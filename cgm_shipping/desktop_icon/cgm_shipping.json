@@ -1,0 +1,22 @@
+{
+ "app": "cgm_shipping",
+ "bg_color": "blue",
+ "creation": "2026-04-13 12:49:11.973857",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon_type": "Link",
+ "idx": 0,
+ "label": "CGM Shipping",
+ "link_to": "CGM Shipping",
+ "link_type": "Workspace Sidebar",
+ "logo_url": "/assets/cgm_shipping/images/CGM Icon.png",
+ "modified": "2026-04-13 12:55:41.530617",
+ "modified_by": "Administrator",
+ "name": "CGM Shipping",
+ "owner": "Administrator",
+ "restrict_removal": 0,
+ "roles": [],
+ "sidebar": "CGM Shipping",
+ "standard": 1
+}
