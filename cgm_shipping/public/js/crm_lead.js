@@ -1,5 +1,7 @@
 frappe.ui.form.on("Lead", {
 	refresh(frm) {
+		frm.remove_custom_button(__("Add to Prospect"), __("Create"));
+		frm.remove_custom_button(__("Add to Prospect"));
 		if (frm.doc.custom_cgm_preshipment_status !== "Lead Ready to Convert") {
 			return;
 		}
@@ -7,7 +9,7 @@ frappe.ui.form.on("Lead", {
 			__("Create Shipment Project"),
 			() => {
 				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.shipment_project_api.create_project_from_lead",
+					method: "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_lead",
 					args: { lead: frm.doc.name },
 					freeze: true,
 					callback(r) {

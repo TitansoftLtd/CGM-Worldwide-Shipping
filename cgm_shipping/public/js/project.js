@@ -33,3 +33,26 @@ frappe.ui.form.on("Shipment Document", {
 		}
 	},
 });
+
+frappe.ui.form.on("Project", {
+	refresh(frm) {
+		if (frm.doc.docstatus !== 0 || frm.doc.custom_mode_of_transport !== "Sea") {
+			return;
+		}
+		frm.add_custom_button(__("Generate Sea Task Plan"), () => {
+			frappe.call({
+				method: "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_sea_import_task_plan",
+				args: { project: frm.doc.name },
+				freeze: true,
+				callback(r) {
+					if (!r.exc) {
+						frappe.show_alert({
+							message: __("Sea task plan generated"),
+							indicator: "green",
+						});
+					}
+				},
+			});
+		});
+	},
+});
