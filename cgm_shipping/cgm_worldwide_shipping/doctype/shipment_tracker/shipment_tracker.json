@@ -1,0 +1,251 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-04-29 05:43:19.038111",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_rsmu",
+  "project",
+  "consignee",
+  "cgm_ref_no",
+  "portcfs_charges",
+  "column_break_loaa",
+  "client_ref_no",
+  "entry_no",
+  "weight",
+  "eta",
+  "column_break_kqie",
+  "status",
+  "date_settled",
+  "agent_allocated",
+  "amended_from",
+  "section_break_ovhs",
+  "no_of_containers",
+  "idf_no",
+  "column_break_bnmt",
+  "total_containers",
+  "kpacfs_code",
+  "column_break_muky",
+  "mbl__hbl",
+  "vessel",
+  "section_break_zlpw",
+  "awb_no",
+  "column_break_jpua",
+  "cfs",
+  "column_break_mrxq",
+  "cfs_code",
+  "section_break_tcnu",
+  "truck_no",
+  "border",
+  "column_break_knoz",
+  "cargo_description"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_rsmu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Shipment tracker",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project"
+  },
+  {
+   "fieldname": "consignee",
+   "fieldtype": "Link",
+   "label": "Consignee",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "cgm_ref_no",
+   "fieldtype": "Data",
+   "label": "CGM Ref No."
+  },
+  {
+   "fieldname": "client_ref_no",
+   "fieldtype": "Data",
+   "label": " Client Ref No. "
+  },
+  {
+   "fieldname": "entry_no",
+   "fieldtype": "Data",
+   "label": "Entry No."
+  },
+  {
+   "fieldname": "weight",
+   "fieldtype": "Data",
+   "label": "Weight"
+  },
+  {
+   "fieldname": "eta",
+   "fieldtype": "Data",
+   "label": "E.T.A"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Vessel Arrived\nRemoved\nIDF Registered\nCancelled"
+  },
+  {
+   "fieldname": "date_settled",
+   "fieldtype": "Date",
+   "label": "Date Settled"
+  },
+  {
+   "fieldname": "agent_allocated",
+   "fieldtype": "Link",
+   "label": "Agent Allocated",
+   "options": "User"
+  },
+  {
+   "fieldname": "column_break_loaa",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_kqie",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_ovhs",
+   "fieldtype": "Section Break",
+   "label": "Sea Freight"
+  },
+  {
+   "fieldname": "no_of_containers",
+   "fieldtype": "Data",
+   "label": "No. of Containers "
+  },
+  {
+   "fieldname": "total_containers",
+   "fieldtype": "Int",
+   "label": "Total Containers"
+  },
+  {
+   "fieldname": "column_break_bnmt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_muky",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mbl__hbl",
+   "fieldtype": "Data",
+   "label": "M/BL / HBL"
+  },
+  {
+   "fieldname": "idf_no",
+   "fieldtype": "Data",
+   "label": "IDF No."
+  },
+  {
+   "fieldname": "portcfs_charges",
+   "fieldtype": "Data",
+   "label": "PORT/CFS Charges"
+  },
+  {
+   "fieldname": "kpacfs_code",
+   "fieldtype": "Data",
+   "label": "KPA/CFS Code"
+  },
+  {
+   "fieldname": "vessel",
+   "fieldtype": "Data",
+   "label": "Vessel"
+  },
+  {
+   "fieldname": "section_break_tcnu",
+   "fieldtype": "Section Break",
+   "label": "Road Freight"
+  },
+  {
+   "fieldname": "truck_no",
+   "fieldtype": "Data",
+   "label": "Truck No."
+  },
+  {
+   "fieldname": "border",
+   "fieldtype": "Data",
+   "label": "Border"
+  },
+  {
+   "fieldname": "cargo_description",
+   "fieldtype": "Small Text",
+   "label": "Cargo Description"
+  },
+  {
+   "fieldname": "column_break_knoz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_zlpw",
+   "fieldtype": "Section Break",
+   "label": "Air Freight"
+  },
+  {
+   "fieldname": "awb_no",
+   "fieldtype": "Data",
+   "label": "Awb No."
+  },
+  {
+   "fieldname": "cfs",
+   "fieldtype": "Data",
+   "label": "CFS"
+  },
+  {
+   "fieldname": "column_break_jpua",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cfs_code",
+   "fieldtype": "Data",
+   "label": "CFS Code"
+  },
+  {
+   "fieldname": "column_break_mrxq",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-04-29 08:12:39.837844",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Shipment tracker",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
