@@ -43,7 +43,13 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Task": "public/js/task.js",
+	"Project": "public/js/project.js",
+	"Lead": "public/js/crm_lead.js",
+	"Customer": "public/js/crm_customer.js",
+	"Opportunity": "public/js/crm_opportunity.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -132,13 +138,14 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Project": {
+		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project_events.apply_shipment_document_automation",
+	},
+	"Customer": {
+		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.customer_events.fill_shipment_defaults_from_lead",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
