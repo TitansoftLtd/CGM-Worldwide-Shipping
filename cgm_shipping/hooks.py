@@ -107,6 +107,7 @@ fixtures = [
 # include js in doctype views
 doctype_js = {
 	"Task": "public/js/task.js",
+	"Payment Entry": "public/js/payment_entry.js",
 	"Project": "public/js/project.js",
 	"Lead": "public/js/crm_lead.js",
 	"Customer": "public/js/crm_customer.js",

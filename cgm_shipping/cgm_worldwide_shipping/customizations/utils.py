@@ -11,6 +11,29 @@ DEPARTMENT_NAME_ALIASES = {
 }
 
 
+def build_project_name_seed(label, shipment_type=None, mode=None):
+	# Step 1: prepare readable base name for repeated jobs.
+	core = (label or "").strip() or "Client"
+	details = " ".join(part for part in [shipment_type, mode] if part)
+	if details:
+		return _("Shipment - {0} - {1}").format(core, details)
+	return _("Shipment - {0}").format(core)
+
+
+def ensure_unique_project_name(seed_name):
+	# Step 1: trim and use fallback when blank.
+	base = (seed_name or "").strip() or _("Shipment")
+	# Step 2: use base when no duplicate exists.
+	if not frappe.db.exists("Project", {"project_name": base}):
+		return base
+	# Step 3: append sequence suffix to avoid collisions.
+	for idx in range(2, 1000):
+		candidate = f"{base} ({idx})"
+		if not frappe.db.exists("Project", {"project_name": candidate}):
+			return candidate
+	frappe.throw(_("Could not generate a unique Project Name. Please set a custom name manually."))
+
+
 def get_default_company():
 	# Step 1: try user default company.
 	company = frappe.defaults.get_user_default("Company")
@@ -240,7 +263,12 @@ def create_project_from_customer(customer, project_name=None):
 	proj = frappe.new_doc("Project")
 	proj.customer = customer
 	proj.company = company
-	proj.project_name = project_name or _("Shipment - {0}").format(cust.customer_name or customer)
+	seed_name = project_name or build_project_name_seed(
+		cust.customer_name or customer,
+		shipment_type=cust.get("custom_shipment_type"),
+		mode=cust.get("custom_mode_of_transport"),
+	)
+	proj.project_name = ensure_unique_project_name(seed_name)
 	apply_shipment_data(
 		proj,
 		shipment_type=cust.get("custom_shipment_type"),
@@ -280,7 +308,12 @@ def create_project_from_lead(lead, project_name=None):
 	proj = frappe.new_doc("Project")
 	proj.customer = customer
 	proj.company = company
-	proj.project_name = project_name or _("Shipment - {0}").format(lead_doc.company_name or lead_doc.lead_name or lead)
+	seed_name = project_name or build_project_name_seed(
+		lead_doc.company_name or lead_doc.lead_name or lead,
+		shipment_type=lead_doc.get("custom_shipment_type"),
+		mode=lead_doc.get("custom_mode_of_transport"),
+	)
+	proj.project_name = ensure_unique_project_name(seed_name)
 	apply_shipment_data(
 		proj,
 		shipment_type=lead_doc.get("custom_shipment_type"),
@@ -317,7 +350,12 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	proj = frappe.new_doc("Project")
 	proj.customer = customer
 	proj.company = company
-	proj.project_name = project_name or _("Shipment - {0}").format(opp.customer_name or opportunity)
+	seed_name = project_name or build_project_name_seed(
+		opp.customer_name or opportunity,
+		shipment_type=opp.get("custom_shipment_type"),
+		mode=opp.get("custom_mode_of_transport"),
+	)
+	proj.project_name = ensure_unique_project_name(seed_name)
 	apply_shipment_data(
 		proj,
 		shipment_type=opp.get("custom_shipment_type"),
@@ -378,3 +416,69 @@ def create_sea_import_task_plan(project, reset=False):
 		created.append(task.name)
 
 	return {"created": created, "count": len(created)}
+
+
+@frappe.whitelist()
+def notify_finance_for_task(task_name):
+	"""Notify finance users that payment action is needed for a task."""
+	if not task_name or not frappe.db.exists("Task", task_name):
+		return {"notified": 0}
+
+	task = frappe.get_doc("Task", task_name)
+	subject = f"Payment action needed for task {task.name}"
+	if frappe.db.exists(
+		"Notification Log",
+		{"document_type": "Task", "document_name": task.name, "subject": subject},
+	):
+		return {"notified": 0}
+
+	finance_users = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", ["Finance Manager", "Accounts User", "Accounts Manager"]]},
+		fields=["parent"],
+	)
+	unique_users = []
+	for row in finance_users:
+		user = row.parent
+		if user in unique_users:
+			continue
+		if not frappe.db.get_value("User", user, "enabled"):
+			continue
+		unique_users.append(user)
+
+	count = 0
+	for user in unique_users:
+		log = frappe.new_doc("Notification Log")
+		log.for_user = user
+		log.type = "Alert"
+		log.from_user = frappe.session.user
+		log.document_type = "Task"
+		log.document_name = task.name
+		log.subject = subject
+		log.insert(ignore_permissions=True)
+		count += 1
+
+	return {"notified": count}
+
+
+@frappe.whitelist()
+def complete_task_with_payment(task_name, payment_entry):
+	"""Attach payment entry to task and mark it completed."""
+	if not task_name or not frappe.db.exists("Task", task_name):
+		frappe.throw(_("Task {0} not found").format(task_name))
+	if not payment_entry or not frappe.db.exists("Payment Entry", payment_entry):
+		frappe.throw(_("Payment Entry {0} not found").format(payment_entry))
+
+	payment_status = frappe.db.get_value("Payment Entry", payment_entry, "docstatus")
+	if int(payment_status or 0) != 1:
+		frappe.throw(_("Payment Entry must be submitted before linking it to the task."))
+
+	task = frappe.get_doc("Task", task_name)
+	if frappe.get_meta("Task").has_field("custom_payment_entry"):
+		task.custom_payment_entry = payment_entry
+	task.completed_by = frappe.session.user
+	task.completed_on = now_datetime()
+	task.status = "Completed"
+	task.save(ignore_permissions=True)
+
+	return {"task": task.name, "status": task.status}
