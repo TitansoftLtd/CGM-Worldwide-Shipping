@@ -8,3 +8,13 @@ cgm_shipping.patches.v1_0.sea_import_setup
 cgm_shipping.patches.v1_0.crm_preshipment_workflows
 cgm_shipping.patches.v1_0.crm_preshipment_workflows_simplify
 cgm_shipping.patches.v1_0.crm_shipment_fields
+cgm_shipping.patches.v1_0.pluralize_shipment_documents_table
+cgm_shipping.patches.v1_0.task_flow_fields
+cgm_shipping.patches.v1_0.crm_lead_reject_flow
+cgm_shipping.patches.v1_0.customer_creation_permissions
+cgm_shipping.patches.v1_0.crm_preshipment_document_fields
+cgm_shipping.patches.v1_0.project_creator_visibility_permissions
+cgm_shipping.patches.v1_0.align_document_type_stages_stepwise
+cgm_shipping.patches.v1_0.task_external_ref_field
+cgm_shipping.patches.v1_0.task_completion_ui_cleanup
+cgm_shipping.patches.v1_0.task_payment_entry_link
