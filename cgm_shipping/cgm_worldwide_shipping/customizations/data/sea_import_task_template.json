@@ -1,17 +1,7 @@
 [
   {
-    "subject": "Create UCR (Unique Consignment Reference)",
+    "subject": "Create UCR and IDF, then hand off for payment",
     "department": "Declaration",
-    "expected_time": 1
-  },
-  {
-    "subject": "Create IDF (Import Declaration Form)",
-    "department": "Declaration",
-    "expected_time": 1
-  },
-  {
-    "subject": "Pay UCR/IDF invoice and attach proof",
-    "department": "Finance",
     "expected_time": 1
   },
   {
