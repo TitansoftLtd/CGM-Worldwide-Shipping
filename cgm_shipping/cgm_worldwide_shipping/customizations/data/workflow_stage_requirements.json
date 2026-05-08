@@ -1,7 +1,7 @@
 {
-  "IDF Created": ["Pre-IDF", "IDF & UCR"],
-  "Permits Processing": ["IDF & UCR"],
-  "Awaiting Arrival": ["Permits (pre-clearance)"],
+  "IDF Created": ["Pre-IDF"],
+  "Permits Processing": ["Permits (pre-clearance)"],
+  "Awaiting Arrival": ["Pre-arrival"],
   "Clearing": ["Arrival & manifest", "Customs entry & taxes"],
   "Released": ["Field clearance & release", "Port & line (DO / charges)"],
   "Completed": ["Transport & delivery", "Closure"]
