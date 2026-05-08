@@ -10,7 +10,7 @@ frappe.ui.form.on("Opportunity", {
 			__("Create Shipment Project"),
 			() => {
 				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.shipment_project_api.create_project_from_opportunity",
+					method: "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_opportunity",
 					args: { opportunity: frm.doc.name },
 					freeze: true,
 					callback(r) {
