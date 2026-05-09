@@ -5,6 +5,67 @@ app_description = "CGM Customizations"
 app_email = "nkubitudouglas@gmail.com"
 app_license = "mit"
 
+fixtures = [
+    # Workflow definitions
+    {
+        "doctype": "Workflow",
+        "filters": [["name", "in", [
+            "CGM Lead Pre-Shipment",
+            "CGM Opportunity Pre-Shipment",
+            "CGM Sea Import Workflow",        # ← added
+        ]]]
+    },
+    # Workflow states
+    {
+        "doctype": "Workflow State",
+        "filters": [["name", "in", [
+            # Lead states
+            "Lead Intake",
+            "Lead Docs Verified",
+            "Lead Docs Rejected",
+            "Lead Ready to Convert",
+            # Opportunity states
+            "Opp Intake",
+            "Opp Docs Verified",
+            "Opp Docs Rejected",
+            "Opp Ready for Project",
+            # Sea Import states
+            "Documents Received",             # ← added
+            "IDF Created",                    # ← added
+            "Permits Processing",             # ← added
+            "Awaiting Arrival",               # ← added
+            "Arrived",                        # ← added
+            "Clearing",                       # ← added
+            "Released",                       # ← added
+            "In Transit",                     # ← added
+            "Delivered",                      # ← added
+            "Container Return Pending",       # ← added
+            "Completed",                      # ← added
+        ]]]
+    },
+    # Workflow actions
+    {
+        "doctype": "Workflow Action Master",
+        "filters": [["name", "in", [
+            # CRM actions
+            "Approve CI/PKL",
+            "Reject CI/PKL",
+            "Authorize Customer Creation",
+            "Authorize Shipment File",
+            # Sea Import actions
+            "Approve Docs & Create IDF",      # ← added
+            "Start Permits",                  # ← added
+            "Permits Ready",                  # ← added
+            "Mark Arrived",                   # ← added
+            "Start Clearing",                 # ← added
+            "Release Cargo",                  # ← added
+            "Dispatch Truck",                 # ← added
+            "Confirm Delivery",               # ← added
+            "Start Container Return",         # ← added
+            "Confirm Interchange & Close",    # ← added
+        ]]]
+    },
+]
 # Apps
 # ------------------
 
@@ -42,9 +103,11 @@ app_license = "mit"
 # include js in page
 # page_js = {"page" : "public/js/file.js"}
 
+
 # include js in doctype views
 doctype_js = {
 	"Task": "public/js/task.js",
+	"Payment Entry": "public/js/payment_entry.js",
 	"Project": "public/js/project.js",
 	"Lead": "public/js/crm_lead.js",
 	"Customer": "public/js/crm_customer.js",
@@ -140,10 +203,10 @@ doctype_js = {
 
 doc_events = {
 	"Project": {
-		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project_events.apply_shipment_document_automation",
+		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
 	},
 	"Customer": {
-		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.customer_events.fill_shipment_defaults_from_lead",
+		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.fill_shipment_defaults_from_lead",
 	},
 }
 
