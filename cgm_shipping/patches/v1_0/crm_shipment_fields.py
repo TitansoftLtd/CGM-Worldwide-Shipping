@@ -43,27 +43,6 @@ def execute():
 		},
 	)
 	add_if_missing(
-		"Customer",
-		{
-			"fieldname": "custom_shipment_type",
-			"label": "Shipment Type (default)",
-			"fieldtype": "Select",
-			"options": "\nImport\nExport",
-			"insert_after": "lead_name",
-			"description": "Default for **Create Shipment Project** from this Customer.",
-		},
-	)
-	add_if_missing(
-		"Customer",
-		{
-			"fieldname": "custom_mode_of_transport",
-			"label": "Mode of Transport (default)",
-			"fieldtype": "Select",
-			"options": "\nSea\nAir\nRoad",
-			"insert_after": "custom_shipment_type",
-		},
-	)
-	add_if_missing(
 		"Project",
 		{
 			"fieldname": "custom_source_lead",
@@ -74,7 +53,7 @@ def execute():
 			"read_only": 1,
 		},
 	)
-	_add_if_missing(
+	add_if_missing(
 		"Project",
 		{
 			"fieldname": "custom_source_opportunity",

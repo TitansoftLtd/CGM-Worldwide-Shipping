@@ -27,7 +27,7 @@ def ensure_crm_workflow_actions():
 	for action_name in [
 		"Approve CI/PKL",
 		"Reject CI/PKL",
-		"Authorize Customer Creation",
+		"Approve customer onboarding",
 		"Authorize Shipment File",
 	]:
 		if not frappe.db.exists("Workflow Action Master", action_name):
@@ -168,7 +168,7 @@ def ensure_lead_workflow():
 				},
 				{
 					"state": "Lead Docs Verified",
-					"action": "Authorize Customer Creation",
+					"action": "Approve customer onboarding",
 					"next_state": "Lead Ready to Convert",
 					"allowed": "Operations Manager",
 					"allow_self_approval": 1,
