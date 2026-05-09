@@ -2,6 +2,10 @@ frappe.ui.form.on("Lead", {
 	refresh(frm) {
 		frm.remove_custom_button(__("Add to Prospect"), __("Create"));
 		frm.remove_custom_button(__("Add to Prospect"));
+		// Step 1: only allow Customer creation after Operations approves onboarding (CRM workflow).
+		if (frm.doc.custom_cgm_preshipment_status !== "Lead Ready to Convert") {
+			frm.remove_custom_button(__("Customer"), __("Create"));
+		}
 		if (frm.doc.custom_cgm_preshipment_status !== "Lead Ready to Convert") {
 			return;
 		}

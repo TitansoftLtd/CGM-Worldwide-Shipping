@@ -73,8 +73,8 @@
   "docstatus": 0,
   "doctype": "Workflow Action Master",
   "modified": "2026-05-06 02:14:02.260254",
-  "name": "Authorize Customer Creation",
-  "workflow_action_name": "Authorize Customer Creation"
+  "name": "Approve customer onboarding",
+  "workflow_action_name": "Approve customer onboarding"
  },
  {
   "docstatus": 0,

@@ -33,16 +33,31 @@ frappe.ui.form.on("Task", {
 			});
 		}
 
-		// Step 1b: combined UCR+IDF task uses finance payment flow.
+		// Step 1b: UCR+IDF — Purchase Invoice → Payment Entry → task completed.
 		if (
 			is_combined_ucr_idf_task(frm) &&
 			frm.doc.status !== "Completed" &&
 			frm.doc.status !== "Cancelled" &&
+			!frm.doc.custom_purchase_invoice &&
+			user_can_record_purchase_invoice()
+		) {
+			frm.add_custom_button(__("Create Purchase Invoice"), () => {
+				localStorage.setItem("cgm_return_task", frm.doc.name);
+				localStorage.setItem("cgm_pi_for_task", "1");
+				frappe.set_route("Form", "Purchase Invoice", "new-purchase-invoice-1");
+			});
+		}
+		if (
+			is_combined_ucr_idf_task(frm) &&
+			frm.doc.status !== "Completed" &&
+			frm.doc.status !== "Cancelled" &&
+			frm.doc.custom_purchase_invoice &&
 			!frm.doc.custom_payment_entry &&
 			user_can_make_payment()
 		) {
 			frm.add_custom_button(__("Make Payment"), () => {
 				localStorage.setItem("cgm_return_task", frm.doc.name);
+				localStorage.setItem("cgm_pe_for_task", "1");
 				frappe.set_route("Form", "Payment Entry", "new-payment-entry-1");
 			});
 		}
@@ -65,8 +80,13 @@ frappe.ui.form.on("Task", {
 		const just_completed = frm.doc.status === "Completed" && frm.__loaded_status !== "Completed";
 		frm.__loaded_status = frm.doc.status;
 
-		// Step 5: for combined UCR+IDF task, notify finance on save before payment.
-		if (is_combined_ucr_idf_task(frm) && !frm.doc.custom_payment_entry && frm.doc.status !== "Completed") {
+		// Step 5: PI is on the task; notify finance when payment is still needed.
+		if (
+			is_combined_ucr_idf_task(frm) &&
+			frm.doc.custom_purchase_invoice &&
+			!frm.doc.custom_payment_entry &&
+			frm.doc.status !== "Completed"
+		) {
 			frappe.call({
 				method: "cgm_shipping.cgm_worldwide_shipping.customizations.utils.notify_finance_for_task",
 				args: { task_name: frm.doc.name },
@@ -90,6 +110,17 @@ function is_combined_ucr_idf_task(frm) {
 function user_can_make_payment() {
 	const roles = frappe.user_roles || [];
 	return ["Finance Manager", "Accounts User", "Accounts Manager"].some((role) => roles.includes(role));
+}
+
+function user_can_record_purchase_invoice() {
+	const roles = frappe.user_roles || [];
+	return [
+		"Finance Manager",
+		"Accounts User",
+		"Accounts Manager",
+		"Purchase Manager",
+		"Purchase User",
+	].some((role) => roles.includes(role));
 }
 
 function open_next_task_prompt(frm) {
