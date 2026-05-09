@@ -2,17 +2,17 @@ import frappe
 
 
 def execute():
-	_add_if_missing(
+	add_if_missing(
 		"Lead",
 		{
 			"fieldname": "custom_shipment_type",
 			"label": "Shipment Type",
 			"fieldtype": "Select",
 			"options": "\nImport\nExport",
-			"insert_after": _insert_after_lead(),
+			"insert_after": insert_after_lead(),
 		},
 	)
-	_add_if_missing(
+	add_if_missing(
 		"Lead",
 		{
 			"fieldname": "custom_mode_of_transport",
@@ -22,17 +22,17 @@ def execute():
 			"insert_after": "custom_shipment_type",
 		},
 	)
-	_add_if_missing(
+	add_if_missing(
 		"Opportunity",
 		{
 			"fieldname": "custom_shipment_type",
 			"label": "Shipment Type",
 			"fieldtype": "Select",
 			"options": "\nImport\nExport",
-			"insert_after": _insert_after_opportunity(),
+			"insert_after": insert_after_opportunity(),
 		},
 	)
-	_add_if_missing(
+	add_if_missing(
 		"Opportunity",
 		{
 			"fieldname": "custom_mode_of_transport",
@@ -42,28 +42,7 @@ def execute():
 			"insert_after": "custom_shipment_type",
 		},
 	)
-	_add_if_missing(
-		"Customer",
-		{
-			"fieldname": "custom_shipment_type",
-			"label": "Shipment Type (default)",
-			"fieldtype": "Select",
-			"options": "\nImport\nExport",
-			"insert_after": "lead_name",
-			"description": "Default for **Create Shipment Project** from this Customer.",
-		},
-	)
-	_add_if_missing(
-		"Customer",
-		{
-			"fieldname": "custom_mode_of_transport",
-			"label": "Mode of Transport (default)",
-			"fieldtype": "Select",
-			"options": "\nSea\nAir\nRoad",
-			"insert_after": "custom_shipment_type",
-		},
-	)
-	_add_if_missing(
+	add_if_missing(
 		"Project",
 		{
 			"fieldname": "custom_source_lead",
@@ -74,7 +53,7 @@ def execute():
 			"read_only": 1,
 		},
 	)
-	_add_if_missing(
+	add_if_missing(
 		"Project",
 		{
 			"fieldname": "custom_source_opportunity",
@@ -87,19 +66,19 @@ def execute():
 	)
 
 
-def _insert_after_lead():
+def insert_after_lead():
 	if frappe.db.exists("Custom Field", "Lead-custom_cgm_preshipment_status"):
 		return "custom_cgm_preshipment_status"
 	return "status"
 
 
-def _insert_after_opportunity():
+def insert_after_opportunity():
 	if frappe.db.exists("Custom Field", "Opportunity-custom_cgm_preshipment_status"):
 		return "custom_cgm_preshipment_status"
 	return "status"
 
 
-def _add_if_missing(dt, spec):
+def add_if_missing(dt, spec):
 	name = f"{dt}-{spec['fieldname']}"
 	if frappe.db.exists("Custom Field", name):
 		return

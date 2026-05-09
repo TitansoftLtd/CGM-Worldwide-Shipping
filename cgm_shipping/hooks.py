@@ -50,7 +50,7 @@ fixtures = [
             # CRM actions
             "Approve CI/PKL",
             "Reject CI/PKL",
-            "Authorize Customer Creation",
+            "Approve customer onboarding",
             "Authorize Shipment File",
             # Sea Import actions
             "Approve Docs & Create IDF",      # ← added
@@ -107,6 +107,7 @@ fixtures = [
 # include js in doctype views
 doctype_js = {
 	"Task": "public/js/task.js",
+	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Payment Entry": "public/js/payment_entry.js",
 	"Project": "public/js/project.js",
 	"Lead": "public/js/crm_lead.js",
@@ -204,9 +205,6 @@ doctype_js = {
 doc_events = {
 	"Project": {
 		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
-	},
-	"Customer": {
-		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.fill_shipment_defaults_from_lead",
 	},
 }
 

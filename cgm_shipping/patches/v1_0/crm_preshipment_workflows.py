@@ -26,7 +26,8 @@ def ensure_crm_roles():
 def ensure_crm_workflow_actions():
 	for action_name in [
 		"Approve CI/PKL",
-		"Authorize Customer Creation",
+		"Reject CI/PKL",
+		"Approve customer onboarding",
 		"Authorize Shipment File",
 	]:
 		if not frappe.db.exists("Workflow Action Master", action_name):
@@ -39,9 +40,11 @@ def ensure_crm_workflow_states():
 	for state_name, style in [
 		("Lead Intake", "Warning"),
 		("Lead Docs Verified", "Success"),
+		("Lead Docs Rejected", "Danger"),
 		("Lead Ready to Convert", "Success"),
 		("Opp Intake", "Warning"),
 		("Opp Docs Verified", "Success"),
+		("Opp Docs Rejected", "Danger"),
 		("Opp Ready for Project", "Success"),
 	]:
 		if not frappe.db.exists("Workflow State", state_name):
@@ -51,7 +54,7 @@ def ensure_crm_workflow_states():
 
 
 def ensure_lead_preshipment_field():
-	options = "\n".join(["Lead Intake", "Lead Docs Verified", "Lead Ready to Convert"])
+	options = "\n".join(["Lead Intake", "Lead Docs Verified", "Lead Docs Rejected", "Lead Ready to Convert"])
 	create_custom_field(
 		"Lead",
 		{
@@ -67,7 +70,7 @@ def ensure_lead_preshipment_field():
 
 
 def ensure_opportunity_preshipment_field():
-	options = "\n".join(["Opp Intake", "Opp Docs Verified", "Opp Ready for Project"])
+	options = "\n".join(["Opp Intake", "Opp Docs Verified", "Opp Docs Rejected", "Opp Ready for Project"])
 	create_custom_field(
 		"Opportunity",
 		{
@@ -95,8 +98,8 @@ def create_custom_field(dt, values):
 
 def sync_preshipment_field_options():
 	for dt, options in (
-		("Lead", "\n".join(["Lead Intake", "Lead Docs Verified", "Lead Ready to Convert"])),
-		("Opportunity", "\n".join(["Opp Intake", "Opp Docs Verified", "Opp Ready for Project"])),
+		("Lead", "\n".join(["Lead Intake", "Lead Docs Verified", "Lead Docs Rejected", "Lead Ready to Convert"])),
+		("Opportunity", "\n".join(["Opp Intake", "Opp Docs Verified", "Opp Docs Rejected", "Opp Ready for Project"])),
 	):
 		cf_name = f"{dt}-custom_cgm_preshipment_status"
 		if frappe.db.exists("Custom Field", cf_name):
@@ -138,6 +141,7 @@ def ensure_lead_workflow():
 			"states": [
 				{"state": "Lead Intake", "doc_status": "0", "allow_edit": "All"},
 				{"state": "Lead Docs Verified", "doc_status": "0", "allow_edit": "Operations Manager"},
+				{"state": "Lead Docs Rejected", "doc_status": "0", "allow_edit": "CGM Documentation"},
 				{"state": "Lead Ready to Convert", "doc_status": "0", "allow_edit": "Operations Manager"},
 			],
 			"transitions": [
@@ -149,8 +153,22 @@ def ensure_lead_workflow():
 					"allow_self_approval": 1,
 				},
 				{
+					"state": "Lead Intake",
+					"action": "Reject CI/PKL",
+					"next_state": "Lead Docs Rejected",
+					"allowed": "Operations Manager",
+					"allow_self_approval": 1,
+				},
+				{
+					"state": "Lead Docs Rejected",
+					"action": "Approve CI/PKL",
+					"next_state": "Lead Docs Verified",
+					"allowed": "Operations Manager",
+					"allow_self_approval": 1,
+				},
+				{
 					"state": "Lead Docs Verified",
-					"action": "Authorize Customer Creation",
+					"action": "Approve customer onboarding",
 					"next_state": "Lead Ready to Convert",
 					"allowed": "Operations Manager",
 					"allow_self_approval": 1,
@@ -176,11 +194,26 @@ def ensure_opportunity_workflow():
 			"states": [
 				{"state": "Opp Intake", "doc_status": "0", "allow_edit": "All"},
 				{"state": "Opp Docs Verified", "doc_status": "0", "allow_edit": "Operations Manager"},
+				{"state": "Opp Docs Rejected", "doc_status": "0", "allow_edit": "CGM Documentation"},
 				{"state": "Opp Ready for Project", "doc_status": "0", "allow_edit": "Operations Manager"},
 			],
 			"transitions": [
 				{
 					"state": "Opp Intake",
+					"action": "Approve CI/PKL",
+					"next_state": "Opp Docs Verified",
+					"allowed": "Operations Manager",
+					"allow_self_approval": 1,
+				},
+				{
+					"state": "Opp Intake",
+					"action": "Reject CI/PKL",
+					"next_state": "Opp Docs Rejected",
+					"allowed": "Operations Manager",
+					"allow_self_approval": 1,
+				},
+				{
+					"state": "Opp Docs Rejected",
 					"action": "Approve CI/PKL",
 					"next_state": "Opp Docs Verified",
 					"allowed": "Operations Manager",

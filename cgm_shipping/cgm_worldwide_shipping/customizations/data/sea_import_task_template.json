@@ -15,6 +15,11 @@
     "expected_time": 1
   },
   {
+    "subject": "Receive and verify approved permits",
+    "department": "Declaration",
+    "expected_time": 1
+  },
+  {
     "subject": "Client inspection follow-up (if required)",
     "department": "Operations",
     "expected_time": 1
