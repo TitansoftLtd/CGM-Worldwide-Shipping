@@ -4,6 +4,8 @@ from frappe.utils import now_datetime
 from pathlib import Path
 import json
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import SEA_TASK_FLOW_KEY
+
 def get_table_field(doc):
 	# Step 1: prefer plural table field.
 	meta = frappe.get_meta(doc.doctype)
@@ -36,6 +38,8 @@ def apply_shipment_document_automation(doc, _method=None):
 	normalize_document_rows(doc)
 	# Step 3: block workflow changes when required docs are missing.
 	enforce_document_gate_on_workflow_change(doc)
+	# Step 4: Sea — IDF Created requires sea task plan + Task 1 completed (UCR/IDF + payment handoff).
+	enforce_sea_task_gate_on_workflow_change(doc)
 
 
 def seed_required_document_rows(doc):
@@ -124,6 +128,49 @@ def enforce_document_gate_on_workflow_change(doc):
 			_(
 				"Cannot move shipment to <b>{0}</b>. Verify required documents first: {1}"
 			).format(new_status, ", ".join(sorted(set(missing))))
+		)
+
+
+def enforce_sea_task_gate_on_workflow_change(doc):
+	"""Sea-import only: entering IDF Created requires Task 1 of the sea template to be Completed."""
+	prev = doc.get_doc_before_save()
+	if not prev:
+		return
+	prev_status = prev.get("custom_shipment_status")
+	new_status = doc.get("custom_shipment_status")
+	if not new_status or new_status == prev_status:
+		return
+	if new_status != "IDF Created":
+		return
+	if doc.get("custom_mode_of_transport") != "Sea":
+		return
+	if not frappe.get_meta(doc.doctype).has_field("custom_mode_of_transport"):
+		return
+
+	task = frappe.db.get_value(
+		"Task",
+		{
+			"project": doc.name,
+			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"custom_sequence_no": 1,
+		},
+		["name", "subject", "status"],
+		as_dict=True,
+	)
+	if not task:
+		frappe.throw(
+			_(
+				"Cannot move to <b>IDF Created</b> yet. Generate the <b>Sea Task Plan</b> on this project first, "
+				"then complete Task 1 (Create UCR and IDF, then hand off for payment)."
+			)
+		)
+	if task.status != "Completed":
+		frappe.throw(
+			_(
+				"Cannot move to <b>IDF Created</b> until sea Task 1 is <b>Completed</b> "
+				"(Declarant: UCR/IDF in portal, attach proofs on the task; Finance: payment from the same task). "
+				"Task <b>{0}</b> is currently <b>{1}</b>."
+			).format(task.name, task.status or _("unset"))
 		)
 
 
