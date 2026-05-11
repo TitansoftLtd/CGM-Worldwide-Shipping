@@ -147,6 +147,44 @@ def carry_preshipment_docs_to_project(project_doc, source_doc):
 	append_verified_doc_row(project_doc, "PKL", attachments.get("PKL"))
 
 
+def get_document_type_link_name(code):
+	"""Resolve `Document Type` name for child table links (code may differ from name)."""
+	if not code:
+		return None
+	name = frappe.db.get_value("Document Type", {"code": code}, "name")
+	if name:
+		return name
+	if frappe.db.exists("Document Type", code):
+		return code
+	return None
+
+
+def carry_customer_kra_pin_to_project(project_doc, customer_ref):
+	"""Copy KRA PIN file from Customer onboarding field into Project shipment documents."""
+	if not customer_ref:
+		return
+	if getattr(customer_ref, "doctype", None) == "Customer":
+		customer_doc = customer_ref
+	else:
+		if not frappe.db.exists("Customer", customer_ref):
+			return
+		customer_doc = frappe.get_doc("Customer", customer_ref)
+
+	meta_c = frappe.get_meta("Customer")
+	if not meta_c.has_field("custom_kra_pin_attachment"):
+		return
+
+	attach = customer_doc.get("custom_kra_pin_attachment")
+	if not attach:
+		return
+
+	doctype_name = get_document_type_link_name("KRA_PIN")
+	if not doctype_name:
+		return
+
+	append_verified_doc_row(project_doc, doctype_name, attach)
+
+
 def load_sea_task_template():
 	# Step 1: load reusable process document from JSON file.
 	template_path = Path(__file__).parent / "data" / "sea_import_task_template.json"
@@ -260,25 +298,40 @@ def create_project_from_customer(customer, project_name=None):
 	if not company:
 		frappe.throw(_("Set a default Company first."))
 
+	# Step 1: shipment classification comes from source Lead (if any), not Customer.
+	shipment_type = None
+	mode_of_transport = None
+	if cust.get("lead_name") and frappe.db.exists("Lead", cust.lead_name):
+		row = frappe.db.get_value(
+			"Lead",
+			cust.lead_name,
+			["custom_shipment_type", "custom_mode_of_transport"],
+			as_dict=True,
+		)
+		if row:
+			shipment_type = row.get("custom_shipment_type")
+			mode_of_transport = row.get("custom_mode_of_transport")
+
 	proj = frappe.new_doc("Project")
 	proj.customer = customer
 	proj.company = company
 	seed_name = project_name or build_project_name_seed(
 		cust.customer_name or customer,
-		shipment_type=cust.get("custom_shipment_type"),
-		mode=cust.get("custom_mode_of_transport"),
+		shipment_type=shipment_type,
+		mode=mode_of_transport,
 	)
 	proj.project_name = ensure_unique_project_name(seed_name)
 	apply_shipment_data(
 		proj,
-		shipment_type=cust.get("custom_shipment_type"),
-		mode=cust.get("custom_mode_of_transport"),
+		shipment_type=shipment_type,
+		mode=mode_of_transport,
 	)
 	if cust.get("lead_name") and frappe.get_meta("Project").has_field("custom_source_lead"):
 		proj.custom_source_lead = cust.lead_name
 	if cust.get("lead_name") and frappe.db.exists("Lead", cust.lead_name):
 		lead_doc = frappe.get_doc("Lead", cust.lead_name)
 		carry_preshipment_docs_to_project(proj, lead_doc)
+	carry_customer_kra_pin_to_project(proj, cust)
 
 	proj.insert()
 	return proj.name
@@ -322,6 +375,7 @@ def create_project_from_lead(lead, project_name=None):
 	if frappe.get_meta("Project").has_field("custom_source_lead"):
 		proj.custom_source_lead = lead
 	carry_preshipment_docs_to_project(proj, lead_doc)
+	carry_customer_kra_pin_to_project(proj, customer)
 
 	proj.insert()
 	return proj.name
@@ -364,6 +418,7 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	if frappe.get_meta("Project").has_field("custom_source_opportunity"):
 		proj.custom_source_opportunity = opportunity
 	carry_preshipment_docs_to_project(proj, opp)
+	carry_customer_kra_pin_to_project(proj, customer)
 
 	proj.insert()
 	return proj.name
@@ -461,9 +516,52 @@ def notify_finance_for_task(task_name):
 	return {"notified": count}
 
 
+def is_sea_ucr_idf_task_one(task):
+	"""Sea import template, Task 1 — UCR / IDF purchase invoice + payment flow."""
+	return (
+		task.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
+		and int(task.get("custom_sequence_no") or 0) == 1
+	)
+
+
+def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoice_name):
+	if not payment_entry_name or not purchase_invoice_name:
+		return False
+	pe = frappe.get_doc("Payment Entry", payment_entry_name)
+	for row in pe.get("references") or []:
+		if row.reference_doctype == "Purchase Invoice" and row.reference_name == purchase_invoice_name:
+			return True
+	return False
+
+
+@frappe.whitelist()
+def link_purchase_invoice_to_task(task_name, purchase_invoice):
+	"""After Purchase Invoice is submitted, link it to sea Task 1 (UCR/IDF)."""
+	if not task_name or not frappe.db.exists("Task", task_name):
+		frappe.throw(_("Task not found."))
+	if not purchase_invoice or not frappe.db.exists("Purchase Invoice", purchase_invoice):
+		frappe.throw(_("Purchase Invoice not found."))
+
+	task = frappe.get_doc("Task", task_name)
+	if not is_sea_ucr_idf_task_one(task):
+		frappe.throw(_("This action is only for sea import Task 1 (UCR / IDF)."))
+
+	pi_status = frappe.db.get_value("Purchase Invoice", purchase_invoice, "docstatus")
+	if int(pi_status or 0) != 1:
+		frappe.throw(_("Purchase Invoice must be submitted before linking to the task."))
+
+	if frappe.get_meta("Task").has_field("custom_purchase_invoice"):
+		task.custom_purchase_invoice = purchase_invoice
+	task.save(ignore_permissions=True)
+
+	notify_finance_for_task(task.name)
+
+	return {"task": task.name, "purchase_invoice": purchase_invoice}
+
+
 @frappe.whitelist()
 def complete_task_with_payment(task_name, payment_entry):
-	"""Attach payment entry to task and mark it completed."""
+	"""Attach submitted Payment Entry (paying the task's PI) and mark Task 1 completed."""
 	if not task_name or not frappe.db.exists("Task", task_name):
 		frappe.throw(_("Task {0} not found").format(task_name))
 	if not payment_entry or not frappe.db.exists("Payment Entry", payment_entry):
@@ -474,6 +572,17 @@ def complete_task_with_payment(task_name, payment_entry):
 		frappe.throw(_("Payment Entry must be submitted before linking it to the task."))
 
 	task = frappe.get_doc("Task", task_name)
+	if is_sea_ucr_idf_task_one(task) and frappe.get_meta("Task").has_field("custom_purchase_invoice"):
+		pi_name = task.get("custom_purchase_invoice")
+		if not pi_name:
+			frappe.throw(
+				_("Create and submit a Purchase Invoice for the IDF fees, link it using **Create Purchase Invoice** on the task, then record payment.")
+			)
+		if not payment_entry_allocates_purchase_invoice(payment_entry, pi_name):
+			frappe.throw(
+				_("Payment Entry must allocate against Purchase Invoice {0}.").format(pi_name)
+			)
+
 	if frappe.get_meta("Task").has_field("custom_payment_entry"):
 		task.custom_payment_entry = payment_entry
 	task.completed_by = frappe.session.user

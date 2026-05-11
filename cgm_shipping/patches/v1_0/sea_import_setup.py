@@ -38,23 +38,29 @@ def ensure_workflow_actions():
 
 
 def ensure_workflow_states():
-	for state_name in [
-		"Documents Received",
-		"IDF Created",
-		"Permits Processing",
-		"Awaiting Arrival",
-		"Arrived",
-		"Clearing",
-		"Released",
-		"In Transit",
-		"Delivered",
-		"Container Return Pending",
-		"Completed",
-	]:
-		if not frappe.db.exists("Workflow State", state_name):
-			frappe.get_doc({"doctype": "Workflow State", "workflow_state_name": state_name, "style": "Info"}).insert(
-				ignore_permissions=True
-			)
+	state_styles = {
+		"Documents Received": "Warning",
+		"IDF Created": "Primary",
+		"Permits Processing": "Primary",
+		"Awaiting Arrival": "Info",
+		"Arrived": "Info",
+		"Clearing": "Warning",
+		"Released": "Primary",
+		"In Transit": "Info",
+		"Delivered": "Success",
+		"Container Return Pending": "Warning",
+		"Completed": "Success",
+	}
+	for state_name, style in state_styles.items():
+		if frappe.db.exists("Workflow State", state_name):
+			state_doc = frappe.get_doc("Workflow State", state_name)
+			if state_doc.style != style:
+				state_doc.style = style
+				state_doc.save(ignore_permissions=True)
+			continue
+		frappe.get_doc({"doctype": "Workflow State", "workflow_state_name": state_name, "style": style}).insert(
+			ignore_permissions=True
+		)
 
 
 def ensure_project_fields():

@@ -9,7 +9,8 @@ frappe.ui.form.on("Payment Entry", {
 
 function link_payment_back_to_task(frm) {
 	const task_name = localStorage.getItem("cgm_return_task");
-	if (!task_name || !frm.doc.name || frm.doc.docstatus !== 1) {
+	const pe_flow = localStorage.getItem("cgm_pe_for_task");
+	if (!task_name || !frm.doc.name || frm.doc.docstatus !== 1 || pe_flow !== "1") {
 		return;
 	}
 
@@ -24,6 +25,7 @@ function link_payment_back_to_task(frm) {
 				return;
 			}
 			localStorage.removeItem("cgm_return_task");
+			localStorage.removeItem("cgm_pe_for_task");
 			frappe.show_alert({
 				message: __("Payment linked and task completed"),
 				indicator: "green",
