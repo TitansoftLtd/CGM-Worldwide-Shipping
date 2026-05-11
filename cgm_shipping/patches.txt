@@ -4,3 +4,17 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+cgm_shipping.patches.v1_0.sea_import_setup
+cgm_shipping.patches.v1_0.crm_preshipment_workflows
+cgm_shipping.patches.v1_0.crm_preshipment_workflows_simplify
+cgm_shipping.patches.v1_0.crm_shipment_fields
+cgm_shipping.patches.v1_0.pluralize_shipment_documents_table
+cgm_shipping.patches.v1_0.crm_lead_reject_flow
+cgm_shipping.patches.v1_0.customer_creation_permissions
+cgm_shipping.patches.v1_0.customer_remove_shipment_defaults
+cgm_shipping.patches.v1_0.crm_preshipment_workflows_reapprove_rename
+cgm_shipping.patches.v1_0.crm_preshipment_document_fields
+cgm_shipping.patches.v1_0.project_creator_visibility_permissions
+cgm_shipping.patches.v1_0.align_document_type_stages_stepwise
+cgm_shipping.patches.v1_0.document_type_kra_pin_all_modes
+cgm_shipping.patches.v1_0.seed_cgm_shipping_settings_templates
