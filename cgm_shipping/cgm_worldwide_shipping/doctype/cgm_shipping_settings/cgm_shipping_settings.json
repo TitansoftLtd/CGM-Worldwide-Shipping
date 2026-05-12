@@ -5,12 +5,25 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "section_break_rskl"
+  "section_break_rskl",
+  "section_break_sea_import",
+  "custom_sea_import_task_template"
  ],
  "fields": [
   {
    "fieldname": "section_break_rskl",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_sea_import",
+   "fieldtype": "Section Break",
+   "label": "Sea import task plan"
+  },
+  {
+   "fieldname": "custom_sea_import_task_template",
+   "fieldtype": "Table",
+   "label": "Sea import task template",
+   "options": "Sea Import Task Template Item"
   }
  ],
  "grid_page_length": 50,
