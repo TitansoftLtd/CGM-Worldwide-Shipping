@@ -37,7 +37,7 @@ def execute():
 		cf.fieldname = "custom_shipment_documents"
 		cf.label = "Shipment Documents"
 		cf.save(ignore_permissions=True)
-		frappe.rename_doc("Custom Field", old_cf_name, new_cf_name, force=True, ignore_permissions=True)
+		frappe.rename_doc("Custom Field", old_cf_name, new_cf_name, force=True)
 
 	# Keep field-order strings and similar property values in sync.
 	for row in frappe.get_all(
