@@ -1,8 +1,6 @@
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
-from pathlib import Path
-import json
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import SEA_TASK_FLOW_KEY
 
@@ -20,15 +18,20 @@ def get_row_list(doc):
 
 
 def get_stage_requirements():
-	# Step 1: load workflow stage gate requirements from data file.
-	path = Path(__file__).parent / "data" / "workflow_stage_requirements.json"
-	if not path.exists():
-		frappe.throw(_("Workflow stage requirements file is missing: {0}").format(path.name))
-	data = json.loads(path.read_text())
-	# Step 2: validate structure.
-	if not isinstance(data, dict):
-		frappe.throw(_("Workflow stage requirements must be a JSON object."))
-	return data
+	"""Map Project shipment workflow status → list of Document Type required_stage values (from CGM Shipping Settings)."""
+	settings = frappe.get_single("CGM Shipping Settings")
+	rows = sorted(
+		settings.get("custom_workflow_stage_requirements") or [],
+		key=lambda r: ((r.shipment_workflow_state or "").strip(), r.idx or 0),
+	)
+	out = {}
+	for row in rows:
+		state = (row.shipment_workflow_state or "").strip()
+		stage = (row.required_stage or "").strip()
+		if not state or not stage:
+			continue
+		out.setdefault(state, []).append(stage)
+	return out
 
 
 def apply_shipment_document_automation(doc, _method=None):
