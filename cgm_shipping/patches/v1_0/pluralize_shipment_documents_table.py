@@ -37,7 +37,17 @@ def execute():
 		cf.fieldname = "custom_shipment_documents"
 		cf.label = "Shipment Documents"
 		cf.save(ignore_permissions=True)
-		frappe.rename_doc("Custom Field", old_cf_name, new_cf_name, force=True)
+		# Use model rename_doc: frappe.rename_doc() public API does not accept ignore_permissions (e.g. cloud / newer Frappe).
+		from frappe.model.rename_doc import rename_doc as rename_document
+
+		rename_document(
+			doctype="Custom Field",
+			old=old_cf_name,
+			new=new_cf_name,
+			force=True,
+			ignore_permissions=True,
+			show_alert=False,
+		)
 
 	# Keep field-order strings and similar property values in sync.
 	for row in frappe.get_all(
