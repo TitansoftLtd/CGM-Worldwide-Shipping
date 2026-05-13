@@ -1,7 +1,5 @@
 import frappe
 from frappe import _
-from pathlib import Path
-import json
 from frappe.utils import now_datetime
 
 SEA_TASK_FLOW_KEY = "SEA_IMPORT_E2E"
@@ -186,15 +184,24 @@ def carry_customer_kra_pin_to_project(project_doc, customer_ref):
 
 
 def load_sea_task_template():
-	# Step 1: load reusable process document from JSON file.
-	template_path = Path(__file__).parent / "data" / "sea_import_task_template.json"
-	if not template_path.exists():
-		frappe.throw(_("Sea task template file is missing: {0}").format(template_path.name))
-	data = json.loads(template_path.read_text())
-	# Step 2: validate minimal structure.
-	if not isinstance(data, list) or not data:
-		frappe.throw(_("Sea task template must contain at least one task."))
-	return data
+	"""Returns sea import tasks from CGM Shipping Settings"""
+	settings = frappe.get_single("CGM Shipping Settings")
+	rows = sorted(settings.get("custom_sea_import_task_template") or [], key=lambda r: r.idx or 0)
+
+	out = []
+	for row in rows:
+		subject = (row.task_subject or "").strip()
+		dept = (row.department or "").strip()
+		if not subject:
+			continue
+		if not dept:
+			frappe.throw(_("Sea import task template: Department is required for task: {0}").format(subject))
+		out.append({"subject": subject, "department": dept})
+
+	if not out:
+		frappe.throw(_("Add at least one row to Sea import task template in CGM Shipping Settings."))
+
+	return out
 
 
 def get_department_name_stem(raw):
@@ -461,7 +468,6 @@ def create_sea_import_task_plan(project, reset=False):
 		task.custom_task_flow_key = SEA_TASK_FLOW_KEY
 		task.custom_sequence_no = idx
 		task.department = resolve_department_name(item.get("department"), company=project_doc.company)
-		task.expected_time = item.get("expected_time") or 0
 		task.status = "Open"
 		task.insert(ignore_permissions=True)
 		if prev_task:
