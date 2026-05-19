@@ -1,13 +1,10 @@
-"""Task vs Project documents (CGM policy).
+"""Task hooks — sync Task Documents to the parent Project shipment file."""
 
-Working papers (permit applications, fee assessments, authority invoices, screenshots,
-payment slips during a step) belong on the Task: use **Attachments** on the Task and/or
-optional **Task Documents** rows on the Task form — they are **not** auto-copied to Project.
 
-Permanent shipment evidence (CI, PKL, BL/AWB, KRA PIN, **final** approved permits, etc.)
-belongs in **Project → Shipment Documents**. Add those there deliberately when they are
-the official file for the shipment.
+def on_task_update(doc, _method=None):
+	if not doc.get("project"):
+		return
 
-Previous behaviour that synced Task document rows into Project on every save was removed
-to avoid cluttering the shipment file with temporary operational documents.
-"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import refresh_project_shipment_documents
+
+	refresh_project_shipment_documents(doc.project)

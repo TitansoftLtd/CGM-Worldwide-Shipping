@@ -21,6 +21,13 @@ def execute():
 	if has_new and not has_old:
 		return
 
+	# Case 1b: neither field in meta — create the plural table field.
+	if not has_new and not has_old:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.utils import ensure_project_shipment_documents_field
+
+		ensure_project_shipment_documents_field()
+		return
+
 	# Case 2: old column exists but new doesn't: rename physical column.
 	if _column_exists("tabProject", "custom_shipment_document") and not _column_exists(
 		"tabProject", "custom_shipment_documents"
