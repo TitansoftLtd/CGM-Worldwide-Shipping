@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "shipment_dossier",
+  "seal_number",
+  "seal_point",
+  "shipment_quantity",
+  "container_tracker",
+  "date_applied",
+  "date_removed"
+ ],
+ "fields": [
+  {
+   "fieldname": "shipment_dossier",
+   "fieldtype": "Link",
+   "label": "Shipment Dossier",
+   "options": "Shipment Dossier",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "seal_number",
+   "fieldtype": "Data",
+   "label": "Seal Number",
+   "reqd": 1
+  },
+  {
+   "fieldname": "seal_point",
+   "fieldtype": "Select",
+   "label": "Seal Point",
+   "options": "Mombasa\nNairobi\nMalaba"
+  },
+  {
+   "fieldname": "shipment_quantity",
+   "fieldtype": "Float",
+   "label": "Shipment Quantity"
+  },
+  {
+   "fieldname": "container_tracker",
+   "fieldtype": "Link",
+   "label": "Container",
+   "options": "Container Tracker"
+  },
+  {
+   "fieldname": "date_applied",
+   "fieldtype": "Date",
+   "label": "Date Applied"
+  },
+  {
+   "fieldname": "date_removed",
+   "fieldtype": "Date",
+   "label": "Date Removed"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-05-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Seal Record",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1,
+   "submit": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "field:seal_number"
+}
