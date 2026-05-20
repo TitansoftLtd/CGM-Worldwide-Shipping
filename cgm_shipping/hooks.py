@@ -12,7 +12,8 @@ fixtures = [
         "filters": [["name", "in", [
             "CGM Lead Pre-Shipment",
             "CGM Opportunity Pre-Shipment",
-            "CGM Sea Import Workflow",        # ← added
+            "CGM Sea Import Workflow",
+            "Shipment Clearance Workflow",
         ]]]
     },
     # Workflow states
@@ -40,7 +41,15 @@ fixtures = [
             "In Transit",                     # ← added
             "Delivered",                      # ← added
             "Container Return Pending",       # ← added
-            "Completed",                      # ← added
+            "Completed",
+            # Shipment Dossier workflow states
+            "Draft",
+            "IDF Open",
+            "Pre-clearance",
+            "Entry Lodged",
+            "Taxes Paid",
+            "Clearance",
+            "Settled",
         ]]]
     },
     # Workflow actions
@@ -62,8 +71,32 @@ fixtures = [
             "Dispatch Truck",                 # ← added
             "Confirm Delivery",               # ← added
             "Start Container Return",         # ← added
-            "Confirm Interchange & Close",    # ← added
+            "Confirm Interchange & Close",
+            # Shipment Dossier actions
+            "Receive Documents",
+            "Open IDF",
+            "Start Pre-clearance",
+            "Mark In Transit",
+            "Lodge Entry",
+            "Confirm Taxes Paid",
+            "Start Clearance",
+            "Release Cargo",
+            "Settle",
         ]]]
+    },
+    {
+        "doctype": "Custom Field",
+        "filters": [["module", "=", "CGM Worldwide Shipping"], ["name", "like", "custom_%"]],
+    },
+    {
+        "doctype": "Role",
+        "filters": [["name", "in", [
+            "Operations Manager",
+            "Declarant",
+            "Finance User",
+            "Field Officer",
+            "Transport Officer",
+        ]]],
     },
 ]
 # Apps
@@ -205,6 +238,9 @@ doctype_js = {
 doc_events = {
 	"Project": {
 		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
+	},
+	"Payment Entry": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
 	},
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
