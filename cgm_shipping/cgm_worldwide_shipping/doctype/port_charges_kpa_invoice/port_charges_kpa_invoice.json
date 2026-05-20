@@ -1,0 +1,90 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "shipment_dossier",
+  "kpa_invoice_number",
+  "kpa_invoice_amount",
+  "payment_date",
+  "pickup_order_date",
+  "gate_pass_issued",
+  "port_compliance_status",
+  "demurrage_billing_amount"
+ ],
+ "fields": [
+  {
+   "fieldname": "shipment_dossier",
+   "fieldtype": "Link",
+   "label": "Shipment Dossier",
+   "options": "Shipment Dossier",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "kpa_invoice_number",
+   "fieldtype": "Data",
+   "label": "KPA Invoice Number"
+  },
+  {
+   "fieldname": "kpa_invoice_amount",
+   "fieldtype": "Currency",
+   "label": "KPA Invoice Amount"
+  },
+  {
+   "fieldname": "payment_date",
+   "fieldtype": "Date",
+   "label": "Payment Date"
+  },
+  {
+   "fieldname": "pickup_order_date",
+   "fieldtype": "Date",
+   "label": "Pick-up Order Date"
+  },
+  {
+   "fieldname": "gate_pass_issued",
+   "fieldtype": "Check",
+   "label": "Gate Pass Issued"
+  },
+  {
+   "fieldname": "port_compliance_status",
+   "fieldtype": "Select",
+   "label": "Port Compliance",
+   "options": "Pending\nCompliant\nIssue"
+  },
+  {
+   "fieldname": "demurrage_billing_amount",
+   "fieldtype": "Currency",
+   "label": "Demurrage Billing Amount"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-05-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Port Charges KPA Invoice",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1,
+   "submit": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "hash"
+}
