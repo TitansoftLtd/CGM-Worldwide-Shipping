@@ -96,5 +96,54 @@
   "modified": "2026-05-07 18:43:59.893831",
   "name": "Reject CI/PKL",
   "workflow_action_name": "Reject CI/PKL"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Receive Documents",
+  "workflow_action_name": "Receive Documents"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Open IDF",
+  "workflow_action_name": "Open IDF"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Start Pre-clearance",
+  "workflow_action_name": "Start Pre-clearance"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Mark In Transit",
+  "workflow_action_name": "Mark In Transit"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Lodge Entry",
+  "workflow_action_name": "Lodge Entry"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Confirm Taxes Paid",
+  "workflow_action_name": "Confirm Taxes Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Settle",
+  "workflow_action_name": "Settle"
  }
 ]

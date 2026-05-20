@@ -516,5 +516,40 @@
   "workflow_data": null,
   "workflow_name": "CGM Opportunity Pre-Shipment",
   "workflow_state_field": "custom_cgm_preshipment_status"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow",
+  "document_type": "Shipment Dossier",
+  "is_active": 1,
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Shipment Clearance Workflow",
+  "override_status": 1,
+  "send_email_alert": 1,
+  "workflow_name": "Shipment Clearance Workflow",
+  "workflow_state_field": "status",
+  "states": [
+   {"allow_edit": "Operations Manager", "doc_status": "0", "state": "Draft"},
+   {"allow_edit": "Operations Manager", "doc_status": "0", "send_email": 1, "state": "Documents Received"},
+   {"allow_edit": "Declarant", "doc_status": "0", "state": "IDF Open"},
+   {"allow_edit": "Declarant", "doc_status": "0", "state": "Pre-clearance"},
+   {"allow_edit": "Operations Manager", "doc_status": "0", "state": "In Transit"},
+   {"allow_edit": "Declarant", "doc_status": "0", "state": "Entry Lodged"},
+   {"allow_edit": "Finance User", "doc_status": "0", "state": "Taxes Paid"},
+   {"allow_edit": "Field Officer", "doc_status": "0", "state": "Clearance"},
+   {"allow_edit": "Transport Officer", "doc_status": "0", "state": "Released"},
+   {"allow_edit": "Operations Manager", "doc_status": "1", "state": "Settled"}
+  ],
+  "transitions": [
+   {"action": "Receive Documents", "allowed": "Operations Manager", "next_state": "Documents Received", "state": "Draft"},
+   {"action": "Open IDF", "allowed": "Declarant", "next_state": "IDF Open", "state": "Documents Received"},
+   {"action": "Start Pre-clearance", "allowed": "Declarant", "next_state": "Pre-clearance", "state": "IDF Open"},
+   {"action": "Mark In Transit", "allowed": "Operations Manager", "next_state": "In Transit", "state": "Pre-clearance"},
+   {"action": "Lodge Entry", "allowed": "Declarant", "next_state": "Entry Lodged", "state": "In Transit"},
+   {"action": "Confirm Taxes Paid", "allowed": "Finance User", "next_state": "Taxes Paid", "state": "Entry Lodged"},
+   {"action": "Start Clearance", "allowed": "Field Officer", "next_state": "Clearance", "state": "Taxes Paid"},
+   {"action": "Release Cargo", "allowed": "Field Officer", "next_state": "Released", "state": "Clearance"},
+   {"action": "Settle", "allowed": "Operations Manager", "next_state": "Settled", "state": "Released"}
+  ]
  }
 ]
