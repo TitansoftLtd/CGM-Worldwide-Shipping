@@ -1,0 +1,225 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "shipment_dossier",
+  "container_number",
+  "batch_bl_no",
+  "container_mode",
+  "eta",
+  "ata",
+  "discharging_date",
+  "custom_release_date",
+  "gate_out_date_port",
+  "truck_number",
+  "driver_name",
+  "driver_contact",
+  "transporter",
+  "gate_in_date_warehouse",
+  "offloading_date",
+  "delivery_date",
+  "expected_empty_return",
+  "actual_empty_return",
+  "gate_in_date_depot",
+  "free_days",
+  "demurrage_days",
+  "detention_days",
+  "daily_demurrage_rate",
+  "demurrage_amount",
+  "status",
+  "interchange_date",
+  "icd_gate_in_date",
+  "icd_gate_out_date",
+  "border_clearance_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "shipment_dossier",
+   "fieldtype": "Link",
+   "label": "Shipment Dossier",
+   "options": "Shipment Dossier",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "container_number",
+   "fieldtype": "Data",
+   "label": "Container Number",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "batch_bl_no",
+   "fieldtype": "Data",
+   "label": "Batch / B/L No"
+  },
+  {
+   "fieldname": "container_mode",
+   "fieldtype": "Select",
+   "label": "Container Mode",
+   "options": "Mombasa Port\nICD Nairobi\nTransit Kenya→Border\nTransit Border→Kenya\nExport"
+  },
+  {
+   "fieldname": "eta",
+   "fieldtype": "Date",
+   "label": "ETA"
+  },
+  {
+   "fieldname": "ata",
+   "fieldtype": "Date",
+   "label": "ATA"
+  },
+  {
+   "fieldname": "discharging_date",
+   "fieldtype": "Date",
+   "label": "Discharging Date"
+  },
+  {
+   "fieldname": "custom_release_date",
+   "fieldtype": "Date",
+   "label": "Custom Release Date"
+  },
+  {
+   "fieldname": "gate_out_date_port",
+   "fieldtype": "Date",
+   "label": "Gate Out Date (Port)"
+  },
+  {
+   "fieldname": "truck_number",
+   "fieldtype": "Data",
+   "label": "Truck Number"
+  },
+  {
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "label": "Driver Name"
+  },
+  {
+   "fieldname": "driver_contact",
+   "fieldtype": "Data",
+   "label": "Driver Contact"
+  },
+  {
+   "fieldname": "transporter",
+   "fieldtype": "Link",
+   "label": "Transporter",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "gate_in_date_warehouse",
+   "fieldtype": "Date",
+   "label": "Gate In Date (Warehouse)"
+  },
+  {
+   "fieldname": "offloading_date",
+   "fieldtype": "Date",
+   "label": "Offloading Date"
+  },
+  {
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "label": "Delivery Date"
+  },
+  {
+   "fieldname": "expected_empty_return",
+   "fieldtype": "Date",
+   "label": "Expected Empty Return",
+   "read_only": 1
+  },
+  {
+   "fieldname": "actual_empty_return",
+   "fieldtype": "Date",
+   "label": "Actual Empty Return"
+  },
+  {
+   "fieldname": "gate_in_date_depot",
+   "fieldtype": "Date",
+   "label": "Gate In Date (Depot)"
+  },
+  {
+   "fieldname": "free_days",
+   "fieldtype": "Int",
+   "label": "Free Days"
+  },
+  {
+   "fieldname": "demurrage_days",
+   "fieldtype": "Int",
+   "label": "Demurrage Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "detention_days",
+   "fieldtype": "Int",
+   "label": "Detention Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "daily_demurrage_rate",
+   "fieldtype": "Currency",
+   "label": "Daily Demurrage Rate"
+  },
+  {
+   "fieldname": "demurrage_amount",
+   "fieldtype": "Currency",
+   "label": "Demurrage Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Dispatched\nDelivered\nEmpty Pending\nEmpty Returned\nOverdue",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "interchange_date",
+   "fieldtype": "Date",
+   "label": "Interchange Date"
+  },
+  {
+   "fieldname": "icd_gate_in_date",
+   "fieldtype": "Date",
+   "label": "ICD Gate In Date"
+  },
+  {
+   "fieldname": "icd_gate_out_date",
+   "fieldtype": "Date",
+   "label": "ICD Gate Out Date"
+  },
+  {
+   "fieldname": "border_clearance_date",
+   "fieldtype": "Date",
+   "label": "Border Clearance Date"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-05-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Container Tracker",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1,
+   "submit": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "field:container_number"
+}
