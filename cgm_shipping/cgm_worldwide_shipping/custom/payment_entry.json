@@ -1,0 +1,18 @@
+{
+ "custom_fields": [
+  {
+   "fieldname": "custom_shipment_dossier",
+   "fieldtype": "Link",
+   "insert_after": "party",
+   "label": "Shipment Dossier",
+   "module": "CGM Worldwide Shipping",
+   "options": "Shipment Dossier",
+   "dt": "Payment Entry"
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "Payment Entry",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}
