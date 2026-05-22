@@ -6,30 +6,69 @@
  "engine": "InnoDB",
  "field_order": [
   "permit_type",
+  "payment_invoice",
+  "invoice_amount",
+  "permit_document",
   "stage",
+  "clearance_phase",
+  "status",
   "application_date",
   "approval_date",
   "issuing_body",
-  "invoice_amount",
+  "invoice_verified",
+  "purchase_invoice",
+  "payment_entry",
+  "payment_receipt",
+  "receipt_verified",
   "payment_date",
-  "payment_reference",
-  "status",
-  "permit_document"
+  "payment_reference"
  ],
  "fields": [
   {
    "fieldname": "permit_type",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Permit Type",
-   "options": "DVS\nNBA\nVMD\nACA\nKEBS\nKRPB\nPort Health\nOther",
-   "in_list_view": 1
+   "options": "DVS\nNBA\nVMD\nACA\nSCA\nKEBS\nKRPB\nPort Health\nOther"
+  },
+  {
+   "fieldname": "payment_invoice",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "columns": 3,
+   "label": "Permit Invoice (for Finance)",
+   "description": "Supplier/agency invoice for this permit — required before completing the permit task."
+  },
+  {
+   "fieldname": "invoice_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Invoice Amount"
+  },
+  {
+   "fieldname": "permit_document",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Permit Certificate"
   },
   {
    "fieldname": "stage",
    "fieldtype": "Select",
    "label": "Stage",
-   "options": "Pre-clearance\nPost-clearance",
-   "in_list_view": 1
+   "options": "Pre-clearance\nPost-clearance"
+  },
+  {
+   "fieldname": "clearance_phase",
+   "fieldtype": "Select",
+   "label": "Clearance Phase",
+   "options": "Not Started\nPre-Cleared\nPost-Cleared",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Applied\nInvoice Submitted\nInvoice Verified\nPaid\nReceipt Submitted\nReceipt Verified\nApproved\nReleased\nRejected"
   },
   {
    "fieldname": "application_date",
@@ -47,9 +86,33 @@
    "label": "Issuing Body"
   },
   {
-   "fieldname": "invoice_amount",
-   "fieldtype": "Currency",
-   "label": "Invoice Amount"
+   "fieldname": "invoice_verified",
+   "fieldtype": "Check",
+   "label": "Invoice Verified"
+  },
+  {
+   "fieldname": "purchase_invoice",
+   "fieldtype": "Link",
+   "label": "Purchase Invoice",
+   "options": "Purchase Invoice"
+  },
+  {
+   "fieldname": "payment_entry",
+   "fieldtype": "Link",
+   "label": "Payment Entry",
+   "options": "Payment Entry"
+  },
+  {
+   "fieldname": "payment_receipt",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Payment Receipt"
+  },
+  {
+   "fieldname": "receipt_verified",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Receipt Verified"
   },
   {
    "fieldname": "payment_date",
@@ -60,18 +123,6 @@
    "fieldname": "payment_reference",
    "fieldtype": "Data",
    "label": "Payment Reference"
-  },
-  {
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "label": "Status",
-   "options": "Applied\nApproved\nPaid\nReleased\nRejected",
-   "in_list_view": 1
-  },
-  {
-   "fieldname": "permit_document",
-   "fieldtype": "Attach",
-   "label": "Permit Document"
   }
  ],
  "index_web_pages_for_search": 1,
