@@ -5,42 +5,60 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "shipment_dossier",
+  "project",
   "container_number",
   "batch_bl_no",
+  "bl_number",
+  "shipment_quantity",
   "container_mode",
+  "delivery_location",
+  "column_break_core",
   "eta",
   "ata",
+  "status",
+  "section_mombasa",
   "discharging_date",
   "custom_release_date",
   "gate_out_date_port",
+  "demurrage_date",
+  "section_icd",
+  "icd_mombasa_discharge_date",
+  "icd_gate_in_date",
+  "icd_gate_out_date",
+  "section_warehouse",
+  "gate_in_date_warehouse",
+  "offloading_date",
+  "delivery_date",
+  "warehouse_loading_date",
+  "section_transit",
+  "border_clearance_date",
+  "transit_gate_in_date",
+  "transit_gate_out_date",
+  "section_transport",
   "truck_number",
   "driver_name",
   "driver_contact",
   "transporter",
-  "gate_in_date_warehouse",
-  "offloading_date",
-  "delivery_date",
+  "section_empty_return",
   "expected_empty_return",
   "actual_empty_return",
   "gate_in_date_depot",
+  "interchange_date",
+  "days_outstanding",
+  "section_calculations",
   "free_days",
+  "port_days_used",
   "demurrage_days",
   "detention_days",
   "daily_demurrage_rate",
-  "demurrage_amount",
-  "status",
-  "interchange_date",
-  "icd_gate_in_date",
-  "icd_gate_out_date",
-  "border_clearance_date"
+  "demurrage_amount"
  ],
  "fields": [
   {
-   "fieldname": "shipment_dossier",
+   "fieldname": "project",
    "fieldtype": "Link",
-   "label": "Shipment Dossier",
-   "options": "Shipment Dossier",
+   "label": "Project (Shipment)",
+   "options": "Project",
    "reqd": 1,
    "in_list_view": 1
   },
@@ -54,28 +72,67 @@
   {
    "fieldname": "batch_bl_no",
    "fieldtype": "Data",
-   "label": "Batch / B/L No"
+   "label": "Shipment Id / Batch No",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "bl_number",
+   "fieldtype": "Data",
+   "label": "B/L Number",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "shipment_quantity",
+   "fieldtype": "Float",
+   "label": "Shipment Quantity"
   },
   {
    "fieldname": "container_mode",
    "fieldtype": "Select",
-   "label": "Container Mode",
-   "options": "Mombasa Port\nICD Nairobi\nTransit Kenya→Border\nTransit Border→Kenya\nExport"
+   "label": "Tracking Mode",
+   "options": "Mombasa Port\nICD Nairobi\nTransit Kenya\u2192Border\nTransit Border\u2192Kenya\nExport",
+   "default": "Mombasa Port",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "delivery_location",
+   "fieldtype": "Data",
+   "label": "Customer / Delivery Location"
+  },
+  {
+   "fieldname": "column_break_core",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "eta",
    "fieldtype": "Date",
-   "label": "ETA"
+   "label": "ETA",
+   "in_list_view": 1
   },
   {
    "fieldname": "ata",
    "fieldtype": "Date",
-   "label": "ATA"
+   "label": "ATA",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Dispatched\nDelivered\nEmpty Pending\nEmpty Returned\nOverdue",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_mombasa",
+   "fieldtype": "Section Break",
+   "label": "Mombasa Port",
+   "collapsible": 1
   },
   {
    "fieldname": "discharging_date",
    "fieldtype": "Date",
-   "label": "Discharging Date"
+   "label": "Discharging Date (Mombasa)"
   },
   {
    "fieldname": "custom_release_date",
@@ -85,7 +142,88 @@
   {
    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
-   "label": "Gate Out Date (Port)"
+   "label": "Gate Out Date (Mombasa Port)"
+  },
+  {
+   "fieldname": "demurrage_date",
+   "fieldtype": "Date",
+   "label": "Demurrage Start Date",
+   "read_only": 1,
+   "description": "First day after free time at port (auto)"
+  },
+  {
+   "fieldname": "section_icd",
+   "fieldtype": "Section Break",
+   "label": "ICD Nairobi",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "icd_mombasa_discharge_date",
+   "fieldtype": "Date",
+   "label": "Discharging Date from Mombasa"
+  },
+  {
+   "fieldname": "icd_gate_in_date",
+   "fieldtype": "Date",
+   "label": "Gate In Date (ICD)"
+  },
+  {
+   "fieldname": "icd_gate_out_date",
+   "fieldtype": "Date",
+   "label": "Gate Out Date (ICD)"
+  },
+  {
+   "fieldname": "section_warehouse",
+   "fieldtype": "Section Break",
+   "label": "Warehouse",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "gate_in_date_warehouse",
+   "fieldtype": "Date",
+   "label": "Gate In Date (Warehouse)"
+  },
+  {
+   "fieldname": "offloading_date",
+   "fieldtype": "Date",
+   "label": "Offloading Date (Warehouse)"
+  },
+  {
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "label": "Delivery Date"
+  },
+  {
+   "fieldname": "warehouse_loading_date",
+   "fieldtype": "Date",
+   "label": "Loading Date (Warehouse)"
+  },
+  {
+   "fieldname": "section_transit",
+   "fieldtype": "Section Break",
+   "label": "Transit / Border",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "border_clearance_date",
+   "fieldtype": "Date",
+   "label": "Clearance at Border Date"
+  },
+  {
+   "fieldname": "transit_gate_in_date",
+   "fieldtype": "Date",
+   "label": "Gate In Date (Transit)"
+  },
+  {
+   "fieldname": "transit_gate_out_date",
+   "fieldtype": "Date",
+   "label": "Gate Out Date (Transit)"
+  },
+  {
+   "fieldname": "section_transport",
+   "fieldtype": "Section Break",
+   "label": "Transport",
+   "collapsible": 1
   },
   {
    "fieldname": "truck_number",
@@ -109,19 +247,10 @@
    "options": "Supplier"
   },
   {
-   "fieldname": "gate_in_date_warehouse",
-   "fieldtype": "Date",
-   "label": "Gate In Date (Warehouse)"
-  },
-  {
-   "fieldname": "offloading_date",
-   "fieldtype": "Date",
-   "label": "Offloading Date"
-  },
-  {
-   "fieldname": "delivery_date",
-   "fieldtype": "Date",
-   "label": "Delivery Date"
+   "fieldname": "section_empty_return",
+   "fieldtype": "Section Break",
+   "label": "Empty Return & Interchange",
+   "collapsible": 1
   },
   {
    "fieldname": "expected_empty_return",
@@ -137,12 +266,35 @@
   {
    "fieldname": "gate_in_date_depot",
    "fieldtype": "Date",
-   "label": "Gate In Date (Depot)"
+   "label": "Gate In Date (Empty Depot)"
+  },
+  {
+   "fieldname": "interchange_date",
+   "fieldtype": "Date",
+   "label": "Interchange Return Date"
+  },
+  {
+   "fieldname": "days_outstanding",
+   "fieldtype": "Int",
+   "label": "Days Outstanding (Empty)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_calculations",
+   "fieldtype": "Section Break",
+   "label": "Demurrage & Detention",
+   "collapsible": 1
   },
   {
    "fieldname": "free_days",
    "fieldtype": "Int",
-   "label": "Free Days"
+   "label": "Free Days (Port)"
+  },
+  {
+   "fieldname": "port_days_used",
+   "fieldtype": "Int",
+   "label": "Port Days (Discharge to Gate Out)",
+   "read_only": 1
   },
   {
    "fieldname": "demurrage_days",
@@ -166,33 +318,6 @@
    "fieldtype": "Currency",
    "label": "Demurrage Amount",
    "read_only": 1
-  },
-  {
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "label": "Status",
-   "options": "Dispatched\nDelivered\nEmpty Pending\nEmpty Returned\nOverdue",
-   "in_list_view": 1
-  },
-  {
-   "fieldname": "interchange_date",
-   "fieldtype": "Date",
-   "label": "Interchange Date"
-  },
-  {
-   "fieldname": "icd_gate_in_date",
-   "fieldtype": "Date",
-   "label": "ICD Gate In Date"
-  },
-  {
-   "fieldname": "icd_gate_out_date",
-   "fieldtype": "Date",
-   "label": "ICD Gate Out Date"
-  },
-  {
-   "fieldname": "border_clearance_date",
-   "fieldtype": "Date",
-   "label": "Border Clearance Date"
   }
  ],
  "index_web_pages_for_search": 1,
@@ -215,11 +340,25 @@
    "email": 1,
    "share": 1,
    "submit": 1
+  },
+  {
+   "role": "Transport Officer",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0
+  },
+  {
+   "role": "Operations Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
   }
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
  "track_changes": 1,
- "autoname": "field:container_number"
+ "autoname": "format:{container_number}-{#####}"
 }
