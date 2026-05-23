@@ -37,6 +37,8 @@
   "section_break_desc",
   "description",
   "remarks",
+  "section_break_client_docs",
+  "shipment_documents",
   "section_break_permits",
   "permits",
   "section_break_links",
@@ -66,7 +68,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Draft\nDocuments Received\nIDF Open\nPre-clearance\nIn Transit\nEntry Lodged\nTaxes Paid\nClearance\nReleased\nSettled"
+   "options": "Draft\nDocuments Received\nUCR Applied\nUCR Paid\nPre-clearance\nClient Inspection\nIn Transit\nFinal Docs Received\nManifest Requested\nEntry Lodged\nLine Paid & DO Lodged\nEntry Paid\nPost-clearance\nField Clearance\nKPA Paid\nIn Delivery\nContainers Returned\nSettled"
   },
   {
    "fieldname": "column_break_hdr1",
@@ -209,9 +211,22 @@
    "label": "Remarks"
   },
   {
+   "fieldname": "section_break_client_docs",
+   "fieldtype": "Section Break",
+   "label": "Client Documents",
+   "description": "Commercial Invoice, Packing List, COO, BL, etc. — received from the client before or when opening the file. Not regulatory permits."
+  },
+  {
+   "fieldname": "shipment_documents",
+   "fieldtype": "Table",
+   "label": "Client Documents",
+   "options": "Shipment Document"
+  },
+  {
    "fieldname": "section_break_permits",
    "fieldtype": "Section Break",
-   "label": "Permits"
+   "label": "Regulatory Permits",
+   "description": "Government / agency permits applied during clearance (DVS, NBA, KEBS permit, Port Health, etc.). Added after IDF — not client intake documents."
   },
   {
    "fieldname": "permits",

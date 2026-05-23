@@ -1,16 +1,20 @@
 """
-Seed end-to-end test data for CGM Worldwide Shipping module.
+Seed end-to-end test data for CGM Worldwide Shipping (Project + Task model).
 
 Usage:
 bench --site <site> execute cgm_shipping.cgm_worldwide_shipping.test_data.seed_e2e_test_data.seed
 
-Re-run safe: skips records that already exist (matched by client_reference).
+Re-run safe: skips records that already exist (matched by client ref).
 """
 from __future__ import annotations
 
 import frappe
 from frappe.utils import add_days, today
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	build_project_name_seed,
+	ensure_unique_project_name,
+)
 
 TEST_MARKER = "E2E-TEST-2026"
 
@@ -20,16 +24,15 @@ def seed():
 	customer = _ensure_customer()
 	supplier = _ensure_supplier()
 	employee = _ensure_employee()
-	dossier_sea = _ensure_sea_fcl_dossier(customer, supplier, employee)
-	dossier_air = _ensure_air_import_dossier(customer, employee)
-	_link_sea_records(dossier_sea, supplier)
+	project_sea = _ensure_sea_fcl_project(customer, supplier, employee)
+	project_air = _ensure_air_import_project(customer, employee)
+	_link_sea_records(project_sea, supplier)
 	_daily_status_red()
 	frappe.db.commit()
-	_print_summary(dossier_sea, dossier_air, customer)
+	_print_summary(project_sea, project_air, customer)
 
 
 def _ensure_customer():
-	"""Prefer an existing Customer (CGM CRM may require KRA PIN attachment on new ones)."""
 	existing = frappe.get_all("Customer", filters={"disabled": 0}, pluck="name", limit=1)
 	if existing:
 		return existing[0]
@@ -89,109 +92,118 @@ def _ensure_employee():
 	return doc.name
 
 
-def _ensure_sea_fcl_dossier(customer, supplier, employee):
+def _doc_type_for_code(code: str) -> str | None:
+	return frappe.db.get_value("Document Type", {"code": code}, "name")
+
+
+def _append_intake_docs(project):
+	for code in ("CI", "PKL"):
+		dt = _doc_type_for_code(code)
+		if not dt:
+			continue
+		if any(
+			frappe.db.get_value("Document Type", r.document_type, "code") == code
+			for r in project.get("custom_shipment_documents") or []
+			if r.document_type
+		):
+			continue
+		project.append(
+			"custom_shipment_documents",
+			{"document_type": dt, "status": "Uploaded", "remarks": f"E2E placeholder {code}"},
+		)
+
+
+def _append_demo_permits(project):
+	for permit_type, agency in (("KEBS", "KEBS"), ("Port Health", "Port Health")):
+		if any(r.permit_type == permit_type for r in project.get("custom_permit_register") or []):
+			continue
+		project.append(
+			"custom_permit_register",
+			{
+				"permit_type": permit_type,
+				"agency": agency,
+				"status": "Pending",
+				"remarks": "E2E regulatory permit row",
+			},
+		)
+
+
+def _ensure_sea_fcl_project(customer, supplier, employee):
 	ref = f"{TEST_MARKER}-SEA-FCL"
-	existing = frappe.db.get_value("Shipment Dossier", {"client_reference": ref}, "name")
+	existing = frappe.db.get_value("Project", {"custom_client_ref_no": ref}, "name")
 	if existing:
 		return existing
-	cfs = frappe.db.get_value("CFS Master", {"cfs_name": "Siginon"}, "name") or frappe.db.get_value(
-		"CFS Master", {}, "name"
+	company = frappe.db.get_single_value("Global Defaults", "default_company") or frappe.db.get_value(
+		"Company", {}, "name"
 	)
+	seed = build_project_name_seed(ref, shipment_type="Sea FCL", mode="Sea")
 	doc = frappe.get_doc(
 		{
-			"doctype": "Shipment Dossier",
-			"naming_series": "CGM/FCL-.YYYY.-.MM.-.###",
-			"shipment_type": "Sea FCL",
-			"status": "Draft",
-			"client": customer,
-			"client_reference": ref,
-			"consignee": "Abyssinia Iron Steel Ltd",
-			"awb_bl_number": "SIGMOMB24051234",
-			"entry_no": "26NBOIM409252569",
-			"cfs": cfs,
-			"cfs_code": "SIG",
-			"weight_nw": 18500,
-			"weight_gw": 19200,
-			"eta": add_days(today(), 7),
-			"vessel_flight": "MV CGM TESTER",
-			"shipping_line": supplier,
-			"agent_allocated": employee,
-			"handling_charges": 45000,
-			"breakbulk_charges": 12000,
-			"kebs_charges": 8500,
-			"charge_notes": "HAN+STOR",
-			"description": "Steel coils — 2x40HC test shipment",
-			"remarks": "E2E sea FCL — start workflow from Draft",
-			"permits": [
-				{
-					"permit_type": "KEBS",
-					"stage": "Pre-clearance",
-					"application_date": today(),
-					"status": "Applied",
-					"issuing_body": "KEBS",
-				},
-				{
-					"permit_type": "Port Health",
-					"stage": "Post-clearance",
-					"status": "Applied",
-					"issuing_body": "Port Health",
-				},
-			],
+			"doctype": "Project",
+			"project_name": ensure_unique_project_name(seed),
+			"customer": customer,
+			"company": company,
+			"custom_client_ref_no": ref,
+			"custom_shipment_type": "Sea FCL",
+			"custom_mode_of_transport": "Sea",
+			"custom_shipment_status": "Draft",
+			"custom_bl_number": "SIGMOMB24051234",
+			"notes": "E2E sea FCL — attach CI/PKL files, then Receive Client Documents. Entry 26NBOIM409252569",
 		}
 	)
+	_append_intake_docs(doc)
+	_append_demo_permits(doc)
 	doc.insert(ignore_permissions=True)
 	return doc.name
 
 
-def _ensure_air_import_dossier(customer, employee):
+def _ensure_air_import_project(customer, employee):
 	ref = f"{TEST_MARKER}-AIR"
-	existing = frappe.db.get_value("Shipment Dossier", {"client_reference": ref}, "name")
+	existing = frappe.db.get_value("Project", {"custom_client_ref_no": ref}, "name")
 	if existing:
 		return existing
-	cfs = frappe.db.get_value("CFS Master", {"cfs_name": "FedEx"}, "name") or frappe.db.get_value(
-		"CFS Master", {}, "name"
+	company = frappe.db.get_single_value("Global Defaults", "default_company") or frappe.db.get_value(
+		"Company", {}, "name"
 	)
+	seed = build_project_name_seed(ref, shipment_type="Air Import", mode="Air")
 	doc = frappe.get_doc(
 		{
-			"doctype": "Shipment Dossier",
-			"naming_series": "CGM/IM-.YYYY.-.MM.-.###",
-			"shipment_type": "Air Import",
-			"status": "Draft",
-			"client": customer,
-			"client_reference": ref,
-			"consignee": "Onelife Rally (Test)",
-			"awb_bl_number": "176-12345678",
-			"cfs": cfs,
-			"cfs_code": "MAT",
-			"weight_nw": 420,
-			"weight_gw": 485,
-			"eta": add_days(today(), 2),
-			"vessel_flight": "KQ 102",
-			"agent_allocated": employee,
-			"description": "Pharma samples — air import E2E",
-			"remarks": "After seed: apply Receive Documents to reach Documents Received",
+			"doctype": "Project",
+			"project_name": ensure_unique_project_name(seed),
+			"customer": customer,
+			"company": company,
+			"custom_client_ref_no": ref,
+			"custom_shipment_type": "Air Import",
+			"custom_mode_of_transport": "Air",
+			"custom_shipment_status": "Draft",
+			"custom_bl_number": "176-12345678",
+			"notes": "E2E air — workflow starts at Documents Received after seed",
 		}
 	)
+	_append_intake_docs(doc)
 	doc.insert(ignore_permissions=True)
-	from frappe.model.workflow import apply_workflow
-
-	apply_workflow(doc, "Receive Documents")
-	doc.reload()
+	frappe.db.set_value(
+		"Project",
+		doc.name,
+		"custom_shipment_status",
+		"Documents Received",
+		update_modified=False,
+	)
 	return doc.name
 
 
-def _link_sea_records(dossier, supplier):
-	if frappe.db.exists("IDF UCR Record", {"shipment_dossier": dossier}):
+def _link_sea_records(project, supplier):
+	if frappe.db.exists("IDF UCR Record", {"project": project}):
 		return
 	frappe.get_doc(
 		{
 			"doctype": "IDF UCR Record",
-			"shipment_dossier": dossier,
+			"project": project,
 			"idf_number": "IDF-TEST-26001",
 			"ucr_number": "UCR-TEST-26001",
 			"application_date": today(),
 			"ucr_payment_status": "Pending",
-			"remarks": "Finance should pay UCR after IDF Open workflow step",
+			"remarks": "Finance pays UCR after Create UCR Application workflow step",
 		}
 	).insert(ignore_permissions=True)
 
@@ -201,7 +213,7 @@ def _link_sea_records(dossier, supplier):
 		frappe.get_doc(
 			{
 				"doctype": "Container Tracker",
-				"shipment_dossier": dossier,
+				"project": project,
 				"container_number": "TESTU1234567",
 				"batch_bl_no": "SIGMOMB24051234",
 				"container_mode": "Mombasa Port",
@@ -220,7 +232,7 @@ def _link_sea_records(dossier, supplier):
 		frappe.get_doc(
 			{
 				"doctype": "Customs Entry",
-				"shipment_dossier": dossier,
+				"project": project,
 				"entry_number": "26NBOIM409252569",
 				"e_slip_reference": "ESLIP-TEST-001",
 				"idf_tax": 15000,
@@ -233,11 +245,11 @@ def _link_sea_records(dossier, supplier):
 			}
 		).insert(ignore_permissions=True)
 
-	if not frappe.db.exists("Shipping Line Charges", {"shipment_dossier": dossier}):
+	if not frappe.db.exists("Shipping Line Charges", {"project": project}):
 		frappe.get_doc(
 			{
 				"doctype": "Shipping Line Charges",
-				"shipment_dossier": dossier,
+				"project": project,
 				"shipping_line": supplier,
 				"local_import_charges": 95000,
 				"cfs_code": "SIG",
@@ -245,11 +257,11 @@ def _link_sea_records(dossier, supplier):
 			}
 		).insert(ignore_permissions=True)
 
-	if not frappe.db.exists("Port Charges KPA Invoice", {"shipment_dossier": dossier}):
+	if not frappe.db.exists("Port Charges KPA Invoice", {"project": project}):
 		frappe.get_doc(
 			{
 				"doctype": "Port Charges KPA Invoice",
-				"shipment_dossier": dossier,
+				"project": project,
 				"kpa_invoice_number": "KPA-INV-TEST-99",
 				"kpa_invoice_amount": 42000,
 				"port_compliance_status": "Pending",
@@ -281,8 +293,9 @@ def _daily_status_red():
 def _print_summary(sea, air, customer):
 	print("\n=== CGM Worldwide Shipping E2E test data ===")
 	print(f"Customer: {customer}")
-	print(f"Sea FCL dossier (Draft): {sea}")
-	print(f"Air import dossier (Documents Received): {air}")
+	print(f"Sea FCL Project (Draft): {sea}")
+	print(f"Air import Project (Documents Received): {air}")
 	print(f"Container: TESTU1234567")
-	print(f"Filter dossiers by Client Reference containing: {TEST_MARKER}")
+	print(f"Filter Projects by Client Ref containing: {TEST_MARKER}")
+	print("Workflow: CGM Sea Import Workflow on Project → custom_shipment_status")
 	print("See apps/cgm_shipping/TEST_E2E.md for the manual test walkthrough.\n")

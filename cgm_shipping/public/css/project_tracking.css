@@ -1,0 +1,93 @@
+.cgm-shipment-progress {
+	margin: 0 0 1rem 0;
+	padding: 12px 14px;
+	background: var(--bg-light-gray, #f4f5f6);
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	font-size: 12px;
+}
+
+.cgm-shipment-progress h4 {
+	margin: 0 0 10px 0;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.cgm-progress-steps {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	align-items: center;
+}
+
+.cgm-progress-step {
+	padding: 4px 8px;
+	border-radius: 4px;
+	background: #fff;
+	border: 1px solid #d1d8dd;
+	color: #6c7680;
+	white-space: nowrap;
+}
+
+.cgm-progress-step.is-done {
+	background: #e8f5e9;
+	border-color: #81c784;
+	color: #2e7d32;
+}
+
+.cgm-progress-step.is-current {
+	background: #e3f2fd;
+	border-color: #1976d2;
+	color: #0d47a1;
+	font-weight: 600;
+}
+
+.cgm-progress-meta {
+	margin-top: 10px;
+	color: #6c7680;
+}
+
+.cgm-tracking-legend {
+	margin-top: 8px;
+	font-size: 11px;
+	color: #6c7680;
+}
+
+.cgm-container-summary {
+	margin-top: 8px;
+}
+
+.cgm-container-summary-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 8px;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.cgm-container-stats {
+	flex: 1;
+	font-weight: normal;
+	color: #6c7680;
+}
+
+.cgm-container-summary table {
+	font-size: 11px;
+	margin-bottom: 0;
+}
+
+.cgm-rag-green {
+	color: #2e7d32;
+	font-weight: 600;
+}
+
+.cgm-rag-yellow {
+	color: #f57f17;
+	font-weight: 600;
+}
+
+.cgm-rag-red {
+	color: #c62828;
+	font-weight: 600;
+}
