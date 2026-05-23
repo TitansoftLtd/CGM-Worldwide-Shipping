@@ -5,7 +5,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "shipment_dossier",
+  "project",
   "entry_number",
   "e_slip_reference",
   "idf_tax",
@@ -19,10 +19,10 @@
  ],
  "fields": [
   {
-   "fieldname": "shipment_dossier",
+   "fieldname": "project",
    "fieldtype": "Link",
-   "label": "Shipment Dossier",
-   "options": "Shipment Dossier",
+   "label": "Project",
+   "options": "Project",
    "reqd": 1,
    "in_list_view": 1
   },
