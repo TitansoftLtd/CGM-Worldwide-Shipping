@@ -27,18 +27,9 @@
    "dt": "Quotation"
   },
   {
-   "fieldname": "custom_shipment_dossier",
-   "fieldtype": "Link",
-   "insert_after": "custom_freight_notes",
-   "label": "Shipment Dossier",
-   "module": "CGM Worldwide Shipping",
-   "options": "Shipment Dossier",
-   "dt": "Quotation"
-  },
-  {
    "fieldname": "custom_freight_approved_by",
    "fieldtype": "Link",
-   "insert_after": "custom_shipment_dossier",
+   "insert_after": "project",
    "label": "Freight Approved By",
    "module": "CGM Worldwide Shipping",
    "options": "User",
