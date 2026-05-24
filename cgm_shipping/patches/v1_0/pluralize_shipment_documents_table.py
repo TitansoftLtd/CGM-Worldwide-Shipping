@@ -21,6 +21,13 @@ def execute():
 	if has_new and not has_old:
 		return
 
+	# Case 1b: neither field in meta — create the plural table field.
+	if not has_new and not has_old:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.utils import ensure_project_shipment_documents_field
+
+		ensure_project_shipment_documents_field()
+		return
+
 	# Case 2: old column exists but new doesn't: rename physical column.
 	if _column_exists("tabProject", "custom_shipment_document") and not _column_exists(
 		"tabProject", "custom_shipment_documents"
@@ -37,7 +44,17 @@ def execute():
 		cf.fieldname = "custom_shipment_documents"
 		cf.label = "Shipment Documents"
 		cf.save(ignore_permissions=True)
-		frappe.rename_doc("Custom Field", old_cf_name, new_cf_name, force=True, ignore_permissions=True)
+		# Use model rename_doc: frappe.rename_doc() public API does not accept ignore_permissions (e.g. cloud / newer Frappe).
+		from frappe.model.rename_doc import rename_doc as rename_document
+
+		rename_document(
+			doctype="Custom Field",
+			old=old_cf_name,
+			new=new_cf_name,
+			force=True,
+			ignore_permissions=True,
+			show_alert=False,
+		)
 
 	# Keep field-order strings and similar property values in sync.
 	for row in frappe.get_all(

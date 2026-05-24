@@ -206,6 +206,12 @@ doc_events = {
 	"Project": {
 		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
 	},
+	"Customer": {
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
+	},
+	"Task": {
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_update",
+	},
 }
 
 # Scheduled Tasks

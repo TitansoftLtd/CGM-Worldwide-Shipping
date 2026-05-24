@@ -5,19 +5,50 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "section_break_rskl"
+  "sea_import_task_plan_tab",
+  "section_break_sea_import",
+  "custom_sea_import_task_template",
+  "tab_workflow_document_gates",
+  "section_workflow_document_gates",
+  "custom_workflow_stage_requirements"
  ],
  "fields": [
   {
-   "fieldname": "section_break_rskl",
+   "fieldname": "section_break_sea_import",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "custom_sea_import_task_template",
+   "fieldtype": "Table",
+   "label": "Sea import task template",
+   "options": "Sea Import Task Template Item"
+  },
+  {
+   "fieldname": "tab_workflow_document_gates",
+   "fieldtype": "Tab Break",
+   "label": "Shipment status and required document stages"
+  },
+  {
+   "fieldname": "section_workflow_document_gates",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "custom_workflow_stage_requirements",
+   "fieldtype": "Table",
+   "label": "Workflow stage requirements",
+   "options": "Workflow Stage Requirement Item"
+  },
+  {
+   "fieldname": "sea_import_task_plan_tab",
+   "fieldtype": "Tab Break",
+   "label": "Sea import task plan"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-04-13 13:00:05.540250",
+ "modified": "2026-05-12 13:13:01.998941",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

@@ -1,77 +1,93 @@
 import frappe
-from frappe import _
 from frappe.utils import now_datetime
-from pathlib import Path
-import json
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import SEA_TASK_FLOW_KEY
-
-def get_table_field(doc):
-	# Step 1: prefer plural table field.
-	meta = frappe.get_meta(doc.doctype)
-	if meta.has_field("custom_shipment_documents"):
-		return "custom_shipment_documents"
-	# Step 2: fallback to legacy singular field.
-	return "custom_shipment_document"
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	SEA_TASK_FLOW_KEY,
+	SHIPMENT_DOCUMENTS_FIELD,
+	sync_linked_attachments_to_project,
+)
 
 
-def get_row_list(doc):
-	return doc.get(get_table_field(doc)) or []
+# ─── Shipment Document Table ──────────────────────────────────────────────────
+
+
+def get_shipment_documents(doc):
+	return doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
+
+
+# ─── Workflow Stage Requirements ─────────────────────────────────────────────
 
 
 def get_stage_requirements():
-	# Step 1: load workflow stage gate requirements from data file.
-	path = Path(__file__).parent / "data" / "workflow_stage_requirements.json"
-	if not path.exists():
-		frappe.throw(_("Workflow stage requirements file is missing: {0}").format(path.name))
-	data = json.loads(path.read_text())
-	# Step 2: validate structure.
-	if not isinstance(data, dict):
-		frappe.throw(_("Workflow stage requirements must be a JSON object."))
-	return data
+	"""Map Project shipment status to required Document Type stages (from CGM Shipping Settings)."""
+	settings = frappe.get_single("CGM Shipping Settings")
+	rows = sorted(
+		settings.get("custom_workflow_stage_requirements") or [],
+		key=lambda r: ((r.shipment_workflow_state or "").strip(), r.idx or 0),
+	)
+	out = {}
+	for row in rows:
+		state = (row.shipment_workflow_state or "").strip()
+		stage = (row.required_stage or "").strip()
+		if not state or not stage:
+			continue
+		out.setdefault(state, []).append(stage)
+	return out
+
+
+# ─── Project Save Hooks ───────────────────────────────────────────────────────
 
 
 def apply_shipment_document_automation(doc, _method=None):
-	# Step 1: seed required checklist rows for selected mode.
+	# 1. Seed required checklist rows for the selected mode of transport.
 	seed_required_document_rows(doc)
-	# Step 2: normalize row status/uploader/verifier metadata.
+	# 2. Pull files from linked Lead, Customer, and Tasks into shipment documents.
+	if not frappe.flags.get("cgm_syncing_shipment_documents"):
+		sync_linked_attachments_to_project(doc)
+	# 3. Normalise row status and uploader/verifier metadata.
 	normalize_document_rows(doc)
-	# Step 3: block workflow changes when required docs are missing.
+	# 4. Block workflow changes when required documents are missing.
 	enforce_document_gate_on_workflow_change(doc)
-	# Step 4: Sea — IDF Created requires sea task plan + Task 1 completed (UCR/IDF + payment handoff).
+	# 5. Sea only: IDF Created requires sea task plan and Task 1 completed.
 	enforce_sea_task_gate_on_workflow_change(doc)
 
 
 def seed_required_document_rows(doc):
-	# Step 1: ensure mode of transport is set before seeding.
+	# 1. Skip when mode of transport is not set.
 	mode = doc.get("custom_mode_of_transport")
 	if not mode:
 		return
-	# Step 2: identify already-added document types.
-	rows = get_row_list(doc)
+
+	# 2. Collect document types already on the project.
+	rows = get_shipment_documents(doc)
 	existing = {r.document_type for r in rows if r.document_type}
-	# Step 3: load required document types for this mode.
+
+	# 3. Load required Document Types for this mode.
 	doctypes = frappe.get_all(
 		"Document Type",
 		filters={"mode_of_transport": ["in", [mode, "", None]], "default_required": 1},
 		fields=["name"],
 		order_by="required_stage asc, name asc",
 	)
-	# Step 4: append missing required rows.
-	fieldname = get_table_field(doc)
+
+	# 4. Append any missing required rows.
 	for d in doctypes:
 		if d.name not in existing:
-			doc.append(fieldname, {"document_type": d.name, "required": 1, "status": "Missing"})
+			doc.append(
+				SHIPMENT_DOCUMENTS_FIELD,
+				{"document_type": d.name, "required": 1, "status": "Missing"},
+			)
 
 
 def normalize_document_rows(doc):
-	for row in get_row_list(doc):
-		# Step 1: sync `required` from Document Type master.
+	for row in get_shipment_documents(doc):
+		# 1. Sync the required flag from the Document Type master.
 		if row.document_type:
 			default_required = frappe.db.get_value("Document Type", row.document_type, "default_required")
 			if default_required is not None:
 				row.required = int(default_required)
-		# Step 2: auto-manage upload state and uploader metadata.
+
+		# 2. Auto-manage upload state and uploader metadata.
 		if row.attachment:
 			if row.status in (None, "", "Missing"):
 				row.status = "Uploaded"
@@ -85,10 +101,12 @@ def normalize_document_rows(doc):
 			row.uploaded_on = None
 			row.verified_by = None
 			row.verified_on = None
-		# Step 3: sync verification metadata from status.
+
+		# 3. Sync verification metadata from status.
 		if row.status in ("Verified", "Rejected"):
 			if not row.attachment:
-				frappe.throw(f"Attach a file before marking {row.document_type or 'a document'} as {row.status}.")
+				label = row.document_type or "a document"
+				frappe.throw(f"Attach a file before marking {label} as {row.status}.")
 			if not row.verified_by:
 				row.verified_by = frappe.session.user
 			if not row.verified_on:
@@ -99,7 +117,7 @@ def normalize_document_rows(doc):
 
 
 def enforce_document_gate_on_workflow_change(doc):
-	# Step 1: detect workflow status change.
+	# 1. Detect a shipment status change.
 	prev = doc.get_doc_before_save()
 	if not prev:
 		return
@@ -107,14 +125,16 @@ def enforce_document_gate_on_workflow_change(doc):
 	new_status = doc.get("custom_shipment_status")
 	if not new_status or new_status == prev_status:
 		return
-	# Step 2: determine document stages required for target status.
+
+	# 2. Load required document stages for the target status.
 	stage_requirements = get_stage_requirements()
 	required_stages = stage_requirements.get(new_status)
 	if not required_stages:
 		return
-	# Step 3: gather missing required docs for those stages.
+
+	# 3. Find required documents that are not yet verified.
 	missing = []
-	for row in get_row_list(doc):
+	for row in get_shipment_documents(doc):
 		if not row.document_type or not row.required:
 			continue
 		stage = frappe.db.get_value("Document Type", row.document_type, "required_stage")
@@ -122,17 +142,16 @@ def enforce_document_gate_on_workflow_change(doc):
 			continue
 		if not row.attachment or row.status != "Verified":
 			missing.append(row.document_type)
-	# Step 4: stop workflow move when evidence is incomplete.
+
+	# 4. Stop the workflow move when evidence is incomplete.
 	if missing:
-		frappe.throw(
-			_(
-				"Cannot move shipment to <b>{0}</b>. Verify required documents first: {1}"
-			).format(new_status, ", ".join(sorted(set(missing))))
-		)
+		labels = ", ".join(sorted(set(missing)))
+		frappe.throw(f"Cannot move shipment to <b>{new_status}</b>. Verify required documents first: {labels}")
 
 
 def enforce_sea_task_gate_on_workflow_change(doc):
-	"""Sea-import only: entering IDF Created requires Task 1 of the sea template to be Completed."""
+	"""Sea import only: entering IDF Created requires Task 1 of the sea template to be Completed."""
+	# 1. Detect a shipment status change into IDF Created.
 	prev = doc.get_doc_before_save()
 	if not prev:
 		return
@@ -144,9 +163,12 @@ def enforce_sea_task_gate_on_workflow_change(doc):
 		return
 	if doc.get("custom_mode_of_transport") != "Sea":
 		return
-	if not frappe.get_meta(doc.doctype).has_field("custom_mode_of_transport"):
+
+	project_fields = frappe.get_meta(doc.doctype)
+	if not project_fields.has_field("custom_mode_of_transport"):
 		return
 
+	# 2. Look up sea import Task 1 on this project.
 	task = frappe.db.get_value(
 		"Task",
 		{
@@ -159,18 +181,13 @@ def enforce_sea_task_gate_on_workflow_change(doc):
 	)
 	if not task:
 		frappe.throw(
-			_(
-				"Cannot move to <b>IDF Created</b> yet. Generate the <b>Sea Task Plan</b> on this project first, "
-				"then complete Task 1 (Create UCR and IDF, then hand off for payment)."
-			)
+			"Cannot move to <b>IDF Created</b> yet. Generate the <b>Sea Task Plan</b> on this project first, "
+			"then complete Task 1 (Create UCR and IDF, then hand off for payment)."
 		)
 	if task.status != "Completed":
+		status = task.status or "unset"
 		frappe.throw(
-			_(
-				"Cannot move to <b>IDF Created</b> until sea Task 1 is <b>Completed</b> "
-				"(Declarant: UCR/IDF in portal, attach proofs on the task; Finance: payment from the same task). "
-				"Task <b>{0}</b> is currently <b>{1}</b>."
-			).format(task.name, task.status or _("unset"))
+			f"Cannot move to <b>IDF Created</b> until sea Task 1 is <b>Completed</b> "
+			f"(Declarant: UCR/IDF in portal, attach proofs on the task; Finance: payment from the same task). "
+			f"Task <b>{task.name}</b> is currently <b>{status}</b>."
 		)
-
-
