@@ -96,5 +96,180 @@
   "modified": "2026-05-07 18:43:59.893831",
   "name": "Reject CI/PKL",
   "workflow_action_name": "Reject CI/PKL"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Receive Documents",
+  "workflow_action_name": "Receive Documents"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Open IDF",
+  "workflow_action_name": "Open IDF"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Start Pre-clearance",
+  "workflow_action_name": "Start Pre-clearance"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Mark In Transit",
+  "workflow_action_name": "Mark In Transit"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Lodge Entry",
+  "workflow_action_name": "Lodge Entry"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Confirm Taxes Paid",
+  "workflow_action_name": "Confirm Taxes Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Settle",
+  "workflow_action_name": "Settle"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Receive Client Documents",
+  "workflow_action_name": "Receive Client Documents"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Create UCR Application",
+  "workflow_action_name": "Create UCR Application"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Confirm UCR Paid",
+  "workflow_action_name": "Confirm UCR Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Start Pre-clearance Permits",
+  "workflow_action_name": "Start Pre-clearance Permits"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Request Client Inspection",
+  "workflow_action_name": "Request Client Inspection"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Start Shipment Tracking",
+  "workflow_action_name": "Start Shipment Tracking"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Receive Final Documents",
+  "workflow_action_name": "Receive Final Documents"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Request Manifest and Charges",
+  "workflow_action_name": "Request Manifest and Charges"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Lodge Customs Entry",
+  "workflow_action_name": "Lodge Customs Entry"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Confirm Line Paid and DO Lodged",
+  "workflow_action_name": "Confirm Line Paid and DO Lodged"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Confirm Entry Paid",
+  "workflow_action_name": "Confirm Entry Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Complete Post-clearance Permits",
+  "workflow_action_name": "Complete Post-clearance Permits"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Hand to Field Officers",
+  "workflow_action_name": "Hand to Field Officers"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Confirm KPA Paid",
+  "workflow_action_name": "Confirm KPA Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Dispatch Cargo",
+  "workflow_action_name": "Dispatch Cargo"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Confirm Containers Returned",
+  "workflow_action_name": "Confirm Containers Returned"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Complete Shipment File",
+  "workflow_action_name": "Complete Shipment File"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Settle File",
+  "workflow_action_name": "Settle File"
  }
 ]

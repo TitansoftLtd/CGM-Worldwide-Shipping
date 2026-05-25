@@ -1,11 +1,18 @@
 import frappe
 from frappe.utils import now_datetime
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+	enforce_workflow_task_gate,
+	get_sea_closure_blockers,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	SEA_TASK_FLOW_KEY,
 	SHIPMENT_DOCUMENTS_FIELD,
 	sync_linked_attachments_to_project,
 )
+
+INTAKE_DOCUMENT_CODES = ("CI", "PKL")
+PERMIT_REGISTER_FIELD = "custom_permit_register"
 
 
 # ─── Shipment Document Table ──────────────────────────────────────────────────
@@ -46,10 +53,17 @@ def apply_shipment_document_automation(doc, _method=None):
 		sync_linked_attachments_to_project(doc)
 	# 3. Normalise row status and uploader/verifier metadata.
 	normalize_document_rows(doc)
+	normalize_permit_register_rows(doc)
 	# 4. Block workflow changes when required documents are missing.
 	enforce_document_gate_on_workflow_change(doc)
-	# 5. Sea only: IDF Created requires sea task plan and Task 1 completed.
-	enforce_sea_task_gate_on_workflow_change(doc)
+	# 5. Require CI/PKL before Documents Received.
+	enforce_intake_documents_before_documents_received(doc)
+	# 6. Sea only: workflow states require prior sea tasks completed in chart order.
+	enforce_sea_workflow_task_gates(doc)
+	# 7. IDF / entry: all permits must be Post-Cleared before Entry Lodged.
+	enforce_permits_post_cleared_before_entry_lodged(doc)
+	# 8. Project Completed only when tasks, docs, permits, payments, and billing are done.
+	enforce_project_closure_on_workflow_change(doc)
 
 
 def seed_required_document_rows(doc):
@@ -149,9 +163,8 @@ def enforce_document_gate_on_workflow_change(doc):
 		frappe.throw(f"Cannot move shipment to <b>{new_status}</b>. Verify required documents first: {labels}")
 
 
-def enforce_sea_task_gate_on_workflow_change(doc):
-	"""Sea import only: entering IDF Created requires Task 1 of the sea template to be Completed."""
-	# 1. Detect a shipment status change into IDF Created.
+def enforce_sea_workflow_task_gates(doc):
+	"""Sea import: each workflow state requires prior tasks in the 24-step clearance chart."""
 	prev = doc.get_doc_before_save()
 	if not prev:
 		return
@@ -159,35 +172,161 @@ def enforce_sea_task_gate_on_workflow_change(doc):
 	new_status = doc.get("custom_shipment_status")
 	if not new_status or new_status == prev_status:
 		return
-	if new_status != "IDF Created":
-		return
 	if doc.get("custom_mode_of_transport") != "Sea":
 		return
+	enforce_workflow_task_gate(doc.name, new_status)
 
-	project_fields = frappe.get_meta(doc.doctype)
-	if not project_fields.has_field("custom_mode_of_transport"):
+
+def enforce_intake_documents_before_documents_received(doc):
+	prev = doc.get_doc_before_save()
+	if not prev or prev.get("custom_shipment_status") == doc.get("custom_shipment_status"):
+		return
+	if doc.get("custom_shipment_status") != "Documents Received":
+		return
+	missing = []
+	rows_by_code = {}
+	for row in get_shipment_documents(doc):
+		if not row.document_type:
+			continue
+		code = frappe.db.get_value("Document Type", row.document_type, "code")
+		if code:
+			rows_by_code[code] = row
+	for code in INTAKE_DOCUMENT_CODES:
+		row = rows_by_code.get(code)
+		if not row or not row.attachment or row.status == "Missing":
+			label = frappe.db.get_value("Document Type", {"code": code}, "name") or code
+			missing.append(label)
+	if missing:
+		frappe.throw(
+			f"Upload client documents in <b>Client Documents</b> first: {', '.join(missing)}. "
+			"Use <b>custom_shipment_documents</b> — not Permit Register."
+		)
+
+
+def normalize_permit_register_rows(doc):
+	"""Derive Pre-Cleared / Post-Cleared from invoice, payment, and permit document fields."""
+	if not doc.meta.has_field(PERMIT_REGISTER_FIELD):
+		return
+	for row in doc.get(PERMIT_REGISTER_FIELD) or []:
+		row.clearance_phase = derive_permit_clearance_phase(row)
+
+
+def derive_permit_clearance_phase(row) -> str:
+	"""Map permit row finance fields to high-level clearance phase (see OPERATIONS_PROCESS.md §7)."""
+	if row.get("payment_entry"):
+		pe_status = frappe.db.get_value("Payment Entry", row.payment_entry, "docstatus")
+		if int(pe_status or 0) == 1:
+			return "Post-Cleared"
+	if row.get("receipt_verified") and row.get("permit_document"):
+		return "Post-Cleared"
+	if row.get("status") in ("Approved", "Released") and row.get("receipt_verified"):
+		return "Post-Cleared"
+	if row.get("invoice_verified") and (
+		row.get("payment_invoice") or row.get("purchase_invoice") or row.get("payment_entry")
+	):
+		return "Pre-Cleared"
+	if row.get("payment_invoice") or row.get("status") in (
+		"Invoice Submitted",
+		"Invoice Verified",
+		"Paid",
+		"Receipt Submitted",
+	):
+		return "Pre-Cleared"
+	return "Not Started"
+
+
+def enforce_permits_post_cleared_before_entry_lodged(doc):
+	prev = doc.get_doc_before_save()
+	if not prev:
+		return
+	prev_status = prev.get("custom_shipment_status")
+	new_status = doc.get("custom_shipment_status")
+	if not new_status or new_status == prev_status or new_status != "Entry Lodged":
+		return
+	if not doc.meta.has_field(PERMIT_REGISTER_FIELD):
+		return
+	pending = [
+		r.permit_type or "Permit"
+		for r in doc.get(PERMIT_REGISTER_FIELD) or []
+		if derive_permit_clearance_phase(r) != "Post-Cleared"
+	]
+	if pending:
+		frappe.throw(
+			"Cannot lodge customs entry until all permits are <b>Post-Cleared</b> "
+			f"(payment, receipt verified, permit document issued). Pending: {', '.join(pending)}."
+		)
+
+
+def enforce_project_closure_on_workflow_change(doc):
+	"""FINAL RULE: Completed only when tasks, documents, permits, payments, and customer invoice are done."""
+	prev = doc.get_doc_before_save()
+	if not prev:
+		return
+	prev_status = prev.get("custom_shipment_status")
+	new_status = doc.get("custom_shipment_status")
+	if not new_status or new_status == prev_status or new_status != "Completed":
 		return
 
-	# 2. Look up sea import Task 1 on this project.
-	task = frappe.db.get_value(
-		"Task",
-		{
-			"project": doc.name,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": 1,
-		},
-		["name", "subject", "status"],
+	blockers = []
+
+	if doc.get("custom_mode_of_transport") == "Sea":
+		blockers.extend(get_sea_closure_blockers(doc.name))
+	else:
+		open_tasks = frappe.get_all(
+			"Task",
+			filters={"project": doc.name, "status": ["not in", ["Completed", "Cancelled"]]},
+			pluck="subject",
+			limit=10,
+		)
+		if open_tasks:
+			preview = ", ".join(open_tasks[:5])
+			if len(open_tasks) > 5:
+				preview += f" (+{len(open_tasks) - 5} more)"
+			blockers.append(f"Open tasks: {preview}")
+
+	for row in get_shipment_documents(doc):
+		if not row.required:
+			continue
+		if not row.attachment or row.status != "Verified":
+			blockers.append(f"Document not verified: {row.document_type or 'row'}")
+
+	if doc.meta.has_field(PERMIT_REGISTER_FIELD):
+		not_cleared = [
+			r.permit_type or "Permit"
+			for r in doc.get(PERMIT_REGISTER_FIELD) or []
+			if derive_permit_clearance_phase(r) != "Post-Cleared"
+		]
+		if not_cleared:
+			blockers.append(f"Permits not Post-Cleared: {', '.join(not_cleared)}")
+
+	# Completed payable tasks must have a submitted Payment Entry:
+	payable_done_no_pe = frappe.db.sql(
+		"""
+		SELECT t.subject
+		FROM `tabTask` t
+		WHERE t.project = %s
+		  AND t.status = 'Completed'
+		  AND t.custom_purchase_invoice IS NOT NULL AND t.custom_purchase_invoice != ''
+		  AND (t.custom_payment_entry IS NULL OR t.custom_payment_entry = '')
+		LIMIT 5
+		""",
+		doc.name,
 		as_dict=True,
 	)
-	if not task:
-		frappe.throw(
-			"Cannot move to <b>IDF Created</b> yet. Generate the <b>Sea Task Plan</b> on this project first, "
-			"then complete Task 1 (Create UCR and IDF, then hand off for payment)."
+	if payable_done_no_pe:
+		blockers.append(
+			"Completed tasks missing Payment Entry: "
+			+ ", ".join(r.subject for r in payable_done_no_pe)
 		)
-	if task.status != "Completed":
-		status = task.status or "unset"
+
+	if not frappe.db.exists(
+		"Sales Invoice", {"project": doc.name, "docstatus": 1}
+	):
+		blockers.append("No submitted Sales Invoice linked to this Project")
+
+	if blockers:
 		frappe.throw(
-			f"Cannot move to <b>IDF Created</b> until sea Task 1 is <b>Completed</b> "
-			f"(Declarant: UCR/IDF in portal, attach proofs on the task; Finance: payment from the same task). "
-			f"Task <b>{task.name}</b> is currently <b>{status}</b>."
+			"<b>Cannot mark Project as Completed.</b> Resolve first:<ul>"
+			+ "".join(f"<li>{b}</li>" for b in blockers)
+			+ "</ul>"
 		)

@@ -1,0 +1,156 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-05-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project",
+  "section_break_ucr",
+  "idf_number",
+  "ucr_number",
+  "application_date",
+  "approval_date",
+  "shared_with_client",
+  "section_break_finance",
+  "payment_status",
+  "payment_invoice",
+  "invoice_verified",
+  "column_break_fin",
+  "purchase_invoice",
+  "payment_entry",
+  "payment_receipt",
+  "receipt_verified",
+  "payment_reference",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Project",
+   "options": "Project",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_ucr",
+   "fieldtype": "Section Break",
+   "label": "UCR / IDF"
+  },
+  {
+   "fieldname": "idf_number",
+   "fieldtype": "Data",
+   "label": "IDF Number"
+  },
+  {
+   "fieldname": "ucr_number",
+   "fieldtype": "Data",
+   "label": "UCR Number"
+  },
+  {
+   "fieldname": "application_date",
+   "fieldtype": "Date",
+   "label": "Application Date"
+  },
+  {
+   "fieldname": "approval_date",
+   "fieldtype": "Date",
+   "label": "IDF Issued / Approval Date"
+  },
+  {
+   "fieldname": "shared_with_client",
+   "fieldtype": "Check",
+   "label": "Shared With Client"
+  },
+  {
+   "fieldname": "section_break_finance",
+   "fieldtype": "Section Break",
+   "label": "UCR payment (Ops → Finance)"
+  },
+  {
+   "default": "Pending Invoice",
+   "fieldname": "payment_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Payment Status",
+   "options": "Pending Invoice\nInvoice Submitted\nInvoice Verified\nPaid\nReceipt Submitted\nReceipt Verified\nComplete"
+  },
+  {
+   "description": "Operations attaches UCR invoice to request payment",
+   "fieldname": "payment_invoice",
+   "fieldtype": "Attach",
+   "label": "UCR Invoice"
+  },
+  {
+   "fieldname": "invoice_verified",
+   "fieldtype": "Check",
+   "label": "Invoice Verified by Finance"
+  },
+  {
+   "fieldname": "column_break_fin",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "purchase_invoice",
+   "fieldtype": "Link",
+   "label": "Purchase Invoice",
+   "options": "Purchase Invoice"
+  },
+  {
+   "fieldname": "payment_entry",
+   "fieldtype": "Link",
+   "label": "Payment Entry",
+   "options": "Payment Entry"
+  },
+  {
+   "description": "Operations attaches proof of payment after Finance pays",
+   "fieldname": "payment_receipt",
+   "fieldtype": "Attach",
+   "label": "Payment Receipt"
+  },
+  {
+   "fieldname": "receipt_verified",
+   "fieldtype": "Check",
+   "label": "Receipt Verified by Finance"
+  },
+  {
+   "fieldname": "payment_reference",
+   "fieldtype": "Data",
+   "label": "Payment Reference"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-05-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "IDF UCR Record",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

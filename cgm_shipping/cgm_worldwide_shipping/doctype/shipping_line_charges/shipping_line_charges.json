@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project",
+  "shipping_line",
+  "local_import_charges",
+  "do_lodgement_date",
+  "manifest_receipt_date",
+  "cfs_code",
+  "payment_reference",
+  "indemnity_form_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "shipping_line",
+   "fieldtype": "Link",
+   "label": "Shipping Line",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "local_import_charges",
+   "fieldtype": "Currency",
+   "label": "Local Import Charges"
+  },
+  {
+   "fieldname": "do_lodgement_date",
+   "fieldtype": "Date",
+   "label": "DO Lodgement Date"
+  },
+  {
+   "fieldname": "manifest_receipt_date",
+   "fieldtype": "Date",
+   "label": "Manifest Receipt Date"
+  },
+  {
+   "fieldname": "cfs_code",
+   "fieldtype": "Select",
+   "label": "CFS Code",
+   "options": "MAT\nCSC\nSIG\nTCC\nKAH\nBFT"
+  },
+  {
+   "fieldname": "payment_reference",
+   "fieldtype": "Data",
+   "label": "Payment Reference"
+  },
+  {
+   "fieldname": "indemnity_form_status",
+   "fieldtype": "Select",
+   "label": "Indemnity Form",
+   "options": "Pending\nReceived\nSubmitted"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-05-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Shipping Line Charges",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1,
+   "submit": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "hash"
+}

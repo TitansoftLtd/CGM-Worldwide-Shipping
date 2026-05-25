@@ -2,23 +2,11 @@
 
 import frappe
 
-DEFAULT_SEA_IMPORT_TASK_ROWS = [
-	{"task_subject": "Create UCR, then hand off for payment", "department": "Declaration"},
-	{
-		"task_subject": "Apply pre-clearance permits (DVS/NBA/VMD/ACA/KEBS as applicable)",
-		"department": "Declaration",
-	},
-	{"task_subject": "Pay permit invoices and attach proof", "department": "Finance"},
-	{"task_subject": "Receive and verify approved permits", "department": "Declaration"},
-	{"task_subject": "Client inspection follow-up (if required)", "department": "Operations"},
-	{"task_subject": "Obtain draft/original BL and manifest", "department": "Documentation"},
-	{"task_subject": "Create customs entry and e-slip", "department": "Declaration"},
-	{"task_subject": "Confirm tax payment", "department": "Finance"},
-	{"task_subject": "Field verification with KRA/agencies", "department": "Field Operations"},
-	{"task_subject": "Secure cargo release and gate pass", "department": "Operations"},
-	{"task_subject": "Dispatch truck and monitor delivery", "department": "Transport"},
-	{"task_subject": "Return empty container and upload interchange", "department": "Transport"},
-]
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+	SEA_FREIGHT_TASK_TEMPLATE,
+)
+
+DEFAULT_SEA_IMPORT_TASK_ROWS = SEA_FREIGHT_TASK_TEMPLATE
 
 DEFAULT_WORKFLOW_STAGE_ROWS = [
 	{"shipment_workflow_state": "IDF Created", "required_stage": "Pre-IDF"},
