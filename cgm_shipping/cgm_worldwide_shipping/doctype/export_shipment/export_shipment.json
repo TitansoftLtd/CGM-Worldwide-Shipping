@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project",
+  "coc_eac_application_date",
+  "uganda_entry_number",
+  "c2_document",
+  "exit_note",
+  "border_clearance_date",
+  "ecmd_device_number",
+  "loading_warehouse",
+  "delivery_warehouse"
+ ],
+ "fields": [
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "coc_eac_application_date",
+   "fieldtype": "Date",
+   "label": "COC/EAC Application Date"
+  },
+  {
+   "fieldname": "uganda_entry_number",
+   "fieldtype": "Data",
+   "label": "Uganda Entry Number"
+  },
+  {
+   "fieldname": "c2_document",
+   "fieldtype": "Attach",
+   "label": "C2 Document"
+  },
+  {
+   "fieldname": "exit_note",
+   "fieldtype": "Data",
+   "label": "Exit Note"
+  },
+  {
+   "fieldname": "border_clearance_date",
+   "fieldtype": "Date",
+   "label": "Border Clearance Date"
+  },
+  {
+   "fieldname": "ecmd_device_number",
+   "fieldtype": "Data",
+   "label": "ECMD Device Number"
+  },
+  {
+   "fieldname": "loading_warehouse",
+   "fieldtype": "Data",
+   "label": "Loading Warehouse"
+  },
+  {
+   "fieldname": "delivery_warehouse",
+   "fieldtype": "Data",
+   "label": "Delivery Warehouse"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-05-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Export Shipment",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1,
+   "submit": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "hash"
+}

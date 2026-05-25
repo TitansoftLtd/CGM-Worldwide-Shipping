@@ -5,281 +5,209 @@
   "document_type": "Project",
   "enable_action_confirmation": 0,
   "is_active": 1,
-  "modified": "2026-05-07 16:42:52.724806",
+  "modified": "2026-05-19 15:00:00.000000",
   "name": "CGM Sea Import Workflow",
   "override_status": 0,
-  "send_email_alert": 0,
+  "send_email_alert": 1,
+  "workflow_name": "CGM Sea Import Workflow",
+  "workflow_state_field": "custom_shipment_status",
   "states": [
    {
     "allow_edit": "Operations Manager",
-    "avoid_status_override": 0,
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Documents Received",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "Draft"
    },
    {
     "allow_edit": "Declarant",
-    "avoid_status_override": 0,
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
     "send_email": 1,
-    "state": "IDF Created",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "Documents Received"
    },
    {
     "allow_edit": "Declarant",
-    "avoid_status_override": 0,
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Permits Processing",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "UCR Applied"
+   },
+   {
+    "allow_edit": "Finance User",
+    "doc_status": "0",
+    "state": "UCR Paid"
+   },
+   {
+    "allow_edit": "Declarant",
+    "doc_status": "0",
+    "state": "Pre-clearance"
    },
    {
     "allow_edit": "Operations Manager",
-    "avoid_status_override": 0,
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Awaiting Arrival",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "Client Inspection"
    },
    {
     "allow_edit": "Operations Manager",
-    "avoid_status_override": 0,
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Arrived",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "In Transit"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "Final Docs Received"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "Manifest Requested"
+   },
+   {
+    "allow_edit": "Declarant",
+    "doc_status": "0",
+    "state": "Entry Lodged"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "Line Paid & DO Lodged"
+   },
+   {
+    "allow_edit": "Finance User",
+    "doc_status": "0",
+    "state": "Entry Paid"
+   },
+   {
+    "allow_edit": "Declarant",
+    "doc_status": "0",
+    "state": "Post-clearance"
    },
    {
     "allow_edit": "Field Officer",
-    "avoid_status_override": 0,
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Clearing",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "Field Clearance"
    },
    {
-    "allow_edit": "Field Officer",
-    "avoid_status_override": 0,
+    "allow_edit": "Finance User",
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Released",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "KPA Paid"
    },
    {
-    "allow_edit": "Transport Manager",
-    "avoid_status_override": 0,
+    "allow_edit": "Transport Officer",
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "In Transit",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "In Delivery"
    },
    {
-    "allow_edit": "Transport Manager",
-    "avoid_status_override": 0,
+    "allow_edit": "Transport Officer",
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Delivered",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
-   },
-   {
-    "allow_edit": "Transport Manager",
-    "avoid_status_override": 0,
-    "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Container Return Pending",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "Containers Returned"
    },
    {
     "allow_edit": "Operations Manager",
-    "avoid_status_override": 0,
     "doc_status": "0",
-    "evaluate_as_expression": 0,
-    "is_optional_state": 0,
-    "message": null,
-    "next_action_email_template": null,
-    "send_email": 1,
-    "state": "Completed",
-    "update_field": null,
-    "update_value": null,
-    "workflow_builder_id": null
+    "state": "Completed"
    }
   ],
   "transitions": [
    {
-    "action": "Approve Docs & Create IDF",
-    "allow_self_approval": 1,
-    "allowed": "Declarant",
-    "condition": null,
-    "next_state": "IDF Created",
-    "send_email_to_creator": 0,
-    "state": "Documents Received",
-    "transition_tasks": null,
-    "workflow_builder_id": null
-   },
-   {
-    "action": "Start Permits",
-    "allow_self_approval": 1,
-    "allowed": "Declarant",
-    "condition": null,
-    "next_state": "Permits Processing",
-    "send_email_to_creator": 0,
-    "state": "IDF Created",
-    "transition_tasks": null,
-    "workflow_builder_id": null
-   },
-   {
-    "action": "Permits Ready",
-    "allow_self_approval": 1,
-    "allowed": "Finance Manager",
-    "condition": null,
-    "next_state": "Awaiting Arrival",
-    "send_email_to_creator": 0,
-    "state": "Permits Processing",
-    "transition_tasks": null,
-    "workflow_builder_id": null
-   },
-   {
-    "action": "Mark Arrived",
-    "allow_self_approval": 1,
+    "action": "Receive Client Documents",
     "allowed": "Operations Manager",
-    "condition": null,
-    "next_state": "Arrived",
-    "send_email_to_creator": 0,
-    "state": "Awaiting Arrival",
-    "transition_tasks": null,
-    "workflow_builder_id": null
+    "next_state": "Documents Received",
+    "state": "Draft"
    },
    {
-    "action": "Start Clearing",
-    "allow_self_approval": 1,
-    "allowed": "Field Officer",
-    "condition": null,
-    "next_state": "Clearing",
-    "send_email_to_creator": 0,
-    "state": "Arrived",
-    "transition_tasks": null,
-    "workflow_builder_id": null
+    "action": "Create UCR Application",
+    "allowed": "Declarant",
+    "next_state": "UCR Applied",
+    "state": "Documents Received"
    },
    {
-    "action": "Release Cargo",
-    "allow_self_approval": 1,
-    "allowed": "Field Officer",
-    "condition": null,
-    "next_state": "Released",
-    "send_email_to_creator": 0,
-    "state": "Clearing",
-    "transition_tasks": null,
-    "workflow_builder_id": null
+    "action": "Confirm UCR Paid",
+    "allowed": "Finance User",
+    "next_state": "UCR Paid",
+    "state": "UCR Applied"
    },
    {
-    "action": "Dispatch Truck",
-    "allow_self_approval": 1,
-    "allowed": "Transport Manager",
-    "condition": null,
+    "action": "Start Pre-clearance Permits",
+    "allowed": "Declarant",
+    "next_state": "Pre-clearance",
+    "state": "UCR Paid"
+   },
+   {
+    "action": "Request Client Inspection",
+    "allowed": "Operations Manager",
+    "next_state": "Client Inspection",
+    "state": "Pre-clearance"
+   },
+   {
+    "action": "Start Shipment Tracking",
+    "allowed": "Operations Manager",
     "next_state": "In Transit",
-    "send_email_to_creator": 0,
-    "state": "Released",
-    "transition_tasks": null,
-    "workflow_builder_id": null
+    "state": "Client Inspection"
    },
    {
-    "action": "Confirm Delivery",
-    "allow_self_approval": 1,
-    "allowed": "Transport Manager",
-    "condition": null,
-    "next_state": "Delivered",
-    "send_email_to_creator": 0,
-    "state": "In Transit",
-    "transition_tasks": null,
-    "workflow_builder_id": null
-   },
-   {
-    "action": "Start Container Return",
-    "allow_self_approval": 1,
-    "allowed": "Transport Manager",
-    "condition": null,
-    "next_state": "Container Return Pending",
-    "send_email_to_creator": 0,
-    "state": "Delivered",
-    "transition_tasks": null,
-    "workflow_builder_id": null
-   },
-   {
-    "action": "Confirm Interchange & Close",
-    "allow_self_approval": 1,
+    "action": "Receive Final Documents",
     "allowed": "Operations Manager",
-    "condition": null,
+    "next_state": "Final Docs Received",
+    "state": "In Transit"
+   },
+   {
+    "action": "Request Manifest and Charges",
+    "allowed": "Operations Manager",
+    "next_state": "Manifest Requested",
+    "state": "Final Docs Received"
+   },
+   {
+    "action": "Lodge Customs Entry",
+    "allowed": "Declarant",
+    "next_state": "Entry Lodged",
+    "state": "Manifest Requested"
+   },
+   {
+    "action": "Confirm Line Paid and DO Lodged",
+    "allowed": "Operations Manager",
+    "next_state": "Line Paid & DO Lodged",
+    "state": "Entry Lodged"
+   },
+   {
+    "action": "Confirm Entry Paid",
+    "allowed": "Finance User",
+    "next_state": "Entry Paid",
+    "state": "Line Paid & DO Lodged"
+   },
+   {
+    "action": "Complete Post-clearance Permits",
+    "allowed": "Declarant",
+    "next_state": "Post-clearance",
+    "state": "Entry Paid"
+   },
+   {
+    "action": "Hand to Field Officers",
+    "allowed": "Declarant",
+    "next_state": "Field Clearance",
+    "state": "Post-clearance"
+   },
+   {
+    "action": "Confirm KPA Paid",
+    "allowed": "Finance User",
+    "next_state": "KPA Paid",
+    "state": "Field Clearance"
+   },
+   {
+    "action": "Dispatch Cargo",
+    "allowed": "Transport Officer",
+    "next_state": "In Delivery",
+    "state": "KPA Paid"
+   },
+   {
+    "action": "Confirm Containers Returned",
+    "allowed": "Transport Officer",
+    "next_state": "Containers Returned",
+    "state": "In Delivery"
+   },
+   {
+    "action": "Complete Shipment File",
+    "allowed": "Operations Manager",
     "next_state": "Completed",
-    "send_email_to_creator": 0,
-    "state": "Container Return Pending",
-    "transition_tasks": null,
-    "workflow_builder_id": null
+    "state": "Containers Returned"
    }
-  ],
-  "workflow_data": null,
-  "workflow_name": "CGM Sea Import Workflow",
-  "workflow_state_field": "custom_shipment_status"
+  ]
  },
  {
   "docstatus": 0,
@@ -516,5 +444,213 @@
   "workflow_data": null,
   "workflow_name": "CGM Opportunity Pre-Shipment",
   "workflow_state_field": "custom_cgm_preshipment_status"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow",
+  "document_type": "Shipment Dossier",
+  "is_active": 0,
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Shipment Clearance Workflow",
+  "override_status": 1,
+  "send_email_alert": 1,
+  "workflow_name": "Shipment Clearance Workflow",
+  "workflow_state_field": "status",
+  "states": [
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "Draft"
+   },
+   {
+    "allow_edit": "Declarant",
+    "doc_status": "0",
+    "state": "Documents Received"
+   },
+   {
+    "allow_edit": "Declarant",
+    "doc_status": "0",
+    "state": "UCR Applied"
+   },
+   {
+    "allow_edit": "Finance User",
+    "doc_status": "0",
+    "state": "UCR Paid"
+   },
+   {
+    "allow_edit": "Declarant",
+    "doc_status": "0",
+    "state": "Pre-clearance"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "Client Inspection"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "In Transit"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "Final Docs Received"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "Manifest Requested"
+   },
+   {
+    "allow_edit": "Declarant",
+    "doc_status": "0",
+    "state": "Entry Lodged"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "0",
+    "state": "Line Paid & DO Lodged"
+   },
+   {
+    "allow_edit": "Finance User",
+    "doc_status": "0",
+    "state": "Entry Paid"
+   },
+   {
+    "allow_edit": "Declarant",
+    "doc_status": "0",
+    "state": "Post-clearance"
+   },
+   {
+    "allow_edit": "Field Officer",
+    "doc_status": "0",
+    "state": "Field Clearance"
+   },
+   {
+    "allow_edit": "Finance User",
+    "doc_status": "0",
+    "state": "KPA Paid"
+   },
+   {
+    "allow_edit": "Transport Officer",
+    "doc_status": "0",
+    "state": "In Delivery"
+   },
+   {
+    "allow_edit": "Transport Officer",
+    "doc_status": "0",
+    "state": "Containers Returned"
+   },
+   {
+    "allow_edit": "Operations Manager",
+    "doc_status": "1",
+    "state": "Settled"
+   }
+  ],
+  "transitions": [
+   {
+    "action": "Receive Client Documents",
+    "allowed": "Operations Manager",
+    "next_state": "Documents Received",
+    "state": "Draft"
+   },
+   {
+    "action": "Create UCR Application",
+    "allowed": "Declarant",
+    "next_state": "UCR Applied",
+    "state": "Documents Received"
+   },
+   {
+    "action": "Confirm UCR Paid",
+    "allowed": "Finance User",
+    "next_state": "UCR Paid",
+    "state": "UCR Applied"
+   },
+   {
+    "action": "Start Pre-clearance Permits",
+    "allowed": "Declarant",
+    "next_state": "Pre-clearance",
+    "state": "UCR Paid"
+   },
+   {
+    "action": "Request Client Inspection",
+    "allowed": "Operations Manager",
+    "next_state": "Client Inspection",
+    "state": "Pre-clearance"
+   },
+   {
+    "action": "Start Shipment Tracking",
+    "allowed": "Operations Manager",
+    "next_state": "In Transit",
+    "state": "Client Inspection"
+   },
+   {
+    "action": "Receive Final Documents",
+    "allowed": "Operations Manager",
+    "next_state": "Final Docs Received",
+    "state": "In Transit"
+   },
+   {
+    "action": "Request Manifest and Charges",
+    "allowed": "Operations Manager",
+    "next_state": "Manifest Requested",
+    "state": "Final Docs Received"
+   },
+   {
+    "action": "Lodge Customs Entry",
+    "allowed": "Declarant",
+    "next_state": "Entry Lodged",
+    "state": "Manifest Requested"
+   },
+   {
+    "action": "Confirm Line Paid and DO Lodged",
+    "allowed": "Operations Manager",
+    "next_state": "Line Paid & DO Lodged",
+    "state": "Entry Lodged"
+   },
+   {
+    "action": "Confirm Entry Paid",
+    "allowed": "Finance User",
+    "next_state": "Entry Paid",
+    "state": "Line Paid & DO Lodged"
+   },
+   {
+    "action": "Complete Post-clearance Permits",
+    "allowed": "Declarant",
+    "next_state": "Post-clearance",
+    "state": "Entry Paid"
+   },
+   {
+    "action": "Hand to Field Officers",
+    "allowed": "Declarant",
+    "next_state": "Field Clearance",
+    "state": "Post-clearance"
+   },
+   {
+    "action": "Confirm KPA Paid",
+    "allowed": "Finance User",
+    "next_state": "KPA Paid",
+    "state": "Field Clearance"
+   },
+   {
+    "action": "Dispatch Cargo",
+    "allowed": "Transport Officer",
+    "next_state": "In Delivery",
+    "state": "KPA Paid"
+   },
+   {
+    "action": "Confirm Containers Returned",
+    "allowed": "Transport Officer",
+    "next_state": "Containers Returned",
+    "state": "In Delivery"
+   },
+   {
+    "action": "Settle File",
+    "allowed": "Operations Manager",
+    "next_state": "Settled",
+    "state": "Containers Returned"
+   }
+  ]
  }
 ]

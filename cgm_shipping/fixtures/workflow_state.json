@@ -169,5 +169,164 @@
   "name": "Clearing",
   "style": "Warning",
   "workflow_state_name": "Clearing"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Draft",
+  "style": "Primary",
+  "workflow_state_name": "Draft"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "IDF Open",
+  "style": "Primary",
+  "workflow_state_name": "IDF Open"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Pre-clearance",
+  "style": "Primary",
+  "workflow_state_name": "Pre-clearance"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Entry Lodged",
+  "style": "Warning",
+  "workflow_state_name": "Entry Lodged"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Taxes Paid",
+  "style": "Success",
+  "workflow_state_name": "Taxes Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Clearance",
+  "style": "Warning",
+  "workflow_state_name": "Clearance"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-05-19 00:00:00.000000",
+  "name": "Settled",
+  "style": "Success",
+  "workflow_state_name": "Settled"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "UCR Applied",
+  "style": "Primary",
+  "workflow_state_name": "UCR Applied"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "UCR Paid",
+  "style": "Success",
+  "workflow_state_name": "UCR Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Client Inspection",
+  "style": "Info",
+  "workflow_state_name": "Client Inspection"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Final Docs Received",
+  "style": "Warning",
+  "workflow_state_name": "Final Docs Received"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Manifest Requested",
+  "style": "Warning",
+  "workflow_state_name": "Manifest Requested"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Line Paid & DO Lodged",
+  "style": "Success",
+  "workflow_state_name": "Line Paid & DO Lodged"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Entry Paid",
+  "style": "Success",
+  "workflow_state_name": "Entry Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Post-clearance",
+  "style": "Primary",
+  "workflow_state_name": "Post-clearance"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Field Clearance",
+  "style": "Warning",
+  "workflow_state_name": "Field Clearance"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "KPA Paid",
+  "style": "Success",
+  "workflow_state_name": "KPA Paid"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "In Delivery",
+  "style": "Info",
+  "workflow_state_name": "In Delivery"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "modified": "2026-05-19 12:00:00.000000",
+  "name": "Containers Returned",
+  "style": "Success",
+  "workflow_state_name": "Containers Returned"
  }
 ]

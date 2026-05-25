@@ -1,0 +1,45 @@
+{
+ "custom_fields": [
+  {
+   "fieldname": "custom_freight_type",
+   "fieldtype": "Select",
+   "insert_after": "transaction_date",
+   "label": "Freight Type",
+   "module": "CGM Worldwide Shipping",
+   "options": "Airfreight\nLCL\nFCL",
+   "dt": "Quotation"
+  },
+  {
+   "fieldname": "custom_incoterm",
+   "fieldtype": "Select",
+   "insert_after": "custom_freight_type",
+   "label": "Incoterm",
+   "module": "CGM Worldwide Shipping",
+   "options": "FOB\nEx-works\nDoor-to-door",
+   "dt": "Quotation"
+  },
+  {
+   "fieldname": "custom_freight_notes",
+   "fieldtype": "Small Text",
+   "insert_after": "custom_incoterm",
+   "label": "Notes / Clauses",
+   "module": "CGM Worldwide Shipping",
+   "dt": "Quotation"
+  },
+  {
+   "fieldname": "custom_freight_approved_by",
+   "fieldtype": "Link",
+   "insert_after": "project",
+   "label": "Freight Approved By",
+   "module": "CGM Worldwide Shipping",
+   "options": "User",
+   "read_only": 1,
+   "dt": "Quotation"
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "Quotation",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}
