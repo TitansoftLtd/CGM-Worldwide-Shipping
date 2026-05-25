@@ -12,7 +12,7 @@ fixtures = [
         "filters": [["name", "in", [
             "CGM Lead Pre-Shipment",
             "CGM Opportunity Pre-Shipment",
-            "CGM Sea Import Workflow",        # ← added
+            "CGM Sea Import Workflow",
         ]]]
     },
     # Workflow states
@@ -29,18 +29,26 @@ fixtures = [
             "Opp Docs Verified",
             "Opp Docs Rejected",
             "Opp Ready for Project",
-            # Sea Import states
-            "Documents Received",             # ← added
-            "IDF Created",                    # ← added
-            "Permits Processing",             # ← added
-            "Awaiting Arrival",               # ← added
-            "Arrived",                        # ← added
-            "Clearing",                       # ← added
-            "Released",                       # ← added
-            "In Transit",                     # ← added
-            "Delivered",                      # ← added
-            "Container Return Pending",       # ← added
-            "Completed",                      # ← added
+            # Project — sea freight clearance (custom_shipment_status)
+            "Draft",
+            "Documents Received",
+            "UCR Applied",
+            "UCR Paid",
+            "Pre-clearance",
+            "Client Inspection",
+            "In Transit",
+            "Final Docs Received",
+            "Entry Lodged",
+            "Manifest Requested",
+            "Line Paid & DO Lodged",
+            "Entry Paid",
+            "Post-clearance",
+            "Field Clearance",
+            "KPA Paid",
+            "In Delivery",
+            "Containers Returned",
+            "Completed",
+            "Settled",
         ]]]
     },
     # Workflow actions
@@ -52,18 +60,40 @@ fixtures = [
             "Reject CI/PKL",
             "Approve customer onboarding",
             "Authorize Shipment File",
-            # Sea Import actions
-            "Approve Docs & Create IDF",      # ← added
-            "Start Permits",                  # ← added
-            "Permits Ready",                  # ← added
-            "Mark Arrived",                   # ← added
-            "Start Clearing",                 # ← added
-            "Release Cargo",                  # ← added
-            "Dispatch Truck",                 # ← added
-            "Confirm Delivery",               # ← added
-            "Start Container Return",         # ← added
-            "Confirm Interchange & Close",    # ← added
+            # Project — sea freight clearance actions
+            "Receive Client Documents",
+            "Create UCR Application",
+            "Confirm UCR Paid",
+            "Start Pre-clearance Permits",
+            "Request Client Inspection",
+            "Start Shipment Tracking",
+            "Receive Final Documents",
+            "Request Manifest and Charges",
+            "Lodge Customs Entry",
+            "Confirm Line Paid and DO Lodged",
+            "Confirm Entry Paid",
+            "Complete Post-clearance Permits",
+            "Hand to Field Officers",
+            "Confirm KPA Paid",
+            "Dispatch Cargo",
+            "Confirm Containers Returned",
+            "Complete Shipment File",
+            "Settle File",
         ]]]
+    },
+    {
+        "doctype": "Custom Field",
+        "filters": [["module", "=", "CGM Worldwide Shipping"], ["name", "like", "custom_%"]],
+    },
+    {
+        "doctype": "Role",
+        "filters": [["name", "in", [
+            "Operations Manager",
+            "Declarant",
+            "Finance User",
+            "Field Officer",
+            "Transport Officer",
+        ]]],
     },
 ]
 # Apps
@@ -86,7 +116,7 @@ fixtures = [
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/cgm_shipping/css/cgm_shipping.css"
+app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
 # app_include_js = "/assets/cgm_shipping/js/cgm_shipping.js"
 
 # include js, css files in header of web template
@@ -110,6 +140,7 @@ doctype_js = {
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Payment Entry": "public/js/payment_entry.js",
 	"Project": "public/js/project.js",
+	"Container Tracker": "public/js/container_tracker.js",
 	"Lead": "public/js/crm_lead.js",
 	"Customer": "public/js/crm_customer.js",
 	"Opportunity": "public/js/crm_opportunity.js",
@@ -206,10 +237,23 @@ doc_events = {
 	"Project": {
 		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
 	},
+	"Purchase Invoice": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_validate_from_task",
+	},
+	"Payment Entry": {
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.payment_entry_validate_from_task",
+		],
+	},
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
 	},
 	"Task": {
+		"before_save": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.before_task_save",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.validate_task_completion_requirements",
+		],
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_update",
 	},
 }

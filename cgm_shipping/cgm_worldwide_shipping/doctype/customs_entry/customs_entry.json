@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project",
+  "entry_number",
+  "e_slip_reference",
+  "idf_tax",
+  "vat",
+  "duty",
+  "excise",
+  "payment_status",
+  "kra_verification_status",
+  "kebs_verification_status",
+  "cro_release_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "entry_number",
+   "fieldtype": "Data",
+   "label": "Entry Number",
+   "reqd": 1
+  },
+  {
+   "fieldname": "e_slip_reference",
+   "fieldtype": "Data",
+   "label": "E-Slip Reference"
+  },
+  {
+   "fieldname": "idf_tax",
+   "fieldtype": "Currency",
+   "label": "IDF Tax"
+  },
+  {
+   "fieldname": "vat",
+   "fieldtype": "Currency",
+   "label": "VAT"
+  },
+  {
+   "fieldname": "duty",
+   "fieldtype": "Currency",
+   "label": "Duty"
+  },
+  {
+   "fieldname": "excise",
+   "fieldtype": "Currency",
+   "label": "Excise"
+  },
+  {
+   "fieldname": "payment_status",
+   "fieldtype": "Select",
+   "label": "Payment Status",
+   "options": "Pending\nPaid"
+  },
+  {
+   "fieldname": "kra_verification_status",
+   "fieldtype": "Select",
+   "label": "KRA Verification",
+   "options": "Pending\nVerified\nFailed"
+  },
+  {
+   "fieldname": "kebs_verification_status",
+   "fieldtype": "Select",
+   "label": "KEBS Verification",
+   "options": "Pending\nVerified\nFailed"
+  },
+  {
+   "fieldname": "cro_release_date",
+   "fieldtype": "Date",
+   "label": "CRO Release Date"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-05-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Customs Entry",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1,
+   "submit": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "field:entry_number"
+}

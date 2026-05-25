@@ -10,7 +10,9 @@ frappe.ui.form.on("Customer", {
 					callback(r) {
 						if (!r.exc && r.message) {
 							frappe.show_alert({
-								message: __("Shipment Project created"),
+								message: __(
+									"Shipment Project created. Sea tasks 1–2 are auto-completed when CI/PKL came from CRM."
+								),
 								indicator: "green",
 							});
 							frappe.set_route("Form", "Project", r.message);

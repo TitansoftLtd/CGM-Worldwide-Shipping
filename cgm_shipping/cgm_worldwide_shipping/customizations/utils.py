@@ -49,13 +49,14 @@ def apply_shipment_data(project, shipment_type=None, mode=None):
 	if mode:
 		project.custom_mode_of_transport = mode
 
-	# 2. Initialise the sea workflow status when the field exists.
+	# 2. Start at Draft on insert (workflow rejects jumping to Documents Received on new docs).
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_shipment_status"):
-		project.custom_shipment_status = "Documents Received"
+		project.custom_shipment_status = "Draft"
 
 
 SHIPMENT_DOCUMENTS_FIELD = "custom_shipment_documents"
+TASK_DOCUMENTS_FIELD = "custom_task_documents"
 
 
 def get_project_documents_fieldname():
@@ -285,6 +286,100 @@ def carry_customer_attachments_to_project(project_doc, customer_ref):
 			append_verified_doc_row(project_doc, document_type, attachment_url)
 
 
+def append_task_document_row(task_doc, document_type, attachment_url, status=None, remarks=None):
+	"""Append or update a Shipment Document row on a Task."""
+	if not attachment_url or not document_type:
+		return
+	if not task_doc.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return
+	if not frappe.db.exists("Document Type", document_type):
+		return
+
+	status = status or "Verified"
+	for row in task_doc.get(TASK_DOCUMENTS_FIELD) or []:
+		if document_types_match(row.document_type, document_type):
+			row.attachment = attachment_url
+			row.status = status
+			if remarks:
+				row.remarks = remarks
+			if status == "Verified":
+				row.verified_by = row.verified_by or frappe.session.user
+				row.verified_on = row.verified_on or now_datetime()
+			row.uploaded_by = row.uploaded_by or frappe.session.user
+			row.uploaded_on = row.uploaded_on or now_datetime()
+			return
+
+	task_doc.append(
+		TASK_DOCUMENTS_FIELD,
+		{
+			"document_type": document_type,
+			"attachment": attachment_url,
+			"status": status,
+			"remarks": remarks or "Carried from Project (approved on Lead/Opportunity/Customer)",
+			"uploaded_by": frappe.session.user,
+			"uploaded_on": now_datetime(),
+			"verified_by": frappe.session.user if status == "Verified" else None,
+			"verified_on": now_datetime() if status == "Verified" else None,
+		},
+	)
+
+
+def carry_project_shipment_documents_to_sea_tasks(project_name, task_sequences=None):
+	"""
+	Copy Project shipment document rows onto sea clearance tasks (audit trail on Task 1–2).
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+		SEA_AUTO_COMPLETE_TASK_SEQS,
+		SEA_TASK_FLOW_KEY,
+	)
+
+	if not project_name or not frappe.db.exists("Project", project_name):
+		return []
+	if not frappe.get_meta("Task").has_field(TASK_DOCUMENTS_FIELD):
+		return []
+
+	task_sequences = task_sequences or sorted(SEA_AUTO_COMPLETE_TASK_SEQS)
+	project = frappe.get_doc("Project", project_name)
+	source_rows = [
+		r
+		for r in project.get(SHIPMENT_DOCUMENTS_FIELD) or []
+		if r.document_type and r.attachment
+	]
+	if not source_rows:
+		return []
+
+	updated_tasks = []
+	for seq in task_sequences:
+		task_name = frappe.db.get_value(
+			"Task",
+			{
+				"project": project_name,
+				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+				"custom_sequence_no": seq,
+			},
+			"name",
+		)
+		if not task_name:
+			continue
+		task = frappe.get_doc("Task", task_name)
+		for row in source_rows:
+			append_task_document_row(
+				task,
+				row.document_type,
+				row.attachment,
+				status=row.status or "Verified",
+				remarks=row.remarks
+				or "Carried from Project (approved on Lead/Opportunity/Customer)",
+			)
+		frappe.flags.cgm_syncing_shipment_documents = True
+		try:
+			task.save(ignore_permissions=True)
+		finally:
+			frappe.flags.cgm_syncing_shipment_documents = False
+		updated_tasks.append(task_name)
+	return updated_tasks
+
+
 def carry_task_documents_to_project(project_doc, project_name=None):
 	"""Copy Task Documents child rows from all tasks on this project."""
 	project_name = project_name or project_doc.name
@@ -503,6 +598,93 @@ def resolve_department_name(department_value, company=None):
 
 # ─── Whitelisted Project Creation ────────────────────────────────────────────
 
+INTAKE_DOCUMENT_CODES = ("CI", "PKL")
+
+
+def project_has_intake_documents(project_doc) -> bool:
+	"""True when CI and PKL are present on the project shipment document table."""
+	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return False
+	rows_by_code = {}
+	for row in project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or []:
+		if not row.document_type:
+			continue
+		code = frappe.db.get_value("Document Type", row.document_type, "code")
+		if code:
+			rows_by_code[code] = row
+	for code in INTAKE_DOCUMENT_CODES:
+		row = rows_by_code.get(code)
+		if not row or not row.attachment:
+			return False
+	return True
+
+
+def bootstrap_project_workflow_status(project_name: str) -> None:
+	"""
+	After insert: move to Documents Received when CRM already supplied CI/PKL.
+
+	Uses db.set_value to avoid Frappe's 'no transition on insert' workflow check.
+	"""
+	if not project_name or not frappe.db.exists("Project", project_name):
+		return
+	project = frappe.get_doc("Project", project_name)
+	if not project.meta.has_field("custom_shipment_status"):
+		return
+	if project.get("custom_shipment_status") != "Draft":
+		return
+	if not project_has_intake_documents(project):
+		return
+	frappe.db.set_value(
+		"Project",
+		project_name,
+		"custom_shipment_status",
+		"Documents Received",
+		update_modified=False,
+	)
+
+
+def insert_shipment_project(project) -> str:
+	"""Insert a new shipment project and apply post-insert workflow status."""
+	project.insert(ignore_permissions=True)
+	bootstrap_project_workflow_status(project.name)
+	bootstrap_sea_task_plan_for_project(project.name)
+	return project.name
+
+
+@frappe.whitelist()
+def backfill_intake_documents_on_sea_tasks(project):
+	"""Copy Project shipment documents onto tasks 1–2 (for projects created before this feature)."""
+	frappe.has_permission("Project", ptype="write", throw=True)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+		auto_complete_initial_sea_tasks,
+	)
+
+	carried = carry_project_shipment_documents_to_sea_tasks(project)
+	auto_complete_initial_sea_tasks(project)
+	return {"tasks_updated": carried}
+
+
+def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
+	"""
+	For Sea projects with CRM-approved CI/PKL: create the 24-task plan and auto-complete tasks 1–2.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+		auto_complete_initial_sea_tasks,
+	)
+
+	if frappe.db.get_value("Project", project_name, "custom_mode_of_transport") != "Sea":
+		return None
+	if not project_has_intake_documents(frappe.get_doc("Project", project_name)):
+		return None
+
+	if frappe.db.exists("Task", {"project": project_name, "custom_task_flow_key": SEA_TASK_FLOW_KEY}):
+		done = auto_complete_initial_sea_tasks(project_name)
+		return {"auto_completed": done, "created": 0}
+
+	result = _create_sea_import_task_plan_internal(project_name)
+	result["auto_completed"] = auto_complete_initial_sea_tasks(project_name)
+	return result
+
 
 @frappe.whitelist()
 def create_project_from_customer(customer, project_name=None):
@@ -540,15 +722,55 @@ def create_project_from_customer(customer, project_name=None):
 	)
 	proj.project_name = ensure_unique_project_name(seed_name)
 	apply_shipment_data(proj, shipment_type=shipment_type, mode=mode_of_transport)
+	_apply_lead_shipment_defaults(proj, lead_name)
+	_apply_project_tracking_defaults(proj)
 
-	# 4. Link the source lead and sync shipment documents.
 	project_fields = frappe.get_meta("Project")
 	if lead_name and project_fields.has_field("custom_source_lead"):
 		proj.custom_source_lead = lead_name
 
 	sync_linked_attachments_to_project(proj)
-	proj.insert()
-	return proj.name
+	return insert_shipment_project(proj)
+
+
+def _lead_field_value(lead, *candidates: str):
+	"""Return the first non-empty attribute present on the Lead document."""
+	lead_meta = lead.meta
+	for name in candidates:
+		if not lead_meta.has_field(name):
+			continue
+		value = lead.get(name)
+		if value not in (None, ""):
+			return value
+	return None
+
+
+def _apply_project_tracking_defaults(project) -> None:
+	"""Seed LCL tracking sheet fields on new projects."""
+	meta = project.meta
+	if meta.has_field("custom_opened_date") and not project.get("custom_opened_date"):
+		project.custom_opened_date = today()
+	if meta.has_field("custom_cgm_ref_no") and project.project_name and not project.get("custom_cgm_ref_no"):
+		project.custom_cgm_ref_no = project.project_name
+
+
+def _apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
+	"""Copy shipment hints from Lead onto Project when fields are empty."""
+	if not lead_name or not frappe.db.exists("Lead", lead_name):
+		return
+	lead = frappe.get_doc("Lead", lead_name)
+	project_meta = project.meta
+	pairs = (
+		("custom_consignee", _lead_field_value(lead, "company_name", "lead_name")),
+		(
+			"custom_shipment_description",
+			_lead_field_value(lead, "description", "notes", "title"),
+		),
+		("custom_shipment_remarks", _lead_field_value(lead, "notes")),
+	)
+	for fieldname, value in pairs:
+		if project_meta.has_field(fieldname) and value and not project.get(fieldname):
+			project.set(fieldname, value)
 
 
 def lead_has_customer(lead):
@@ -591,15 +813,15 @@ def create_project_from_lead(lead, project_name=None):
 		shipment_type=lead_doc.get("custom_shipment_type"),
 		mode=lead_doc.get("custom_mode_of_transport"),
 	)
+	_apply_lead_shipment_defaults(proj, lead)
+	_apply_project_tracking_defaults(proj)
 
-	# 4. Link the source lead and carry pre-shipment documents across.
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_source_lead"):
 		proj.custom_source_lead = lead
 
 	sync_linked_attachments_to_project(proj)
-	proj.insert()
-	return proj.name
+	return insert_shipment_project(proj)
 
 
 @frappe.whitelist()
@@ -635,31 +857,29 @@ def create_project_from_opportunity(opportunity, project_name=None):
 		shipment_type=opp.get("custom_shipment_type"),
 		mode=opp.get("custom_mode_of_transport"),
 	)
+	_apply_project_tracking_defaults(proj)
 
-	# 4. Link the source opportunity and carry pre-shipment documents across.
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_source_opportunity"):
 		proj.custom_source_opportunity = opportunity
 
 	sync_linked_attachments_to_project(proj)
-	proj.insert()
-	return proj.name
+	return insert_shipment_project(proj)
 
 
 # ─── Sea Import Task Plan ─────────────────────────────────────────────────────
 
 
-@frappe.whitelist()
-def create_sea_import_task_plan(project, reset=False):
-	"""Generate ordered sea-import tasks and link them via a depends_on chain."""
-	frappe.has_permission("Task", ptype="create", throw=True)
-	project_doc = frappe.get_doc("Project", project)
+def _create_sea_import_task_plan_internal(project, reset=False):
+	"""Generate ordered sea-import tasks (internal; no duplicate check unless reset)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+		auto_complete_initial_sea_tasks,
+	)
 
-	# 1. Guard: this plan is only for Sea mode projects.
+	project_doc = frappe.get_doc("Project", project)
 	if project_doc.get("custom_mode_of_transport") != "Sea":
 		frappe.throw("This task plan is for Sea mode projects only.")
 
-	# 2. Check for an existing plan and handle the reset flag.
 	existing = frappe.get_all(
 		"Task",
 		filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
@@ -676,12 +896,10 @@ def create_sea_import_task_plan(project, reset=False):
 		):
 			frappe.delete_doc("Task", d.name, ignore_permissions=True, force=True)
 
-	# 3. Load the standard sea task template.
 	task_template = load_sea_task_template()
 	created = []
 	prev_task = None
 
-	# 4. Create each task in sequence and link it to the previous via depends_on.
 	for idx, item in enumerate(task_template, start=1):
 		subject = item.get("subject")
 		if not subject:
@@ -703,7 +921,17 @@ def create_sea_import_task_plan(project, reset=False):
 		prev_task = task
 		created.append(task.name)
 
-	return {"created": created, "count": len(created)}
+	out = {"created": created, "count": len(created)}
+	if project_has_intake_documents(project_doc):
+		out["auto_completed"] = auto_complete_initial_sea_tasks(project)
+	return out
+
+
+@frappe.whitelist()
+def create_sea_import_task_plan(project, reset=False):
+	"""Generate ordered sea-import tasks and link them via a depends_on chain."""
+	frappe.has_permission("Task", ptype="create", throw=True)
+	return _create_sea_import_task_plan_internal(project, reset=reset)
 
 
 # ─── Finance Notification ─────────────────────────────────────────────────────
@@ -761,11 +989,12 @@ def notify_finance_for_task(task_name):
 
 
 def is_sea_ucr_idf_task_one(task):
-	"""Return True when this is Sea import Task 1 (UCR / IDF flow)."""
-	return (
-		task.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(task.get("custom_sequence_no") or 0) == 1
+	"""Legacy alias: finance payment tasks in the sea clearance chart."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+		is_sea_payment_task,
 	)
+
+	return is_sea_payment_task(task)
 
 
 def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoice_name):
@@ -782,68 +1011,19 @@ def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoic
 
 @frappe.whitelist()
 def link_purchase_invoice_to_task(task_name, purchase_invoice):
-	"""Link a submitted Purchase Invoice to sea Task 1 (UCR/IDF) and notify finance."""
-	# 1. Validate that the task and purchase invoice both exist.
-	if not task_name or not frappe.db.exists("Task", task_name):
-		frappe.throw("Task not found.")
-	if not purchase_invoice or not frappe.db.exists("Purchase Invoice", purchase_invoice):
-		frappe.throw("Purchase Invoice not found.")
+	"""Link a submitted Purchase Invoice to a sea finance task; sync Project."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link import (
+		link_purchase_invoice_to_task_enhanced,
+	)
 
-	task = frappe.get_doc("Task", task_name)
-
-	# 2. Guard: this action is only valid for sea import Task 1.
-	if not is_sea_ucr_idf_task_one(task):
-		frappe.throw("This action is only for sea import Task 1 (UCR / IDF).")
-
-	# 3. Require the Purchase Invoice to be submitted before linking.
-	pi_status = frappe.db.get_value("Purchase Invoice", purchase_invoice, "docstatus")
-	if int(pi_status or 0) != 1:
-		frappe.throw("Purchase Invoice must be submitted before linking to the task.")
-
-	# 4. Save the link and notify finance.
-	task_fields = frappe.get_meta("Task")
-	if task_fields.has_field("custom_purchase_invoice"):
-		task.custom_purchase_invoice = purchase_invoice
-	task.save(ignore_permissions=True)
-	notify_finance_for_task(task.name)
-
-	return {"task": task.name, "purchase_invoice": purchase_invoice}
+	return link_purchase_invoice_to_task_enhanced(task_name, purchase_invoice)
 
 
 @frappe.whitelist()
 def complete_task_with_payment(task_name, payment_entry):
-	"""Attach a submitted Payment Entry to Task 1 and mark the task completed."""
-	# 1. Validate that the task and payment entry both exist.
-	if not task_name or not frappe.db.exists("Task", task_name):
-		frappe.throw(f"Task {task_name} not found")
-	if not payment_entry or not frappe.db.exists("Payment Entry", payment_entry):
-		frappe.throw(f"Payment Entry {payment_entry} not found")
+	"""Attach a submitted Payment Entry to a finance task and mark it completed."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link import (
+		complete_task_with_payment_enhanced,
+	)
 
-	# 2. Require the Payment Entry to be submitted.
-	payment_status = frappe.db.get_value("Payment Entry", payment_entry, "docstatus")
-	if int(payment_status or 0) != 1:
-		frappe.throw("Payment Entry must be submitted before linking it to the task.")
-
-	task = frappe.get_doc("Task", task_name)
-
-	# 3. For Task 1, verify the payment allocates against the task's Purchase Invoice.
-	task_fields = frappe.get_meta("Task")
-	if is_sea_ucr_idf_task_one(task) and task_fields.has_field("custom_purchase_invoice"):
-		pi_name = task.get("custom_purchase_invoice")
-		if not pi_name:
-			frappe.throw(
-				"Create and submit a Purchase Invoice for the IDF fees, "
-				"link it using **Create Purchase Invoice** on the task, then record payment."
-			)
-		if not payment_entry_allocates_purchase_invoice(payment_entry, pi_name):
-			frappe.throw(f"Payment Entry must allocate against Purchase Invoice {pi_name}.")
-
-	# 4. Record the payment, mark the task completed, and save.
-	if task_fields.has_field("custom_payment_entry"):
-		task.custom_payment_entry = payment_entry
-	task.completed_by = frappe.session.user
-	task.completed_on = now_datetime()
-	task.status = "Completed"
-	task.save(ignore_permissions=True)
-
-	return {"task": task.name, "status": task.status}
+	return complete_task_with_payment_enhanced(task_name, payment_entry)
