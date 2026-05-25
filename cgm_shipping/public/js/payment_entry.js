@@ -1,4 +1,13 @@
 frappe.ui.form.on("Payment Entry", {
+	onload(frm) {
+		if (frm.is_new() && localStorage.getItem("cgm_pe_for_task") === "1") {
+			const task_name = localStorage.getItem("cgm_return_task");
+			if (task_name && !frm.doc.custom_cgm_source_task && frm.fields_dict.custom_cgm_source_task) {
+				frm.set_value("custom_cgm_source_task", task_name);
+			}
+		}
+	},
+
 	after_save(frm) {
 		link_payment_back_to_task(frm);
 	},
@@ -26,10 +35,12 @@ function link_payment_back_to_task(frm) {
 			}
 			localStorage.removeItem("cgm_return_task");
 			localStorage.removeItem("cgm_pe_for_task");
-			frappe.show_alert({
-				message: __("Payment linked and task completed"),
-				indicator: "green",
-			});
+			const msg =
+				r.message?.message ||
+				(r.message?.auto_completed === false
+					? __("Payment recorded — upload and verify receipts before completing the task")
+					: __("Payment linked and task completed"));
+			frappe.show_alert({ message: msg, indicator: "green" });
 			frappe.set_route("Form", "Task", task_name);
 		},
 	});

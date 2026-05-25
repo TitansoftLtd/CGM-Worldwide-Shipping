@@ -1,0 +1,107 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "date",
+  "group_team",
+  "submitted_by",
+  "shipments_dispatched",
+  "deliveries_completed",
+  "delays_issues",
+  "empty_containers_pending",
+  "containers_returned_today",
+  "outstanding_actions",
+  "rag_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "default": "Today",
+   "reqd": 1
+  },
+  {
+   "fieldname": "group_team",
+   "fieldtype": "Select",
+   "label": "Group / Team",
+   "options": "Operations\nDeclarants\nTransport\nFinance\nField",
+   "reqd": 1
+  },
+  {
+   "fieldname": "submitted_by",
+   "fieldtype": "Link",
+   "label": "Submitted By",
+   "options": "User",
+   "read_only": 1,
+   "default": "__user"
+  },
+  {
+   "fieldname": "shipments_dispatched",
+   "fieldtype": "Int",
+   "label": "Shipments Dispatched"
+  },
+  {
+   "fieldname": "deliveries_completed",
+   "fieldtype": "Int",
+   "label": "Deliveries Completed"
+  },
+  {
+   "fieldname": "delays_issues",
+   "fieldtype": "Text",
+   "label": "Delays / Issues"
+  },
+  {
+   "fieldname": "empty_containers_pending",
+   "fieldtype": "Int",
+   "label": "Empty Containers Pending"
+  },
+  {
+   "fieldname": "containers_returned_today",
+   "fieldtype": "Int",
+   "label": "Containers Returned Today"
+  },
+  {
+   "fieldname": "outstanding_actions",
+   "fieldtype": "Text",
+   "label": "Outstanding Actions"
+  },
+  {
+   "fieldname": "rag_status",
+   "fieldtype": "Select",
+   "label": "RAG Status",
+   "options": "Green\nYellow\nRed",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-05-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Daily Status Update",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1,
+   "submit": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "format:DSU-{date}-{#####}"
+}
