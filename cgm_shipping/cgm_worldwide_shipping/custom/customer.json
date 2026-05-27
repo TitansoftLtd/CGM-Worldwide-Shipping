@@ -1,0 +1,20 @@
+{
+ "custom_fields": [
+  {
+   "dt": "Customer",
+   "fieldname": "custom_kra_pin_attachment",
+   "fieldtype": "Attach",
+   "insert_after": "image",
+   "label": "KRA PIN Document",
+   "module": "CGM Worldwide Shipping",
+   "name": "Customer-custom_kra_pin_attachment",
+   "reqd": 1,
+   "description": "Upload official KRA PIN certificate or clearance letter for this importer. Required for Kenyan import operations."
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "Customer",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}
