@@ -60,7 +60,16 @@ def execute():
 	frappe.db.commit()
 
 
-def _ensure_workflow_action(action: str):
+def _ensure_workflow_state(state: str, style: str = "Primary") -> None:
+	if frappe.db.exists("Workflow State", state):
+		return
+	doc = frappe.new_doc("Workflow State")
+	doc.workflow_state_name = state
+	doc.style = style
+	doc.insert(ignore_permissions=True)
+
+
+def _ensure_workflow_action(action: str) -> None:
 	if frappe.db.exists("Workflow Action Master", action):
 		return
 	doc = frappe.new_doc("Workflow Action Master")
@@ -70,11 +79,16 @@ def _ensure_workflow_action(action: str):
 
 def _sync_sea_import_workflow():
 	"""Replace in-DB CGM Sea Import Workflow with fixture (UCR states, not IDF Created)."""
-	_ensure_workflow_action("Complete Shipment File")
 	path = Path(frappe.get_app_path("cgm_shipping")) / "fixtures" / "workflow.json"
 	wf_data = next(
 		w for w in json.loads(path.read_text()) if w.get("name") == "CGM Sea Import Workflow"
 	)
+	for row in wf_data["states"]:
+		_ensure_workflow_state(row["state"])
+	for row in wf_data["transitions"]:
+		_ensure_workflow_action(row["action"])
+		_ensure_workflow_state(row["state"])
+		_ensure_workflow_state(row["next_state"])
 	wf = frappe.get_doc("Workflow", "CGM Sea Import Workflow")
 	wf.states = []
 	wf.transitions = []
