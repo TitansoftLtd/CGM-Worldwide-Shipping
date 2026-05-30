@@ -47,6 +47,25 @@ function is_clearance_project(frm) {
 	return ["Sea", "Air", "Road"].includes(frm.doc.custom_mode_of_transport);
 }
 
+function toggle_project_transport_reference_fields(frm) {
+	const mode = frm.doc.custom_mode_of_transport;
+	const hide_awb = mode === "Sea";
+	const hide_bl = mode === "Air";
+
+	if (frm.fields_dict.custom_awb_number) {
+		frm.toggle_display("custom_awb_number", !hide_awb);
+	}
+	if (frm.fields_dict.custom_bill_of_lading) {
+		frm.toggle_display("custom_bill_of_lading", !hide_bl);
+	}
+	if (frm.fields_dict.custom_container_information) {
+		frm.toggle_display(
+			"custom_container_information",
+			!hide_bl && Boolean(frm.doc.custom_bill_of_lading)
+		);
+	}
+}
+
 function project_clearance_indicator(doc) {
 	const status = doc.custom_shipment_status;
 	if (!status) return null;
@@ -211,9 +230,13 @@ frappe.ui.form.on("Project", {
 		if (frm.is_new() && frm.fields_dict.custom_opened_date && !frm.doc.custom_opened_date) {
 			frm.set_value("custom_opened_date", frappe.datetime.get_today());
 		}
+		toggle_project_transport_reference_fields(frm);
 	},
 
 	refresh(frm) {
+		toggle_project_transport_reference_fields(frm);
+		cgm_shipping.bl_containers.sync_from_bl(frm);
+
 		if (frm.doc.custom_shipment_status) {
 			const indicator = project_clearance_indicator(frm.doc);
 			if (indicator) {
@@ -269,5 +292,14 @@ frappe.ui.form.on("Project", {
 		if (frm.fields_dict.custom_cgm_ref_no && !frm.doc.custom_cgm_ref_no) {
 			frm.set_value("custom_cgm_ref_no", frm.doc.project_name);
 		}
+	},
+
+	custom_mode_of_transport(frm) {
+		toggle_project_transport_reference_fields(frm);
+	},
+
+	custom_bill_of_lading(frm) {
+		toggle_project_transport_reference_fields(frm);
+		cgm_shipping.bl_containers.sync_from_bl(frm);
 	},
 });

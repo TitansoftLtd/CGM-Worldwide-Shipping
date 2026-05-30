@@ -139,9 +139,15 @@ doctype_js = {
 	"Task": "public/js/task.js",
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Payment Entry": "public/js/payment_entry.js",
-	"Project": "public/js/project.js",
+	"Project": [
+		"public/js/cgm_bl_containers.js",
+		"public/js/project.js",
+	],
 	"Container Tracker": "public/js/container_tracker.js",
-	"Lead": "public/js/crm_lead.js",
+	"Lead": [
+		"public/js/cgm_bl_containers.js",
+		"public/js/crm_lead.js",
+	],
 	"Customer": "public/js/crm_customer.js",
 	"Opportunity": "public/js/crm_opportunity.js",
 }
