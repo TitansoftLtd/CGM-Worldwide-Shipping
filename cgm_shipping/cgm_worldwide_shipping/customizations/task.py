@@ -30,9 +30,16 @@ def before_task_save(doc, _method=None):
 		enforce_receipt_verified_permission,
 		seed_finance_task_permits_from_project,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+		enforce_ucr_finance_field_permissions,
+		sync_ucr_payment_to_idf_record,
+	)
 
 	seed_finance_task_permits_from_project(doc)
 	enforce_receipt_verified_permission(doc)
+	enforce_ucr_finance_field_permissions(doc)
+	if doc.status != "Cancelled":
+		sync_ucr_payment_to_idf_record(doc)
 
 
 def on_task_update(doc, _method=None):
@@ -46,8 +53,12 @@ def on_task_update(doc, _method=None):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 			close_permit_application_when_finance_done,
 		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+			close_ucr_application_when_finance_done,
+		)
 
 		close_permit_application_when_finance_done(doc)
+		close_ucr_application_when_finance_done(doc)
 
 
 def validate_task_completion_requirements(doc, _method=None):
