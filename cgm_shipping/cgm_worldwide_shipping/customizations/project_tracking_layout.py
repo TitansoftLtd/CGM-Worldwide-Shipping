@@ -4,7 +4,6 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_shipment_fields import (
-	CFS_CODE_OPTIONS,
 	MODULE,
 	_create_cf,
 )
@@ -118,8 +117,14 @@ def _ensure_tracking_fields() -> None:
 		},
 	)
 
-	# Update CFS code options (FFK, MCT from tracking sheet).
-	_set_cf_property("custom_cfs_code", options=CFS_CODE_OPTIONS + "\nFFK\nMCT")
+	# CFS code comes from the linked CFS Master record (see custom_cfs_code fetch_from).
+	_set_cf_property(
+		"custom_cfs_code",
+		fieldtype="Data",
+		fetch_from="custom_cfs.cfs_code",
+		fetch_if_empty=1,
+		read_only=1,
+	)
 
 
 def _reorder_tracking_field_chain() -> None:
