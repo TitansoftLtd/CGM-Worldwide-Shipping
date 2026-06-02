@@ -47,6 +47,26 @@ function is_clearance_project(frm) {
 	return ["Sea", "Air", "Road"].includes(frm.doc.custom_mode_of_transport);
 }
 
+function open_project_clearance_tasks(frm) {
+	if (!frm.doc.name || frm.is_new()) {
+		return;
+	}
+	frappe.route_options = { project: frm.doc.name };
+	frappe.set_route("List", "Task");
+}
+
+function setup_clearance_tasks_toolbar_button(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	if (frm._cgm_clearance_tasks_btn) {
+		return;
+	}
+	frm._cgm_clearance_tasks_btn = frm.page.add_inner_button(__("Clearance Tasks"), () =>
+		open_project_clearance_tasks(frm)
+	);
+}
+
 function toggle_project_transport_reference_fields(frm) {
 	const mode = frm.doc.custom_mode_of_transport;
 	const hide_awb = mode === "Sea";
@@ -98,7 +118,9 @@ function render_shipment_progress_chart(frm) {
 					return `<span class="${cls}" title="${frappe.utils.escape_html(state)}">${frappe.utils.escape_html(state)}</span>`;
 				})
 				.join("");
-			let taskLine = `<div class="cgm-progress-meta">Generate <b>Sea Task Plan</b> to start the 24-step clearance chart.</div>`;
+			let taskLine = `<div class="cgm-progress-meta">${__(
+				"No clearance tasks on this project yet."
+			)}</div>`;
 			if (d.tasks_total > 0) {
 				let nextHint = __("Create UCR (IDF)");
 				if (d.first_open_task) {
@@ -246,7 +268,10 @@ frappe.ui.form.on("Project", {
 
 		render_shipment_progress_chart(frm);
 
+		setup_clearance_tasks_toolbar_button(frm);
+
 		if (frm.doc.name && !frm.is_new()) {
+			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm));
 			frm.add_custom_button(__("Container Tracker"), () => {
 				frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
 			}, __("View"));
@@ -264,28 +289,6 @@ frappe.ui.form.on("Project", {
 			}
 		}
 
-		if (frm.doc.docstatus !== 0 || frm.doc.custom_mode_of_transport !== "Sea") {
-			return;
-		}
-		frm.add_custom_button(__("Generate Sea Task Plan"), () => {
-			frappe.call({
-				method: "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_sea_import_task_plan",
-				args: { project: frm.doc.name },
-				freeze: true,
-				callback(r) {
-					if (!r.exc && r.message) {
-						const n = r.message.count || 0;
-						const auto = (r.message.auto_completed || []).length;
-						let msg = __("Sea task plan generated ({0} tasks)", [n]);
-						if (auto) {
-							msg += ". " + __("Tasks 1–2 auto-completed with CRM documents.");
-						}
-						frappe.show_alert({ message: msg, indicator: "green" });
-						frm.reload_doc();
-					}
-				},
-			});
-		});
 	},
 
 	project_name(frm) {

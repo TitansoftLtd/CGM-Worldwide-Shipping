@@ -1,12 +1,12 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "field:shipment_type_name",
  "creation": "2026-05-31 17:34:14.307718",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_2k6q",
-  "default_mode_of_transport",
   "shipment_type_name",
   "cgm_ref_prefix",
   "requires_bill_of_lading",
@@ -16,23 +16,15 @@
  ],
  "fields": [
   {
-   "fieldname": "section_break_2k6q",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "Shipment Type",
-   "print_hide": 1,
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
    "fieldname": "shipment_type_name",
    "fieldtype": "Data",
-   "label": " Shipment Type Name"
+   "label": " Shipment Type Name",
+   "unique": 1
+  },
+  {
+   "fieldname": "cgm_ref_prefix",
+   "fieldtype": "Data",
+   "label": "CGM Ref Prefix"
   },
   {
    "default": "0",
@@ -47,31 +39,35 @@
    "label": "Requires Air Waybill"
   },
   {
+   "fieldname": "section_break_2k6q",
+   "fieldtype": "Section Break"
+  },
+  {
    "default": "0",
    "fieldname": "uses_unit_tracking",
    "fieldtype": "Check",
    "label": "Uses Unit Tracking"
   },
   {
-   "fieldname": "cgm_ref_prefix",
-   "fieldtype": "Data",
-   "label": "CGM Ref Prefix"
-  },
-  {
-   "fieldname": "default_mode_of_transport",
-   "fieldtype": "Select",
-   "label": "Default Mode of Transport",
-   "options": "\nSea\nAir\nRoad"
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Shipment Type",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-31 18:40:44.215513",
+ "modified": "2026-06-02 06:35:53.943281",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Type",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
