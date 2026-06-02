@@ -8,6 +8,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow impor
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	SEA_TASK_FLOW_KEY,
 	SHIPMENT_DOCUMENTS_FIELD,
+	assign_cgm_project_reference,
+	is_cgm_ref,
 	sync_linked_attachments_to_project,
 )
 
@@ -45,52 +47,59 @@ def get_stage_requirements():
 # ─── Project Save Hooks ───────────────────────────────────────────────────────
 
 
+def assign_cgm_reference_on_insert(doc, _method=None):
+	"""Allocate CGM/FCL001/0526 as project_name and custom_cgm_ref_no on new shipments."""
+	if is_cgm_ref(doc.project_name) or is_cgm_ref(doc.get("custom_cgm_ref_no")):
+		assign_cgm_project_reference(doc)
+		return
+	if doc.project_name and not str(doc.project_name).startswith("Shipment -"):
+		return
+	assign_cgm_project_reference(doc)
+
+
 def apply_shipment_document_automation(doc, _method=None):
-	# 1. Seed required checklist rows for the selected mode of transport.
-	seed_required_document_rows(doc)
-	# 2. Pull files from linked Lead, Customer, and Tasks into shipment documents.
+	# 1. Pull files from linked Lead, Customer, and Tasks into shipment documents.
 	if not frappe.flags.get("cgm_syncing_shipment_documents"):
 		sync_linked_attachments_to_project(doc)
-	# 3. Normalise row status and uploader/verifier metadata.
+	# 2. Normalise row status and uploader/verifier metadata.
 	normalize_document_rows(doc)
 	normalize_permit_register_rows(doc)
-	# 4. Block workflow changes when required documents are missing.
+	# 3. Block workflow changes when required documents are missing.
 	enforce_document_gate_on_workflow_change(doc)
-	# 5. Require CI/PKL before Documents Received.
+	# 4. Require CI/PKL before Documents Received.
 	enforce_intake_documents_before_documents_received(doc)
-	# 6. Sea only: workflow states require prior sea tasks completed in chart order.
+	# 5. Sea only: workflow states require prior sea tasks completed in chart order.
 	enforce_sea_workflow_task_gates(doc)
-	# 7. IDF / entry: all permits must be Post-Cleared before Entry Lodged.
+	# 6. IDF / entry: all permits must be Post-Cleared before Entry Lodged.
 	enforce_permits_post_cleared_before_entry_lodged(doc)
-	# 8. Project Completed only when tasks, docs, permits, payments, and billing are done.
+	# 7. Project Completed only when tasks, docs, permits, payments, and billing are done.
 	enforce_project_closure_on_workflow_change(doc)
 
 
-def seed_required_document_rows(doc):
-	# 1. Skip when mode of transport is not set.
-	mode = doc.get("custom_mode_of_transport")
+def _shipment_document_row_map(doc):
+	rows = {}
+	for row in get_shipment_documents(doc):
+		if row.document_type:
+			rows[row.document_type] = row
+	return rows
+
+
+def _required_document_types(mode, stages=None):
+	"""Document Type names required for a mode (and optional workflow stages)."""
 	if not mode:
-		return
-
-	# 2. Collect document types already on the project.
-	rows = get_shipment_documents(doc)
-	existing = {r.document_type for r in rows if r.document_type}
-
-	# 3. Load required Document Types for this mode.
-	doctypes = frappe.get_all(
+		return []
+	filters = {
+		"default_required": 1,
+		"mode_of_transport": ["in", [mode, "", None]],
+	}
+	if stages:
+		filters["required_stage"] = ["in", stages]
+	return frappe.get_all(
 		"Document Type",
-		filters={"mode_of_transport": ["in", [mode, "", None]], "default_required": 1},
-		fields=["name"],
+		filters=filters,
+		pluck="name",
 		order_by="required_stage asc, name asc",
 	)
-
-	# 4. Append any missing required rows.
-	for d in doctypes:
-		if d.name not in existing:
-			doc.append(
-				SHIPMENT_DOCUMENTS_FIELD,
-				{"document_type": d.name, "required": 1, "status": "Missing"},
-			)
 
 
 def normalize_document_rows(doc):
@@ -147,15 +156,13 @@ def enforce_document_gate_on_workflow_change(doc):
 		return
 
 	# 3. Find required documents that are not yet verified.
+	mode = doc.get("custom_mode_of_transport")
+	rows_by_type = _shipment_document_row_map(doc)
 	missing = []
-	for row in get_shipment_documents(doc):
-		if not row.document_type or not row.required:
-			continue
-		stage = frappe.db.get_value("Document Type", row.document_type, "required_stage")
-		if stage not in required_stages:
-			continue
-		if not row.attachment or row.status != "Verified":
-			missing.append(row.document_type)
+	for dt_name in _required_document_types(mode, required_stages):
+		row = rows_by_type.get(dt_name)
+		if not row or not row.attachment or row.status != "Verified":
+			missing.append(dt_name)
 
 	# 4. Stop the workflow move when evidence is incomplete.
 	if missing:
@@ -284,11 +291,12 @@ def enforce_project_closure_on_workflow_change(doc):
 				preview += f" (+{len(open_tasks) - 5} more)"
 			blockers.append(f"Open tasks: {preview}")
 
-	for row in get_shipment_documents(doc):
-		if not row.required:
-			continue
-		if not row.attachment or row.status != "Verified":
-			blockers.append(f"Document not verified: {row.document_type or 'row'}")
+	mode = doc.get("custom_mode_of_transport")
+	rows_by_type = _shipment_document_row_map(doc)
+	for dt_name in _required_document_types(mode):
+		row = rows_by_type.get(dt_name)
+		if not row or not row.attachment or row.status != "Verified":
+			blockers.append(f"Document not verified: {dt_name}")
 
 	if doc.meta.has_field(PERMIT_REGISTER_FIELD):
 		not_cleared = [

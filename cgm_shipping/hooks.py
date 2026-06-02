@@ -241,6 +241,7 @@ doctype_js = {
 
 doc_events = {
 	"Project": {
+		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_cgm_reference_on_insert",
 		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
 	},
 	"Purchase Invoice": {
