@@ -1,0 +1,74 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-28 14:48:33.302212",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "client_ref",
+  "air_waybill",
+  "table_uwao",
+  "section_break_ztvo",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_ztvo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Air Waybill",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "client_ref",
+   "fieldtype": "Data",
+   "label": "Client Ref"
+  },
+  {
+   "fieldname": "air_waybill",
+   "fieldtype": "Data",
+   "label": "Air Waybill"
+  },
+  {
+   "fieldname": "table_uwao",
+   "fieldtype": "Table",
+   "options": "Container"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-05-28 14:51:48.754989",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Air Waybill",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

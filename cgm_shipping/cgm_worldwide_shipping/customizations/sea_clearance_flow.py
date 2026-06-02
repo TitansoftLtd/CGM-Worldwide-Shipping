@@ -180,6 +180,8 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 			completed.add(seq)
 		elif seq == 5 and row.get("custom_permit_invoices_submitted"):
 			completed.add(5)
+		elif seq == 3 and row.get("custom_ucr_invoice_submitted"):
+			completed.add(3)
 	return completed
 
 
@@ -210,7 +212,12 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	tasks = frappe.get_all(
 		"Task",
 		filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
-		fields=["custom_sequence_no", "status", "custom_permit_invoices_submitted"],
+		fields=[
+			"custom_sequence_no",
+			"status",
+			"custom_permit_invoices_submitted",
+			"custom_ucr_invoice_submitted",
+		],
 		limit=30,
 	)
 	progress_status, _ = derive_workflow_progress_from_tasks(tasks)
@@ -244,6 +251,9 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 		permit_invoices_ready,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+		ucr_invoice_ready,
+	)
 
 	rows = frappe.db.sql(
 		"""
@@ -259,8 +269,13 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 		(project, SEA_TASK_FLOW_KEY, before_sequence),
 		as_dict=True,
 	)
-	# Task 5 stays Open while Finance pays on Task 6; invoices submitted is enough to unlock Task 6.
-	return [r for r in rows if not (r.seq == 5 and permit_invoices_ready(r.name))]
+	# Task 3/5 stay Open while Finance pays; invoice submitted is enough to unlock the finance task.
+	return [
+		r
+		for r in rows
+		if not (r.seq == 5 and permit_invoices_ready(r.name))
+		and not (r.seq == 3 and ucr_invoice_ready(r.name))
+	]
 
 
 def get_open_sea_tasks(project: str) -> list[dict]:
@@ -304,6 +319,23 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 			frappe.throw(
 				"Submit all permit invoices to Finance on <b>Apply for Pre-Clearance Permits</b> "
 				"using <b>Notify Finance — invoices ready</b> before advancing workflow."
+			)
+		return
+	if new_status == "UCR Paid" and required_seq == 4:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+			get_ucr_finance_task,
+			ucr_finance_ready_to_complete,
+		)
+
+		finance_task_name = get_ucr_finance_task(project)
+		if not finance_task_name:
+			frappe.throw("Generate the sea task plan and complete <b>Finance pays UCR</b> first.")
+		finance_task = frappe.get_doc("Task", finance_task_name)
+		if finance_task.status != "Completed" or not ucr_finance_ready_to_complete(finance_task):
+			frappe.throw(
+				"Cannot move to <b>UCR Paid</b> until <b>Finance pays UCR</b> is completed with: "
+				"invoice verified, Purchase Invoice, Payment Entry, payment receipt uploaded, "
+				"and receipt verified."
 			)
 		return
 	incomplete = get_incomplete_sea_tasks(project, required_seq + 1)

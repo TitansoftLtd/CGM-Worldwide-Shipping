@@ -175,6 +175,14 @@ def get_task_finance_defaults(task_name: str) -> dict:
 	permit_rows = get_permit_rows_for_purchase_invoice(task)
 	permit_lines = build_permit_purchase_invoice_lines(task)
 	remarks = f"{task.subject} ({task.name}) — {ctx['project']}"
+	if int(task.get("custom_sequence_no") or 0) == 4:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+			get_ucr_application_task,
+		)
+
+		app_task = get_ucr_application_task(task.project) if task.project else None
+		if app_task:
+			remarks += f" | UCR invoice on task {app_task}"
 	if permit_rows:
 		remarks += " | Permits: " + ", ".join(r["permit_type"] for r in permit_rows if r.get("permit_type"))
 
@@ -324,27 +332,43 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 	if task_fields.has_field("custom_payment_entry"):
 		task.custom_payment_entry = payment_entry
 
-	# Task 6 (permit payment): record PE only — complete after receipts verified.
-	if int(task.get("custom_sequence_no") or 0) == 6:
-		task.save(ignore_permissions=True)
-		apply_finance_payment_to_project_permits(task)
-		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
-			notify_operations_upload_receipts,
-			seed_finance_task_permits_from_project,
-		)
+	seq = int(task.get("custom_sequence_no") or 0)
 
-		seed_finance_task_permits_from_project(task)
-		sync_task_permits_to_project(task)
-		notify_operations_upload_receipts(task)
+	# Task 4 (UCR) / 6 (permits): record PE only — complete after receipts verified.
+	if seq in (4, 6):
+		task.save(ignore_permissions=True)
+		if seq == 6:
+			apply_finance_payment_to_project_permits(task)
+			from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
+				notify_operations_upload_receipts,
+				seed_finance_task_permits_from_project,
+			)
+
+			seed_finance_task_permits_from_project(task)
+			sync_task_permits_to_project(task)
+			notify_operations_upload_receipts(task)
+			message = (
+				"Payment recorded. Operations must upload payment receipts; "
+				"Finance must verify receipts before completing this task."
+			)
+		else:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+				notify_operations_upload_ucr_receipt,
+				sync_ucr_payment_to_idf_record,
+			)
+
+			sync_ucr_payment_to_idf_record(task)
+			notify_operations_upload_ucr_receipt(task)
+			message = (
+				"Payment recorded. Operations must attach the UCR payment receipt; "
+				"Finance must verify the receipt before completing this task."
+			)
 		return {
 			"task": task.name,
 			"status": task.status,
 			"payment_entry": payment_entry,
 			"auto_completed": False,
-			"message": (
-				"Payment recorded. Operations must upload payment receipts; "
-				"Finance must verify receipts before completing this task."
-			),
+			"message": message,
 		}
 
 	task.completed_by = frappe.session.user
