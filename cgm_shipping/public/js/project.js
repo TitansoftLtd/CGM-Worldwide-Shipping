@@ -235,7 +235,7 @@ frappe.ui.form.on("Project", {
 
 	refresh(frm) {
 		toggle_project_transport_reference_fields(frm);
-		cgm_shipping.bl_containers.sync_from_bl(frm);
+		cgm_shipping.bl_containers.sync_from_bl(frm, { silent: true });
 
 		if (frm.doc.custom_shipment_status) {
 			const indicator = project_clearance_indicator(frm.doc);
