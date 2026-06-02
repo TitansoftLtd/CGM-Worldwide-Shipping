@@ -29,7 +29,7 @@ SUPPLIER_INVOICE_CODE = "SUP_INV"
 # Document Type codes required before completing each sea task (empty = see special rules).
 SEA_TASK_REQUIRED_DOC_CODES: dict[int, list[str]] = {
 	3: ["UCR_DOC"],
-	4: [SUPPLIER_INVOICE_CODE],
+	4: [],
 	6: [SUPPLIER_INVOICE_CODE],
 	7: ["INSPECT"],
 	9: ["BL", "CI", "PKL"],
@@ -171,19 +171,33 @@ def validate_sea_task_can_complete(task) -> None:
 		)
 
 		validate_permit_application_not_completed(task)
+	elif seq == 3:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+			validate_ucr_application_not_manually_completed,
+		)
+
+		validate_ucr_application_not_manually_completed(task)
 	elif seq in SEA_LIGHT_PROOF_TASK_SEQS:
 		_validate_light_proof_task(task)
 	else:
 		_validate_required_documents(task, seq)
 
 	if is_sea_payment_task(task):
-		_validate_finance_task(task)
-		if int(task.get("custom_sequence_no") or 0) == 6:
-			from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
-				validate_finance_permit_payment_task,
+		seq = int(task.get("custom_sequence_no") or 0)
+		if seq == 4:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+				validate_finance_ucr_payment_task,
 			)
 
-			validate_finance_permit_payment_task(task)
+			validate_finance_ucr_payment_task(task)
+		else:
+			_validate_finance_task(task)
+			if seq == 6:
+				from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
+					validate_finance_permit_payment_task,
+				)
+
+				validate_finance_permit_payment_task(task)
 
 
 def _validate_required_documents(task, seq: int) -> None:
