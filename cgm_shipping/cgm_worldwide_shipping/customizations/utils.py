@@ -16,26 +16,7 @@ DEPARTMENT_NAME_ALIASES = {
 # Tracking sheet format: CGM/FCL001/1022  (prefix + 3-digit seq + MMYY period)
 
 
-CGM_REF_PREFIX_BY_SHIPMENT_TYPE = {
-	"Sea FCL": "FCL",
-	"Sea LCL": "LCL",
-	"Air Import": "AIR",
-	"Road Import": "ROD",
-	"Transit": "TRN",
-	"Export": "EX",
-}
-
-# Operational shipment type → mode (AWB vs BL, sea workflow, etc.).
-SHIPMENT_TYPE_TO_MODE = {
-	"Air Import": "Air",
-	"Sea FCL": "Sea",
-	"Sea LCL": "Sea",
-	"Road Import": "Road",
-	"Transit": "Road",
-	"Export": "Sea",
-}
-
-CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,4}\d{3}/\d{4}$")
+CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$")
 
 
 def is_cgm_ref(value: str | None) -> bool:
@@ -45,10 +26,15 @@ def is_cgm_ref(value: str | None) -> bool:
 
 
 def cgm_ref_prefix(shipment_type=None, mode=None) -> str:
-	"""Map shipment classification to tracking-sheet prefix (FCL, LCL, AIR, …)."""
+	"""Map shipment classification to tracking-sheet prefix (FCL, LCL, IM, …)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type_master import (
+		cgm_ref_prefix_from_master,
+	)
+
 	st = (shipment_type or "").strip()
-	if st in CGM_REF_PREFIX_BY_SHIPMENT_TYPE:
-		return CGM_REF_PREFIX_BY_SHIPMENT_TYPE[st]
+	prefix = cgm_ref_prefix_from_master(st, mode)
+	if prefix:
+		return prefix
 
 	mode = (mode or "").strip()
 	if st == "Import":
@@ -191,8 +177,14 @@ def normalize_shipment_classification(shipment_type=None, mode=None):
 	st = (shipment_type or "").strip()
 	m = (mode or "").strip()
 
-	if st in SHIPMENT_TYPE_TO_MODE:
-		return st, SHIPMENT_TYPE_TO_MODE[st]
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type_master import (
+		get_shipment_type_record,
+		mode_from_master,
+	)
+
+	row = get_shipment_type_record(st)
+	if row:
+		return row.shipment_type_name or st, mode_from_master(st) or m
 
 	# Legacy Lead/Opportunity: Import + mode → operational default (Sea defaults to FCL).
 	if st == "Import":
@@ -201,7 +193,7 @@ def normalize_shipment_classification(shipment_type=None, mode=None):
 		if m == "Air":
 			return "Air Import", "Air"
 		if m == "Road":
-			return "Road Import", "Road"
+			return "Cross-Border Road Import", "Road"
 	if st == "Export":
 		return "Export", m or "Sea"
 	if st == "Transit":
