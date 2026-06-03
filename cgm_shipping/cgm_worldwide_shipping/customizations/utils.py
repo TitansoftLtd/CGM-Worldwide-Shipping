@@ -929,6 +929,67 @@ def _apply_project_tracking_defaults(project) -> None:
 		project.custom_opened_date = today()
 
 
+def _container_rows_from_preshipment_source(source_doc) -> list[dict]:
+	"""Container rows from preshipment child table, or from linked Bill of Lading when empty."""
+	rows = []
+	for row in source_doc.get("custom_container_information") or []:
+		rows.append(
+			{
+				"container_number": row.get("container_number"),
+				"type_of_container": row.get("type_of_container"),
+			}
+		)
+	if rows:
+		return rows
+
+	bl_name = source_doc.get("custom_bill_of_lading")
+	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
+		return []
+
+	bl = frappe.get_doc("Bill of Lading", bl_name)
+	return [
+		{
+			"container_number": row.get("container_number"),
+			"type_of_container": row.get("type_of_container"),
+		}
+		for row in bl.get("container_information") or []
+	]
+
+
+def _copy_container_rows_to_project(project, rows: list[dict]) -> None:
+	if not rows or not project.meta.has_field("custom_container_information"):
+		return
+	project.set("custom_container_information", [])
+	for row in rows:
+		project.append(
+			"custom_container_information",
+			{
+				"container_number": row.get("container_number"),
+				"type_of_container": row.get("type_of_container"),
+			},
+		)
+
+
+def _apply_preshipment_transport_defaults(project, source_doc) -> None:
+	"""Copy B/L, AWB, and container rows from Lead/Opportunity onto a new Project."""
+	project_meta = project.meta
+
+	if project_meta.has_field("custom_bill_of_lading"):
+		bl = source_doc.get("custom_bill_of_lading")
+		if bl and not project.get("custom_bill_of_lading"):
+			project.custom_bill_of_lading = bl
+
+	if project_meta.has_field("custom_awb_number"):
+		awb = source_doc.get("custom_awb_number") or source_doc.get("custom_air_waybill")
+		if awb and not project.get("custom_awb_number"):
+			project.custom_awb_number = awb
+
+	if project_meta.has_field("custom_container_information") and not project.get(
+		"custom_container_information"
+	):
+		_copy_container_rows_to_project(project, _container_rows_from_preshipment_source(source_doc))
+
+
 def _apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
 	"""Copy shipment hints from Lead onto Project when fields are empty."""
 	if not lead_name or not frappe.db.exists("Lead", lead_name):
@@ -946,6 +1007,7 @@ def _apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
 	for fieldname, value in pairs:
 		if project_meta.has_field(fieldname) and value and not project.get(fieldname):
 			project.set(fieldname, value)
+	_apply_preshipment_transport_defaults(project, lead)
 
 
 def lead_has_customer(lead):
@@ -1034,6 +1096,7 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	if project_fields.has_field("custom_source_opportunity"):
 		proj.custom_source_opportunity = opportunity
 
+	_apply_preshipment_transport_defaults(proj, opp)
 	sync_linked_attachments_to_project(proj)
 	return insert_shipment_project(proj)
 
