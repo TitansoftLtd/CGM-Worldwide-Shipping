@@ -72,9 +72,21 @@
 	color: #6c7680;
 }
 
+.cgm-container-table-scroll {
+	overflow-x: auto;
+	max-width: 100%;
+	margin-bottom: 4px;
+}
+
 .cgm-container-summary table {
 	font-size: 11px;
 	margin-bottom: 0;
+	min-width: 960px;
+}
+
+.cgm-container-summary table th,
+.cgm-container-summary table td {
+	white-space: nowrap;
 }
 
 .cgm-rag-green {
