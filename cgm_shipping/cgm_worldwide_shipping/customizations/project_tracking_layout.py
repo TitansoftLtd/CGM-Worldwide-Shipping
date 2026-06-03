@@ -11,6 +11,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_shipment_fields 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
 	TRACKING_WORKFLOW_STATES,
 	derive_workflow_progress_from_tasks,
+	get_all_sea_tasks_for_project,
 	get_open_sea_tasks,
 )
 
@@ -223,6 +224,9 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	total = len(tasks) or 24
 
 	progress_status, progress_index = derive_workflow_progress_from_tasks(tasks, states)
+	visible_tasks = (
+		get_all_sea_tasks_for_project(project) if doc.get("custom_mode_of_transport") == "Sea" else []
+	)
 	open_tasks = get_open_sea_tasks(project) if doc.get("custom_mode_of_transport") == "Sea" else []
 	first_open = open_tasks[0] if open_tasks else None
 	workflow_behind = workflow_index < progress_index
@@ -261,6 +265,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"states": states,
 		"tasks_completed": completed,
 		"tasks_total": total,
+		"sea_tasks": visible_tasks,
 		"first_open_task": first_open,
 		"mode": doc.get("custom_mode_of_transport"),
 		"berth_phase": berth_phase,

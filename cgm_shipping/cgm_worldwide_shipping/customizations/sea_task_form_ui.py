@@ -17,10 +17,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules im
 # Finance payment steps
 PAYMENT_SEQS = SEA_PAYMENT_TASK_SEQS
 
-# Steps where task-level document uploads are expected (incl. finance invoices).
-DOCUMENT_TASK_SEQS = frozenset({3, 5, 7, 9, 10, 11, 13, 15, 16, 17, 19, 20, 21, 22, 23, 24}) | frozenset(
-	PAYMENT_SEQS
-)
+# Finance tasks that use Task Documents for supplier invoice (not UCR / permit payment).
+FINANCE_DOCUMENT_SEQS = frozenset({12, 14, 18})
+
+# Steps where task-level document uploads are expected.
+DOCUMENT_TASK_SEQS = frozenset({3, 5, 7, 9, 10, 11, 13, 15, 16, 17, 19, 20, 21, 22, 23, 24}) | FINANCE_DOCUMENT_SEQS
 
 # Tracking / coordination — description + ref only.
 LIGHT_TASK_SEQS = frozenset({8})
@@ -55,7 +56,7 @@ def get_sea_task_form_ui(sequence_no: int) -> dict:
 	if seq in PAYMENT_SEQS:
 		return {
 			"is_sea_task": True,
-			"show_documents": True,
+			"show_documents": seq in FINANCE_DOCUMENT_SEQS,
 			"documents_read_only": False,
 			"show_permits": seq == 6,
 			"show_payments": True,

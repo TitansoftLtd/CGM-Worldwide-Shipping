@@ -186,20 +186,38 @@ def normalize_shipment_classification(shipment_type=None, mode=None):
 	if row:
 		return row.shipment_type_name or st, mode_from_master(st) or m
 
-	# Legacy Lead/Opportunity: Import + mode → operational default (Sea defaults to FCL).
+	# Legacy Lead/Opportunity: Import + mode → operational default (blank mode → Sea FCL).
 	if st == "Import":
-		if m == "Sea":
+		if m in ("", "Sea", None):
 			return "Sea FCL", "Sea"
 		if m == "Air":
 			return "Air Import", "Air"
 		if m == "Road":
 			return "Cross-Border Road Import", "Road"
+		return "Sea FCL", "Sea"
 	if st == "Export":
 		return "Export", m or "Sea"
 	if st == "Transit":
-		return "Transit", m or "Road"
+		return "Transit", m or "Sea"
+	if st == "Road Import":
+		return "Cross-Border Road Import", "Road"
 
 	return st or None, m or None
+
+
+def normalize_shipment_fields_on_doc(doc) -> None:
+	"""Rewrite legacy Import/Export values before Select validation on save."""
+	if not doc.meta.has_field("custom_shipment_type"):
+		return
+	mode = doc.get("custom_mode_of_transport") if doc.meta.has_field("custom_mode_of_transport") else None
+	normalized_type, derived_mode = normalize_shipment_classification(
+		doc.get("custom_shipment_type"),
+		mode,
+	)
+	if normalized_type:
+		doc.custom_shipment_type = normalized_type
+	if derived_mode and doc.meta.has_field("custom_mode_of_transport"):
+		doc.custom_mode_of_transport = derived_mode
 
 
 SHIPMENT_DOCUMENTS_FIELD = "custom_shipment_documents"
@@ -582,6 +600,7 @@ def refresh_project_shipment_documents(project_name):
 	frappe.flags.cgm_syncing_shipment_documents = True
 	try:
 		project = frappe.get_doc("Project", project_name)
+		normalize_shipment_fields_on_doc(project)
 		sync_linked_attachments_to_project(project)
 		project.save(ignore_permissions=True)
 	finally:
@@ -1075,50 +1094,12 @@ def create_sea_import_task_plan(project, reset=False):
 
 @frappe.whitelist()
 def notify_finance_for_task(task_name):
-	"""Notify finance users that payment action is needed for a task."""
-	if not task_name or not frappe.db.exists("Task", task_name):
-		return {"notified": 0}
-
-	task = frappe.get_doc("Task", task_name)
-	subject = f"Payment action needed for task {task.name}"
-
-	# 1. Skip when this notification has already been sent.
-	if frappe.db.exists(
-		"Notification Log",
-		{"document_type": "Task", "document_name": task.name, "subject": subject},
-	):
-		return {"notified": 0}
-
-	# 2. Collect unique, enabled finance users.
-	finance_users = frappe.get_all(
-		"Has Role",
-		filters={"role": ["in", ["Finance Manager", "Accounts User", "Accounts Manager"]]},
-		fields=["parent"],
+	"""Notify Finance users (in-app + email) that payment action is needed for a task."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
+		notify_finance_for_task_email,
 	)
-	seen = set()
-	unique_users = []
-	for row in finance_users:
-		user = row.parent
-		if user in seen:
-			continue
-		seen.add(user)
-		if frappe.db.get_value("User", user, "enabled"):
-			unique_users.append(user)
 
-	# 3. Create a Notification Log entry for each finance user.
-	count = 0
-	for user in unique_users:
-		log = frappe.new_doc("Notification Log")
-		log.for_user = user
-		log.type = "Alert"
-		log.from_user = frappe.session.user
-		log.document_type = "Task"
-		log.document_name = task.name
-		log.subject = subject
-		log.insert(ignore_permissions=True)
-		count += 1
-
-	return {"notified": count}
+	return notify_finance_for_task_email(task_name)
 
 
 # ─── Task Payment Helpers ─────────────────────────────────────────────────────

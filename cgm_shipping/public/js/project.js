@@ -51,7 +51,11 @@ function open_project_clearance_tasks(frm) {
 	if (!frm.doc.name || frm.is_new()) {
 		return;
 	}
-	frappe.route_options = { project: frm.doc.name };
+	frappe.route_options = {
+		project: frm.doc.name,
+		custom_task_flow_key: "SEA_IMPORT_E2E",
+		status: ["in", ["Open", "Working", "Pending Review", "Overdue", "Completed"]],
+	};
 	frappe.set_route("List", "Task");
 }
 

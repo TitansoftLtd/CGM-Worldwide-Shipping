@@ -1,7 +1,7 @@
 """
 Sea task completion rules — required documents, permits, and finance proofs.
 
-Task level: supplier invoices on Task Documents (finance) or Permit Register rows (permits).
+Task level: invoices/receipts on Task Finance Lines; clearance docs on Task Documents; permits on Task Permits.
 Project level: custom_permit_register synced from Task permits automatically.
 """
 from __future__ import annotations
@@ -28,9 +28,8 @@ SUPPLIER_INVOICE_CODE = "SUP_INV"
 
 # Document Type codes required before completing each sea task (empty = see special rules).
 SEA_TASK_REQUIRED_DOC_CODES: dict[int, list[str]] = {
-	3: ["UCR_DOC"],
+	3: [],  # UCR invoice on Task Finance; IDF certificate optional on Task Documents
 	4: [],
-	6: [SUPPLIER_INVOICE_CODE],
 	7: ["INSPECT"],
 	9: ["BL", "CI", "PKL"],
 	10: ["MANIFEST"],
@@ -60,7 +59,7 @@ TASK_DOCUMENT_TYPE_DEFAULTS: dict[str, dict] = {
 		"required_stage": "IDF & UCR",
 		"default_required": 0,
 	},
-	"UCR_DOC": {
+	"IDF_CERT": {
 		"category": "Customs",
 		"required_stage": "IDF & UCR",
 		"default_required": 0,
@@ -138,6 +137,14 @@ def seed_required_task_document_rows(task) -> None:
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
 	seq = int(task.get("custom_sequence_no") or 0)
+	if seq == 3:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
+			ensure_idf_certificate_document_row,
+		)
+
+		ensure_idf_certificate_document_row(task)
+		return
+
 	required = SEA_TASK_REQUIRED_DOC_CODES.get(seq) or []
 	if not required:
 		return
@@ -158,6 +165,8 @@ def validate_sea_task_can_complete(task) -> None:
 	"""Raise if required documents / permits / finance proofs are missing."""
 	if task.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
 		return
+	if frappe.flags.get("cgm_auto_completing_sea_task"):
+		return
 
 	seq = int(task.get("custom_sequence_no") or 0)
 	if seq in SEA_AUTO_COMPLETE_TASK_SEQS:
@@ -167,10 +176,11 @@ def validate_sea_task_can_complete(task) -> None:
 
 	if seq in SEA_PERMIT_APPLICATION_TASK_SEQS:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
-			validate_permit_application_not_completed,
+			validate_permit_application_can_complete,
 		)
 
-		validate_permit_application_not_completed(task)
+		_validate_permit_application_task(task, seq)
+		validate_permit_application_can_complete(task)
 	elif seq == 3:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 			validate_ucr_application_not_manually_completed,
@@ -179,7 +189,7 @@ def validate_sea_task_can_complete(task) -> None:
 		validate_ucr_application_not_manually_completed(task)
 	elif seq in SEA_LIGHT_PROOF_TASK_SEQS:
 		_validate_light_proof_task(task)
-	else:
+	elif not is_sea_payment_task(task):
 		_validate_required_documents(task, seq)
 
 	if is_sea_payment_task(task):

@@ -10,6 +10,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	SHIPMENT_DOCUMENTS_FIELD,
 	assign_cgm_project_reference,
 	is_cgm_ref,
+	normalize_shipment_fields_on_doc,
 	sync_linked_attachments_to_project,
 )
 
@@ -58,6 +59,26 @@ def assign_cgm_reference_on_insert(doc, _method=None):
 
 
 def apply_shipment_document_automation(doc, _method=None):
+	# Legacy workflow statuses that existed before we switched Project tracking to
+	# the ordered CGM Sea chart (UCR Applied → ... → Completed).
+	# Map them before Select validation runs on save.
+	if doc.meta.has_field("custom_shipment_status"):
+		legacy_status = doc.get("custom_shipment_status")
+		legacy_map = {
+			"IDF Created": "UCR Applied",
+			"Permits Processing": "Pre-clearance",
+			"Awaiting Arrival": "Client Inspection",
+		}
+		if legacy_status in legacy_map:
+			doc.custom_shipment_status = legacy_map[legacy_status]
+
+	# Legacy transport location label used in older projects.
+	if doc.meta.has_field("custom_current_location"):
+		legacy_location = doc.get("custom_current_location")
+		if legacy_location == "Origin Country":
+			doc.custom_current_location = "At origin"
+
+	normalize_shipment_fields_on_doc(doc)
 	# 1. Pull files from linked Lead, Customer, and Tasks into shipment documents.
 	if not frappe.flags.get("cgm_syncing_shipment_documents"):
 		sync_linked_attachments_to_project(doc)
