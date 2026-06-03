@@ -227,13 +227,25 @@ doctype_js = {
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {
+	"Task": (
+		"cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions"
+		".get_permission_query_conditions"
+	),
+}
+
+has_permission = {
+	"Task": (
+		"cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions.has_permission"
+	),
+}
+
+# Document class overrides
+# ------------------------
+
+override_doctype_class = {
+	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task_overrides.CGMTask"],
+}
 
 # Document Events
 # ---------------
@@ -246,17 +258,20 @@ doc_events = {
 	},
 	"Purchase Invoice": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_validate_from_task",
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_on_submit",
 	},
 	"Payment Entry": {
 		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.payment_entry_validate_from_task",
 		],
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.payment_entry_on_submit",
 	},
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
 	},
 	"Task": {
+		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_onload",
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.before_task_save",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.validate_task_completion_requirements",
