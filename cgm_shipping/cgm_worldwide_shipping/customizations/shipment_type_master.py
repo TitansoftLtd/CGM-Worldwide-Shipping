@@ -72,13 +72,24 @@ def _shipment_type_meta():
 	return frappe.get_meta("Shipment Type")
 
 
-def _shipment_type_query_fields() -> list[str]:
-	"""Only fields present in DB — safe before bench migrate adds new columns."""
-	base = ["name", "shipment_type_name", "cgm_ref_prefix", "default_mode_of_transport"]
+def _shipment_type_field_queryable(fieldname: str) -> bool:
+	"""True when the field exists in DocType meta and the MariaDB column is present."""
 	meta = _shipment_type_meta()
-	if not meta:
-		return base
-	return base + [f for f in _OPTIONAL_SHIPMENT_TYPE_FIELDS if meta.has_field(f)]
+	if not meta or not meta.has_field(fieldname):
+		return False
+	return frappe.db.has_column("Shipment Type", fieldname)
+
+
+def _shipment_type_query_fields() -> list[str]:
+	"""Only fields present in DB — safe during patches before new columns are migrated."""
+	candidates = [
+		"name",
+		"shipment_type_name",
+		"cgm_ref_prefix",
+		"default_mode_of_transport",
+		*_OPTIONAL_SHIPMENT_TYPE_FIELDS,
+	]
+	return [f for f in candidates if _shipment_type_field_queryable(f)] or ["name"]
 
 
 def _filter_row_for_doc(row: dict) -> dict:

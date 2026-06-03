@@ -1,15 +1,22 @@
-"""Declaration User needs write on Task for permit receipts and certificates."""
+"""Declaration roles need write on Task for permit receipts and certificates."""
 from __future__ import annotations
 
 import frappe
 
+# Sites may use Declarant only, Declaration User only, or both.
+DECLARATION_TASK_ROLES = ("Declaration User", "Declarant")
+
 
 def execute():
-	_ensure_task_write("Declaration User")
+	for role in DECLARATION_TASK_ROLES:
+		_ensure_task_write(role)
 	frappe.clear_cache(doctype="Task")
 
 
 def _ensure_task_write(role: str) -> None:
+	if not frappe.db.exists("Role", role):
+		return
+
 	name = frappe.db.get_value(
 		"Custom DocPerm",
 		{"parent": "Task", "role": role, "permlevel": 0},
