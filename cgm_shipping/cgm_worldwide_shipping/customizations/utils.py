@@ -1,6 +1,8 @@
+import re
+
 import frappe
 from erpnext import get_default_company
-from frappe.utils import now_datetime
+from frappe.utils import getdate, now_datetime, today
 
 SEA_TASK_FLOW_KEY = "SEA_IMPORT_E2E"
 
@@ -10,11 +12,114 @@ DEPARTMENT_NAME_ALIASES = {
 }
 
 
-# ─── Project Name Helpers ────────────────────────────────────────────────────
+# ─── CGM reference / Project Name ─────────────────────────────────────────────
+# Tracking sheet format: CGM/FCL001/1022  (prefix + 3-digit seq + MMYY period)
+
+
+CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$")
+
+
+def is_cgm_ref(value: str | None) -> bool:
+	if not value:
+		return False
+	return bool(CGM_REF_PATTERN.match(str(value).strip().upper()))
+
+
+def cgm_ref_prefix(shipment_type=None, mode=None) -> str:
+	"""Map shipment classification to tracking-sheet prefix (FCL, LCL, IM, …)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type_master import (
+		cgm_ref_prefix_from_master,
+	)
+
+	st = (shipment_type or "").strip()
+	prefix = cgm_ref_prefix_from_master(st, mode)
+	if prefix:
+		return prefix
+
+	mode = (mode or "").strip()
+	if st == "Import":
+		if mode == "Sea":
+			return "FCL"
+		if mode == "Air":
+			return "AIR"
+		if mode == "Road":
+			return "ROD"
+		return "IM"
+	if st == "Export":
+		return "EX"
+	if mode == "Sea":
+		return "FCL"
+	if mode == "Air":
+		return "AIR"
+	if mode == "Road":
+		return "ROD"
+	return "IM"
+
+
+def _next_cgm_ref_sequence(prefix: str, period: str) -> int:
+	"""Next 3-digit sequence for CGM/{prefix}NNN/{period} in this calendar month."""
+	like = f"CGM/{prefix}%/{period}"
+	rows = frappe.db.sql(
+		"""
+		SELECT project_name AS ref FROM `tabProject` WHERE UPPER(project_name) LIKE %s
+		UNION
+		SELECT custom_cgm_ref_no AS ref FROM `tabProject`
+		WHERE custom_cgm_ref_no IS NOT NULL AND custom_cgm_ref_no != ''
+		  AND UPPER(custom_cgm_ref_no) LIKE %s
+		""",
+		(like.upper(), like.upper()),
+		as_dict=True,
+	)
+	seq_pattern = re.compile(rf"^CGM/{re.escape(prefix)}(\d{{3}})/{re.escape(period)}$")
+	max_seq = 0
+	for row in rows:
+		ref = (row.ref or "").strip().upper()
+		match = seq_pattern.match(ref)
+		if match:
+			max_seq = max(max_seq, int(match.group(1)))
+	return max_seq + 1
+
+
+def build_cgm_ref_no(shipment_type=None, mode=None, opened_date=None) -> str:
+	"""Allocate CGM/LCL001/1022-style reference for the shipment tracking sheet."""
+	prefix = cgm_ref_prefix(shipment_type, mode)
+	dt = getdate(opened_date or today())
+	period = dt.strftime("%m%y")
+	seq = _next_cgm_ref_sequence(prefix, period)
+	for candidate_seq in range(seq, seq + 1000):
+		ref = f"CGM/{prefix}{candidate_seq:03d}/{period}"
+		if not frappe.db.exists("Project", {"project_name": ref}):
+			return ref
+	frappe.throw("Could not allocate a unique CGM reference number.")
+
+
+def assign_cgm_project_reference(project) -> None:
+	"""Set project_name and custom_cgm_ref_no to the tracking-sheet CGM reference."""
+	if project.get("custom_cgm_ref_no") and is_cgm_ref(project.custom_cgm_ref_no):
+		if not is_cgm_ref(project.project_name):
+			project.project_name = project.custom_cgm_ref_no
+		return
+
+	if project.project_name and is_cgm_ref(project.project_name):
+		if project.meta.has_field("custom_cgm_ref_no") and not project.get("custom_cgm_ref_no"):
+			project.custom_cgm_ref_no = project.project_name
+		return
+
+	ref = build_cgm_ref_no(
+		normalize_shipment_classification(
+			project.get("custom_shipment_type"),
+			project.get("custom_mode_of_transport"),
+		)[0],
+		project.get("custom_mode_of_transport"),
+		project.get("custom_opened_date"),
+	)
+	project.project_name = ref
+	if project.meta.has_field("custom_cgm_ref_no"):
+		project.custom_cgm_ref_no = ref
 
 
 def build_project_name_seed(label, shipment_type=None, mode=None):
-	# 1. Build a readable base name for the project.
+	# Legacy helper — prefer assign_cgm_project_reference for new shipments.
 	core = (label or "").strip() or "Client"
 	details = " ".join(part for part in [shipment_type, mode] if part)
 	if details:
@@ -43,16 +148,76 @@ def ensure_unique_project_name(seed_name):
 
 
 def apply_shipment_data(project, shipment_type=None, mode=None):
-	# 1. Set shipment classification fields on the project.
+	"""Set shipment classification; derive mode from operational shipment type when known."""
 	if shipment_type:
 		project.custom_shipment_type = shipment_type
-	if mode:
+	if mode and project.meta.has_field("custom_mode_of_transport"):
 		project.custom_mode_of_transport = mode
 
-	# 2. Start at Draft on insert (workflow rejects jumping to Documents Received on new docs).
+	normalized_type, derived_mode = normalize_shipment_classification(
+		project.get("custom_shipment_type"),
+		project.get("custom_mode_of_transport"),
+	)
+	if normalized_type:
+		project.custom_shipment_type = normalized_type
+	if derived_mode and project.meta.has_field("custom_mode_of_transport"):
+		project.custom_mode_of_transport = derived_mode
+
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_shipment_status"):
 		project.custom_shipment_status = "Draft"
+
+
+def normalize_shipment_classification(shipment_type=None, mode=None):
+	"""
+	Return (shipment_type, mode) using operational types (Sea FCL, Air Import, …).
+
+	Legacy CRM values (Import/Export + Sea/Air/Road) are mapped for old records only.
+	"""
+	st = (shipment_type or "").strip()
+	m = (mode or "").strip()
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type_master import (
+		get_shipment_type_record,
+		mode_from_master,
+	)
+
+	row = get_shipment_type_record(st)
+	if row:
+		return row.shipment_type_name or st, mode_from_master(st) or m
+
+	# Legacy Lead/Opportunity: Import + mode → operational default (blank mode → Sea FCL).
+	if st == "Import":
+		if m in ("", "Sea", None):
+			return "Sea FCL", "Sea"
+		if m == "Air":
+			return "Air Import", "Air"
+		if m == "Road":
+			return "Cross-Border Road Import", "Road"
+		return "Sea FCL", "Sea"
+	if st == "Export":
+		return "Export", m or "Sea"
+	if st == "Transit":
+		return "Transit", m or "Sea"
+	if st == "Road Import":
+		return "Cross-Border Road Import", "Road"
+
+	return st or None, m or None
+
+
+def normalize_shipment_fields_on_doc(doc) -> None:
+	"""Rewrite legacy Import/Export values before Select validation on save."""
+	if not doc.meta.has_field("custom_shipment_type"):
+		return
+	mode = doc.get("custom_mode_of_transport") if doc.meta.has_field("custom_mode_of_transport") else None
+	normalized_type, derived_mode = normalize_shipment_classification(
+		doc.get("custom_shipment_type"),
+		mode,
+	)
+	if normalized_type:
+		doc.custom_shipment_type = normalized_type
+	if derived_mode and doc.meta.has_field("custom_mode_of_transport"):
+		doc.custom_mode_of_transport = derived_mode
 
 
 SHIPMENT_DOCUMENTS_FIELD = "custom_shipment_documents"
@@ -435,6 +600,7 @@ def refresh_project_shipment_documents(project_name):
 	frappe.flags.cgm_syncing_shipment_documents = True
 	try:
 		project = frappe.get_doc("Project", project_name)
+		normalize_shipment_fields_on_doc(project)
 		sync_linked_attachments_to_project(project)
 		project.save(ignore_permissions=True)
 	finally:
@@ -691,13 +857,11 @@ def create_project_from_customer(customer, project_name=None):
 	"""Create a shipment project from a Customer record."""
 	frappe.has_permission("Project", ptype="create", throw=True)
 
-	# 1. Validate the customer exists.
 	if not frappe.db.exists("Customer", customer):
 		frappe.throw(f"Customer {customer} not found")
 
 	cust = frappe.get_doc("Customer", customer)
 
-	# 2. Pull shipment classification from the linked Lead when available.
 	shipment_type = None
 	mode_of_transport = None
 	lead_name = cust.get("lead_name")
@@ -712,18 +876,15 @@ def create_project_from_customer(customer, project_name=None):
 			shipment_type = row.get("custom_shipment_type")
 			mode_of_transport = row.get("custom_mode_of_transport")
 
-	# 3. Build and save the new Project.
 	proj = frappe.new_doc("Project")
 	proj.customer = customer
-	seed_name = project_name or build_project_name_seed(
-		cust.customer_name or customer,
-		shipment_type=shipment_type,
-		mode=mode_of_transport,
-	)
-	proj.project_name = ensure_unique_project_name(seed_name)
 	apply_shipment_data(proj, shipment_type=shipment_type, mode=mode_of_transport)
 	_apply_lead_shipment_defaults(proj, lead_name)
 	_apply_project_tracking_defaults(proj)
+	if project_name:
+		proj.project_name = project_name
+		if proj.meta.has_field("custom_cgm_ref_no"):
+			proj.custom_cgm_ref_no = project_name
 
 	project_fields = frappe.get_meta("Project")
 	if lead_name and project_fields.has_field("custom_source_lead"):
@@ -746,12 +907,10 @@ def _lead_field_value(lead, *candidates: str):
 
 
 def _apply_project_tracking_defaults(project) -> None:
-	"""Seed LCL tracking sheet fields on new projects."""
+	"""Seed tracking sheet fields on new projects (opened date; CGM ref assigned on insert)."""
 	meta = project.meta
 	if meta.has_field("custom_opened_date") and not project.get("custom_opened_date"):
 		project.custom_opened_date = today()
-	if meta.has_field("custom_cgm_ref_no") and project.project_name and not project.get("custom_cgm_ref_no"):
-		project.custom_cgm_ref_no = project.project_name
 
 
 def _apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
@@ -802,12 +961,6 @@ def create_project_from_lead(lead, project_name=None):
 	# 3. Build and save the new Project.
 	proj = frappe.new_doc("Project")
 	proj.customer = customer
-	seed_name = project_name or build_project_name_seed(
-		lead_doc.company_name or lead_doc.lead_name or lead,
-		shipment_type=lead_doc.get("custom_shipment_type"),
-		mode=lead_doc.get("custom_mode_of_transport"),
-	)
-	proj.project_name = ensure_unique_project_name(seed_name)
 	apply_shipment_data(
 		proj,
 		shipment_type=lead_doc.get("custom_shipment_type"),
@@ -815,6 +968,10 @@ def create_project_from_lead(lead, project_name=None):
 	)
 	_apply_lead_shipment_defaults(proj, lead)
 	_apply_project_tracking_defaults(proj)
+	if project_name:
+		proj.project_name = project_name
+		if proj.meta.has_field("custom_cgm_ref_no"):
+			proj.custom_cgm_ref_no = project_name
 
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_source_lead"):
@@ -846,18 +1003,16 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	proj.customer = customer
 	if opp.get("company"):
 		proj.company = opp.company
-	seed_name = project_name or build_project_name_seed(
-		opp.customer_name or opportunity,
-		shipment_type=opp.get("custom_shipment_type"),
-		mode=opp.get("custom_mode_of_transport"),
-	)
-	proj.project_name = ensure_unique_project_name(seed_name)
 	apply_shipment_data(
 		proj,
 		shipment_type=opp.get("custom_shipment_type"),
 		mode=opp.get("custom_mode_of_transport"),
 	)
 	_apply_project_tracking_defaults(proj)
+	if project_name:
+		proj.project_name = project_name
+		if proj.meta.has_field("custom_cgm_ref_no"):
+			proj.custom_cgm_ref_no = project_name
 
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_source_opportunity"):
@@ -939,50 +1094,12 @@ def create_sea_import_task_plan(project, reset=False):
 
 @frappe.whitelist()
 def notify_finance_for_task(task_name):
-	"""Notify finance users that payment action is needed for a task."""
-	if not task_name or not frappe.db.exists("Task", task_name):
-		return {"notified": 0}
-
-	task = frappe.get_doc("Task", task_name)
-	subject = f"Payment action needed for task {task.name}"
-
-	# 1. Skip when this notification has already been sent.
-	if frappe.db.exists(
-		"Notification Log",
-		{"document_type": "Task", "document_name": task.name, "subject": subject},
-	):
-		return {"notified": 0}
-
-	# 2. Collect unique, enabled finance users.
-	finance_users = frappe.get_all(
-		"Has Role",
-		filters={"role": ["in", ["Finance Manager", "Accounts User", "Accounts Manager"]]},
-		fields=["parent"],
+	"""Notify Finance users (in-app + email) that payment action is needed for a task."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
+		notify_finance_for_task_email,
 	)
-	seen = set()
-	unique_users = []
-	for row in finance_users:
-		user = row.parent
-		if user in seen:
-			continue
-		seen.add(user)
-		if frappe.db.get_value("User", user, "enabled"):
-			unique_users.append(user)
 
-	# 3. Create a Notification Log entry for each finance user.
-	count = 0
-	for user in unique_users:
-		log = frappe.new_doc("Notification Log")
-		log.for_user = user
-		log.type = "Alert"
-		log.from_user = frappe.session.user
-		log.document_type = "Task"
-		log.document_name = task.name
-		log.subject = subject
-		log.insert(ignore_permissions=True)
-		count += 1
-
-	return {"notified": count}
+	return notify_finance_for_task_email(task_name)
 
 
 # ─── Task Payment Helpers ─────────────────────────────────────────────────────

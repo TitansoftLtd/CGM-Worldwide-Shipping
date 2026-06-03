@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-05-19 00:00:00.000000",
+ "creation": "2026-05-19 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -26,18 +26,18 @@
  "fields": [
   {
    "fieldname": "permit_type",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Permit Type",
-   "options": "DVS\nNBA\nVMD\nACA\nSCA\nKEBS\nKRPB\nPort Health\nOther"
+   "options": "Permit Type"
   },
   {
+   "columns": 3,
+   "description": "Supplier/agency invoice for this permit \u2014 required before completing the permit task.",
    "fieldname": "payment_invoice",
    "fieldtype": "Attach",
    "in_list_view": 1,
-   "columns": 3,
-   "label": "Permit Invoice (for Finance)",
-   "description": "Supplier/agency invoice for this permit — required before completing the permit task."
+   "label": "Permit Invoice (for Finance)"
   },
   {
    "fieldname": "invoice_amount",
@@ -86,6 +86,7 @@
    "label": "Issuing Body"
   },
   {
+   "default": "0",
    "fieldname": "invoice_verified",
    "fieldtype": "Check",
    "label": "Invoice Verified"
@@ -109,6 +110,7 @@
    "label": "Payment Receipt"
   },
   {
+   "default": "0",
    "fieldname": "receipt_verified",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -128,12 +130,13 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-05-19 00:00:00.000000",
+ "modified": "2026-06-03 04:54:10.927352",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Permit Register",
  "owner": "Administrator",
  "permissions": [],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

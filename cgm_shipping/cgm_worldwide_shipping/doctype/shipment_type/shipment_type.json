@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:shipment_type_name",
+ "creation": "2026-05-31 17:34:14.307718",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_2k6q",
+  "shipment_type_name",
+  "cgm_ref_prefix",
+  "requires_bill_of_lading",
+  "requires_air_waybill",
+  "uses_unit_tracking",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "shipment_type_name",
+   "fieldtype": "Data",
+   "label": " Shipment Type Name",
+   "unique": 1
+  },
+  {
+   "fieldname": "cgm_ref_prefix",
+   "fieldtype": "Data",
+   "label": "CGM Ref Prefix"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_bill_of_lading",
+   "fieldtype": "Check",
+   "label": "Requires Bill of Lading"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_air_waybill",
+   "fieldtype": "Check",
+   "label": "Requires Air Waybill"
+  },
+  {
+   "fieldname": "section_break_2k6q",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "uses_unit_tracking",
+   "fieldtype": "Check",
+   "label": "Uses Unit Tracking"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Shipment Type",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-06-02 06:35:53.943281",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Shipment Type",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

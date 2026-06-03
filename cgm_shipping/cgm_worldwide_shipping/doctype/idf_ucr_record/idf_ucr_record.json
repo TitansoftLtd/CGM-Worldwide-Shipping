@@ -12,6 +12,7 @@
   "ucr_number",
   "application_date",
   "approval_date",
+  "idf_certificate",
   "shared_with_client",
   "section_break_finance",
   "payment_status",
@@ -58,6 +59,12 @@
    "fieldname": "approval_date",
    "fieldtype": "Date",
    "label": "IDF Issued / Approval Date"
+  },
+  {
+   "description": "Synced from Create UCR task when the declarant uploads the issued IDF/UCR certificate.",
+   "fieldname": "idf_certificate",
+   "fieldtype": "Attach",
+   "label": "IDF / UCR Certificate"
   },
   {
    "fieldname": "shared_with_client",
