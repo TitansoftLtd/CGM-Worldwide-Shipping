@@ -283,6 +283,12 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
+scheduler_events = {
+	"daily": [
+		"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
+	],
+}
+
 # scheduler_events = {
 # 	"all": [
 # 		"cgm_shipping.tasks.all"

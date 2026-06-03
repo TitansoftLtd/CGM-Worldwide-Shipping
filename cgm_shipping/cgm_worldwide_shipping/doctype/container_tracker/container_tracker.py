@@ -5,63 +5,53 @@ from __future__ import annotations
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import add_days, date_diff, getdate, today
+
+from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_charges import (
+	apply_metrics_to_doc,
+	compute_container_metrics,
+)
 
 
 class ContainerTracker(Document):
 	def validate(self):
-		self._calc_expected_empty_return()
-		self._calc_demurrage_detention()
-		self._update_status()
+		apply_metrics_to_doc(self)
 
 	def on_update(self):
 		sync_container_summary_to_project(self.project)
 
-	def _calc_expected_empty_return(self):
-		if self.gate_out_date_port and self.free_days:
-			self.expected_empty_return = add_days(self.gate_out_date_port, self.free_days)
 
-	def _calc_demurrage_detention(self):
-		self.port_days_used = 0
-		self.demurrage_days = 0
-		self.detention_days = 0
-		self.demurrage_amount = 0
-		self.demurrage_date = None
-		self.days_outstanding = 0
-
-		discharge = self.discharging_date or self.icd_mombasa_discharge_date
-		if discharge and self.gate_out_date_port:
-			self.port_days_used = date_diff(self.gate_out_date_port, discharge)
-			agreed = self.free_days or 0
-			self.demurrage_days = max(0, self.port_days_used - agreed)
-			if self.demurrage_days and agreed:
-				self.demurrage_date = add_days(discharge, agreed)
-			elif self.demurrage_days:
-				self.demurrage_date = add_days(discharge, 1)
-
-		if self.gate_out_date_port and self.actual_empty_return:
-			self.detention_days = max(0, date_diff(self.actual_empty_return, self.gate_out_date_port))
-
-		rate = self.daily_demurrage_rate or 0
-		self.demurrage_amount = self.demurrage_days * rate
-
-		if self.expected_empty_return and not self.actual_empty_return:
-			self.days_outstanding = max(0, date_diff(today(), self.expected_empty_return))
-
-	def _update_status(self):
-		if self.actual_empty_return:
-			self.status = "Empty Returned"
-			return
-		if self.expected_empty_return and not self.actual_empty_return:
-			if getdate(today()) > getdate(self.expected_empty_return):
-				self.status = "Overdue"
-				return
-		if self.delivery_date and not self.actual_empty_return:
-			self.status = "Empty Pending"
-		elif self.gate_out_date_port:
-			self.status = "Dispatched"
-		elif self.discharging_date or self.custom_release_date:
-			self.status = "Delivered"
+_CONTAINER_TRACKER_FIELDS = [
+	"name",
+	"project",
+	"container_number",
+	"batch_bl_no",
+	"bl_number",
+	"container_mode",
+	"delivery_location",
+	"eta",
+	"ata",
+	"discharging_date",
+	"icd_mombasa_discharge_date",
+	"custom_release_date",
+	"gate_out_date_port",
+	"delivery_date",
+	"actual_empty_return",
+	"expected_empty_return",
+	"gate_in_date_depot",
+	"icd_gate_in_date",
+	"icd_gate_out_date",
+	"free_days",
+	"port_days_used",
+	"daily_demurrage_rate",
+	"daily_detention_rate",
+	"demurrage_days",
+	"detention_days",
+	"demurrage_amount",
+	"detention_amount",
+	"demurrage_date",
+	"days_outstanding",
+	"status",
+]
 
 
 def sync_container_summary_to_project(project: str | None) -> None:
@@ -124,30 +114,42 @@ def sync_container_summary_to_project(project: str | None) -> None:
 		frappe.db.set_value("Project", project, updates, update_modified=False)
 
 
+def enrich_container_row(row: dict) -> dict:
+	"""Merge stored DB values with live computed metrics (for dashboards/reports)."""
+	metrics = compute_container_metrics(row)
+	row.update(metrics)
+	return row
+
+
 @frappe.whitelist()
 def get_containers_for_project(project: str) -> list[dict]:
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=[
-			"name",
-			"container_number",
-			"batch_bl_no",
-			"bl_number",
-			"container_mode",
-			"eta",
-			"ata",
-			"discharging_date",
-			"gate_out_date_port",
-			"delivery_date",
-			"actual_empty_return",
-			"expected_empty_return",
-			"free_days",
-			"demurrage_days",
-			"detention_days",
-			"days_outstanding",
-			"status",
-		],
+		fields=_CONTAINER_TRACKER_FIELDS,
 		order_by="container_number asc",
 	)
+	return [enrich_container_row(r) for r in rows]
+
+
+@frappe.whitelist()
+def refresh_open_container_metrics() -> int:
+	"""Daily job: recompute outstanding/detention for containers not yet returned."""
+	names = frappe.get_all(
+		"Container Tracker",
+		filters={"actual_empty_return": ["is", "not set"]},
+		pluck="name",
+	)
+	projects = set()
+	for name in names:
+		doc = frappe.get_doc("Container Tracker", name)
+		apply_metrics_to_doc(doc)
+		doc.db_update()
+		if doc.project:
+			projects.add(doc.project)
+
+	for project in projects:
+		sync_container_summary_to_project(project)
+
+	return len(names)
