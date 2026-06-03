@@ -1,6 +1,6 @@
 frappe.ui.form.on("Lead", {
 	refresh(frm) {
-		cgm_shipping.bl_containers.sync_from_bl(frm);
+		cgm_shipping.bl_containers.sync_from_bl(frm, { silent: true });
 
 		if (frm.is_new()) {
 			return;

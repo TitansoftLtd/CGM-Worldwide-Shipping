@@ -1,15 +1,16 @@
-"""Ensure Project carries full shipment core fields (parity with Shipment Dossier)."""
+"""
+Idempotent installer for Project custom fields on sites that predate custom/project.json.
+
+Primary field definitions live in cgm_worldwide_shipping/custom/project.json (exported from
+Customize Form). This module only creates missing fields on migrate — it does not replace JSON.
+
+MODULE is the Custom Field owner in Desk (required by Frappe); it does not re-create Module Def.
+"""
 from __future__ import annotations
 
 import frappe
 
 MODULE = "CGM Worldwide Shipping"
-
-SHIPMENT_TYPE_OPTIONS = (
-	"Air Import\nSea FCL\nSea LCL\nRoad Import\nTransit\nExport"
-)
-
-CFS_CODE_OPTIONS = "MAT\nCSC\nSIG\nTCC\nKAH\nBFT\nICD\nICD-UG\nFFK\nMCT"
 
 
 def _create_cf(dt: str, values: dict) -> None:
@@ -26,16 +27,7 @@ def _create_cf(dt: str, values: dict) -> None:
 
 def ensure_project_shipment_core_fields() -> None:
 	"""Add missing shipment fields on Project for end-to-end clearance visibility."""
-	# Align shipment type options with dossier / operations chart.
-	if frappe.db.exists("Custom Field", "Project-custom_shipment_type"):
-		frappe.db.set_value(
-			"Custom Field",
-			"Project-custom_shipment_type",
-			"options",
-			SHIPMENT_TYPE_OPTIONS,
-			update_modified=False,
-		)
-
+	# Shipment type options are maintained on the Custom Field (custom/project.json), not in code.
 	_create_cf(
 		"Project",
 		{
@@ -69,28 +61,25 @@ def ensure_project_shipment_core_fields() -> None:
 		"Project",
 		{
 			"fieldname": "custom_cfs",
-			"label": "CFS",
+			"label": "Clearance Station",
 			"fieldtype": "Link",
-			"options": "CFS Master",
+			"options": "Clearance Station",
 			"insert_after": "custom_entry_no",
 		},
 	)
-	_create_cf(
-		"Project",
-		{
-			"fieldname": "custom_cfs_code",
-			"label": "CFS Code",
-			"fieldtype": "Select",
-			"options": CFS_CODE_OPTIONS,
-			"insert_after": "custom_cfs",
-		},
-	)
+	if frappe.db.exists("Custom Field", "Project-custom_cfs"):
+		frappe.db.set_value(
+			"Custom Field",
+			"Project-custom_cfs",
+			{"label": "Clearance Station", "options": "Clearance Station"},
+			update_modified=False,
+		)
 	_create_cf(
 		"Project",
 		{
 			"fieldname": "custom_column_break_transport",
 			"fieldtype": "Column Break",
-			"insert_after": "custom_cfs_code",
+			"insert_after": "custom_cfs",
 		},
 	)
 	_create_cf(
