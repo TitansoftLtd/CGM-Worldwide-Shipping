@@ -47,6 +47,37 @@
 	color: #6c7680;
 }
 
+.cgm-sea-task-table-wrap {
+	margin-top: 12px;
+}
+
+.cgm-sea-task-table-wrap h5 {
+	margin: 0 0 6px 0;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.cgm-sea-task-table {
+	font-size: 11px;
+	margin-bottom: 0;
+	background: #fff;
+}
+
+.cgm-task-status-done {
+	color: #2e7d32;
+	font-weight: 600;
+}
+
+.cgm-task-status-open {
+	color: #f57f17;
+	font-weight: 600;
+}
+
+.cgm-task-status-cancelled {
+	color: #6c7680;
+	font-weight: 600;
+}
+
 .cgm-tracking-legend {
 	margin-top: 8px;
 	font-size: 11px;

@@ -1,0 +1,74 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:permit_name",
+ "creation": "2026-06-03 04:45:05.242049",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_c9fj",
+  "amended_from",
+  "permit_name",
+  "purchase_item"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_c9fj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Permit Type",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "permit_name",
+   "fieldtype": "Data",
+   "label": "Permit Name",
+   "unique": 1
+  },
+  {
+   "description": "ERPNext Item used on Purchase Invoice when Finance pays this permit.",
+   "fieldname": "purchase_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Purchase Item",
+   "options": "Item"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-06-03 04:45:39.507445",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Permit Type",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

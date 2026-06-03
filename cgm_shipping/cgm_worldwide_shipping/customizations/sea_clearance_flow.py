@@ -170,7 +170,7 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 
 
 def effective_completed_task_seqs(tasks: list) -> set[int]:
-	"""Task sequences that count as done for workflow progress (incl. Task 5 invoices submitted)."""
+	"""Task sequences that count as done for workflow progress."""
 	completed: set[int] = set()
 	for row in tasks:
 		seq = int(row.get("custom_sequence_no") or 0)
@@ -179,6 +179,7 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 		if row.get("status") == "Completed":
 			completed.add(seq)
 		elif seq == 5 and row.get("custom_permit_invoices_submitted"):
+			# Task 5 stays Open until finance completes — still unlocks finance task 6.
 			completed.add(5)
 	return completed
 
@@ -203,6 +204,15 @@ def derive_workflow_progress_from_tasks(
 	return progress_status, progress_index
 
 
+def _sea_task_progress_fields() -> list[str]:
+	"""Fields for workflow sync — only columns that exist on Task (safe before migrate)."""
+	fields = ["custom_sequence_no", "status", "custom_permit_invoices_submitted"]
+	meta = frappe.get_meta("Task")
+	if meta.has_field("custom_ucr_invoice_submitted"):
+		fields.append("custom_ucr_invoice_submitted")
+	return fields
+
+
 def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	"""Advance Project workflow field when sea tasks have passed the current state."""
 	if frappe.db.get_value("Project", project, "custom_mode_of_transport") != "Sea":
@@ -210,7 +220,7 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	tasks = frappe.get_all(
 		"Task",
 		filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
-		fields=["custom_sequence_no", "status", "custom_permit_invoices_submitted"],
+		fields=_sea_task_progress_fields(),
 		limit=30,
 	)
 	progress_status, _ = derive_workflow_progress_from_tasks(tasks)
@@ -244,6 +254,9 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 		permit_invoices_ready,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+		ucr_invoice_ready,
+	)
 
 	rows = frappe.db.sql(
 		"""
@@ -259,14 +272,45 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 		(project, SEA_TASK_FLOW_KEY, before_sequence),
 		as_dict=True,
 	)
-	# Task 5 stays Open while Finance pays on Task 6; invoices submitted is enough to unlock Task 6.
-	return [r for r in rows if not (r.seq == 5 and permit_invoices_ready(r.name))]
+	# Task 3/5 stay Open while Finance pays; invoice submitted is enough to unlock the finance task.
+	return [
+		r
+		for r in rows
+		if not (r.seq == 5 and permit_invoices_ready(r.name))
+		and not (r.seq == 3 and ucr_invoice_ready(r.name))
+	]
 
 
-def get_open_sea_tasks(project: str) -> list[dict]:
-	return frappe.db.sql(
+def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
+	"""All sea clearance tasks on a project visible to the user (incl. Completed)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions import (
+		filter_sea_tasks_for_user,
+	)
+
+	if not project:
+		return []
+	rows = frappe.db.sql(
 		"""
-		SELECT name, subject, custom_sequence_no AS seq, status
+		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign
+		FROM `tabTask`
+		WHERE project = %s
+		  AND custom_task_flow_key = %s
+		ORDER BY custom_sequence_no ASC
+		""",
+		(project, SEA_TASK_FLOW_KEY),
+		as_dict=True,
+	)
+	return filter_sea_tasks_for_user(rows, user=user)
+
+
+def get_open_sea_tasks(project: str, user: str | None = None) -> list[dict]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions import (
+		filter_sea_tasks_for_user,
+	)
+
+	rows = frappe.db.sql(
+		"""
+		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign
 		FROM `tabTask`
 		WHERE project = %s
 		  AND custom_task_flow_key = %s
@@ -276,6 +320,7 @@ def get_open_sea_tasks(project: str) -> list[dict]:
 		(project, SEA_TASK_FLOW_KEY),
 		as_dict=True,
 	)
+	return filter_sea_tasks_for_user(rows, user=user)
 
 
 def enforce_sea_tasks_exist(project: str) -> None:
@@ -304,6 +349,22 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 			frappe.throw(
 				"Submit all permit invoices to Finance on <b>Apply for Pre-Clearance Permits</b> "
 				"using <b>Notify Finance — invoices ready</b> before advancing workflow."
+			)
+		return
+	if new_status == "UCR Paid" and required_seq == 4:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+			get_ucr_finance_task,
+			ucr_finance_ready_to_complete,
+		)
+
+		finance_task_name = get_ucr_finance_task(project)
+		if not finance_task_name:
+			frappe.throw("Generate the sea task plan and complete <b>Finance pays UCR</b> first.")
+		finance_task = frappe.get_doc("Task", finance_task_name)
+		if (finance_task.status != "Completed" or not ucr_finance_ready_to_complete(finance_task)):
+			frappe.throw(
+				"Cannot move to <b>UCR Paid</b> until <b>Finance pays UCR</b> is completed: "
+				"UCR invoice verified and UCR receipt verified by Finance."
 			)
 		return
 	incomplete = get_incomplete_sea_tasks(project, required_seq + 1)

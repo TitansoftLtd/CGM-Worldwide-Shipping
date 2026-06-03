@@ -9,12 +9,13 @@ def execute():
 
 
 def _ensure_customer_kra_pin_field():
-	"""Re-apply KRA PIN on Customer after removing mode/shipment fields (insert after tax_id)."""
+	"""Re-apply KRA PIN on Customer after removing mode/shipment fields (main profile, after image)."""
 	spec = {
 		"fieldname": "custom_kra_pin_attachment",
 		"label": "KRA PIN Document",
 		"fieldtype": "Attach",
-		"insert_after": "tax_id",
+		"insert_after": "image",
+		"module": "CGM Worldwide Shipping",
 		"reqd": 1,
 		"description": (
 			"Upload official KRA PIN certificate or clearance letter for this importer. "
@@ -29,6 +30,7 @@ def _ensure_customer_kra_pin_field():
 		doc.reqd = spec["reqd"]
 		doc.description = spec["description"]
 		doc.insert_after = spec["insert_after"]
+		doc.module = spec["module"]
 		doc.save(ignore_permissions=True)
 		return
 
