@@ -83,9 +83,6 @@ def get_default_purchase_item_code(company: str | None = None) -> str:
 
 def get_permit_rows_for_purchase_invoice(task) -> list[dict]:
 	"""Permit rows with invoice + amount for PI line pre-fill (task 6 / 15 finance)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
-		seed_finance_task_permits_from_project,
-	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 		PERMIT_REGISTER_FIELD,
 	)
@@ -99,7 +96,11 @@ def get_permit_rows_for_purchase_invoice(task) -> list[dict]:
 		return []
 
 	if task.meta.has_field(TASK_PERMITS_FIELD) and not task.get(TASK_PERMITS_FIELD):
-		seed_finance_task_permits_from_project(task)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
+			ensure_finance_permit_rows_saved,
+		)
+
+		ensure_finance_permit_rows_saved(task)
 		task.reload()
 
 	rows: list = list(task.get(TASK_PERMITS_FIELD) or [])
@@ -130,28 +131,37 @@ def get_permit_rows_for_purchase_invoice(task) -> list[dict]:
 
 def build_permit_purchase_invoice_lines(task) -> list[dict]:
 	"""Purchase Invoice Item rows from Task / Project permits."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permit_item_mapping import (
+		get_purchase_item_for_permit_type,
+	)
+
 	permit_rows = get_permit_rows_for_purchase_invoice(task)
 	if not permit_rows:
 		return []
 
-	item_code = get_default_purchase_item_code(task.company)
 	lines = []
 	for row in permit_rows:
+		permit_type = row.get("permit_type") or "Permit"
 		amount = flt(row.get("invoice_amount"))
-		label = row.get("permit_type") or "Permit"
-		desc = f"Pre-clearance permit — {label}"
+		if not amount:
+			continue
+
+		item_code = get_purchase_item_for_permit_type(permit_type, task.company)
+		item_name = frappe.db.get_value("Item", item_code, "item_name") or permit_type
+		desc = f"Pre-clearance permit — {permit_type}"
 		invoice_ref = row.get("payment_invoice")
 		if invoice_ref:
 			desc += f" (ref: {invoice_ref.split('/')[-1]})"
 		lines.append(
 			{
 				"item_code": item_code,
-				"item_name": desc,
+				"item_name": item_name,
 				"description": desc,
 				"qty": 1,
 				"rate": amount,
 				"amount": amount,
 				"project": task.project,
+				"permit_type": permit_type,
 			}
 		)
 	return lines
@@ -167,14 +177,22 @@ def get_task_finance_defaults(task_name: str) -> dict:
 	ctx = _task_finance_context(task)
 	if int(task.get("custom_sequence_no") or 0) == 6:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
-			seed_finance_task_permits_from_project,
+			ensure_finance_permit_rows_saved,
 		)
 
-		seed_finance_task_permits_from_project(task)
+		ensure_finance_permit_rows_saved(task)
 		task.reload()
 	permit_rows = get_permit_rows_for_purchase_invoice(task)
 	permit_lines = build_permit_purchase_invoice_lines(task)
 	remarks = f"{task.subject} ({task.name}) — {ctx['project']}"
+	if int(task.get("custom_sequence_no") or 0) == 4:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+			get_ucr_application_task,
+		)
+
+		app_task = get_ucr_application_task(task.project) if task.project else None
+		if app_task:
+			remarks += f" | UCR invoice on task {app_task}"
 	if permit_rows:
 		remarks += " | Permits: " + ", ".join(r["permit_type"] for r in permit_rows if r.get("permit_type"))
 
@@ -208,15 +226,107 @@ def apply_project_from_task_to_purchase_invoice(purchase_invoice: str, task_name
 	if updates:
 		frappe.db.set_value("Purchase Invoice", purchase_invoice, updates, update_modified=True)
 
-	# Propagate project to line items when header was empty.
-	pi = frappe.get_doc("Purchase Invoice", purchase_invoice)
-	changed = False
-	for row in pi.get("items") or []:
-		if not row.project:
-			row.project = task.project
-			changed = True
-	if changed:
-		pi.save(ignore_permissions=True)
+	# Avoid pi.save() here — it deadlocks when called from Purchase Invoice on_submit.
+	frappe.db.sql(
+		"""
+		UPDATE `tabPurchase Invoice Item`
+		SET project = %s
+		WHERE parent = %s AND IFNULL(project, '') = ''
+		""",
+		(task.project, purchase_invoice),
+	)
+
+
+def _set_task_fields(task_name: str, values: dict) -> None:
+	"""Update task finance link fields without triggering full save hooks."""
+	meta = frappe.get_meta("Task")
+	updates = {k: v for k, v in values.items() if meta.has_field(k)}
+	if updates:
+		frappe.db.set_value("Task", task_name, updates, update_modified=True)
+
+
+def _enqueue_finance_job(method: str, **kwargs) -> None:
+	"""Run linking in a separate job after commit (avoids Task row lock conflicts)."""
+
+	def _enqueue():
+		frappe.enqueue(
+			f"cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.{method}",
+			queue="short",
+			enqueue_after_commit=True,
+			**kwargs,
+		)
+
+	frappe.db.after_commit.add(_enqueue)
+
+
+def _find_payment_entry_for_purchase_invoice(purchase_invoice: str) -> str | None:
+	rows = frappe.db.sql(
+		"""
+		SELECT pe.name
+		FROM `tabPayment Entry` pe
+		INNER JOIN `tabPayment Entry Reference` ref ON ref.parent = pe.name
+		WHERE ref.reference_doctype = 'Purchase Invoice'
+		  AND ref.reference_name = %s
+		  AND pe.docstatus = 1
+		ORDER BY pe.modified DESC
+		LIMIT 1
+		""",
+		purchase_invoice,
+		pluck=True,
+	)
+	return rows[0] if rows else None
+
+
+def _resolve_purchase_invoice_for_task(task, payment_entry: str) -> str | None:
+	task_name = task.name
+	pi_name = task.get("custom_purchase_invoice")
+	if pi_name and frappe.db.exists("Purchase Invoice", pi_name):
+		return pi_name
+
+	ref_pi = frappe.db.get_value(
+		"Payment Entry Reference",
+		{"parent": payment_entry, "reference_doctype": "Purchase Invoice"},
+		"reference_name",
+	)
+	if ref_pi:
+		_set_task_fields(task_name, {"custom_purchase_invoice": ref_pi})
+		return ref_pi
+
+	return frappe.db.get_value(
+		"Purchase Invoice",
+		{"custom_cgm_source_task": task_name, "docstatus": 1},
+		"name",
+		order_by="modified desc",
+	)
+
+
+def job_link_pi_to_task(task_name: str, purchase_invoice: str) -> None:
+	"""Background: link PI to task; if already paid, link PE too."""
+	try:
+		link_purchase_invoice_to_task_enhanced(task_name, purchase_invoice, notify=False)
+		pe_name = _find_payment_entry_for_purchase_invoice(purchase_invoice)
+		if pe_name:
+			job_link_pe_to_task(task_name, pe_name)
+	except Exception:
+		frappe.log_error(
+			title="CGM link PI to task failed",
+			message=f"PI {purchase_invoice} → task {task_name}",
+		)
+
+
+def job_link_pe_to_task(task_name: str, payment_entry: str) -> None:
+	"""Background: ensure PI + PE are linked on the finance task."""
+	try:
+		task = frappe.get_doc("Task", task_name)
+		pi_name = _resolve_purchase_invoice_for_task(task, payment_entry)
+		if pi_name and task.get("custom_purchase_invoice") != pi_name:
+			link_purchase_invoice_to_task_enhanced(task_name, pi_name, notify=False)
+		complete_task_with_payment_enhanced(task_name, payment_entry)
+	except Exception:
+		frappe.log_error(
+			title="CGM link PE to task failed",
+			message=f"PE {payment_entry} → task {task_name}",
+		)
 
 
 def purchase_invoice_validate_from_task(doc, method=None):
@@ -242,8 +352,58 @@ def purchase_invoice_validate_from_task(doc, method=None):
 			row.project = task.project
 
 
+def purchase_invoice_on_submit(doc, method=None) -> None:
+	"""Link submitted PI to the finance task after commit (avoid submit deadlocks)."""
+	task_name = doc.get("custom_cgm_source_task")
+	if not task_name or not frappe.db.exists("Task", task_name):
+		return
+	task = frappe.get_doc("Task", task_name)
+	if not is_sea_payment_task(task):
+		return
+	if task.get("custom_purchase_invoice") == doc.name:
+		return
+	_enqueue_finance_job("job_link_pi_to_task", task_name=task_name, purchase_invoice=doc.name)
+
+
+def payment_entry_on_submit(doc, method=None) -> None:
+	"""Link submitted PE to the finance task in a background job."""
+	task_name = doc.get("custom_cgm_source_task")
+	if not task_name:
+		task_name = _task_from_payment_references(doc)
+	if not task_name or not frappe.db.exists("Task", task_name):
+		return
+	task = frappe.get_doc("Task", task_name)
+	if not is_sea_payment_task(task):
+		return
+	if task.get("custom_payment_entry") == doc.name:
+		return
+	_enqueue_finance_job("job_link_pe_to_task", task_name=task_name, payment_entry=doc.name)
+
+
+def _task_from_payment_references(doc) -> str | None:
+	for row in doc.get("references") or []:
+		if row.reference_doctype != "Purchase Invoice" or not row.reference_name:
+			continue
+		task_name = frappe.db.get_value(
+			"Purchase Invoice", row.reference_name, "custom_cgm_source_task"
+		)
+		if task_name:
+			return task_name
+	return None
+
+
 def payment_entry_validate_from_task(doc, method=None):
-	"""Ensure PE project matches PI / task when created from Make Payment on task."""
+	"""Ensure PE project / source task match the finance task or its Purchase Invoice."""
+	if not doc.get("custom_cgm_source_task"):
+		for row in doc.get("references") or []:
+			if row.reference_doctype == "Purchase Invoice" and row.reference_name:
+				task_name = frappe.db.get_value(
+					"Purchase Invoice", row.reference_name, "custom_cgm_source_task"
+				)
+				if task_name and doc.meta.has_field("custom_cgm_source_task"):
+					doc.custom_cgm_source_task = task_name
+					break
+
 	task_name = doc.get("custom_cgm_source_task")
 	if task_name and frappe.db.exists("Task", task_name):
 		project = frappe.db.get_value("Task", task_name, "project")
@@ -251,7 +411,9 @@ def payment_entry_validate_from_task(doc, method=None):
 			doc.project = project
 
 
-def link_purchase_invoice_to_task_enhanced(task_name: str, purchase_invoice: str) -> dict:
+def link_purchase_invoice_to_task_enhanced(
+	task_name: str, purchase_invoice: str, *, notify: bool = True
+) -> dict:
 	"""Link submitted PI to task and sync Project."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		notify_finance_for_task,
@@ -264,20 +426,21 @@ def link_purchase_invoice_to_task_enhanced(task_name: str, purchase_invoice: str
 
 	task = frappe.get_doc("Task", task_name)
 	_task_finance_context(task)
+	project = task.project
+
+	if task.get("custom_purchase_invoice") == purchase_invoice:
+		return {"task": task.name, "purchase_invoice": purchase_invoice, "project": project}
 
 	pi_status = frappe.db.get_value("Purchase Invoice", purchase_invoice, "docstatus")
 	if int(pi_status or 0) != 1:
 		frappe.throw("Purchase Invoice must be submitted before linking to the task.")
 
 	apply_project_from_task_to_purchase_invoice(purchase_invoice, task_name)
+	_set_task_fields(task_name, {"custom_purchase_invoice": purchase_invoice})
+	if notify:
+		notify_finance_for_task(task_name)
 
-	task_fields = frappe.get_meta("Task")
-	if task_fields.has_field("custom_purchase_invoice"):
-		task.custom_purchase_invoice = purchase_invoice
-	task.save(ignore_permissions=True)
-	notify_finance_for_task(task.name)
-
-	return {"task": task.name, "purchase_invoice": purchase_invoice, "project": task.project}
+	return {"task": task_name, "purchase_invoice": purchase_invoice, "project": project}
 
 
 def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> dict:
@@ -295,16 +458,27 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 	_task_finance_context(task)
 	task_fields = frappe.get_meta("Task")
 
+	if task.get("custom_payment_entry") == payment_entry:
+		return {
+			"task": task.name,
+			"status": task.status,
+			"payment_entry": payment_entry,
+			"auto_completed": task.status == "Completed",
+			"message": "Payment already linked to this task.",
+		}
+
 	if is_sea_payment_task(task) and task_fields.has_field("custom_purchase_invoice"):
-		pi_name = task.get("custom_purchase_invoice")
+		pi_name = _resolve_purchase_invoice_for_task(task, payment_entry)
 		if not pi_name:
 			frappe.throw(
-				"Create and submit a Purchase Invoice from this task first, then use <b>Make Payment</b>."
+				"Create and submit a Purchase Invoice from this task first, then pay from that invoice."
 			)
+		if task.get("custom_purchase_invoice") != pi_name:
+			_set_task_fields(task.name, {"custom_purchase_invoice": pi_name})
 		if not payment_entry_allocates_purchase_invoice(payment_entry, pi_name):
 			frappe.throw(
 				f"Payment Entry must allocate against Purchase Invoice <b>{pi_name}</b>. "
-				"Use <b>Make Payment</b> on the task (do not create a blank Payment Entry)."
+				"Use <b>Payment</b> on the Purchase Invoice (Create menu)."
 			)
 
 	pe_meta = frappe.get_meta("Payment Entry")
@@ -321,36 +495,62 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 		sync_task_permits_to_project,
 	)
 
-	if task_fields.has_field("custom_payment_entry"):
-		task.custom_payment_entry = payment_entry
+	seq = int(task.get("custom_sequence_no") or 0)
 
-	# Task 6 (permit payment): record PE only — complete after receipts verified.
-	if int(task.get("custom_sequence_no") or 0) == 6:
-		task.save(ignore_permissions=True)
-		apply_finance_payment_to_project_permits(task)
-		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
-			notify_operations_upload_receipts,
-			seed_finance_task_permits_from_project,
-		)
+	# Task 4 (UCR) / 6 (permits): record PE only — complete after receipts verified.
+	if seq in (4, 6):
+		if task_fields.has_field("custom_payment_entry"):
+			_set_task_fields(task.name, {"custom_payment_entry": payment_entry})
+		task = frappe.get_doc("Task", task.name)
 
-		seed_finance_task_permits_from_project(task)
-		sync_task_permits_to_project(task)
-		notify_operations_upload_receipts(task)
+		frappe.flags.cgm_skip_task_project_sync = True
+		try:
+			if seq == 6:
+				apply_finance_payment_to_project_permits(task)
+				from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
+					notify_declarant_upload_permit_receipts,
+					seed_finance_task_permits_from_project,
+				)
+
+				seed_finance_task_permits_from_project(task)
+				sync_task_permits_to_project(task)
+				notify_declarant_upload_permit_receipts(task)
+				message = (
+					"Payment recorded. Declarant must upload payment receipts and permit "
+					"certificates on Apply for Pre-Clearance Permits; Finance must verify "
+					"receipts before completing this task."
+				)
+			else:
+				from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+					notify_operations_upload_ucr_receipt,
+					sync_ucr_payment_to_idf_record,
+				)
+
+				sync_ucr_payment_to_idf_record(task)
+				notify_operations_upload_ucr_receipt(task)
+				message = (
+					"Payment recorded. Declarant must upload the UCR payment receipt on "
+					"<b>Create UCR (IDF)</b>; Finance verifies the receipt before completing this task."
+				)
+		finally:
+			frappe.flags.cgm_skip_task_project_sync = False
+
 		return {
 			"task": task.name,
 			"status": task.status,
 			"payment_entry": payment_entry,
 			"auto_completed": False,
-			"message": (
-				"Payment recorded. Operations must upload payment receipts; "
-				"Finance must verify receipts before completing this task."
-			),
+			"message": message,
 		}
 
 	task.completed_by = frappe.session.user
 	task.completed_on = now_datetime()
 	task.status = "Completed"
-	task.save(ignore_permissions=True)
+	frappe.flags.cgm_skip_task_project_sync = True
+	try:
+		task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_skip_task_project_sync = False
 	apply_finance_payment_to_project_permits(task)
 
 	return {
@@ -366,9 +566,32 @@ def sync_finance_docs_from_task(task_name: str) -> dict:
 	"""Backfill Project on PI linked to a finance task (e.g. after upgrade)."""
 	if not task_name or not frappe.db.exists("Task", task_name):
 		frappe.throw("Task not found.")
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
 	out = {"task": task_name, "project": task.project}
 	if task.get("custom_purchase_invoice"):
 		apply_project_from_task_to_purchase_invoice(task.custom_purchase_invoice, task_name)
 		out["purchase_invoice"] = task.custom_purchase_invoice
 	return out
+
+
+@frappe.whitelist()
+def sync_finance_links_from_documents(task_name: str) -> dict:
+	"""Link submitted PI/PE that reference this task (repair / backfill)."""
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	pi_name = frappe.db.get_value(
+		"Purchase Invoice",
+		{"custom_cgm_source_task": task_name, "docstatus": 1},
+		"name",
+		order_by="modified desc",
+	)
+	if not pi_name:
+		frappe.throw("No submitted Purchase Invoice found for this task.")
+	job_link_pi_to_task(task_name, pi_name)
+	task = frappe.get_doc("Task", task_name)
+	return {
+		"task": task_name,
+		"purchase_invoice": task.get("custom_purchase_invoice") or pi_name,
+		"payment_entry": task.get("custom_payment_entry"),
+		"message": "Finance documents linked to this task.",
+	}
