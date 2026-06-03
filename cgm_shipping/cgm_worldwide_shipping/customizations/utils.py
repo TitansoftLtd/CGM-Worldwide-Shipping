@@ -653,7 +653,7 @@ def load_sea_task_template():
 	out = []
 	for row in rows:
 		subject = (row.task_subject or "").strip()
-		dept = (row.department or "").strip()
+		dept = normalize_department_stem(row.department)
 		if not subject:
 			continue
 		if not dept:
@@ -681,20 +681,32 @@ def get_department_name_stem(raw):
 	return value
 
 
+def normalize_department_stem(raw) -> str:
+	"""Template / task stem only (e.g. Finance), never Finance - C from another site."""
+	stem = get_department_name_stem(raw)
+	if not stem:
+		return ""
+	return DEPARTMENT_NAME_ALIASES.get(stem, stem)
+
+
+def _department_matches_company(department: str, company: str) -> bool:
+	"""True when Department link belongs to the given company."""
+	if not department or not company:
+		return False
+	dept_company = frappe.db.get_value("Department", department, "company")
+	if dept_company:
+		return dept_company == company
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	return bool(abbr and department.endswith(f" - {abbr}"))
+
+
 def resolve_department_name(department_value, company=None):
-	"""Resolve a raw department string to a valid ERPNext Department link name."""
+	"""Resolve stem or link to ERPNext Department for *company* (e.g. Finance - CWSCL)."""
 	if not (department_value or "").strip():
 		return None
 
 	value = department_value.strip()
-
-	# 1. Accept the value as-is when it already matches an ERPNext Department.
-	if frappe.db.exists("Department", value):
-		return value
-
-	# 2. Strip the company suffix and apply any known aliases.
-	stem = get_department_name_stem(value)
-	stem = DEPARTMENT_NAME_ALIASES.get(stem, stem)
+	stem = normalize_department_stem(value)
 	if not stem:
 		frappe.throw("Department value is invalid.")
 
@@ -717,20 +729,34 @@ def resolve_department_name(department_value, company=None):
 			)
 		return None
 
-	# 3. Try to narrow the match using the project's company first.
+	def resolve_for_company(co: str | None) -> str | None:
+		if not co:
+			return None
+		abbr = frappe.db.get_value("Company", co, "abbr")
+		if abbr:
+			candidate = f"{stem} - {abbr}".strip()
+			if frappe.db.exists("Department", candidate):
+				return candidate
+		return pick_one([["company", "=", co], ["department_name", "=", stem]])
+
+	# 1. Always prefer the project / target company (local Finance - C must not stick on server).
 	if company:
-		matched = pick_one([["company", "=", company], ["department_name", "=", stem]])
+		matched = resolve_for_company(company)
 		if matched:
 			return matched
 
-	# 4. Try the global default company as a fallback.
+	# 2. Accept an exact link only when it matches that company.
+	if frappe.db.exists("Department", value):
+		if not company or _department_matches_company(value, company):
+			return value
+
 	fallback_company = get_default_company()
 	if fallback_company and fallback_company != company:
-		matched = pick_one([["company", "=", fallback_company], ["department_name", "=", stem]])
+		matched = resolve_for_company(fallback_company)
 		if matched:
 			return matched
 
-	# 5. Match by department_name alone when the name is unique across all companies.
+	# 3. Unique department_name across companies.
 	all_match = frappe.get_all(
 		"Department",
 		filters=[["department_name", "=", stem], ["disabled", "=", 0]],
@@ -745,20 +771,10 @@ def resolve_department_name(department_value, company=None):
 			"Set Project.company or rename one."
 		)
 
-	# 6. Try composing the docname as `{stem} - {abbr}` for the project and default companies.
-	for co in [company, fallback_company]:
-		if not co:
-			continue
-		abbr = frappe.db.get_value("Company", co, "abbr")
-		if not abbr:
-			continue
-		candidate = f"{stem} - {abbr}".strip()
-		if frappe.db.exists("Department", candidate):
-			return candidate
-
 	frappe.throw(
-		f"No Department found for '{stem}'. "
-		"Create it under the Project company or set an exact department link name."
+		f"No Department found for '{stem}'"
+		+ (f" under company {company}." if company else ".")
+		+ f" Create Department '{stem} - <company abbr>' for that company."
 	)
 
 

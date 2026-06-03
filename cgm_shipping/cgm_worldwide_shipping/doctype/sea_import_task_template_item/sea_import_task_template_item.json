@@ -18,6 +18,7 @@
    "reqd": 1
   },
   {
+   "description": "Department stem only (e.g. Finance, Operations). Company suffix is added automatically from the Project.",
    "fieldname": "department",
    "fieldtype": "Data",
    "in_list_view": 1,
