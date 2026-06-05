@@ -59,8 +59,12 @@ def execute():
 			"Clearance Documents",
 			update_modified=False,
 		)
-	_migrate_ucr_invoice_rows_to_finance_lines()
-	_seed_finance_lines_on_open_ucr_tasks()
+	frappe.flags.cgm_skip_task_project_sync = True
+	try:
+		_migrate_ucr_invoice_rows_to_finance_lines()
+		_seed_finance_lines_on_open_ucr_tasks()
+	finally:
+		frappe.flags.cgm_skip_task_project_sync = False
 	frappe.clear_cache(doctype="Task")
 	frappe.db.commit()
 

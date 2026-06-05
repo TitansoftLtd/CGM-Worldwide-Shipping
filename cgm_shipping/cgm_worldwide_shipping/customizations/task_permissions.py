@@ -5,7 +5,7 @@ import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	SEA_TASK_FLOW_KEY,
-	get_department_name_stem,
+	normalize_department_stem,
 )
 
 # Roles that see every sea clearance task (oversight).
@@ -56,7 +56,7 @@ def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
 def department_matches_stems(department: str | None, stems: set[str]) -> bool:
 	if not stems:
 		return False
-	return get_department_name_stem(department) in stems
+	return normalize_department_stem(department) in stems
 
 
 def user_is_assigned_to_task(doc, user: str) -> bool:
@@ -156,17 +156,29 @@ def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
 	return "Finance" in get_user_sea_task_department_stems(user)
 
 
+def _department_link_sql_fragment(stem: str) -> str:
+	"""SQL: task department equals stem or '{stem} - {company abbr}' (any abbr)."""
+	dept_col = "IFNULL(`tabTask`.`department`, '')"
+	fragments = [
+		f"`tabTask`.`department` = {frappe.db.escape(stem)}",
+		f"LOCATE({frappe.db.escape(stem + ' -')}, {dept_col}) = 1",
+	]
+	# Avoid Operations stem matching Field Operations - CWSCL.
+	if stem == "Operations":
+		fragments[-1] = (
+			f"(LOCATE({frappe.db.escape('Operations -')}, {dept_col}) = 1 "
+			f"AND LOCATE({frappe.db.escape('Field Operations -')}, {dept_col}) != 1)"
+		)
+	return "(" + " OR ".join(fragments) + ")"
+
+
 def _build_department_sql_conditions(stems: set[str]) -> str:
 	"""Match ERPNext Department link names (`{stem}` or `{stem} - {abbr}`).
 
 	Avoid SQL ``%`` wildcards: permission fragments are inlined into queries that
 	MySQLdb formats with pyformat, so ``LIKE 'foo-%'`` breaks list views.
 	"""
-	parts: list[str] = []
-	for stem in sorted(stems):
-		parts.append(f"`tabTask`.`department` = {frappe.db.escape(stem)}")
-		prefix = frappe.db.escape(stem + " -")
-		parts.append(f"LOCATE({prefix}, IFNULL(`tabTask`.`department`, '')) = 1")
+	parts = [_department_link_sql_fragment(stem) for stem in sorted(stems)]
 	return "(" + " OR ".join(parts) + ")"
 
 

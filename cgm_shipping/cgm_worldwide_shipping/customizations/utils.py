@@ -764,7 +764,7 @@ def load_sea_task_template():
 	out = []
 	for row in rows:
 		subject = (row.task_subject or "").strip()
-		dept = (row.department or "").strip()
+		dept = normalize_department_stem(row.department)
 		if not subject:
 			continue
 		if not dept:
@@ -792,20 +792,32 @@ def get_department_name_stem(raw):
 	return value
 
 
+def normalize_department_stem(raw) -> str:
+	"""Template / task stem only (e.g. Finance), never Finance - C from another site."""
+	stem = get_department_name_stem(raw)
+	if not stem:
+		return ""
+	return DEPARTMENT_NAME_ALIASES.get(stem, stem)
+
+
+def _department_matches_company(department: str, company: str) -> bool:
+	"""True when Department link belongs to the given company."""
+	if not department or not company:
+		return False
+	dept_company = frappe.db.get_value("Department", department, "company")
+	if dept_company:
+		return dept_company == company
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	return bool(abbr and department.endswith(f" - {abbr}"))
+
+
 def resolve_department_name(department_value, company=None):
-	"""Resolve a raw department string to a valid ERPNext Department link name."""
+	"""Resolve stem or link to ERPNext Department for *company* (e.g. Finance - CWSCL)."""
 	if not (department_value or "").strip():
 		return None
 
 	value = department_value.strip()
-
-	# 1. Accept the value as-is when it already matches an ERPNext Department.
-	if frappe.db.exists("Department", value):
-		return value
-
-	# 2. Strip the company suffix and apply any known aliases.
-	stem = get_department_name_stem(value)
-	stem = DEPARTMENT_NAME_ALIASES.get(stem, stem)
+	stem = normalize_department_stem(value)
 	if not stem:
 		frappe.throw("Department value is invalid.")
 
@@ -828,20 +840,34 @@ def resolve_department_name(department_value, company=None):
 			)
 		return None
 
-	# 3. Try to narrow the match using the project's company first.
+	def resolve_for_company(co: str | None) -> str | None:
+		if not co:
+			return None
+		abbr = frappe.db.get_value("Company", co, "abbr")
+		if abbr:
+			candidate = f"{stem} - {abbr}".strip()
+			if frappe.db.exists("Department", candidate):
+				return candidate
+		return pick_one([["company", "=", co], ["department_name", "=", stem]])
+
+	# 1. Always prefer the project / target company (local Finance - C must not stick on server).
 	if company:
-		matched = pick_one([["company", "=", company], ["department_name", "=", stem]])
+		matched = resolve_for_company(company)
 		if matched:
 			return matched
 
-	# 4. Try the global default company as a fallback.
+	# 2. Accept an exact link only when it matches that company.
+	if frappe.db.exists("Department", value):
+		if not company or _department_matches_company(value, company):
+			return value
+
 	fallback_company = get_default_company()
 	if fallback_company and fallback_company != company:
-		matched = pick_one([["company", "=", fallback_company], ["department_name", "=", stem]])
+		matched = resolve_for_company(fallback_company)
 		if matched:
 			return matched
 
-	# 5. Match by department_name alone when the name is unique across all companies.
+	# 3. Unique department_name across companies.
 	all_match = frappe.get_all(
 		"Department",
 		filters=[["department_name", "=", stem], ["disabled", "=", 0]],
@@ -856,20 +882,10 @@ def resolve_department_name(department_value, company=None):
 			"Set Project.company or rename one."
 		)
 
-	# 6. Try composing the docname as `{stem} - {abbr}` for the project and default companies.
-	for co in [company, fallback_company]:
-		if not co:
-			continue
-		abbr = frappe.db.get_value("Company", co, "abbr")
-		if not abbr:
-			continue
-		candidate = f"{stem} - {abbr}".strip()
-		if frappe.db.exists("Department", candidate):
-			return candidate
-
 	frappe.throw(
-		f"No Department found for '{stem}'. "
-		"Create it under the Project company or set an exact department link name."
+		f"No Department found for '{stem}'"
+		+ (f" under company {company}." if company else ".")
+		+ f" Create Department '{stem} - <company abbr>' for that company."
 	)
 
 
@@ -1024,79 +1040,65 @@ def _apply_project_tracking_defaults(project) -> None:
 		project.custom_opened_date = today()
 
 
-OPPORTUNITY_TO_PROJECT_FIELD_MAP = (
-	("custom_consignee", "custom_consignee"),
-	("custom_entry_no", "custom_entry_no"),
-	("custom_batch_no", "custom_batch_no"),
-	("custom_weight_nw", ("custom_net_weightkg", "custom_weight_nw")),
-	("custom_gross_weight", ("custom_gross_weightkg", "custom_weight_gw")),
-	("custom_vesselairline", "custom_vessel_flight"),
-	("custom_quantity", "custom_shipment_quantity"),
-	("custom_description_of_goods", "custom_shipment_description"),
-	("custom_clearance_station", "custom_cfs"),
-	("custom_station_code", "custom_clearance_station_code"),
-	("custom_airway_bill", "custom_awb_number"),
-)
+def _container_rows_from_preshipment_source(source_doc) -> list[dict]:
+	"""Container rows from preshipment child table, or from linked Bill of Lading when empty."""
+	rows = []
+	for row in source_doc.get("custom_container_information") or []:
+		rows.append(
+			{
+				"container_number": row.get("container_number"),
+				"type_of_container": row.get("type_of_container"),
+			}
+		)
+	if rows:
+		return rows
+
+	bl_name = source_doc.get("custom_bill_of_lading")
+	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
+		return []
+
+	bl = frappe.get_doc("Bill of Lading", bl_name)
+	return [
+		{
+			"container_number": row.get("container_number"),
+			"type_of_container": row.get("type_of_container"),
+		}
+		for row in bl.get("container_information") or []
+	]
 
 
-def _resolve_project_target_field(project_meta, project_field):
-	"""Pick the first Project field that exists (handles site-specific weight field names)."""
-	candidates = (project_field,) if isinstance(project_field, str) else project_field
-	for fieldname in candidates:
-		if project_meta.has_field(fieldname):
-			return fieldname
-	return None
-
-
-def _coerce_project_field_value(project_meta, fieldname: str, value):
-	field = project_meta.get_field(fieldname)
-	if not field or value in (None, ""):
-		return value
-	if field.fieldtype == "Float":
-		return frappe.utils.flt(value)
-	if field.fieldtype == "Int":
-		return frappe.utils.cint(value)
-	return value
-
-
-def _apply_opportunity_fields_to_project(project, opportunity) -> None:
-	"""Copy applicable Opportunity shipment fields onto a new Project."""
-	opp = (
-		frappe.get_doc("Opportunity", opportunity)
-		if isinstance(opportunity, str)
-		else opportunity
-	)
-	if not opp:
+def _copy_container_rows_to_project(project, rows: list[dict]) -> None:
+	if not rows or not project.meta.has_field("custom_container_information"):
 		return
-
-	project_meta = project.meta
-	for opp_field, project_field in OPPORTUNITY_TO_PROJECT_FIELD_MAP:
-		if not opp.meta.has_field(opp_field):
-			continue
-		target_field = _resolve_project_target_field(project_meta, project_field)
-		if not target_field:
-			continue
-		value = opp.get(opp_field)
-		if value in (None, ""):
-			continue
-		project.set(
-			target_field,
-			_coerce_project_field_value(project_meta, target_field, value),
+	project.set("custom_container_information", [])
+	for row in rows:
+		project.append(
+			"custom_container_information",
+			{
+				"container_number": row.get("container_number"),
+				"type_of_container": row.get("type_of_container"),
+			},
 		)
 
-	if project_meta.has_field("custom_awb_number") and not project.get("custom_awb_number"):
-		for opp_field in ("custom_air_waybill",):
-			if not opp.meta.has_field(opp_field):
-				continue
-			value = opp.get(opp_field)
-			if value not in (None, ""):
-				project.custom_awb_number = value
-				break
 
-	if project_meta.has_field("custom_consignee") and not project.get("custom_consignee"):
-		consignee = opp.get("custom_consignee") or opp.get("customer_name")
-		if consignee:
-			project.custom_consignee = consignee
+def _apply_preshipment_transport_defaults(project, source_doc) -> None:
+	"""Copy B/L, AWB, and container rows from Lead/Opportunity onto a new Project."""
+	project_meta = project.meta
+
+	if project_meta.has_field("custom_bill_of_lading"):
+		bl = source_doc.get("custom_bill_of_lading")
+		if bl and not project.get("custom_bill_of_lading"):
+			project.custom_bill_of_lading = bl
+
+	if project_meta.has_field("custom_awb_number"):
+		awb = source_doc.get("custom_awb_number") or source_doc.get("custom_air_waybill")
+		if awb and not project.get("custom_awb_number"):
+			project.custom_awb_number = awb
+
+	if project_meta.has_field("custom_container_information") and not project.get(
+		"custom_container_information"
+	):
+		_copy_container_rows_to_project(project, _container_rows_from_preshipment_source(source_doc))
 
 
 def _apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
@@ -1116,6 +1118,7 @@ def _apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
 	for fieldname, value in pairs:
 		if project_meta.has_field(fieldname) and value and not project.get(fieldname):
 			project.set(fieldname, value)
+	_apply_preshipment_transport_defaults(project, lead)
 
 
 def lead_has_customer(lead):
@@ -1210,11 +1213,7 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	if project_fields.has_field("custom_source_opportunity"):
 		proj.custom_source_opportunity = opportunity
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers import (
-		apply_bill_of_lading_from_source,
-	)
-
-	apply_bill_of_lading_from_source(proj, opp)
+	_apply_preshipment_transport_defaults(proj, opp)
 	sync_linked_attachments_to_project(proj)
 	return insert_shipment_project(proj)
 
