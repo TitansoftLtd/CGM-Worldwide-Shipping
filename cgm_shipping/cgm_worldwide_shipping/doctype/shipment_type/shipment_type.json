@@ -9,6 +9,11 @@
   "section_break_2k6q",
   "shipment_type_name",
   "cgm_ref_prefix",
+  "default_mode_of_transport",
+  "description",
+  "column_break_st_cfg",
+  "use_sea_import_workflow",
+  "is_active",
   "requires_bill_of_lading",
   "requires_air_waybill",
   "uses_unit_tracking",
@@ -25,6 +30,36 @@
    "fieldname": "cgm_ref_prefix",
    "fieldtype": "Data",
    "label": "CGM Ref Prefix"
+  },
+  {
+   "default": "Sea",
+   "fieldname": "default_mode_of_transport",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Default Mode of Transport",
+   "options": "Sea\nAir\nRoad"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "column_break_st_cfg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "use_sea_import_workflow",
+   "fieldtype": "Check",
+   "label": "Use Sea Import Workflow"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
   },
   {
    "default": "0",

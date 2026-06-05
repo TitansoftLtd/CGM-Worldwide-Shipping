@@ -323,6 +323,30 @@ frappe.ui.form.on("Task", {
 				frappe.set_route("Form", "Project", frm.doc.project);
 			});
 		}
+
+		if (
+			is_sea_clearance_task(frm) &&
+			sea_task_sequence(frm) === SEA_CREATE_ENTRY_SEQ &&
+			frm.doc.project &&
+			frm.doc.status !== "Completed"
+		) {
+			add_cgm_toolbar_button(
+				frm,
+				__("Start Container Tracking"),
+				() => {
+					if (cgm_shipping?.container_tracking?.open_from_task) {
+						cgm_shipping.container_tracking.open_from_task(frm);
+						return;
+					}
+					frappe.msgprint(
+						__(
+							"Container tracking script is not loaded. Please hard-refresh the browser (Ctrl+Shift+R)."
+						)
+					);
+				},
+				{ primary: true }
+			);
+		}
 	},
 
 	validate(frm) {
@@ -359,6 +383,7 @@ const SEA_UCR_FINANCE_SEQ = 4;
 const SEA_PERMIT_APPLICATION_TASK_SEQS = [5, 15];
 const SEA_AUTO_COMPLETE_TASK_SEQS = [1, 2];
 const SEA_LIGHT_TASK_SEQS = [8, 19, 20, 21, 22, 23, 24];
+const SEA_CREATE_ENTRY_SEQ = 11;
 const SEA_NO_DOCUMENT_TASK_SEQS = [1, 2];
 
 const SEA_TASK_HIDDEN_FIELDS = [

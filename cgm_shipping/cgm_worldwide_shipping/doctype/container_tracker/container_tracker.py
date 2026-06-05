@@ -14,7 +14,15 @@ from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_cha
 
 class ContainerTracker(Document):
 	def validate(self):
+		self._apply_bill_of_lading_defaults()
 		apply_metrics_to_doc(self)
+
+	def _apply_bill_of_lading_defaults(self):
+		bl = self.get("custom_bill_of_lading")
+		if bl:
+			self.bl_number = bl
+		if self.get("custom_bl_container_select") and not self.container_number:
+			self.container_number = self.custom_bl_container_select
 
 	def on_update(self):
 		sync_container_summary_to_project(self.project)

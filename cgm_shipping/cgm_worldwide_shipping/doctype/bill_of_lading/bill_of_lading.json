@@ -6,8 +6,12 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "client_ref",
   "bl_number",
+  "column_break_sqbc",
+  "client_ref",
+  "column_break_chhk",
+  "bill_of_lading",
+  "section_break_abdt",
   "container_information",
   "section_break_mkbo",
   "amended_from"
@@ -30,7 +34,7 @@
   {
    "fieldname": "bl_number",
    "fieldtype": "Data",
-   "label": "BL Number",
+   "label": "Bill of Lading Number",
    "unique": 1
   },
   {
@@ -43,13 +47,31 @@
    "fieldtype": "Table",
    "label": "Container Information",
    "options": "Container"
+  },
+  {
+   "fieldname": "column_break_sqbc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_abdt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_chhk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bill_of_lading",
+   "fieldtype": "Attach",
+   "label": "Bill of Lading"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-27 22:26:52.098496",
+ "make_attachments_public": 1,
+ "modified": "2026-06-05 15:47:55.288234",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",

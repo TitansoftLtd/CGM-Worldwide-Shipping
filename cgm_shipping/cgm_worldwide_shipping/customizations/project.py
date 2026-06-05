@@ -58,6 +58,16 @@ def assign_cgm_reference_on_insert(doc, _method=None):
 	assign_cgm_project_reference(doc)
 
 
+def sync_consignee_from_customer(doc, _method=None):
+	"""Keep consignee aligned with the linked customer."""
+	if not doc.get("customer") or not doc.meta.has_field("custom_consignee"):
+		return
+
+	customer_label = frappe.db.get_value("Customer", doc.customer, "customer_name") or doc.customer
+	if not doc.get("custom_consignee") or doc.has_value_changed("customer"):
+		doc.custom_consignee = customer_label
+
+
 def apply_shipment_document_automation(doc, _method=None):
 	# Legacy workflow statuses that existed before we switched Project tracking to
 	# the ordered CGM Sea chart (UCR Applied → ... → Completed).
