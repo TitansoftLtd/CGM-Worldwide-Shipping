@@ -74,11 +74,17 @@ def _shipment_type_meta():
 
 def _shipment_type_query_fields() -> list[str]:
 	"""Only fields present in DB — safe before bench migrate adds new columns."""
-	base = ["name", "shipment_type_name", "cgm_ref_prefix", "default_mode_of_transport"]
 	meta = _shipment_type_meta()
 	if not meta:
-		return base
-	return base + [f for f in _OPTIONAL_SHIPMENT_TYPE_FIELDS if meta.has_field(f)]
+		return ["name", "shipment_type_name", "cgm_ref_prefix"]
+	candidates = [
+		"name",
+		"shipment_type_name",
+		"cgm_ref_prefix",
+		"default_mode_of_transport",
+		*_OPTIONAL_SHIPMENT_TYPE_FIELDS,
+	]
+	return [f for f in candidates if meta.has_field(f)]
 
 
 def _filter_row_for_doc(row: dict) -> dict:
