@@ -7,6 +7,10 @@ from frappe.utils import flt, now_datetime
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
 	is_sea_payment_task,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	is_permit_finance_payment_task,
+	is_ucr_finance_payment_task,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	payment_entry_allocates_purchase_invoice,
 )
@@ -82,17 +86,21 @@ def get_default_purchase_item_code(company: str | None = None) -> str:
 
 
 def get_permit_rows_for_purchase_invoice(task) -> list[dict]:
-	"""Permit rows with invoice + amount for PI line pre-fill (task 6 / 15 finance)."""
+	"""Permit rows with invoice + amount for PI line pre-fill (permit finance steps)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 		PERMIT_REGISTER_FIELD,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
-		PERMIT_STAGE_BY_TASK_SEQ,
 		TASK_PERMITS_FIELD,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+		get_permit_stage_for_sequence,
+		is_permit_finance_payment_task,
+		permit_finance_by_application_sequence,
 	)
 
 	seq = int(task.get("custom_sequence_no") or 0)
-	if seq not in (6,):
+	if not is_permit_finance_payment_task(seq):
 		return []
 
 	if task.meta.has_field(TASK_PERMITS_FIELD) and not task.get(TASK_PERMITS_FIELD):
@@ -106,7 +114,11 @@ def get_permit_rows_for_purchase_invoice(task) -> list[dict]:
 	rows: list = list(task.get(TASK_PERMITS_FIELD) or [])
 
 	if not rows and task.project:
-		stage = PERMIT_STAGE_BY_TASK_SEQ.get(5 if seq == 6 else 15, "Pre-clearance")
+		app_seq = next(
+			(app for app, fin in permit_finance_by_application_sequence().items() if fin == seq),
+			None,
+		)
+		stage = get_permit_stage_for_sequence(app_seq) if app_seq else "Pre-clearance"
 		project = frappe.get_doc("Project", task.project)
 		rows = [
 			r
@@ -175,7 +187,7 @@ def get_task_finance_defaults(task_name: str) -> dict:
 	frappe.has_permission("Task", ptype="read", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
 	ctx = _task_finance_context(task)
-	if int(task.get("custom_sequence_no") or 0) == 6:
+	if is_permit_finance_payment_task(int(task.get("custom_sequence_no") or 0)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 			ensure_finance_permit_rows_saved,
 		)
@@ -185,7 +197,7 @@ def get_task_finance_defaults(task_name: str) -> dict:
 	permit_rows = get_permit_rows_for_purchase_invoice(task)
 	permit_lines = build_permit_purchase_invoice_lines(task)
 	remarks = f"{task.subject} ({task.name}) — {ctx['project']}"
-	if int(task.get("custom_sequence_no") or 0) == 4:
+	if is_ucr_finance_payment_task(int(task.get("custom_sequence_no") or 0)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 			get_ucr_application_task,
 		)
@@ -497,15 +509,15 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 
 	seq = int(task.get("custom_sequence_no") or 0)
 
-	# Task 4 (UCR) / 6 (permits): record PE only — complete after receipts verified.
-	if seq in (4, 6):
+	# UCR / permit finance: record PE only — complete after receipts verified.
+	if is_ucr_finance_payment_task(seq) or is_permit_finance_payment_task(seq):
 		if task_fields.has_field("custom_payment_entry"):
 			_set_task_fields(task.name, {"custom_payment_entry": payment_entry})
 		task = frappe.get_doc("Task", task.name)
 
 		frappe.flags.cgm_skip_task_project_sync = True
 		try:
-			if seq == 6:
+			if is_permit_finance_payment_task(seq):
 				apply_finance_payment_to_project_permits(task)
 				from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 					notify_declarant_upload_permit_receipts,
