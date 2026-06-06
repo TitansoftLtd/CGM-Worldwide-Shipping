@@ -74,7 +74,7 @@
   {
    "fieldname": "section_break_finance",
    "fieldtype": "Section Break",
-   "label": "UCR payment (Ops → Finance)"
+   "label": "UCR payment (Ops \u2192 Finance)"
   },
   {
    "default": "Pending Invoice",
