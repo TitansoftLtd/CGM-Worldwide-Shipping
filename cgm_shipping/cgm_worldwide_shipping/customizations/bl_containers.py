@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import frappe
 
-CONTAINER_ROW_FIELDS = ("container_number", "type_of_container", "no_container", "seal_no")
+CONTAINER_ROW_FIELDS = ("container_number", "type_of_container", "seal_no")
 BL_LINK_FIELD = "custom_bill_of_lading"
 CONTAINER_TABLE_FIELD = "custom_container_information"
 CONTAINER_TYPE_DISPLAY_ORDER = ("40FT", "20FT", "LCL")
@@ -38,9 +38,11 @@ def _fetch_container_rows(bill_of_lading: str | None) -> list[dict]:
 @frappe.whitelist()
 def get_bl_container_select_options(bill_of_lading: str | None = None) -> list[dict]:
 	"""Options for Container Tracker select: value = container_number, label = human-readable."""
+	if not bill_of_lading or not frappe.db.exists("Bill of Lading", bill_of_lading):
+		return []
+	# Check permission before reading any container rows.
+	frappe.has_permission("Bill of Lading", ptype="read", doc=bill_of_lading, throw=True)
 	rows = _fetch_container_rows(bill_of_lading)
-	if bill_of_lading and frappe.db.exists("Bill of Lading", bill_of_lading):
-		frappe.has_permission("Bill of Lading", ptype="read", doc=bill_of_lading, throw=True)
 
 	options = []
 	for row in rows:
@@ -94,9 +96,17 @@ def get_container_rows_for_bill_of_lading(bill_of_lading: str | None = None) -> 
 	return _fetch_container_rows(bill_of_lading)
 
 
-def sync_preshipment_containers_from_bl(doc, method=None) -> None:
-	"""Populate read-only container rows from the linked Bill of Lading before save."""
+def sync_preshipment_containers_from_bl(doc, method=None, force: bool = False) -> None:
+	"""Populate read-only container rows from the linked Bill of Lading before save.
+
+	Only rebuilds the table when the Bill of Lading link actually changed (or on a
+	new doc / when ``force`` is set). On saves where the BL link is unchanged the
+	rows are left intact, so manual edits are not silently wiped on every save.
+	"""
 	if not doc.meta.has_field(CONTAINER_TABLE_FIELD):
+		return
+
+	if not force and not doc.is_new() and not doc.has_value_changed(BL_LINK_FIELD):
 		return
 
 	bl_name = doc.get(BL_LINK_FIELD)
@@ -119,7 +129,7 @@ def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 		return
 
 	target_doc.set(BL_LINK_FIELD, bl_name)
-	sync_preshipment_containers_from_bl(target_doc)
+	sync_preshipment_containers_from_bl(target_doc, force=True)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		carry_bill_of_lading_attachment_to_project,

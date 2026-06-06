@@ -56,11 +56,21 @@ def _resolve_opportunity_for_bl(bl_doc, opportunity: str | None = None) -> str |
 	return None
 
 
-def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
-	"""Link submitted BL data back onto the source Opportunity."""
+def sync_opportunity_from_submitted_bl(
+	bl_doc, opportunity: str | None = None, enforce_permissions: bool = False
+) -> str | None:
+	"""Link submitted BL data back onto the source Opportunity.
+
+	``enforce_permissions`` must be set for user-initiated calls (e.g. the
+	whitelisted endpoint) so a user cannot mutate an Opportunity they lack write
+	access to. The ``on_submit`` hook runs as a system side-effect and leaves it off.
+	"""
 	opportunity = _resolve_opportunity_for_bl(bl_doc, opportunity)
 	if not opportunity:
 		return None
+
+	if enforce_permissions:
+		frappe.has_permission("Opportunity", ptype="write", doc=opportunity, throw=True)
 
 	opp = frappe.get_doc("Opportunity", opportunity)
 	changed = False
@@ -98,7 +108,9 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 		frappe.throw("Bill of Lading must be submitted first.")
 
 	ensure_document_types()
-	linked_opportunity = sync_opportunity_from_submitted_bl(doc, opportunity)
+	linked_opportunity = sync_opportunity_from_submitted_bl(
+		doc, opportunity, enforce_permissions=True
+	)
 	return {
 		"bl_name": doc.name,
 		"attachment": doc.get(BL_ATTACHMENT_FIELD),

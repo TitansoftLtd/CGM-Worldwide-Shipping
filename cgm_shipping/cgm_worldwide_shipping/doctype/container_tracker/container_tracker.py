@@ -85,9 +85,15 @@ def sync_container_summary_to_project(project: str | None) -> None:
 		return
 
 	updates = {}
+	# Don't clobber a manually-set Project ATA; only fill when empty (mirrors custom_eta below).
+	existing_ata = (
+		frappe.db.get_value("Project", project, "custom_ata")
+		if meta.has_field("custom_ata")
+		else None
+	)
 	if meta.has_field("custom_ata"):
 		atas = [r.ata for r in rows if r.ata]
-		if atas:
+		if atas and not existing_ata:
 			updates["custom_ata"] = min(atas)
 
 	if meta.has_field("custom_eta"):
@@ -113,7 +119,7 @@ def sync_container_summary_to_project(project: str | None) -> None:
 			updates["custom_custom_release_date"] = max(releases)
 
 	if meta.has_field("custom_berth_phase"):
-		if updates.get("custom_ata") or any(r.discharging_date for r in rows):
+		if existing_ata or updates.get("custom_ata") or any(r.discharging_date for r in rows):
 			updates["custom_berth_phase"] = "After Vessel Berthed"
 		else:
 			updates["custom_berth_phase"] = "Before Vessel Berth"
