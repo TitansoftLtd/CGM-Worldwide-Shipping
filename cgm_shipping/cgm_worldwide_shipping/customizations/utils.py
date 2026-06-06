@@ -221,6 +221,7 @@ def normalize_shipment_fields_on_doc(doc) -> None:
 
 
 SHIPMENT_DOCUMENTS_FIELD = "custom_shipment_documents"
+OPPORTUNITY_DOCUMENTS_FIELD = "custom_clients_documents"
 TASK_DOCUMENTS_FIELD = "custom_task_documents"
 
 
@@ -391,6 +392,11 @@ DOCUMENT_TYPE_DEFAULTS = {
 		"default_required": 1,
 		"required_stage": "Pre-IDF",
 	},
+	"BL": {
+		"category": "Transport",
+		"default_required": 0,
+		"required_stage": "Pre-IDF",
+	},
 }
 
 # Customer Attach field → Document Type code.
@@ -426,6 +432,99 @@ def carry_preshipment_docs_to_project(project_doc, source_doc):
 		document_type = get_document_type_link_name(code)
 		if document_type:
 			append_verified_doc_row(project_doc, document_type, attachment_url)
+
+
+def carry_clients_documents_to_project(project_doc, source_doc) -> None:
+	"""Copy all Clients Documents rows from Opportunity onto Project shipment documents."""
+	if not source_doc or not source_doc.meta.has_field(OPPORTUNITY_DOCUMENTS_FIELD):
+		return
+	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return
+
+	ensure_document_types()
+	for row in source_doc.get(OPPORTUNITY_DOCUMENTS_FIELD) or []:
+		if not row.document_type or not row.attachment:
+			continue
+		if not frappe.db.exists("Document Type", row.document_type):
+			continue
+		_append_or_update_shipment_document_row(project_doc, row)
+
+
+def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
+	rows = project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
+	for existing in rows:
+		if not document_types_match(existing.document_type, source_row.document_type):
+			continue
+		if not existing.attachment:
+			existing.attachment = source_row.attachment
+		if source_row.status and source_row.status != "Missing":
+			existing.status = source_row.status
+		for field in (
+			"uploaded_by",
+			"uploaded_on",
+			"verified_by",
+			"verified_on",
+			"remarks",
+		):
+			value = source_row.get(field)
+			if value and not existing.get(field):
+				existing.set(field, value)
+		return
+
+	project_doc.append(
+		SHIPMENT_DOCUMENTS_FIELD,
+		{
+			"document_type": source_row.document_type,
+			"attachment": source_row.attachment,
+			"status": source_row.status or "Uploaded",
+			"uploaded_by": source_row.uploaded_by,
+			"uploaded_on": source_row.uploaded_on,
+			"verified_by": source_row.verified_by,
+			"verified_on": source_row.verified_on,
+			"remarks": source_row.remarks,
+		},
+	)
+
+
+def get_bill_of_lading_attachment_url(
+	bl_name: str | None = None, source_doc=None
+) -> str | None:
+	"""Resolve BL file URL from the Bill of Lading record or source Clients Documents."""
+	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+		attachment_url = frappe.db.get_value("Bill of Lading", bl_name, "bill_of_lading")
+		if attachment_url:
+			return attachment_url
+
+	if not source_doc:
+		return None
+
+	clients_field = OPPORTUNITY_DOCUMENTS_FIELD
+	if not source_doc.meta.has_field(clients_field):
+		return None
+
+	bl_type = get_document_type_link_name("BL")
+	if not bl_type:
+		return None
+
+	for row in source_doc.get(clients_field) or []:
+		if document_types_match(row.document_type, bl_type) and row.attachment:
+			return row.attachment
+	return None
+
+
+def carry_bill_of_lading_attachment_to_project(
+	project_doc, bl_name: str | None = None, source_doc=None
+) -> None:
+	"""Add the Bill of Lading file to Project shipment documents (type BL)."""
+	ensure_document_types()
+	bl_name = bl_name or project_doc.get("custom_bill_of_lading")
+	attachment_url = get_bill_of_lading_attachment_url(bl_name, source_doc)
+	if not attachment_url:
+		return
+
+	document_type = get_document_type_link_name("BL")
+	if document_type:
+		append_verified_doc_row(project_doc, document_type, attachment_url)
 
 
 def carry_customer_attachments_to_project(project_doc, customer_ref):
@@ -574,12 +673,24 @@ def sync_linked_attachments_to_project(project_doc):
 	if not lead_name and project_doc.get("customer"):
 		lead_name = frappe.db.get_value("Customer", project_doc.customer, "lead_name")
 	if lead_name and frappe.db.exists("Lead", lead_name):
-		carry_preshipment_docs_to_project(project_doc, frappe.get_doc("Lead", lead_name))
+		lead_doc = frappe.get_doc("Lead", lead_name)
+		carry_preshipment_docs_to_project(project_doc, lead_doc)
+		carry_bill_of_lading_attachment_to_project(
+			project_doc,
+			bl_name=project_doc.get("custom_bill_of_lading") or lead_doc.get("custom_bill_of_lading"),
+			source_doc=lead_doc,
+		)
 
 	# 2. Opportunity source when present.
 	opp_name = project_doc.get("custom_source_opportunity")
 	if opp_name and frappe.db.exists("Opportunity", opp_name):
-		carry_preshipment_docs_to_project(project_doc, frappe.get_doc("Opportunity", opp_name))
+		opp_doc = frappe.get_doc("Opportunity", opp_name)
+		carry_clients_documents_to_project(project_doc, opp_doc)
+		carry_bill_of_lading_attachment_to_project(
+			project_doc,
+			bl_name=project_doc.get("custom_bill_of_lading") or opp_doc.get("custom_bill_of_lading"),
+			source_doc=opp_doc,
+		)
 
 	# 3. Customer attach fields (KRA PIN, etc.).
 	if project_doc.get("customer"):
@@ -1055,6 +1166,11 @@ def create_project_from_lead(lead, project_name=None):
 	if project_fields.has_field("custom_source_lead"):
 		proj.custom_source_lead = lead
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers import (
+		apply_bill_of_lading_from_source,
+	)
+
+	apply_bill_of_lading_from_source(proj, lead_doc)
 	sync_linked_attachments_to_project(proj)
 	return insert_shipment_project(proj)
 
@@ -1086,6 +1202,7 @@ def create_project_from_opportunity(opportunity, project_name=None):
 		shipment_type=opp.get("custom_shipment_type"),
 		mode=opp.get("custom_mode_of_transport"),
 	)
+	_apply_opportunity_fields_to_project(proj, opp)
 	_apply_project_tracking_defaults(proj)
 	if project_name:
 		proj.project_name = project_name

@@ -71,6 +71,15 @@ function setup_clearance_tasks_toolbar_button(frm) {
 	);
 }
 
+function sync_consignee_from_customer(frm) {
+	if (!frm.doc.customer || !frm.fields_dict.custom_consignee) {
+		return;
+	}
+	frappe.db.get_value("Customer", frm.doc.customer, "customer_name", (values) => {
+		frm.set_value("custom_consignee", values?.customer_name || frm.doc.customer);
+	});
+}
+
 function toggle_project_transport_reference_fields(frm) {
 	const mode = frm.doc.custom_mode_of_transport;
 	const hide_awb = mode === "Sea";
@@ -295,12 +304,18 @@ frappe.ui.form.on("Project", {
 		if (frm.is_new() && frm.fields_dict.custom_opened_date && !frm.doc.custom_opened_date) {
 			frm.set_value("custom_opened_date", frappe.datetime.get_today());
 		}
+		if (frm.doc.customer && !frm.doc.custom_consignee) {
+			sync_consignee_from_customer(frm);
+		}
 		toggle_project_transport_reference_fields(frm);
+	},
+
+	customer(frm) {
+		sync_consignee_from_customer(frm);
 	},
 
 	refresh(frm) {
 		toggle_project_transport_reference_fields(frm);
-		cgm_shipping.bl_containers.sync_from_bl(frm, { silent: true });
 
 		if (frm.doc.custom_shipment_status) {
 			const indicator = project_clearance_indicator(frm.doc);
@@ -351,6 +366,5 @@ frappe.ui.form.on("Project", {
 
 	custom_bill_of_lading(frm) {
 		toggle_project_transport_reference_fields(frm);
-		cgm_shipping.bl_containers.sync_from_bl(frm);
 	},
 });
