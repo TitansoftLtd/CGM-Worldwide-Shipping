@@ -218,9 +218,9 @@ function render_container_tracking_table(frm, dashboard) {
 					<td class="text-right">${format_currency_amount(c.demurrage_amount)}</td>
 					<td class="text-right">${c.detention_days != null ? c.detention_days : ""}</td>
 					<td class="text-right">${format_currency_amount(c.detention_amount)}</td>
-					<td>${c.gate_out_date_port || ""}</td>
-					<td>${c.expected_empty_return || ""}</td>
-					<td>${c.actual_empty_return || ""}</td>
+					<td>${frappe.utils.escape_html(c.gate_out_date_port || "")}</td>
+					<td>${frappe.utils.escape_html(c.expected_empty_return || "")}</td>
+					<td>${frappe.utils.escape_html(c.actual_empty_return || "")}</td>
 				</tr>`;
 			})
 			.join("");

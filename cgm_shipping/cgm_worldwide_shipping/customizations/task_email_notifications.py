@@ -24,26 +24,49 @@ DEFAULT_EMAIL_TEMPLATE = (
 
 
 def get_users_with_roles(roles: tuple[str, ...]) -> list[str]:
+	if not roles:
+		return []
+	# Single query for all role holders, then one query to keep only enabled users
+	# (was an N+1: a query per role plus a get_value per user).
+	rows = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", list(roles)], "parenttype": "User"},
+		fields=["parent as user", "role"],
+	)
+	if not rows:
+		return []
+	enabled = set(
+		frappe.get_all(
+			"User",
+			filters={"name": ["in", list({r.user for r in rows})], "enabled": 1},
+			pluck="name",
+		)
+	)
+	# Preserve the caller's role priority (first role's holders first), then user name.
+	role_rank = {role: idx for idx, role in enumerate(roles)}
 	seen: set[str] = set()
 	out: list[str] = []
-	for role in roles:
-		for user in frappe.get_all(
-			"Has Role",
-			filters={"role": role, "parenttype": "User"},
-			pluck="parent",
-		):
-			if user in seen or not frappe.db.get_value("User", user, "enabled"):
-				continue
-			seen.add(user)
-			out.append(user)
+	for row in sorted(rows, key=lambda r: (role_rank.get(r.role, len(roles)), r.user)):
+		if row.user in enabled and row.user not in seen:
+			seen.add(row.user)
+			out.append(row.user)
 	return out
 
 
 def get_user_email_addresses(users: list[str]) -> list[str]:
+	if not users:
+		return []
+	# Fetch all emails in one query (was a get_value per user).
+	email_map = {
+		r.name: r.email
+		for r in frappe.get_all(
+			"User", filters={"name": ["in", list(set(users))]}, fields=["name", "email"]
+		)
+	}
 	emails: list[str] = []
 	seen: set[str] = set()
-	for user in users:
-		email = (frappe.db.get_value("User", user, "email") or user or "").strip()
+	for user in users:  # preserve caller order
+		email = (email_map.get(user) or user or "").strip()
 		if not email or "@" not in email or email in seen:
 			continue
 		seen.add(email)

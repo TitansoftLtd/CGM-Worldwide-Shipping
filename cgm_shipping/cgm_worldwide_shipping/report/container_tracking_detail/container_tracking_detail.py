@@ -48,61 +48,60 @@ def get_columns():
 	]
 
 
+CONTAINER_FIELDS = [
+	"name",
+	"project",
+	"container_number",
+	"bl_number",
+	"batch_bl_no",
+	"container_mode",
+	"delivery_location",
+	"eta",
+	"ata",
+	"discharging_date",
+	"icd_mombasa_discharge_date",
+	"custom_release_date",
+	"gate_out_date_port",
+	"delivery_date",
+	"actual_empty_return",
+	"expected_empty_return",
+	"gate_in_date_depot",
+	"icd_gate_in_date",
+	"icd_gate_out_date",
+	"free_days",
+	"port_days_used",
+	"daily_demurrage_rate",
+	"daily_detention_rate",
+	"demurrage_days",
+	"detention_days",
+	"demurrage_amount",
+	"detention_amount",
+	"demurrage_date",
+	"days_outstanding",
+	"status",
+]
+
+
 def get_data(filters):
-	conditions = []
-	values = {}
-
+	list_filters = {}
 	if filters.get("project"):
-		conditions.append("ct.project = %(project)s")
-		values["project"] = filters.project
+		list_filters["project"] = filters.project
 
-	where = f"where {' and '.join(conditions)}" if conditions else ""
-
-	rows = frappe.db.sql(
-		f"""
-		select
-			ct.name as container_tracker,
-			ct.project,
-			ct.container_number,
-			ct.bl_number,
-			ct.batch_bl_no,
-			ct.container_mode,
-			ct.delivery_location,
-			ct.eta,
-			ct.ata,
-			ct.discharging_date,
-			ct.icd_mombasa_discharge_date,
-			ct.custom_release_date,
-			ct.gate_out_date_port,
-			ct.delivery_date,
-			ct.actual_empty_return,
-			ct.expected_empty_return,
-			ct.gate_in_date_depot,
-			ct.icd_gate_in_date,
-			ct.icd_gate_out_date,
-			ct.free_days,
-			ct.port_days_used,
-			ct.daily_demurrage_rate,
-			ct.daily_detention_rate,
-			ct.demurrage_days,
-			ct.detention_days,
-			ct.demurrage_amount,
-			ct.detention_amount,
-			ct.demurrage_date,
-			ct.days_outstanding,
-			ct.status
-		from `tabContainer Tracker` ct
-		{where}
-		order by ct.project asc, ct.container_number asc
-		""",
-		values,
-		as_dict=True,
+	# Use get_list (not raw SQL / get_all) so the doctype's role and user
+	# permissions are applied — a user only sees Container Trackers they may read.
+	rows = frappe.get_list(
+		"Container Tracker",
+		filters=list_filters,
+		fields=CONTAINER_FIELDS,
+		order_by="project asc, container_number asc",
+		limit_page_length=0,
 	)
 
 	data = []
 	for row in rows:
+		row["container_tracker"] = row.get("name")
 		enriched = enrich_container_row(row)
-		enriched["status"] = enriched.get("status") or row.status or ""
+		enriched["status"] = enriched.get("status") or row.get("status") or ""
 		data.append(enriched)
 
 	if filters.get("status"):

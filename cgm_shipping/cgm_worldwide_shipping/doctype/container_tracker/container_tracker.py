@@ -85,9 +85,15 @@ def sync_container_summary_to_project(project: str | None) -> None:
 		return
 
 	updates = {}
+	# Don't clobber a manually-set Project ATA; only fill when empty (mirrors custom_eta below).
+	existing_ata = (
+		frappe.db.get_value("Project", project, "custom_ata")
+		if meta.has_field("custom_ata")
+		else None
+	)
 	if meta.has_field("custom_ata"):
 		atas = [r.ata for r in rows if r.ata]
-		if atas:
+		if atas and not existing_ata:
 			updates["custom_ata"] = min(atas)
 
 	if meta.has_field("custom_eta"):
@@ -113,7 +119,7 @@ def sync_container_summary_to_project(project: str | None) -> None:
 			updates["custom_custom_release_date"] = max(releases)
 
 	if meta.has_field("custom_berth_phase"):
-		if updates.get("custom_ata") or any(r.discharging_date for r in rows):
+		if existing_ata or updates.get("custom_ata") or any(r.discharging_date for r in rows):
 			updates["custom_berth_phase"] = "After Vessel Berthed"
 		else:
 			updates["custom_berth_phase"] = "Before Vessel Berth"
@@ -141,23 +147,40 @@ def get_containers_for_project(project: str) -> list[dict]:
 	return [enrich_container_row(r) for r in rows]
 
 
+_COMPUTED_METRIC_FIELDS = (
+	"expected_empty_return",
+	"port_days_used",
+	"demurrage_days",
+	"demurrage_date",
+	"detention_days",
+	"demurrage_amount",
+	"detention_amount",
+	"days_outstanding",
+	"status",
+)
+
+
 @frappe.whitelist()
 def refresh_open_container_metrics() -> int:
 	"""Daily job: recompute outstanding/detention for containers not yet returned."""
-	names = frappe.get_all(
+	# Read rows as dicts and batch-update only the computed metric fields, rather
+	# than loading a full document per container (avoids an N+1 of get_doc/db_update).
+	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"actual_empty_return": ["is", "not set"]},
-		pluck="name",
+		fields=_CONTAINER_TRACKER_FIELDS,
 	)
 	projects = set()
-	for name in names:
-		doc = frappe.get_doc("Container Tracker", name)
-		apply_metrics_to_doc(doc)
-		doc.db_update()
-		if doc.project:
-			projects.add(doc.project)
+	for row in rows:
+		metrics = compute_container_metrics(row)
+		updates = {f: metrics.get(f) for f in _COMPUTED_METRIC_FIELDS}
+		frappe.db.set_value(
+			"Container Tracker", row["name"], updates, update_modified=False
+		)
+		if row.get("project"):
+			projects.add(row["project"])
 
 	for project in projects:
 		sync_container_summary_to_project(project)
 
-	return len(names)
+	return len(rows)

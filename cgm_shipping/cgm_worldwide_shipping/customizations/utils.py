@@ -118,32 +118,6 @@ def assign_cgm_project_reference(project) -> None:
 		project.custom_cgm_ref_no = ref
 
 
-def build_project_name_seed(label, shipment_type=None, mode=None):
-	# Legacy helper — prefer assign_cgm_project_reference for new shipments.
-	core = (label or "").strip() or "Client"
-	details = " ".join(part for part in [shipment_type, mode] if part)
-	if details:
-		return f"Shipment - {core} - {details}"
-	return f"Shipment - {core}"
-
-
-def ensure_unique_project_name(seed_name):
-	# 1. Use fallback when seed is blank.
-	base = (seed_name or "").strip() or "Shipment"
-
-	# 2. Return base name when no duplicate exists.
-	if not frappe.db.exists("Project", {"project_name": base}):
-		return base
-
-	# 3. Append a numeric suffix until a unique name is found.
-	for idx in range(2, 1000):
-		candidate = f"{base} ({idx})"
-		if not frappe.db.exists("Project", {"project_name": candidate}):
-			return candidate
-
-	frappe.throw("Could not generate a unique Project Name. Please set a custom name manually.")
-
-
 # ─── Project Field Helpers ────────────────────────────────────────────────────
 
 
@@ -987,6 +961,8 @@ def create_project_from_customer(customer, project_name=None):
 	if not frappe.db.exists("Customer", customer):
 		frappe.throw(f"Customer {customer} not found")
 
+	# Prevent copying data out of a source record the user cannot read.
+	frappe.has_permission("Customer", ptype="read", doc=customer, throw=True)
 	cust = frappe.get_doc("Customer", customer)
 
 	shipment_type = None
@@ -1133,6 +1109,8 @@ def lead_has_customer(lead):
 def create_project_from_lead(lead, project_name=None):
 	"""Create a shipment project from an approved Lead."""
 	frappe.has_permission("Project", ptype="create", throw=True)
+	# Prevent copying data out of a source record the user cannot read.
+	frappe.has_permission("Lead", ptype="read", doc=lead, throw=True)
 	lead_doc = frappe.get_doc("Lead", lead)
 
 	# 1. Ensure the lead is in the correct pre-shipment status.
@@ -1179,6 +1157,8 @@ def create_project_from_lead(lead, project_name=None):
 def create_project_from_opportunity(opportunity, project_name=None):
 	"""Create a shipment project from an approved Opportunity."""
 	frappe.has_permission("Project", ptype="create", throw=True)
+	# Prevent copying data out of a source record the user cannot read.
+	frappe.has_permission("Opportunity", ptype="read", doc=opportunity, throw=True)
 	opp = frappe.get_doc("Opportunity", opportunity)
 
 	# 1. Validate the opportunity status and party type.
@@ -1299,15 +1279,6 @@ def notify_finance_for_task(task_name):
 
 
 # ─── Task Payment Helpers ─────────────────────────────────────────────────────
-
-
-def is_sea_ucr_idf_task_one(task):
-	"""Legacy alias: finance payment tasks in the sea clearance chart."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-		is_sea_payment_task,
-	)
-
-	return is_sea_payment_task(task)
 
 
 def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoice_name):
