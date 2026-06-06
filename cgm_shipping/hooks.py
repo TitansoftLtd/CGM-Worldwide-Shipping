@@ -121,7 +121,7 @@ fixtures = [
 
 # include js, css files in header of desk.html
 app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
-# app_include_js = "/assets/cgm_shipping/js/cgm_shipping.js"
+app_include_js = "/assets/cgm_shipping/js/cgm_container_tracking.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/cgm_shipping/css/cgm_shipping.css"
@@ -153,7 +153,12 @@ doctype_js = {
 		"public/js/crm_lead.js",
 	],
 	"Customer": "public/js/crm_customer.js",
-	"Opportunity": "public/js/crm_opportunity.js",
+	"Opportunity": [
+		"public/js/cgm_transport_reference.js",
+		"public/js/cgm_bl_containers.js",
+		"public/js/crm_opportunity.js",
+	],
+	"Bill of Lading": "public/js/bill_of_lading.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -258,7 +263,11 @@ override_doctype_class = {
 doc_events = {
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_cgm_reference_on_insert",
-		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
+		"before_save": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl",
+		],
 	},
 	"Purchase Invoice": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_validate_from_task",
@@ -274,6 +283,24 @@ doc_events = {
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
 	},
+	"Bill of Lading": {
+		"on_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_bill_of_lading"
+			".bill_of_lading_on_submit"
+		),
+	},
+	"Opportunity": {
+		"before_save": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+			".sync_preshipment_containers_from_bl"
+		),
+	},
+	"Lead": {
+		"before_save": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+			".sync_preshipment_containers_from_bl"
+		),
+	},
 	"Task": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_onload",
 		"before_save": [
@@ -286,6 +313,12 @@ doc_events = {
 
 # Scheduled Tasks
 # ---------------
+
+scheduler_events = {
+	"daily": [
+		"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
+	],
+}
 
 # scheduler_events = {
 # 	"all": [

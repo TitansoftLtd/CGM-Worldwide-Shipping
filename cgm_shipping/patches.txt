@@ -65,3 +65,7 @@ cgm_shipping.patches.v2_39.seed_role_department_access
 cgm_shipping.patches.v2_40.seed_notification_recipients
 cgm_shipping.patches.v2_41.remove_cgm_notification_role_item
 cgm_shipping.patches.v2_42.remove_cgm_role_department_item
+cgm_shipping.patches.v2_43.opportunity_bill_of_lading_containers
+cgm_shipping.patches.v2_44.opportunity_bill_of_lading_flow
+cgm_shipping.patches.v2_45.container_tracker_bl_selection
+cgm_shipping.patches.v2_46.opportunity_airway_bill_visibility

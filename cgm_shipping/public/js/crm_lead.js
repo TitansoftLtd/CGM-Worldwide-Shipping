@@ -1,7 +1,5 @@
 frappe.ui.form.on("Lead", {
 	refresh(frm) {
-		cgm_shipping.bl_containers.sync_from_bl(frm, { silent: true });
-
 		if (frm.is_new()) {
 			return;
 		}
@@ -42,10 +40,6 @@ frappe.ui.form.on("Lead", {
 				});
 			});
 		}, 0);
-	},
-
-	custom_bill_of_lading(frm) {
-		cgm_shipping.bl_containers.sync_from_bl(frm);
 	},
 });
 

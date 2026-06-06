@@ -244,6 +244,102 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import
 )
 
 
+OPPORTUNITY_DOCUMENTS_FIELD = "custom_clients_documents"
+
+
+def carry_clients_documents_to_project(project_doc, source_doc) -> None:
+	"""Copy all Clients Documents rows from Opportunity onto Project shipment documents."""
+	if not source_doc or not source_doc.meta.has_field(OPPORTUNITY_DOCUMENTS_FIELD):
+		return
+	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return
+
+	ensure_document_types()
+	for row in source_doc.get(OPPORTUNITY_DOCUMENTS_FIELD) or []:
+		if not row.document_type or not row.attachment:
+			continue
+		if not frappe.db.exists("Document Type", row.document_type):
+			continue
+		_append_or_update_shipment_document_row(project_doc, row)
+
+
+def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
+	rows = project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
+	for existing in rows:
+		if not document_types_match(existing.document_type, source_row.document_type):
+			continue
+		if not existing.attachment:
+			existing.attachment = source_row.attachment
+		if source_row.status and source_row.status != "Missing":
+			existing.status = source_row.status
+		for field in (
+			"uploaded_by",
+			"uploaded_on",
+			"verified_by",
+			"verified_on",
+			"remarks",
+		):
+			value = source_row.get(field)
+			if value and not existing.get(field):
+				existing.set(field, value)
+		return
+
+	project_doc.append(
+		SHIPMENT_DOCUMENTS_FIELD,
+		{
+			"document_type": source_row.document_type,
+			"attachment": source_row.attachment,
+			"status": source_row.status or "Uploaded",
+			"uploaded_by": source_row.uploaded_by,
+			"uploaded_on": source_row.uploaded_on,
+			"verified_by": source_row.verified_by,
+			"verified_on": source_row.verified_on,
+			"remarks": source_row.remarks,
+		},
+	)
+
+
+def get_bill_of_lading_attachment_url(
+	bl_name: str | None = None, source_doc=None
+) -> str | None:
+	"""Resolve BL file URL from the Bill of Lading record or source Clients Documents."""
+	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+		attachment_url = frappe.db.get_value("Bill of Lading", bl_name, "bill_of_lading")
+		if attachment_url:
+			return attachment_url
+
+	if not source_doc:
+		return None
+
+	clients_field = OPPORTUNITY_DOCUMENTS_FIELD
+	if not source_doc.meta.has_field(clients_field):
+		return None
+
+	bl_type = get_document_type_link_name("BL")
+	if not bl_type:
+		return None
+
+	for row in source_doc.get(clients_field) or []:
+		if document_types_match(row.document_type, bl_type) and row.attachment:
+			return row.attachment
+	return None
+
+
+def carry_bill_of_lading_attachment_to_project(
+	project_doc, bl_name: str | None = None, source_doc=None
+) -> None:
+	"""Add the Bill of Lading file to Project shipment documents (type BL)."""
+	ensure_document_types()
+	bl_name = bl_name or project_doc.get("custom_bill_of_lading")
+	attachment_url = get_bill_of_lading_attachment_url(bl_name, source_doc)
+	if not attachment_url:
+		return
+
+	document_type = get_document_type_link_name("BL")
+	if document_type:
+		append_verified_doc_row(project_doc, document_type, attachment_url)
+
+
 # ─── Sea Task Template ────────────────────────────────────────────────────────
 
 
@@ -589,7 +685,11 @@ def _apply_preshipment_transport_defaults(project, source_doc) -> None:
 			project.custom_bill_of_lading = bl
 
 	if project_meta.has_field("custom_awb_number"):
-		awb = source_doc.get("custom_awb_number") or source_doc.get("custom_air_waybill")
+		awb = (
+			source_doc.get("custom_awb_number")
+			or source_doc.get("custom_airway_bill")
+			or source_doc.get("custom_air_waybill")
+		)
 		if awb and not project.get("custom_awb_number"):
 			project.custom_awb_number = awb
 
@@ -617,6 +717,39 @@ def _apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
 		if project_meta.has_field(fieldname) and value and not project.get(fieldname):
 			project.set(fieldname, value)
 	_apply_preshipment_transport_defaults(project, lead)
+
+
+def _apply_opportunity_to_project_mappings(project, opp) -> None:
+	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""
+	meta = project.meta
+	pairs = (
+		("custom_entry_no", "custom_entry_no"),
+		("custom_batch_no", "custom_batch_no"),
+		("custom_consignee", "custom_consignee"),
+		("custom_quantity", "custom_shipment_quantity"),
+		("custom_vesselairline", "custom_vessel_flight"),
+		("custom_gross_weight", "custom_gross_weightkg"),
+		("custom_weight_nw", "custom_net_weightkg"),
+		("custom_description_of_goods", "custom_shipment_description"),
+	)
+	for src_field, dest_field in pairs:
+		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
+			continue
+		value = opp.get(src_field)
+		if value not in (None, "") and not project.get(dest_field):
+			project.set(dest_field, value)
+
+
+def _sync_preshipment_documents_from_source(project, source_doc) -> None:
+	"""Pull client docs and B/L attachment from Lead/Opportunity onto Project shipment documents."""
+	if source_doc.meta.has_field(OPPORTUNITY_DOCUMENTS_FIELD):
+		carry_clients_documents_to_project(project, source_doc)
+	sync_linked_attachments_to_project(project)
+	carry_bill_of_lading_attachment_to_project(
+		project,
+		bl_name=project.get("custom_bill_of_lading") or source_doc.get("custom_bill_of_lading"),
+		source_doc=source_doc,
+	)
 
 
 def lead_has_customer(lead):
@@ -664,7 +797,12 @@ def create_project_from_lead(lead, project_name=None):
 	if project_fields.has_field("custom_source_lead"):
 		proj.custom_source_lead = lead
 
-	sync_linked_attachments_to_project(proj)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers import (
+		apply_bill_of_lading_from_source,
+	)
+
+	apply_bill_of_lading_from_source(proj, lead_doc)
+	_sync_preshipment_documents_from_source(proj, lead_doc)
 	return insert_shipment_project(proj)
 
 
@@ -705,8 +843,9 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	if project_fields.has_field("custom_source_opportunity"):
 		proj.custom_source_opportunity = opportunity
 
+	_apply_opportunity_to_project_mappings(proj, opp)
 	_apply_preshipment_transport_defaults(proj, opp)
-	sync_linked_attachments_to_project(proj)
+	_sync_preshipment_documents_from_source(proj, opp)
 	return insert_shipment_project(proj)
 
 
