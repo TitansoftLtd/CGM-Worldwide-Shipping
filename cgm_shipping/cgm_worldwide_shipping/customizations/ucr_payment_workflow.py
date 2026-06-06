@@ -193,7 +193,10 @@ def notify_operations_upload_ucr_receipt(task) -> dict:
 	try:
 		app.save(ignore_permissions=True)
 	except Exception:
-		pass
+		frappe.log_error(
+			title="UCR receipt seeding failed",
+			message=f"Could not seed UCR finance lines on {app_name}: {frappe.get_traceback()}",
+		)
 
 	subject = f"Upload UCR payment receipt — {task.project or app_name}"
 	message = (

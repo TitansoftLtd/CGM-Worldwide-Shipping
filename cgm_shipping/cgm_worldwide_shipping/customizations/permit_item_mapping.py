@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe.utils import cint
 
 # Common Item name/code variants in CGM item master (longest / most specific first).
 PERMIT_TYPE_ITEM_CANDIDATES: dict[str, tuple[str, ...]] = {
@@ -22,7 +23,8 @@ def _item_is_usable(item_code: str | None) -> bool:
 	disabled, is_purchase = frappe.db.get_value(
 		"Item", item_code, ("disabled", "is_purchase_item")
 	) or (1, 0)
-	return not disabled and is_purchase
+	# Coerce NULL columns so a NULL `disabled` isn't read as "enabled".
+	return not cint(disabled) and bool(cint(is_purchase))
 
 
 def _resolve_item_code(candidates: list[str]) -> str | None:

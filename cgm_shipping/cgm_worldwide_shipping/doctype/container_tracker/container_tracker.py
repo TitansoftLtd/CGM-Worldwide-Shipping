@@ -147,23 +147,40 @@ def get_containers_for_project(project: str) -> list[dict]:
 	return [enrich_container_row(r) for r in rows]
 
 
+_COMPUTED_METRIC_FIELDS = (
+	"expected_empty_return",
+	"port_days_used",
+	"demurrage_days",
+	"demurrage_date",
+	"detention_days",
+	"demurrage_amount",
+	"detention_amount",
+	"days_outstanding",
+	"status",
+)
+
+
 @frappe.whitelist()
 def refresh_open_container_metrics() -> int:
 	"""Daily job: recompute outstanding/detention for containers not yet returned."""
-	names = frappe.get_all(
+	# Read rows as dicts and batch-update only the computed metric fields, rather
+	# than loading a full document per container (avoids an N+1 of get_doc/db_update).
+	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"actual_empty_return": ["is", "not set"]},
-		pluck="name",
+		fields=_CONTAINER_TRACKER_FIELDS,
 	)
 	projects = set()
-	for name in names:
-		doc = frappe.get_doc("Container Tracker", name)
-		apply_metrics_to_doc(doc)
-		doc.db_update()
-		if doc.project:
-			projects.add(doc.project)
+	for row in rows:
+		metrics = compute_container_metrics(row)
+		updates = {f: metrics.get(f) for f in _COMPUTED_METRIC_FIELDS}
+		frappe.db.set_value(
+			"Container Tracker", row["name"], updates, update_modified=False
+		)
+		if row.get("project"):
+			projects.add(row["project"])
 
 	for project in projects:
 		sync_container_summary_to_project(project)
 
-	return len(names)
+	return len(rows)
