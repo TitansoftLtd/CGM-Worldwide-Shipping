@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>CGM Worldwide Shipping</b></span>\",\"col\":12}},{\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Shipment Dossier\",\"col\":3}},{\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Container Tracker\",\"col\":3}},{\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Status Update\",\"col\":3}},{\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"CFS Master\",\"col\":3}},{\"type\":\"spacer\",\"data\":{\"col\":12}},{\"type\":\"card\",\"data\":{\"card_name\":\"Clearance\",\"col\":4}},{\"type\":\"card\",\"data\":{\"card_name\":\"Operations\",\"col\":4}},{\"type\":\"card\",\"data\":{\"card_name\":\"Transport\",\"col\":4}}]",
+ "content": "[{\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>CGM Worldwide Shipping</b></span>\",\"col\":12}},{\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Container Tracker\",\"col\":3}},{\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Status Update\",\"col\":3}},{\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"CFS Master\",\"col\":3}},{\"type\":\"spacer\",\"data\":{\"col\":12}},{\"type\":\"card\",\"data\":{\"card_name\":\"Clearance\",\"col\":4}},{\"type\":\"card\",\"data\":{\"card_name\":\"Operations\",\"col\":4}},{\"type\":\"card\",\"data\":{\"card_name\":\"Transport\",\"col\":4}}]",
  "creation": "2026-05-19 00:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -16,20 +16,9 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Clearance",
-   "link_count": 4,
+   "link_count": 3,
    "onboard": 0,
    "type": "Card Break"
-  },
-  {
-   "dependencies": "",
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipment Dossier",
-   "link_count": 0,
-   "link_to": "Shipment Dossier",
-   "link_type": "DocType",
-   "onboard": 1,
-   "type": "Link"
   },
   {
    "hidden": 0,
@@ -139,13 +128,6 @@
  "roles": [],
  "sequence_id": 1.0,
  "shortcuts": [
-  {
-   "color": "Blue",
-   "doc_view": "List",
-   "label": "Shipment Dossier",
-   "link_to": "Shipment Dossier",
-   "type": "DocType"
-  },
   {
    "color": "Green",
    "doc_view": "List",

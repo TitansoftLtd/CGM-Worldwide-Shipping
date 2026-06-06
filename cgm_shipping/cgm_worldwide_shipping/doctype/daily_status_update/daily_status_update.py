@@ -13,37 +13,13 @@ class DailyStatusUpdate(Document):
 			self.submitted_by = frappe.session.user
 
 	def on_submit(self):
-		if self.rag_status in ("Red", "Yellow"):
-			self._notify_supervisor()
-
-	def _notify_supervisor(self):
-		recipients = frappe.get_all(
-			"Has Role",
-			filters={"role": "Operations Manager", "parenttype": "User"},
-			pluck="parent",
-		)
-		if not recipients:
+		if self.rag_status not in ("Red", "Yellow"):
 			return
-		level = self.rag_status
-		frappe.sendmail(
-			recipients=recipients,
-			subject=f"{level} RAG daily status — {self.group_team} ({self.date})",
-			message=frappe.render_template(
-				"<p>Team <b>{{ group }}</b> reported <b>{{ level }}</b> RAG on {{ date }}.</p>"
-				"<p>Dispatched: {{ dispatched }} · Deliveries: {{ deliveries }}</p>"
-				"<p>Empty pending: {{ empty_pending }} · Returned today: {{ returned }}</p>"
-				"<p><b>Delays:</b> {{ delays }}</p>"
-				"<p><b>Actions:</b> {{ actions }}</p>",
-				{
-					"group": self.group_team,
-					"date": self.date,
-					"level": level,
-					"dispatched": self.shipments_dispatched or 0,
-					"deliveries": self.deliveries_completed or 0,
-					"empty_pending": self.empty_containers_pending or 0,
-					"returned": self.containers_returned_today or 0,
-					"delays": self.delays_issues or "—",
-					"actions": self.outstanding_actions or "—",
-				},
-			),
+		from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.constants import (
+			DAILY_STATUS_RAG_ALERT,
 		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+			send_notification,
+		)
+
+		send_notification(DAILY_STATUS_RAG_ALERT, self, audience="Operations")

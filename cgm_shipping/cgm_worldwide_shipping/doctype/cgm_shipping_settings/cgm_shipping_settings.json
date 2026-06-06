@@ -8,11 +8,22 @@
   "sea_import_task_plan_tab",
   "section_break_sea_import",
   "custom_sea_import_task_template",
+  "tab_sea_task_requirements",
+  "section_sea_task_requirements",
+  "custom_sea_clearance_task_requirements",
+  "tab_sea_workflow_task_gates",
+  "section_sea_workflow_task_gates",
+  "custom_sea_workflow_task_gates",
   "tab_workflow_document_gates",
   "section_workflow_document_gates",
   "custom_workflow_stage_requirements"
  ],
  "fields": [
+  {
+   "fieldname": "sea_import_task_plan_tab",
+   "fieldtype": "Tab Break",
+   "label": "Sea import task plan"
+  },
   {
    "fieldname": "section_break_sea_import",
    "fieldtype": "Section Break"
@@ -22,6 +33,40 @@
    "fieldtype": "Table",
    "label": "Sea import task template",
    "options": "Sea Import Task Template Item"
+  },
+  {
+   "fieldname": "tab_sea_task_requirements",
+   "fieldtype": "Tab Break",
+   "label": "Sea task completion rules"
+  },
+  {
+   "description": "What must be satisfied before each sea clearance task can be marked completed. Prefer this table over hard-coded Python rules.",
+   "fieldname": "section_sea_task_requirements",
+   "fieldtype": "Section Break",
+   "label": "Completion requirements"
+  },
+  {
+   "fieldname": "custom_sea_clearance_task_requirements",
+   "fieldtype": "Table",
+   "label": "Sea clearance task requirements",
+   "options": "Sea Clearance Task Requirement Item"
+  },
+  {
+   "fieldname": "tab_sea_workflow_task_gates",
+   "fieldtype": "Tab Break",
+   "label": "Sea workflow task gates"
+  },
+  {
+   "description": "Before Project shipment status can move to each workflow state, these sea task steps must be satisfied. Aligns with CGM Sea Import Workflow on Project.",
+   "fieldname": "section_sea_workflow_task_gates",
+   "fieldtype": "Section Break",
+   "label": "Workflow status gates"
+  },
+  {
+   "fieldname": "custom_sea_workflow_task_gates",
+   "fieldtype": "Table",
+   "label": "Sea workflow task gates",
+   "options": "Sea Workflow Task Gate Item"
   },
   {
    "fieldname": "tab_workflow_document_gates",
@@ -37,18 +82,13 @@
    "fieldtype": "Table",
    "label": "Workflow stage requirements",
    "options": "Workflow Stage Requirement Item"
-  },
-  {
-   "fieldname": "sea_import_task_plan_tab",
-   "fieldtype": "Tab Break",
-   "label": "Sea import task plan"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-12 13:13:01.998941",
+ "modified": "2026-06-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
