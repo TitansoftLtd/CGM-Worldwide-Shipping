@@ -95,6 +95,10 @@ fixtures = [
             "Transport Officer",
         ]]],
     },
+    {
+        "doctype": "Notification",
+        "filters": [["name", "like", "CGM%"]],
+    },
 ]
 # Apps
 # ------------------
