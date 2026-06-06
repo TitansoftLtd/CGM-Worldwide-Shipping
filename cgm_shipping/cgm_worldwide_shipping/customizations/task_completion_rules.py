@@ -1,57 +1,36 @@
 """
-Sea task completion rules — required documents, permits, and finance proofs.
+Sea task completion rules — driven by CGM Shipping Settings where possible.
 
 Task level: invoices/receipts on Task Finance Lines; clearance docs on Task Documents; permits on Task Permits.
-Project level: custom_permit_register synced from Task permits automatically.
+Project level: custom_permit_register synced from Task permits (see sync_task_permits_to_project).
 """
 from __future__ import annotations
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
+from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import (
+	TASK_DOCUMENTS_FIELD,
+	get_document_type_link_name,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 	PERMIT_REGISTER_FIELD,
 	derive_permit_clearance_phase,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-	SEA_AUTO_COMPLETE_TASK_SEQS,
-	SEA_PAYMENT_TASK_SEQS,
-	SEA_TASK_FLOW_KEY,
-	is_sea_payment_task,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
-	TASK_DOCUMENTS_FIELD,
-	get_document_type_link_name,
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	SUPPLIER_INVOICE_CODE,
+	get_permit_stage_for_sequence,
+	get_required_document_codes,
+	is_auto_complete_task,
+	is_finance_payment_task,
+	is_light_proof_task,
+	is_permit_application_task,
+	is_permit_finance_payment_task,
+	is_ucr_application_task,
+	is_ucr_finance_payment_task,
 )
 
 TASK_PERMITS_FIELD = "custom_task_permits"
-SUPPLIER_INVOICE_CODE = "SUP_INV"
-
-# Document Type codes required before completing each sea task (empty = see special rules).
-SEA_TASK_REQUIRED_DOC_CODES: dict[int, list[str]] = {
-	3: [],  # UCR invoice on Task Finance; IDF certificate optional on Task Documents
-	4: [],
-	7: ["INSPECT"],
-	9: ["BL", "CI", "PKL"],
-	10: ["MANIFEST"],
-	11: ["ENTRY"],
-	12: [SUPPLIER_INVOICE_CODE],
-	13: ["DO"],
-	14: [SUPPLIER_INVOICE_CODE],
-	16: ["FIELD"],
-	17: [SUPPLIER_INVOICE_CODE],
-	18: [SUPPLIER_INVOICE_CODE],
-}
-
-# Declaration tasks that use Task Permits table instead of generic documents.
-SEA_PERMIT_APPLICATION_TASK_SEQS: frozenset[int] = frozenset({5, 15})
-
-PERMIT_STAGE_BY_TASK_SEQ: dict[int, str] = {
-	5: "Pre-clearance",
-	15: "Post-clearance",
-}
-
-# Transport / coordination: at least one proof (doc, description, or external ref).
-SEA_LIGHT_PROOF_TASK_SEQS: frozenset[int] = frozenset({8, 19, 20, 21, 22, 23, 24})
 
 TASK_DOCUMENT_TYPE_DEFAULTS: dict[str, dict] = {
 	"SUP_INV": {
@@ -98,8 +77,7 @@ TASK_DOCUMENT_TYPE_DEFAULTS: dict[str, dict] = {
 
 
 def ensure_task_document_types() -> None:
-	"""Create Document Type masters used for task completion validation."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import (
 		DOCUMENT_TYPE_DEFAULTS,
 		ensure_document_types,
 	)
@@ -117,27 +95,26 @@ def ensure_task_document_types() -> None:
 			doc.submit()
 
 
-def _document_type_code(document_type_link: str | None) -> str | None:
+def get_document_type_code(document_type_link: str | None) -> str | None:
 	if not document_type_link:
 		return None
 	return frappe.db.get_value("Document Type", document_type_link, "code")
 
 
-def _attached_codes(task) -> set[str]:
+def attached_document_codes(task) -> set[str]:
 	codes = set()
 	for row in task.get(TASK_DOCUMENTS_FIELD) or []:
-		code = _document_type_code(row.document_type)
+		code = get_document_type_code(row.document_type)
 		if code and row.attachment:
 			codes.add(code)
 	return codes
 
 
 def seed_required_task_document_rows(task) -> None:
-	"""Pre-populate missing required document rows on the Task (status Missing)."""
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
 	seq = int(task.get("custom_sequence_no") or 0)
-	if seq == 3:
+	if is_ucr_application_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
 			ensure_idf_certificate_document_row,
 		)
@@ -145,7 +122,7 @@ def seed_required_task_document_rows(task) -> None:
 		ensure_idf_certificate_document_row(task)
 		return
 
-	required = SEA_TASK_REQUIRED_DOC_CODES.get(seq) or []
+	required = get_required_document_codes(seq)
 	if not required:
 		return
 
@@ -162,47 +139,45 @@ def seed_required_task_document_rows(task) -> None:
 
 
 def validate_sea_task_can_complete(task) -> None:
-	"""Raise if required documents / permits / finance proofs are missing."""
 	if task.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
 		return
 	if frappe.flags.get("cgm_auto_completing_sea_task"):
 		return
 
 	seq = int(task.get("custom_sequence_no") or 0)
-	if seq in SEA_AUTO_COMPLETE_TASK_SEQS:
+	if is_auto_complete_task(seq):
 		return
 
 	seed_required_task_document_rows(task)
 
-	if seq in SEA_PERMIT_APPLICATION_TASK_SEQS:
+	if is_permit_application_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 			validate_permit_application_can_complete,
 		)
 
-		_validate_permit_application_task(task, seq)
+		validate_permit_application_task(task, seq)
 		validate_permit_application_can_complete(task)
-	elif seq == 3:
+	elif is_ucr_application_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 			validate_ucr_application_not_manually_completed,
 		)
 
 		validate_ucr_application_not_manually_completed(task)
-	elif seq in SEA_LIGHT_PROOF_TASK_SEQS:
-		_validate_light_proof_task(task)
-	elif not is_sea_payment_task(task):
-		_validate_required_documents(task, seq)
+	elif is_light_proof_task(seq):
+		validate_light_proof_task(task)
+	elif not is_finance_payment_task(seq):
+		validate_required_documents(task, seq)
 
-	if is_sea_payment_task(task):
-		seq = int(task.get("custom_sequence_no") or 0)
-		if seq == 4:
+	if is_finance_payment_task(seq):
+		if is_ucr_finance_payment_task(seq):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 				validate_finance_ucr_payment_task,
 			)
 
 			validate_finance_ucr_payment_task(task)
 		else:
-			_validate_finance_task(task)
-			if seq == 6:
+			validate_finance_task(task)
+			if is_permit_finance_payment_task(seq):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 					validate_finance_permit_payment_task,
 				)
@@ -210,12 +185,12 @@ def validate_sea_task_can_complete(task) -> None:
 				validate_finance_permit_payment_task(task)
 
 
-def _validate_required_documents(task, seq: int) -> None:
-	required_codes = SEA_TASK_REQUIRED_DOC_CODES.get(seq)
+def validate_required_documents(task, seq: int) -> None:
+	required_codes = get_required_document_codes(seq)
 	if not required_codes:
 		return
 
-	attached = _attached_codes(task)
+	attached = attached_document_codes(task)
 	missing = []
 	for code in required_codes:
 		if code not in attached:
@@ -228,7 +203,6 @@ def _validate_required_documents(task, seq: int) -> None:
 			f"<b>{', '.join(missing)}</b>."
 		)
 
-	# Reject rows that were seeded but left empty.
 	empty_rows = [
 		row.document_type or "Document"
 		for row in task.get(TASK_DOCUMENTS_FIELD) or []
@@ -241,8 +215,8 @@ def _validate_required_documents(task, seq: int) -> None:
 		)
 
 
-def _validate_light_proof_task(task) -> None:
-	has_doc = bool(_attached_codes(task))
+def validate_light_proof_task(task) -> None:
+	has_doc = bool(attached_document_codes(task))
 	has_text = bool((task.description or "").strip())
 	has_ref = bool((task.get("custom_external_ref_no") or "").strip())
 	if not (has_doc or has_text or has_ref):
@@ -251,7 +225,7 @@ def _validate_light_proof_task(task) -> None:
 		)
 
 
-def _validate_permit_application_task(task, seq: int) -> None:
+def validate_permit_application_task(task, seq: int) -> None:
 	if not task.meta.has_field(TASK_PERMITS_FIELD):
 		frappe.throw("Task Permits table is not available on this site. Run <b>bench migrate</b>.")
 
@@ -270,9 +244,6 @@ def _validate_permit_application_task(task, seq: int) -> None:
 			continue
 		if not row.get("payment_invoice"):
 			missing.append(f"{label} — supplier/permit invoice")
-		elif not row.get("permit_document"):
-			# Application certificate optional at apply stage — invoice is mandatory for Accounts.
-			pass
 
 	if missing:
 		frappe.throw(
@@ -283,11 +254,10 @@ def _validate_permit_application_task(task, seq: int) -> None:
 		)
 
 
-def _validate_finance_task(task) -> None:
-	"""Finance tasks: supplier invoice on task + submitted PI + PE."""
+def validate_finance_task(task) -> None:
 	seq = int(task.get("custom_sequence_no") or 0)
-	attached = _attached_codes(task)
-	if seq != 6 and SUPPLIER_INVOICE_CODE not in attached:
+	attached = attached_document_codes(task)
+	if not is_permit_finance_payment_task(seq) and SUPPLIER_INVOICE_CODE not in attached:
 		frappe.throw(
 			"Attach the <b>Supplier Invoice</b> on <b>Task Documents</b> for Accounts to verify "
 			"before completing this finance task."
@@ -309,7 +279,6 @@ def _validate_finance_task(task) -> None:
 
 
 def sync_task_permits_to_project(task) -> None:
-	"""Mirror Task Permits → Project custom_permit_register with Pre/Post-Cleared logic."""
 	if frappe.flags.get("cgm_syncing_permits"):
 		return
 	if not task.get("project") or not task.meta.has_field(TASK_PERMITS_FIELD):
@@ -326,8 +295,8 @@ def sync_task_permits_to_project(task) -> None:
 		return
 
 	seq = int(task.get("custom_sequence_no") or 0)
-	default_stage = PERMIT_STAGE_BY_TASK_SEQ.get(seq, "Pre-clearance")
-	is_finance_permit_payment = seq == 6
+	default_stage = get_permit_stage_for_sequence(seq)
+	is_finance_permit_payment = is_permit_finance_payment_task(seq)
 
 	by_type: dict[str, object] = {
 		r.permit_type: r for r in project.get(PERMIT_REGISTER_FIELD) or [] if r.permit_type
@@ -379,19 +348,17 @@ def sync_task_permits_to_project(task) -> None:
 
 
 def apply_finance_payment_to_project_permits(task) -> None:
-	"""After finance pays permits (task 6), mark matching project permits Post-Cleared."""
-	if int(task.get("custom_sequence_no") or 0) != 6:
+	if not is_permit_finance_payment_task(int(task.get("custom_sequence_no") or 0)):
 		return
 	sync_task_permits_to_project(task)
 
 
 @frappe.whitelist()
 def reopen_task_for_permit_attachments(task_name: str) -> dict:
-	"""Re-open a completed permit task so invoices can be attached (Declaration)."""
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
 	seq = int(task.get("custom_sequence_no") or 0)
-	if seq not in SEA_PERMIT_APPLICATION_TASK_SEQS:
+	if not is_permit_application_task(seq):
 		frappe.throw("This action is only for pre-/post-clearance permit application tasks.")
 
 	missing = [r.permit_type for r in task.get(TASK_PERMITS_FIELD) or [] if not r.get("payment_invoice")]
@@ -409,7 +376,6 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 
 @frappe.whitelist()
 def get_project_permit_invoices(project: str) -> list[dict]:
-	"""List permit invoices on Project for Finance (task 6)."""
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
 	if not frappe.db.exists("Project", project):
 		frappe.throw("Project not found.")
@@ -427,16 +393,19 @@ def get_project_permit_invoices(project: str) -> list[dict]:
 	]
 
 
+# Backward-compatible alias for patches and finance modules.
+attached_codes = attached_document_codes
+
+
 @frappe.whitelist()
 def get_task_completion_hint(task_name: str) -> dict:
-	"""UI helper: what is required before Mark Completed."""
 	frappe.has_permission("Task", ptype="read", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
 	seq = int(task.get("custom_sequence_no") or 0)
-	out = {
+	return {
 		"sequence_no": seq,
-		"requires_supplier_invoice": seq in SEA_PAYMENT_TASK_SEQS,
-		"requires_permits": seq in SEA_PERMIT_APPLICATION_TASK_SEQS,
-		"required_doc_codes": SEA_TASK_REQUIRED_DOC_CODES.get(seq, []),
+		"requires_supplier_invoice": is_finance_payment_task(seq)
+		and not is_permit_finance_payment_task(seq),
+		"requires_permits": is_permit_application_task(seq),
+		"required_doc_codes": get_required_document_codes(seq),
 	}
-	return out

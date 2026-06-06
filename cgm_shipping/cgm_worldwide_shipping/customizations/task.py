@@ -3,10 +3,17 @@
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-	SEA_AUTO_COMPLETE_TASK_SEQS,
 	SEA_TASK_FLOW_KEY,
 	get_incomplete_sea_tasks,
 	sync_project_shipment_status_from_tasks,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	is_auto_complete_task,
+	is_permit_application_task,
+	is_permit_finance_payment_task,
+	is_ucr_application_task,
+	is_ucr_finance_payment_task,
+	is_ucr_workflow_task,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
 	apply_finance_payment_to_project_permits,
@@ -17,6 +24,14 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules im
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	refresh_project_shipment_documents,
 )
+
+
+def _sea_task_seq(doc) -> int:
+	return int(doc.get("custom_sequence_no") or 0)
+
+
+def _is_sea_task(doc) -> bool:
+	return doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
 
 
 def on_task_onload(doc, _method=None):
@@ -30,19 +45,17 @@ def on_task_onload(doc, _method=None):
 		return
 	if purge_invoice_rows_from_task_documents_db(doc.name):
 		doc.reload()
-		if doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY:
+		if _is_sea_task(doc):
 			prepare_ucr_task_tables(doc)
-	if (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(doc.get("custom_sequence_no") or 0) in (3, 4)
-	):
+	if _is_sea_task(doc) and is_ucr_workflow_task(_sea_task_seq(doc)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
 			ensure_ucr_finance_lines_saved,
 			sync_ucr_status_from_finance_to_application,
 		)
 
 		changed = ensure_ucr_finance_lines_saved(doc)
-		if int(doc.get("custom_sequence_no") or 0) == 3:
+		seq = _sea_task_seq(doc)
+		if is_ucr_application_task(seq):
 			changed = sync_ucr_status_from_finance_to_application(doc) or changed
 			if doc.status not in ("Completed", "Cancelled"):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
@@ -51,13 +64,10 @@ def on_task_onload(doc, _method=None):
 
 				if try_auto_complete_ucr_application_task(doc):
 					changed = True
-		elif int(doc.get("custom_sequence_no") or 0) == 4 and doc.status not in (
-			"Completed",
-			"Cancelled",
-		):
+		elif is_ucr_finance_payment_task(seq) and doc.status not in ("Completed", "Cancelled"):
 			if doc.project:
 				from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
-					_copy_ucr_receipt_to_finance_task,
+					copy_ucr_receipt_to_finance_task,
 				)
 				from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 					get_ucr_application_task,
@@ -66,17 +76,14 @@ def on_task_onload(doc, _method=None):
 
 				app_name = get_ucr_application_task(doc.project)
 				if app_name:
-					_copy_ucr_receipt_to_finance_task(frappe.get_doc("Task", app_name))
+					copy_ucr_receipt_to_finance_task(frappe.get_doc("Task", app_name))
 					doc.reload()
 				if try_auto_complete_ucr_finance_task(doc):
 					changed = True
 		if changed:
 			doc.reload()
 
-	if (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(doc.get("custom_sequence_no") or 0) == 6
-	):
+	if _is_sea_task(doc) and is_permit_finance_payment_task(_sea_task_seq(doc)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 			ensure_finance_permit_rows_saved,
 		)
@@ -84,10 +91,7 @@ def on_task_onload(doc, _method=None):
 		if ensure_finance_permit_rows_saved(doc):
 			doc.reload()
 
-	if (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(doc.get("custom_sequence_no") or 0) in (5, 15)
-	):
+	if _is_sea_task(doc) and is_permit_application_task(_sea_task_seq(doc)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 			merge_project_permits_into_application_task,
 		)
@@ -98,7 +102,7 @@ def on_task_onload(doc, _method=None):
 
 def before_task_save(doc, _method=None):
 	"""Pre-fill required document rows while the task is still open."""
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not _is_sea_task(doc):
 		return
 	if doc.status in ("Completed", "Cancelled"):
 		return
@@ -130,10 +134,10 @@ def before_task_save(doc, _method=None):
 
 
 def on_task_update(doc, _method=None):
-	if (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(doc.get("custom_sequence_no") or 0) == 3
-		and doc.status not in ("Completed", "Cancelled")
+	seq = _sea_task_seq(doc)
+	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status not in (
+		"Completed",
+		"Cancelled",
 	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 			handle_ucr_application_receipt_upload,
@@ -147,8 +151,8 @@ def on_task_update(doc, _method=None):
 		try_auto_complete_ucr_application_task(doc)
 
 	if (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(doc.get("custom_sequence_no") or 0) == 4
+		_is_sea_task(doc)
+		and is_ucr_finance_payment_task(seq)
 		and doc.status not in ("Completed", "Cancelled")
 	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
@@ -158,8 +162,8 @@ def on_task_update(doc, _method=None):
 		try_auto_complete_ucr_finance_task(doc)
 
 	if (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(doc.get("custom_sequence_no") or 0) == 6
+		_is_sea_task(doc)
+		and is_permit_finance_payment_task(seq)
 		and doc.status not in ("Completed", "Cancelled")
 		and not frappe.flags.get("cgm_permit_finance_completing")
 	):
@@ -174,9 +178,8 @@ def on_task_update(doc, _method=None):
 	if doc.get("project"):
 		refresh_project_shipment_documents(doc.project)
 		sync_task_permits_to_project(doc)
-		if doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY:
-			seq = int(doc.get("custom_sequence_no") or 0)
-			if seq in (5, 15):
+		if _is_sea_task(doc):
+			if is_permit_application_task(seq):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 					get_permit_finance_task,
 					sync_permit_invoices_to_finance_task,
@@ -209,21 +212,22 @@ def validate_task_completion_requirements(doc, _method=None):
 	if prev and prev.status == "Completed":
 		return
 
-	seq = int(doc.get("custom_sequence_no") or 0)
+	seq = _sea_task_seq(doc)
 	if (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
+		_is_sea_task(doc)
 		and frappe.flags.get("cgm_auto_completing_sea_task")
-		and (seq in SEA_AUTO_COMPLETE_TASK_SEQS or seq in (3, 4))
+		and (
+			is_auto_complete_task(seq)
+			or is_ucr_application_task(seq)
+			or is_ucr_finance_payment_task(seq)
+		)
 	):
 		return
 
-	if (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and seq in SEA_AUTO_COMPLETE_TASK_SEQS
-	):
+	if _is_sea_task(doc) and is_auto_complete_task(seq):
 		return
 
-	if doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY:
+	if _is_sea_task(doc):
 		if seq > 1:
 			incomplete = get_incomplete_sea_tasks(doc.project, seq)
 			if incomplete:
