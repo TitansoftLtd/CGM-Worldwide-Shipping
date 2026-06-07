@@ -80,15 +80,29 @@ def _next_cgm_ref_sequence(prefix: str, period: str) -> int:
 	return max_seq + 1
 
 
+def _cgm_ref_in_use(ref: str) -> bool:
+	"""True if a Project already uses this reference as its name or CGM ref."""
+	return bool(
+		frappe.db.exists("Project", {"project_name": ref})
+		or frappe.db.exists("Project", {"custom_cgm_ref_no": ref})
+	)
+
+
 def build_cgm_ref_no(shipment_type=None, mode=None, opened_date=None) -> str:
-	"""Allocate CGM/LCL001/1022-style reference for the shipment tracking sheet."""
+	"""Allocate CGM/LCL001/1022-style reference for the shipment tracking sheet.
+
+	Collisions are guarded two ways: this checks both project_name and
+	custom_cgm_ref_no when allocating, and patch v2_39 adds a unique index on
+	custom_cgm_ref_no so a concurrent race fails loudly at insert (surfaced as a
+	retryable message in insert_shipment_project) instead of silently duplicating.
+	"""
 	prefix = cgm_ref_prefix(shipment_type, mode)
 	dt = getdate(opened_date or today())
 	period = dt.strftime("%m%y")
 	seq = _next_cgm_ref_sequence(prefix, period)
 	for candidate_seq in range(seq, seq + 1000):
 		ref = f"CGM/{prefix}{candidate_seq:03d}/{period}"
-		if not frappe.db.exists("Project", {"project_name": ref}):
+		if not _cgm_ref_in_use(ref):
 			return ref
 	frappe.throw("Could not allocate a unique CGM reference number.")
 
@@ -911,7 +925,12 @@ def bootstrap_project_workflow_status(project_name: str) -> None:
 
 
 def insert_shipment_project(project) -> str:
-	"""Insert a new shipment project and apply post-insert workflow status."""
+	"""Insert a new shipment project and apply post-insert workflow status.
+
+	A concurrent creation grabbing the same CGM reference is caught by the unique
+	index on custom_cgm_ref_no (patch v2_39); Frappe surfaces that as a
+	UniqueValidationError ("CGM Ref No must be unique") so the user can retry.
+	"""
 	project.insert(ignore_permissions=True)
 	bootstrap_project_workflow_status(project.name)
 	bootstrap_sea_task_plan_for_project(project.name)
