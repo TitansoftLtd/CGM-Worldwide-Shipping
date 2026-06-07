@@ -485,38 +485,35 @@ def _run_ucr_finance_completion_hooks(task) -> None:
 	_notify_task_status_changed(task)
 
 
-def try_auto_complete_ucr_application_task(task) -> bool:
-	"""Mark Create UCR (IDF) completed when declarant documents are all present."""
+def _try_auto_complete_ucr_task(task, ready_fn, hooks_fn) -> bool:
+	"""Shared skeleton: complete an open UCR task when `ready_fn` passes, then run `hooks_fn`."""
 	if task.status in ("Completed", "Cancelled"):
 		return False
-	if not ucr_application_ready_to_complete(task):
+	if not ready_fn(task):
 		return False
 
 	frappe.flags.cgm_auto_completing_sea_task = True
 	try:
 		_persist_task_completed(task)
 		task.reload()
-		_run_ucr_application_completion_hooks(task)
+		hooks_fn(task)
 	finally:
 		frappe.flags.cgm_auto_completing_sea_task = False
 	return True
+
+
+def try_auto_complete_ucr_application_task(task) -> bool:
+	"""Mark Create UCR (IDF) completed when declarant documents are all present."""
+	return _try_auto_complete_ucr_task(
+		task, ucr_application_ready_to_complete, _run_ucr_application_completion_hooks
+	)
 
 
 def try_auto_complete_ucr_finance_task(task) -> bool:
 	"""Mark Finance pays UCR completed when Finance verifies the UCR receipt."""
-	if task.status in ("Completed", "Cancelled"):
-		return False
-	if not ucr_finance_ready_to_complete(task):
-		return False
-
-	frappe.flags.cgm_auto_completing_sea_task = True
-	try:
-		_persist_task_completed(task)
-		task.reload()
-		_run_ucr_finance_completion_hooks(task)
-	finally:
-		frappe.flags.cgm_auto_completing_sea_task = False
-	return True
+	return _try_auto_complete_ucr_task(
+		task, ucr_finance_ready_to_complete, _run_ucr_finance_completion_hooks
+	)
 
 
 @frappe.whitelist()
