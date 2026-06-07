@@ -703,6 +703,10 @@ function ensure_finance_permit_rows_on_form(frm) {
 				frm.reload_doc();
 			}
 		},
+		error() {
+			// Reset the guard so a transient failure doesn't block future retries.
+			frm._cgm_finance_permit_rows_ensuring = false;
+		},
 	});
 }
 
@@ -719,6 +723,9 @@ function ensure_ucr_finance_lines_on_form(frm) {
 			if (!r.exc && r.message?.added) {
 				frm.reload_doc();
 			}
+		},
+		error() {
+			frm._cgm_finance_lines_ensuring = false;
 		},
 	});
 }
@@ -753,6 +760,15 @@ function load_ucr_declarant_workflow_status(frm) {
 				return;
 			}
 			apply_ucr_application_intro(frm, r.message);
+		},
+		error() {
+			frm._cgm_declarant_status_loading = false;
+			frm.set_intro(
+				__(
+					"Could not load UCR workflow status. Refresh the page or contact support if this persists."
+				),
+				"orange"
+			);
 		},
 	});
 }
@@ -985,6 +1001,9 @@ function ensure_ucr_finance_task_completed_on_form(frm) {
 				});
 				frm.reload_doc();
 			}
+		},
+		error() {
+			frm._cgm_finance_complete_checking = false;
 		},
 	});
 }

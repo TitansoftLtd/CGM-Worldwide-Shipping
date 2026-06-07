@@ -225,10 +225,11 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 
 	stems = get_user_sea_task_department_stems(user)
 	escaped_user = frappe.db.escape(user)
+	assign_token = frappe.db.escape(f'"{user}"')
 	non_sea = f"(IFNULL(`tabTask`.`custom_task_flow_key`, '') != {frappe.db.escape(SEA_TASK_FLOW_KEY)})"
 	assigned_or_owner = (
 		f"(`tabTask`.`owner` = {escaped_user} "
-		f"OR LOCATE({escaped_user}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
+		f"OR LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
 	)
 
 	visibility_parts = [assigned_or_owner]
