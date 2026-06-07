@@ -107,7 +107,7 @@ doctype_js = {
 # ------------
 
 # before_install = "cgm_shipping.install.before_install"
-# after_install = "cgm_shipping.install.after_install"
+after_install = "cgm_shipping.cgm_worldwide_shipping.customizations.cgm_setup.after_install"
 
 # Uninstallation
 # ------------

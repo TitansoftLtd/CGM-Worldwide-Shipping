@@ -4,14 +4,7 @@ from __future__ import annotations
 import frappe
 from frappe.utils import get_url
 
-FINANCE_ROLES = ("Finance Manager", "Finance User", "Accounts User", "Accounts Manager")
-OPERATIONS_ROLES = (
-	"Operations Manager",
-	"Operations User",
-	"Declaration User",
-	"Declarant",
-	"System Manager",
-)
+from cgm_shipping.cgm_worldwide_shipping.customizations.role_config import finance_roles
 
 DEFAULT_EMAIL_TEMPLATE = (
 	"<p>Hello,</p>"
@@ -21,6 +14,15 @@ DEFAULT_EMAIL_TEMPLATE = (
 	"{% if project_url %} · <a href=\"{{ project_url }}\">Open project</a>{% endif %}"
 	"</p>"
 )
+
+
+def configured_email_template(fieldname: str, default: str) -> str:
+	"""Return the admin-configured template (CGM Shipping Settings) or the code default."""
+	try:
+		settings = frappe.get_cached_doc("CGM Shipping Settings")
+	except Exception:
+		return default
+	return (settings.get(fieldname) or "").strip() or default
 
 
 def get_users_with_roles(roles: tuple[str, ...]) -> list[str]:
@@ -196,8 +198,10 @@ def notify_finance_for_task_email(task_name: str, *, action_label: str = "Paymen
 		task,
 		subject=subject,
 		message=message,
-		roles=FINANCE_ROLES,
-		email_template=DEFAULT_EMAIL_TEMPLATE,
+		roles=finance_roles(),
+		email_template=configured_email_template(
+			"custom_default_email_template", DEFAULT_EMAIL_TEMPLATE
+		),
 	)
 	result["message"] = (
 		f"Finance notified ({result.get('emails_sent', 0)} email(s))."

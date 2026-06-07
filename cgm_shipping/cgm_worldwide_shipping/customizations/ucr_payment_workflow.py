@@ -7,9 +7,12 @@ from frappe.utils import get_url, now_datetime
 from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 	_send_task_notifications,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.role_config import (
+	finance_roles,
+	operations_roles,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
-	FINANCE_ROLES,
-	OPERATIONS_ROLES,
+	configured_email_template,
 	workflow_notify_message,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
@@ -145,8 +148,10 @@ def submit_ucr_invoice_to_finance(task_name: str) -> dict:
 		finance_task,
 		subject=subject,
 		message=message,
-		roles=FINANCE_ROLES,
-		email_template=UCR_FINANCE_EMAIL_TEMPLATE,
+		roles=finance_roles(),
+		email_template=configured_email_template(
+			"custom_ucr_finance_email_template", UCR_FINANCE_EMAIL_TEMPLATE
+		),
 		attachment_urls=[invoice_url] if invoice_url else None,
 	)
 
@@ -197,8 +202,10 @@ def notify_operations_upload_ucr_receipt(task) -> dict:
 		app,
 		subject=subject,
 		message=message,
-		roles=OPERATIONS_ROLES,
-		email_template=UCR_FINANCE_EMAIL_TEMPLATE,
+		roles=operations_roles(),
+		email_template=configured_email_template(
+			"custom_ucr_finance_email_template", UCR_FINANCE_EMAIL_TEMPLATE
+		),
 	)
 	return {
 		**result,
@@ -350,7 +357,7 @@ def _notify_finance_verify_ucr_receipt(task) -> dict:
 		task,
 		subject=subject,
 		message=message,
-		roles=FINANCE_ROLES,
+		roles=finance_roles(),
 		attachment_urls=attachment_urls or None,
 	)
 	return {
@@ -707,14 +714,12 @@ def get_ucr_invoice_preview(task_name: str) -> dict:
 
 
 def _user_is_finance(user: str | None = None) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
-		FINANCE_ROLES,
-	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.role_config import finance_roles
 
 	user = user or frappe.session.user
 	if user == "Administrator":
 		return True
-	return bool(set(FINANCE_ROLES) & set(frappe.get_roles(user)))
+	return bool(set(finance_roles()) & set(frappe.get_roles(user)))
 
 
 @frappe.whitelist()
