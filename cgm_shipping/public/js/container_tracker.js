@@ -130,6 +130,10 @@ function when_bl_container_field_ready(frm, callback) {
 
 	let attempts = 0;
 	const try_ready = () => {
+		// Stop retrying if the user has navigated away from this form.
+		if (cur_frm !== frm) {
+			return;
+		}
 		attempts += 1;
 		frm.refresh_field("custom_bl_container_select");
 		if (frm.fields_dict.custom_bl_container_select) {

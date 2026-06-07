@@ -9,6 +9,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow impor
 	sync_project_shipment_status_from_tasks,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
+	SEA_PERMIT_APPLICATION_TASK_SEQS,
 	apply_finance_payment_to_project_permits,
 	seed_required_task_document_rows,
 	sync_task_permits_to_project,
@@ -86,7 +87,7 @@ def on_task_onload(doc, _method=None):
 
 	if (
 		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(doc.get("custom_sequence_no") or 0) in (5, 15)
+		and int(doc.get("custom_sequence_no") or 0) in SEA_PERMIT_APPLICATION_TASK_SEQS
 	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 			merge_project_permits_into_application_task,
@@ -176,7 +177,7 @@ def on_task_update(doc, _method=None):
 		sync_task_permits_to_project(doc)
 		if doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY:
 			seq = int(doc.get("custom_sequence_no") or 0)
-			if seq in (5, 15):
+			if seq in SEA_PERMIT_APPLICATION_TASK_SEQS:
 				from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 					get_permit_finance_task,
 					sync_permit_invoices_to_finance_task,

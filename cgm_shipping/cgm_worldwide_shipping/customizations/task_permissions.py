@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+	SEA_PAYMENT_TASK_SEQS,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	SEA_TASK_FLOW_KEY,
 	normalize_department_stem,
@@ -151,7 +154,7 @@ def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
-	if seq not in (4, 6, 12, 14, 18):
+	if seq not in SEA_PAYMENT_TASK_SEQS:
 		return False
 	return "Finance" in get_user_sea_task_department_stems(user)
 
@@ -225,10 +228,11 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 
 	stems = get_user_sea_task_department_stems(user)
 	escaped_user = frappe.db.escape(user)
+	assign_token = frappe.db.escape(f'"{user}"')
 	non_sea = f"(IFNULL(`tabTask`.`custom_task_flow_key`, '') != {frappe.db.escape(SEA_TASK_FLOW_KEY)})"
 	assigned_or_owner = (
 		f"(`tabTask`.`owner` = {escaped_user} "
-		f"OR LOCATE({escaped_user}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
+		f"OR LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
 	)
 
 	visibility_parts = [assigned_or_owner]
@@ -238,8 +242,9 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	if linked:
 		visibility_parts.append(linked)
 	if "Finance" in stems:
+		payment_seqs = ", ".join(str(s) for s in sorted(SEA_PAYMENT_TASK_SEQS))
 		visibility_parts.append(
-			f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN (4, 6, 12, 14, 18))"
+			f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({payment_seqs}))"
 		)
 
 	sea_visible = (

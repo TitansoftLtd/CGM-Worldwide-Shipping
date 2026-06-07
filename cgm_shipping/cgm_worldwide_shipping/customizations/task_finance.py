@@ -406,9 +406,9 @@ def _finance_line_verified_changed(task, row) -> bool:
 
 def enforce_finance_line_permissions(task) -> None:
 	"""Only Finance may tick Verified on finance lines."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
-		FINANCE_ROLES,
-		OPERATIONS_ROLES,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.role_config import (
+		finance_roles,
+		operations_roles,
 	)
 
 	if frappe.session.user == "Administrator":
@@ -421,8 +421,8 @@ def enforce_finance_line_permissions(task) -> None:
 		return
 
 	roles = set(frappe.get_roles())
-	is_finance = bool(set(FINANCE_ROLES) & roles)
-	can_attach_receipt = bool(set(OPERATIONS_ROLES + FINANCE_ROLES) & roles)
+	is_finance = bool(set(finance_roles()) & roles)
+	can_attach_receipt = bool(set(operations_roles() + finance_roles()) & roles)
 
 	for row in task.get(TASK_FINANCE_FIELD) or []:
 		if row.verified and not is_finance and _finance_line_verified_changed(task, row):

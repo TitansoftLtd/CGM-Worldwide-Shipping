@@ -104,6 +104,11 @@ cgm_shipping.bl_containers.schedule_sync = function (frm, opts = {}) {
 	return new Promise((resolve) => {
 		let attempts = 0;
 		const try_sync = () => {
+			// Stop retrying if the user has navigated away from this form.
+			if (cur_frm !== frm) {
+				resolve();
+				return;
+			}
 			attempts += 1;
 			if (frm.fields_dict[BL_CONTAINER_FIELD]) {
 				run().then(resolve).catch(() => resolve());
