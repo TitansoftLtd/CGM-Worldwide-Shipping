@@ -60,7 +60,7 @@
   {
    "fieldname": "section_roles",
    "fieldtype": "Section Break",
-   "description": "Override which roles are notified / treated as Finance, Operations, or Declaration. Leave a table empty to use the built-in defaults."
+   "description": "Which roles are notified / treated as Finance, Operations, or Declaration. Required: an empty table means no one is in that group (those notifications and role checks will match nobody)."
   },
   {
    "fieldname": "custom_finance_roles",

@@ -1,8 +1,9 @@
 """Role groups for notifications and finance/declaration checks.
 
-The source of truth is CGM Shipping Settings → Roles. Initial values are seeded
-on install / migrate (see cgm_setup.py); there is no code fallback, so an empty
-table means "no roles in that group". Depends only on frappe (no import cycle).
+The source of truth is CGM Shipping Settings → Roles, configured by an admin.
+There is no code fallback and no seeding: an empty table means "no roles in that
+group" (so those notifications / role checks match no one). Depends only on
+frappe (no import cycle).
 """
 
 from __future__ import annotations
