@@ -69,3 +69,5 @@ cgm_shipping.patches.v2_43.opportunity_bill_of_lading_containers
 cgm_shipping.patches.v2_44.opportunity_bill_of_lading_flow
 cgm_shipping.patches.v2_45.container_tracker_bl_selection
 cgm_shipping.patches.v2_46.opportunity_airway_bill_visibility
+cgm_shipping.patches.v2_47.sync_cgm_shipping_desktop_navigation
+cgm_shipping.patches.v2_48.replace_shipment_dossier_with_project

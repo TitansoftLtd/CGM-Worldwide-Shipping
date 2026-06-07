@@ -29,6 +29,18 @@
   {
    "child": 1,
    "collapsible": 0,
+   "icon": "folder",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Project",
+   "link_to": "Project",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
    "icon": "file-text",
    "indent": 0,
    "keep_closed": 0,
@@ -294,7 +306,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-06 11:30:00.000000",
+ "modified": "2026-06-07 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",
