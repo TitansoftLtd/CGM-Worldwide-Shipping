@@ -34,34 +34,21 @@ UCR_FINANCE_EMAIL_TEMPLATE = (
 	"{% if project_url %} · <a href=\"{{ project_url }}\">Open project</a>{% endif %}"
 	"</p>"
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import SEA_TASK_FLOW_KEY
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	get_sea_task,
+	mark_task_completed,
+)
 
 UCR_APPLICATION_SEQ = 3
 UCR_FINANCE_SEQ = 4
 
 
 def get_ucr_application_task(project: str) -> str | None:
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": UCR_APPLICATION_SEQ,
-		},
-		"name",
-	)
+	return get_sea_task(project, UCR_APPLICATION_SEQ)
 
 
 def get_ucr_finance_task(project: str) -> str | None:
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": UCR_FINANCE_SEQ,
-		},
-		"name",
-	)
+	return get_sea_task(project, UCR_FINANCE_SEQ)
 
 
 def _ucr_invoice_attached_legacy(task) -> bool:
@@ -451,19 +438,7 @@ def auto_complete_ucr_application_for_project(project: str) -> bool:
 
 
 def _persist_task_completed(task) -> None:
-	"""Write Completed to the database directly (nested doc.save can leave list view stale)."""
-	frappe.db.set_value(
-		"Task",
-		task.name,
-		{
-			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
-			"progress": 100,
-		},
-		update_modified=True,
-	)
-	frappe.clear_document_cache("Task", task.name)
+	mark_task_completed(task)
 
 
 def _notify_task_status_changed(task) -> None:

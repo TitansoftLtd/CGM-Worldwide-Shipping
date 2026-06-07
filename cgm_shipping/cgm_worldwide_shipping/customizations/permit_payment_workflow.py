@@ -18,7 +18,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications
 )
 
 DECLARATION_ROLES = ("Declaration User", "Declarant", "System Manager")
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import SEA_TASK_FLOW_KEY
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	SEA_TASK_FLOW_KEY,
+	get_sea_task,
+	mark_task_completed,
+)
 
 PERMIT_FINANCE_EMAIL_TEMPLATE = (
 	"<p>Hello,</p>"
@@ -99,15 +103,7 @@ def permit_invoices_ready_for_project(project: str, stage: str = "Pre-clearance"
 
 
 def get_permit_application_task(project: str, seq: int) -> str | None:
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": seq,
-		},
-		"name",
-	)
+	return get_sea_task(project, seq)
 
 
 def get_permit_finance_task(project: str, application_seq: int = 5) -> str | None:
@@ -115,15 +111,7 @@ def get_permit_finance_task(project: str, application_seq: int = 5) -> str | Non
 	fin_seq = PERMIT_FINANCE_SEQ_BY_APPLICATION.get(application_seq)
 	if not fin_seq or not project:
 		return None
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": fin_seq,
-		},
-		"name",
-	)
+	return get_sea_task(project, fin_seq)
 
 
 def _permit_row_dict(row) -> dict:
@@ -609,18 +597,7 @@ def permit_finance_ready_to_complete(task) -> bool:
 
 
 def _persist_permit_task_completed(task) -> None:
-	frappe.db.set_value(
-		"Task",
-		task.name,
-		{
-			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
-			"progress": 100,
-		},
-		update_modified=True,
-	)
-	frappe.clear_document_cache("Task", task.name)
+	mark_task_completed(task)
 
 
 def _run_permit_finance_completion_hooks(task) -> None:

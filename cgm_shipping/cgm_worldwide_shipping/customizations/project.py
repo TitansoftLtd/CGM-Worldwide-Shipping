@@ -88,6 +88,7 @@ def apply_shipment_document_automation(doc, _method=None):
 		if legacy_location == "Origin Country":
 			doc.custom_current_location = "At origin"
 
+	# Re-normalising shipment type/mode is idempotent, so only run it when those
 	# fields actually change (or on a new doc) — skips a Document-Type lookup per save.
 	if (
 		doc.is_new()

@@ -12,6 +12,37 @@ DEPARTMENT_NAME_ALIASES = {
 }
 
 
+def get_sea_task(project: str, seq: int) -> str | None:
+	"""Return the name of the sea-clearance Task at `seq` for `project` (or None)."""
+	if not project or not seq:
+		return None
+	return frappe.db.get_value(
+		"Task",
+		{
+			"project": project,
+			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"custom_sequence_no": seq,
+		},
+		"name",
+	)
+
+
+def mark_task_completed(task) -> None:
+	"""Write Completed straight to the DB (a nested doc.save can leave list views stale)."""
+	frappe.db.set_value(
+		"Task",
+		task.name,
+		{
+			"status": "Completed",
+			"completed_by": task.completed_by or frappe.session.user,
+			"completed_on": task.completed_on or now_datetime(),
+			"progress": 100,
+		},
+		update_modified=True,
+	)
+	frappe.clear_document_cache("Task", task.name)
+
+
 # ─── CGM reference / Project Name ─────────────────────────────────────────────
 # Tracking sheet format: CGM/FCL001/1022  (prefix + 3-digit seq + MMYY period)
 
