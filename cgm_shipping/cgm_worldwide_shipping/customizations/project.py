@@ -88,7 +88,13 @@ def apply_shipment_document_automation(doc, _method=None):
 		if legacy_location == "Origin Country":
 			doc.custom_current_location = "At origin"
 
-	normalize_shipment_fields_on_doc(doc)
+	# fields actually change (or on a new doc) — skips a Document-Type lookup per save.
+	if (
+		doc.is_new()
+		or doc.has_value_changed("custom_shipment_type")
+		or doc.has_value_changed("custom_mode_of_transport")
+	):
+		normalize_shipment_fields_on_doc(doc)
 	# 1. Pull files from linked Lead, Customer, and Tasks into shipment documents.
 	if not frappe.flags.get("cgm_syncing_shipment_documents"):
 		sync_linked_attachments_to_project(doc)
@@ -134,10 +140,23 @@ def _required_document_types(mode, stages=None):
 
 
 def normalize_document_rows(doc):
-	for row in get_shipment_documents(doc):
+	rows = list(get_shipment_documents(doc))
+	# Batch the Document Type 'default_required' lookups (was one query per row).
+	doc_types = {r.document_type for r in rows if r.document_type}
+	required_map = {}
+	if doc_types:
+		required_map = {
+			d.name: d.default_required
+			for d in frappe.get_all(
+				"Document Type",
+				filters={"name": ["in", list(doc_types)]},
+				fields=["name", "default_required"],
+			)
+		}
+	for row in rows:
 		# 1. Sync the required flag from the Document Type master.
 		if row.document_type:
-			default_required = frappe.db.get_value("Document Type", row.document_type, "default_required")
+			default_required = required_map.get(row.document_type)
 			if default_required is not None:
 				row.required = int(default_required)
 
