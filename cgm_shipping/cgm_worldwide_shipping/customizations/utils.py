@@ -156,10 +156,7 @@ def get_project_awb_field() -> str | None:
 	"""AWB field on Project."""
 	return get_field_from_meta("Project", "awb_number") or get_field_from_meta("Project", "awb")
 
-
 # ─── Document Type utilities ──────────────────────────────────────────────────
-
-
 def document_types_match(existing_type, incoming_type):
 	"""Check if two document types match by name or code."""
 	if not existing_type or not incoming_type:
@@ -169,7 +166,6 @@ def document_types_match(existing_type, incoming_type):
 	existing_code = frappe.db.get_value("Document Type", existing_type, "code")
 	incoming_code = frappe.db.get_value("Document Type", incoming_type, "code")
 	return bool(existing_code and incoming_code and existing_code == incoming_code)
-
 
 def get_document_type_link_name(code):
 	"""Get the name of a Document Type by its code."""
@@ -181,7 +177,6 @@ def get_document_type_link_name(code):
 	if frappe.db.exists("Document Type", code):
 		return code
 	return None
-
 
 def ensure_document_types():
 	"""Create default Document Type records if they don't exist."""
@@ -198,19 +193,14 @@ def ensure_document_types():
 		if doc.meta.is_submittable and doc.docstatus == 0:
 			doc.submit()
 
-
 # ─── CGM reference / Project Name ─────────────────────────────────────────────
 # Tracking sheet format: CGM/FCL001/1022  (prefix + 3-digit seq + MMYY period)
-
-
 CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$")
-
 
 def is_cgm_ref(value: str | None) -> bool:
 	if not value:
 		return False
 	return bool(CGM_REF_PATTERN.match(str(value).strip().upper()))
-
 
 def cgm_ref_prefix(shipment_type=None, mode=None) -> str:
 	"""
@@ -258,7 +248,6 @@ def cgm_ref_prefix(shipment_type=None, mode=None) -> str:
 
 	return get_default_cgm_ref_prefix()
 
-
 def get_default_cgm_ref_prefix() -> str:
 	"""Absolute fallback prefix from Shipment Type master."""
 	if not frappe.db.exists("DocType", "Shipment Type"):
@@ -275,7 +264,6 @@ def get_default_cgm_ref_prefix() -> str:
 		order_by="idx asc",
 	)
 	return str(prefix).strip().upper() if prefix else ""
-
 
 def get_next_cgm_ref_sequence(prefix: str, period: str) -> int:
 	"""Next 3-digit sequence for CGM/{prefix}NNN/{period} in this calendar month."""
@@ -308,7 +296,6 @@ def get_next_cgm_ref_sequence(prefix: str, period: str) -> int:
 			max_seq = max(max_seq, int(match.group(1)))
 	return max_seq + 1
 
-
 def build_cgm_ref_no(shipment_type=None, mode=None, opened_date=None) -> str:
 	"""Allocate CGM/LCL001/1022-style reference for the shipment tracking sheet."""
 	prefix = cgm_ref_prefix(shipment_type, mode)
@@ -320,7 +307,6 @@ def build_cgm_ref_no(shipment_type=None, mode=None, opened_date=None) -> str:
 		if not frappe.db.exists("Project", {"project_name": ref}):
 			return ref
 	frappe.throw("Could not allocate a unique CGM reference number.")
-
 
 def assign_cgm_project_reference(project) -> None:
 	"""Set project_name and the CGM ref custom field to the tracking-sheet reference."""
@@ -350,7 +336,6 @@ def assign_cgm_project_reference(project) -> None:
 	if cgm_ref_field:
 		project.set(cgm_ref_field, ref)
 
-
 def build_project_name_seed(label, shipment_type=None, mode=None):
 	# Legacy helper — prefer assign_cgm_project_reference for new shipments.
 	core = (label or "").strip() or "Client"
@@ -358,7 +343,6 @@ def build_project_name_seed(label, shipment_type=None, mode=None):
 	if details:
 		return f"Shipment - {core} - {details}"
 	return f"Shipment - {core}"
-
 
 def ensure_unique_project_name(seed_name):
 	# 1. Use fallback when seed is blank.
@@ -378,8 +362,6 @@ def ensure_unique_project_name(seed_name):
 
 
 # ─── Project Field Helpers ────────────────────────────────────────────────────
-
-
 def apply_shipment_data(project, shipment_type=None, mode=None):
 	"""Set shipment classification; derive mode from operational shipment type when known."""
 	if shipment_type:
@@ -399,7 +381,6 @@ def apply_shipment_data(project, shipment_type=None, mode=None):
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_shipment_status"):
 		project.custom_shipment_status = "Draft"
-
 
 def normalize_shipment_classification(shipment_type=None, mode=None):
 	"""
@@ -437,7 +418,6 @@ def normalize_shipment_classification(shipment_type=None, mode=None):
 
 	return st or None, m or None
 
-
 def normalize_shipment_fields_on_doc(doc) -> None:
 	"""Rewrite legacy Import/Export values before Select validation on save."""
 	if not doc.meta.has_field("custom_shipment_type"):
@@ -468,7 +448,6 @@ def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 		if not frappe.db.exists("Document Type", row.document_type):
 			continue
 		append_or_update_shipment_document_row(project_doc, row)
-
 
 def append_or_update_shipment_document_row(project_doc, source_row) -> None:
 	shipment_field = get_project_shipment_documents_field()
@@ -508,7 +487,6 @@ def append_or_update_shipment_document_row(project_doc, source_row) -> None:
 		},
 	)
 
-
 def get_bill_of_lading_attachment_url(
 	bl_name: str | None = None, source_doc=None
 ) -> str | None:
@@ -536,7 +514,6 @@ def get_bill_of_lading_attachment_url(
 			return row.attachment
 	return None
 
-
 def carry_bill_of_lading_attachment_to_project(
 	project_doc, bl_name: str | None = None, source_doc=None
 ) -> None:
@@ -557,8 +534,6 @@ def carry_bill_of_lading_attachment_to_project(
 
 
 # ─── Sea Task Template ────────────────────────────────────────────────────────
-
-
 def load_sea_task_template():
 	"""Return sea import tasks from CGM Shipping Settings."""
 	# 1. Load and sort template rows by their index.
@@ -581,10 +556,7 @@ def load_sea_task_template():
 
 	return out
 
-
 # ─── Department Resolution ────────────────────────────────────────────────────
-
-
 def get_department_name_stem(raw):
 	"""Extract the department name before the company abbreviation suffix."""
 	value = (raw or "").strip()
@@ -595,7 +567,6 @@ def get_department_name_stem(raw):
 	if " - " in value:
 		return value.split(" - ", 1)[0].strip()
 	return value
-
 
 def resolve_department_alias(stem: str, company: str | None = None) -> str:
 	"""
@@ -626,7 +597,6 @@ def resolve_department_alias(stem: str, company: str | None = None) -> str:
 
 	return frappe.db.get_value("Department", mapped, "department_name") or stem
 
-
 def normalize_department_stem(raw, company=None) -> str:
 	"""Template / task stem only (e.g. Finance), never Finance - C from another site."""
 	stem = get_department_name_stem(raw)
@@ -644,7 +614,6 @@ def department_matches_company(department: str, company: str) -> bool:
 		return dept_company == company
 	abbr = frappe.db.get_value("Company", company, "abbr")
 	return bool(abbr and department.endswith(f" - {abbr}"))
-
 
 def resolve_department_name(department_value, company=None):
 	"""Resolve stem or link to ERPNext Department for *company* (e.g. Finance - CWSCL)."""
@@ -725,9 +694,7 @@ def resolve_department_name(department_value, company=None):
 
 
 # ─── Whitelisted Project Creation ────────────────────────────────────────────
-
 INTAKE_DOCUMENT_CODES = ("CI", "PKL")
-
 
 def project_has_intake_documents(project_doc) -> bool:
 	"""True when CI and PKL are present on the project shipment document table."""
@@ -746,7 +713,6 @@ def project_has_intake_documents(project_doc) -> bool:
 		if not row or not row.attachment:
 			return False
 	return True
-
 
 def bootstrap_project_workflow_status(project_name: str) -> None:
 	"""
@@ -771,7 +737,6 @@ def bootstrap_project_workflow_status(project_name: str) -> None:
 		update_modified=False,
 	)
 
-
 def insert_shipment_project(project) -> str:
 	"""Insert a new shipment project and apply post-insert workflow status."""
 	project.insert(ignore_permissions=True)
@@ -791,7 +756,6 @@ def backfill_intake_documents_on_sea_tasks(project):
 	carried = carry_project_shipment_documents_to_sea_tasks(project)
 	auto_complete_initial_sea_tasks(project)
 	return {"tasks_updated": carried}
-
 
 def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 	"""
@@ -818,7 +782,6 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 	result = create_sea_import_task_plan_internal(project_name)
 	result["auto_completed"] = auto_complete_initial_sea_tasks(project_name)
 	return result
-
 
 @frappe.whitelist()
 def create_project_from_customer(customer, project_name=None):
@@ -862,7 +825,6 @@ def create_project_from_customer(customer, project_name=None):
 	sync_linked_attachments_to_project(proj)
 	return insert_shipment_project(proj)
 
-
 def get_lead_field_value(lead, *candidates: str):
 	"""Return the first non-empty attribute present on the Lead document."""
 	lead_meta = lead.meta
@@ -874,13 +836,11 @@ def get_lead_field_value(lead, *candidates: str):
 			return value
 	return None
 
-
 def apply_project_tracking_defaults(project) -> None:
 	"""Seed tracking sheet fields on new projects (opened date; CGM ref assigned on insert)."""
 	opened_date_field = get_field_from_meta("Project", "opened_date")
 	if opened_date_field and not project.get(opened_date_field):
 		project.set(opened_date_field, today())
-
 
 def get_container_rows_from_preshipment_source(source_doc) -> list[dict]:
 	"""Container rows from preshipment child table, or from linked Bill of Lading when empty."""
@@ -917,7 +877,6 @@ def get_container_rows_from_preshipment_source(source_doc) -> list[dict]:
 		for row in bl.get(bl_container_field) or []
 	]
 
-
 def copy_container_rows_to_project(project, rows: list[dict]) -> None:
 	container_field = get_container_table_field_for_doctype("Project")
 	if not rows or not container_field or not project.meta.has_field(container_field):
@@ -931,7 +890,6 @@ def copy_container_rows_to_project(project, rows: list[dict]) -> None:
 				"type_of_container": row.get("type_of_container"),
 			},
 		)
-
 
 def apply_preshipment_transport_defaults(project, source_doc) -> None:
 	"""Copy B/L, AWB, and container rows from Lead/Opportunity onto a new Project."""
@@ -979,7 +937,6 @@ def apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
 			project.set(fieldname, value)
 	apply_preshipment_transport_defaults(project, lead)
 
-
 def apply_opportunity_to_project_mappings(project, opp) -> None:
 	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""
 	meta = project.meta
@@ -1000,7 +957,6 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 		if value not in (None, "") and not project.get(dest_field):
 			project.set(dest_field, value)
 
-
 def sync_preshipment_documents_from_source(project, source_doc) -> None:
 	"""Pull client docs and B/L attachment from Lead/Opportunity onto Project shipment documents."""
 	bl_config = get_bl_config()
@@ -1019,14 +975,12 @@ def sync_preshipment_documents_from_source(project, source_doc) -> None:
 		source_doc=source_doc,
 	)
 
-
 def lead_has_customer(lead):
 	"""Return True when a Customer is already linked to this Lead."""
 	if frappe.db.get_value("Customer", {"lead_name": lead}, "name"):
 		return True
 	lead_customer = frappe.db.get_value("Lead", lead, "customer")
 	return bool(lead_customer and frappe.db.exists("Customer", lead_customer))
-
 
 @frappe.whitelist()
 def create_project_from_lead(lead, project_name=None):
@@ -1074,7 +1028,6 @@ def create_project_from_lead(lead, project_name=None):
 	sync_preshipment_documents_from_source(proj, lead_doc)
 	return insert_shipment_project(proj)
 
-
 @frappe.whitelist()
 def create_project_from_opportunity(opportunity, project_name=None):
 	"""Create a shipment project from an approved Opportunity."""
@@ -1120,8 +1073,6 @@ def create_project_from_opportunity(opportunity, project_name=None):
 
 
 # ─── Sea Import Task Plan ─────────────────────────────────────────────────────
-
-
 def create_sea_import_task_plan_internal(project, reset=False):
 	"""Generate ordered sea-import tasks (internal; no duplicate check unless reset)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
@@ -1187,7 +1138,6 @@ def create_sea_import_task_plan_internal(project, reset=False):
 		out["auto_completed"] = auto_complete_initial_sea_tasks(project)
 	return out
 
-
 @frappe.whitelist()
 def create_sea_import_task_plan(project, reset=False):
 	"""Generate ordered sea-import tasks and link them via a depends_on chain."""
@@ -1196,8 +1146,6 @@ def create_sea_import_task_plan(project, reset=False):
 
 
 # ─── Finance Notification ─────────────────────────────────────────────────────
-
-
 @frappe.whitelist()
 def notify_finance_for_task(task_name):
 	"""Notify Finance users (in-app + email) that payment action is needed for a task."""
@@ -1209,8 +1157,6 @@ def notify_finance_for_task(task_name):
 
 
 # ─── Task Payment Helpers ─────────────────────────────────────────────────────
-
-
 def is_sea_ucr_idf_task_one(task):
 	"""Legacy alias: finance payment tasks in the sea clearance chart."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
@@ -1218,7 +1164,6 @@ def is_sea_ucr_idf_task_one(task):
 	)
 
 	return is_sea_payment_task(task)
-
 
 def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoice_name):
 	"""Return True when the Payment Entry references the given Purchase Invoice."""
@@ -1231,7 +1176,6 @@ def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoic
 			return True
 	return False
 
-
 @frappe.whitelist()
 def link_purchase_invoice_to_task(task_name, purchase_invoice):
 	"""Link a submitted Purchase Invoice to a sea finance task; sync Project."""
@@ -1240,7 +1184,6 @@ def link_purchase_invoice_to_task(task_name, purchase_invoice):
 	)
 
 	return link_purchase_invoice_to_task_enhanced(task_name, purchase_invoice)
-
 
 @frappe.whitelist()
 def complete_task_with_payment(task_name, payment_entry):
