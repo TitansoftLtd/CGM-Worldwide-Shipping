@@ -1,4 +1,9 @@
-"""Align sea workflow states, finance fields on UCR/permits, and permit type ACA/SCA."""
+"""Align Shipment Dossier status options and map legacy statuses.
+
+Sea-clearance Workflow States are installed from ``fixtures``
+(workflow_state.json), so this patch only updates the legacy Shipment Dossier
+status field options and remaps old demo statuses.
+"""
 from __future__ import annotations
 
 import frappe
@@ -24,43 +29,11 @@ NEW_STATUSES = (
 	"Settled",
 )
 
-WORKFLOW_STATE_STYLES = {
-	"Draft": "Primary",
-	"Documents Received": "Warning",
-	"UCR Applied": "Primary",
-	"UCR Paid": "Success",
-	"Pre-clearance": "Primary",
-	"Client Inspection": "Info",
-	"In Transit": "Info",
-	"Final Docs Received": "Warning",
-	"Manifest Requested": "Warning",
-	"Entry Lodged": "Warning",
-	"Line Paid & DO Lodged": "Success",
-	"Entry Paid": "Success",
-	"Post-clearance": "Primary",
-	"Field Clearance": "Warning",
-	"KPA Paid": "Success",
-	"In Delivery": "Info",
-	"Containers Returned": "Success",
-	"Settled": "Success",
-}
-
 
 def execute():
-	_ensure_workflow_states()
 	_update_shipment_dossier_status_field()
 	_map_legacy_statuses()
 	frappe.db.commit()
-
-
-def _ensure_workflow_states():
-	for state, style in WORKFLOW_STATE_STYLES.items():
-		if frappe.db.exists("Workflow State", state):
-			continue
-		doc = frappe.new_doc("Workflow State")
-		doc.workflow_state_name = state
-		doc.style = style
-		doc.insert(ignore_permissions=True)
 
 
 def _update_shipment_dossier_status_field():

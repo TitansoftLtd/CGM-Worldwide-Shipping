@@ -1,56 +1,25 @@
+"""CRM pre-shipment setup: roles + Lead/Opportunity status fields.
+
+The Lead/Opportunity workflows, their states and actions are installed from
+``fixtures`` (workflow.json / workflow_state.json / workflow_action_master.json),
+so this patch only seeds the roles and custom status fields they depend on.
+"""
+
 import frappe
-
-
-WORKFLOW_LEAD = "CGM Lead Pre-Shipment"
-WORKFLOW_OPP = "CGM Opportunity Pre-Shipment"
 
 
 def execute():
 	ensure_crm_roles()
-	ensure_crm_workflow_actions()
-	ensure_crm_workflow_states()
 	ensure_lead_preshipment_field()
 	ensure_opportunity_preshipment_field()
 	sync_preshipment_field_options()
 	migrate_legacy_preshipment_states()
-	ensure_lead_workflow()
-	ensure_opportunity_workflow()
 
 
 def ensure_crm_roles():
 	for role_name in ["CGM Documentation", "Operations Manager"]:
 		if not frappe.db.exists("Role", role_name):
 			frappe.get_doc({"doctype": "Role", "role_name": role_name}).insert(ignore_permissions=True)
-
-
-def ensure_crm_workflow_actions():
-	for action_name in [
-		"Approve CI/PKL",
-		"Reject CI/PKL",
-		"Approve customer onboarding",
-		"Authorize Shipment File",
-	]:
-		if not frappe.db.exists("Workflow Action Master", action_name):
-			frappe.get_doc({"doctype": "Workflow Action Master", "workflow_action_name": action_name}).insert(
-				ignore_permissions=True
-			)
-
-
-def ensure_crm_workflow_states():
-	for state_name, style in [
-		("Lead Intake", "Warning"),
-		("Lead Docs Verified", "Success"),
-		("Lead Docs Rejected", "Danger"),
-		("Lead Ready to Convert", "Success"),
-		("Opp Intake", "Warning"),
-		("Opp Docs Verified", "Success"),
-		("Opp Docs Rejected", "Danger"),
-		("Opp Ready for Project", "Success"),
-	]:
-		if not frappe.db.exists("Workflow State", state_name):
-			frappe.get_doc(
-				{"doctype": "Workflow State", "workflow_state_name": state_name, "style": style}
-			).insert(ignore_permissions=True)
 
 
 def ensure_lead_preshipment_field():
@@ -124,109 +93,3 @@ def migrate_legacy_preshipment_states():
 		"""
 	)
 	frappe.db.commit()
-
-
-def ensure_lead_workflow():
-	if frappe.db.exists("Workflow", WORKFLOW_LEAD):
-		frappe.delete_doc("Workflow", WORKFLOW_LEAD, ignore_permissions=True, force=True)
-
-	workflow = frappe.get_doc(
-		{
-			"doctype": "Workflow",
-			"workflow_name": WORKFLOW_LEAD,
-			"document_type": "Lead",
-			"is_active": 1,
-			"workflow_state_field": "custom_cgm_preshipment_status",
-			"send_email_alert": 0,
-			"states": [
-				{"state": "Lead Intake", "doc_status": "0", "allow_edit": "All"},
-				{"state": "Lead Docs Verified", "doc_status": "0", "allow_edit": "Operations Manager"},
-				{"state": "Lead Docs Rejected", "doc_status": "0", "allow_edit": "CGM Documentation"},
-				{"state": "Lead Ready to Convert", "doc_status": "0", "allow_edit": "Operations Manager"},
-			],
-			"transitions": [
-				{
-					"state": "Lead Intake",
-					"action": "Approve CI/PKL",
-					"next_state": "Lead Docs Verified",
-					"allowed": "Operations Manager",
-					"allow_self_approval": 1,
-				},
-				{
-					"state": "Lead Intake",
-					"action": "Reject CI/PKL",
-					"next_state": "Lead Docs Rejected",
-					"allowed": "Operations Manager",
-					"allow_self_approval": 1,
-				},
-				{
-					"state": "Lead Docs Rejected",
-					"action": "Approve CI/PKL",
-					"next_state": "Lead Docs Verified",
-					"allowed": "Operations Manager",
-					"allow_self_approval": 1,
-				},
-				{
-					"state": "Lead Docs Verified",
-					"action": "Approve customer onboarding",
-					"next_state": "Lead Ready to Convert",
-					"allowed": "Operations Manager",
-					"allow_self_approval": 1,
-				},
-			],
-		}
-	)
-	workflow.insert(ignore_permissions=True)
-
-
-def ensure_opportunity_workflow():
-	if frappe.db.exists("Workflow", WORKFLOW_OPP):
-		frappe.delete_doc("Workflow", WORKFLOW_OPP, ignore_permissions=True, force=True)
-
-	workflow = frappe.get_doc(
-		{
-			"doctype": "Workflow",
-			"workflow_name": WORKFLOW_OPP,
-			"document_type": "Opportunity",
-			"is_active": 1,
-			"workflow_state_field": "custom_cgm_preshipment_status",
-			"send_email_alert": 0,
-			"states": [
-				{"state": "Opp Intake", "doc_status": "0", "allow_edit": "All"},
-				{"state": "Opp Docs Verified", "doc_status": "0", "allow_edit": "Operations Manager"},
-				{"state": "Opp Docs Rejected", "doc_status": "0", "allow_edit": "CGM Documentation"},
-				{"state": "Opp Ready for Project", "doc_status": "0", "allow_edit": "Operations Manager"},
-			],
-			"transitions": [
-				{
-					"state": "Opp Intake",
-					"action": "Approve CI/PKL",
-					"next_state": "Opp Docs Verified",
-					"allowed": "Operations Manager",
-					"allow_self_approval": 1,
-				},
-				{
-					"state": "Opp Intake",
-					"action": "Reject CI/PKL",
-					"next_state": "Opp Docs Rejected",
-					"allowed": "Operations Manager",
-					"allow_self_approval": 1,
-				},
-				{
-					"state": "Opp Docs Rejected",
-					"action": "Approve CI/PKL",
-					"next_state": "Opp Docs Verified",
-					"allowed": "Operations Manager",
-					"allow_self_approval": 1,
-				},
-				{
-					"state": "Opp Docs Verified",
-					"action": "Authorize Shipment File",
-					"next_state": "Opp Ready for Project",
-					"allowed": "Operations Manager",
-					"allow_self_approval": 1,
-				},
-			],
-		}
-	)
-	workflow.insert(ignore_permissions=True)
