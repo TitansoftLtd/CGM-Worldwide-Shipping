@@ -1,5 +1,5 @@
 """
-Sea Freight Clearance — ordered task plan and workflow gates.
+Sea Freight Clearance - ordered task plan and workflow gates.
 
 Task plan rows: CGM Shipping Settings → custom_sea_import_task_template
 Workflow states: CGM Sea Import Workflow (Project)
@@ -60,7 +60,7 @@ def is_sea_clearance_task(task) -> bool:
 
 
 def task_should_show_documents(seq: int) -> bool:
-	"""Task Documents table — not for CRM intake steps auto-done at project create."""
+	"""Task Documents table - not for CRM intake steps auto-done at project create."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
 		is_auto_complete_task,
 	)
@@ -134,7 +134,7 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 			and get_permit_stage_for_sequence(seq) == PRE_CLEARANCE_STAGE
 			and row.get("custom_permit_invoices_submitted")
 		):
-			# Pre-clearance permit application stays Open until finance completes — still unlocks finance step.
+			# Pre-clearance permit application stays Open until finance completes - still unlocks finance step.
 			completed.add(seq)
 	return completed
 
@@ -167,7 +167,7 @@ def derive_workflow_progress_from_tasks(
 
 
 def _sea_task_progress_fields() -> list[str]:
-	"""Fields for workflow sync — only columns that exist on Task (safe before migrate)."""
+	"""Fields for workflow sync - only columns that exist on Task (safe before migrate)."""
 	fields = ["custom_sequence_no", "status", "custom_permit_invoices_submitted"]
 	meta = frappe.get_meta("Task")
 	if meta.has_field("custom_ucr_invoice_submitted"):
@@ -326,7 +326,7 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 		if not permit_invoices_ready_for_project(project, "Pre-clearance"):
 			frappe.throw(
 				"Submit all permit invoices to Finance on <b>Apply for Pre-Clearance Permits</b> "
-				"using <b>Notify Finance — invoices ready</b> before advancing workflow."
+				"using <b>Notify Finance - invoices ready</b> before advancing workflow."
 			)
 		return
 

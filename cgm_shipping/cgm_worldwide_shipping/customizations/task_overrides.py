@@ -1,4 +1,4 @@
-"""Task document class — strip legacy invoice rows before Frappe link validation."""
+"""Task document class - strip legacy invoice rows before Frappe link validation."""
 from __future__ import annotations
 
 from erpnext.projects.doctype.task.task import Task

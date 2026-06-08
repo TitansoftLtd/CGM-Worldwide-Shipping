@@ -27,7 +27,7 @@ def ensure_project_container_tracking_fields() -> None:
 			"fieldtype": "Section Break",
 			"insert_after": "custom_port_cfs_charges_note",
 			"collapsible": 1,
-			"description": "Pre-arrival updates — fill before the vessel berths. Do not use ATA here until the ship arrives.",
+			"description": "Pre-arrival updates - fill before the vessel berths. Do not use ATA here until the ship arrives.",
 		},
 	)
 	_create_cf(
@@ -93,7 +93,7 @@ def ensure_project_container_tracking_fields() -> None:
 			"label": "Entry & Taxes",
 			"fieldtype": "Small Text",
 			"insert_after": "custom_custom_release_date",
-			"description": "Entry duties/taxes narrative — use Entry No field for the official number.",
+			"description": "Entry duties/taxes narrative - use Entry No field for the official number.",
 		},
 	)
 	_create_cf(

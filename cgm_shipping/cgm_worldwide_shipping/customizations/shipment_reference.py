@@ -1,7 +1,7 @@
 """CGM tracking-sheet reference generation and shipment-type/mode classification.
 
 Extracted from utils.py. Depends only on frappe and (lazily) shipment_type_master,
-so it has no import cycle with utils — which re-exports these names for callers that
+so it has no import cycle with utils - which re-exports these names for callers that
 still import them from cgm_shipping...customizations.utils.
 """
 

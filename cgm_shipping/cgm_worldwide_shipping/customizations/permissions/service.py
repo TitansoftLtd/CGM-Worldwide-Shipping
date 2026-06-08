@@ -2,7 +2,7 @@
 ERPNext RBAC helpers for sea clearance tasks.
 
 Administrators create Roles in Desk (names should match sea task template departments).
-Access checks use frappe.get_roles() against template department stems — no role lists in code.
+Access checks use frappe.get_roles() against template department stems - no role lists in code.
 """
 from __future__ import annotations
 

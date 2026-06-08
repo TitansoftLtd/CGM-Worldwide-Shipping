@@ -1,4 +1,4 @@
-"""Shipment Type interpretation layer — DB is source of truth; no bootstrap constants at runtime."""
+"""Shipment Type interpretation layer - DB is source of truth; no bootstrap constants at runtime."""
 from __future__ import annotations
 
 import frappe

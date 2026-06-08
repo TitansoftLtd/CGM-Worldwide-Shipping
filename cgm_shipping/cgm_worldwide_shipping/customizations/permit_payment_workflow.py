@@ -532,7 +532,7 @@ def validate_permit_application_can_complete(task) -> None:
 
 	if not task.get("custom_permit_invoices_submitted"):
 		frappe.throw(
-			"Click <b>Notify Finance — invoices ready</b> before completing this task."
+			"Click <b>Notify Finance - invoices ready</b> before completing this task."
 		)
 
 	if not finance_payment_completed(task.project, seq):
@@ -780,7 +780,7 @@ def verify_all_permit_receipts(task_name: str) -> dict:
 		"application_status": app_status,
 		"auto_completed": completed,
 		"message": (
-			"All permit receipts verified — finance and declarant tasks are completed."
+			"All permit receipts verified - finance and declarant tasks are completed."
 			if completed
 			else "Receipts verified. Tick any remaining rows or refresh the page."
 		),

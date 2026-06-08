@@ -70,11 +70,11 @@ frappe.ui.form.on("Task", {
 		frm.set_df_property("completed_on", "hidden", show_completion_meta ? 0 : 1);
 
 		if (ui.auto_intake_intro) {
-			frm.set_intro(
+			set_task_intro(
+				frm,
 				__(
 					"Completed automatically at Project creation. Documents were copied from the Project file (approved on Lead/Opportunity)."
-				),
-				"blue"
+				)
 			);
 		} else if (ui.is_sea_task && frm.doc.project) {
 			let intro = __(
@@ -88,7 +88,7 @@ frappe.ui.form.on("Task", {
 					intro = __(
 						"<b>1 Finance:</b> Create PI & <b>Make Payment</b> · " +
 							"<b>2 Declarant:</b> Upload receipts on <b>Apply for Pre-Clearance Permits</b> · " +
-							"<b>3 Finance:</b> Use <b>Actions → Verify All Receipts</b> — this task and the declarant task complete automatically."
+							"<b>3 Finance:</b> Use <b>Actions → Verify All Receipts</b> - this task and the declarant task complete automatically."
 					);
 				} else if (frm.doc.custom_permit_invoices_submitted) {
 					intro = __(
@@ -98,7 +98,7 @@ frappe.ui.form.on("Task", {
 				} else {
 					intro = __(
 						"<b>Declaration:</b> Attach <b>Permit Invoice (for Finance)</b> on each row, then click " +
-							"<b>Notify Finance — invoices ready</b>."
+							"<b>Notify Finance - invoices ready</b>."
 					);
 				}
 			} else if (ui.is_ucr_application) {
@@ -111,7 +111,7 @@ frappe.ui.form.on("Task", {
 					"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
 						"<b>2</b> <b>Actions → Create Purchase Invoice & Pay</b> · " +
 						"<b>3 Declarant:</b> Upload <b>UCR Receipt</b> and IDF certificate on <b>Create UCR (IDF)</b> · " +
-						"<b>4 Finance:</b> Verify receipt — this task completes automatically when the receipt is verified."
+						"<b>4 Finance:</b> Verify receipt - this task completes automatically when the receipt is verified."
 				);
 				intro_set = true;
 			} else if (ui.show_payments) {
@@ -120,7 +120,7 @@ frappe.ui.form.on("Task", {
 				);
 			}
 			if (!intro_set) {
-				frm.set_intro(intro, "blue");
+				set_task_intro(frm, intro);
 			}
 		}
 
@@ -189,7 +189,7 @@ frappe.ui.form.on("Task", {
 			frm.doc.status !== "Completed" &&
 			!frm.doc.custom_permit_invoices_submitted
 		) {
-			frm.add_custom_button(__("Notify Finance — invoices ready"), () => {
+			frm.add_custom_button(__("Notify Finance - invoices ready"), () => {
 				frappe.call({
 					method: "cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow.submit_permit_invoices_to_finance",
 					args: { task_name: frm.doc.name },
@@ -264,7 +264,7 @@ frappe.ui.form.on("Task", {
 					callback(r) {
 						if (!r.exc) {
 							frappe.show_alert({
-								message: __("Task re-opened — attach Permit Invoice on each row, then save."),
+								message: __("Task re-opened - attach Permit Invoice on each row, then save."),
 								indicator: "orange",
 							});
 							frm.reload_doc();
@@ -735,7 +735,7 @@ function configure_finance_line_grid(frm, ui) {
 	const can_receipt = user_can_upload_receipt(frm);
 	const seq = sea_task_sequence(frm);
 
-	// Set docfield properties directly — avoid toggle_enable() which re-renders the grid
+	// Set docfield properties directly - avoid toggle_enable() which re-renders the grid
 	// and can collapse the toolbar while the user clicks action buttons.
 	const line_label_df = grid.get_docfield("line_label");
 	const verified_df = grid.get_docfield("verified");
@@ -828,6 +828,16 @@ function ensure_ucr_finance_lines_on_form(frm) {
 	});
 }
 
+function set_task_intro(frm, message, color = "blue") {
+	// set_intro() appends a message block on every call, so clear first then set
+	// once. Routing all intro updates through here keeps exactly one banner across
+	// repeated refreshes and async callbacks.
+	frm.set_intro("");
+	if (message) {
+		frm.set_intro(message, color);
+	}
+}
+
 function load_ucr_declarant_workflow_status(frm) {
 	if (frm._cgm_declarant_status_loading || frm._cgm_declarant_status_loaded) {
 		return;
@@ -839,7 +849,8 @@ function load_ucr_declarant_workflow_status(frm) {
 		callback(r) {
 			frm._cgm_declarant_status_loading = false;
 			if (r.exc || !r.message) {
-				frm.set_intro(
+				set_task_intro(
+					frm,
 					__(
 						"Could not load UCR workflow status. Refresh the page or contact support if this persists."
 					),
@@ -861,7 +872,8 @@ function load_ucr_declarant_workflow_status(frm) {
 		},
 		error() {
 			frm._cgm_declarant_status_loading = false;
-			frm.set_intro(
+			set_task_intro(
+				frm,
 				__(
 					"Could not load UCR workflow status. Refresh the page or contact support if this persists."
 				),
@@ -912,7 +924,7 @@ function apply_ucr_application_intro(frm, status) {
 				"and the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
 		);
 	}
-	frm.set_intro(intro, "blue");
+	set_task_intro(frm, intro);
 }
 
 function configure_permit_grid(frm) {
@@ -966,7 +978,7 @@ frappe.ui.form.on("Task Finance Line", {
 		const row = locals[cdt][cdn];
 		if (is_ucr_application_step(frm) && row.line_type === "Receipt" && row.attachment) {
 			frappe.show_alert({
-				message: __("UCR receipt saved — Finance will be notified to verify."),
+				message: __("UCR receipt saved - Finance will be notified to verify."),
 				indicator: "green",
 			});
 		}

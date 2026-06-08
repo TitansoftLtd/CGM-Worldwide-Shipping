@@ -11,7 +11,7 @@ SHIPMENT_TYPE_BOOTSTRAP_DATA: list[dict] = [
 		"default_mode_of_transport": "Sea",
 		"use_sea_import_workflow": 1,
 		"requires_bill_of_lading": 1,
-		"description": "Full container load — port/CFS, containers table, 24-step sea clearance.",
+		"description": "Full container load - port/CFS, containers table, 24-step sea clearance.",
 	},
 	{
 		"shipment_type_name": "Sea LCL",
@@ -19,33 +19,33 @@ SHIPMENT_TYPE_BOOTSTRAP_DATA: list[dict] = [
 		"default_mode_of_transport": "Sea",
 		"use_sea_import_workflow": 1,
 		"requires_bill_of_lading": 1,
-		"description": "Less than container load — shared BL, sea clearance.",
+		"description": "Less than container load - shared BL, sea clearance.",
 	},
 	{
 		"shipment_type_name": "Air Import",
 		"cgm_ref_prefix": "IM",
 		"default_mode_of_transport": "Air",
 		"requires_air_waybill": 1,
-		"description": "Air import — CGM/IM001/0822 style references, AWB not BL.",
+		"description": "Air import - CGM/IM001/0822 style references, AWB not BL.",
 	},
 	{
 		"shipment_type_name": "Cross-Border Road Import",
 		"cgm_ref_prefix": "CBIM",
 		"default_mode_of_transport": "Road",
-		"description": "Road import via border (e.g. Malaba) — CGM/CBIM001/0523, truck rows.",
+		"description": "Road import via border (e.g. Malaba) - CGM/CBIM001/0523, truck rows.",
 	},
 	{
 		"shipment_type_name": "Motor Vehicle Import",
 		"cgm_ref_prefix": "MVS",
 		"default_mode_of_transport": "Sea",
 		"requires_bill_of_lading": 1,
-		"description": "Used vehicle / unit tracking at port — CGM/MVS001/0223 sheet.",
+		"description": "Used vehicle / unit tracking at port - CGM/MVS001/0223 sheet.",
 	},
 	{
 		"shipment_type_name": "Export",
 		"cgm_ref_prefix": "EX",
 		"default_mode_of_transport": "Sea",
-		"description": "Export clearance — CGM/EX001/0523.",
+		"description": "Export clearance - CGM/EX001/0523.",
 	},
 	{
 		"shipment_type_name": "Transit",
@@ -53,7 +53,7 @@ SHIPMENT_TYPE_BOOTSTRAP_DATA: list[dict] = [
 		"default_mode_of_transport": "Sea",
 		"use_sea_import_workflow": 1,
 		"requires_bill_of_lading": 1,
-		"description": "Transit containers (often FCL ref series) — TZ/UG/RW border moves.",
+		"description": "Transit containers (often FCL ref series) - TZ/UG/RW border moves.",
 	},
 ]
 

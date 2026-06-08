@@ -1,4 +1,4 @@
-"""Task Finance Lines — invoices and receipts (separate from clearance documents)."""
+"""Task Finance Lines - invoices and receipts (separate from clearance documents)."""
 from __future__ import annotations
 
 import frappe
@@ -131,7 +131,7 @@ def migrate_invoice_attachments_to_finance_lines_sql() -> None:
 
 
 def remove_invoice_rows_from_task_documents(task) -> None:
-	"""Drop invoice/receipt rows from Clearance Documents — those use Task Finance Lines."""
+	"""Drop invoice/receipt rows from Clearance Documents - those use Task Finance Lines."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import TASK_DOCUMENTS_FIELD
 
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):

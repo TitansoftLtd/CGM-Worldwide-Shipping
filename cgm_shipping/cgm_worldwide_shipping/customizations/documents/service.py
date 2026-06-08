@@ -1,4 +1,4 @@
-"""Shipment and task document sync — domain logic (not generic utilities)."""
+"""Shipment and task document sync - domain logic (not generic utilities)."""
 from __future__ import annotations
 
 import frappe

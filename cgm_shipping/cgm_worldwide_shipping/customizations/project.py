@@ -89,7 +89,7 @@ def apply_shipment_document_automation(doc, _method=None):
 			doc.custom_current_location = "At origin"
 
 	# Re-normalising shipment type/mode is idempotent, so only run it when those
-	# fields actually change (or on a new doc) — skips a Document-Type lookup per save.
+	# fields actually change (or on a new doc) - skips a Document-Type lookup per save.
 	if (
 		doc.is_new()
 		or doc.has_value_changed("custom_shipment_type")
@@ -257,7 +257,7 @@ def enforce_intake_documents_before_documents_received(doc):
 	if missing:
 		frappe.throw(
 			f"Upload client documents in <b>Client Documents</b> first: {', '.join(missing)}. "
-			"Use <b>custom_shipment_documents</b> — not Permit Register."
+			"Use <b>custom_shipment_documents</b> - not Permit Register."
 		)
 
 
