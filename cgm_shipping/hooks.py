@@ -147,7 +147,6 @@ doctype_js = {
 		"public/js/cgm_bl_containers.js",
 		"public/js/project.js",
 	],
-	"Container Tracker": "public/js/container_tracker.js",
 	"Lead": [
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_lead.js",
@@ -157,8 +156,7 @@ doctype_js = {
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_opportunity.js",
-	],
-	"Bill of Lading": "public/js/bill_of_lading.js",
+	]
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -282,12 +280,6 @@ doc_events = {
 	},
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
-	},
-	"Bill of Lading": {
-		"on_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-			".bill_of_lading_on_submit"
-		),
 	},
 	"Opportunity": {
 		"before_save": (
