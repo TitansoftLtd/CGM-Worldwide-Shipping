@@ -55,7 +55,6 @@ frappe.ui.form.on("Task", {
 
 	refresh(frm) {
 		const ui = get_sea_task_ui(frm);
-		frm.set_intro("");
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
 		if (!frm._cgm_sea_layout_ready) {
@@ -71,11 +70,11 @@ frappe.ui.form.on("Task", {
 		frm.set_df_property("completed_on", "hidden", show_completion_meta ? 0 : 1);
 
 		if (ui.auto_intake_intro) {
-			frm.set_intro(
+			set_task_intro(
+				frm,
 				__(
 					"Completed automatically at Project creation. Documents were copied from the Project file (approved on Lead/Opportunity)."
-				),
-				"blue"
+				)
 			);
 		} else if (ui.is_sea_task && frm.doc.project) {
 			let intro = __(
@@ -121,7 +120,7 @@ frappe.ui.form.on("Task", {
 				);
 			}
 			if (!intro_set) {
-				frm.set_intro(intro, "blue");
+				set_task_intro(frm, intro);
 			}
 		}
 
@@ -829,6 +828,16 @@ function ensure_ucr_finance_lines_on_form(frm) {
 	});
 }
 
+function set_task_intro(frm, message, color = "blue") {
+	// set_intro() appends a message block on every call, so clear first then set
+	// once. Routing all intro updates through here keeps exactly one banner across
+	// repeated refreshes and async callbacks.
+	frm.set_intro("");
+	if (message) {
+		frm.set_intro(message, color);
+	}
+}
+
 function load_ucr_declarant_workflow_status(frm) {
 	if (frm._cgm_declarant_status_loading || frm._cgm_declarant_status_loaded) {
 		return;
@@ -840,7 +849,8 @@ function load_ucr_declarant_workflow_status(frm) {
 		callback(r) {
 			frm._cgm_declarant_status_loading = false;
 			if (r.exc || !r.message) {
-				frm.set_intro(
+				set_task_intro(
+					frm,
 					__(
 						"Could not load UCR workflow status. Refresh the page or contact support if this persists."
 					),
@@ -862,7 +872,8 @@ function load_ucr_declarant_workflow_status(frm) {
 		},
 		error() {
 			frm._cgm_declarant_status_loading = false;
-			frm.set_intro(
+			set_task_intro(
+				frm,
 				__(
 					"Could not load UCR workflow status. Refresh the page or contact support if this persists."
 				),
@@ -913,7 +924,7 @@ function apply_ucr_application_intro(frm, status) {
 				"and the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
 		);
 	}
-	frm.set_intro(intro, "blue");
+	set_task_intro(frm, intro);
 }
 
 function configure_permit_grid(frm) {
