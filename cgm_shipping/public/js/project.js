@@ -71,6 +71,15 @@ function setup_clearance_tasks_toolbar_button(frm) {
 	);
 }
 
+function sync_consignee_from_customer(frm) {
+	if (!frm.doc.customer || !frm.fields_dict.custom_consignee) {
+		return;
+	}
+	frappe.db.get_value("Customer", frm.doc.customer, "customer_name", (values) => {
+		frm.set_value("custom_consignee", values?.customer_name || frm.doc.customer);
+	});
+}
+
 function toggle_project_transport_reference_fields(frm) {
 	const mode = frm.doc.custom_mode_of_transport;
 	const hide_awb = mode === "Sea";
@@ -160,6 +169,16 @@ function render_shipment_progress_chart(frm) {
 	});
 }
 
+function format_currency_amount(value) {
+	if (value == null || value === "") {
+		return "";
+	}
+	return frappe.format(value, {
+		fieldtype: "Currency",
+		options: frappe.defaults.get_default("currency"),
+	});
+}
+
 function render_container_tracking_table(frm, dashboard) {
 	const field = frm.get_field("custom_container_tracking_html");
 	if (!field || !frm.doc.name) {
@@ -168,10 +187,12 @@ function render_container_tracking_table(frm, dashboard) {
 	const rows = dashboard.containers || [];
 	const overdue = dashboard.containers_overdue || 0;
 	const pending = dashboard.containers_pending_empty || 0;
+	const demurrage_total = dashboard.total_demurrage_amount || 0;
+	const detention_total = dashboard.total_detention_amount || 0;
 
 	let tableBody = "";
 	if (!rows.length) {
-		tableBody = `<tr><td colspan="8" class="text-muted">${__(
+		tableBody = `<tr><td colspan="12" class="text-muted">${__(
 			"No containers yet. Create Container Tracker rows linked to this Project."
 		)}</td></tr>`;
 	} else {
@@ -187,47 +208,74 @@ function render_container_tracking_table(frm, dashboard) {
 					<td><a href="/app/container-tracker/${encodeURIComponent(c.name)}">${frappe.utils.escape_html(
 						c.container_number || c.name
 					)}</a></td>
-					<td>${frappe.utils.escape_html(c.batch_bl_no || "")}</td>
 					<td>${frappe.utils.escape_html(c.bl_number || "")}</td>
-					<td>${c.eta || ""}</td>
-					<td>${c.ata || ""}</td>
-					<td>${c.demurrage_days != null ? c.demurrage_days : ""}</td>
-					<td>${c.detention_days != null ? c.detention_days : ""}</td>
+					<td title="${frappe.utils.escape_html(c.current_location || "")}">${frappe.utils.escape_html(
+						(c.current_location || "").slice(0, 28)
+					)}${(c.current_location || "").length > 28 ? "…" : ""}</td>
 					<td><span class="${statusClass}">${frappe.utils.escape_html(c.status || "")}</span></td>
+					<td class="text-right">${c.free_days != null ? c.free_days : ""}</td>
+					<td class="text-right">${c.demurrage_days != null ? c.demurrage_days : ""}</td>
+					<td class="text-right">${format_currency_amount(c.demurrage_amount)}</td>
+					<td class="text-right">${c.detention_days != null ? c.detention_days : ""}</td>
+					<td class="text-right">${format_currency_amount(c.detention_amount)}</td>
+					<td>${frappe.utils.escape_html(c.gate_out_date_port || "")}</td>
+					<td>${frappe.utils.escape_html(c.expected_empty_return || "")}</td>
+					<td>${frappe.utils.escape_html(c.actual_empty_return || "")}</td>
 				</tr>`;
 			})
 			.join("");
 	}
 
+	const exposureLine =
+		demurrage_total || detention_total
+			? `<span>${__("Est. demurrage")}: <b>${format_currency_amount(demurrage_total)}</b> · ${__(
+					"Est. detention"
+				)}: <b>${format_currency_amount(detention_total)}</b></span>`
+			: "";
+
 	field.$wrapper.html(`
 		<div class="cgm-container-summary">
 			<div class="cgm-container-summary-head">
-				<span>${__("Shipment → B/L → Container tracking")}</span>
+				<span>${__("Container tracking")}</span>
 				<span class="cgm-container-stats">
 					${pending ? `<b>${pending}</b> ${__("empty pending")} · ` : ""}
-					${overdue ? `<span class="cgm-rag-red"><b>${overdue}</b> ${__("overdue")}</span>` : ""}
+					${overdue ? `<span class="cgm-rag-red"><b>${overdue}</b> ${__("overdue")}</span> · ` : ""}
+					${exposureLine}
 				</span>
+				<button type="button" class="btn btn-default btn-xs cgm-open-tracking-report">${__(
+					"Full Report"
+				)}</button>
 				<button type="button" class="btn btn-default btn-xs cgm-add-container">${__(
 					"New Container"
 				)}</button>
 			</div>
-			<table class="table table-bordered table-condensed">
-				<thead>
-					<tr>
-						<th>${__("Container")}</th>
-						<th>${__("Batch")}</th>
-						<th>${__("B/L")}</th>
-						<th>${__("ETA")}</th>
-						<th>${__("ATA")}</th>
-						<th>${__("Dem.")}</th>
-						<th>${__("Det.")}</th>
-						<th>${__("Status")}</th>
-					</tr>
-				</thead>
-				<tbody>${tableBody}</tbody>
-			</table>
+			<div class="cgm-container-table-scroll">
+				<table class="table table-bordered table-condensed">
+					<thead>
+						<tr>
+							<th>${__("Container")}</th>
+							<th>${__("B/L")}</th>
+							<th>${__("Location")}</th>
+							<th>${__("Status")}</th>
+							<th>${__("Free")}</th>
+							<th>${__("Dem. Days")}</th>
+							<th>${__("Dem. Amt")}</th>
+							<th>${__("Det. Days")}</th>
+							<th>${__("Det. Amt")}</th>
+							<th>${__("Gate Out")}</th>
+							<th>${__("Expected")}</th>
+							<th>${__("Returned")}</th>
+						</tr>
+					</thead>
+					<tbody>${tableBody}</tbody>
+				</table>
+			</div>
 		</div>
 	`);
+
+	field.$wrapper.find(".cgm-open-tracking-report").on("click", () => {
+		frappe.set_route("query-report", "Container Tracking Detail", { project: frm.doc.name });
+	});
 
 	field.$wrapper.find(".cgm-add-container").on("click", () => {
 		frappe.new_doc("Container Tracker", {
@@ -256,12 +304,18 @@ frappe.ui.form.on("Project", {
 		if (frm.is_new() && frm.fields_dict.custom_opened_date && !frm.doc.custom_opened_date) {
 			frm.set_value("custom_opened_date", frappe.datetime.get_today());
 		}
+		if (frm.doc.customer && !frm.doc.custom_consignee) {
+			sync_consignee_from_customer(frm);
+		}
 		toggle_project_transport_reference_fields(frm);
+	},
+
+	customer(frm) {
+		sync_consignee_from_customer(frm);
 	},
 
 	refresh(frm) {
 		toggle_project_transport_reference_fields(frm);
-		cgm_shipping.bl_containers.sync_from_bl(frm, { silent: true });
 
 		if (frm.doc.custom_shipment_status) {
 			const indicator = project_clearance_indicator(frm.doc);
@@ -278,6 +332,11 @@ frappe.ui.form.on("Project", {
 			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm));
 			frm.add_custom_button(__("Container Tracker"), () => {
 				frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
+			}, __("View"));
+			frm.add_custom_button(__("Container Tracking Report"), () => {
+				frappe.set_route("query-report", "Container Tracking Detail", {
+					project: frm.doc.name,
+				});
 			}, __("View"));
 			frm.add_custom_button(__("Daily Status"), () => {
 				frappe.new_doc("Daily Status Update");
@@ -307,6 +366,5 @@ frappe.ui.form.on("Project", {
 
 	custom_bill_of_lading(frm) {
 		toggle_project_transport_reference_fields(frm);
-		cgm_shipping.bl_containers.sync_from_bl(frm);
 	},
 });

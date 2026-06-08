@@ -10,15 +10,21 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules im
 	TASK_PERMITS_FIELD,
 	sync_task_permits_to_project,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.role_config import (
+	declaration_roles,
+	finance_roles,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
 	DEFAULT_EMAIL_TEMPLATE,
-	FINANCE_ROLES,
+	configured_email_template,
 	send_workflow_task_notification,
 	workflow_notify_message,
 )
-
-DECLARATION_ROLES = ("Declaration User", "Declarant", "System Manager")
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import SEA_TASK_FLOW_KEY
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	SEA_TASK_FLOW_KEY,
+	get_sea_task,
+	mark_task_completed,
+)
 
 PERMIT_FINANCE_EMAIL_TEMPLATE = (
 	"<p>Hello,</p>"
@@ -46,7 +52,8 @@ def _send_task_notifications(
 		subject=subject,
 		message=message,
 		roles=roles,
-		email_template=email_template or DEFAULT_EMAIL_TEMPLATE,
+		email_template=email_template
+		or configured_email_template("custom_default_email_template", DEFAULT_EMAIL_TEMPLATE),
 		attachment_urls=attachment_urls,
 	)
 
@@ -99,15 +106,7 @@ def permit_invoices_ready_for_project(project: str, stage: str = "Pre-clearance"
 
 
 def get_permit_application_task(project: str, seq: int) -> str | None:
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": seq,
-		},
-		"name",
-	)
+	return get_sea_task(project, seq)
 
 
 def get_permit_finance_task(project: str, application_seq: int = 5) -> str | None:
@@ -115,15 +114,7 @@ def get_permit_finance_task(project: str, application_seq: int = 5) -> str | Non
 	fin_seq = PERMIT_FINANCE_SEQ_BY_APPLICATION.get(application_seq)
 	if not fin_seq or not project:
 		return None
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": fin_seq,
-		},
-		"name",
-	)
+	return get_sea_task(project, fin_seq)
 
 
 def _permit_row_dict(row) -> dict:
@@ -321,8 +312,10 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 		finance_task,
 		subject=subject,
 		message=message,
-		roles=FINANCE_ROLES,
-		email_template=PERMIT_FINANCE_EMAIL_TEMPLATE,
+		roles=finance_roles(),
+		email_template=configured_email_template(
+			"custom_permit_finance_email_template", PERMIT_FINANCE_EMAIL_TEMPLATE
+		),
 		attachment_urls=invoice_urls,
 	)
 
@@ -364,7 +357,7 @@ def notify_declarant_upload_permit_receipts(task) -> dict:
 		app_task,
 		subject=subject,
 		message=message,
-		roles=DECLARATION_ROLES,
+		roles=declaration_roles(),
 	)
 	return {
 		**result,
@@ -412,7 +405,7 @@ def _notify_finance_verify_receipts(task) -> dict:
 		task,
 		subject=subject,
 		message=message,
-		roles=FINANCE_ROLES,
+		roles=finance_roles(),
 		attachment_urls=receipt_urls,
 	)
 	return {
@@ -571,7 +564,7 @@ def enforce_receipt_verified_permission(task) -> None:
 		if frappe.session.user == "Administrator":
 			return
 		roles = set(frappe.get_roles())
-		if set(FINANCE_ROLES) & roles:
+		if set(finance_roles()) & roles:
 			return
 		for row in task.get(TASK_PERMITS_FIELD) or []:
 			if row.get("receipt_verified"):
@@ -585,7 +578,7 @@ def enforce_receipt_verified_permission(task) -> None:
 	if frappe.session.user == "Administrator":
 		return
 	roles = set(frappe.get_roles())
-	if set(FINANCE_ROLES) & roles:
+	if set(finance_roles()) & roles:
 		return
 	for row in task.get(TASK_PERMITS_FIELD) or []:
 		if row.get("receipt_verified"):
@@ -609,18 +602,7 @@ def permit_finance_ready_to_complete(task) -> bool:
 
 
 def _persist_permit_task_completed(task) -> None:
-	frappe.db.set_value(
-		"Task",
-		task.name,
-		{
-			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
-			"progress": 100,
-		},
-		update_modified=True,
-	)
-	frappe.clear_document_cache("Task", task.name)
+	mark_task_completed(task)
 
 
 def _run_permit_finance_completion_hooks(task) -> None:

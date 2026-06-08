@@ -10,7 +10,16 @@
   "custom_sea_import_task_template",
   "tab_workflow_document_gates",
   "section_workflow_document_gates",
-  "custom_workflow_stage_requirements"
+  "custom_workflow_stage_requirements",
+  "roles_tab",
+  "section_roles",
+  "custom_finance_roles",
+  "custom_operations_roles",
+  "custom_declaration_roles",
+  "section_email_templates",
+  "custom_default_email_template",
+  "custom_permit_finance_email_template",
+  "custom_ucr_finance_email_template"
  ],
  "fields": [
   {
@@ -42,6 +51,55 @@
    "fieldname": "sea_import_task_plan_tab",
    "fieldtype": "Tab Break",
    "label": "Sea import task plan"
+  },
+  {
+   "fieldname": "roles_tab",
+   "fieldtype": "Tab Break",
+   "label": "Roles"
+  },
+  {
+   "fieldname": "section_roles",
+   "fieldtype": "Section Break",
+   "description": "Which roles are notified / treated as Finance, Operations, or Declaration. Required: an empty table means no one is in that group (those notifications and role checks will match nobody)."
+  },
+  {
+   "fieldname": "custom_finance_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Finance roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "fieldname": "custom_operations_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Operations roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "fieldname": "custom_declaration_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Declaration roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "fieldname": "section_email_templates",
+   "fieldtype": "Section Break",
+   "label": "Notification email templates",
+   "description": "HTML + Jinja. Available variables: {{ message }}, {{ task_url }}, {{ project_url }}. Leave blank to use the built-in default."
+  },
+  {
+   "fieldname": "custom_default_email_template",
+   "fieldtype": "Code",
+   "label": "Default notification template"
+  },
+  {
+   "fieldname": "custom_permit_finance_email_template",
+   "fieldtype": "Code",
+   "label": "Permit finance notification template"
+  },
+  {
+   "fieldname": "custom_ucr_finance_email_template",
+   "fieldtype": "Code",
+   "label": "UCR finance notification template"
   }
  ],
  "grid_page_length": 50,

@@ -274,4 +274,6 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"containers_pending_empty": sum(
 			1 for c in containers if c.get("status") in ("Empty Pending", "Overdue", "Dispatched")
 		),
+		"total_demurrage_amount": sum(c.get("demurrage_amount") or 0 for c in containers),
+		"total_detention_amount": sum(c.get("detention_amount") or 0 for c in containers),
 	}

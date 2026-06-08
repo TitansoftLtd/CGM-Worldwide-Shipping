@@ -55,3 +55,5 @@ cgm_shipping.patches.v2_29.permit_type_purchase_items
 cgm_shipping.patches.v2_30.sync_permit_type_purchase_item_field
 cgm_shipping.patches.v2_31.declaration_user_task_write
 cgm_shipping.patches.v2_32.resync_sea_task_departments
+cgm_shipping.patches.v2_38.move_workflow_fixtures
+cgm_shipping.patches.v2_39.cgm_ref_unique_index

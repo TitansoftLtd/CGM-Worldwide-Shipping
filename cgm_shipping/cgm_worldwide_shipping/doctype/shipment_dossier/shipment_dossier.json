@@ -211,10 +211,10 @@
    "label": "Remarks"
   },
   {
+   "description": "Commercial Invoice, Packing List, COO, BL, etc. \u2014 received from the client before or when opening the file. Not regulatory permits.",
    "fieldname": "section_break_client_docs",
    "fieldtype": "Section Break",
-   "label": "Client Documents",
-   "description": "Commercial Invoice, Packing List, COO, BL, etc. — received from the client before or when opening the file. Not regulatory permits."
+   "label": "Client Documents"
   },
   {
    "fieldname": "shipment_documents",
@@ -223,10 +223,10 @@
    "options": "Shipment Document"
   },
   {
+   "description": "Government / agency permits applied during clearance (DVS, NBA, KEBS permit, Port Health, etc.). Added after IDF \u2014 not client intake documents.",
    "fieldname": "section_break_permits",
    "fieldtype": "Section Break",
-   "label": "Regulatory Permits",
-   "description": "Government / agency permits applied during clearance (DVS, NBA, KEBS permit, Port Health, etc.). Added after IDF — not client intake documents."
+   "label": "Regulatory Permits"
   },
   {
    "fieldname": "permits",

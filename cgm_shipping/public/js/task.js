@@ -323,6 +323,30 @@ frappe.ui.form.on("Task", {
 				frappe.set_route("Form", "Project", frm.doc.project);
 			});
 		}
+
+		if (
+			is_sea_clearance_task(frm) &&
+			sea_task_sequence(frm) === SEA_CREATE_ENTRY_SEQ &&
+			frm.doc.project &&
+			frm.doc.status !== "Completed"
+		) {
+			add_cgm_toolbar_button(
+				frm,
+				__("Start Container Tracking"),
+				() => {
+					if (cgm_shipping?.container_tracking?.open_from_task) {
+						cgm_shipping.container_tracking.open_from_task(frm);
+						return;
+					}
+					frappe.msgprint(
+						__(
+							"Container tracking script is not loaded. Please hard-refresh the browser (Ctrl+Shift+R)."
+						)
+					);
+				},
+				{ primary: true }
+			);
+		}
 	},
 
 	validate(frm) {
@@ -359,6 +383,7 @@ const SEA_UCR_FINANCE_SEQ = 4;
 const SEA_PERMIT_APPLICATION_TASK_SEQS = [5, 15];
 const SEA_AUTO_COMPLETE_TASK_SEQS = [1, 2];
 const SEA_LIGHT_TASK_SEQS = [8, 19, 20, 21, 22, 23, 24];
+const SEA_CREATE_ENTRY_SEQ = 11;
 const SEA_NO_DOCUMENT_TASK_SEQS = [1, 2];
 
 const SEA_TASK_HIDDEN_FIELDS = [
@@ -678,6 +703,10 @@ function ensure_finance_permit_rows_on_form(frm) {
 				frm.reload_doc();
 			}
 		},
+		error() {
+			// Reset the guard so a transient failure doesn't block future retries.
+			frm._cgm_finance_permit_rows_ensuring = false;
+		},
 	});
 }
 
@@ -694,6 +723,9 @@ function ensure_ucr_finance_lines_on_form(frm) {
 			if (!r.exc && r.message?.added) {
 				frm.reload_doc();
 			}
+		},
+		error() {
+			frm._cgm_finance_lines_ensuring = false;
 		},
 	});
 }
@@ -728,6 +760,15 @@ function load_ucr_declarant_workflow_status(frm) {
 				return;
 			}
 			apply_ucr_application_intro(frm, r.message);
+		},
+		error() {
+			frm._cgm_declarant_status_loading = false;
+			frm.set_intro(
+				__(
+					"Could not load UCR workflow status. Refresh the page or contact support if this persists."
+				),
+				"orange"
+			);
 		},
 	});
 }
@@ -960,6 +1001,9 @@ function ensure_ucr_finance_task_completed_on_form(frm) {
 				});
 				frm.reload_doc();
 			}
+		},
+		error() {
+			frm._cgm_finance_complete_checking = false;
 		},
 	});
 }

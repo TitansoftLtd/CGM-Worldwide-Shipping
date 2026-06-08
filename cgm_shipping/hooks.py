@@ -5,97 +5,6 @@ app_description = "CGM Customizations"
 app_email = "nkubitudouglas@gmail.com"
 app_license = "mit"
 
-fixtures = [
-    # Workflow definitions
-    {
-        "doctype": "Workflow",
-        "filters": [["name", "in", [
-            "CGM Lead Pre-Shipment",
-            "CGM Opportunity Pre-Shipment",
-            "CGM Sea Import Workflow",
-        ]]]
-    },
-    # Workflow states
-    {
-        "doctype": "Workflow State",
-        "filters": [["name", "in", [
-            # Lead states
-            "Lead Intake",
-            "Lead Docs Verified",
-            "Lead Docs Rejected",
-            "Lead Ready to Convert",
-            # Opportunity states
-            "Opp Intake",
-            "Opp Docs Verified",
-            "Opp Docs Rejected",
-            "Opp Ready for Project",
-            # Project — sea freight clearance (custom_shipment_status)
-            "Draft",
-            "Documents Received",
-            "UCR Applied",
-            "UCR Paid",
-            "Pre-clearance",
-            "Client Inspection",
-            "In Transit",
-            "Final Docs Received",
-            "Entry Lodged",
-            "Manifest Requested",
-            "Line Paid & DO Lodged",
-            "Entry Paid",
-            "Post-clearance",
-            "Field Clearance",
-            "KPA Paid",
-            "In Delivery",
-            "Containers Returned",
-            "Completed",
-            "Settled",
-        ]]]
-    },
-    # Workflow actions
-    {
-        "doctype": "Workflow Action Master",
-        "filters": [["name", "in", [
-            # CRM actions
-            "Approve CI/PKL",
-            "Reject CI/PKL",
-            "Approve customer onboarding",
-            "Authorize Shipment File",
-            # Project — sea freight clearance actions
-            "Receive Client Documents",
-            "Create UCR Application",
-            "Confirm UCR Paid",
-            "Start Pre-clearance Permits",
-            "Request Client Inspection",
-            "Start Shipment Tracking",
-            "Receive Final Documents",
-            "Request Manifest and Charges",
-            "Lodge Customs Entry",
-            "Confirm Line Paid and DO Lodged",
-            "Confirm Entry Paid",
-            "Complete Post-clearance Permits",
-            "Hand to Field Officers",
-            "Confirm KPA Paid",
-            "Dispatch Cargo",
-            "Confirm Containers Returned",
-            "Complete Shipment File",
-            "Settle File",
-        ]]]
-    },
-    {
-        "doctype": "Custom Field",
-        "filters": [["module", "=", "CGM Worldwide Shipping"], ["name", "like", "custom_%"]],
-    },
-    {
-        "doctype": "Role",
-        "filters": [["name", "in", [
-            "Operations Manager",
-            "Declarant",
-            "Finance User",
-            "Field Officer",
-            "Transport Officer",
-        ]]],
-    },
-]
 # Apps
 # ------------------
 
@@ -117,7 +26,7 @@ fixtures = [
 
 # include js, css files in header of desk.html
 app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
-# app_include_js = "/assets/cgm_shipping/js/cgm_shipping.js"
+app_include_js = "/assets/cgm_shipping/js/cgm_container_tracking.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/cgm_shipping/css/cgm_shipping.css"
@@ -149,7 +58,12 @@ doctype_js = {
 		"public/js/crm_lead.js",
 	],
 	"Customer": "public/js/crm_customer.js",
-	"Opportunity": "public/js/crm_opportunity.js",
+	"Opportunity": [
+		"public/js/cgm_transport_reference.js",
+		"public/js/cgm_bl_containers.js",
+		"public/js/crm_opportunity.js",
+	],
+	"Bill of Lading": "public/js/bill_of_lading.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -254,7 +168,11 @@ override_doctype_class = {
 doc_events = {
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_cgm_reference_on_insert",
-		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
+		"before_save": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl",
+		],
 	},
 	"Purchase Invoice": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_validate_from_task",
@@ -270,6 +188,24 @@ doc_events = {
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
 	},
+	"Bill of Lading": {
+		"on_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_bill_of_lading"
+			".bill_of_lading_on_submit"
+		),
+	},
+	"Opportunity": {
+		"before_save": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+			".sync_preshipment_containers_from_bl"
+		),
+	},
+	"Lead": {
+		"before_save": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+			".sync_preshipment_containers_from_bl"
+		),
+	},
 	"Task": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_onload",
 		"before_save": [
@@ -282,6 +218,12 @@ doc_events = {
 
 # Scheduled Tasks
 # ---------------
+
+scheduler_events = {
+	"daily": [
+		"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
+	],
+}
 
 # scheduler_events = {
 # 	"all": [

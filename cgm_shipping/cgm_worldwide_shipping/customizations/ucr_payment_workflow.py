@@ -7,9 +7,12 @@ from frappe.utils import get_url, now_datetime
 from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 	_send_task_notifications,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.role_config import (
+	finance_roles,
+	operations_roles,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
-	FINANCE_ROLES,
-	OPERATIONS_ROLES,
+	configured_email_template,
 	workflow_notify_message,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
@@ -34,34 +37,21 @@ UCR_FINANCE_EMAIL_TEMPLATE = (
 	"{% if project_url %} · <a href=\"{{ project_url }}\">Open project</a>{% endif %}"
 	"</p>"
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import SEA_TASK_FLOW_KEY
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	get_sea_task,
+	mark_task_completed,
+)
 
 UCR_APPLICATION_SEQ = 3
 UCR_FINANCE_SEQ = 4
 
 
 def get_ucr_application_task(project: str) -> str | None:
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": UCR_APPLICATION_SEQ,
-		},
-		"name",
-	)
+	return get_sea_task(project, UCR_APPLICATION_SEQ)
 
 
 def get_ucr_finance_task(project: str) -> str | None:
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": UCR_FINANCE_SEQ,
-		},
-		"name",
-	)
+	return get_sea_task(project, UCR_FINANCE_SEQ)
 
 
 def _ucr_invoice_attached_legacy(task) -> bool:
@@ -158,8 +148,10 @@ def submit_ucr_invoice_to_finance(task_name: str) -> dict:
 		finance_task,
 		subject=subject,
 		message=message,
-		roles=FINANCE_ROLES,
-		email_template=UCR_FINANCE_EMAIL_TEMPLATE,
+		roles=finance_roles(),
+		email_template=configured_email_template(
+			"custom_ucr_finance_email_template", UCR_FINANCE_EMAIL_TEMPLATE
+		),
 		attachment_urls=[invoice_url] if invoice_url else None,
 	)
 
@@ -193,7 +185,10 @@ def notify_operations_upload_ucr_receipt(task) -> dict:
 	try:
 		app.save(ignore_permissions=True)
 	except Exception:
-		pass
+		frappe.log_error(
+			title="UCR receipt seeding failed",
+			message=f"Could not seed UCR finance lines on {app_name}: {frappe.get_traceback()}",
+		)
 
 	subject = f"Upload UCR payment receipt — {task.project or app_name}"
 	message = (
@@ -207,8 +202,10 @@ def notify_operations_upload_ucr_receipt(task) -> dict:
 		app,
 		subject=subject,
 		message=message,
-		roles=OPERATIONS_ROLES,
-		email_template=UCR_FINANCE_EMAIL_TEMPLATE,
+		roles=operations_roles(),
+		email_template=configured_email_template(
+			"custom_ucr_finance_email_template", UCR_FINANCE_EMAIL_TEMPLATE
+		),
 	)
 	return {
 		**result,
@@ -360,7 +357,7 @@ def _notify_finance_verify_ucr_receipt(task) -> dict:
 		task,
 		subject=subject,
 		message=message,
-		roles=FINANCE_ROLES,
+		roles=finance_roles(),
 		attachment_urls=attachment_urls or None,
 	)
 	return {
@@ -448,19 +445,7 @@ def auto_complete_ucr_application_for_project(project: str) -> bool:
 
 
 def _persist_task_completed(task) -> None:
-	"""Write Completed to the database directly (nested doc.save can leave list view stale)."""
-	frappe.db.set_value(
-		"Task",
-		task.name,
-		{
-			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
-			"progress": 100,
-		},
-		update_modified=True,
-	)
-	frappe.clear_document_cache("Task", task.name)
+	mark_task_completed(task)
 
 
 def _notify_task_status_changed(task) -> None:
@@ -507,38 +492,35 @@ def _run_ucr_finance_completion_hooks(task) -> None:
 	_notify_task_status_changed(task)
 
 
-def try_auto_complete_ucr_application_task(task) -> bool:
-	"""Mark Create UCR (IDF) completed when declarant documents are all present."""
+def _try_auto_complete_ucr_task(task, ready_fn, hooks_fn) -> bool:
+	"""Shared skeleton: complete an open UCR task when `ready_fn` passes, then run `hooks_fn`."""
 	if task.status in ("Completed", "Cancelled"):
 		return False
-	if not ucr_application_ready_to_complete(task):
+	if not ready_fn(task):
 		return False
 
 	frappe.flags.cgm_auto_completing_sea_task = True
 	try:
 		_persist_task_completed(task)
 		task.reload()
-		_run_ucr_application_completion_hooks(task)
+		hooks_fn(task)
 	finally:
 		frappe.flags.cgm_auto_completing_sea_task = False
 	return True
+
+
+def try_auto_complete_ucr_application_task(task) -> bool:
+	"""Mark Create UCR (IDF) completed when declarant documents are all present."""
+	return _try_auto_complete_ucr_task(
+		task, ucr_application_ready_to_complete, _run_ucr_application_completion_hooks
+	)
 
 
 def try_auto_complete_ucr_finance_task(task) -> bool:
 	"""Mark Finance pays UCR completed when Finance verifies the UCR receipt."""
-	if task.status in ("Completed", "Cancelled"):
-		return False
-	if not ucr_finance_ready_to_complete(task):
-		return False
-
-	frappe.flags.cgm_auto_completing_sea_task = True
-	try:
-		_persist_task_completed(task)
-		task.reload()
-		_run_ucr_finance_completion_hooks(task)
-	finally:
-		frappe.flags.cgm_auto_completing_sea_task = False
-	return True
+	return _try_auto_complete_ucr_task(
+		task, ucr_finance_ready_to_complete, _run_ucr_finance_completion_hooks
+	)
 
 
 @frappe.whitelist()
@@ -732,14 +714,12 @@ def get_ucr_invoice_preview(task_name: str) -> dict:
 
 
 def _user_is_finance(user: str | None = None) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
-		FINANCE_ROLES,
-	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.role_config import finance_roles
 
 	user = user or frappe.session.user
 	if user == "Administrator":
 		return True
-	return bool(set(FINANCE_ROLES) & set(frappe.get_roles(user)))
+	return bool(set(finance_roles()) & set(frappe.get_roles(user)))
 
 
 @frappe.whitelist()
