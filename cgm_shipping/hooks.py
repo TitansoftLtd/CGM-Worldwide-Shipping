@@ -285,7 +285,7 @@ doc_events = {
 	},
 	"Bill of Lading": {
 		"on_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_bill_of_lading"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
 			".bill_of_lading_on_submit"
 		),
 	},
