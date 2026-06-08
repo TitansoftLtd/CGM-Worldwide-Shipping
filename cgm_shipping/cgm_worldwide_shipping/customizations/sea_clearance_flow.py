@@ -1,96 +1,24 @@
 """
 Sea Freight Clearance — ordered task plan and workflow gates.
 
-Matches CGM Worldwide Shipping sea clearance chart (START → END).
+Task plan rows: CGM Shipping Settings → custom_sea_import_task_template
+Workflow states: CGM Sea Import Workflow (Project)
+Task gates: CGM Shipping Settings → custom_sea_workflow_task_gates
 """
 from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import SEA_TASK_FLOW_KEY
-
-# Ordered sea import tasks (sequence = row order).
-SEA_FREIGHT_TASK_TEMPLATE: list[dict[str, str]] = [
-	{"task_subject": "Receive shipment documents from Client", "department": "Operations"},
-	{"task_subject": "Share documents with Declarants", "department": "Operations"},
-	{"task_subject": "Create UCR (IDF)", "department": "Declaration"},
-	{"task_subject": "Finance pays UCR", "department": "Finance"},
-	{
-		"task_subject": "Apply for Pre-Clearance Permits (DVS, NBA, VMD, ACA)",
-		"department": "Declaration",
-	},
-	{"task_subject": "Finance pays Pre-Clearance Permits", "department": "Finance"},
-	{"task_subject": "Client conducts inspection", "department": "Operations"},
-	{"task_subject": "Track shipment and monitor ETA", "department": "Operations"},
-	{
-		"task_subject": "Receive Final Clearance Documents (B/L, Invoice, PKL, COC)",
-		"department": "Documentation",
-	},
-	{"task_subject": "Request Manifest and Local Import Charges", "department": "Documentation"},
-	{"task_subject": "Create Entry (after vessel arrival confirmation)", "department": "Declaration"},
-	{"task_subject": "Finance pays Shipping Line Charges", "department": "Finance"},
-	{"task_subject": "Lodge Delivery Order", "department": "Operations"},
-	{"task_subject": "Confirm Entry Payment (Client/CGM)", "department": "Finance"},
-	{"task_subject": "Prepare and pay Post-Clearance Permits", "department": "Declaration"},
-	{"task_subject": "Field Officers conduct clearance", "department": "Field Operations"},
-	{"task_subject": "Supervisor obtains KPA Invoice", "department": "Operations"},
-	{"task_subject": "Finance pays KPA Invoice", "department": "Finance"},
-	{"task_subject": "Book trucks and notify warehouse", "department": "Transport"},
-	{"task_subject": "Load trucks and exit port", "department": "Transport"},
-	{"task_subject": "Monitor delivery to destination", "department": "Transport"},
-	{"task_subject": "Offload cargo", "department": "Transport"},
-	{"task_subject": "Return empty container to depot", "department": "Transport"},
-	{"task_subject": "Receive interchange confirmation", "department": "Transport"},
-]
-
-# Visual workflow chart on Project (matches CGM Sea Import Workflow states).
-TRACKING_WORKFLOW_STATES = [
-	"Draft",
-	"Documents Received",
-	"UCR Applied",
-	"UCR Paid",
-	"Pre-clearance",
-	"Client Inspection",
-	"In Transit",
-	"Final Docs Received",
-	"Manifest Requested",
-	"Entry Lodged",
-	"Line Paid & DO Lodged",
-	"Entry Paid",
-	"Post-clearance",
-	"Field Clearance",
-	"KPA Paid",
-	"In Delivery",
-	"Containers Returned",
-	"Completed",
-]
-
-# Minimum completed task sequence before entering each workflow state.
-SEA_WORKFLOW_TASK_GATES: dict[str, int] = {
-	"Documents Received": 1,
-	"UCR Applied": 3,
-	"UCR Paid": 4,
-	"Pre-clearance": 5,
-	"Client Inspection": 7,
-	"In Transit": 8,
-	"Final Docs Received": 9,
-	"Manifest Requested": 10,
-	"Entry Lodged": 11,
-	"Line Paid & DO Lodged": 13,
-	"Entry Paid": 14,
-	"Post-clearance": 15,
-	"Field Clearance": 16,
-	"KPA Paid": 18,
-	"In Delivery": 18,
-	"Containers Returned": 23,
-	"Completed": 24,
-}
-
-# Finance tasks that require Purchase Invoice + Payment Entry before completion.
-SEA_PAYMENT_TASK_SEQS: frozenset[int] = frozenset({4, 6, 12, 14, 18})
-
-# Completed at Project creation when CI/PKL were approved on Lead/Opportunity.
-SEA_AUTO_COMPLETE_TASK_SEQS: frozenset[int] = frozenset({1, 2})
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	PRE_CLEARANCE_STAGE,
+	get_permit_stage_for_sequence,
+	is_permit_application_task,
+	is_ucr_application_task,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.workflow.gates import (
+	get_sea_import_workflow_states,
+)
 
 AUTO_COMPLETE_INTAKE_REMARK = (
 	"Auto-completed at Project creation: shipment documents were received and "
@@ -98,22 +26,33 @@ AUTO_COMPLETE_INTAKE_REMARK = (
 )
 
 
+def get_tracking_workflow_states() -> list[str]:
+	"""Ordered shipment workflow states for progress chart and gate sync."""
+	return get_sea_import_workflow_states()
+
+
 def sea_task_count() -> int:
-	return len(SEA_FREIGHT_TASK_TEMPLATE)
+	"""Number of steps in the configured sea import task template."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
+
+	return len(load_sea_task_template())
 
 
 def is_sea_payment_task(task) -> bool:
-	return (
-		task.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(task.get("custom_sequence_no") or 0) in SEA_PAYMENT_TASK_SEQS
+	"""Finance payment step on sea import (delegates to CGM Shipping Settings)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+		is_sea_finance_payment_task,
 	)
+
+	return is_sea_finance_payment_task(task)
 
 
 def is_sea_auto_completed_task(task) -> bool:
-	return (
-		task.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and int(task.get("custom_sequence_no") or 0) in SEA_AUTO_COMPLETE_TASK_SEQS
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+		is_sea_auto_complete_task,
 	)
+
+	return is_sea_auto_complete_task(task)
 
 
 def is_sea_clearance_task(task) -> bool:
@@ -121,16 +60,24 @@ def is_sea_clearance_task(task) -> bool:
 
 
 def task_should_show_documents(seq: int) -> bool:
-	"""Task Documents table — not for CRM intake steps (1–2) auto-done at project create."""
-	return seq not in SEA_AUTO_COMPLETE_TASK_SEQS
+	"""Task Documents table — not for CRM intake steps auto-done at project create."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+		is_auto_complete_task,
+	)
+
+	return not is_auto_complete_task(seq)
 
 
 def task_should_show_payment_fields(seq: int) -> bool:
-	return seq in SEA_PAYMENT_TASK_SEQS
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+		is_finance_payment_task,
+	)
+
+	return is_finance_payment_task(seq)
 
 
 def auto_complete_initial_sea_tasks(project: str) -> list[str]:
-	"""Attach Project docs to tasks 1–2, then mark them Completed."""
+	"""Attach Project docs to auto-complete steps, then mark them Completed."""
 	from frappe.utils import now_datetime
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
@@ -140,7 +87,11 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 	carry_project_shipment_documents_to_sea_tasks(project)
 
 	completed = []
-	for seq in sorted(SEA_AUTO_COMPLETE_TASK_SEQS):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+		auto_complete_sequences,
+	)
+
+	for seq in sorted(auto_complete_sequences()):
 		task_name = frappe.db.get_value(
 			"Task",
 			{
@@ -178,9 +129,13 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 			continue
 		if row.get("status") == "Completed":
 			completed.add(seq)
-		elif seq == 5 and row.get("custom_permit_invoices_submitted"):
-			# Task 5 stays Open until finance completes — still unlocks finance task 6.
-			completed.add(5)
+		elif (
+			is_permit_application_task(seq)
+			and get_permit_stage_for_sequence(seq) == PRE_CLEARANCE_STAGE
+			and row.get("custom_permit_invoices_submitted")
+		):
+			# Pre-clearance permit application stays Open until finance completes — still unlocks finance step.
+			completed.add(seq)
 	return completed
 
 
@@ -189,15 +144,22 @@ def derive_workflow_progress_from_tasks(
 	states: list[str] | None = None,
 ) -> tuple[str, int]:
 	"""Furthest workflow state supported by completed sea tasks (for the progress chart)."""
-	states = states or TRACKING_WORKFLOW_STATES
+	states = states or get_tracking_workflow_states()
+	if not states:
+		return "Draft", 0
 	completed_seqs = effective_completed_task_seqs(tasks)
 	if not completed_seqs:
-		return "Draft", 0
+		return states[0], 0
 	max_seq = max(completed_seqs)
-	progress_status = "Documents Received"
-	progress_index = states.index("Documents Received")
+	progress_status = states[0]
+	progress_index = 0
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow.gates import (
+		get_workflow_task_gates,
+	)
+
 	for state in states:
-		gate = SEA_WORKFLOW_TASK_GATES.get(state)
+		gate_row = get_workflow_task_gates().get(state)
+		gate = gate_row.get("min_completed_task_seq") if gate_row else None
 		if gate and max_seq >= gate:
 			progress_status = state
 			progress_index = states.index(state)
@@ -225,7 +187,9 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	)
 	progress_status, _ = derive_workflow_progress_from_tasks(tasks)
 	current = frappe.db.get_value("Project", project, "custom_shipment_status") or "Draft"
-	states = TRACKING_WORKFLOW_STATES
+	states = get_tracking_workflow_states()
+	if not states:
+		return None
 	try:
 		if states.index(progress_status) <= states.index(current):
 			return None
@@ -272,12 +236,16 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 		(project, SEA_TASK_FLOW_KEY, before_sequence),
 		as_dict=True,
 	)
-	# Task 3/5 stay Open while Finance pays; invoice submitted is enough to unlock the finance task.
+	# UCR / pre-clearance permit application tasks stay Open while Finance pays; invoice submitted unlocks finance.
 	return [
 		r
 		for r in rows
-		if not (r.seq == 5 and permit_invoices_ready(r.name))
-		and not (r.seq == 3 and ucr_invoice_ready(r.name))
+		if not (
+			is_permit_application_task(r.seq)
+			and get_permit_stage_for_sequence(r.seq) == PRE_CLEARANCE_STAGE
+			and permit_invoices_ready(r.name)
+		)
+		and not (is_ucr_application_task(r.seq) and ucr_invoice_ready(r.name))
 	]
 
 
@@ -328,19 +296,29 @@ def enforce_sea_tasks_exist(project: str) -> None:
 		"Task",
 		{"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
 	):
+		total = sea_task_count()
 		frappe.throw(
 			"Generate the <b>Sea Task Plan</b> on this Project first "
-			f"({sea_task_count()} ordered steps)."
+			f"({total} ordered steps)."
 		)
 
 
 def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 	"""Block workflow advance until prior sea tasks in the chart are Completed."""
-	required_seq = SEA_WORKFLOW_TASK_GATES.get(new_status)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow.gates import get_gate_for_state
+
+	gate_row = get_gate_for_state(new_status)
+	if not gate_row:
+		return
+
+	required_seq = int(gate_row.get("min_completed_task_seq") or 0)
+	gate_rule = gate_row.get("gate_rule") or "Standard"
 	if not required_seq:
 		return
+
 	enforce_sea_tasks_exist(project)
-	if new_status == "Pre-clearance" and required_seq == 5:
+
+	if gate_rule == "Permit Invoices Submitted":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 			permit_invoices_ready_for_project,
 		)
@@ -351,7 +329,8 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 				"using <b>Notify Finance — invoices ready</b> before advancing workflow."
 			)
 		return
-	if new_status == "UCR Paid" and required_seq == 4:
+
+	if gate_rule == "UCR Finance Complete":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 			get_ucr_finance_task,
 			ucr_finance_ready_to_complete,
@@ -361,12 +340,17 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 		if not finance_task_name:
 			frappe.throw("Generate the sea task plan and complete <b>Finance pays UCR</b> first.")
 		finance_task = frappe.get_doc("Task", finance_task_name)
-		if (finance_task.status != "Completed" or not ucr_finance_ready_to_complete(finance_task)):
+		if finance_task.status != "Completed" or not ucr_finance_ready_to_complete(finance_task):
 			frappe.throw(
 				"Cannot move to <b>UCR Paid</b> until <b>Finance pays UCR</b> is completed: "
 				"UCR invoice verified and UCR receipt verified by Finance."
 			)
 		return
+
+	if gate_rule == "All Sea Tasks Complete":
+		enforce_all_sea_tasks_complete(project)
+		return
+
 	incomplete = get_incomplete_sea_tasks(project, required_seq + 1)
 	if incomplete:
 		lines = [
@@ -380,7 +364,7 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 
 
 def get_sea_closure_blockers(project: str) -> list[str]:
-	"""Return human-readable blockers when the 24-step sea chart is not fully complete."""
+	"""Return human-readable blockers when the sea chart is not fully complete."""
 	blockers: list[str] = []
 	if not frappe.db.exists(
 		"Task", {"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY}
@@ -409,16 +393,3 @@ def enforce_all_sea_tasks_complete(project: str) -> None:
 	blockers = get_sea_closure_blockers(project)
 	if blockers:
 		frappe.throw("<br>".join(blockers))
-
-
-def sync_sea_task_template_to_settings() -> None:
-	"""Replace CGM Shipping Settings sea task template with the 24-step chart."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
-		return
-	settings = frappe.get_single("CGM Shipping Settings")
-	if not settings.meta.has_field("custom_sea_import_task_template"):
-		return
-	settings.set("custom_sea_import_task_template", [])
-	for row in SEA_FREIGHT_TASK_TEMPLATE:
-		settings.append("custom_sea_import_task_template", row)
-	settings.save(ignore_permissions=True)

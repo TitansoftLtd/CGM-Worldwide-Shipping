@@ -34,7 +34,7 @@
    "fieldname": "code",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Code",
+   "label": "Full Name",
    "reqd": 1,
    "unique": 1
   },
@@ -72,7 +72,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-05 06:58:25.355173",
+ "modified": "2026-06-08 06:31:17.552350",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Document Type",
