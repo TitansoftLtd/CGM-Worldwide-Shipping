@@ -2,11 +2,11 @@
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-	SEA_FREIGHT_TASK_TEMPLATE,
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_template_seed_data import (
+	DEFAULT_SEA_IMPORT_TASK_TEMPLATE,
 )
 
-DEFAULT_SEA_IMPORT_TASK_ROWS = SEA_FREIGHT_TASK_TEMPLATE
+DEFAULT_SEA_IMPORT_TASK_ROWS = DEFAULT_SEA_IMPORT_TASK_TEMPLATE
 
 DEFAULT_WORKFLOW_STAGE_ROWS = [
 	{"shipment_workflow_state": "IDF Created", "required_stage": "Pre-IDF"},

@@ -95,6 +95,10 @@ fixtures = [
             "Transport Officer",
         ]]],
     },
+    {
+        "doctype": "Notification",
+        "filters": [["name", "like", "CGM%"]],
+    },
 ]
 # Apps
 # ------------------
@@ -281,7 +285,7 @@ doc_events = {
 	},
 	"Bill of Lading": {
 		"on_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_bill_of_lading"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
 			".bill_of_lading_on_submit"
 		),
 	},
@@ -422,4 +426,3 @@ scheduler_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

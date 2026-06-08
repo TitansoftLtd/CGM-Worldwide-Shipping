@@ -9,7 +9,6 @@ OLD_MODULE = "CGM Shipment"
 GUIDE_DOCTYPES = (
 	"CFS Master",
 	"Permit Register",
-	"Shipment Dossier",
 	"IDF UCR Record",
 	"Customs Entry",
 	"Container Tracker",

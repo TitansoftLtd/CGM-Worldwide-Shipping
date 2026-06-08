@@ -3,54 +3,35 @@ from __future__ import annotations
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+	application_department_stems_for_linked_pairs,
+	finance_department_stems_for_linked_pairs,
+	finance_payment_department_stems,
+	get_user_sea_task_department_stems,
+	user_has_department_for_sequence,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	finance_payment_sequences,
+	permit_linked_task_pairs,
+	ucr_linked_task_pairs,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	SEA_TASK_FLOW_KEY,
 	normalize_department_stem,
 )
 
-# Roles that see every sea clearance task (oversight).
-UNRESTRICTED_SEA_TASK_ROLES = frozenset(
-	{
-		"Administrator",
-		"System Manager",
-		"Projects Manager",
-	}
-)
-
-# ERPNext role → department stems from sea_clearance_flow.SEA_FREIGHT_TASK_TEMPLATE.
-ROLE_DEPARTMENT_STEMS: dict[str, tuple[str, ...]] = {
-	"Operations Manager": ("Operations", "Documentation"),
-	"Operations User": ("Operations", "Documentation"),
-	"Declaration User": ("Declaration",),
-	"Declarant": ("Declaration",),
-	"Finance Manager": ("Finance",),
-	"Finance User": ("Finance",),
-	"Accounts User": ("Finance",),
-	"Accounts Manager": ("Finance",),
-	"Field Officer": ("Field Operations",),
-	"Transport Manager": ("Transport",),
-	"Transport Officer": ("Transport",),
-}
-
-# UCR: Declarant ↔ Finance cross-read. Permits: Declarant may read finance task only.
-UCR_LINKED_TASK_PAIRS: tuple[tuple[int, int], ...] = ((3, 4),)
-PERMIT_LINKED_TASK_PAIRS: tuple[tuple[int, int], ...] = ((5, 6),)
-PERMIT_FINANCE_SEQ_BY_APPLICATION: dict[int, int] = {5: 6}
+# UCR / permit: cross-read on paired workflow steps (Settings-driven sequences).
+def _ucr_linked_pairs() -> tuple[tuple[int, int], ...]:
+	return ucr_linked_task_pairs()
 
 
-def user_has_unrestricted_sea_task_access(user: str | None = None) -> bool:
-	user = user or frappe.session.user
-	if user == "Administrator":
-		return True
-	return bool(set(frappe.get_roles(user)) & UNRESTRICTED_SEA_TASK_ROLES)
+def _permit_linked_pairs() -> tuple[tuple[int, int], ...]:
+	return permit_linked_task_pairs()
 
 
-def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
-	user = user or frappe.session.user
-	stems: set[str] = set()
-	for role in frappe.get_roles(user):
-		stems.update(ROLE_DEPARTMENT_STEMS.get(role, ()))
-	return stems
+def user_bypasses_sea_task_department_filter(user: str | None = None) -> bool:
+	"""Only Administrator skips row-level sea task filtering."""
+	return (user or frappe.session.user) == "Administrator"
 
 
 def department_matches_stems(department: str | None, stems: set[str]) -> bool:
@@ -89,7 +70,7 @@ def _project_has_sea_task(project: str, sequence_no: int) -> bool:
 
 
 def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
-	"""Cross-read for paired workflow tasks — Finance never gets Declaration permit tasks."""
+	"""Cross-read for paired workflow tasks using template department stems."""
 	if not hasattr(doc, "get"):
 		return False
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
@@ -99,18 +80,16 @@ def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
 	if not project:
 		return False
 
-	stems = get_user_sea_task_department_stems(user)
-	if not stems:
-		return False
+	for app_seq, fin_seq in _ucr_linked_pairs():
+		if seq == fin_seq and user_has_department_for_sequence(user, app_seq):
+			if _project_has_sea_task(project, app_seq):
+				return True
+		if seq == app_seq and user_has_department_for_sequence(user, fin_seq):
+			if _project_has_sea_task(project, fin_seq):
+				return True
 
-	for app_seq, fin_seq in UCR_LINKED_TASK_PAIRS:
-		if seq == fin_seq and "Declaration" in stems and _project_has_sea_task(project, app_seq):
-			return True
-		if seq == app_seq and "Finance" in stems and _project_has_sea_task(project, fin_seq):
-			return True
-
-	for app_seq, fin_seq in PERMIT_LINKED_TASK_PAIRS:
-		if seq == fin_seq and "Declaration" in stems and _project_has_sea_task(project, app_seq):
+	for app_seq, fin_seq in _permit_linked_pairs():
+		if seq == fin_seq and user_has_department_for_sequence(user, app_seq):
 			return True
 
 	return False
@@ -125,7 +104,7 @@ def user_can_access_sea_task(
 ) -> bool:
 	"""Whether *user* may read a single sea clearance task."""
 	user = user or frappe.session.user
-	if user_has_unrestricted_sea_task_access(user):
+	if user_bypasses_sea_task_department_filter(user):
 		return True
 
 	if hasattr(doc, "get"):
@@ -145,15 +124,15 @@ def user_can_access_sea_task(
 
 
 def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
-	"""Finance payment tasks (seq 4,6,…) — allow Finance roles even if department link differs."""
+	"""Finance payment tasks — user must have Role matching that step's template department."""
 	if not hasattr(doc, "get"):
 		return False
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
-	if seq not in (4, 6, 12, 14, 18):
+	if seq not in finance_payment_sequences():
 		return False
-	return "Finance" in get_user_sea_task_department_stems(user)
+	return user_has_department_for_sequence(user, seq)
 
 
 def _department_link_sql_fragment(stem: str) -> str:
@@ -173,11 +152,6 @@ def _department_link_sql_fragment(stem: str) -> str:
 
 
 def _build_department_sql_conditions(stems: set[str]) -> str:
-	"""Match ERPNext Department link names (`{stem}` or `{stem} - {abbr}`).
-
-	Avoid SQL ``%`` wildcards: permission fragments are inlined into queries that
-	MySQLdb formats with pyformat, so ``LIKE 'foo-%'`` breaks list views.
-	"""
 	parts = [_department_link_sql_fragment(stem) for stem in sorted(stems)]
 	return "(" + " OR ".join(parts) + ")"
 
@@ -186,8 +160,12 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 	"""SQL OR-clauses for linked UCR / permit tasks in list views."""
 	flow = frappe.db.escape(SEA_TASK_FLOW_KEY)
 	parts: list[str] = []
-	if "Declaration" in stems:
-		for app_seq, fin_seq in UCR_LINKED_TASK_PAIRS:
+	app_stems = set(application_department_stems_for_linked_pairs(_ucr_linked_pairs()))
+	app_stems |= set(application_department_stems_for_linked_pairs(_permit_linked_pairs()))
+	fin_stems = finance_department_stems_for_linked_pairs(_ucr_linked_pairs())
+
+	if stems & app_stems:
+		for app_seq, fin_seq in _ucr_linked_pairs():
 			parts.append(
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
@@ -195,7 +173,7 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"AND lk.custom_task_flow_key = {flow} "
 				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
 			)
-		for app_seq, fin_seq in PERMIT_LINKED_TASK_PAIRS:
+		for app_seq, fin_seq in _permit_linked_pairs():
 			parts.append(
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
@@ -203,8 +181,8 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"AND lk.custom_task_flow_key = {flow} "
 				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
 			)
-	if "Finance" in stems:
-		for app_seq, fin_seq in UCR_LINKED_TASK_PAIRS:
+	if stems & fin_stems:
+		for app_seq, fin_seq in _ucr_linked_pairs():
 			parts.append(
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
@@ -220,15 +198,16 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 def get_permission_query_conditions(user: str | None = None) -> str | None:
 	"""List view / report SQL filter for Task."""
 	user = user or frappe.session.user
-	if user_has_unrestricted_sea_task_access(user):
+	if user_bypasses_sea_task_department_filter(user):
 		return None
 
 	stems = get_user_sea_task_department_stems(user)
 	escaped_user = frappe.db.escape(user)
+	assign_token = frappe.db.escape(f'"{user}"')
 	non_sea = f"(IFNULL(`tabTask`.`custom_task_flow_key`, '') != {frappe.db.escape(SEA_TASK_FLOW_KEY)})"
 	assigned_or_owner = (
 		f"(`tabTask`.`owner` = {escaped_user} "
-		f"OR LOCATE({escaped_user}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
+		f"OR LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
 	)
 
 	visibility_parts = [assigned_or_owner]
@@ -237,10 +216,13 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	linked = _build_linked_sea_task_sql(stems)
 	if linked:
 		visibility_parts.append(linked)
-	if "Finance" in stems:
-		visibility_parts.append(
-			f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN (4, 6, 12, 14, 18))"
-		)
+	if stems & finance_payment_department_stems():
+		finance_seqs = sorted(finance_payment_sequences())
+		if finance_seqs:
+			seq_list = ", ".join(str(s) for s in finance_seqs)
+			visibility_parts.append(
+				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}))"
+			)
 
 	sea_visible = (
 		f"(`tabTask`.`custom_task_flow_key` = {frappe.db.escape(SEA_TASK_FLOW_KEY)} "
@@ -253,7 +235,7 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 def has_permission(doc, ptype=None, user=None, **kwargs):
 	"""Deny access to sea clearance tasks outside the user's departments."""
 	user = user or frappe.session.user
-	if user_has_unrestricted_sea_task_access(user):
+	if user_bypasses_sea_task_department_filter(user):
 		return True
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
 		return True
@@ -265,7 +247,7 @@ def has_permission(doc, ptype=None, user=None, **kwargs):
 def filter_sea_tasks_for_user(tasks: list[dict], user: str | None = None) -> list[dict]:
 	"""Filter task rows (e.g. from SQL) for the current user's visibility."""
 	user = user or frappe.session.user
-	if user_has_unrestricted_sea_task_access(user):
+	if user_bypasses_sea_task_department_filter(user):
 		return tasks
 	out: list[dict] = []
 	for row in tasks:

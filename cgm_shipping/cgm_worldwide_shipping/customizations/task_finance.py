@@ -4,6 +4,15 @@ from __future__ import annotations
 import frappe
 from frappe.utils import cint, now_datetime
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import (
+	TASK_DOCUMENTS_FIELD,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	is_ucr_application_task,
+	is_ucr_finance_payment_task,
+	is_ucr_workflow_task,
+)
+
 TASK_FINANCE_FIELD = "custom_task_finance_lines"
 
 LINE_INVOICE = "Invoice"
@@ -23,6 +32,10 @@ LEGACY_INVOICE_DOCUMENT_TYPE_LINKS = frozenset(
 
 def task_has_finance_table(task) -> bool:
 	return bool(task.meta.has_field(TASK_FINANCE_FIELD))
+
+
+def _task_seq(task) -> int:
+	return int(task.get("custom_sequence_no") or 0)
 
 
 def _invoice_document_type_names() -> set[str]:
@@ -135,7 +148,7 @@ def ensure_idf_certificate_document_row(task) -> None:
 		get_document_type_link_name,
 	)
 
-	if int(task.get("custom_sequence_no") or 0) != 3:
+	if not is_ucr_application_task(_task_seq(task)):
 		return
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
@@ -151,15 +164,15 @@ def ensure_idf_certificate_document_row(task) -> None:
 
 def prepare_ucr_task_tables(task) -> None:
 	"""UCR tasks: finance lines for invoice/receipt; clearance docs for IDF certificate only."""
-	seq = int(task.get("custom_sequence_no") or 0)
-	if seq not in (3, 4):
+	seq = _task_seq(task)
+	if not is_ucr_workflow_task(seq):
 		return
 	seed_ucr_finance_lines(task)
-	if seq == 3:
+	if is_ucr_application_task(seq):
 		ensure_idf_certificate_document_row(task)
-	elif seq == 4:
+	elif is_ucr_finance_payment_task(seq):
 		remove_invoice_rows_from_task_documents(task)
-		_copy_ucr_invoice_to_finance_task(task)
+		copy_ucr_invoice_to_finance_task(task)
 
 
 def _find_line(task, line_type: str, payment_item: str = PAYMENT_UCR):
@@ -190,22 +203,22 @@ def seed_ucr_finance_lines(task) -> None:
 	"""Pre-fill UCR Invoice + UCR Receipt rows on UCR tasks."""
 	if not task_has_finance_table(task):
 		return
-	seq = int(task.get("custom_sequence_no") or 0)
-	if seq not in (3, 4):
+	seq = _task_seq(task)
+	if not is_ucr_workflow_task(seq):
 		return
 
 	_ensure_line(task, LINE_INVOICE, UCR_INVOICE_LABEL)
 	_ensure_line(task, LINE_RECEIPT, UCR_RECEIPT_LABEL)
-	if seq == 4:
-		_copy_ucr_invoice_to_finance_task(task)
+	if is_ucr_finance_payment_task(seq):
+		copy_ucr_invoice_to_finance_task(task)
 
 
 def ensure_ucr_finance_lines_saved(task) -> bool:
 	"""Persist missing UCR Invoice / UCR Receipt rows on Create UCR and Finance pays UCR."""
 	if not task_has_finance_table(task):
 		return False
-	seq = int(task.get("custom_sequence_no") or 0)
-	if seq not in (3, 4):
+	seq = _task_seq(task)
+	if not is_ucr_workflow_task(seq):
 		return False
 
 	before = {
@@ -231,10 +244,9 @@ def migrate_invoice_attachments_from_documents(task) -> None:
 	"""Move legacy invoice attachments from Clearance Documents → finance lines."""
 	if not task_has_finance_table(task):
 		return
-	seq = int(task.get("custom_sequence_no") or 0)
-	if seq not in (3, 4):
+	seq = _task_seq(task)
+	if not is_ucr_workflow_task(seq):
 		return
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import TASK_DOCUMENTS_FIELD
 
 	seed_ucr_finance_lines(task)
 	inv_line = _find_line(task, LINE_INVOICE)
@@ -248,9 +260,9 @@ def migrate_invoice_attachments_from_documents(task) -> None:
 		task.remove(row)
 
 
-def _copy_ucr_invoice_to_finance_task(finance_task) -> None:
+def copy_ucr_invoice_to_finance_task(finance_task) -> None:
 	"""Copy declarant UCR invoice onto the finance task for review."""
-	if int(finance_task.get("custom_sequence_no") or 0) != 4 or not finance_task.project:
+	if not is_ucr_finance_payment_task(_task_seq(finance_task)) or not finance_task.project:
 		return
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
@@ -290,9 +302,9 @@ def ucr_payment_made_for_project(project: str) -> bool:
 	return int(frappe.db.get_value("Payment Entry", pe_name, "docstatus") or 0) == 1
 
 
-def _copy_ucr_receipt_to_finance_task(application_task) -> str | None:
+def copy_ucr_receipt_to_finance_task(application_task) -> str | None:
 	"""Copy declarant UCR receipt onto Finance pays UCR. Returns finance task name."""
-	if int(application_task.get("custom_sequence_no") or 0) != 3 or not application_task.project:
+	if not is_ucr_application_task(_task_seq(application_task)) or not application_task.project:
 		return None
 
 	app_rec = _find_line(application_task, LINE_RECEIPT)
@@ -377,8 +389,8 @@ def normalize_finance_line_verification(task) -> None:
 			row.verified_by = None
 			row.verified_on = None
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if seq == 4:
+	seq = _task_seq(task)
+	if is_ucr_finance_payment_task(seq):
 		inv = get_ucr_invoice_line(task)
 		rec = get_ucr_receipt_line(task)
 		if inv and inv.verified and task.meta.has_field("custom_ucr_invoice_verified"):
@@ -405,10 +417,10 @@ def _finance_line_verified_changed(task, row) -> bool:
 
 
 def enforce_finance_line_permissions(task) -> None:
-	"""Only Finance may tick Verified on finance lines."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
-		FINANCE_ROLES,
-		OPERATIONS_ROLES,
+	"""Only users with finance-payment template department roles may verify finance lines."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+		user_has_department_for_sequence,
+		user_has_finance_department_access,
 	)
 
 	if frappe.session.user == "Administrator":
@@ -416,13 +428,12 @@ def enforce_finance_line_permissions(task) -> None:
 	if frappe.flags.get("cgm_syncing_ucr_receipt") or frappe.flags.get("cgm_ensuring_ucr_finance_lines"):
 		return
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if seq not in (3, 4) or not task_has_finance_table(task):
+	seq = _task_seq(task)
+	if not is_ucr_workflow_task(seq) or not task_has_finance_table(task):
 		return
 
-	roles = set(frappe.get_roles())
-	is_finance = bool(set(FINANCE_ROLES) & roles)
-	can_attach_receipt = bool(set(OPERATIONS_ROLES + FINANCE_ROLES) & roles)
+	is_finance = user_has_finance_department_access()
+	can_attach_receipt = user_has_department_for_sequence(frappe.session.user, seq)
 
 	for row in task.get(TASK_FINANCE_FIELD) or []:
 		if row.verified and not is_finance and _finance_line_verified_changed(task, row):
@@ -437,7 +448,7 @@ def enforce_finance_line_permissions(task) -> None:
 				frappe.throw(
 					f"<b>{row.line_label or 'Finance line'}</b> is verified by Finance and cannot be changed here."
 				)
-		if row.line_type == LINE_RECEIPT and seq == 3 and row.attachment:
+		if row.line_type == LINE_RECEIPT and is_ucr_application_task(seq) and row.attachment:
 			if not can_attach_receipt:
 				frappe.throw(
 					f"Only <b>Declarant</b> or <b>Operations</b> can attach <b>{row.line_label}</b>."
@@ -446,7 +457,7 @@ def enforce_finance_line_permissions(task) -> None:
 				frappe.throw(
 					"Finance must record UCR payment before uploading the <b>UCR Receipt</b>."
 				)
-		if row.line_type == LINE_RECEIPT and seq == 4 and row.attachment:
+		if row.line_type == LINE_RECEIPT and is_ucr_finance_payment_task(seq) and row.attachment:
 			if frappe.flags.get("cgm_syncing_ucr_receipt"):
 				continue
 			prev = task.get_doc_before_save()
@@ -457,7 +468,12 @@ def enforce_finance_line_permissions(task) -> None:
 					"Declarant uploads the <b>UCR Receipt</b> on <b>Create UCR (IDF)</b>. "
 					"Finance verifies it here."
 				)
-		if row.line_type == LINE_INVOICE and seq == 4 and row.attachment and row.verified is None:
+		if (
+			row.line_type == LINE_INVOICE
+			and is_ucr_finance_payment_task(seq)
+			and row.attachment
+			and row.verified is None
+		):
 			pass
 
 
@@ -496,7 +512,7 @@ def sync_ucr_finance_lines_to_idf_record(task) -> None:
 	if rec and rec.verified:
 		doc.receipt_verified = 1
 		doc.payment_status = "Receipt Verified"
-	if task.status == "Completed" and int(task.get("custom_sequence_no") or 0) == 4:
+	if task.status == "Completed" and is_ucr_finance_payment_task(_task_seq(task)):
 		doc.payment_status = "Complete"
 
 	doc.save(ignore_permissions=True)
@@ -505,7 +521,7 @@ def sync_ucr_finance_lines_to_idf_record(task) -> None:
 def sync_idf_certificate_to_project(task) -> None:
 	"""Copy IDF/UCR certificate from Task Documents → Project shipment documents + IDF record."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
-		_document_type_code,
+		get_document_type_code,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		SHIPMENT_DOCUMENTS_FIELD,
@@ -518,7 +534,7 @@ def sync_idf_certificate_to_project(task) -> None:
 
 	cert_url = None
 	for row in task.get("custom_task_documents") or []:
-		code = _document_type_code(row.document_type)
+		code = get_document_type_code(row.document_type)
 		if code in ("IDF_CERT", "UCR_CERT", "IDF") and row.attachment:
 			cert_url = row.attachment
 			break
@@ -552,8 +568,7 @@ def sync_idf_certificate_to_project(task) -> None:
 
 def sync_ucr_verification_to_application_task(finance_task) -> bool:
 	"""Mirror invoice verification from Finance pays UCR (seq 4) → Create UCR task (seq 3)."""
-	seq = int(finance_task.get("custom_sequence_no") or 0)
-	if seq != 4 or not finance_task.project or not task_has_finance_table(finance_task):
+	if not is_ucr_finance_payment_task(_task_seq(finance_task)) or not finance_task.project or not task_has_finance_table(finance_task):
 		return False
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
@@ -620,8 +635,7 @@ def sync_ucr_verification_to_application_task(finance_task) -> bool:
 
 def sync_ucr_receipt_verification_to_application_task(finance_task) -> bool:
 	"""Mirror receipt verification from Finance pays UCR (seq 4) → Create UCR task (seq 3)."""
-	seq = int(finance_task.get("custom_sequence_no") or 0)
-	if seq != 4 or not finance_task.project or not task_has_finance_table(finance_task):
+	if not is_ucr_finance_payment_task(_task_seq(finance_task)) or not finance_task.project or not task_has_finance_table(finance_task):
 		return False
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
@@ -687,7 +701,7 @@ def sync_ucr_receipt_verification_to_application_task(finance_task) -> bool:
 
 def sync_ucr_status_from_finance_to_application(application_task) -> bool:
 	"""Pull invoice + receipt verification from Finance pays UCR when opening Create UCR."""
-	if int(application_task.get("custom_sequence_no") or 0) != 3 or not application_task.project:
+	if not is_ucr_application_task(_task_seq(application_task)) or not application_task.project:
 		return False
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (

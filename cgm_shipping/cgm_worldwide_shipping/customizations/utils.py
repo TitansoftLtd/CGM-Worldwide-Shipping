@@ -1,73 +1,327 @@
 import re
 
 import frappe
-from erpnext import get_default_company
 from frappe.utils import getdate, now_datetime, today
+# CGM reference & shipment-classification helpers were extracted to
+# shipment_reference.py; re-exported here so existing
+# `from ...customizations.utils import ...` call sites keep working.
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (  # noqa: E402,F401
+	CGM_REF_PATTERN,
+	apply_shipment_data,
+	assign_cgm_project_reference,
+	build_cgm_ref_no,
+	cgm_ref_prefix,
+	is_cgm_ref,
+	normalize_shipment_classification,
+	normalize_shipment_fields_on_doc,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.department import (  # noqa: E402,F401
+	DEPARTMENT_NAME_ALIASES,
+	get_department_name_stem,
+	normalize_department_stem,
+	resolve_department_name,
+)
 
-SEA_TASK_FLOW_KEY = "SEA_IMPORT_E2E"
 
-# Map template labels or old department names -> ERPNext department_name (before company suffix).
-DEPARTMENT_NAME_ALIASES = {
-	"Administration": "Documentation",
-}
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (  # noqa: E402,F401
+	CUSTOMER_ATTACH_TO_DOCUMENT_CODE,
+	OPPORTUNITY_DOCUMENTS_FIELD,
+	SHIPMENT_DOCUMENTS_FIELD,
+	TASK_DOCUMENTS_FIELD,
+	append_task_document_row,
+	append_verified_doc_row,
+	carry_customer_attachments_to_project,
+	carry_preshipment_docs_to_project,
+	carry_project_shipment_documents_to_sea_tasks,
+	carry_task_documents_to_project,
+	ensure_project_shipment_documents_field,
+	get_preshipment_attachments,
+	get_project_documents_fieldname,
+	refresh_project_shipment_documents,
+	refresh_projects_for_customer,
+	sync_linked_attachments_to_project,
+	sync_project_shipment_documents,
+)
 
+
+# ─── Dynamic field discovery ───────────────────────────────────────────────────
+
+
+def get_field_from_meta(doctype: str, keyword: str) -> str | None:
+	"""Find the first fieldname on a DocType that contains keyword."""
+	return next(
+		(
+			field.fieldname
+			for field in frappe.get_meta(doctype).fields
+			if keyword in field.fieldname
+		),
+		None,
+	)
+
+
+def get_link_field_for_doctype(doctype: str, target_doctype: str) -> str | None:
+	"""Find a Link field on doctype that points to target_doctype."""
+	return next(
+		(
+			field.fieldname
+			for field in frappe.get_meta(doctype).fields
+			if field.fieldtype == "Link" and field.options == target_doctype
+		),
+		None,
+	)
+
+
+def get_container_table_field_for_doctype(doctype: str) -> str | None:
+	"""Find a child table on doctype whose rows include container_number."""
+	return next(
+		(
+			field.fieldname
+			for field in frappe.get_meta(doctype).fields
+			if field.fieldtype == "Table"
+			and frappe.get_meta(field.options)
+			and frappe.get_meta(field.options).has_field("container_number")
+		),
+		None,
+	)
+
+
+def get_opportunity_documents_field() -> str | None:
+	"""Fetch the Clients Documents table fieldname from Opportunity meta."""
+	return next(
+		(
+			field.fieldname
+			for field in frappe.get_meta("Opportunity").fields
+			if field.fieldtype == "Table"
+			and "clients_documents" in field.fieldname
+		),
+		None,
+	)
+
+
+def get_project_shipment_documents_field() -> str | None:
+	"""Fetch the Shipment Documents table fieldname from Project meta."""
+	return next(
+		(
+			field.fieldname
+			for field in frappe.get_meta("Project").fields
+			if field.fieldtype == "Table"
+			and "shipment_documents" in field.fieldname
+		),
+		None,
+	)
+
+
+def get_bl_config() -> dict:
+	"""Fetch Bill of Lading config from Document Type master — no hardcoding."""
+	dt_meta = frappe.get_meta("Document Type")
+	config_fields = [
+		name
+		for name in (
+			"linked_doctype",
+			"attachment_field",
+			"opportunity_bl_field",
+			"opportunity_quantity_field",
+			"opportunity_container_field",
+			"opportunity_source_field",
+		)
+		if dt_meta.has_field(name)
+	]
+	config = {}
+	if config_fields and dt_meta.has_field("linked_doctype"):
+		config = (
+			frappe.db.get_value(
+				"Document Type",
+				{"linked_doctype": "Bill of Lading"},
+				config_fields,
+				as_dict=True,
+			)
+			or {}
+		)
+
+	if not config.get("attachment_field"):
+		config["attachment_field"] = get_field_from_meta("Bill of Lading", "attach_bill")
+	if not config.get("opportunity_bl_field"):
+		config["opportunity_bl_field"] = get_link_field_for_doctype("Opportunity", "Bill of Lading")
+	if not config.get("opportunity_quantity_field"):
+		bl_field = config.get("opportunity_bl_field")
+		if bl_field:
+			config["opportunity_quantity_field"] = get_quantity_field_after("Opportunity", bl_field)
+	if not config.get("opportunity_container_field"):
+		config["opportunity_container_field"] = get_container_table_field_for_doctype("Opportunity")
+	if not config.get("opportunity_source_field"):
+		config["opportunity_source_field"] = get_link_field_for_doctype("Bill of Lading", "Opportunity")
+	return config
+
+
+def get_quantity_field_after(doctype: str, anchor_field: str) -> str | None:
+	"""First Data/Float/Int field after anchor_field in DocType field order."""
+	fields = frappe.get_meta(doctype).fields
+	start = next((idx for idx, field in enumerate(fields) if field.fieldname == anchor_field), -1)
+	if start < 0:
+		return None
+	for field in fields[start + 1 :]:
+		if field.fieldtype in ("Section Break", "Tab Break"):
+			break
+		if field.fieldtype == "Table":
+			break
+		if field.fieldtype in ("Data", "Float", "Int"):
+			return field.fieldname
+	return None
+
+
+def get_bl_container_child_field() -> str | None:
+	"""Child table on Bill of Lading that holds container rows."""
+	return get_container_table_field_for_doctype("Bill of Lading")
+
+
+def get_awb_value_from_doc(doc) -> str | None:
+	"""Return the first non-empty AWB-style field value on a document."""
+	for field in doc.meta.fields:
+		if field.fieldtype not in ("Data", "Link", "Small Text"):
+			continue
+		name = field.fieldname.lower()
+		if not any(token in name for token in ("awb", "airway", "air_waybill")):
+			continue
+		value = doc.get(field.fieldname)
+		if value not in (None, ""):
+			return value
+	return None
+
+
+def get_project_awb_field() -> str | None:
+	"""AWB field on Project."""
+	return get_field_from_meta("Project", "awb_number") or get_field_from_meta("Project", "awb")
+
+# ─── Document Type utilities ──────────────────────────────────────────────────
+def document_types_match(existing_type, incoming_type):
+	"""Check if two document types match by name or code."""
+	if not existing_type or not incoming_type:
+		return False
+	if existing_type == incoming_type:
+		return True
+	existing_code = frappe.db.get_value("Document Type", existing_type, "code")
+	incoming_code = frappe.db.get_value("Document Type", incoming_type, "code")
+	return bool(existing_code and incoming_code and existing_code == incoming_code)
+
+def get_document_type_link_name(code):
+	"""Get the name of a Document Type by its code."""
+	if not code:
+		return None
+	name = frappe.db.get_value("Document Type", {"code": code}, "name")
+	if name:
+		return name
+	if frappe.db.exists("Document Type", code):
+		return code
+	return None
+
+def ensure_document_types():
+	"""Create default Document Type records if they don't exist."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import DOCUMENT_TYPE_DEFAULTS
+
+	for code, defaults in DOCUMENT_TYPE_DEFAULTS.items():
+		if get_document_type_link_name(code):
+			continue
+		doc = frappe.new_doc("Document Type")
+		doc.code = code
+		for key, value in defaults.items():
+			setattr(doc, key, value)
+		doc.insert(ignore_permissions=True)
+		if doc.meta.is_submittable and doc.docstatus == 0:
+			doc.submit()
 
 # ─── CGM reference / Project Name ─────────────────────────────────────────────
 # Tracking sheet format: CGM/FCL001/1022  (prefix + 3-digit seq + MMYY period)
-
-
 CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$")
-
 
 def is_cgm_ref(value: str | None) -> bool:
 	if not value:
 		return False
 	return bool(CGM_REF_PATTERN.match(str(value).strip().upper()))
 
-
 def cgm_ref_prefix(shipment_type=None, mode=None) -> str:
-	"""Map shipment classification to tracking-sheet prefix (FCL, LCL, IM, …)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type_master import (
+	"""
+	Fetch CGM ref prefix from Shipment Type master.
+	Falls back to mode-based lookup when no exact match is found.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
 		cgm_ref_prefix_from_master,
 	)
 
 	st = (shipment_type or "").strip()
+	mode = (mode or "").strip()
+
 	prefix = cgm_ref_prefix_from_master(st, mode)
 	if prefix:
 		return prefix
 
-	mode = (mode or "").strip()
-	if st == "Import":
-		if mode == "Sea":
-			return "FCL"
-		if mode == "Air":
-			return "AIR"
-		if mode == "Road":
-			return "ROD"
-		return "IM"
-	if st == "Export":
-		return "EX"
-	if mode == "Sea":
-		return "FCL"
-	if mode == "Air":
-		return "AIR"
-	if mode == "Road":
-		return "ROD"
-	return "IM"
+	if not st:
+		return get_default_cgm_ref_prefix()
 
+	st_meta = frappe.get_meta("Shipment Type") if frappe.db.exists("DocType", "Shipment Type") else None
+	if not st_meta:
+		return get_default_cgm_ref_prefix()
 
-def _next_cgm_ref_sequence(prefix: str, period: str) -> int:
+	st_filters = {"shipment_type_name": st}
+	if st_meta.has_field("is_active"):
+		st_filters["is_active"] = 1
+
+	prefix = frappe.db.get_value("Shipment Type", st_filters, "cgm_ref_prefix")
+	if prefix:
+		return str(prefix).strip().upper()
+
+	if mode and st_meta.has_field("default_mode_of_transport"):
+		mode_filters = {"default_mode_of_transport": mode}
+		if st_meta.has_field("is_active"):
+			mode_filters["is_active"] = 1
+		prefix = frappe.db.get_value(
+			"Shipment Type",
+			mode_filters,
+			"cgm_ref_prefix",
+			order_by="idx asc",
+		)
+		if prefix:
+			return str(prefix).strip().upper()
+
+	return get_default_cgm_ref_prefix()
+
+def get_default_cgm_ref_prefix() -> str:
+	"""Absolute fallback prefix from Shipment Type master."""
+	if not frappe.db.exists("DocType", "Shipment Type"):
+		return ""
+
+	st_meta = frappe.get_meta("Shipment Type")
+	filters = {}
+	if st_meta.has_field("is_active"):
+		filters["is_active"] = 1
+	prefix = frappe.db.get_value(
+		"Shipment Type",
+		filters,
+		"cgm_ref_prefix",
+		order_by="idx asc",
+	)
+	return str(prefix).strip().upper() if prefix else ""
+
+def get_next_cgm_ref_sequence(prefix: str, period: str) -> int:
 	"""Next 3-digit sequence for CGM/{prefix}NNN/{period} in this calendar month."""
 	like = f"CGM/{prefix}%/{period}"
-	rows = frappe.db.sql(
-		"""
-		SELECT project_name AS ref FROM `tabProject` WHERE UPPER(project_name) LIKE %s
+	cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
+	union_sql = ""
+	params = [like.upper()]
+	if cgm_ref_field and frappe.get_meta("Project").has_field(cgm_ref_field):
+		union_sql = f"""
 		UNION
-		SELECT custom_cgm_ref_no AS ref FROM `tabProject`
-		WHERE custom_cgm_ref_no IS NOT NULL AND custom_cgm_ref_no != ''
-		  AND UPPER(custom_cgm_ref_no) LIKE %s
+		SELECT `{cgm_ref_field}` AS ref FROM `tabProject`
+		WHERE `{cgm_ref_field}` IS NOT NULL AND `{cgm_ref_field}` != ''
+		  AND UPPER(`{cgm_ref_field}`) LIKE %s
+		"""
+		params.append(like.upper())
+	rows = frappe.db.sql(
+		f"""
+		SELECT project_name AS ref FROM `tabProject` WHERE UPPER(project_name) LIKE %s
+		{union_sql}
 		""",
-		(like.upper(), like.upper()),
+		tuple(params),
 		as_dict=True,
 	)
 	seq_pattern = re.compile(rf"^CGM/{re.escape(prefix)}(\d{{3}})/{re.escape(period)}$")
@@ -79,30 +333,32 @@ def _next_cgm_ref_sequence(prefix: str, period: str) -> int:
 			max_seq = max(max_seq, int(match.group(1)))
 	return max_seq + 1
 
-
 def build_cgm_ref_no(shipment_type=None, mode=None, opened_date=None) -> str:
 	"""Allocate CGM/LCL001/1022-style reference for the shipment tracking sheet."""
 	prefix = cgm_ref_prefix(shipment_type, mode)
 	dt = getdate(opened_date or today())
 	period = dt.strftime("%m%y")
-	seq = _next_cgm_ref_sequence(prefix, period)
+	seq = get_next_cgm_ref_sequence(prefix, period)
 	for candidate_seq in range(seq, seq + 1000):
 		ref = f"CGM/{prefix}{candidate_seq:03d}/{period}"
 		if not frappe.db.exists("Project", {"project_name": ref}):
 			return ref
 	frappe.throw("Could not allocate a unique CGM reference number.")
 
-
 def assign_cgm_project_reference(project) -> None:
-	"""Set project_name and custom_cgm_ref_no to the tracking-sheet CGM reference."""
-	if project.get("custom_cgm_ref_no") and is_cgm_ref(project.custom_cgm_ref_no):
+	"""Set project_name and the CGM ref custom field to the tracking-sheet reference."""
+	cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
+	opened_date_field = get_field_from_meta("Project", "opened_date")
+	cgm_ref_value = project.get(cgm_ref_field) if cgm_ref_field else None
+
+	if cgm_ref_value and is_cgm_ref(cgm_ref_value):
 		if not is_cgm_ref(project.project_name):
-			project.project_name = project.custom_cgm_ref_no
+			project.project_name = cgm_ref_value
 		return
 
 	if project.project_name and is_cgm_ref(project.project_name):
-		if project.meta.has_field("custom_cgm_ref_no") and not project.get("custom_cgm_ref_no"):
-			project.custom_cgm_ref_no = project.project_name
+		if cgm_ref_field and not project.get(cgm_ref_field):
+			project.set(cgm_ref_field, project.project_name)
 		return
 
 	ref = build_cgm_ref_no(
@@ -111,12 +367,11 @@ def assign_cgm_project_reference(project) -> None:
 			project.get("custom_mode_of_transport"),
 		)[0],
 		project.get("custom_mode_of_transport"),
-		project.get("custom_opened_date"),
+		project.get(opened_date_field) if opened_date_field else None,
 	)
 	project.project_name = ref
-	if project.meta.has_field("custom_cgm_ref_no"):
-		project.custom_cgm_ref_no = ref
-
+	if cgm_ref_field:
+		project.set(cgm_ref_field, ref)
 
 def build_project_name_seed(label, shipment_type=None, mode=None):
 	# Legacy helper — prefer assign_cgm_project_reference for new shipments.
@@ -125,7 +380,6 @@ def build_project_name_seed(label, shipment_type=None, mode=None):
 	if details:
 		return f"Shipment - {core} - {details}"
 	return f"Shipment - {core}"
-
 
 def ensure_unique_project_name(seed_name):
 	# 1. Use fallback when seed is blank.
@@ -145,8 +399,6 @@ def ensure_unique_project_name(seed_name):
 
 
 # ─── Project Field Helpers ────────────────────────────────────────────────────
-
-
 def apply_shipment_data(project, shipment_type=None, mode=None):
 	"""Set shipment classification; derive mode from operational shipment type when known."""
 	if shipment_type:
@@ -167,7 +419,6 @@ def apply_shipment_data(project, shipment_type=None, mode=None):
 	if project_fields.has_field("custom_shipment_status"):
 		project.custom_shipment_status = "Draft"
 
-
 def normalize_shipment_classification(shipment_type=None, mode=None):
 	"""
 	Return (shipment_type, mode) using operational types (Sea FCL, Air Import, …).
@@ -177,7 +428,7 @@ def normalize_shipment_classification(shipment_type=None, mode=None):
 	st = (shipment_type or "").strip()
 	m = (mode or "").strip()
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type_master import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
 		get_shipment_type_record,
 		mode_from_master,
 	)
@@ -204,7 +455,6 @@ def normalize_shipment_classification(shipment_type=None, mode=None):
 
 	return st or None, m or None
 
-
 def normalize_shipment_fields_on_doc(doc) -> None:
 	"""Rewrite legacy Import/Export values before Select validation on save."""
 	if not doc.meta.has_field("custom_shipment_type"):
@@ -219,239 +469,28 @@ def normalize_shipment_fields_on_doc(doc) -> None:
 	if derived_mode and doc.meta.has_field("custom_mode_of_transport"):
 		doc.custom_mode_of_transport = derived_mode
 
-
-SHIPMENT_DOCUMENTS_FIELD = "custom_shipment_documents"
-OPPORTUNITY_DOCUMENTS_FIELD = "custom_clients_documents"
-TASK_DOCUMENTS_FIELD = "custom_task_documents"
-
-
-def get_project_documents_fieldname():
-	"""Return the Project child-table fieldname for shipment documents, or None if absent."""
-	project_fields = frappe.get_meta("Project")
-	if project_fields.has_field(SHIPMENT_DOCUMENTS_FIELD):
-		return SHIPMENT_DOCUMENTS_FIELD
-	return None
-
-
-def ensure_project_shipment_documents_field():
-	"""Create the Shipment Documents table on Project when it is missing."""
-	# 1. Return early when the field already exists.
-	if get_project_documents_fieldname():
-		return SHIPMENT_DOCUMENTS_FIELD
-
-	fieldname = SHIPMENT_DOCUMENTS_FIELD
-	cf_name = f"Project-{fieldname}"
-
-	# 2. Reload cache and return when the Custom Field record already exists.
-	if frappe.db.exists("Custom Field", cf_name):
-		frappe.clear_cache(doctype="Project")
-		return fieldname
-
-	# 3. Choose the best anchor field for insert_after.
-	project_fields = frappe.get_meta("Project")
-	insert_after = "custom_shipment_status"
-	if not project_fields.has_field(insert_after):
-		insert_after = "custom_shipment_type"
-	if not project_fields.has_field(insert_after):
-		insert_after = "customer"
-
-	# 4. Create and insert the Custom Field.
-	doc = frappe.new_doc("Custom Field")
-	doc.update(
-		{
-			"dt": "Project",
-			"fieldname": fieldname,
-			"label": "Shipment Documents",
-			"fieldtype": "Table",
-			"options": "Shipment Document",
-			"insert_after": insert_after,
-		}
-	)
-	doc.insert(ignore_permissions=True)
-	frappe.clear_cache(doctype="Project")
-	return fieldname
-
-
-# ─── Pre-shipment Attachment Helpers ─────────────────────────────────────────
-
-
-def get_preshipment_attachments(source_doc):
-	# 1. Read explicit CI/PKL attachment fields when available.
-	attachments = {"CI": None, "PKL": None}
-	source_fields = source_doc.meta
-	for code in ("CI", "PKL"):
-		fieldname = f"custom_{code.lower()}_attachment"
-		if source_fields.has_field(fieldname):
-			attachments[code] = source_doc.get(fieldname)
-
-	# 2. Return early when both attachments were resolved from fields.
-	if attachments["CI"] and attachments["PKL"]:
-		return attachments
-
-	# 3. Fall back to timeline file attachments for older records.
-	files = frappe.get_all(
-		"File",
-		filters={
-			"attached_to_doctype": source_doc.doctype,
-			"attached_to_name": source_doc.name,
-			"is_folder": 0,
-		},
-		fields=["file_name", "file_url"],
-		order_by="creation desc",
-	)
-
-	for file_row in files:
-		filename = (file_row.file_name or "").lower()
-		if not attachments["CI"] and (
-			"commercial invoice" in filename
-			or filename.startswith("ci")
-			or "_ci" in filename
-			or "-ci" in filename
-		):
-			attachments["CI"] = file_row.file_url
-		if not attachments["PKL"] and (
-			"packing list" in filename
-			or filename.startswith("pkl")
-			or "_pkl" in filename
-			or "-pkl" in filename
-		):
-			attachments["PKL"] = file_row.file_url
-		if attachments["CI"] and attachments["PKL"]:
-			break
-
-	return attachments
-
-
-def document_types_match(existing_type, incoming_type):
-	"""Match Document Type rows by link name or shared code (e.g. CI vs Commercial Invoice)."""
-	if not existing_type or not incoming_type:
-		return False
-	if existing_type == incoming_type:
-		return True
-	existing_code = frappe.db.get_value("Document Type", existing_type, "code")
-	incoming_code = frappe.db.get_value("Document Type", incoming_type, "code")
-	return bool(existing_code and incoming_code and existing_code == incoming_code)
-
-
-def append_verified_doc_row(project_doc, document_type, attachment_url):
-	# 1. Skip when any required value is absent.
-	if not attachment_url or not document_type:
-		return
-	if not frappe.db.exists("Document Type", document_type):
-		return
-	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
-		return
-
-	rows = project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
-
-	# 2. Update the existing row when the document type is already present.
-	for row in rows:
-		if document_types_match(row.document_type, document_type):
-			if not row.attachment:
-				row.attachment = attachment_url
-			row.status = "Verified"
-			if not row.uploaded_by:
-				row.uploaded_by = frappe.session.user
-			if not row.uploaded_on:
-				row.uploaded_on = now_datetime()
-			if not row.verified_by:
-				row.verified_by = frappe.session.user
-			if not row.verified_on:
-				row.verified_on = now_datetime()
-			return
-
-	# 3. Append a new verified row when no existing row matched.
-	project_doc.append(
-		SHIPMENT_DOCUMENTS_FIELD,
-		{
-			"document_type": document_type,
-			"attachment": attachment_url,
-			"required": 1,
-			"status": "Verified",
-			"uploaded_by": frappe.session.user,
-			"uploaded_on": now_datetime(),
-			"verified_by": frappe.session.user,
-			"verified_on": now_datetime(),
-		},
-	)
-
-
-DOCUMENT_TYPE_DEFAULTS = {
-	"CI": {
-		"category": "Commercial",
-		"default_required": 1,
-		"required_stage": "Pre-IDF",
-	},
-	"PKL": {
-		"category": "Commercial",
-		"default_required": 1,
-		"required_stage": "Pre-IDF",
-	},
-	"KRA_PIN": {
-		"category": "Compliance",
-		"default_required": 1,
-		"required_stage": "Pre-IDF",
-	},
-	"BL": {
-		"category": "Transport",
-		"default_required": 0,
-		"required_stage": "Pre-IDF",
-	},
-}
-
-# Customer Attach field → Document Type code.
-CUSTOMER_ATTACH_TO_DOCUMENT_CODE = {
-	"custom_kra_pin_attachment": "KRA_PIN",
-}
-
-
-def ensure_document_types():
-	"""Ensure Document Type master rows exist for synced shipment files."""
-	for code, defaults in DOCUMENT_TYPE_DEFAULTS.items():
-		if get_document_type_link_name(code):
-			continue
-
-		# 1. Create and submit the Document Type when it does not yet exist.
-		doc = frappe.new_doc("Document Type")
-		doc.code = code
-		for key, value in defaults.items():
-			setattr(doc, key, value)
-		doc.insert(ignore_permissions=True)
-		if doc.meta.is_submittable and doc.docstatus == 0:
-			doc.submit()
-
-
-def carry_preshipment_docs_to_project(project_doc, source_doc):
-	"""Copy CI and PKL attachments from a Lead/Opportunity into Project shipment document rows."""
-	ensure_document_types()
-	attachments = get_preshipment_attachments(source_doc)
-	for code in ("CI", "PKL"):
-		attachment_url = attachments.get(code)
-		if not attachment_url:
-			continue
-		document_type = get_document_type_link_name(code)
-		if document_type:
-			append_verified_doc_row(project_doc, document_type, attachment_url)
-
-
 def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 	"""Copy all Clients Documents rows from Opportunity onto Project shipment documents."""
-	if not source_doc or not source_doc.meta.has_field(OPPORTUNITY_DOCUMENTS_FIELD):
+	clients_field = get_opportunity_documents_field()
+	shipment_field = get_project_shipment_documents_field()
+	if not source_doc or not clients_field or not source_doc.meta.has_field(clients_field):
 		return
-	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+	if not shipment_field or not project_doc.meta.has_field(shipment_field):
 		return
 
 	ensure_document_types()
-	for row in source_doc.get(OPPORTUNITY_DOCUMENTS_FIELD) or []:
+	for row in source_doc.get(clients_field) or []:
 		if not row.document_type or not row.attachment:
 			continue
 		if not frappe.db.exists("Document Type", row.document_type):
 			continue
-		_append_or_update_shipment_document_row(project_doc, row)
+		append_or_update_shipment_document_row(project_doc, row)
 
-
-def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
-	rows = project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
+def append_or_update_shipment_document_row(project_doc, source_row) -> None:
+	shipment_field = get_project_shipment_documents_field()
+	if not shipment_field:
+		return
+	rows = project_doc.get(shipment_field) or []
 	for existing in rows:
 		if not document_types_match(existing.document_type, source_row.document_type):
 			continue
@@ -472,7 +511,7 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 		return
 
 	project_doc.append(
-		SHIPMENT_DOCUMENTS_FIELD,
+		shipment_field,
 		{
 			"document_type": source_row.document_type,
 			"attachment": source_row.attachment,
@@ -485,21 +524,22 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 		},
 	)
 
-
 def get_bill_of_lading_attachment_url(
 	bl_name: str | None = None, source_doc=None
 ) -> str | None:
 	"""Resolve BL file URL from the Bill of Lading record or source Clients Documents."""
-	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
-		attachment_url = frappe.db.get_value("Bill of Lading", bl_name, "bill_of_lading")
+	bl_config = get_bl_config()
+	attachment_field = bl_config.get("attachment_field")
+	if bl_name and frappe.db.exists("Bill of Lading", bl_name) and attachment_field:
+		attachment_url = frappe.db.get_value("Bill of Lading", bl_name, attachment_field)
 		if attachment_url:
 			return attachment_url
 
 	if not source_doc:
 		return None
 
-	clients_field = OPPORTUNITY_DOCUMENTS_FIELD
-	if not source_doc.meta.has_field(clients_field):
+	clients_field = get_opportunity_documents_field()
+	if not clients_field or not source_doc.meta.has_field(clients_field):
 		return None
 
 	bl_type = get_document_type_link_name("BL")
@@ -511,13 +551,16 @@ def get_bill_of_lading_attachment_url(
 			return row.attachment
 	return None
 
-
 def carry_bill_of_lading_attachment_to_project(
 	project_doc, bl_name: str | None = None, source_doc=None
 ) -> None:
 	"""Add the Bill of Lading file to Project shipment documents (type BL)."""
 	ensure_document_types()
-	bl_name = bl_name or project_doc.get("custom_bill_of_lading")
+	bl_config = get_bl_config()
+	bl_link_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
+		"Project", "Bill of Lading"
+	)
+	bl_name = bl_name or (project_doc.get(bl_link_field) if bl_link_field else None)
 	attachment_url = get_bill_of_lading_attachment_url(bl_name, source_doc)
 	if not attachment_url:
 		return
@@ -527,233 +570,38 @@ def carry_bill_of_lading_attachment_to_project(
 		append_verified_doc_row(project_doc, document_type, attachment_url)
 
 
-def carry_customer_attachments_to_project(project_doc, customer_ref):
-	"""Copy Customer attach fields (e.g. KRA PIN) into Project shipment document rows."""
-	if not customer_ref:
-		return
-	if getattr(customer_ref, "doctype", None) == "Customer":
-		customer_doc = customer_ref
-	else:
-		if not frappe.db.exists("Customer", customer_ref):
-			return
-		customer_doc = frappe.get_doc("Customer", customer_ref)
-
-	customer_fields = frappe.get_meta("Customer")
-	for fieldname, code in CUSTOMER_ATTACH_TO_DOCUMENT_CODE.items():
-		if not customer_fields.has_field(fieldname):
-			continue
-		attachment_url = customer_doc.get(fieldname)
-		if not attachment_url:
-			continue
-		document_type = get_document_type_link_name(code)
-		if document_type:
-			append_verified_doc_row(project_doc, document_type, attachment_url)
-
-
-def append_task_document_row(task_doc, document_type, attachment_url, status=None, remarks=None):
-	"""Append or update a Shipment Document row on a Task."""
-	if not attachment_url or not document_type:
-		return
-	if not task_doc.meta.has_field(TASK_DOCUMENTS_FIELD):
-		return
-	if not frappe.db.exists("Document Type", document_type):
-		return
-
-	status = status or "Verified"
-	for row in task_doc.get(TASK_DOCUMENTS_FIELD) or []:
-		if document_types_match(row.document_type, document_type):
-			row.attachment = attachment_url
-			row.status = status
-			if remarks:
-				row.remarks = remarks
-			if status == "Verified":
-				row.verified_by = row.verified_by or frappe.session.user
-				row.verified_on = row.verified_on or now_datetime()
-			row.uploaded_by = row.uploaded_by or frappe.session.user
-			row.uploaded_on = row.uploaded_on or now_datetime()
-			return
-
-	task_doc.append(
-		TASK_DOCUMENTS_FIELD,
-		{
-			"document_type": document_type,
-			"attachment": attachment_url,
-			"status": status,
-			"remarks": remarks or "Carried from Project (approved on Lead/Opportunity/Customer)",
-			"uploaded_by": frappe.session.user,
-			"uploaded_on": now_datetime(),
-			"verified_by": frappe.session.user if status == "Verified" else None,
-			"verified_on": now_datetime() if status == "Verified" else None,
-		},
-	)
-
-
-def carry_project_shipment_documents_to_sea_tasks(project_name, task_sequences=None):
-	"""
-	Copy Project shipment document rows onto sea clearance tasks (audit trail on Task 1–2).
-	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-		SEA_AUTO_COMPLETE_TASK_SEQS,
-		SEA_TASK_FLOW_KEY,
-	)
-
-	if not project_name or not frappe.db.exists("Project", project_name):
-		return []
-	if not frappe.get_meta("Task").has_field(TASK_DOCUMENTS_FIELD):
-		return []
-
-	task_sequences = task_sequences or sorted(SEA_AUTO_COMPLETE_TASK_SEQS)
-	project = frappe.get_doc("Project", project_name)
-	source_rows = [
-		r
-		for r in project.get(SHIPMENT_DOCUMENTS_FIELD) or []
-		if r.document_type and r.attachment
-	]
-	if not source_rows:
-		return []
-
-	updated_tasks = []
-	for seq in task_sequences:
-		task_name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project_name,
-				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-				"custom_sequence_no": seq,
-			},
-			"name",
-		)
-		if not task_name:
-			continue
-		task = frappe.get_doc("Task", task_name)
-		for row in source_rows:
-			append_task_document_row(
-				task,
-				row.document_type,
-				row.attachment,
-				status=row.status or "Verified",
-				remarks=row.remarks
-				or "Carried from Project (approved on Lead/Opportunity/Customer)",
-			)
-		frappe.flags.cgm_syncing_shipment_documents = True
-		try:
-			task.save(ignore_permissions=True)
-		finally:
-			frappe.flags.cgm_syncing_shipment_documents = False
-		updated_tasks.append(task_name)
-	return updated_tasks
-
-
-def carry_task_documents_to_project(project_doc, project_name=None):
-	"""Copy Task Documents child rows from all tasks on this project."""
-	project_name = project_name or project_doc.name
-	if not project_name:
-		return
-
-	task_fields = frappe.get_meta("Task")
-	if not task_fields.has_field("custom_task_documents"):
-		return
-
-	for task_name in frappe.get_all("Task", filters={"project": project_name}, pluck="name"):
-		task_doc = frappe.get_doc("Task", task_name)
-		for row in task_doc.get("custom_task_documents") or []:
-			if row.document_type and row.attachment:
-				append_verified_doc_row(project_doc, row.document_type, row.attachment)
-
-
-def sync_linked_attachments_to_project(project_doc):
-	"""Pull shipment files from linked Lead, Customer, and Project tasks into custom_shipment_documents."""
-	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
-		return
-
-	ensure_document_types()
-
-	# 1. Lead (explicit source or via customer).
-	lead_name = project_doc.get("custom_source_lead")
-	if not lead_name and project_doc.get("customer"):
-		lead_name = frappe.db.get_value("Customer", project_doc.customer, "lead_name")
-	if lead_name and frappe.db.exists("Lead", lead_name):
-		lead_doc = frappe.get_doc("Lead", lead_name)
-		carry_preshipment_docs_to_project(project_doc, lead_doc)
-		carry_bill_of_lading_attachment_to_project(
-			project_doc,
-			bl_name=project_doc.get("custom_bill_of_lading") or lead_doc.get("custom_bill_of_lading"),
-			source_doc=lead_doc,
-		)
-
-	# 2. Opportunity source when present.
-	opp_name = project_doc.get("custom_source_opportunity")
-	if opp_name and frappe.db.exists("Opportunity", opp_name):
-		opp_doc = frappe.get_doc("Opportunity", opp_name)
-		carry_clients_documents_to_project(project_doc, opp_doc)
-		carry_bill_of_lading_attachment_to_project(
-			project_doc,
-			bl_name=project_doc.get("custom_bill_of_lading") or opp_doc.get("custom_bill_of_lading"),
-			source_doc=opp_doc,
-		)
-
-	# 3. Customer attach fields (KRA PIN, etc.).
-	if project_doc.get("customer"):
-		carry_customer_attachments_to_project(project_doc, project_doc.customer)
-
-	# 4. Task Documents on tasks linked to this project.
-	if project_doc.name:
-		carry_task_documents_to_project(project_doc)
-
-
-def refresh_project_shipment_documents(project_name):
-	"""Re-sync shipment document rows from linked Customer / Tasks and save the Project."""
-	if not project_name or not frappe.db.exists("Project", project_name):
-		return
-	if frappe.flags.cgm_syncing_shipment_documents:
-		return
-
-	frappe.flags.cgm_syncing_shipment_documents = True
-	try:
-		project = frappe.get_doc("Project", project_name)
-		normalize_shipment_fields_on_doc(project)
-		sync_linked_attachments_to_project(project)
-		project.save(ignore_permissions=True)
-	finally:
-		frappe.flags.cgm_syncing_shipment_documents = False
-
-
-def refresh_projects_for_customer(customer):
-	"""Update shipment documents on every Project for this Customer."""
-	if not customer:
-		return
-	for project_name in frappe.get_all("Project", filters={"customer": customer}, pluck="name"):
-		refresh_project_shipment_documents(project_name)
-
-
-@frappe.whitelist()
-def sync_project_shipment_documents(project):
-	"""Re-pull Lead / Customer / Task files into Project shipment documents (for support / backfill)."""
-	frappe.has_permission("Project", ptype="write", throw=True)
-	refresh_project_shipment_documents(project)
-	return project
-
-
-def get_document_type_link_name(code):
-	"""Resolve the Document Type name for child table links."""
-	if not code:
+def get_sea_task(project: str, seq: int) -> str | None:
+	"""Return the name of the sea-clearance Task at `seq` for `project` (or None)."""
+	if not project or not seq:
 		return None
+	return frappe.db.get_value(
+		"Task",
+		{
+			"project": project,
+			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"custom_sequence_no": seq,
+		},
+		"name",
+	)
 
-	# 1. Prefer a match on the code field.
-	name = frappe.db.get_value("Document Type", {"code": code}, "name")
-	if name:
-		return name
 
-	# 2. Fall back to using the code directly as the document name.
-	if frappe.db.exists("Document Type", code):
-		return code
-
-	return None
+def mark_task_completed(task) -> None:
+	"""Write Completed straight to the DB (a nested doc.save can leave list views stale)."""
+	frappe.db.set_value(
+		"Task",
+		task.name,
+		{
+			"status": "Completed",
+			"completed_by": task.completed_by or frappe.session.user,
+			"completed_on": task.completed_on or now_datetime(),
+			"progress": 100,
+		},
+		update_modified=True,
+	)
+	frappe.clear_document_cache("Task", task.name)
 
 
 # ─── Sea Task Template ────────────────────────────────────────────────────────
-
-
 def load_sea_task_template():
 	"""Return sea import tasks from CGM Shipping Settings."""
 	# 1. Load and sort template rows by their index.
@@ -776,130 +624,18 @@ def load_sea_task_template():
 
 	return out
 
-
-# ─── Department Resolution ────────────────────────────────────────────────────
-
-
-def get_department_name_stem(raw):
-	"""Extract the department name before the company abbreviation suffix."""
-	value = (raw or "").strip()
-	if not value:
-		return ""
-
-	# 1. ERPNext department docnames follow `{department_name} - {abbr}` — strip the suffix.
-	if " - " in value:
-		return value.split(" - ", 1)[0].strip()
-	return value
-
-
-def normalize_department_stem(raw) -> str:
-	"""Template / task stem only (e.g. Finance), never Finance - C from another site."""
-	stem = get_department_name_stem(raw)
-	if not stem:
-		return ""
-	return DEPARTMENT_NAME_ALIASES.get(stem, stem)
-
-
-def _department_matches_company(department: str, company: str) -> bool:
-	"""True when Department link belongs to the given company."""
-	if not department or not company:
-		return False
-	dept_company = frappe.db.get_value("Department", department, "company")
-	if dept_company:
-		return dept_company == company
-	abbr = frappe.db.get_value("Company", company, "abbr")
-	return bool(abbr and department.endswith(f" - {abbr}"))
-
-
-def resolve_department_name(department_value, company=None):
-	"""Resolve stem or link to ERPNext Department for *company* (e.g. Finance - CWSCL)."""
-	if not (department_value or "").strip():
-		return None
-
-	value = department_value.strip()
-	stem = normalize_department_stem(value)
-	if not stem:
-		frappe.throw("Department value is invalid.")
-
-	def pick_one(filters_list):
-		"""Return the single matching department name or throw on ambiguity."""
-		names = frappe.get_all(
-			"Department",
-			filters=filters_list + [["disabled", "=", 0]],
-			pluck="name",
-			order_by="name asc",
-		)
-		if len(names) == 1:
-			return names[0]
-		if len(names) > 1:
-			preview = ", ".join(names[:8])
-			suffix = f"... ({len(names)} total)" if len(names) > 8 else ""
-			frappe.throw(
-				f"Multiple Departments match '{stem}' ({preview}{suffix}). "
-				"Pick an exact ERPNext Department link name."
-			)
-		return None
-
-	def resolve_for_company(co: str | None) -> str | None:
-		if not co:
-			return None
-		abbr = frappe.db.get_value("Company", co, "abbr")
-		if abbr:
-			candidate = f"{stem} - {abbr}".strip()
-			if frappe.db.exists("Department", candidate):
-				return candidate
-		return pick_one([["company", "=", co], ["department_name", "=", stem]])
-
-	# 1. Always prefer the project / target company (local Finance - C must not stick on server).
-	if company:
-		matched = resolve_for_company(company)
-		if matched:
-			return matched
-
-	# 2. Accept an exact link only when it matches that company.
-	if frappe.db.exists("Department", value):
-		if not company or _department_matches_company(value, company):
-			return value
-
-	fallback_company = get_default_company()
-	if fallback_company and fallback_company != company:
-		matched = resolve_for_company(fallback_company)
-		if matched:
-			return matched
-
-	# 3. Unique department_name across companies.
-	all_match = frappe.get_all(
-		"Department",
-		filters=[["department_name", "=", stem], ["disabled", "=", 0]],
-		pluck="name",
-		order_by="name asc",
-	)
-	if len(all_match) == 1:
-		return all_match[0]
-	if len(all_match) > 1:
-		frappe.throw(
-			f"Multiple Departments named '{stem}' exist across companies. "
-			"Set Project.company or rename one."
-		)
-
-	frappe.throw(
-		f"No Department found for '{stem}'"
-		+ (f" under company {company}." if company else ".")
-		+ f" Create Department '{stem} - <company abbr>' for that company."
-	)
-
+# (Department resolution helpers now live in department.py — re-exported at top.)
 
 # ─── Whitelisted Project Creation ────────────────────────────────────────────
-
 INTAKE_DOCUMENT_CODES = ("CI", "PKL")
-
 
 def project_has_intake_documents(project_doc) -> bool:
 	"""True when CI and PKL are present on the project shipment document table."""
-	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+	shipment_field = get_project_shipment_documents_field()
+	if not shipment_field or not project_doc.meta.has_field(shipment_field):
 		return False
 	rows_by_code = {}
-	for row in project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or []:
+	for row in project_doc.get(shipment_field) or []:
 		if not row.document_type:
 			continue
 		code = frappe.db.get_value("Document Type", row.document_type, "code")
@@ -910,7 +646,6 @@ def project_has_intake_documents(project_doc) -> bool:
 		if not row or not row.attachment:
 			return False
 	return True
-
 
 def bootstrap_project_workflow_status(project_name: str) -> None:
 	"""
@@ -935,9 +670,13 @@ def bootstrap_project_workflow_status(project_name: str) -> None:
 		update_modified=False,
 	)
 
-
 def insert_shipment_project(project) -> str:
-	"""Insert a new shipment project and apply post-insert workflow status."""
+	"""Insert a new shipment project and apply post-insert workflow status.
+
+	A concurrent creation grabbing the same CGM reference is caught by the unique
+	index on custom_cgm_ref_no (patch v2_39); Frappe surfaces that as a
+	UniqueValidationError ("CGM Ref No must be unique") so the user can retry.
+	"""
 	project.insert(ignore_permissions=True)
 	bootstrap_project_workflow_status(project.name)
 	bootstrap_sea_task_plan_for_project(project.name)
@@ -956,7 +695,6 @@ def backfill_intake_documents_on_sea_tasks(project):
 	auto_complete_initial_sea_tasks(project)
 	return {"tasks_updated": carried}
 
-
 def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 	"""
 	For Sea projects with CRM-approved CI/PKL: create the 24-task plan and auto-complete tasks 1–2.
@@ -965,19 +703,23 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 		auto_complete_initial_sea_tasks,
 	)
 
-	if frappe.db.get_value("Project", project_name, "custom_mode_of_transport") != "Sea":
+	project_doc = frappe.get_doc("Project", project_name)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
+		sea_import_enabled_for_project,
+	)
+
+	if not sea_import_enabled_for_project(project_doc):
 		return None
-	if not project_has_intake_documents(frappe.get_doc("Project", project_name)):
+	if not project_has_intake_documents(project_doc):
 		return None
 
 	if frappe.db.exists("Task", {"project": project_name, "custom_task_flow_key": SEA_TASK_FLOW_KEY}):
 		done = auto_complete_initial_sea_tasks(project_name)
 		return {"auto_completed": done, "created": 0}
 
-	result = _create_sea_import_task_plan_internal(project_name)
+	result = create_sea_import_task_plan_internal(project_name)
 	result["auto_completed"] = auto_complete_initial_sea_tasks(project_name)
 	return result
-
 
 @frappe.whitelist()
 def create_project_from_customer(customer, project_name=None):
@@ -987,6 +729,8 @@ def create_project_from_customer(customer, project_name=None):
 	if not frappe.db.exists("Customer", customer):
 		frappe.throw(f"Customer {customer} not found")
 
+	# Prevent copying data out of a source record the user cannot read.
+	frappe.has_permission("Customer", ptype="read", doc=customer, throw=True)
 	cust = frappe.get_doc("Customer", customer)
 
 	shipment_type = None
@@ -1006,12 +750,13 @@ def create_project_from_customer(customer, project_name=None):
 	proj = frappe.new_doc("Project")
 	proj.customer = customer
 	apply_shipment_data(proj, shipment_type=shipment_type, mode=mode_of_transport)
-	_apply_lead_shipment_defaults(proj, lead_name)
-	_apply_project_tracking_defaults(proj)
+	apply_lead_shipment_defaults(proj, lead_name)
+	apply_project_tracking_defaults(proj)
 	if project_name:
 		proj.project_name = project_name
-		if proj.meta.has_field("custom_cgm_ref_no"):
-			proj.custom_cgm_ref_no = project_name
+		cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
+		if cgm_ref_field:
+			proj.set(cgm_ref_field, project_name)
 
 	project_fields = frappe.get_meta("Project")
 	if lead_name and project_fields.has_field("custom_source_lead"):
@@ -1020,8 +765,7 @@ def create_project_from_customer(customer, project_name=None):
 	sync_linked_attachments_to_project(proj)
 	return insert_shipment_project(proj)
 
-
-def _lead_field_value(lead, *candidates: str):
+def get_lead_field_value(lead, *candidates: str):
 	"""Return the first non-empty attribute present on the Lead document."""
 	lead_meta = lead.meta
 	for name in candidates:
@@ -1032,94 +776,144 @@ def _lead_field_value(lead, *candidates: str):
 			return value
 	return None
 
-
-def _apply_project_tracking_defaults(project) -> None:
+def apply_project_tracking_defaults(project) -> None:
 	"""Seed tracking sheet fields on new projects (opened date; CGM ref assigned on insert)."""
-	meta = project.meta
-	if meta.has_field("custom_opened_date") and not project.get("custom_opened_date"):
-		project.custom_opened_date = today()
+	opened_date_field = get_field_from_meta("Project", "opened_date")
+	if opened_date_field and not project.get(opened_date_field):
+		project.set(opened_date_field, today())
 
-
-def _container_rows_from_preshipment_source(source_doc) -> list[dict]:
+def get_container_rows_from_preshipment_source(source_doc) -> list[dict]:
 	"""Container rows from preshipment child table, or from linked Bill of Lading when empty."""
+	bl_config = get_bl_config()
+	container_field = bl_config.get("opportunity_container_field") or get_container_table_field_for_doctype(
+		source_doc.doctype
+	)
 	rows = []
-	for row in source_doc.get("custom_container_information") or []:
-		rows.append(
-			{
-				"container_number": row.get("container_number"),
-				"type_of_container": row.get("type_of_container"),
-			}
-		)
+	if container_field:
+		for row in source_doc.get(container_field) or []:
+			rows.append(
+				{
+					"container_number": row.get("container_number"),
+					"type_of_container": row.get("type_of_container"),
+				}
+			)
 	if rows:
 		return rows
 
-	bl_name = source_doc.get("custom_bill_of_lading")
+	bl_link_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
+		source_doc.doctype, "Bill of Lading"
+	)
+	bl_name = source_doc.get(bl_link_field) if bl_link_field else None
 	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
 		return []
 
 	bl = frappe.get_doc("Bill of Lading", bl_name)
+	bl_container_field = get_bl_container_child_field()
 	return [
 		{
 			"container_number": row.get("container_number"),
 			"type_of_container": row.get("type_of_container"),
 		}
-		for row in bl.get("container_information") or []
+		for row in bl.get(bl_container_field) or []
 	]
 
-
-def _copy_container_rows_to_project(project, rows: list[dict]) -> None:
-	if not rows or not project.meta.has_field("custom_container_information"):
+def copy_container_rows_to_project(project, rows: list[dict]) -> None:
+	container_field = get_container_table_field_for_doctype("Project")
+	if not rows or not container_field or not project.meta.has_field(container_field):
 		return
-	project.set("custom_container_information", [])
+	project.set(container_field, [])
 	for row in rows:
 		project.append(
-			"custom_container_information",
+			container_field,
 			{
 				"container_number": row.get("container_number"),
 				"type_of_container": row.get("type_of_container"),
 			},
 		)
 
-
-def _apply_preshipment_transport_defaults(project, source_doc) -> None:
+def apply_preshipment_transport_defaults(project, source_doc) -> None:
 	"""Copy B/L, AWB, and container rows from Lead/Opportunity onto a new Project."""
+	bl_config = get_bl_config()
 	project_meta = project.meta
+	source_bl_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
+		source_doc.doctype, "Bill of Lading"
+	)
+	project_bl_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
+		"Project", "Bill of Lading"
+	)
 
-	if project_meta.has_field("custom_bill_of_lading"):
-		bl = source_doc.get("custom_bill_of_lading")
-		if bl and not project.get("custom_bill_of_lading"):
-			project.custom_bill_of_lading = bl
+	if project_bl_field and project_meta.has_field(project_bl_field) and source_bl_field:
+		bl = source_doc.get(source_bl_field)
+		if bl and not project.get(project_bl_field):
+			project.set(project_bl_field, bl)
 
-	if project_meta.has_field("custom_awb_number"):
-		awb = source_doc.get("custom_awb_number") or source_doc.get("custom_air_waybill")
-		if awb and not project.get("custom_awb_number"):
-			project.custom_awb_number = awb
+	project_awb_field = get_project_awb_field()
+	if project_awb_field and project_meta.has_field(project_awb_field):
+		awb = get_awb_value_from_doc(source_doc)
+		if awb and not project.get(project_awb_field):
+			project.set(project_awb_field, awb)
 
-	if project_meta.has_field("custom_container_information") and not project.get(
-		"custom_container_information"
-	):
-		_copy_container_rows_to_project(project, _container_rows_from_preshipment_source(source_doc))
+	container_field = get_container_table_field_for_doctype("Project")
+	if container_field and project_meta.has_field(container_field) and not project.get(container_field):
+		copy_container_rows_to_project(project, get_container_rows_from_preshipment_source(source_doc))
 
 
-def _apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
+def apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
 	"""Copy shipment hints from Lead onto Project when fields are empty."""
 	if not lead_name or not frappe.db.exists("Lead", lead_name):
 		return
 	lead = frappe.get_doc("Lead", lead_name)
 	project_meta = project.meta
 	pairs = (
-		("custom_consignee", _lead_field_value(lead, "company_name", "lead_name")),
+		("custom_consignee", get_lead_field_value(lead, "company_name", "lead_name")),
 		(
 			"custom_shipment_description",
-			_lead_field_value(lead, "description", "notes", "title"),
+			get_lead_field_value(lead, "description", "notes", "title"),
 		),
-		("custom_shipment_remarks", _lead_field_value(lead, "notes")),
+		("custom_shipment_remarks", get_lead_field_value(lead, "notes")),
 	)
 	for fieldname, value in pairs:
 		if project_meta.has_field(fieldname) and value and not project.get(fieldname):
 			project.set(fieldname, value)
-	_apply_preshipment_transport_defaults(project, lead)
+	apply_preshipment_transport_defaults(project, lead)
 
+def apply_opportunity_to_project_mappings(project, opp) -> None:
+	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""
+	meta = project.meta
+	pairs = (
+		("custom_entry_no", "custom_entry_no"),
+		("custom_batch_no", "custom_batch_no"),
+		("custom_consignee", "custom_consignee"),
+		("custom_quantity", "custom_shipment_quantity"),
+		("custom_vesselairline", "custom_vessel_flight"),
+		("custom_gross_weight", "custom_gross_weightkg"),
+		("custom_weight_nw", "custom_net_weightkg"),
+		("custom_description_of_goods", "custom_shipment_description"),
+	)
+	for src_field, dest_field in pairs:
+		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
+			continue
+		value = opp.get(src_field)
+		if value not in (None, "") and not project.get(dest_field):
+			project.set(dest_field, value)
+
+def sync_preshipment_documents_from_source(project, source_doc) -> None:
+	"""Pull client docs and B/L attachment from Lead/Opportunity onto Project shipment documents."""
+	bl_config = get_bl_config()
+	bl_link_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
+		"Opportunity", "Bill of Lading"
+	)
+	clients_field = get_opportunity_documents_field()
+	if clients_field and source_doc.meta.has_field(clients_field):
+		carry_clients_documents_to_project(project, source_doc)
+	sync_linked_attachments_to_project(project)
+	project_bl = project.get(bl_link_field) if bl_link_field else None
+	source_bl = source_doc.get(bl_link_field) if bl_link_field else None
+	carry_bill_of_lading_attachment_to_project(
+		project,
+		bl_name=project_bl or source_bl,
+		source_doc=source_doc,
+	)
 
 def lead_has_customer(lead):
 	"""Return True when a Customer is already linked to this Lead."""
@@ -1128,11 +922,12 @@ def lead_has_customer(lead):
 	lead_customer = frappe.db.get_value("Lead", lead, "customer")
 	return bool(lead_customer and frappe.db.exists("Customer", lead_customer))
 
-
 @frappe.whitelist()
 def create_project_from_lead(lead, project_name=None):
 	"""Create a shipment project from an approved Lead."""
 	frappe.has_permission("Project", ptype="create", throw=True)
+	# Prevent copying data out of a source record the user cannot read.
+	frappe.has_permission("Lead", ptype="read", doc=lead, throw=True)
 	lead_doc = frappe.get_doc("Lead", lead)
 
 	# 1. Ensure the lead is in the correct pre-shipment status.
@@ -1155,12 +950,13 @@ def create_project_from_lead(lead, project_name=None):
 		shipment_type=lead_doc.get("custom_shipment_type"),
 		mode=lead_doc.get("custom_mode_of_transport"),
 	)
-	_apply_lead_shipment_defaults(proj, lead)
-	_apply_project_tracking_defaults(proj)
+	apply_lead_shipment_defaults(proj, lead)
+	apply_project_tracking_defaults(proj)
 	if project_name:
 		proj.project_name = project_name
-		if proj.meta.has_field("custom_cgm_ref_no"):
-			proj.custom_cgm_ref_no = project_name
+		cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
+		if cgm_ref_field:
+			proj.set(cgm_ref_field, project_name)
 
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_source_lead"):
@@ -1171,14 +967,15 @@ def create_project_from_lead(lead, project_name=None):
 	)
 
 	apply_bill_of_lading_from_source(proj, lead_doc)
-	sync_linked_attachments_to_project(proj)
+	sync_preshipment_documents_from_source(proj, lead_doc)
 	return insert_shipment_project(proj)
-
 
 @frappe.whitelist()
 def create_project_from_opportunity(opportunity, project_name=None):
 	"""Create a shipment project from an approved Opportunity."""
 	frappe.has_permission("Project", ptype="create", throw=True)
+	# Prevent copying data out of a source record the user cannot read.
+	frappe.has_permission("Opportunity", ptype="read", doc=opportunity, throw=True)
 	opp = frappe.get_doc("Opportunity", opportunity)
 
 	# 1. Validate the opportunity status and party type.
@@ -1202,34 +999,42 @@ def create_project_from_opportunity(opportunity, project_name=None):
 		shipment_type=opp.get("custom_shipment_type"),
 		mode=opp.get("custom_mode_of_transport"),
 	)
-	_apply_opportunity_fields_to_project(proj, opp)
-	_apply_project_tracking_defaults(proj)
+	apply_project_tracking_defaults(proj)
 	if project_name:
 		proj.project_name = project_name
-		if proj.meta.has_field("custom_cgm_ref_no"):
-			proj.custom_cgm_ref_no = project_name
+		cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
+		if cgm_ref_field:
+			proj.set(cgm_ref_field, project_name)
 
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_source_opportunity"):
 		proj.custom_source_opportunity = opportunity
 
-	_apply_preshipment_transport_defaults(proj, opp)
-	sync_linked_attachments_to_project(proj)
+	apply_opportunity_to_project_mappings(proj, opp)
+	apply_preshipment_transport_defaults(proj, opp)
+	sync_preshipment_documents_from_source(proj, opp)
 	return insert_shipment_project(proj)
 
 
 # ─── Sea Import Task Plan ─────────────────────────────────────────────────────
-
-
-def _create_sea_import_task_plan_internal(project, reset=False):
+def create_sea_import_task_plan_internal(project, reset=False):
 	"""Generate ordered sea-import tasks (internal; no duplicate check unless reset)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
 		auto_complete_initial_sea_tasks,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+		ensure_sea_task_requirements_configured,
+	)
+
+	ensure_sea_task_requirements_configured()
 
 	project_doc = frappe.get_doc("Project", project)
-	if project_doc.get("custom_mode_of_transport") != "Sea":
-		frappe.throw("This task plan is for Sea mode projects only.")
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
+		sea_import_enabled_for_project,
+	)
+
+	if not sea_import_enabled_for_project(project_doc):
+		frappe.throw("This task plan is for sea-import shipment types only.")
 
 	existing = frappe.get_all(
 		"Task",
@@ -1277,30 +1082,25 @@ def _create_sea_import_task_plan_internal(project, reset=False):
 		out["auto_completed"] = auto_complete_initial_sea_tasks(project)
 	return out
 
-
 @frappe.whitelist()
 def create_sea_import_task_plan(project, reset=False):
 	"""Generate ordered sea-import tasks and link them via a depends_on chain."""
 	frappe.has_permission("Task", ptype="create", throw=True)
-	return _create_sea_import_task_plan_internal(project, reset=reset)
+	return create_sea_import_task_plan_internal(project, reset=reset)
 
 
 # ─── Finance Notification ─────────────────────────────────────────────────────
-
-
 @frappe.whitelist()
 def notify_finance_for_task(task_name):
 	"""Notify Finance users (in-app + email) that payment action is needed for a task."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_email_notifications import (
-		notify_finance_for_task_email,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+		notify_finance_for_task as _notify,
 	)
 
-	return notify_finance_for_task_email(task_name)
+	return _notify(task_name)
 
 
 # ─── Task Payment Helpers ─────────────────────────────────────────────────────
-
-
 def is_sea_ucr_idf_task_one(task):
 	"""Legacy alias: finance payment tasks in the sea clearance chart."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
@@ -1308,7 +1108,6 @@ def is_sea_ucr_idf_task_one(task):
 	)
 
 	return is_sea_payment_task(task)
-
 
 def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoice_name):
 	"""Return True when the Payment Entry references the given Purchase Invoice."""
@@ -1321,7 +1120,6 @@ def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoic
 			return True
 	return False
 
-
 @frappe.whitelist()
 def link_purchase_invoice_to_task(task_name, purchase_invoice):
 	"""Link a submitted Purchase Invoice to a sea finance task; sync Project."""
@@ -1330,7 +1128,6 @@ def link_purchase_invoice_to_task(task_name, purchase_invoice):
 	)
 
 	return link_purchase_invoice_to_task_enhanced(task_name, purchase_invoice)
-
 
 @frappe.whitelist()
 def complete_task_with_payment(task_name, payment_entry):

@@ -17,7 +17,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
 	TASK_DOCUMENTS_FIELD,
-	_document_type_code,
+	get_document_type_code,
 	ensure_task_document_types,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (

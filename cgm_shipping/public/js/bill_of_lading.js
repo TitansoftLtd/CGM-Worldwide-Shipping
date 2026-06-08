@@ -151,7 +151,7 @@ function return_to_opportunity_after_submit(frm) {
 
 	frappe.call({
 		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_bill_of_lading.get_bl_submit_payload",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.get_bl_submit_payload",
 		args: {
 			bl_name: frm.doc.name,
 			opportunity,
