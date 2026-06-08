@@ -326,6 +326,69 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 		"opportunity": linked_opportunity,
 	}
 
+@frappe.whitelist()
+def create_opportunity_from_bill_of_lading(bill_of_lading: str) -> str:
+	"""Create a CRM Opportunity from a submitted Bill of Lading.
+
+	The Customer carried on the BL becomes the Opportunity party; the BL link and
+	(via the Opportunity ``before_save`` container sync) its container rows flow
+	onto the new Opportunity. The BL is back-linked through its opportunity-source
+	field so the existing submit-sync keeps both records in step. Re-running this
+	returns the already-linked Opportunity instead of creating a duplicate.
+	"""
+	frappe.has_permission("Opportunity", ptype="create", throw=True)
+
+	if not bill_of_lading or not frappe.db.exists("Bill of Lading", bill_of_lading):
+		frappe.throw("Bill of Lading not found", frappe.DoesNotExistError)
+
+	# Prevent copying data out of a source record the user cannot read.
+	frappe.has_permission("Bill of Lading", ptype="read", doc=bill_of_lading, throw=True)
+	bl = frappe.get_doc("Bill of Lading", bill_of_lading)
+
+	if bl.docstatus != 1:
+		frappe.throw("Bill of Lading must be submitted before creating an Opportunity.")
+
+	config = get_bl_config()
+	source_field = config.get("opportunity_source_field")
+	bl_field = config.get("opportunity_bl_field")
+
+	# Return the existing Opportunity instead of creating a duplicate.
+	if source_field:
+		existing = bl.get(source_field)
+		if is_valid_opportunity_link(existing):
+			return existing
+
+	customer = bl.get("customer")
+	if not customer or not frappe.db.exists("Customer", customer):
+		frappe.throw("Set a Customer on the Bill of Lading before creating an Opportunity.")
+
+	opp = frappe.new_doc("Opportunity")
+	opp.opportunity_from = "Customer"
+	opp.party_name = customer
+
+	if bl_field and opp.meta.has_field(bl_field):
+		opp.set(bl_field, bl.name)
+	# A Bill of Lading is an ocean-freight document, so default the mode to Sea.
+	if opp.meta.has_field("custom_mode_of_transport") and not opp.get("custom_mode_of_transport"):
+		opp.set("custom_mode_of_transport", "Sea")
+	if opp.meta.has_field("custom_consignee"):
+		opp.set(
+			"custom_consignee",
+			frappe.db.get_value("Customer", customer, "customer_name") or customer,
+		)
+
+	# before_save (sync_preshipment_containers_from_bl) copies BL container rows.
+	opp.insert()
+
+	# Back-link the BL so the on_submit sync keeps both records aligned.
+	if source_field and bl.meta.has_field(source_field):
+		frappe.db.set_value(
+			"Bill of Lading", bl.name, source_field, opp.name, update_modified=False
+		)
+
+	return opp.name
+
+
 # ─── Document event hooks ─────────────────────────────────────────────────────
 def bill_of_lading_on_submit(doc, method=None) -> None:
 	"""After BL submit: link to Opportunity and prepend BL file in Clients Documents."""

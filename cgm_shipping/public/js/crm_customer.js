@@ -1,6 +1,14 @@
 frappe.ui.form.on("Customer", {
 	refresh(frm) {
 		frm.add_custom_button(
+			__("Bill of Lading"),
+			() => {
+				frappe.new_doc("Bill of Lading", { customer: frm.doc.name });
+			},
+			__("Create")
+		);
+
+		frm.add_custom_button(
 			__("Create Shipment Project"),
 			() => {
 				frappe.call({

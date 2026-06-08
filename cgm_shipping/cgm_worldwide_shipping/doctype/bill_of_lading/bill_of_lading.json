@@ -8,6 +8,7 @@
  "field_order": [
   "bl_number",
   "client_ref",
+  "customer",
   "column_break_sqbc",
   "attach_bill_of_lading",
   "column_break_chhk",
@@ -43,6 +44,13 @@
    "fieldname": "client_ref",
    "fieldtype": "Data",
    "label": "Client Ref"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "search_index": 1
   },
   {
    "fieldname": "container_information",

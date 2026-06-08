@@ -43,6 +43,16 @@ def _replace_dossier_navigation_with_project() -> None:
 	for ws_name in frappe.get_all("Workspace", pluck="name"):
 		ws = frappe.get_doc("Workspace", ws_name)
 		changed = _replace_dossier_rows(ws.links, ws.shortcuts)
+		# Older workspaces predate the now-mandatory parent `type` field; default
+		# it so saving the doc does not fail the mandatory check.
+		if not ws.type:
+			ws.type = "Workspace"
+			changed = True
+		# Drop links/shortcuts whose DocType target no longer exists (e.g. the
+		# renamed-away "CFS Master") so saving the workspace does not fail link
+		# validation; the clean workspace JSON is force-imported below.
+		if _prune_dangling_doctype_targets(ws):
+			changed = True
 		if ws.content and DOCTYPE in ws.content:
 			ws.content = ws.content.replace(DOCTYPE, "Project")
 			changed = True
@@ -83,6 +93,39 @@ def _replace_dossier_rows(links, shortcuts) -> bool:
 			row.link_to = "Project"
 			row.type = "DocType"
 			changed = True
+	return changed
+
+
+def _prune_dangling_doctype_targets(ws) -> bool:
+	"""Remove workspace links/shortcuts pointing to a DocType that no longer exists."""
+	changed = False
+
+	kept_links = [
+		row
+		for row in ws.links
+		if not (
+			row.link_type == "DocType"
+			and row.link_to
+			and not frappe.db.exists("DocType", row.link_to)
+		)
+	]
+	if len(kept_links) != len(ws.links):
+		ws.links = kept_links
+		changed = True
+
+	kept_shortcuts = [
+		row
+		for row in ws.shortcuts
+		if not (
+			row.type == "DocType"
+			and row.link_to
+			and not frappe.db.exists("DocType", row.link_to)
+		)
+	]
+	if len(kept_shortcuts) != len(ws.shortcuts):
+		ws.shortcuts = kept_shortcuts
+		changed = True
+
 	return changed
 
 
