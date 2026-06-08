@@ -60,7 +60,9 @@ cgm_shipping.patches.v2_34.seed_sea_workflow_task_gates
 cgm_shipping.patches.v2_35.backfill_finance_payment_requirement_values
 cgm_shipping.patches.v2_36.remove_shipment_dossier
 cgm_shipping.patches.v2_37.bootstrap_shipment_types
+cgm_shipping.patches.v2_38.move_workflow_fixtures
 cgm_shipping.patches.v2_38.seed_notification_roles_to_settings
+cgm_shipping.patches.v2_39.cgm_ref_unique_index
 cgm_shipping.patches.v2_39.seed_role_department_access
 cgm_shipping.patches.v2_40.seed_notification_recipients
 cgm_shipping.patches.v2_41.remove_cgm_notification_role_item

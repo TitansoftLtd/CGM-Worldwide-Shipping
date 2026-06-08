@@ -38,7 +38,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.servic
 	is_ucr_application_task,
 	is_ucr_finance_payment_task,
 )
-
 # ------------------------------------------------------------------
 # Constants
 # ------------------------------------------------------------------
@@ -319,7 +318,10 @@ def notify_declarant_upload_ucr_receipt(task) -> dict:
 	try:
 		app.save(ignore_permissions=True)
 	except Exception:
-		pass
+		frappe.log_error(
+			title="UCR receipt seeding failed",
+			message=f"Could not seed UCR finance lines on {app_name}: {frappe.get_traceback()}",
+		)
 
 	result = send_notification(
 		UCR_RECEIPT_FOR_DECLARANT,

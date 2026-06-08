@@ -16,6 +16,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.servic
 	is_ucr_workflow_task,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
+	SEA_PERMIT_APPLICATION_TASK_SEQS,
 	apply_finance_payment_to_project_permits,
 	seed_required_task_document_rows,
 	sync_task_permits_to_project,
@@ -191,7 +192,8 @@ def on_task_update(doc, _method=None):
 						frappe.get_doc("Task", fin_name), save=True
 					)
 			sync_project_shipment_status_from_tasks(doc.project)
-	if doc.status == "Completed":
+	prev = doc.get_doc_before_save()
+	if doc.status == "Completed" and (not prev or prev.status != "Completed"):
 		apply_finance_payment_to_project_permits(doc)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
 			close_permit_application_when_finance_done,

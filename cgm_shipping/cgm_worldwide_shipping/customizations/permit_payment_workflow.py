@@ -288,6 +288,20 @@ def ensure_finance_permit_rows_saved(finance_task) -> bool:
 	return sync_permit_invoices_to_finance_task(finance_task, save=True)
 
 
+@frappe.whitelist()
+def ensure_finance_permit_rows(task_name: str) -> dict:
+	"""Load permit invoice rows onto Finance pays Pre-Clearance Permits (from declarant task)."""
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	task = frappe.get_doc("Task", task_name)
+	if int(task.get("custom_sequence_no") or 0) != 6:
+		frappe.throw("This action is only for <b>Finance pays Pre-Clearance Permits</b>.")
+	added = ensure_finance_permit_rows_saved(task)
+	task.reload()
+	return {
+		"added": added,
+		"rows": len(task.get(TASK_PERMITS_FIELD) or []),
+		"task": task.name,
+	}
 def seed_finance_task_permits_from_project(task) -> None:
 	if not is_pre_clearance_finance_permit_task(task):
 		return

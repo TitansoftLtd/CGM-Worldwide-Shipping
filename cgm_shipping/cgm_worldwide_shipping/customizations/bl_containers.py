@@ -247,10 +247,10 @@ def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 # ─── Whitelisted API methods ──────────────────────────────────────────────────
 @frappe.whitelist()
 def get_bl_container_select_options(bill_of_lading: str | None = None) -> list[dict]:
-	"""Options for Container Tracker select."""
+	if not bill_of_lading or not frappe.db.exists("Bill of Lading", bill_of_lading):
+		return []
+	frappe.has_permission("Bill of Lading", ptype="read", doc=bill_of_lading, throw=True)
 	rows = fetch_container_rows(bill_of_lading)
-	if bill_of_lading and frappe.db.exists("Bill of Lading", bill_of_lading):
-		frappe.has_permission("Bill of Lading", ptype="read", doc=bill_of_lading, throw=True)
 
 	options = []
 	for row in rows:
