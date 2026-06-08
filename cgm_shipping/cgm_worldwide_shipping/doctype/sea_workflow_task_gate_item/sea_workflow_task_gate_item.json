@@ -1,0 +1,53 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-04 14:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "shipment_workflow_state",
+  "min_completed_task_seq",
+  "gate_rule"
+ ],
+ "fields": [
+  {
+   "description": "Project custom_shipment_status value (CGM Sea Import Workflow state).",
+   "fieldname": "shipment_workflow_state",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Shipment workflow status",
+   "reqd": 1
+  },
+  {
+   "description": "Sea task step (1–24) that must be satisfied before entering this workflow status.",
+   "fieldname": "min_completed_task_seq",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Min completed task seq",
+   "reqd": 1
+  },
+  {
+   "fieldname": "gate_rule",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Gate rule",
+   "options": "Standard\nPermit Invoices Submitted\nUCR Finance Complete\nAll Sea Tasks Complete",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-04 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Sea Workflow Task Gate Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

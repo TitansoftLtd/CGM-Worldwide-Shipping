@@ -7,10 +7,12 @@
  "engine": "InnoDB",
  "field_order": [
   "bl_number",
-  "column_break_sqbc",
   "client_ref",
+  "column_break_sqbc",
+  "attach_bill_of_lading",
   "column_break_chhk",
-  "bill_of_lading",
+  "quantity",
+  "linked_opportunity",
   "section_break_abdt",
   "container_information",
   "section_break_mkbo",
@@ -61,9 +63,21 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "bill_of_lading",
+   "fieldname": "linked_opportunity",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Linked Opportunity",
+   "options": "Opportunity"
+  },
+  {
+   "fieldname": "attach_bill_of_lading",
    "fieldtype": "Attach",
-   "label": "Bill of Lading"
+   "label": "Attach Bill of Lading"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Data",
+   "label": "Quantity"
   }
  ],
  "grid_page_length": 50,
@@ -71,7 +85,7 @@
  "is_submittable": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-06-05 15:47:55.288234",
+ "modified": "2026-06-08 07:09:05.057558",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",
