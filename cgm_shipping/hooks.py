@@ -5,6 +5,101 @@ app_description = "CGM Customizations"
 app_email = "nkubitudouglas@gmail.com"
 app_license = "mit"
 
+fixtures = [
+    # Workflow definitions
+    {
+        "doctype": "Workflow",
+        "filters": [["name", "in", [
+            "CGM Lead Pre-Shipment",
+            "CGM Opportunity Pre-Shipment",
+            "CGM Sea Import Workflow",
+        ]]]
+    },
+    # Workflow states
+    {
+        "doctype": "Workflow State",
+        "filters": [["name", "in", [
+            # Lead states
+            "Lead Intake",
+            "Lead Docs Verified",
+            "Lead Docs Rejected",
+            "Lead Ready to Convert",
+            # Opportunity states
+            "Opp Intake",
+            "Opp Docs Verified",
+            "Opp Docs Rejected",
+            "Opp Ready for Project",
+            # Project — sea freight clearance (custom_shipment_status)
+            "Draft",
+            "Documents Received",
+            "UCR Applied",
+            "UCR Paid",
+            "Pre-clearance",
+            "Client Inspection",
+            "In Transit",
+            "Final Docs Received",
+            "Entry Lodged",
+            "Manifest Requested",
+            "Line Paid & DO Lodged",
+            "Entry Paid",
+            "Post-clearance",
+            "Field Clearance",
+            "KPA Paid",
+            "In Delivery",
+            "Containers Returned",
+            "Completed",
+            "Settled",
+        ]]]
+    },
+    # Workflow actions
+    {
+        "doctype": "Workflow Action Master",
+        "filters": [["name", "in", [
+            # CRM actions
+            "Approve CI/PKL",
+            "Reject CI/PKL",
+            "Approve customer onboarding",
+            "Authorize Shipment File",
+            # Project — sea freight clearance actions
+            "Receive Client Documents",
+            "Create UCR Application",
+            "Confirm UCR Paid",
+            "Start Pre-clearance Permits",
+            "Request Client Inspection",
+            "Start Shipment Tracking",
+            "Receive Final Documents",
+            "Request Manifest and Charges",
+            "Lodge Customs Entry",
+            "Confirm Line Paid and DO Lodged",
+            "Confirm Entry Paid",
+            "Complete Post-clearance Permits",
+            "Hand to Field Officers",
+            "Confirm KPA Paid",
+            "Dispatch Cargo",
+            "Confirm Containers Returned",
+            "Complete Shipment File",
+            "Settle File",
+        ]]]
+    },
+    {
+        "doctype": "Custom Field",
+        "filters": [["module", "=", "CGM Worldwide Shipping"], ["name", "like", "custom_%"]],
+    },
+    {
+        "doctype": "Role",
+        "filters": [["name", "in", [
+            "Operations Manager",
+            "Declarant",
+            "Finance User",
+            "Field Officer",
+            "Transport Officer",
+        ]]],
+    },
+    {
+        "doctype": "Notification",
+        "filters": [["name", "like", "CGM%"]],
+    },
+]
 # Apps
 # ------------------
 
@@ -190,7 +285,7 @@ doc_events = {
 	},
 	"Bill of Lading": {
 		"on_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_bill_of_lading"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
 			".bill_of_lading_on_submit"
 		),
 	},
@@ -331,4 +426,3 @@ scheduler_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

@@ -9,7 +9,6 @@ NEW = "CGM Worldwide Shipping"
 DOCTYPES = (
 	"CFS Master",
 	"Permit Register",
-	"Shipment Dossier",
 	"IDF UCR Record",
 	"Customs Entry",
 	"Container Tracker",

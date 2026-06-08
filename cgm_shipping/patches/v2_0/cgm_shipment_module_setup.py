@@ -20,12 +20,7 @@ CFS_SEED = (
 	("Swissport", "KAH"),
 )
 
-NAMING_SERIES = (
-	("Shipment Dossier", "CGM/IM-.YYYY.-.MM.-.###"),
-	("Shipment Dossier", "CGM/EX-.YYYY.-.MM.-.###"),
-	("Shipment Dossier", "CGM/LCL-.YYYY.-.MM.-.###"),
-	("Shipment Dossier", "CGM/FCL-.YYYY.-.MM.-.###"),
-)
+NAMING_SERIES: tuple[tuple[str, str], ...] = ()
 
 
 def execute():

@@ -1,36 +1,26 @@
 """
 Per-task form visibility for sea clearance tasks (SEA_IMPORT_E2E).
 
-Used by public/js/task.js via frappe.call or duplicated constants — keep in sync.
+Client task.js loads sequence lists from get_sea_task_ui_sequences (Settings-driven).
 """
 from __future__ import annotations
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-	SEA_AUTO_COMPLETE_TASK_SEQS,
-	SEA_PAYMENT_TASK_SEQS,
-	SEA_TASK_FLOW_KEY,
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	finance_payment_with_supplier_invoice_sequences,
+	is_auto_complete_task,
+	is_finance_payment_task,
+	is_light_proof_task,
+	is_permit_application_task,
+	is_permit_finance_payment_task,
+	is_ucr_application_task,
+	is_ucr_finance_payment_task,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
-	SEA_PERMIT_APPLICATION_TASK_SEQS,
-)
-
-# Finance payment steps
-PAYMENT_SEQS = SEA_PAYMENT_TASK_SEQS
-
-# Finance tasks that use Task Documents for supplier invoice (not UCR / permit payment).
-FINANCE_DOCUMENT_SEQS = frozenset({12, 14, 18})
-
-# Steps where task-level document uploads are expected.
-DOCUMENT_TASK_SEQS = frozenset({3, 5, 7, 9, 10, 11, 13, 15, 16, 17, 19, 20, 21, 22, 23, 24}) | FINANCE_DOCUMENT_SEQS
-
-# Tracking / coordination — description + ref only.
-LIGHT_TASK_SEQS = frozenset({8})
 
 
 def get_sea_task_form_ui(sequence_no: int) -> dict:
 	"""Return UI flags for Task form (documents, payments, fields to hide)."""
 	seq = int(sequence_no or 0)
-	if seq in SEA_AUTO_COMPLETE_TASK_SEQS:
+	if is_auto_complete_task(seq):
 		return {
 			"is_sea_task": True,
 			"show_documents": True,
@@ -41,7 +31,21 @@ def get_sea_task_form_ui(sequence_no: int) -> dict:
 			"auto_intake_intro": True,
 			"hide_mark_complete": True,
 		}
-	if seq in SEA_PERMIT_APPLICATION_TASK_SEQS:
+	if is_ucr_application_task(seq):
+		return {
+			"is_sea_task": True,
+			"is_ucr_application": True,
+			"show_finance_lines": True,
+			"show_documents": True,
+			"documents_read_only": False,
+			"show_permits": False,
+			"show_payments": False,
+			"show_external_ref": True,
+			"show_description": True,
+			"auto_intake_intro": False,
+			"hide_mark_complete": True,
+		}
+	if is_permit_application_task(seq):
 		return {
 			"is_sea_task": True,
 			"show_documents": False,
@@ -53,33 +57,26 @@ def get_sea_task_form_ui(sequence_no: int) -> dict:
 			"auto_intake_intro": False,
 			"hide_mark_complete": True,
 		}
-	if seq in PAYMENT_SEQS:
+	if is_finance_payment_task(seq):
+		ucr_finance = is_ucr_finance_payment_task(seq)
 		return {
 			"is_sea_task": True,
-			"show_documents": seq in FINANCE_DOCUMENT_SEQS,
+			"is_ucr_application": False,
+			"is_ucr_finance": ucr_finance,
+			"show_finance_lines": ucr_finance,
+			"show_documents": seq in finance_payment_with_supplier_invoice_sequences(),
 			"documents_read_only": False,
-			"show_permits": seq == 6,
+			"show_permits": is_permit_finance_payment_task(seq),
 			"show_payments": True,
 			"show_external_ref": True,
 			"show_description": True,
 			"auto_intake_intro": False,
 			"hide_mark_complete": True,
 		}
-	if seq in LIGHT_TASK_SEQS:
+	if is_light_proof_task(seq):
 		return {
 			"is_sea_task": True,
 			"show_documents": False,
-			"documents_read_only": False,
-			"show_payments": False,
-			"show_external_ref": True,
-			"show_description": True,
-			"auto_intake_intro": False,
-			"hide_mark_complete": False,
-		}
-	if seq in DOCUMENT_TASK_SEQS:
-		return {
-			"is_sea_task": True,
-			"show_documents": True,
 			"documents_read_only": False,
 			"show_payments": False,
 			"show_external_ref": True,

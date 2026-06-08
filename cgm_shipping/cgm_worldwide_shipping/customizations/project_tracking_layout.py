@@ -9,10 +9,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_shipment_fields 
 )
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-	TRACKING_WORKFLOW_STATES,
 	derive_workflow_progress_from_tasks,
 	get_all_sea_tasks_for_project,
 	get_open_sea_tasks,
+	get_tracking_workflow_states,
+	sea_task_count,
 )
 
 
@@ -200,7 +201,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
 	doc = frappe.get_doc("Project", project)
 	workflow_status = doc.get("custom_shipment_status") or "Draft"
-	states = TRACKING_WORKFLOW_STATES
+	states = get_tracking_workflow_states()
 	try:
 		workflow_index = states.index(workflow_status)
 	except ValueError:
@@ -221,7 +222,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 			limit=30,
 		)
 	completed = sum(1 for t in tasks if t.status == "Completed")
-	total = len(tasks) or 24
+	total = len(tasks) or sea_task_count()
 
 	progress_status, progress_index = derive_workflow_progress_from_tasks(tasks, states)
 	visible_tasks = (
