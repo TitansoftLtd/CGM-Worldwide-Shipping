@@ -157,6 +157,48 @@ def get_project_awb_field() -> str | None:
 	return get_field_from_meta("Project", "awb_number") or get_field_from_meta("Project", "awb")
 
 
+# ─── Document Type utilities ──────────────────────────────────────────────────
+
+
+def document_types_match(existing_type, incoming_type):
+	"""Check if two document types match by name or code."""
+	if not existing_type or not incoming_type:
+		return False
+	if existing_type == incoming_type:
+		return True
+	existing_code = frappe.db.get_value("Document Type", existing_type, "code")
+	incoming_code = frappe.db.get_value("Document Type", incoming_type, "code")
+	return bool(existing_code and incoming_code and existing_code == incoming_code)
+
+
+def get_document_type_link_name(code):
+	"""Get the name of a Document Type by its code."""
+	if not code:
+		return None
+	name = frappe.db.get_value("Document Type", {"code": code}, "name")
+	if name:
+		return name
+	if frappe.db.exists("Document Type", code):
+		return code
+	return None
+
+
+def ensure_document_types():
+	"""Create default Document Type records if they don't exist."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import DOCUMENT_TYPE_DEFAULTS
+
+	for code, defaults in DOCUMENT_TYPE_DEFAULTS.items():
+		if get_document_type_link_name(code):
+			continue
+		doc = frappe.new_doc("Document Type")
+		doc.code = code
+		for key, value in defaults.items():
+			setattr(doc, key, value)
+		doc.insert(ignore_permissions=True)
+		if doc.meta.is_submittable and doc.docstatus == 0:
+			doc.submit()
+
+
 # ─── CGM reference / Project Name ─────────────────────────────────────────────
 # Tracking sheet format: CGM/FCL001/1022  (prefix + 3-digit seq + MMYY period)
 
