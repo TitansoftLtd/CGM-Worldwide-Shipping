@@ -7,7 +7,7 @@ def execute():
 
 	ensure_document_types()
 
-	# 2. KRA PIN is customer onboarding — empty mode matches all transport modes in seeding.
+	# 2. KRA PIN is customer onboarding - empty mode matches all transport modes in seeding.
 	name = frappe.db.get_value("Document Type", {"code": "KRA_PIN"}, "name")
 	if not name:
 		return

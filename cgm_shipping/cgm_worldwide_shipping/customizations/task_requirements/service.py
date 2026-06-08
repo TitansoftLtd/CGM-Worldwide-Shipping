@@ -1,7 +1,7 @@
 """
 Strict interpreter for sea task requirements in CGM Shipping Settings.
 
-Settings hold the rules; this module reads and validates them — no runtime fallbacks.
+Settings hold the rules; this module reads and validates them - no runtime fallbacks.
 """
 from __future__ import annotations
 

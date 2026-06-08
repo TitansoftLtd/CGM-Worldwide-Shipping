@@ -21,7 +21,7 @@ def execute():
 	if has_new and not has_old:
 		return
 
-	# Case 1b: neither field in meta — create the plural table field.
+	# Case 1b: neither field in meta - create the plural table field.
 	if not has_new and not has_old:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.utils import ensure_project_shipment_documents_field
 

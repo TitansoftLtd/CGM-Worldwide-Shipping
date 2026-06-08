@@ -1,4 +1,4 @@
-"""Hide legacy UCR Payment fields on Task — verification uses Invoices & Receipts table."""
+"""Hide legacy UCR Payment fields on Task - verification uses Invoices & Receipts table."""
 from __future__ import annotations
 
 import frappe

@@ -1,4 +1,4 @@
-"""Task hooks — sync documents to Project; enforce completion rules."""
+"""Task hooks - sync documents to Project; enforce completion rules."""
 
 import frappe
 
@@ -16,7 +16,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.servic
 	is_ucr_workflow_task,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
-	SEA_PERMIT_APPLICATION_TASK_SEQS,
 	apply_finance_payment_to_project_permits,
 	seed_required_task_document_rows,
 	sync_task_permits_to_project,

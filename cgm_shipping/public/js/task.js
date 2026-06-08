@@ -55,6 +55,7 @@ frappe.ui.form.on("Task", {
 
 	refresh(frm) {
 		const ui = get_sea_task_ui(frm);
+		frm.set_intro("");
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
 		if (!frm._cgm_sea_layout_ready) {
@@ -88,7 +89,7 @@ frappe.ui.form.on("Task", {
 					intro = __(
 						"<b>1 Finance:</b> Create PI & <b>Make Payment</b> · " +
 							"<b>2 Declarant:</b> Upload receipts on <b>Apply for Pre-Clearance Permits</b> · " +
-							"<b>3 Finance:</b> Use <b>Actions → Verify All Receipts</b> — this task and the declarant task complete automatically."
+							"<b>3 Finance:</b> Use <b>Actions → Verify All Receipts</b> - this task and the declarant task complete automatically."
 					);
 				} else if (frm.doc.custom_permit_invoices_submitted) {
 					intro = __(
@@ -98,7 +99,7 @@ frappe.ui.form.on("Task", {
 				} else {
 					intro = __(
 						"<b>Declaration:</b> Attach <b>Permit Invoice (for Finance)</b> on each row, then click " +
-							"<b>Notify Finance — invoices ready</b>."
+							"<b>Notify Finance - invoices ready</b>."
 					);
 				}
 			} else if (ui.is_ucr_application) {
@@ -111,7 +112,7 @@ frappe.ui.form.on("Task", {
 					"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
 						"<b>2</b> <b>Actions → Create Purchase Invoice & Pay</b> · " +
 						"<b>3 Declarant:</b> Upload <b>UCR Receipt</b> and IDF certificate on <b>Create UCR (IDF)</b> · " +
-						"<b>4 Finance:</b> Verify receipt — this task completes automatically when the receipt is verified."
+						"<b>4 Finance:</b> Verify receipt - this task completes automatically when the receipt is verified."
 				);
 				intro_set = true;
 			} else if (ui.show_payments) {
@@ -189,7 +190,7 @@ frappe.ui.form.on("Task", {
 			frm.doc.status !== "Completed" &&
 			!frm.doc.custom_permit_invoices_submitted
 		) {
-			frm.add_custom_button(__("Notify Finance — invoices ready"), () => {
+			frm.add_custom_button(__("Notify Finance - invoices ready"), () => {
 				frappe.call({
 					method: "cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow.submit_permit_invoices_to_finance",
 					args: { task_name: frm.doc.name },
@@ -264,7 +265,7 @@ frappe.ui.form.on("Task", {
 					callback(r) {
 						if (!r.exc) {
 							frappe.show_alert({
-								message: __("Task re-opened — attach Permit Invoice on each row, then save."),
+								message: __("Task re-opened - attach Permit Invoice on each row, then save."),
 								indicator: "orange",
 							});
 							frm.reload_doc();
@@ -735,7 +736,7 @@ function configure_finance_line_grid(frm, ui) {
 	const can_receipt = user_can_upload_receipt(frm);
 	const seq = sea_task_sequence(frm);
 
-	// Set docfield properties directly — avoid toggle_enable() which re-renders the grid
+	// Set docfield properties directly - avoid toggle_enable() which re-renders the grid
 	// and can collapse the toolbar while the user clicks action buttons.
 	const line_label_df = grid.get_docfield("line_label");
 	const verified_df = grid.get_docfield("verified");
@@ -966,7 +967,7 @@ frappe.ui.form.on("Task Finance Line", {
 		const row = locals[cdt][cdn];
 		if (is_ucr_application_step(frm) && row.line_type === "Receipt" && row.attachment) {
 			frappe.show_alert({
-				message: __("UCR receipt saved — Finance will be notified to verify."),
+				message: __("UCR receipt saved - Finance will be notified to verify."),
 				indicator: "green",
 			});
 		}

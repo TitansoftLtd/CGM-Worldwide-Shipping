@@ -8,7 +8,7 @@ This patch is non-destructive:
   * empty strings are normalised to NULL (MySQL allows many NULLs but not many
     equal non-null values);
   * if duplicate references already exist the index is skipped and the duplicates
-    are logged for manual resolution — the patch never renumbers a business ref.
+    are logged for manual resolution - the patch never renumbers a business ref.
 """
 
 import frappe
@@ -25,7 +25,7 @@ def execute():
 		"UPDATE `tabProject` SET custom_cgm_ref_no = NULL WHERE custom_cgm_ref_no = ''"
 	)
 
-	# 2. Skip (non-destructively) if duplicates exist — do not renumber refs.
+	# 2. Skip (non-destructively) if duplicates exist - do not renumber refs.
 	dups = frappe.db.sql(
 		"""
 		SELECT custom_cgm_ref_no, COUNT(*) AS c

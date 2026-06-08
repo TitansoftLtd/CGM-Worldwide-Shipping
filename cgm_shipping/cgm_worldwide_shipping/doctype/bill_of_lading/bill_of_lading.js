@@ -170,7 +170,7 @@ function return_to_opportunity_after_submit(frm) {
 		localStorage.removeItem(CGM_RETURN_OPPORTUNITY_KEY);
 		frappe.show_alert({
 			message: __(
-				"Bill of Lading submitted — returning to Opportunity to continue."
+				"Bill of Lading submitted - returning to Opportunity to continue."
 			),
 			indicator: "green",
 		});

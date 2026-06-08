@@ -1,5 +1,5 @@
 """
-Sea task completion rules — driven by CGM Shipping Settings where possible.
+Sea task completion rules - driven by CGM Shipping Settings where possible.
 
 Task level: invoices/receipts on Task Finance Lines; clearance docs on Task Documents; permits on Task Permits.
 Project level: custom_permit_register synced from Task permits (see sync_task_permits_to_project).
@@ -243,7 +243,7 @@ def validate_permit_application_task(task, seq: int) -> None:
 			missing.append("Permit type (select DVS / NBA / VMD / ACA / SCA)")
 			continue
 		if not row.get("payment_invoice"):
-			missing.append(f"{label} — supplier/permit invoice")
+			missing.append(f"{label} - supplier/permit invoice")
 
 	if missing:
 		frappe.throw(

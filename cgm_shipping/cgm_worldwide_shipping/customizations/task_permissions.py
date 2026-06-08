@@ -124,7 +124,7 @@ def user_can_access_sea_task(
 
 
 def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
-	"""Finance payment tasks — user must have Role matching that step's template department."""
+	"""Finance payment tasks - user must have Role matching that step's template department."""
 	if not hasattr(doc, "get"):
 		return False
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:

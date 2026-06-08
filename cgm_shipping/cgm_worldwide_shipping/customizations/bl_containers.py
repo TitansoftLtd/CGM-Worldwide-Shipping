@@ -135,7 +135,7 @@ def get_bl_container_select_options(bill_of_lading: str | None = None) -> list[d
 			parts.append(str(row.type_of_container))
 		if row.get("seal_no"):
 			parts.append(f"Seal {row.seal_no}")
-		options.append({"value": number, "label": " — ".join(parts)})
+		options.append({"value": number, "label": " - ".join(parts)})
 	return options
 
 @frappe.whitelist()

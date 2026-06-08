@@ -113,7 +113,7 @@ def get_project_shipment_documents_field() -> str | None:
 
 
 def get_bl_config() -> dict:
-	"""Fetch Bill of Lading config from Document Type master — no hardcoding."""
+	"""Fetch Bill of Lading config from Document Type master - no hardcoding."""
 	dt_meta = frappe.get_meta("Document Type")
 	config_fields = [
 		name
@@ -374,7 +374,7 @@ def assign_cgm_project_reference(project) -> None:
 		project.set(cgm_ref_field, ref)
 
 def build_project_name_seed(label, shipment_type=None, mode=None):
-	# Legacy helper — prefer assign_cgm_project_reference for new shipments.
+	# Legacy helper - prefer assign_cgm_project_reference for new shipments.
 	core = (label or "").strip() or "Client"
 	details = " ".join(part for part in [shipment_type, mode] if part)
 	if details:
@@ -624,7 +624,7 @@ def load_sea_task_template():
 
 	return out
 
-# (Department resolution helpers now live in department.py — re-exported at top.)
+# (Department resolution helpers now live in department.py - re-exported at top.)
 
 # ─── Whitelisted Project Creation ────────────────────────────────────────────
 INTAKE_DOCUMENT_CODES = ("CI", "PKL")

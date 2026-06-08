@@ -2,7 +2,7 @@
 Idempotent installer for Project custom fields on sites that predate custom/project.json.
 
 Primary field definitions live in cgm_worldwide_shipping/custom/project.json (exported from
-Customize Form). This module only creates missing fields on migrate — it does not replace JSON.
+Customize Form). This module only creates missing fields on migrate - it does not replace JSON.
 
 MODULE is the Custom Field owner in Desk (required by Frappe); it does not re-create Module Def.
 """
@@ -225,7 +225,7 @@ def ensure_project_shipment_core_fields() -> None:
 			"label": "Client Documents",
 			"fieldtype": "Section Break",
 			"insert_after": "custom_shipment_remarks",
-			"description": "CI, PKL, BL, COC, KRA PIN — synced from Lead/Opportunity/Customer/Tasks.",
+			"description": "CI, PKL, BL, COC, KRA PIN - synced from Lead/Opportunity/Customer/Tasks.",
 		},
 	)
 	# Shipment documents table (may already exist from ensure_project_shipment_documents_field).
@@ -249,7 +249,7 @@ def ensure_project_shipment_core_fields() -> None:
 			"label": "Regulatory Permits",
 			"fieldtype": "Section Break",
 			"insert_after": "custom_shipment_documents",
-			"description": "DVS, NBA, VMD, ACA — not client CI/PKL.",
+			"description": "DVS, NBA, VMD, ACA - not client CI/PKL.",
 		},
 	)
 	if not frappe.db.exists("Custom Field", "Project-custom_permit_register"):

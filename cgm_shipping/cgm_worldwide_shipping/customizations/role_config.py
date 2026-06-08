@@ -23,7 +23,7 @@ def _roles(group: str) -> tuple[str, ...]:
 	try:
 		settings = frappe.get_cached_doc("CGM Shipping Settings")
 	except Exception:
-		# Settings single may not exist yet (very early in install) — treat as empty.
+		# Settings single may not exist yet (very early in install) - treat as empty.
 		return ()
 	return tuple(
 		(row.role or "").strip()

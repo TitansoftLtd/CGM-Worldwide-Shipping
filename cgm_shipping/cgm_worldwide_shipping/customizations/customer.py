@@ -1,4 +1,4 @@
-"""Customer hooks — sync onboarding attachments to linked Projects."""
+"""Customer hooks - sync onboarding attachments to linked Projects."""
 
 
 def on_customer_update(doc, _method=None):

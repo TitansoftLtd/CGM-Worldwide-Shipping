@@ -1,4 +1,4 @@
-"""Backward-compatible re-exports — prefer shipment_type.service and shipment_type_seed_data."""
+"""Backward-compatible re-exports - prefer shipment_type.service and shipment_type_seed_data."""
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
 	cgm_ref_prefix_from_master,
 	get_allowed_shipment_types,
@@ -15,6 +15,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type_seed_data 
 	bootstrap_shipment_types,
 )
 
-# Deprecated aliases — bootstrap only; do not import at runtime.
+# Deprecated aliases - bootstrap only; do not import at runtime.
 DEFAULT_SHIPMENT_TYPES = SHIPMENT_TYPE_BOOTSTRAP_DATA
 seed_shipment_types = bootstrap_shipment_types

@@ -67,7 +67,7 @@ def _ensure_tracking_fields() -> None:
 			"fieldtype": "Data",
 			"insert_after": "custom_opened_date",
 			"in_list_view": 1,
-			"description": "e.g. CGM/LCL001/1022 — can match Project Name",
+			"description": "e.g. CGM/LCL001/1022 - can match Project Name",
 		},
 	)
 	_create_cf(
@@ -95,7 +95,7 @@ def _ensure_tracking_fields() -> None:
 			"label": "Weight (as per docs)",
 			"fieldtype": "Data",
 			"insert_after": "custom_weight_gw",
-			"description": "Free text e.g. GW 437 KGS / NW 760KG — use NW/GW fields when numeric",
+			"description": "Free text e.g. GW 437 KGS / NW 760KG - use NW/GW fields when numeric",
 		},
 	)
 	_create_cf(

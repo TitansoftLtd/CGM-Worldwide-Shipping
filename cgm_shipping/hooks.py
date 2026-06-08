@@ -29,7 +29,7 @@ fixtures = [
             "Opp Docs Verified",
             "Opp Docs Rejected",
             "Opp Ready for Project",
-            # Project — sea freight clearance (custom_shipment_status)
+            # Project - sea freight clearance (custom_shipment_status)
             "Draft",
             "Documents Received",
             "UCR Applied",
@@ -60,7 +60,7 @@ fixtures = [
             "Reject CI/PKL",
             "Approve customer onboarding",
             "Authorize Shipment File",
-            # Project — sea freight clearance actions
+            # Project - sea freight clearance actions
             "Receive Client Documents",
             "Create UCR Application",
             "Confirm UCR Paid",

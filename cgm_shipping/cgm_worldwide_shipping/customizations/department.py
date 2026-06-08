@@ -1,7 +1,7 @@
 """ERPNext Department resolution for the sea-clearance task flow.
 
 Extracted from utils.py. Depends only on frappe and erpnext, so it has no import
-cycle with utils — which re-exports these names for existing call sites.
+cycle with utils - which re-exports these names for existing call sites.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ def get_department_name_stem(raw):
 	if not value:
 		return ""
 
-	# 1. ERPNext department docnames follow `{department_name} - {abbr}` — strip the suffix.
+	# 1. ERPNext department docnames follow `{department_name} - {abbr}` - strip the suffix.
 	if " - " in value:
 		return value.split(" - ", 1)[0].strip()
 	return value

@@ -1,7 +1,7 @@
 """Use Project + Task as clearance master; link guide doctypes to Project.
 
 The CGM Sea Import Workflow is installed from ``fixtures`` (workflow.json), so
-this patch no longer syncs it — it only migrates Shipment Dossiers to Projects.
+this patch no longer syncs it - it only migrates Shipment Dossiers to Projects.
 """
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ def _add_permit_register_on_project():
 	cf.label = "Regulatory Permits"
 	cf.options = "Permit Register"
 	cf.insert_after = "custom_shipment_documents"
-	cf.description = "DVS, NBA, VMD, ACA/SCA — applied during clearance (not client CI/PKL)."
+	cf.description = "DVS, NBA, VMD, ACA/SCA - applied during clearance (not client CI/PKL)."
 	cf.insert(ignore_permissions=True)
 
 

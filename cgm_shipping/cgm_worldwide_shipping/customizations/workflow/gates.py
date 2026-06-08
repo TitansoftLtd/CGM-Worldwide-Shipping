@@ -1,4 +1,4 @@
-"""Sea import workflow task gates — loaded from CGM Shipping Settings."""
+"""Sea import workflow task gates - loaded from CGM Shipping Settings."""
 from __future__ import annotations
 
 import frappe

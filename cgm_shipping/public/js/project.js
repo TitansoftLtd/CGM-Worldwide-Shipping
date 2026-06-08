@@ -139,7 +139,7 @@ function render_shipment_progress_chart(frm) {
 				if (d.first_open_task) {
 					nextHint = `Task ${d.first_open_task.seq}: ${d.first_open_task.subject}`;
 				}
-				taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> sea tasks completed — next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
+				taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> sea tasks completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
 			}
 			const berth = frappe.utils.escape_html(d.berth_phase || "Before Vessel Berth");
 			const wfNote =

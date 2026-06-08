@@ -312,7 +312,7 @@ function apply_pending_bl_from_submit(frm) {
 
     localStorage.removeItem("cgm_pending_bl_link");
     frappe.show_alert({
-        message: __("Bill of Lading {0} linked — continue completing this Opportunity.", [
+        message: __("Bill of Lading {0} linked - continue completing this Opportunity.", [
             pending.bl_name,
         ]),
         indicator: "green",
