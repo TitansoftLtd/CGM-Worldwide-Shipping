@@ -4,18 +4,3 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
-cgm_shipping.patches.sea_import_setup
-cgm_shipping.patches.project_creator_visibility_permissions
-cgm_shipping.patches.project_shipment_core_fields
-cgm_shipping.patches.project_shipment_tracking_layout
-cgm_shipping.patches.project_container_tracking_flow
-cgm_shipping.patches.finance_task_project_link
-cgm_shipping.patches.task_permits_and_completion_rules
-cgm_shipping.patches.permit_purchase_invoice_defaults
-cgm_shipping.patches.finance_task_write_permissions
-cgm_shipping.patches.declaration_user_task_write
-cgm_shipping.patches.cgm_ref_unique_index
-cgm_shipping.patches.opportunity_bill_of_lading_flow
-cgm_shipping.patches.container_tracker_bl_selection
-cgm_shipping.patches.sync_cgm_shipping_desktop_navigation
-cgm_shipping.patches.document_type_mode_of_transport_multiselect
