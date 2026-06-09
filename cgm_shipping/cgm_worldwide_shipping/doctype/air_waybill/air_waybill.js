@@ -2,12 +2,32 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on("Air Waybill", {
+	onload(frm) {
+		set_default_air_shipment_type(frm);
+	},
+
 	refresh(frm) {
 		if (frm.doc.docstatus === 1) {
 			add_create_opportunity_button(frm);
 		}
 	},
 });
+
+function set_default_air_shipment_type(frm) {
+	if (!frm.is_new() || frm.doc.shipment_type) {
+		return;
+	}
+	frappe.db.get_value(
+		"Shipment Type",
+		{ default_mode_of_transport: "Air", is_active: 1 },
+		"name",
+		(r) => {
+			if (r && r.name && frm.is_new() && !frm.doc.shipment_type) {
+				frm.set_value("shipment_type", r.name);
+			}
+		}
+	);
+}
 
 function add_create_opportunity_button(frm) {
 	if (frm.doc.linked_opportunity) {
