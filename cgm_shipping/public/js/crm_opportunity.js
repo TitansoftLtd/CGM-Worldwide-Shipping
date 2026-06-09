@@ -24,73 +24,15 @@ frappe.ui.form.on("Opportunity", {
 });
 
 
-// ─── Shipment Document child table ────────────────────────────────────────────
+// ─── Documents table: stamp uploader on new rows ──────────────────────────────
+// The grid triggers "<table_fieldname>_add" against the CHILD doctype (see
+// frappe grid.js), so the handler must be registered on Shipment Document — not
+// on the Opportunity parent — keyed by the parent table fieldname.
 
 frappe.ui.form.on("Shipment Document", {
-    document_type(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.document_type) {
-            return;
-        }
-
-        const master_doctype = frappe.meta.get_docfield(cdt, "document_type")?.options;
-        if (!master_doctype) {
-            return;
-        }
-
-        frappe.db.get_value(
-            master_doctype,
-            row.document_type,
-            ["linked_doctype", "attachment_field", "populate_containers"],
-            (values) => {
-                if (!values) {
-                    return;
-                }
-                frappe.model.set_value(cdt, cdn, "linked_doctype", values.linked_doctype || "");
-                frappe.model.set_value(cdt, cdn, "attachment_field", values.attachment_field || "");
-                frappe.model.set_value(
-                    cdt,
-                    cdn,
-                    "populate_containers",
-                    cint(values.populate_containers)
-                );
-                frappe.model.set_value(cdt, cdn, "document_reference", "");
-                frappe.model.set_value(cdt, cdn, "attachment", "");
-            }
-        );
-    },
-
-    document_reference(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.document_reference || !row.linked_doctype) {
-            return;
-        }
-
-        if (cint(row.populate_containers)) {
-            fetch_and_apply_bl_data(frm, row, cdt, cdn);
-            return;
-        }
-
-        if (!row.attachment_field) {
-            return;
-        }
-
-        frappe.db.get_value(
-            row.linked_doctype,
-            row.document_reference,
-            row.attachment_field,
-            (values) => {
-                if (!values) {
-                    return;
-                }
-                frappe.model.set_value(
-                    cdt,
-                    cdn,
-                    "attachment",
-                    values[row.attachment_field] || ""
-                );
-            }
-        );
+    custom_clients_documents_add(frm, cdt, cdn) {
+        frappe.model.set_value(cdt, cdn, "uploaded_by", frappe.session.user);
+        frappe.model.set_value(cdt, cdn, "uploaded_on", frappe.datetime.now_datetime());
     },
 });
 
@@ -332,10 +274,9 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
     }
 
     frm.clear_table(docs_field);
-    const new_row = frm.add_child(docs_field, {
+    frm.add_child(docs_field, {
         document_type: pending.document_type,
         attachment: pending.attachment,
-        document_reference: pending.bl_name || "",
         status: "Uploaded",
     });
     rows.forEach((row) => {
@@ -351,42 +292,6 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
         });
     });
     frm.refresh_field(docs_field);
-    enrich_shipment_document_row_from_type(new_row, pending.document_type);
-}
-
-function enrich_shipment_document_row_from_type(row, document_type) {
-    if (!row || !document_type) {
-        return;
-    }
-
-    const master_doctype = frappe.meta.get_docfield(row.doctype, "document_type")?.options;
-    if (!master_doctype) {
-        return;
-    }
-
-    frappe.db.get_value(
-        master_doctype,
-        document_type,
-        ["linked_doctype", "attachment_field", "populate_containers"],
-        (values) => {
-            if (!values) {
-                return;
-            }
-            frappe.model.set_value(row.doctype, row.name, "linked_doctype", values.linked_doctype || "");
-            frappe.model.set_value(
-                row.doctype,
-                row.name,
-                "attachment_field",
-                values.attachment_field || ""
-            );
-            frappe.model.set_value(
-                row.doctype,
-                row.name,
-                "populate_containers",
-                cint(values.populate_containers)
-            );
-        }
-    );
 }
 
 

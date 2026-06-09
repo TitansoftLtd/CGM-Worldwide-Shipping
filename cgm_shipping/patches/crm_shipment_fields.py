@@ -27,8 +27,8 @@ def execute():
 		{
 			"fieldname": "custom_shipment_type",
 			"label": "Shipment Type",
-			"fieldtype": "Select",
-			"options": "\nImport\nExport",
+			"fieldtype": "Link",
+			"options": "Shipment Type",
 			"insert_after": insert_after_opportunity(),
 		},
 	)
@@ -37,8 +37,8 @@ def execute():
 		{
 			"fieldname": "custom_mode_of_transport",
 			"label": "Mode of Transport",
-			"fieldtype": "Select",
-			"options": "\nSea\nAir\nRoad",
+			"fieldtype": "Link",
+			"options": "Mode of Transport",
 			"insert_after": "custom_shipment_type",
 		},
 	)
