@@ -6,4 +6,6 @@ from frappe.model.document import Document
 
 class ClearanceStation(Document):
 	def autoname(self):
-		self.name = (self.cfs_name or "").strip()
+		code = (self.station_code or "").strip()
+		name = (self.cfs_name or "").strip()
+		self.name = f"{code} - {name}"
