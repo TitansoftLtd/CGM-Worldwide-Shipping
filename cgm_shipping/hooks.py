@@ -187,16 +187,18 @@ doc_events = {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
 	},
 	"Opportunity": {
-		"before_save": [
-			(
-				"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-				".sync_preshipment_containers_from_bl"
-			),
-			(
-				"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
-				".stamp_verified_documents_on_approval"
-			),
-		],
+		"before_save": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+			".sync_preshipment_containers_from_bl"
+		),
+		"before_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			".stamp_verified_documents_on_approval"
+		),
+		"before_update_after_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			".stamp_verified_documents_on_approval"
+		),
 		"on_trash": (
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
 			".clear_back_links_on_trash"

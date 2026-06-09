@@ -678,9 +678,11 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	frappe.has_permission("Opportunity", ptype="read", doc=opportunity, throw=True)
 	opp = frappe.get_doc("Opportunity", opportunity)
 
-	# 1. Validate the opportunity status and party type.
-	if opp.get("custom_cgm_preshipment_status") != "Opp Ready for Project":
-		frappe.throw("Opportunity must be **Opp Ready for Project** before creating a shipment Project.")
+	# 1. Validate the opportunity status and party type. The shipment Project is
+	# created off the CGM Opportunity Pre-Shipment workflow: the Opportunity must
+	# be Approved before it can branch into a Project.
+	if opp.get("workflow_state") != "Approved":
+		frappe.throw("Opportunity must be **Approved** before creating a shipment Project.")
 	if opp.opportunity_from != "Customer":
 		frappe.throw("Opportunity party must be a **Customer** to create a shipment Project.")
 

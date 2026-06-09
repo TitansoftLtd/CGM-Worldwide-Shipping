@@ -370,7 +370,7 @@ function clear_bl_derived_opportunity_fields(frm) {
 
 function setup_create_shipment_project_button(frm) {
     if (
-        frm.doc.custom_cgm_preshipment_status !== "Opp Ready for Project" ||
+        frm.doc.workflow_state !== "Approved" ||
         frm.doc.opportunity_from !== "Customer"
     ) {
         return;
