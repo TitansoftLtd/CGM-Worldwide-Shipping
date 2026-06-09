@@ -686,12 +686,21 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	if opp.opportunity_from != "Customer":
 		frappe.throw("Opportunity party must be a **Customer** to create a shipment Project.")
 
-	# 2. Validate the linked customer exists.
+	# 2. Enforce one Project per Opportunity: return the existing one instead of
+	# branching a duplicate.
+	if frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		existing = frappe.db.get_value(
+			"Project", {"custom_source_opportunity": opportunity}, "name"
+		)
+		if existing:
+			return existing
+
+	# 3. Validate the linked customer exists.
 	customer = opp.party_name
 	if not frappe.db.exists("Customer", customer):
 		frappe.throw(f"Customer {customer} not found")
 
-	# 3. Build and save the new Project.
+	# 4. Build and save the new Project.
 	proj = frappe.new_doc("Project")
 	proj.customer = customer
 	if opp.get("company"):

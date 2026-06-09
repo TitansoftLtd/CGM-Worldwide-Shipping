@@ -292,6 +292,9 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
 // ─── BL data sync (single API call) ───────────────────────────────────────────
 
 function sync_bl_from_clients_documents(frm) {
+    if (frm.doc.docstatus !== 0) {
+        return;
+    }
     const bl_row = find_populate_containers_row(frm);
     if (!bl_row) {
         const bl_link_field = get_opportunity_bl_link_field(frm);
@@ -338,7 +341,8 @@ function apply_bl_data_from_response(frm, row, cdt, cdn, data) {
     if (quantity_field) {
         frm.set_value(quantity_field, data.quantity || "");
     }
-    if (container_field) {
+
+    if (container_field && !container_rows_match(frm.doc[container_field], data.containers)) {
         frm.clear_table(container_field);
         (data.containers || []).forEach((container) => {
             Object.assign(frm.add_child(container_field), container);
@@ -347,19 +351,32 @@ function apply_bl_data_from_response(frm, row, cdt, cdn, data) {
     }
 }
 
+function container_rows_match(existing, incoming) {
+    existing = existing || [];
+    incoming = incoming || [];
+    if (existing.length !== incoming.length) {
+        return false;
+    }
+    return incoming.every((row, i) =>
+        Object.keys(row).every(
+            (key) => (existing[i]?.[key] ?? "") === (row[key] ?? "")
+        )
+    );
+}
+
 function clear_bl_derived_opportunity_fields(frm) {
     const bl_link_field = get_opportunity_bl_link_field(frm);
     const container_field = get_container_table_field(frm);
     const quantity_field = bl_link_field ? get_quantity_field(frm, bl_link_field) : null;
 
-    if (container_field) {
+    if (container_field && (frm.doc[container_field] || []).length) {
         frm.clear_table(container_field);
         frm.refresh_field(container_field);
     }
-    if (quantity_field) {
+    if (quantity_field && frm.doc[quantity_field]) {
         frm.set_value(quantity_field, "");
     }
-    if (bl_link_field) {
+    if (bl_link_field && frm.doc[bl_link_field]) {
         frm.set_value(bl_link_field, "");
     }
 }
@@ -372,28 +389,41 @@ function setup_create_shipment_project_button(frm) {
         return;
     }
 
-    frm.add_custom_button(
-        __("Create Shipment Project"),
-        () => {
-            frappe.call({
-                method:
-                    "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_opportunity",
-                args: { opportunity: frm.doc.name },
-                freeze: true,
-                callback(r) {
-                    if (!r.exc && r.message) {
-                        frappe.show_alert({
-                            message: __("Shipment Project created"),
-                            indicator: "green",
+    frappe.db
+        .get_value("Project", { custom_source_opportunity: frm.doc.name }, "name")
+        .then((r) => {
+            const existing = r?.message?.name;
+            if (existing) {
+                frm.add_custom_button(
+                    __("View Project"),
+                    () => frappe.set_route("Form", "Project", existing),
+                    __("Create")
+                );
+            } else {
+                frm.add_custom_button(
+                    __("Create Shipment Project"),
+                    () => {
+                        frappe.call({
+                            method:
+                                "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_opportunity",
+                            args: { opportunity: frm.doc.name },
+                            freeze: true,
+                            callback(r) {
+                                if (!r.exc && r.message) {
+                                    frappe.show_alert({
+                                        message: __("Shipment Project created"),
+                                        indicator: "green",
+                                    });
+                                    frappe.set_route("Form", "Project", r.message);
+                                }
+                            },
                         });
-                        frappe.set_route("Form", "Project", r.message);
-                    }
-                },
-            });
-        },
-        __("Create")
-    );
-    frm.page.set_inner_btn_group_as_primary(__("Create"));
+                    },
+                    __("Create")
+                );
+            }
+            frm.page.set_inner_btn_group_as_primary(__("Create"));
+        });
 }
 
 function hide_procurement_create_buttons(frm) {
