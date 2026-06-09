@@ -356,6 +356,9 @@ scheduler_events = {
 # override_doctype_dashboards = {
 # 	"Task": "cgm_shipping.task.get_dashboard_data"
 # }
+override_doctype_dashboards = {
+	"Opportunity": "cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_dashboard.get_dashboard_data",
+}
 
 # exempt linked doctypes from being automatically cancelled
 #

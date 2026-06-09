@@ -10,6 +10,7 @@ frappe.ui.form.on("Opportunity", {
     },
 
     refresh(frm) {
+        hide_procurement_create_buttons(frm);
         register_clients_documents_remove_handler(frm);
         sync_opportunity_transport_and_containers(frm);
         setup_opportunity_bill_of_lading_create(frm);
@@ -22,12 +23,6 @@ frappe.ui.form.on("Opportunity", {
         sync_opportunity_transport_and_containers(frm);
     },
 });
-
-
-// ─── Documents table: stamp uploader on new rows ──────────────────────────────
-// The grid triggers "<table_fieldname>_add" against the CHILD doctype (see
-// frappe grid.js), so the handler must be registered on Shipment Document — not
-// on the Opportunity parent — keyed by the parent table fieldname.
 
 frappe.ui.form.on("Shipment Document", {
     custom_clients_documents_add(frm, cdt, cdn) {
@@ -403,4 +398,13 @@ function setup_create_shipment_project_button(frm) {
         __("Create")
     );
     frm.page.set_inner_btn_group_as_primary(__("Create"));
+}
+
+function hide_procurement_create_buttons(frm) {
+    const remove = () => {
+        frm.remove_custom_button(__("Supplier Quotation"), __("Create"));
+        frm.remove_custom_button(__("Request For Quotation"), __("Create"));
+    };
+    remove();
+    [50, 200, 600].forEach((delay) => setTimeout(remove, delay));
 }

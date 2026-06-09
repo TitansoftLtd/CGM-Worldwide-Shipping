@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "cfs_name",
+  "column_break_hkvi",
   "station_code"
  ],
  "fields": [
@@ -22,11 +23,15 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Station Code"
+  },
+  {
+   "fieldname": "column_break_hkvi",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 11:20:12.510528",
+ "modified": "2026-06-09 11:35:01.843459",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Clearance Station",
