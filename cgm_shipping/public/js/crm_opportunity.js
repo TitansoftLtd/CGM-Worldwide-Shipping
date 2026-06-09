@@ -165,7 +165,7 @@ function on_clients_documents_removed(frm) {
 function sync_opportunity_transport_and_containers(frm) {
     const bl_link_field = get_opportunity_bl_link_field(frm);
     cgm_shipping.transport_reference.toggle(frm, {
-        air_waybill: "custom_airway_bill",
+        air_waybill: "custom_air_waybill",
         bill_of_lading: bl_link_field || undefined,
         section: "custom_section_break_idqn5",
     });

@@ -2,7 +2,7 @@
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.project_shipment_fields import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 	_create_cf,
 )
 

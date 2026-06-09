@@ -4,10 +4,10 @@ from __future__ import annotations
 import frappe
 from frappe.utils import cint, now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
 	TASK_DOCUMENTS_FIELD,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	is_ucr_application_task,
 	is_ucr_finance_payment_task,
 	is_ucr_workflow_task,
@@ -36,17 +36,6 @@ def task_has_finance_table(task) -> bool:
 
 def _task_seq(task) -> int:
 	return int(task.get("custom_sequence_no") or 0)
-
-
-def _invoice_document_type_names() -> set[str]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_document_type_link_name
-
-	names: set[str] = set(LEGACY_INVOICE_DOCUMENT_TYPE_LINKS)
-	for code in INVOICE_DOCUMENT_TYPE_CODES:
-		name = get_document_type_link_name(code)
-		if name:
-			names.add(name)
-	return names
 
 
 def is_invoice_clearance_document_row(document_type: str | None) -> bool:
@@ -418,7 +407,7 @@ def _finance_line_verified_changed(task, row) -> bool:
 
 def enforce_finance_line_permissions(task) -> None:
 	"""Only users with finance-payment template department roles may verify finance lines."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
 		user_has_department_for_sequence,
 		user_has_finance_department_access,
 	)
@@ -566,9 +555,16 @@ def sync_idf_certificate_to_project(task) -> None:
 				)
 
 
-def sync_ucr_verification_to_application_task(finance_task) -> bool:
-	"""Mirror invoice verification from Finance pays UCR (seq 4) → Create UCR task (seq 3)."""
-	if not is_ucr_finance_payment_task(_task_seq(finance_task)) or not finance_task.project or not task_has_finance_table(finance_task):
+def _sync_ucr_line_verification_to_application(
+	finance_task, line_getter, line_type, app_field, seed=False
+) -> bool:
+	"""Mirror one UCR finance line's verification from Finance pays UCR (seq 4) onto the
+	matching line + flag on the Create UCR task (seq 3). Shared by invoice/receipt."""
+	if (
+		not is_ucr_finance_payment_task(_task_seq(finance_task))
+		or not finance_task.project
+		or not task_has_finance_table(finance_task)
+	):
 		return False
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
@@ -579,48 +575,43 @@ def sync_ucr_verification_to_application_task(finance_task) -> bool:
 	if not app_name:
 		return False
 
-	seed_ucr_finance_lines(finance_task)
-	fin_inv = get_ucr_invoice_line(finance_task)
-	if not fin_inv or not fin_inv.verified:
+	if seed:
+		seed_ucr_finance_lines(finance_task)
+	fin_line = line_getter(finance_task)
+	if not fin_line or not fin_line.verified:
 		return False
 
-	app_inv_name = frappe.db.get_value(
+	app_line_name = frappe.db.get_value(
 		"Task Finance Line",
 		{
 			"parent": app_name,
 			"parenttype": "Task",
 			"parentfield": TASK_FINANCE_FIELD,
-			"line_type": LINE_INVOICE,
+			"line_type": line_type,
 			"payment_item": PAYMENT_UCR,
 		},
 		"name",
 	)
-	if not app_inv_name:
+	if not app_line_name:
 		return False
 
 	changed = False
-	if not frappe.db.get_value("Task Finance Line", app_inv_name, "verified"):
+	if not frappe.db.get_value("Task Finance Line", app_line_name, "verified"):
 		frappe.db.set_value(
 			"Task Finance Line",
-			app_inv_name,
+			app_line_name,
 			{
 				"verified": 1,
-				"verified_by": fin_inv.verified_by,
-				"verified_on": fin_inv.verified_on,
+				"verified_by": fin_line.verified_by,
+				"verified_on": fin_line.verified_on,
 			},
 			update_modified=False,
 		)
 		changed = True
 
 	app_task = frappe.get_doc("Task", app_name)
-	if app_task.meta.has_field("custom_ucr_invoice_verified") and not app_task.custom_ucr_invoice_verified:
-		frappe.db.set_value(
-			"Task",
-			app_name,
-			"custom_ucr_invoice_verified",
-			1,
-			update_modified=False,
-		)
+	if app_task.meta.has_field(app_field) and not app_task.get(app_field):
+		frappe.db.set_value("Task", app_name, app_field, 1, update_modified=False)
 		changed = True
 
 	if changed and finance_task.project:
@@ -631,72 +622,20 @@ def sync_ucr_verification_to_application_task(finance_task) -> bool:
 		auto_complete_ucr_application_for_project(finance_task.project)
 
 	return changed
+
+
+def sync_ucr_verification_to_application_task(finance_task) -> bool:
+	"""Mirror invoice verification from Finance pays UCR (seq 4) → Create UCR task (seq 3)."""
+	return _sync_ucr_line_verification_to_application(
+		finance_task, get_ucr_invoice_line, LINE_INVOICE, "custom_ucr_invoice_verified", seed=True
+	)
 
 
 def sync_ucr_receipt_verification_to_application_task(finance_task) -> bool:
 	"""Mirror receipt verification from Finance pays UCR (seq 4) → Create UCR task (seq 3)."""
-	if not is_ucr_finance_payment_task(_task_seq(finance_task)) or not finance_task.project or not task_has_finance_table(finance_task):
-		return False
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
-		get_ucr_application_task,
+	return _sync_ucr_line_verification_to_application(
+		finance_task, get_ucr_receipt_line, LINE_RECEIPT, "custom_ucr_receipt_verified"
 	)
-
-	app_name = get_ucr_application_task(finance_task.project)
-	if not app_name:
-		return False
-
-	fin_rec = get_ucr_receipt_line(finance_task)
-	if not fin_rec or not fin_rec.verified:
-		return False
-
-	app_rec_name = frappe.db.get_value(
-		"Task Finance Line",
-		{
-			"parent": app_name,
-			"parenttype": "Task",
-			"parentfield": TASK_FINANCE_FIELD,
-			"line_type": LINE_RECEIPT,
-			"payment_item": PAYMENT_UCR,
-		},
-		"name",
-	)
-	if not app_rec_name:
-		return False
-
-	changed = False
-	if not frappe.db.get_value("Task Finance Line", app_rec_name, "verified"):
-		frappe.db.set_value(
-			"Task Finance Line",
-			app_rec_name,
-			{
-				"verified": 1,
-				"verified_by": fin_rec.verified_by,
-				"verified_on": fin_rec.verified_on,
-			},
-			update_modified=False,
-		)
-		changed = True
-
-	app_task = frappe.get_doc("Task", app_name)
-	if app_task.meta.has_field("custom_ucr_receipt_verified") and not app_task.custom_ucr_receipt_verified:
-		frappe.db.set_value(
-			"Task",
-			app_name,
-			"custom_ucr_receipt_verified",
-			1,
-			update_modified=False,
-		)
-		changed = True
-
-	if changed and finance_task.project:
-		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
-			auto_complete_ucr_application_for_project,
-		)
-
-		auto_complete_ucr_application_for_project(finance_task.project)
-
-	return changed
 
 
 def sync_ucr_status_from_finance_to_application(application_task) -> bool:
@@ -718,6 +657,3 @@ def sync_ucr_status_from_finance_to_application(application_task) -> bool:
 	return changed
 
 
-def sync_ucr_verification_from_finance_to_application(application_task) -> bool:
-	"""When opening Create UCR, pull invoice verification from Finance pays UCR."""
-	return sync_ucr_status_from_finance_to_application(application_task)

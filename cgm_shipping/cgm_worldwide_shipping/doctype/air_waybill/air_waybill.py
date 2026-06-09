@@ -22,7 +22,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 
 # Air Waybill -> Opportunity (back-link on this doctype) and Opportunity -> AWB.
 OPPORTUNITY_SOURCE_FIELD = "linked_opportunity"
-OPPORTUNITY_AWB_FIELD = "custom_airway_bill"
+OPPORTUNITY_AWB_FIELD = "custom_air_waybill"
 DOCUMENT_TYPE_CODE = "AWB"
 
 

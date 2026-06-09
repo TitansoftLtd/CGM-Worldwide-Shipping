@@ -3,10 +3,10 @@ import frappe
 
 
 def execute():
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project_container_tracking import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		ensure_project_container_tracking_fields,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project_tracking_layout import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		ensure_project_tracking_layout,
 	)
 

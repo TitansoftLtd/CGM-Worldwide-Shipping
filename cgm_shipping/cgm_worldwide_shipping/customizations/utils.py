@@ -2,9 +2,6 @@ import re
 
 import frappe
 from frappe.utils import getdate, now_datetime, today
-# CGM reference & shipment-classification helpers were extracted to
-# shipment_reference.py; re-exported here so existing
-# `from ...customizations.utils import ...` call sites keep working.
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (  # noqa: E402,F401
 	CGM_REF_PATTERN,
 	apply_shipment_data,
@@ -112,6 +109,7 @@ def get_project_shipment_documents_field() -> str | None:
 	)
 
 
+@frappe.request_cache
 def get_bl_config() -> dict:
 	"""Fetch Bill of Lading config from Document Type master - no hardcoding."""
 	dt_meta = frappe.get_meta("Document Type")
@@ -217,7 +215,7 @@ def get_document_type_link_name(code):
 
 def ensure_document_types():
 	"""Create default Document Type records if they don't exist."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import DOCUMENT_TYPE_DEFAULTS
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import DOCUMENT_TYPE_DEFAULTS
 
 	for code, defaults in DOCUMENT_TYPE_DEFAULTS.items():
 		if get_document_type_link_name(code):
@@ -229,245 +227,6 @@ def ensure_document_types():
 		doc.insert(ignore_permissions=True)
 		if doc.meta.is_submittable and doc.docstatus == 0:
 			doc.submit()
-
-# ─── CGM reference / Project Name ─────────────────────────────────────────────
-# Tracking sheet format: CGM/FCL001/1022  (prefix + 3-digit seq + MMYY period)
-CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$")
-
-def is_cgm_ref(value: str | None) -> bool:
-	if not value:
-		return False
-	return bool(CGM_REF_PATTERN.match(str(value).strip().upper()))
-
-def cgm_ref_prefix(shipment_type=None, mode=None) -> str:
-	"""
-	Fetch CGM ref prefix from Shipment Type master.
-	Falls back to mode-based lookup when no exact match is found.
-	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
-		cgm_ref_prefix_from_master,
-	)
-
-	st = (shipment_type or "").strip()
-	mode = (mode or "").strip()
-
-	prefix = cgm_ref_prefix_from_master(st, mode)
-	if prefix:
-		return prefix
-
-	if not st:
-		return get_default_cgm_ref_prefix()
-
-	st_meta = frappe.get_meta("Shipment Type") if frappe.db.exists("DocType", "Shipment Type") else None
-	if not st_meta:
-		return get_default_cgm_ref_prefix()
-
-	st_filters = {"shipment_type_name": st}
-	if st_meta.has_field("is_active"):
-		st_filters["is_active"] = 1
-
-	prefix = frappe.db.get_value("Shipment Type", st_filters, "cgm_ref_prefix")
-	if prefix:
-		return str(prefix).strip().upper()
-
-	if mode and st_meta.has_field("default_mode_of_transport"):
-		mode_filters = {"default_mode_of_transport": mode}
-		if st_meta.has_field("is_active"):
-			mode_filters["is_active"] = 1
-		prefix = frappe.db.get_value(
-			"Shipment Type",
-			mode_filters,
-			"cgm_ref_prefix",
-			order_by="idx asc",
-		)
-		if prefix:
-			return str(prefix).strip().upper()
-
-	return get_default_cgm_ref_prefix()
-
-def get_default_cgm_ref_prefix() -> str:
-	"""Absolute fallback prefix from Shipment Type master."""
-	if not frappe.db.exists("DocType", "Shipment Type"):
-		return ""
-
-	st_meta = frappe.get_meta("Shipment Type")
-	filters = {}
-	if st_meta.has_field("is_active"):
-		filters["is_active"] = 1
-	prefix = frappe.db.get_value(
-		"Shipment Type",
-		filters,
-		"cgm_ref_prefix",
-		order_by="idx asc",
-	)
-	return str(prefix).strip().upper() if prefix else ""
-
-def get_next_cgm_ref_sequence(prefix: str, period: str) -> int:
-	"""Next 3-digit sequence for CGM/{prefix}NNN/{period} in this calendar month."""
-	like = f"CGM/{prefix}%/{period}"
-	cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
-	union_sql = ""
-	params = [like.upper()]
-	if cgm_ref_field and frappe.get_meta("Project").has_field(cgm_ref_field):
-		union_sql = f"""
-		UNION
-		SELECT `{cgm_ref_field}` AS ref FROM `tabProject`
-		WHERE `{cgm_ref_field}` IS NOT NULL AND `{cgm_ref_field}` != ''
-		  AND UPPER(`{cgm_ref_field}`) LIKE %s
-		"""
-		params.append(like.upper())
-	rows = frappe.db.sql(
-		f"""
-		SELECT project_name AS ref FROM `tabProject` WHERE UPPER(project_name) LIKE %s
-		{union_sql}
-		""",
-		tuple(params),
-		as_dict=True,
-	)
-	seq_pattern = re.compile(rf"^CGM/{re.escape(prefix)}(\d{{3}})/{re.escape(period)}$")
-	max_seq = 0
-	for row in rows:
-		ref = (row.ref or "").strip().upper()
-		match = seq_pattern.match(ref)
-		if match:
-			max_seq = max(max_seq, int(match.group(1)))
-	return max_seq + 1
-
-def build_cgm_ref_no(shipment_type=None, mode=None, opened_date=None) -> str:
-	"""Allocate CGM/LCL001/1022-style reference for the shipment tracking sheet."""
-	prefix = cgm_ref_prefix(shipment_type, mode)
-	dt = getdate(opened_date or today())
-	period = dt.strftime("%m%y")
-	seq = get_next_cgm_ref_sequence(prefix, period)
-	for candidate_seq in range(seq, seq + 1000):
-		ref = f"CGM/{prefix}{candidate_seq:03d}/{period}"
-		if not frappe.db.exists("Project", {"project_name": ref}):
-			return ref
-	frappe.throw("Could not allocate a unique CGM reference number.")
-
-def assign_cgm_project_reference(project) -> None:
-	"""Set project_name and the CGM ref custom field to the tracking-sheet reference."""
-	cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
-	opened_date_field = get_field_from_meta("Project", "opened_date")
-	cgm_ref_value = project.get(cgm_ref_field) if cgm_ref_field else None
-
-	if cgm_ref_value and is_cgm_ref(cgm_ref_value):
-		if not is_cgm_ref(project.project_name):
-			project.project_name = cgm_ref_value
-		return
-
-	if project.project_name and is_cgm_ref(project.project_name):
-		if cgm_ref_field and not project.get(cgm_ref_field):
-			project.set(cgm_ref_field, project.project_name)
-		return
-
-	ref = build_cgm_ref_no(
-		normalize_shipment_classification(
-			project.get("custom_shipment_type"),
-			project.get("custom_mode_of_transport"),
-		)[0],
-		project.get("custom_mode_of_transport"),
-		project.get(opened_date_field) if opened_date_field else None,
-	)
-	project.project_name = ref
-	if cgm_ref_field:
-		project.set(cgm_ref_field, ref)
-
-def build_project_name_seed(label, shipment_type=None, mode=None):
-	# Legacy helper - prefer assign_cgm_project_reference for new shipments.
-	core = (label or "").strip() or "Client"
-	details = " ".join(part for part in [shipment_type, mode] if part)
-	if details:
-		return f"Shipment - {core} - {details}"
-	return f"Shipment - {core}"
-
-def ensure_unique_project_name(seed_name):
-	# 1. Use fallback when seed is blank.
-	base = (seed_name or "").strip() or "Shipment"
-
-	# 2. Return base name when no duplicate exists.
-	if not frappe.db.exists("Project", {"project_name": base}):
-		return base
-
-	# 3. Append a numeric suffix until a unique name is found.
-	for idx in range(2, 1000):
-		candidate = f"{base} ({idx})"
-		if not frappe.db.exists("Project", {"project_name": candidate}):
-			return candidate
-
-	frappe.throw("Could not generate a unique Project Name. Please set a custom name manually.")
-
-
-# ─── Project Field Helpers ────────────────────────────────────────────────────
-def apply_shipment_data(project, shipment_type=None, mode=None):
-	"""Set shipment classification; derive mode from operational shipment type when known."""
-	if shipment_type:
-		project.custom_shipment_type = shipment_type
-	if mode and project.meta.has_field("custom_mode_of_transport"):
-		project.custom_mode_of_transport = mode
-
-	normalized_type, derived_mode = normalize_shipment_classification(
-		project.get("custom_shipment_type"),
-		project.get("custom_mode_of_transport"),
-	)
-	if normalized_type:
-		project.custom_shipment_type = normalized_type
-	if derived_mode and project.meta.has_field("custom_mode_of_transport"):
-		project.custom_mode_of_transport = derived_mode
-
-	project_fields = frappe.get_meta("Project")
-	if project_fields.has_field("custom_shipment_status"):
-		project.custom_shipment_status = "Draft"
-
-def normalize_shipment_classification(shipment_type=None, mode=None):
-	"""
-	Return (shipment_type, mode) using operational types (Sea FCL, Air Import, …).
-
-	Legacy CRM values (Import/Export + Sea/Air/Road) are mapped for old records only.
-	"""
-	st = (shipment_type or "").strip()
-	m = (mode or "").strip()
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
-		get_shipment_type_record,
-		mode_from_master,
-	)
-
-	row = get_shipment_type_record(st)
-	if row:
-		return row.shipment_type_name or st, mode_from_master(st) or m
-
-	# Legacy Lead/Opportunity: Import + mode → operational default (blank mode → Sea FCL).
-	if st == "Import":
-		if m in ("", "Sea", None):
-			return "Sea FCL", "Sea"
-		if m == "Air":
-			return "Air Import", "Air"
-		if m == "Road":
-			return "Cross-Border Road Import", "Road"
-		return "Sea FCL", "Sea"
-	if st == "Export":
-		return "Export", m or "Sea"
-	if st == "Transit":
-		return "Transit", m or "Sea"
-	if st == "Road Import":
-		return "Cross-Border Road Import", "Road"
-
-	return st or None, m or None
-
-def normalize_shipment_fields_on_doc(doc) -> None:
-	"""Rewrite legacy Import/Export values before Select validation on save."""
-	if not doc.meta.has_field("custom_shipment_type"):
-		return
-	mode = doc.get("custom_mode_of_transport") if doc.meta.has_field("custom_mode_of_transport") else None
-	normalized_type, derived_mode = normalize_shipment_classification(
-		doc.get("custom_shipment_type"),
-		mode,
-	)
-	if normalized_type:
-		doc.custom_shipment_type = normalized_type
-	if derived_mode and doc.meta.has_field("custom_mode_of_transport"):
-		doc.custom_mode_of_transport = derived_mode
 
 def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 	"""Copy all Clients Documents rows from Opportunity onto Project shipment documents."""
@@ -568,21 +327,6 @@ def carry_bill_of_lading_attachment_to_project(
 	document_type = get_document_type_link_name("BL")
 	if document_type:
 		append_verified_doc_row(project_doc, document_type, attachment_url)
-
-
-def get_sea_task(project: str, seq: int) -> str | None:
-	"""Return the name of the sea-clearance Task at `seq` for `project` (or None)."""
-	if not project or not seq:
-		return None
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": seq,
-		},
-		"name",
-	)
 
 
 def mark_task_completed(task) -> None:
@@ -978,7 +722,7 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
 		auto_complete_initial_sea_tasks,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		ensure_sea_task_requirements_configured,
 	)
 
@@ -1049,7 +793,7 @@ def create_sea_import_task_plan(project, reset=False):
 @frappe.whitelist()
 def notify_finance_for_task(task_name):
 	"""Notify Finance users (in-app + email) that payment action is needed for a task."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 		notify_finance_for_task as _notify,
 	)
 
@@ -1057,14 +801,6 @@ def notify_finance_for_task(task_name):
 
 
 # ─── Task Payment Helpers ─────────────────────────────────────────────────────
-def is_sea_ucr_idf_task_one(task):
-	"""Legacy alias: finance payment tasks in the sea clearance chart."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-		is_sea_payment_task,
-	)
-
-	return is_sea_payment_task(task)
-
 def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoice_name):
 	"""Return True when the Payment Entry references the given Purchase Invoice."""
 	if not payment_entry_name or not purchase_invoice_name:

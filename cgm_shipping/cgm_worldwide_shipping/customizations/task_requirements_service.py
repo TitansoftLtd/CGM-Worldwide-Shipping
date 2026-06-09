@@ -9,7 +9,6 @@ import frappe
 
 SUPPLIER_INVOICE_CODE = "SUP_INV"
 PRE_CLEARANCE_STAGE = "Pre-clearance"
-POST_CLEARANCE_STAGE = "Post-clearance"
 
 _SETTINGS_REQUIREMENTS_FIELD = "custom_sea_clearance_task_requirements"
 _SETTINGS_LINK = "CGM Shipping Settings → Sea clearance task requirements"
@@ -298,7 +297,7 @@ def get_sea_task_ui_sequences() -> dict:
 	"""Sequence lists and role flags for Task form UI (from CGM Shipping Settings)."""
 	ensure_sea_task_requirements_configured()
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 		get_task_form_permissions,
 	)
 

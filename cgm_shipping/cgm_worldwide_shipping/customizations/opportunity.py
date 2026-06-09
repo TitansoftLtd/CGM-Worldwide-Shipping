@@ -42,3 +42,25 @@ def stamp_verified_documents_on_approval(doc, method=None) -> None:
 			row.verified_by = frappe.session.user
 		if not row.verified_on:
 			row.verified_on = now_datetime()
+
+
+# ─── Connections (form dashboard) ─────────────────────────────────────────────
+def get_dashboard_data(data):
+	"""Tailor the Opportunity "Connections" for the shipping workflow.
+
+	ERPNext ships Quotation / Request for Quotation / Supplier Quotation. For CGM
+	the Opportunity branches into a Bill of Lading / Air Waybill and a (shipment)
+	Project, so we keep Quotation, drop the two procurement quotations, and surface
+	those shipping links instead.
+	"""
+	data["transactions"] = [
+		{"label": "Quotation", "items": ["Quotation"]},
+		{"label": "Shipment", "items": ["Bill of Lading", "Air Waybill"]},
+		{"label": "Project", "items": ["Project"]},
+	]
+	non_standard = data.setdefault("non_standard_fieldnames", {})
+	non_standard["Bill of Lading"] = "linked_opportunity"
+	non_standard["Air Waybill"] = "linked_opportunity"
+	non_standard["Project"] = "custom_source_opportunity"
+
+	return data
