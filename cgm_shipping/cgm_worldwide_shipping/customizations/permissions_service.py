@@ -47,7 +47,7 @@ def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool
 
 @frappe.request_cache
 def finance_payment_department_stems() -> frozenset[str]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		finance_payment_sequences,
 	)
 

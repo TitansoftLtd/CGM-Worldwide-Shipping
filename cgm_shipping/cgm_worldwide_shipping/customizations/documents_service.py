@@ -267,7 +267,7 @@ def append_task_document_row(task_doc, document_type, attachment_url, status=Non
 
 
 def carry_project_shipment_documents_to_sea_tasks(project_name, task_sequences=None):
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		is_auto_complete_task,
 	)
 

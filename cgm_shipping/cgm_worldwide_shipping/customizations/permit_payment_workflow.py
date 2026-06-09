@@ -5,23 +5,23 @@ import frappe
 from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.constants import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 	PERMIT_INVOICES_TO_FINANCE,
 	PERMIT_RECEIPTS_FOR_DECLARANT,
 	PERMIT_RECEIPTS_VERIFY_FINANCE,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 	send_notification,
 	workflow_notify_message,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
 	user_has_finance_department_access,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
 	TASK_PERMITS_FIELD,
 	sync_task_permits_to_project,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	PRE_CLEARANCE_STAGE,
 	get_permit_finance_sequence_for_application,
 	get_permit_stage_for_sequence,

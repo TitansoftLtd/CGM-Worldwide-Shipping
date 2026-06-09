@@ -7,16 +7,16 @@ import frappe
 from frappe.utils import get_url, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.constants import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 	UCR_INVOICE_TO_FINANCE,
 	UCR_RECEIPT_FOR_DECLARANT,
 	UCR_RECEIPT_VERIFY_FINANCE,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 	send_notification,
 	workflow_notify_message,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
 	user_has_finance_department_access,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
@@ -32,7 +32,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
 	ucr_receipt_attached,
 	ucr_receipt_verified,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	get_ucr_create_sequence,
 	get_ucr_payment_sequence,
 	is_ucr_application_task,

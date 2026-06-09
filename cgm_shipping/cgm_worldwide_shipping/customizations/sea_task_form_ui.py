@@ -5,7 +5,7 @@ Client task.js loads sequence lists from get_sea_task_ui_sequences (Settings-dri
 """
 from __future__ import annotations
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	finance_payment_with_supplier_invoice_sequences,
 	is_auto_complete_task,
 	is_finance_payment_task,

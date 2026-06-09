@@ -7,7 +7,7 @@ from frappe.utils import flt, now_datetime
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
 	is_sea_payment_task,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	is_permit_finance_payment_task,
 	is_ucr_finance_payment_task,
 )
@@ -17,7 +17,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 
 
 def ensure_finance_custom_fields() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project_shipment_fields import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		_create_cf,
 	)
 
@@ -93,7 +93,7 @@ def get_permit_rows_for_purchase_invoice(task) -> list[dict]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
 		TASK_PERMITS_FIELD,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		get_permit_stage_for_sequence,
 		is_permit_finance_payment_task,
 		permit_finance_by_application_sequence,

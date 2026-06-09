@@ -10,13 +10,13 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	PRE_CLEARANCE_STAGE,
 	get_permit_stage_for_sequence,
 	is_permit_application_task,
 	is_ucr_application_task,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.workflow.gates import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_gates import (
 	get_sea_import_workflow_states,
 )
 
@@ -40,7 +40,7 @@ def sea_task_count() -> int:
 
 def is_sea_payment_task(task) -> bool:
 	"""Finance payment step on sea import (delegates to CGM Shipping Settings)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		is_sea_finance_payment_task,
 	)
 
@@ -48,7 +48,7 @@ def is_sea_payment_task(task) -> bool:
 
 
 def is_sea_auto_completed_task(task) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		is_sea_auto_complete_task,
 	)
 
@@ -61,7 +61,7 @@ def is_sea_clearance_task(task) -> bool:
 
 def task_should_show_documents(seq: int) -> bool:
 	"""Task Documents table - not for CRM intake steps auto-done at project create."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		is_auto_complete_task,
 	)
 
@@ -69,7 +69,7 @@ def task_should_show_documents(seq: int) -> bool:
 
 
 def task_should_show_payment_fields(seq: int) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		is_finance_payment_task,
 	)
 
@@ -87,7 +87,7 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 	carry_project_shipment_documents_to_sea_tasks(project)
 
 	completed = []
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		auto_complete_sequences,
 	)
 
@@ -153,7 +153,7 @@ def derive_workflow_progress_from_tasks(
 	max_seq = max(completed_seqs)
 	progress_status = states[0]
 	progress_index = 0
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow.gates import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_gates import (
 		get_workflow_task_gates,
 	)
 
@@ -305,7 +305,7 @@ def enforce_sea_tasks_exist(project: str) -> None:
 
 def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 	"""Block workflow advance until prior sea tasks in the chart are Completed."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow.gates import get_gate_for_state
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_gates import get_gate_for_state
 
 	gate_row = get_gate_for_state(new_status)
 	if not gate_row:

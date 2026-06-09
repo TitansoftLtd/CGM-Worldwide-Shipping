@@ -9,7 +9,7 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.documents_service import (
 	TASK_DOCUMENTS_FIELD,
 	get_document_type_link_name,
 )
@@ -17,7 +17,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 	PERMIT_REGISTER_FIELD,
 	derive_permit_clearance_phase,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	SUPPLIER_INVOICE_CODE,
 	get_permit_stage_for_sequence,
 	get_required_document_codes,
@@ -77,7 +77,7 @@ TASK_DOCUMENT_TYPE_DEFAULTS: dict[str, dict] = {
 
 
 def ensure_task_document_types() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents_service import (
 		DOCUMENT_TYPE_DEFAULTS,
 		ensure_document_types,
 	)

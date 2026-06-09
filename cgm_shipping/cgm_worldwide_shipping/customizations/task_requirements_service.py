@@ -298,7 +298,7 @@ def get_sea_task_ui_sequences() -> dict:
 	"""Sequence lists and role flags for Task form UI (from CGM Shipping Settings)."""
 	ensure_sea_task_requirements_configured()
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 		get_task_form_permissions,
 	)
 

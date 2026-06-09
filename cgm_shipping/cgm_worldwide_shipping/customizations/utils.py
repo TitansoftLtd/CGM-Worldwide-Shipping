@@ -217,7 +217,7 @@ def get_document_type_link_name(code):
 
 def ensure_document_types():
 	"""Create default Document Type records if they don't exist."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import DOCUMENT_TYPE_DEFAULTS
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents_service import DOCUMENT_TYPE_DEFAULTS
 
 	for code, defaults in DOCUMENT_TYPE_DEFAULTS.items():
 		if get_document_type_link_name(code):
@@ -978,7 +978,7 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
 		auto_complete_initial_sea_tasks,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		ensure_sea_task_requirements_configured,
 	)
 
@@ -1049,7 +1049,7 @@ def create_sea_import_task_plan(project, reset=False):
 @frappe.whitelist()
 def notify_finance_for_task(task_name):
 	"""Notify Finance users (in-app + email) that payment action is needed for a task."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 		notify_finance_for_task as _notify,
 	)
 
