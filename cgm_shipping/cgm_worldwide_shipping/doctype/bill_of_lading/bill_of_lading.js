@@ -25,6 +25,11 @@ frappe.ui.form.on("Bill of Lading", {
 			add_create_opportunity_button(frm);
 			return_to_opportunity_after_submit(frm);
 		}
+		frm.set_query("shipment_type", () => ({
+			filters: {
+				default_mode_of_transport: "Sea",
+			},
+		}));
 	},
 
 	before_save(frm) {

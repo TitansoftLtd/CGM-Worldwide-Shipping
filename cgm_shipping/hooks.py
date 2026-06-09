@@ -204,8 +204,7 @@ doc_events = {
 	},
 	"Lead": {
 		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-			".sync_preshipment_containers_from_bl"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl"
 		),
 	},
 	"Task": {
