@@ -1,0 +1,76 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/portal_localize.html" import local_date %}
+
+{% block title %}{{ _("My Invoices") }}{% endblock %}
+
+{% block page_content %}
+<div class="cp-page cp-page-narrow">
+
+{% include "templates/includes/portal_back_link.html" %}
+
+{% if error_title %}
+  <div class="cp-banner-error"><h4>{{ error_title }}</h4><p>{{ error_message }}</p></div>
+{% else %}
+
+  <div class="cp-hero" style="padding:1.5rem 1.75rem;">
+    <h1 style="margin:0;font-size:1.4rem;font-weight:700;">{{ _("My Invoices") }}</h1>
+    <p class="cp-sub">
+      {% if customer_name %}{{ _("Sales invoices billed to") }} <strong>{{ customer_name }}</strong>{% else %}{{ _("Your invoices") }}{% endif %}.
+    </p>
+  </div>
+
+  {% if no_customer %}
+    <div class="cp-empty">
+      <h4>{{ _("No customer linked to your account") }}</h4>
+      <p>{{ _("Your portal account isn't connected to a Customer yet. Contact CGM Worldwide Shipping.") }}</p>
+    </div>
+  {% elif not invoices %}
+    <div class="cp-empty">
+      <div class="cp-empty-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg></div>
+      <h4>{{ _("No invoices yet") }}</h4>
+      <p>{{ _("Invoices from CGM Worldwide Shipping will appear here.") }}</p>
+    </div>
+  {% else %}
+    {% if total_outstanding > 0 %}
+      <div class="cp-alert" style="background:linear-gradient(135deg,#fff7ed 0%,#fef3c7 100%);border-color:#fcd34d;">
+        <div class="icon">!</div>
+        <div>
+          <h4>{{ _("Outstanding balance") }}: {{ frappe.utils.fmt_money(total_outstanding, currency=currency) }}</h4>
+          <p>{{ _("Total due across your open invoices. Please contact us to settle.") }}</p>
+        </div>
+      </div>
+    {% endif %}
+    <div class="cp-table-wrap">
+      <table class="cp-table">
+        <thead>
+          <tr>
+            <th>{{ _("Invoice") }}</th>
+            <th>{{ _("Date") }}</th>
+            <th>{{ _("Due Date") }}</th>
+            <th>{{ _("Status") }}</th>
+            <th style="text-align:right;">{{ _("Total") }}</th>
+            <th style="text-align:right;">{{ _("Outstanding") }}</th>
+            <th>{{ _("Actions") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in invoices %}
+            <tr>
+              <td data-label="{{ _('Invoice') }}"><span class="ref-link">{{ i.name }}</span></td>
+              <td data-label="{{ _('Date') }}">{% if i.posting_date %}{{ local_date(i.posting_date) }}{% else %}-{% endif %}</td>
+              <td data-label="{{ _('Due Date') }}">{% if i.due_date %}{{ local_date(i.due_date) }}{% else %}-{% endif %}</td>
+              <td data-label="{{ _('Status') }}"><span class="cp-status {{ i.tone }}"><span class="dot"></span>{{ i.status }}</span></td>
+              <td data-label="{{ _('Total') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">{{ frappe.utils.fmt_money(i.grand_total, currency=i.currency) }}</td>
+              <td data-label="{{ _('Outstanding') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;{% if i.outstanding_amount and i.outstanding_amount > 0 %}color:#be123c;{% else %}color:var(--cp-green);{% endif %}">{{ frappe.utils.fmt_money(i.outstanding_amount, currency=i.currency) }}</td>
+              <td data-label="{{ _('Actions') }}"><a class="cp-btn cp-btn-ghost" style="padding:.3rem .8rem;font-size:.78rem;" href="{{ i.pdf_url }}">{{ _("PDF") }}</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+{% endif %}
+
+</div>
+{% endblock %}

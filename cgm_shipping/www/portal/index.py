@@ -20,6 +20,8 @@ from frappe.utils import getdate
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	customer_display_name,
 	customer_for_user,
+	get_customer_invoices,
+	get_customer_quotations,
 	get_customer_shipments,
 	status_tone,
 )
@@ -32,6 +34,9 @@ _DEFAULTS = {
 	"stat_at_port": 0,
 	"stat_delivered": 0,
 	"stat_demurrage": 0,
+	"stat_open_quotations": 0,
+	"stat_amount_due": 0,
+	"amount_due_currency": None,
 	"arriving_soon": [],
 	"recent_shipments": [],
 }
@@ -147,6 +152,20 @@ def _populate(context, customer):
 		)
 	arriving.sort(key=lambda x: x["eta"])
 	context.arriving_soon = arriving[:6]
+
+	# Billing snapshot: open quotations awaiting a decision and the total
+	# amount still owed across submitted invoices.
+	from frappe.utils import flt
+
+	quotations = get_customer_quotations(customer)
+	context.stat_open_quotations = sum(
+		1 for q in quotations if q.status in ("Open", "Replied")
+	)
+	invoices = get_customer_invoices(customer)
+	context.stat_amount_due = sum(flt(i.outstanding_amount) for i in invoices)
+	context.amount_due_currency = (
+		invoices[0].currency if invoices else frappe.defaults.get_global_default("currency")
+	)
 
 	recent = []
 	for s in shipments[:8]:

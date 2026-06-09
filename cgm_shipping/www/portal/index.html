@@ -57,6 +57,18 @@
       <div><div class="cp-kpi-num">{{ stat_demurrage }}</div><div class="cp-kpi-label">{{ _("Demurrage Alerts") }}</div></div>
     </a>
     {% endif %}
+    <a class="cp-kpi teal" href="/my-quotations">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>
+      </div>
+      <div><div class="cp-kpi-num">{{ stat_open_quotations|default(0) }}</div><div class="cp-kpi-label">{{ _("Open Quotations") }}</div></div>
+    </a>
+    <a class="cp-kpi rose" href="/my-invoices">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
+      </div>
+      <div><div class="cp-kpi-num" style="font-size:1.15rem;">{{ frappe.utils.fmt_money(stat_amount_due|default(0), currency=amount_due_currency|default(None)) }}</div><div class="cp-kpi-label">{{ _("Amount Due") }}</div></div>
+    </a>
   </section>
   {% endif %}
 
@@ -66,6 +78,14 @@
     <a class="cp-action" href="/my-shipments">
       <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20M2 12l3-7h14l3 7M5 12v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/></svg></span>
       <div><h3>{{ _("My Shipments") }}</h3><p>{{ _("Track every shipment and its current status.") }}</p></div>
+    </a>
+    <a class="cp-action" href="/my-quotations">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg></span>
+      <div><h3>{{ _("Quotations") }}</h3><p>{{ _("Review quotes prepared for you and their status.") }}</p></div>
+    </a>
+    <a class="cp-action" href="/my-invoices">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg></span>
+      <div><h3>{{ _("Invoices") }}</h3><p>{{ _("View invoices and outstanding balances.") }}</p></div>
     </a>
     <a class="cp-action" href="/documents">
       <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg></span>

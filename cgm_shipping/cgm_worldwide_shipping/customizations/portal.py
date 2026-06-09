@@ -344,6 +344,134 @@ def container_timeline(container: dict) -> list[dict]:
 	return timeline
 
 
+# ─── Quotations & Sales Invoices ─────────────────────────────────────────────
+
+
+def get_customer_quotations(customer: str, limit: int = 200) -> list[dict]:
+	"""Sales Quotations addressed to this customer, newest first.
+
+	Quotations link to a party via (quotation_to, party_name); we only
+	want the ones raised to this Customer. Cancelled quotations (docstatus
+	2) are hidden. Each row carries a tone + guarded PDF download URL.
+	"""
+	if not customer:
+		return []
+	rows = frappe.get_all(
+		"Quotation",
+		filters={
+			"quotation_to": "Customer",
+			"party_name": customer,
+			"docstatus": ["<", 2],
+		},
+		fields=[
+			"name",
+			"transaction_date",
+			"valid_till",
+			"status",
+			"order_type",
+			"grand_total",
+			"currency",
+		],
+		order_by="transaction_date desc, creation desc",
+		limit=limit,
+	)
+	for r in rows:
+		r["tone"] = quotation_status_tone(r.status)
+		r["pdf_url"] = _pdf_url("Quotation", r["name"])
+	return rows
+
+
+def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
+	"""Submitted Sales Invoices for this customer, newest first.
+
+	Only submitted invoices (docstatus 1) are shown - drafts are internal.
+	Each row carries a tone + guarded PDF download URL.
+	"""
+	if not customer:
+		return []
+	rows = frappe.get_all(
+		"Sales Invoice",
+		filters={"customer": customer, "docstatus": 1},
+		fields=[
+			"name",
+			"posting_date",
+			"due_date",
+			"status",
+			"grand_total",
+			"outstanding_amount",
+			"currency",
+		],
+		order_by="posting_date desc, creation desc",
+		limit=limit,
+	)
+	for r in rows:
+		r["tone"] = invoice_status_tone(r.status)
+		r["pdf_url"] = _pdf_url("Sales Invoice", r["name"])
+	return rows
+
+
+def quotation_status_tone(status: str | None) -> str:
+	"""CSS tone class for a Quotation status pill."""
+	if status in ("Ordered", "Partially Ordered"):
+		return "success"
+	if status in ("Open", "Replied"):
+		return "active"
+	if status in ("Lost", "Expired", "Cancelled"):
+		return "danger"
+	return "muted"
+
+
+def invoice_status_tone(status: str | None) -> str:
+	"""CSS tone class for a Sales Invoice status pill."""
+	if status == "Paid":
+		return "success"
+	if status and "Overdue" in status:
+		return "danger"
+	if status in ("Unpaid", "Partly Paid", "Submitted", "Unpaid and Discounted", "Partly Paid and Discounted"):
+		return "active"
+	return "muted"
+
+
+def _pdf_url(doctype: str, name: str) -> str:
+	return (
+		"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_transaction_pdf"
+		+ f"?doctype={quote(doctype, safe='')}&name={quote(name, safe='')}"
+	)
+
+
+@frappe.whitelist()
+def download_transaction_pdf(doctype: str, name: str):
+	"""Stream a customer's own Quotation / Sales Invoice as a PDF.
+
+	Portal users hold no desk read perm on these doctypes, so a direct
+	print URL would 403. This re-derives the customer from the session,
+	confirms the document is addressed to them, then renders and streams
+	the PDF. Only Quotation and Sales Invoice are downloadable here.
+	"""
+	if doctype not in ("Quotation", "Sales Invoice"):
+		raise frappe.PermissionError(_("This document type can't be downloaded here."))
+
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+
+	if doctype == "Sales Invoice":
+		owner = frappe.db.get_value("Sales Invoice", name, "customer")
+	else:
+		row = frappe.db.get_value(
+			"Quotation", name, ["quotation_to", "party_name"], as_dict=True
+		)
+		owner = row.party_name if (row and row.quotation_to == "Customer") else None
+
+	if not owner or owner != customer:
+		raise frappe.PermissionError(_("You can only download your own documents."))
+
+	pdf = frappe.get_print(doctype, name, as_pdf=True)
+	frappe.local.response.filename = f"{name}.pdf"
+	frappe.local.response.filecontent = pdf
+	frappe.local.response.type = "download"
+
+
 # ─── Documents ───────────────────────────────────────────────────────────────
 
 
