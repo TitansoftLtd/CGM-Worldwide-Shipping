@@ -244,7 +244,7 @@ def cgm_ref_prefix(shipment_type=None, mode=None) -> str:
 	Fetch CGM ref prefix from Shipment Type master.
 	Falls back to mode-based lookup when no exact match is found.
 	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
 		cgm_ref_prefix_from_master,
 	)
 
@@ -428,7 +428,7 @@ def normalize_shipment_classification(shipment_type=None, mode=None):
 	st = (shipment_type or "").strip()
 	m = (mode or "").strip()
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
 		get_shipment_type_record,
 		mode_from_master,
 	)
@@ -704,7 +704,7 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 	)
 
 	project_doc = frappe.get_doc("Project", project_name)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
 		sea_import_enabled_for_project,
 	)
 
@@ -985,7 +985,7 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	ensure_sea_task_requirements_configured()
 
 	project_doc = frappe.get_doc("Project", project)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_type.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
 		sea_import_enabled_for_project,
 	)
 

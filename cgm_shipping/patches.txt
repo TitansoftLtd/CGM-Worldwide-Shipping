@@ -37,7 +37,6 @@ cgm_shipping.patches.permit_fields_on_finance_task
 cgm_shipping.patches.permit_type_purchase_items
 cgm_shipping.patches.declaration_user_task_write
 cgm_shipping.patches.remove_shipment_dossier
-cgm_shipping.patches.bootstrap_shipment_types
 cgm_shipping.patches.cgm_ref_unique_index
 cgm_shipping.patches.opportunity_bill_of_lading_containers
 cgm_shipping.patches.opportunity_bill_of_lading_flow
