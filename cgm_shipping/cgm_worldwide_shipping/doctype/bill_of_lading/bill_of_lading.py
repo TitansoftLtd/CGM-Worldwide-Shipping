@@ -297,6 +297,12 @@ def create_opportunity_from_bill_of_lading(bill_of_lading: str) -> str:
 			frappe.db.get_value("Customer", customer, "customer_name") or customer,
 		)
 
+	# Carry the shipment classification details from the BL onto the Opportunity.
+	if opp.meta.has_field("custom_shipment_type") and bl.get("shipment_type"):
+		opp.set("custom_shipment_type", bl.get("shipment_type"))
+	if opp.meta.has_field("custom_description_of_goods") and bl.get("description"):
+		opp.set("custom_description_of_goods", bl.get("description"))
+
 	# Carry the BL quantity summary onto the Opportunity.
 	quantity_field = config.get("opportunity_quantity_field")
 	quantity_summary = get_bl_quantity_summary(bl)

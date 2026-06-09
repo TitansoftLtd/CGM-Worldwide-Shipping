@@ -187,10 +187,16 @@ doc_events = {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
 	},
 	"Opportunity": {
-		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-			".sync_preshipment_containers_from_bl"
-		),
+		"before_save": [
+			(
+				"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+				".sync_preshipment_containers_from_bl"
+			),
+			(
+				"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+				".stamp_verified_documents_on_approval"
+			),
+		],
 	},
 	"Lead": {
 		"before_save": (

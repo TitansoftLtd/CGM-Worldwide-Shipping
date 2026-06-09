@@ -721,50 +721,6 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 	result["auto_completed"] = auto_complete_initial_sea_tasks(project_name)
 	return result
 
-@frappe.whitelist()
-def create_project_from_customer(customer, project_name=None):
-	"""Create a shipment project from a Customer record."""
-	frappe.has_permission("Project", ptype="create", throw=True)
-
-	if not frappe.db.exists("Customer", customer):
-		frappe.throw(f"Customer {customer} not found")
-
-	# Prevent copying data out of a source record the user cannot read.
-	frappe.has_permission("Customer", ptype="read", doc=customer, throw=True)
-	cust = frappe.get_doc("Customer", customer)
-
-	shipment_type = None
-	mode_of_transport = None
-	lead_name = cust.get("lead_name")
-	if lead_name and frappe.db.exists("Lead", lead_name):
-		row = frappe.db.get_value(
-			"Lead",
-			lead_name,
-			["custom_shipment_type", "custom_mode_of_transport"],
-			as_dict=True,
-		)
-		if row:
-			shipment_type = row.get("custom_shipment_type")
-			mode_of_transport = row.get("custom_mode_of_transport")
-
-	proj = frappe.new_doc("Project")
-	proj.customer = customer
-	apply_shipment_data(proj, shipment_type=shipment_type, mode=mode_of_transport)
-	apply_lead_shipment_defaults(proj, lead_name)
-	apply_project_tracking_defaults(proj)
-	if project_name:
-		proj.project_name = project_name
-		cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
-		if cgm_ref_field:
-			proj.set(cgm_ref_field, project_name)
-
-	project_fields = frappe.get_meta("Project")
-	if lead_name and project_fields.has_field("custom_source_lead"):
-		proj.custom_source_lead = lead_name
-
-	sync_linked_attachments_to_project(proj)
-	return insert_shipment_project(proj)
-
 def get_lead_field_value(lead, *candidates: str):
 	"""Return the first non-empty attribute present on the Lead document."""
 	lead_meta = lead.meta

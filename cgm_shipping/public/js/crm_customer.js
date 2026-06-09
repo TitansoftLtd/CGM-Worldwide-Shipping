@@ -9,24 +9,9 @@ frappe.ui.form.on("Customer", {
 		);
 
 		frm.add_custom_button(
-			__("Create Shipment Project"),
+			__("Air Waybill"),
 			() => {
-				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_customer",
-					args: { customer: frm.doc.name },
-					freeze: true,
-					callback(r) {
-						if (!r.exc && r.message) {
-							frappe.show_alert({
-								message: __(
-									"Shipment Project created. Sea tasks 1–2 are auto-completed when CI/PKL came from CRM."
-								),
-								indicator: "green",
-							});
-							frappe.set_route("Form", "Project", r.message);
-						}
-					},
-				});
+				frappe.new_doc("Air Waybill", { customer: frm.doc.name });
 			},
 			__("Create")
 		);

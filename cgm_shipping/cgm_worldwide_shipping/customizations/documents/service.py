@@ -25,6 +25,11 @@ DOCUMENT_TYPE_DEFAULTS = {
 		"default_required": 1,
 		"required_stage": "Pre-IDF",
 	},
+	"AWB": {
+		"category": "Transport",
+		"default_required": 0,
+		"required_stage": "Arrival & manifest",
+	},
 }
 
 CUSTOMER_ATTACH_TO_DOCUMENT_CODE = {

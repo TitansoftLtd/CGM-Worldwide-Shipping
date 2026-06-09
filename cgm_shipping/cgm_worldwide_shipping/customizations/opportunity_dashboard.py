@@ -10,14 +10,12 @@ shipping links instead.
 def get_dashboard_data(data):
 	data["transactions"] = [
 		{"label": "Quotation", "items": ["Quotation"]},
-		{"label": "Shipment", "items": ["Bill of Lading"]},
+		{"label": "Shipment", "items": ["Bill of Lading", "Air Waybill"]},
 		{"label": "Project", "items": ["Project"]},
 	]
-
-	# Bill of Lading and Project link back to the Opportunity through their own
-	# fields, not the standard "opportunity" fieldname.
 	non_standard = data.setdefault("non_standard_fieldnames", {})
 	non_standard["Bill of Lading"] = "linked_opportunity"
+	non_standard["Air Waybill"] = "linked_opportunity"
 	non_standard["Project"] = "custom_source_opportunity"
 
 	return data
