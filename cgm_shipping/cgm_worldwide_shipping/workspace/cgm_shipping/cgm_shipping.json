@@ -182,7 +182,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Masters & Setup",
-   "link_count": 6,
+   "link_count": 5,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -222,16 +222,6 @@
    "label": "Permit Type",
    "link_count": 0,
    "link_to": "Permit Type",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Clearance Station Code",
-   "link_count": 0,
-   "link_to": "Clearance Station Code",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
