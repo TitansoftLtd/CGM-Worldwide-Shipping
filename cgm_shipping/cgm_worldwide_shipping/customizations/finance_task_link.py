@@ -11,9 +11,18 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_servic
 	is_permit_finance_payment_task,
 	is_ucr_finance_payment_task,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
-	payment_entry_allocates_purchase_invoice,
-)
+
+
+def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoice_name):
+	"""Return True when the Payment Entry references the given Purchase Invoice."""
+	if not payment_entry_name or not purchase_invoice_name:
+		return False
+
+	pe = frappe.get_doc("Payment Entry", payment_entry_name)
+	for row in pe.get("references") or []:
+		if row.reference_doctype == "Purchase Invoice" and row.reference_name == purchase_invoice_name:
+			return True
+	return False
 
 
 def ensure_finance_custom_fields() -> None:

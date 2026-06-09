@@ -109,7 +109,7 @@ def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 	target_doc.set(bl_field, bl_name)
 	sync_preshipment_containers_from_bl(target_doc)
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
 		carry_bill_of_lading_attachment_to_project,
 	)
 

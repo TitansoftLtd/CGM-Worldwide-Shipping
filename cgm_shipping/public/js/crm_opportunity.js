@@ -405,7 +405,7 @@ function setup_create_shipment_project_button(frm) {
                     () => {
                         frappe.call({
                             method:
-                                "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_opportunity",
+                                "cgm_shipping.cgm_worldwide_shipping.customizations.project.create_project_from_opportunity",
                             args: { opportunity: frm.doc.name },
                             freeze: true,
                             callback(r) {
