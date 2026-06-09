@@ -1,5 +1,3 @@
-// ─── Opportunity form ─────────────────────────────────────────────────────────
-
 frappe.ui.form.on("Opportunity", {
     onload(frm) {
         register_clients_documents_remove_handler(frm);
@@ -31,18 +29,19 @@ frappe.ui.form.on("Shipment Document", {
     },
 });
 
-
-// ─── Meta discovery ───────────────────────────────────────────────────────────
+function meta_has_field(doctype, fieldname) {
+    const meta = doctype && frappe.get_meta(doctype);
+    return Boolean(meta && (meta.fields || []).some((df) => df.fieldname === fieldname));
+}
 
 function get_shipment_documents_field(frm) {
     for (const df of frappe.meta.get_docfields(frm.doctype, frm.doc.name)) {
         if (df.fieldtype !== "Table") {
             continue;
         }
-        const child_meta = frappe.get_meta(df.options);
         if (
-            child_meta?.has_field("document_type") &&
-            child_meta?.has_field("document_reference")
+            meta_has_field(df.options, "document_type") &&
+            meta_has_field(df.options, "document_reference")
         ) {
             return df.fieldname;
         }
@@ -71,7 +70,7 @@ function linked_doctype_has_container_table(doctype) {
         if (df.fieldtype !== "Table") {
             return false;
         }
-        return Boolean(frappe.get_meta(df.options)?.has_field("container_number"));
+        return meta_has_field(df.options, "container_number");
     });
 }
 
@@ -92,7 +91,7 @@ function get_container_table_field(frm) {
         if (df.fieldtype !== "Table") {
             continue;
         }
-        if (frappe.get_meta(df.options)?.has_field("container_number")) {
+        if (meta_has_field(df.options, "container_number")) {
             return df.fieldname;
         }
     }
@@ -364,9 +363,6 @@ function clear_bl_derived_opportunity_fields(frm) {
         frm.set_value(bl_link_field, "");
     }
 }
-
-
-// ─── Create Shipment Project button ───────────────────────────────────────────
 
 function setup_create_shipment_project_button(frm) {
     if (
