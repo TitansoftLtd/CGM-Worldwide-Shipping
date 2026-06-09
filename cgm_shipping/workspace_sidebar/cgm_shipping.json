@@ -12,7 +12,7 @@
    "indent": 0,
    "keep_closed": 0,
    "label": "Home",
-   "link_to": "CGM Shipping",
+   "link_to": "CGM",
    "link_type": "Workspace",
    "show_arrow": 0,
    "type": "Link"
@@ -306,7 +306,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-09 09:22:58.672096",
+ "modified": "2026-06-09 09:29:57.022849",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",
