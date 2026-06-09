@@ -264,10 +264,18 @@ def create_opportunity_from_bill_of_lading(bill_of_lading: str) -> str:
 	source_field = config.get("opportunity_source_field")
 	bl_field = config.get("opportunity_bl_field")
 
-	# Return the existing Opportunity instead of creating a duplicate.
 	if source_field:
 		existing = bl.get(source_field)
 		if is_valid_opportunity_link(existing):
+			return existing
+
+	if bl_field:
+		existing = frappe.db.get_value("Opportunity", {bl_field: bl.name}, "name")
+		if existing:
+			if source_field and bl.meta.has_field(source_field):
+				frappe.db.set_value(
+					"Bill of Lading", bl.name, source_field, existing, update_modified=False
+				)
 			return existing
 
 	customer = bl.get("customer")
@@ -288,6 +296,19 @@ def create_opportunity_from_bill_of_lading(bill_of_lading: str) -> str:
 			"custom_consignee",
 			frappe.db.get_value("Customer", customer, "customer_name") or customer,
 		)
+
+	# Carry the BL quantity summary onto the Opportunity.
+	quantity_field = config.get("opportunity_quantity_field")
+	quantity_summary = get_bl_quantity_summary(bl)
+	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
+		opp.set(quantity_field, quantity_summary)
+
+	# Add the BL attachment as the first row of the Opportunity documents table.
+	attachment_field = config.get("attachment_field")
+	attachment_url = bl.get(attachment_field) if attachment_field else None
+	clients_field = get_opportunity_documents_field()
+	if attachment_url and clients_field and opp.meta.has_field(clients_field):
+		prepend_opportunity_bl_document(opp, attachment_url, bl_name=bl.name)
 
 	# before_save (sync_preshipment_containers_from_bl) copies BL container rows.
 	opp.insert()

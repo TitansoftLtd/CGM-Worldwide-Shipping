@@ -130,6 +130,16 @@ function add_back_to_opportunity_button(frm) {
 }
 
 function add_create_opportunity_button(frm) {
+	if (frm.doc.linked_opportunity) {
+		frm.add_custom_button(
+			__("Opportunity"),
+			() => frappe.set_route("Form", "Opportunity", frm.doc.linked_opportunity),
+			__("View")
+		);
+		frm.page.set_inner_btn_group_as_primary(__("View"));
+		return;
+	}
+
 	// Branch a CRM Opportunity off a submitted Bill of Lading.
 	frm.add_custom_button(
 		__("Opportunity"),
