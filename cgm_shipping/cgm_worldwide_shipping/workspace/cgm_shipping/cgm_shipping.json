@@ -24,6 +24,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Project",
+   "link_count": 0,
+   "link_to": "Project",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Bill of Lading",
    "link_count": 0,
    "link_to": "Bill of Lading",
@@ -182,7 +192,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Masters & Setup",
-   "link_count": 6,
+   "link_count": 7,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -209,6 +219,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Mode of Transport",
+   "link_count": 0,
+   "link_to": "Mode of Transport",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Document Type",
    "link_count": 0,
    "link_to": "Document Type",
@@ -222,6 +242,16 @@
    "label": "Permit Type",
    "link_count": 0,
    "link_to": "Permit Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "CFS Location",
+   "link_count": 0,
+   "link_to": "CFS Location",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
