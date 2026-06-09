@@ -126,6 +126,7 @@ function add_back_to_opportunity_button(frm) {
 	frm.add_custom_button(__("Back to Opportunity"), () => {
 		frappe.set_route("Form", "Opportunity", opportunity);
 	}, __("CGM"));
+	frm.page.set_inner_btn_group_as_primary(__("CGM"));
 }
 
 function add_create_opportunity_button(frm) {
@@ -150,6 +151,7 @@ function add_create_opportunity_button(frm) {
 		},
 		__("Create")
 	);
+	frm.page.set_inner_btn_group_as_primary(__("Create"));
 }
 
 function return_to_opportunity_after_submit(frm) {

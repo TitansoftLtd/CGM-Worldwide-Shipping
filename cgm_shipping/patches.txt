@@ -45,4 +45,3 @@ cgm_shipping.patches.opportunity_bill_of_lading_flow
 cgm_shipping.patches.container_tracker_bl_selection
 cgm_shipping.patches.opportunity_airway_bill_visibility
 cgm_shipping.patches.sync_cgm_shipping_desktop_navigation
-cgm_shipping.patches.replace_shipment_dossier_with_project

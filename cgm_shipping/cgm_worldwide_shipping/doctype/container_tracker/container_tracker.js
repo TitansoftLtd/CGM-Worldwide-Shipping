@@ -263,13 +263,14 @@ frappe.ui.form.on("Container Tracker", {
 		if (frm.doc.project) {
 			frm.add_custom_button(__("Open Project"), () => {
 				frappe.set_route("Form", "Project", frm.doc.project);
-			});
+			}).addClass("btn-primary");
 		}
 		const task_name = localStorage.getItem(CGM_CONTAINER_TRACKING_TASK_KEY);
 		if (task_name) {
 			frm.add_custom_button(__("Back to Task"), () => {
 				frappe.set_route("Form", "Task", task_name);
 			}, __("CGM"));
+			frm.page.set_inner_btn_group_as_primary(__("CGM"));
 		}
 	},
 

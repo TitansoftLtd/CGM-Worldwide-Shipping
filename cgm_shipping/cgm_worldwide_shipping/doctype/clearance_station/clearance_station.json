@@ -7,8 +7,6 @@
  "engine": "InnoDB",
  "field_order": [
   "cfs_name",
-  "cfs_code",
-  "supplier",
   "amended_from"
  ],
  "fields": [
@@ -19,18 +17,6 @@
    "label": "Clearance Station",
    "reqd": 1,
    "unique": 1
-  },
-  {
-   "fieldname": "cfs_code",
-   "fieldtype": "Select",
-   "label": "Clearance Station Code",
-   "options": "MAT\nCSC\nSIG\nTCC\nKAH\nBFT\nICD\nICD-UG"
-  },
-  {
-   "fieldname": "supplier",
-   "fieldtype": "Link",
-   "label": "Supplier",
-   "options": "Supplier"
   },
   {
    "fieldname": "amended_from",
@@ -46,7 +32,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-27 23:33:35.987481",
+ "modified": "2026-06-09 09:43:56.990447",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Clearance Station",

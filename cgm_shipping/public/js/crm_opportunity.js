@@ -497,4 +497,5 @@ function setup_create_shipment_project_button(frm) {
         },
         __("Create")
     );
+    frm.page.set_inner_btn_group_as_primary(__("Create"));
 }

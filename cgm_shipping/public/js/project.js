@@ -329,7 +329,7 @@ frappe.ui.form.on("Project", {
 		setup_clearance_tasks_toolbar_button(frm);
 
 		if (frm.doc.name && !frm.is_new()) {
-			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm));
+			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass("btn-primary");
 			frm.add_custom_button(__("Container Tracker"), () => {
 				frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
 			}, __("View"));
@@ -344,6 +344,7 @@ frappe.ui.form.on("Project", {
 			frm.add_custom_button(__("Seal Record"), () => {
 				frappe.new_doc("Seal Record", { project: frm.doc.name });
 			}, __("View"));
+			frm.page.set_inner_btn_group_as_primary(__("View"));
 		}
 
 		if (frm.is_new() && frm.doc.project_name && frm.fields_dict.custom_cgm_ref_no) {

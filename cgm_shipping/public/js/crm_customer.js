@@ -30,5 +30,7 @@ frappe.ui.form.on("Customer", {
 			},
 			__("Create")
 		);
+
+		frm.page.set_inner_btn_group_as_primary(__("Create"));
 	},
 });
