@@ -1,13 +1,12 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:cfs_name",
  "creation": "2026-05-19 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "cfs_name",
-  "amended_from"
+  "station_code"
  ],
  "fields": [
   {
@@ -19,23 +18,19 @@
    "unique": 1
   },
   {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "Clearance Station",
-   "print_hide": 1,
-   "read_only": 1,
-   "search_index": 1
+   "fieldname": "station_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Station Code"
   }
  ],
  "index_web_pages_for_search": 1,
- "is_submittable": 1,
  "links": [],
- "modified": "2026-06-09 09:43:56.990447",
+ "modified": "2026-06-09 11:20:12.510528",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Clearance Station",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
@@ -47,7 +42,6 @@
    "read": 1,
    "role": "System Manager",
    "share": 1,
-   "submit": 1,
    "write": 1
   }
  ],
