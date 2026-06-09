@@ -24,6 +24,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 
 
 class BillofLading(Document):
+	def autoname(self):
+		# Name by the Bill of Lading number (naming_rule: "By script").
+		if not self.bl_number:
+			frappe.throw(frappe._("Bill of Lading Number is required"))
+		self.name = self.bl_number
+
 	def validate(self):
 		sanitize_bill_of_lading_linked_opportunity(self)
 		summary = self._summarize_container_quantities()

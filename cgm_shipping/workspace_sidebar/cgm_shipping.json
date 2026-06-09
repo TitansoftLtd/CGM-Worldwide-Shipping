@@ -12,8 +12,7 @@
    "indent": 0,
    "keep_closed": 0,
    "label": "Home",
-   "link_to": "CGM Worldwide Shipping",
-   "link_to": "CGM Worldwide Shipping",
+   "link_to": "CGM Shipping",
    "link_type": "Workspace",
    "show_arrow": 0,
    "type": "Link"
@@ -30,11 +29,6 @@
   {
    "child": 1,
    "collapsible": 0,
-   "icon": "folder",
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Project",
-   "link_to": "Project",
    "icon": "folder",
    "indent": 0,
    "keep_closed": 0,
@@ -312,8 +306,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-07 18:00:00.000000",
- "modified": "2026-06-07 18:00:00.000000",
+ "modified": "2026-06-09 09:22:58.672096",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",
