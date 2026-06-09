@@ -1,15 +1,15 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:permit_name",
  "creation": "2026-06-03 04:45:05.242049",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_c9fj",
-  "amended_from",
   "permit_name",
-  "purchase_item"
+  "column_break_chun",
+  "purchase_item",
+  "amended_from"
  ],
  "fields": [
   {
@@ -30,6 +30,7 @@
    "fieldname": "permit_name",
    "fieldtype": "Data",
    "label": "Permit Name",
+   "reqd": 1,
    "unique": 1
   },
   {
@@ -39,17 +40,20 @@
    "in_list_view": 1,
    "label": "Purchase Item",
    "options": "Item"
+  },
+  {
+   "fieldname": "column_break_chun",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "is_submittable": 1,
  "links": [],
- "modified": "2026-06-03 04:45:39.507445",
+ "modified": "2026-06-09 22:00:00.900531",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Permit Type",
- "naming_rule": "By fieldname",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
@@ -62,7 +66,6 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
-   "submit": 1,
    "write": 1
   }
  ],

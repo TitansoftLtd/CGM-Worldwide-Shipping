@@ -8,8 +8,13 @@ Task gates: CGM Shipping Settings → custom_sea_workflow_task_gates
 from __future__ import annotations
 
 import frappe
+from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
+from cgm_shipping.cgm_worldwide_shipping.customizations.department import (
+	normalize_department_stem,
+	resolve_department_name,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	PRE_CLEARANCE_STAGE,
 	get_permit_stage_for_sequence,
@@ -33,8 +38,6 @@ def get_tracking_workflow_states() -> list[str]:
 
 def sea_task_count() -> int:
 	"""Number of steps in the configured sea import task template."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
-
 	return len(load_sea_task_template())
 
 
@@ -364,3 +367,156 @@ def enforce_all_sea_tasks_complete(project: str) -> None:
 	blockers = get_sea_closure_blockers(project)
 	if blockers:
 		frappe.throw("<br>".join(blockers))
+
+
+# ─── Sea Task Template & Plan (moved from utils.py) ───────────────────────────
+def mark_task_completed(task) -> None:
+	"""Write Completed straight to the DB (a nested doc.save can leave list views stale)."""
+	frappe.db.set_value(
+		"Task",
+		task.name,
+		{
+			"status": "Completed",
+			"completed_by": task.completed_by or frappe.session.user,
+			"completed_on": task.completed_on or now_datetime(),
+			"progress": 100,
+		},
+		update_modified=True,
+	)
+	frappe.clear_document_cache("Task", task.name)
+
+
+def load_sea_task_template():
+	"""Return sea import tasks from CGM Shipping Settings."""
+	# 1. Load and sort template rows by their index.
+	settings = frappe.get_single("CGM Shipping Settings")
+	rows = sorted(settings.get("custom_sea_import_task_template") or [], key=lambda r: r.idx or 0)
+
+	# 2. Validate and collect each row.
+	out = []
+	for row in rows:
+		subject = (row.task_subject or "").strip()
+		dept = normalize_department_stem(row.department)
+		if not subject:
+			continue
+		if not dept:
+			frappe.throw(f"Sea import task template: Department is required for task: {subject}")
+		out.append({"subject": subject, "department": dept})
+
+	if not out:
+		frappe.throw("Add at least one row to Sea import task template in CGM Shipping Settings.")
+
+	return out
+
+
+@frappe.whitelist()
+def backfill_intake_documents_on_sea_tasks(project):
+	"""Copy Project shipment documents onto tasks 1–2 (for projects created before this feature)."""
+	frappe.has_permission("Project", ptype="write", throw=True)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
+		carry_project_shipment_documents_to_sea_tasks,
+	)
+
+	carried = carry_project_shipment_documents_to_sea_tasks(project)
+	auto_complete_initial_sea_tasks(project)
+	return {"tasks_updated": carried}
+
+
+def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
+	"""
+	For Sea projects with CRM-approved CI/PKL: create the 24-task plan and auto-complete tasks 1–2.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+		project_has_intake_documents,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
+		sea_import_enabled_for_project,
+	)
+
+	project_doc = frappe.get_doc("Project", project_name)
+
+	if not sea_import_enabled_for_project(project_doc):
+		return None
+	if not project_has_intake_documents(project_doc):
+		return None
+
+	if frappe.db.exists("Task", {"project": project_name, "custom_task_flow_key": SEA_TASK_FLOW_KEY}):
+		done = auto_complete_initial_sea_tasks(project_name)
+		return {"auto_completed": done, "created": 0}
+
+	result = create_sea_import_task_plan_internal(project_name)
+	result["auto_completed"] = auto_complete_initial_sea_tasks(project_name)
+	return result
+
+
+def create_sea_import_task_plan_internal(project, reset=False):
+	"""Generate ordered sea-import tasks (internal; no duplicate check unless reset)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+		project_has_intake_documents,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
+		sea_import_enabled_for_project,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
+		ensure_sea_task_requirements_configured,
+	)
+
+	ensure_sea_task_requirements_configured()
+
+	project_doc = frappe.get_doc("Project", project)
+
+	if not sea_import_enabled_for_project(project_doc):
+		frappe.throw("This task plan is for sea-import shipment types only.")
+
+	existing = frappe.get_all(
+		"Task",
+		filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
+		fields=["name"],
+		limit=1,
+	)
+	if existing and not frappe.utils.cint(reset):
+		frappe.throw("Sea task plan already exists. Use reset=1 if you want to regenerate it.")
+	if existing and frappe.utils.cint(reset):
+		for d in frappe.get_all(
+			"Task",
+			filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
+			fields=["name"],
+		):
+			frappe.delete_doc("Task", d.name, ignore_permissions=True, force=True)
+
+	task_template = load_sea_task_template()
+	created = []
+	prev_task = None
+
+	for idx, item in enumerate(task_template, start=1):
+		subject = item.get("subject")
+		if not subject:
+			frappe.throw(f"Task template item at position {idx} has no subject.")
+
+		task = frappe.new_doc("Task")
+		task.subject = subject
+		task.project = project
+		task.custom_task_flow_key = SEA_TASK_FLOW_KEY
+		task.custom_sequence_no = idx
+		task.department = resolve_department_name(item.get("department"), company=project_doc.company)
+		task.status = "Open"
+		task.insert(ignore_permissions=True)
+
+		if prev_task:
+			task.append("depends_on", {"task": prev_task.name})
+			task.save(ignore_permissions=True)
+
+		prev_task = task
+		created.append(task.name)
+
+	out = {"created": created, "count": len(created)}
+	if project_has_intake_documents(project_doc):
+		out["auto_completed"] = auto_complete_initial_sea_tasks(project)
+	return out
+
+
+@frappe.whitelist()
+def create_sea_import_task_plan(project, reset=False):
+	"""Generate ordered sea-import tasks and link them via a depends_on chain."""
+	frappe.has_permission("Task", ptype="create", throw=True)
+	return create_sea_import_task_plan_internal(project, reset=reset)

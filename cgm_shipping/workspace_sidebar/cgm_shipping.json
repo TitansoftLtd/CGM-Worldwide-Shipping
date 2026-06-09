@@ -260,6 +260,18 @@
   {
    "child": 1,
    "collapsible": 0,
+   "icon": "route",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Mode of Transport",
+   "link_to": "Mode of Transport",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
    "icon": "file",
    "indent": 0,
    "keep_closed": 0,
@@ -284,6 +296,18 @@
   {
    "child": 1,
    "collapsible": 0,
+   "icon": "map-pin-check-inside",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "CFS Location",
+   "link_to": "CFS Location",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
    "icon": "settings",
    "indent": 0,
    "keep_closed": 0,
@@ -294,7 +318,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-09 09:29:57.022849",
+ "modified": "2026-06-09 22:08:04.211636",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",

@@ -5,9 +5,11 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "station_code",
+  "cfs_name",
   "column_break_hkvi",
-  "cfs_name"
+  "station_code",
+  "column_break_nqyy",
+  "location"
  ],
  "fields": [
   {
@@ -15,6 +17,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Clearance Station",
+   "reqd": 1
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Location",
+   "options": "CFS Location",
    "reqd": 1
   },
   {
@@ -27,11 +37,15 @@
   {
    "fieldname": "column_break_hkvi",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_nqyy",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 12:37:17.001393",
+ "modified": "2026-06-09 19:13:19.800863",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Clearance Station",

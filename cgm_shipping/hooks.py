@@ -29,8 +29,14 @@ app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
 app_include_js = "/assets/cgm_shipping/js/cgm_container_tracking.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/cgm_shipping/css/cgm_shipping.css"
-# web_include_js = "/assets/cgm_shipping/js/cgm_shipping.js"
+# Customer portal: shared design-system CSS + browser-side timezone
+# localization for the /portal, /my-shipments, /shipment and /documents pages.
+web_include_css = [
+	"/assets/cgm_shipping/css/customer_portal.css",
+]
+web_include_js = [
+	"/assets/cgm_shipping/js/portal_localize_time.js",
+]
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "cgm_shipping/public/scss/website"
@@ -79,9 +85,14 @@ doctype_js = {
 # home_page = "login"
 
 # website user home page (by Role)
-# role_home_page = {
-# 	"Role": "home_page"
-# }
+# Customers (Website Users) land on the branded shipment portal.
+role_home_page = {
+	"Customer": "portal",
+}
+
+on_session_creation = [
+	"cgm_shipping.cgm_worldwide_shipping.customizations.website.route_customer_to_portal",
+]
 
 # Generators
 # ----------
@@ -96,10 +107,13 @@ doctype_js = {
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "cgm_shipping.utils.jinja_methods",
-# 	"filters": "cgm_shipping.utils.jinja_filters"
-# }
+# `local_datetime_iso` powers the timezone-aware <time> macros used across
+# the customer portal templates.
+jinja = {
+	"methods": [
+		"cgm_shipping.cgm_worldwide_shipping.customizations.portal_localize.local_datetime_iso",
+	],
+}
 
 # Installation
 # ------------
@@ -187,16 +201,18 @@ doc_events = {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
 	},
 	"Opportunity": {
-		"before_save": [
-			(
-				"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-				".sync_preshipment_containers_from_bl"
-			),
-			(
-				"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
-				".stamp_verified_documents_on_approval"
-			),
-		],
+		"before_save": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+			".sync_preshipment_containers_from_bl"
+		),
+		"before_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			".stamp_verified_documents_on_approval"
+		),
+		"before_update_after_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			".stamp_verified_documents_on_approval"
+		),
 		"on_trash": (
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
 			".clear_back_links_on_trash"
@@ -204,8 +220,7 @@ doc_events = {
 	},
 	"Lead": {
 		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-			".sync_preshipment_containers_from_bl"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl"
 		),
 	},
 	"Task": {

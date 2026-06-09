@@ -401,7 +401,7 @@ function load_cgm_sea_ui_sequences(frm) {
 	frm._cgm_sea_seq_loading = true;
 	frappe.call({
 		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service.get_sea_task_ui_sequences",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service.get_sea_task_ui_sequences",
 		callback(r) {
 			frm._cgm_sea_seq_loading = false;
 			frm._cgm_sea_seq_config = r.message || CGM_SEA_UI_SEQUENCES_EMPTY;
