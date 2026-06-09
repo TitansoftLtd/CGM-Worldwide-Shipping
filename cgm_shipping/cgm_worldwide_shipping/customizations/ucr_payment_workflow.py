@@ -7,16 +7,16 @@ import frappe
 from frappe.utils import get_url, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.constants import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 	UCR_INVOICE_TO_FINANCE,
 	UCR_RECEIPT_FOR_DECLARANT,
 	UCR_RECEIPT_VERIFY_FINANCE,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 	send_notification,
 	workflow_notify_message,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
 	user_has_finance_department_access,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
@@ -32,7 +32,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_finance import (
 	ucr_receipt_attached,
 	ucr_receipt_verified,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	get_ucr_create_sequence,
 	get_ucr_payment_sequence,
 	is_ucr_application_task,
@@ -802,13 +802,8 @@ def verify_ucr_finance_line(task_name: str, line_type: str = "Invoice") -> dict:
 get_ucr_application_task = get_ucr_create_task
 get_ucr_finance_task = get_ucr_payment_task
 ucr_invoice_ready = ucr_invoice_submitted
-ucr_invoice_ready_for_project = project_has_submitted_ucr_invoice
-ucr_application_ready_to_complete = can_complete_ucr_create_task
 ucr_finance_ready_to_complete = can_complete_ucr_payment_task
 try_auto_complete_ucr_application_task = try_auto_complete_ucr_create_task
 try_auto_complete_ucr_finance_task = try_auto_complete_ucr_payment_task
 notify_operations_upload_ucr_receipt = notify_declarant_upload_ucr_receipt
 idf_certificate_attached = idf_certificate_uploaded
-ucr_invoice_verified_for_application = ucr_invoice_verified_for_create_task
-ucr_receipt_attached_for_finance_workflow = ucr_receipt_attached_for_payment_workflow
-sync_ucr_invoice_to_idf_record = sync_ucr_finance_lines_to_idf_record

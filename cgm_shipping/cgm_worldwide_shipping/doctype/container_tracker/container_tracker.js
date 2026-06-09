@@ -1,8 +1,325 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 // For license information, please see license.txt
 
-// frappe.ui.form.on("Container Tracker", {
-// 	refresh(frm) {
+const CGM_CONTAINER_TRACKING_TASK_KEY = "cgm_container_tracking_task";
+const CGM_CONTAINER_TRACKING_PROJECT_KEY = "cgm_container_tracking_project";
 
-// 	},
-// });
+const MODE_SECTIONS = {
+	"Mombasa Port": ["section_mombasa", "section_warehouse", "section_transport", "section_empty_return", "section_calculations"],
+	"ICD Nairobi": [
+		"section_mombasa",
+		"section_icd",
+		"section_warehouse",
+		"section_transport",
+		"section_empty_return",
+		"section_calculations",
+	],
+	"Transit Kenya→Border": [
+		"section_transit",
+		"section_warehouse",
+		"section_transport",
+		"section_empty_return",
+		"section_calculations",
+	],
+	"Transit Border→Kenya": [
+		"section_transit",
+		"section_warehouse",
+		"section_transport",
+		"section_empty_return",
+		"section_calculations",
+	],
+	Export: ["section_mombasa", "section_transport", "section_empty_return", "section_calculations"],
+};
+
+function apply_container_mode_layout(frm) {
+	const mode = frm.doc.container_mode || "Mombasa Port";
+	const show = new Set(MODE_SECTIONS[mode] || MODE_SECTIONS["Mombasa Port"]);
+	Object.keys(frm.fields_dict).forEach((fn) => {
+		const f = frm.fields_dict[fn];
+		if (!f || f.df.fieldtype !== "Section Break") {
+			return;
+		}
+		if (fn.startsWith("section_")) {
+			frm.set_df_property(fn, "hidden", show.has(fn) ? 0 : 1);
+		}
+	});
+}
+
+function fetch_bl_container_options(bill_of_lading) {
+	return new Promise((resolve, reject) => {
+		if (!bill_of_lading) {
+			resolve([]);
+			return;
+		}
+		frappe.call({
+			method:
+				"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.get_bl_container_select_options",
+			args: { bill_of_lading },
+			callback(r) {
+				if (r.exc) {
+					reject(r.exc);
+					return;
+				}
+				resolve(r.message || []);
+			},
+			error: reject,
+		});
+	});
+}
+
+function update_bl_container_select_options(frm, options) {
+	if (!frm.fields_dict.custom_bl_container_select) {
+		return false;
+	}
+
+	const values = (options || []).map((o) => o.value).filter(Boolean);
+	const options_str = ["", ...values].join("\n");
+	const df = frappe.meta.get_docfield(frm.doctype, "custom_bl_container_select", frm.doc.name);
+	if (df) {
+		df.options = options_str;
+	}
+
+	frm.set_df_property("custom_bl_container_select", "options", options_str);
+	frm.refresh_field("custom_bl_container_select");
+
+	if (!values.length) {
+		frappe.show_alert({
+			message: __("No containers found on this Bill of Lading"),
+			indicator: "orange",
+		});
+	}
+	return true;
+}
+
+function render_bl_containers_preview(frm, options) {
+	const field = frm.get_field("custom_bl_container_select");
+	if (!field?.$wrapper) {
+		return;
+	}
+
+	field.$wrapper.find(".cgm-bl-containers-preview").remove();
+	if (!options?.length) {
+		return;
+	}
+
+	const rows = options
+		.map(
+			(o) =>
+				`<tr data-container="${frappe.utils.escape_html(o.value)}"><td><a href="#" class="cgm-pick-container">${frappe.utils.escape_html(o.label)}</a></td></tr>`
+		)
+		.join("");
+
+	const html = `<div class="cgm-bl-containers-preview" style="margin-top:8px;">
+		<label class="control-label">${__("Containers on this B/L")}</label>
+		<table class="table table-bordered table-sm"><tbody>${rows}</tbody></table>
+	</div>`;
+
+	field.$wrapper.append(html);
+	field.$wrapper.find(".cgm-pick-container").on("click", (e) => {
+		e.preventDefault();
+		const container = $(e.currentTarget).closest("tr").data("container");
+		frm.set_value("custom_bl_container_select", container);
+	});
+}
+
+function when_bl_container_field_ready(frm, callback) {
+	if (frm.fields_dict.custom_bl_container_select) {
+		callback();
+		return;
+	}
+	if (!frm.doc.custom_bill_of_lading) {
+		return;
+	}
+
+	let attempts = 0;
+	const try_ready = () => {
+		// Stop retrying if the user has navigated away from this form.
+		if (cur_frm !== frm) {
+			return;
+		}
+		attempts += 1;
+		frm.refresh_field("custom_bl_container_select");
+		if (frm.fields_dict.custom_bl_container_select) {
+			callback();
+			return;
+		}
+		if (attempts < 12) {
+			setTimeout(try_ready, 100);
+		}
+	};
+	setTimeout(try_ready, 50);
+}
+
+function sync_bl_container_pick_list(frm) {
+	const bl = frm.doc.custom_bill_of_lading;
+	if (!bl) {
+		return Promise.resolve();
+	}
+
+	return fetch_bl_container_options(bl).then((options) => {
+		when_bl_container_field_ready(frm, () => {
+			update_bl_container_select_options(frm, options);
+			render_bl_containers_preview(frm, options);
+			if (
+				frm.doc.custom_bl_container_select &&
+				!options.some((o) => o.value === frm.doc.custom_bl_container_select)
+			) {
+				frm.set_value("custom_bl_container_select", null);
+			}
+		});
+	});
+}
+
+function apply_selected_bl_container(frm) {
+	const picked = frm.doc.custom_bl_container_select;
+	if (!picked) {
+		return;
+	}
+	if (frm.doc.container_number !== picked) {
+		frm.set_value("container_number", picked);
+	}
+	if (frm.doc.custom_bill_of_lading && frm.doc.bl_number !== frm.doc.custom_bill_of_lading) {
+		frm.set_value("bl_number", frm.doc.custom_bill_of_lading);
+	}
+}
+
+function apply_container_tracker_route_defaults(frm) {
+	const opts = frappe.route_options || {};
+	if (opts.project && !frm.doc.project) {
+		frm.set_value("project", opts.project);
+	}
+	if (opts.custom_bill_of_lading && !frm.doc.custom_bill_of_lading) {
+		frm.set_value("custom_bill_of_lading", opts.custom_bill_of_lading);
+	}
+	if (opts.eta && !frm.doc.eta) {
+		frm.set_value("eta", opts.eta);
+	}
+	if (opts.batch_bl_no && !frm.doc.batch_bl_no) {
+		frm.set_value("batch_bl_no", opts.batch_bl_no);
+	}
+	frappe.route_options = null;
+}
+
+function prompt_track_next_container(frm) {
+	const project = frm.doc.project || localStorage.getItem(CGM_CONTAINER_TRACKING_PROJECT_KEY);
+	const bl = frm.doc.custom_bill_of_lading;
+	const task_name = localStorage.getItem(CGM_CONTAINER_TRACKING_TASK_KEY);
+
+	const open_another = () => {
+		frappe.model.with_doctype("Container Tracker", () => {
+			const doc = frappe.model.get_new_doc("Container Tracker");
+			doc.project = project;
+			doc.custom_bill_of_lading = bl;
+			doc.bl_number = bl;
+			doc.eta = frm.doc.eta;
+			doc.batch_bl_no = frm.doc.batch_bl_no;
+			frappe.set_route("Form", "Container Tracker", doc.name);
+		});
+	};
+
+	const return_to_task = () => {
+		if (task_name) {
+			localStorage.removeItem(CGM_CONTAINER_TRACKING_TASK_KEY);
+			localStorage.removeItem(CGM_CONTAINER_TRACKING_PROJECT_KEY);
+			frappe.set_route("Form", "Task", task_name);
+			return;
+		}
+		if (project) {
+			frappe.set_route("Form", "Project", project);
+		}
+	};
+
+	frappe.confirm(
+		__(
+			"Container <b>{0}</b> saved. Track another container from the same Bill of Lading?",
+			[frm.doc.container_number]
+		),
+		open_another,
+		return_to_task
+	);
+}
+
+frappe.ui.form.on("Container Tracker", {
+	onload(frm) {
+		apply_container_tracker_route_defaults(frm);
+		if (frm.doc.custom_bill_of_lading) {
+			sync_bl_container_pick_list(frm);
+		}
+		if (frm.is_new() && localStorage.getItem(CGM_CONTAINER_TRACKING_TASK_KEY)) {
+			frm.set_intro(
+				__(
+					"Select the <b>Bill of Lading</b>, choose a <b>container</b> from the list, then fill in tracking dates and save."
+				),
+				"blue"
+			);
+		}
+	},
+
+	refresh(frm) {
+		apply_container_mode_layout(frm);
+		if (frm.doc.custom_bill_of_lading) {
+			sync_bl_container_pick_list(frm);
+		}
+		if (frm.doc.project) {
+			frm.add_custom_button(__("Open Project"), () => {
+				frappe.set_route("Form", "Project", frm.doc.project);
+			}).addClass("btn-primary");
+		}
+		const task_name = localStorage.getItem(CGM_CONTAINER_TRACKING_TASK_KEY);
+		if (task_name) {
+			frm.add_custom_button(__("Back to Task"), () => {
+				frappe.set_route("Form", "Task", task_name);
+			}, __("CGM"));
+			frm.page.set_inner_btn_group_as_primary(__("CGM"));
+		}
+	},
+
+	project(frm) {
+		if (!frm.doc.project || frm.doc.custom_bill_of_lading) {
+			return;
+		}
+		frappe.db.get_value("Project", frm.doc.project, "custom_bill_of_lading", (values) => {
+			if (values?.custom_bill_of_lading) {
+				frm.set_value("custom_bill_of_lading", values.custom_bill_of_lading);
+			}
+		});
+	},
+
+	custom_bill_of_lading(frm) {
+		frm.set_value("custom_bl_container_select", null);
+		const field = frm.get_field("custom_bl_container_select");
+		field?.$wrapper?.find(".cgm-bl-containers-preview")?.remove();
+
+		if (frm.doc.custom_bill_of_lading) {
+			frm.set_value("bl_number", frm.doc.custom_bill_of_lading);
+			sync_bl_container_pick_list(frm);
+		} else if (frm.fields_dict.custom_bl_container_select) {
+			update_bl_container_select_options(frm, []);
+		}
+	},
+
+	custom_bl_container_select(frm) {
+		apply_selected_bl_container(frm);
+	},
+
+	container_mode(frm) {
+		apply_container_mode_layout(frm);
+	},
+
+	before_save(frm) {
+		frm._cgm_container_tracker_was_new = Boolean(frm.doc.__islocal);
+	},
+
+	after_save(frm) {
+		if (!frm._cgm_container_tracker_was_new) {
+			return;
+		}
+		if (
+			!localStorage.getItem(CGM_CONTAINER_TRACKING_TASK_KEY) &&
+			!localStorage.getItem(CGM_CONTAINER_TRACKING_PROJECT_KEY)
+		) {
+			return;
+		}
+		prompt_track_next_container(frm);
+	},
+});

@@ -10,6 +10,7 @@ frappe.ui.form.on("Opportunity", {
     },
 
     refresh(frm) {
+        hide_procurement_create_buttons(frm);
         register_clients_documents_remove_handler(frm);
         sync_opportunity_transport_and_containers(frm);
         setup_opportunity_bill_of_lading_create(frm);
@@ -23,74 +24,10 @@ frappe.ui.form.on("Opportunity", {
     },
 });
 
-
-// ─── Shipment Document child table ────────────────────────────────────────────
-
 frappe.ui.form.on("Shipment Document", {
-    document_type(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.document_type) {
-            return;
-        }
-
-        const master_doctype = frappe.meta.get_docfield(cdt, "document_type")?.options;
-        if (!master_doctype) {
-            return;
-        }
-
-        frappe.db.get_value(
-            master_doctype,
-            row.document_type,
-            ["linked_doctype", "attachment_field", "populate_containers"],
-            (values) => {
-                if (!values) {
-                    return;
-                }
-                frappe.model.set_value(cdt, cdn, "linked_doctype", values.linked_doctype || "");
-                frappe.model.set_value(cdt, cdn, "attachment_field", values.attachment_field || "");
-                frappe.model.set_value(
-                    cdt,
-                    cdn,
-                    "populate_containers",
-                    cint(values.populate_containers)
-                );
-                frappe.model.set_value(cdt, cdn, "document_reference", "");
-                frappe.model.set_value(cdt, cdn, "attachment", "");
-            }
-        );
-    },
-
-    document_reference(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.document_reference || !row.linked_doctype) {
-            return;
-        }
-
-        if (cint(row.populate_containers)) {
-            fetch_and_apply_bl_data(frm, row, cdt, cdn);
-            return;
-        }
-
-        if (!row.attachment_field) {
-            return;
-        }
-
-        frappe.db.get_value(
-            row.linked_doctype,
-            row.document_reference,
-            row.attachment_field,
-            (values) => {
-                if (!values) {
-                    return;
-                }
-                frappe.model.set_value(
-                    cdt,
-                    cdn,
-                    "attachment",
-                    values[row.attachment_field] || ""
-                );
-            }
-        );
+    custom_clients_documents_add(frm, cdt, cdn) {
+        frappe.model.set_value(cdt, cdn, "uploaded_by", frappe.session.user);
+        frappe.model.set_value(cdt, cdn, "uploaded_on", frappe.datetime.now_datetime());
     },
 });
 
@@ -228,7 +165,7 @@ function on_clients_documents_removed(frm) {
 function sync_opportunity_transport_and_containers(frm) {
     const bl_link_field = get_opportunity_bl_link_field(frm);
     cgm_shipping.transport_reference.toggle(frm, {
-        air_waybill: "custom_airway_bill",
+        air_waybill: "custom_air_waybill",
         bill_of_lading: bl_link_field || undefined,
         section: "custom_section_break_idqn5",
     });
@@ -312,7 +249,7 @@ function apply_pending_bl_from_submit(frm) {
 
     localStorage.removeItem("cgm_pending_bl_link");
     frappe.show_alert({
-        message: __("Bill of Lading {0} linked — continue completing this Opportunity.", [
+        message: __("Bill of Lading {0} linked - continue completing this Opportunity.", [
             pending.bl_name,
         ]),
         indicator: "green",
@@ -332,10 +269,9 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
     }
 
     frm.clear_table(docs_field);
-    const new_row = frm.add_child(docs_field, {
+    frm.add_child(docs_field, {
         document_type: pending.document_type,
         attachment: pending.attachment,
-        document_reference: pending.bl_name || "",
         status: "Uploaded",
     });
     rows.forEach((row) => {
@@ -351,42 +287,6 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
         });
     });
     frm.refresh_field(docs_field);
-    enrich_shipment_document_row_from_type(new_row, pending.document_type);
-}
-
-function enrich_shipment_document_row_from_type(row, document_type) {
-    if (!row || !document_type) {
-        return;
-    }
-
-    const master_doctype = frappe.meta.get_docfield(row.doctype, "document_type")?.options;
-    if (!master_doctype) {
-        return;
-    }
-
-    frappe.db.get_value(
-        master_doctype,
-        document_type,
-        ["linked_doctype", "attachment_field", "populate_containers"],
-        (values) => {
-            if (!values) {
-                return;
-            }
-            frappe.model.set_value(row.doctype, row.name, "linked_doctype", values.linked_doctype || "");
-            frappe.model.set_value(
-                row.doctype,
-                row.name,
-                "attachment_field",
-                values.attachment_field || ""
-            );
-            frappe.model.set_value(
-                row.doctype,
-                row.name,
-                "populate_containers",
-                cint(values.populate_containers)
-            );
-        }
-    );
 }
 
 
@@ -497,4 +397,14 @@ function setup_create_shipment_project_button(frm) {
         },
         __("Create")
     );
+    frm.page.set_inner_btn_group_as_primary(__("Create"));
+}
+
+function hide_procurement_create_buttons(frm) {
+    const remove = () => {
+        frm.remove_custom_button(__("Supplier Quotation"), __("Create"));
+        frm.remove_custom_button(__("Request For Quotation"), __("Create"));
+    };
+    remove();
+    [50, 200, 600].forEach((delay) => setTimeout(remove, delay));
 }

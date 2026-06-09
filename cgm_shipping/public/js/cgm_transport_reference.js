@@ -19,7 +19,7 @@ cgm_shipping.transport_reference.resolve_category = function (doc) {
 };
 
 /**
- * Show B/L for Sea, AWB for Air (Project uses custom_awb_number; Opportunity uses custom_airway_bill).
+ * Show B/L for Sea, AWB for Air (Project uses custom_awb_number; Opportunity uses custom_air_waybill).
  */
 cgm_shipping.transport_reference.toggle = function (frm, options = {}) {
 	const category = cgm_shipping.transport_reference.resolve_category(frm.doc);

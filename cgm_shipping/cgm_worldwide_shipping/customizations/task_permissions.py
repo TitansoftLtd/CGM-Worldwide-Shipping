@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
 	application_department_stems_for_linked_pairs,
 	finance_department_stems_for_linked_pairs,
 	finance_payment_department_stems,
 	get_user_sea_task_department_stems,
 	user_has_department_for_sequence,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	finance_payment_sequences,
 	permit_linked_task_pairs,
 	ucr_linked_task_pairs,
@@ -124,7 +124,7 @@ def user_can_access_sea_task(
 
 
 def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
-	"""Finance payment tasks — user must have Role matching that step's template department."""
+	"""Finance payment tasks - user must have Role matching that step's template department."""
 	if not hasattr(doc, "get"):
 		return False
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:

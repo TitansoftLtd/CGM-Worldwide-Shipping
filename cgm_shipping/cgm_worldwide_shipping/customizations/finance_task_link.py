@@ -7,7 +7,7 @@ from frappe.utils import flt, now_datetime
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
 	is_sea_payment_task,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	is_permit_finance_payment_task,
 	is_ucr_finance_payment_task,
 )
@@ -17,7 +17,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 
 
 def ensure_finance_custom_fields() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project_shipment_fields import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		_create_cf,
 	)
 
@@ -93,7 +93,7 @@ def get_permit_rows_for_purchase_invoice(task) -> list[dict]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
 		TASK_PERMITS_FIELD,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 		get_permit_stage_for_sequence,
 		is_permit_finance_payment_task,
 		permit_finance_by_application_sequence,
@@ -160,7 +160,7 @@ def build_permit_purchase_invoice_lines(task) -> list[dict]:
 
 		item_code = get_purchase_item_for_permit_type(permit_type, task.company)
 		item_name = frappe.db.get_value("Item", item_code, "item_name") or permit_type
-		desc = f"Pre-clearance permit — {permit_type}"
+		desc = f"Pre-clearance permit - {permit_type}"
 		invoice_ref = row.get("payment_invoice")
 		if invoice_ref:
 			desc += f" (ref: {invoice_ref.split('/')[-1]})"
@@ -196,7 +196,7 @@ def get_task_finance_defaults(task_name: str) -> dict:
 		task.reload()
 	permit_rows = get_permit_rows_for_purchase_invoice(task)
 	permit_lines = build_permit_purchase_invoice_lines(task)
-	remarks = f"{task.subject} ({task.name}) — {ctx['project']}"
+	remarks = f"{task.subject} ({task.name}) - {ctx['project']}"
 	if is_ucr_finance_payment_task(int(task.get("custom_sequence_no") or 0)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 			get_ucr_application_task,
@@ -238,7 +238,7 @@ def apply_project_from_task_to_purchase_invoice(purchase_invoice: str, task_name
 	if updates:
 		frappe.db.set_value("Purchase Invoice", purchase_invoice, updates, update_modified=True)
 
-	# Avoid pi.save() here — it deadlocks when called from Purchase Invoice on_submit.
+	# Avoid pi.save() here - it deadlocks when called from Purchase Invoice on_submit.
 	frappe.db.sql(
 		"""
 		UPDATE `tabPurchase Invoice Item`
@@ -509,7 +509,7 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 
 	seq = int(task.get("custom_sequence_no") or 0)
 
-	# UCR / permit finance: record PE only — complete after receipts verified.
+	# UCR / permit finance: record PE only - complete after receipts verified.
 	if is_ucr_finance_payment_task(seq) or is_permit_finance_payment_task(seq):
 		if task_fields.has_field("custom_payment_entry"):
 			_set_task_fields(task.name, {"custom_payment_entry": payment_entry})

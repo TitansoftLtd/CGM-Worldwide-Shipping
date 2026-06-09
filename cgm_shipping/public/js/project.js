@@ -116,7 +116,7 @@ function render_shipment_progress_chart(frm) {
 		return;
 	}
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.project_tracking_layout.get_project_tracking_dashboard",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.project_layout.get_project_tracking_dashboard",
 		args: { project: frm.doc.name },
 		callback(r) {
 			if (r.exc || !r.message) {
@@ -139,7 +139,7 @@ function render_shipment_progress_chart(frm) {
 				if (d.first_open_task) {
 					nextHint = `Task ${d.first_open_task.seq}: ${d.first_open_task.subject}`;
 				}
-				taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> sea tasks completed — next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
+				taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> sea tasks completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
 			}
 			const berth = frappe.utils.escape_html(d.berth_phase || "Before Vessel Berth");
 			const wfNote =
@@ -329,7 +329,7 @@ frappe.ui.form.on("Project", {
 		setup_clearance_tasks_toolbar_button(frm);
 
 		if (frm.doc.name && !frm.is_new()) {
-			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm));
+			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass("btn-primary");
 			frm.add_custom_button(__("Container Tracker"), () => {
 				frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
 			}, __("View"));
@@ -344,6 +344,7 @@ frappe.ui.form.on("Project", {
 			frm.add_custom_button(__("Seal Record"), () => {
 				frappe.new_doc("Seal Record", { project: frm.doc.name });
 			}, __("View"));
+			frm.page.set_inner_btn_group_as_primary(__("View"));
 		}
 
 		if (frm.is_new() && frm.doc.project_name && frm.fields_dict.custom_cgm_ref_no) {
