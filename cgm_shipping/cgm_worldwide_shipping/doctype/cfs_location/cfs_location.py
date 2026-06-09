@@ -4,6 +4,6 @@
 from frappe.model.document import Document
 
 
-class ClearanceStation(Document):
+class CFSLocation(Document):
 	def autoname(self):
-		self.name = (self.cfs_name or "").strip()
+		self.name = (self.location_name or "").strip()

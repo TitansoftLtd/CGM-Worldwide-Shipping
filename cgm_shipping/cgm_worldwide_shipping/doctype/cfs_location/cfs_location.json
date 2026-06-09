@@ -1,54 +1,34 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-05-19 00:00:00",
+ "creation": "2026-06-09 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "cfs_name",
-  "column_break_hkvi",
-  "station_code",
-  "column_break_nqyy",
-  "location"
+  "location_name",
+  "description"
  ],
  "fields": [
   {
-   "fieldname": "cfs_name",
+   "fieldname": "location_name",
    "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Clearance Station",
-   "reqd": 1
-  },
-  {
-   "fieldname": "location",
-   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Location",
-   "options": "CFS Location",
-   "reqd": 1
+   "reqd": 1,
+   "unique": 1
   },
   {
-   "fieldname": "station_code",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Station Code",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_hkvi",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_nqyy",
-   "fieldtype": "Column Break"
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 19:13:19.800863",
+ "modified": "2026-06-09 19:12:47.889029",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
- "name": "Clearance Station",
+ "name": "CFS Location",
  "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
@@ -59,6 +39,7 @@
    "export": 1,
    "print": 1,
    "read": 1,
+   "report": 1,
    "role": "System Manager",
    "share": 1,
    "write": 1
