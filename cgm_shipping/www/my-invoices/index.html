@@ -62,7 +62,12 @@
               <td data-label="{{ _('Status') }}"><span class="cp-status {{ i.tone }}"><span class="dot"></span>{{ i.status }}</span></td>
               <td data-label="{{ _('Total') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">{{ frappe.utils.fmt_money(i.grand_total, currency=i.currency) }}</td>
               <td data-label="{{ _('Outstanding') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;{% if i.outstanding_amount and i.outstanding_amount > 0 %}color:#be123c;{% else %}color:var(--cp-green);{% endif %}">{{ frappe.utils.fmt_money(i.outstanding_amount, currency=i.currency) }}</td>
-              <td data-label="{{ _('Actions') }}"><a class="cp-btn cp-btn-ghost" style="padding:.3rem .8rem;font-size:.78rem;" href="{{ i.pdf_url }}">{{ _("PDF") }}</a></td>
+              <td data-label="{{ _('Actions') }}">
+                <span style="display:inline-flex;gap:.4rem;">
+                  <a class="cp-btn cp-btn-ghost" style="padding:.3rem .7rem;font-size:.78rem;" href="{{ i.pdf_view_url }}" target="_blank" rel="noopener">{{ _("Preview") }}</a>
+                  <a class="cp-btn cp-btn-ghost" style="padding:.3rem .7rem;font-size:.78rem;" href="{{ i.pdf_download_url }}">{{ _("Download") }}</a>
+                </span>
+              </td>
             </tr>
           {% endfor %}
         </tbody>

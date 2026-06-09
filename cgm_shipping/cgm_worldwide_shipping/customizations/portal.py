@@ -377,7 +377,8 @@ def get_customer_quotations(customer: str, limit: int = 200) -> list[dict]:
 	)
 	for r in rows:
 		r["tone"] = quotation_status_tone(r.status)
-		r["pdf_url"] = _pdf_url("Quotation", r["name"])
+		r["pdf_view_url"] = _pdf_url("Quotation", r["name"], "inline")
+		r["pdf_download_url"] = _pdf_url("Quotation", r["name"], "attachment")
 	return rows
 
 
@@ -406,7 +407,8 @@ def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
 	)
 	for r in rows:
 		r["tone"] = invoice_status_tone(r.status)
-		r["pdf_url"] = _pdf_url("Sales Invoice", r["name"])
+		r["pdf_view_url"] = _pdf_url("Sales Invoice", r["name"], "inline")
+		r["pdf_download_url"] = _pdf_url("Sales Invoice", r["name"], "attachment")
 	return rows
 
 
@@ -432,21 +434,26 @@ def invoice_status_tone(status: str | None) -> str:
 	return "muted"
 
 
-def _pdf_url(doctype: str, name: str) -> str:
+def _pdf_url(doctype: str, name: str, disposition: str = "attachment") -> str:
 	return (
 		"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_transaction_pdf"
 		+ f"?doctype={quote(doctype, safe='')}&name={quote(name, safe='')}"
+		+ f"&disposition={disposition}"
 	)
 
 
 @frappe.whitelist()
-def download_transaction_pdf(doctype: str, name: str):
+def download_transaction_pdf(doctype: str, name: str, disposition: str = "attachment"):
 	"""Stream a customer's own Quotation / Sales Invoice as a PDF.
 
 	Portal users hold no desk read perm on these doctypes, so a direct
 	print URL would 403. This re-derives the customer from the session,
 	confirms the document is addressed to them, then renders and streams
-	the PDF. Only Quotation and Sales Invoice are downloadable here.
+	the PDF. Only Quotation and Sales Invoice are served here.
+
+	``disposition`` controls how the browser handles it:
+	  - "inline"     → preview in a new tab (Content-Disposition: inline)
+	  - "attachment" → force a download (the default)
 	"""
 	if doctype not in ("Quotation", "Sales Invoice"):
 		raise frappe.PermissionError(_("This document type can't be downloaded here."))
@@ -464,12 +471,14 @@ def download_transaction_pdf(doctype: str, name: str):
 		owner = row.party_name if (row and row.quotation_to == "Customer") else None
 
 	if not owner or owner != customer:
-		raise frappe.PermissionError(_("You can only download your own documents."))
+		raise frappe.PermissionError(_("You can only access your own documents."))
 
 	pdf = frappe.get_print(doctype, name, as_pdf=True)
 	frappe.local.response.filename = f"{name}.pdf"
 	frappe.local.response.filecontent = pdf
-	frappe.local.response.type = "download"
+	# "pdf" → inline preview; "download" → save-as. Frappe's response
+	# builder maps these to the right Content-Disposition header.
+	frappe.local.response.type = "pdf" if disposition == "inline" else "download"
 
 
 # ─── Documents ───────────────────────────────────────────────────────────────

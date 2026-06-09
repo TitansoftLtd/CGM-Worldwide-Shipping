@@ -51,7 +51,12 @@
               <td data-label="{{ _('Valid Till') }}">{% if q.valid_till %}{{ local_date(q.valid_till) }}{% else %}-{% endif %}</td>
               <td data-label="{{ _('Status') }}"><span class="cp-status {{ q.tone }}"><span class="dot"></span>{{ q.status }}</span></td>
               <td data-label="{{ _('Total') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">{{ frappe.utils.fmt_money(q.grand_total, currency=q.currency) }}</td>
-              <td data-label="{{ _('Actions') }}"><a class="cp-btn cp-btn-ghost" style="padding:.3rem .8rem;font-size:.78rem;" href="{{ q.pdf_url }}">{{ _("PDF") }}</a></td>
+              <td data-label="{{ _('Actions') }}">
+                <span style="display:inline-flex;gap:.4rem;">
+                  <a class="cp-btn cp-btn-ghost" style="padding:.3rem .7rem;font-size:.78rem;" href="{{ q.pdf_view_url }}" target="_blank" rel="noopener">{{ _("Preview") }}</a>
+                  <a class="cp-btn cp-btn-ghost" style="padding:.3rem .7rem;font-size:.78rem;" href="{{ q.pdf_download_url }}">{{ _("Download") }}</a>
+                </span>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
