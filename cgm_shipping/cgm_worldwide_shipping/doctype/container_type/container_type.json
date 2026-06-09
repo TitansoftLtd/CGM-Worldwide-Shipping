@@ -1,14 +1,14 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:container_type",
  "creation": "2026-05-30 06:55:46.144218",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_gppx",
-  "amended_from",
-  "container_type"
+  "container_type",
+  "description"
  ],
  "fields": [
   {
@@ -16,31 +16,28 @@
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "Container Type",
-   "print_hide": 1,
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
    "fieldname": "container_type",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Container Type",
+   "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "is_submittable": 1,
  "links": [],
- "modified": "2026-05-30 07:02:01.322916",
+ "make_attachments_public": 1,
+ "modified": "2026-06-09 21:47:01.167259",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Type",
- "naming_rule": "By fieldname",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
@@ -53,7 +50,6 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
-   "submit": 1,
    "write": 1
   }
  ],
