@@ -45,6 +45,7 @@ function add_back_to_cgm_task_button_pe(frm) {
 	frm.add_custom_button(__("Back to Task"), () => {
 		frappe.set_route("Form", "Task", task_name);
 	}, __("CGM"));
+	frm.page.set_inner_btn_group_as_primary(__("CGM"));
 }
 
 function return_to_cgm_task_from_pe(frm) {
@@ -60,7 +61,7 @@ function return_to_cgm_task_from_pe(frm) {
 	frappe.after_ajax(() => {
 		frappe.show_alert({
 			message: __(
-				"Payment submitted — returning to task {0}. Upload and verify receipts there if required.",
+				"Payment submitted - returning to task {0}. Upload and verify receipts there if required.",
 				[task_name]
 			),
 			indicator: "green",

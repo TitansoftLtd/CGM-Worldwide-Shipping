@@ -89,7 +89,7 @@ def apply_shipment_document_automation(doc, _method=None):
 			doc.custom_current_location = "At origin"
 
 	# Re-normalising shipment type/mode is idempotent, so only run it when those
-	# fields actually change (or on a new doc) — skips a Document-Type lookup per save.
+	# fields actually change (or on a new doc) - skips a Document-Type lookup per save.
 	if (
 		doc.is_new()
 		or doc.has_value_changed("custom_shipment_type")
@@ -123,21 +123,38 @@ def _shipment_document_row_map(doc):
 
 
 def _required_document_types(mode, stages=None):
-	"""Document Type names required for a mode (and optional workflow stages)."""
+	"""Document Type names required for a mode (and optional workflow stages).
+
+	``mode_of_transport`` is a Table MultiSelect: a Document Type applies to
+	``mode`` when it lists that mode, or to every mode when it lists none.
+	"""
 	if not mode:
 		return []
-	filters = {
-		"default_required": 1,
-		"mode_of_transport": ["in", [mode, "", None]],
-	}
+	filters = {"default_required": 1}
 	if stages:
 		filters["required_stage"] = ["in", stages]
-	return frappe.get_all(
+	candidates = frappe.get_all(
 		"Document Type",
 		filters=filters,
 		pluck="name",
 		order_by="required_stage asc, name asc",
 	)
+	if not candidates:
+		return []
+	mode_rows = frappe.get_all(
+		"Mode of Transport Item",
+		filters={"parenttype": "Document Type", "parent": ["in", candidates]},
+		fields=["parent", "mode_of_transport"],
+	)
+	modes_by_dt = {}
+	for row in mode_rows:
+		modes_by_dt.setdefault(row.parent, set()).add(row.mode_of_transport)
+	# Keep candidate ordering; a Document Type with no modes applies to all modes.
+	return [
+		name
+		for name in candidates
+		if not modes_by_dt.get(name) or mode in modes_by_dt[name]
+	]
 
 
 def normalize_document_rows(doc):
@@ -257,7 +274,7 @@ def enforce_intake_documents_before_documents_received(doc):
 	if missing:
 		frappe.throw(
 			f"Upload client documents in <b>Client Documents</b> first: {', '.join(missing)}. "
-			"Use <b>custom_shipment_documents</b> — not Permit Register."
+			"Use <b>custom_shipment_documents</b> - not Permit Register."
 		)
 
 

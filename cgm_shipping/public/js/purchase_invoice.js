@@ -20,7 +20,7 @@ frappe.ui.form.on("Purchase Invoice", {
 			} else {
 				return_to_cgm_task(frm, {
 					message: __(
-						"Purchase Invoice submitted — returning to task {0}. Receipt verification may continue there.",
+						"Purchase Invoice submitted - returning to task {0}. Receipt verification may continue there.",
 						[task_name]
 					),
 				});
@@ -62,6 +62,7 @@ function add_cgm_finance_buttons(frm) {
 	frm.add_custom_button(__("Back to Task"), () => {
 		frappe.set_route("Form", "Task", task_name);
 	}, __("CGM"));
+	frm.page.set_inner_btn_group_as_primary(__("CGM"));
 
 	if (frm.doc.docstatus === 1 && flt(frm.doc.outstanding_amount) > 0 && !frm.doc.on_hold) {
 		frm.add_custom_button(
@@ -109,7 +110,7 @@ function open_payment_from_purchase_invoice(frm) {
 				localStorage.setItem("cgm_pe_for_task", "1");
 			}
 			frappe.show_alert({
-				message: __("Submit payment — you will return to the finance task."),
+				message: __("Submit payment - you will return to the finance task."),
 				indicator: "blue",
 			});
 			frappe.set_route("Form", "Payment Entry", pe.name);
@@ -169,7 +170,7 @@ function apply_task_finance_defaults(frm) {
 				apply_permit_lines_to_purchase_invoice(frm, permit_items).then(() => {
 					frappe.show_alert({
 						message: __(
-							"Added {0} permit line(s) from task {1} — submit, then use CGM → Make Payment.",
+							"Added {0} permit line(s) from task {1} - submit, then use CGM → Make Payment.",
 							[permit_items.length, task_name]
 						),
 						indicator: "green",

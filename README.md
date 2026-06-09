@@ -1,8 +1,8 @@
 ### CGM Worldwide Shipping
 
-ERPNext shipment clearance for CGM Worldwide Shipping — air, sea, road, and export operations.
+ERPNext shipment clearance for CGM Worldwide Shipping - air, sea, road, and export operations.
 
-**Module:** `CGM Worldwide Shipping` — CRM pre-shipment, Project sea-import workflow, and guide-aligned doctypes (`Shipment Dossier`, `Container Tracker`, etc.).
+**Module:** `CGM Worldwide Shipping` - CRM pre-shipment, Project sea-import workflow, and guide-aligned doctypes (`Shipment Dossier`, `Container Tracker`, etc.).
 
 ### Installation
 

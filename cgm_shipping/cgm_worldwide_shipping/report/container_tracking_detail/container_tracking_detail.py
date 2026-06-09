@@ -88,7 +88,7 @@ def get_data(filters):
 		list_filters["project"] = filters.project
 
 	# Use get_list (not raw SQL / get_all) so the doctype's role and user
-	# permissions are applied — a user only sees Container Trackers they may read.
+	# permissions are applied - a user only sees Container Trackers they may read.
 	rows = frappe.get_list(
 		"Container Tracker",
 		filters=list_filters,
