@@ -288,20 +288,6 @@ def ensure_finance_permit_rows_saved(finance_task) -> bool:
 	return sync_permit_invoices_to_finance_task(finance_task, save=True)
 
 
-@frappe.whitelist()
-def ensure_finance_permit_rows(task_name: str) -> dict:
-	"""Load permit invoice rows onto Finance pays Pre-Clearance Permits (from declarant task)."""
-	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-	task = frappe.get_doc("Task", task_name)
-	if int(task.get("custom_sequence_no") or 0) != 6:
-		frappe.throw("This action is only for <b>Finance pays Pre-Clearance Permits</b>.")
-	added = ensure_finance_permit_rows_saved(task)
-	task.reload()
-	return {
-		"added": added,
-		"rows": len(task.get(TASK_PERMITS_FIELD) or []),
-		"task": task.name,
-	}
 def seed_finance_task_permits_from_project(task) -> None:
 	if not is_pre_clearance_finance_permit_task(task):
 		return
@@ -832,12 +818,7 @@ def get_permit_finance_workflow_status(task_name: str) -> dict:
 # Backward-compatible aliases (existing imports / patches)
 # ------------------------------------------------------------------
 
-PERMIT_FINANCE_SEQ_BY_APPLICATION = permit_finance_by_application_sequence()
-all_permit_rows_have_invoices = has_all_permit_invoices
 permit_invoices_ready = permit_invoices_submitted
 permit_invoices_ready_for_project = project_has_submitted_permit_invoices
-finance_permit_payment_recorded = finance_payment_completed
-permit_finance_ready_to_complete = can_complete_finance_permit_task
 try_auto_complete_permit_finance_task = auto_complete_finance_permit_task
-get_permit_application_task = get_permit_application_task_name
 get_permit_finance_task = get_finance_permit_task_name

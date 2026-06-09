@@ -121,7 +121,6 @@ def before_task_save(doc, _method=None):
 	seed_required_task_document_rows(doc)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
 		enforce_ucr_finance_field_permissions,
-		handle_ucr_application_receipt_upload,
 		sync_ucr_payment_to_idf_record,
 	)
 

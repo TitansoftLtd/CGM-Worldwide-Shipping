@@ -116,7 +116,7 @@ function render_shipment_progress_chart(frm) {
 		return;
 	}
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.project_tracking_layout.get_project_tracking_dashboard",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.project_layout.get_project_tracking_dashboard",
 		args: { project: frm.doc.name },
 		callback(r) {
 			if (r.exc || !r.message) {

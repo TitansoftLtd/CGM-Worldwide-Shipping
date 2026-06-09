@@ -4,7 +4,7 @@ from __future__ import annotations
 import frappe
 from frappe.utils import cint, now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.documents_service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
 	TASK_DOCUMENTS_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
@@ -36,17 +36,6 @@ def task_has_finance_table(task) -> bool:
 
 def _task_seq(task) -> int:
 	return int(task.get("custom_sequence_no") or 0)
-
-
-def _invoice_document_type_names() -> set[str]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_document_type_link_name
-
-	names: set[str] = set(LEGACY_INVOICE_DOCUMENT_TYPE_LINKS)
-	for code in INVOICE_DOCUMENT_TYPE_CODES:
-		name = get_document_type_link_name(code)
-		if name:
-			names.add(name)
-	return names
 
 
 def is_invoice_clearance_document_row(document_type: str | None) -> bool:
@@ -718,6 +707,3 @@ def sync_ucr_status_from_finance_to_application(application_task) -> bool:
 	return changed
 
 
-def sync_ucr_verification_from_finance_to_application(application_task) -> bool:
-	"""When opening Create UCR, pull invoice verification from Finance pays UCR."""
-	return sync_ucr_status_from_finance_to_application(application_task)

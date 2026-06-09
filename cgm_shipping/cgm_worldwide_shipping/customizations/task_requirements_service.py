@@ -9,7 +9,6 @@ import frappe
 
 SUPPLIER_INVOICE_CODE = "SUP_INV"
 PRE_CLEARANCE_STAGE = "Pre-clearance"
-POST_CLEARANCE_STAGE = "Post-clearance"
 
 _SETTINGS_REQUIREMENTS_FIELD = "custom_sea_clearance_task_requirements"
 _SETTINGS_LINK = "CGM Shipping Settings → Sea clearance task requirements"

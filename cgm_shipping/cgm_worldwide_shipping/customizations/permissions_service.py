@@ -36,10 +36,6 @@ def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
 	return set(get_sea_task_template_department_stems()) & user_roles(user)
 
 
-def user_has_department_stem(user: str | None, stem: str) -> bool:
-	return stem in user_roles(user)
-
-
 def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool:
 	stem = department_stem_for_sequence(sequence_no)
 	return bool(stem and stem in user_roles(user))

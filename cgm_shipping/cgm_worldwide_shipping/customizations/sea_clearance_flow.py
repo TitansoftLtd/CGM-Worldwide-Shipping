@@ -47,35 +47,6 @@ def is_sea_payment_task(task) -> bool:
 	return is_sea_finance_payment_task(task)
 
 
-def is_sea_auto_completed_task(task) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
-		is_sea_auto_complete_task,
-	)
-
-	return is_sea_auto_complete_task(task)
-
-
-def is_sea_clearance_task(task) -> bool:
-	return task.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-
-
-def task_should_show_documents(seq: int) -> bool:
-	"""Task Documents table - not for CRM intake steps auto-done at project create."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
-		is_auto_complete_task,
-	)
-
-	return not is_auto_complete_task(seq)
-
-
-def task_should_show_payment_fields(seq: int) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
-		is_finance_payment_task,
-	)
-
-	return is_finance_payment_task(seq)
-
-
 def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 	"""Attach Project docs to auto-complete steps, then mark them Completed."""
 	from frappe.utils import now_datetime
