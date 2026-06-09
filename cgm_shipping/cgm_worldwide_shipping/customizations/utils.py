@@ -109,6 +109,7 @@ def get_project_shipment_documents_field() -> str | None:
 	)
 
 
+@frappe.request_cache
 def get_bl_config() -> dict:
 	"""Fetch Bill of Lading config from Document Type master - no hardcoding."""
 	dt_meta = frappe.get_meta("Document Type")
