@@ -1,8 +1,7 @@
 """Sea import setup: roles + Project ETD/ETA fields and shipment-status option.
 
-The CGM Sea Import Workflow, its states and actions are installed from
-``fixtures`` (workflow.json / workflow_state.json / workflow_action_master.json),
-so this patch only seeds the roles and Project fields they depend on.
+The workflow fixtures were removed, so this patch only seeds the CGM roles and
+the Project fields. ``custom_shipment_status`` is now a plain status select.
 """
 
 import frappe
@@ -14,7 +13,7 @@ def execute():
 
 
 def ensure_roles():
-	for role_name in ["Operations Manager", "Declarant", "Finance Manager", "Field Officer", "Transport Manager"]:
+	for role_name in ["Operations Manager", "CGM Documentation", "Declarant", "Finance Manager", "Field Officer", "Transport Manager"]:
 		if not frappe.db.exists("Role", role_name):
 			frappe.get_doc({"doctype": "Role", "role_name": role_name}).insert(ignore_permissions=True)
 

@@ -163,7 +163,7 @@ frappe.ui.form.on("Task", {
 						}
 					},
 				});
-			});
+			}).addClass("btn-primary");
 		}
 
 		if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
@@ -208,7 +208,7 @@ frappe.ui.form.on("Task", {
 						}
 					},
 				});
-			});
+			}).addClass("btn-primary");
 		}
 
 		if (
@@ -224,7 +224,7 @@ frappe.ui.form.on("Task", {
 				await frm.set_value("completed_on", frappe.datetime.now_datetime());
 				await frm.set_value("status", "Completed");
 				await frm.save();
-			});
+			}).addClass("btn-primary");
 		}
 
 		if (
@@ -253,7 +253,7 @@ frappe.ui.form.on("Task", {
 				await frm.set_value("completed_on", frappe.datetime.now_datetime());
 				await frm.set_value("status", "Completed");
 				await frm.save();
-			});
+			}).addClass("btn-primary");
 		}
 
 		if (ui.show_permits && frm.doc.status === "Completed" && !permit_rows_have_invoices(frm)) {
@@ -308,14 +308,14 @@ frappe.ui.form.on("Task", {
 							}
 						},
 					});
-				});
+				}).addClass("btn-primary");
 			}
 		}
 
 		if (ui.is_sea_task && frm.doc.project) {
 			frm.add_custom_button(__("Open Shipment Project"), () => {
 				frappe.set_route("Form", "Project", frm.doc.project);
-			});
+			}).addClass("btn-primary");
 		}
 	},
 
@@ -764,9 +764,7 @@ function configure_finance_line_grid(frm, ui) {
 
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
 	const btn = frm.add_custom_button(label, fn, CGM_ACTION_GROUP);
-	if (opts.primary) {
-		frm.change_custom_button_type(label, CGM_ACTION_GROUP, "primary");
-	}
+	frm.page.set_inner_btn_group_as_primary(CGM_ACTION_GROUP);
 	return btn;
 }
 

@@ -1,7 +1,7 @@
 {
  "app": "cgm_shipping",
  "charts": [],
- "content": "[{\"id\":\"uWiLsJUdVJ\",\"type\":\"header\",\"data\":{\"text\":\"<span style=\\\"font-size: 16px;\\\"><b>Shortcuts</b></span>\",\"col\":12}},{\"id\":\"MX3aYUoYqW\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Shipment Dossier\",\"col\":3}},{\"id\":\"ZCVcZygZ0r\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bill of Lading\",\"col\":3}},{\"id\":\"HooY9lDlzt\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Container Tracker\",\"col\":3}},{\"id\":\"pt6I2_8o9i\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customs Entry\",\"col\":3}},{\"id\":\"mF1Spy7u2_\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"s-vIcHLenp\",\"type\":\"card\",\"data\":{\"card_name\":\"Shipments\",\"col\":3}},{\"id\":\"3UvHg06GlH\",\"type\":\"card\",\"data\":{\"card_name\":\"Clearance & Customs\",\"col\":3}},{\"id\":\"5280sQiiF1\",\"type\":\"card\",\"data\":{\"card_name\":\"Transport & Containers\",\"col\":3}},{\"id\":\"9lOSeVN8nN\",\"type\":\"card\",\"data\":{\"card_name\":\"Masters & Setup\",\"col\":3}}]",
+ "content": "[{\"id\":\"uWiLsJUdVJ\",\"type\":\"header\",\"data\":{\"text\":\"<span style=\\\"font-size: 16px;\\\"><b>Shortcuts</b></span>\",\"col\":12}},{\"id\":\"yNse_cDnTB\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Project\",\"col\":3}},{\"id\":\"ZCVcZygZ0r\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bill of Lading\",\"col\":3}},{\"id\":\"HooY9lDlzt\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Container Tracker\",\"col\":3}},{\"id\":\"pt6I2_8o9i\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customs Entry\",\"col\":3}},{\"id\":\"mF1Spy7u2_\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"s-vIcHLenp\",\"type\":\"card\",\"data\":{\"card_name\":\"Shipments\",\"col\":3}},{\"id\":\"3UvHg06GlH\",\"type\":\"card\",\"data\":{\"card_name\":\"Clearance & Customs\",\"col\":3}},{\"id\":\"5280sQiiF1\",\"type\":\"card\",\"data\":{\"card_name\":\"Transport & Containers\",\"col\":3}},{\"id\":\"9lOSeVN8nN\",\"type\":\"card\",\"data\":{\"card_name\":\"Masters & Setup\",\"col\":3}}]",
  "creation": "2026-06-06 00:00:00",
  "custom_blocks": [],
  "docstatus": 0,
@@ -11,7 +11,7 @@
  "icon": "stock",
  "idx": 0,
  "is_hidden": 0,
- "label": "CGM",
+ "label": "CGM Shipping",
  "links": [
   {
    "hidden": 0,
@@ -20,17 +20,6 @@
    "link_count": 6,
    "onboard": 0,
    "type": "Card Break"
-  },
-  {
-   "dependencies": "",
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipment Dossier",
-   "link_count": 0,
-   "link_to": "Shipment Dossier",
-   "link_type": "DocType",
-   "onboard": 1,
-   "type": "Link"
   },
   {
    "hidden": 0,
@@ -193,7 +182,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Masters & Setup",
-   "link_count": 6,
+   "link_count": 5,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -240,16 +229,6 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Clearance Station Code",
-   "link_count": 0,
-   "link_to": "Clearance Station Code",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "CGM Shipping Settings",
    "link_count": 0,
    "link_to": "CGM Shipping Settings",
@@ -258,10 +237,10 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-06 11:06:00.137462",
+ "modified": "2026-06-09 09:42:30.751650",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
- "name": "CGM",
+ "name": "CGM Shipping",
  "number_cards": [],
  "owner": "Administrator",
  "parent_page": "",
@@ -271,17 +250,18 @@
  "sequence_id": 2.0,
  "shortcuts": [
   {
-   "color": "Blue",
-   "doc_view": "List",
-   "label": "Shipment Dossier",
-   "link_to": "Shipment Dossier",
-   "type": "DocType"
-  },
-  {
    "color": "Green",
    "doc_view": "List",
    "label": "Bill of Lading",
    "link_to": "Bill of Lading",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Project",
+   "link_to": "Project",
+   "stats_filter": "[]",
    "type": "DocType"
   },
   {
@@ -299,6 +279,6 @@
    "type": "DocType"
   }
  ],
- "title": "CGM",
+ "title": "CGM Shipping",
  "type": "Workspace"
 }

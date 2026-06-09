@@ -6,6 +6,7 @@ import frappe
 SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
 
 
+@frappe.request_cache
 def get_workflow_task_gates() -> dict[str, dict]:
 	"""Map shipment workflow status → gate row from CGM Shipping Settings."""
 	meta = frappe.get_meta("CGM Shipping Settings")

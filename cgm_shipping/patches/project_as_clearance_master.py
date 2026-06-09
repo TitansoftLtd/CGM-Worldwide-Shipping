@@ -1,7 +1,7 @@
 """Use Project + Task as clearance master; link guide doctypes to Project.
 
-The CGM Sea Import Workflow is installed from ``fixtures`` (workflow.json), so
-this patch no longer syncs it - it only migrates Shipment Dossiers to Projects.
+The workflow fixtures were removed, so this patch does not sync any workflow -
+it only migrates Shipment Dossiers to Projects.
 """
 from __future__ import annotations
 

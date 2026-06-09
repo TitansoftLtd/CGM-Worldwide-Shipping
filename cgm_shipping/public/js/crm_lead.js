@@ -19,7 +19,7 @@ frappe.ui.form.on("Lead", {
 						method: "erpnext.crm.doctype.lead.lead.make_customer",
 						frm,
 					});
-				});
+				}).addClass("btn-primary");
 				return;
 			}
 
@@ -38,7 +38,7 @@ frappe.ui.form.on("Lead", {
 						}
 					},
 				});
-			});
+			}).addClass("btn-primary");
 		}, 0);
 	},
 });

@@ -1,21 +1,23 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:bl_number",
  "creation": "2026-05-27 21:40:50.404448",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "bl_number",
-  "client_ref",
   "customer",
   "column_break_sqbc",
+  "client_ref",
   "attach_bill_of_lading",
   "column_break_chhk",
+  "shipment_type",
   "quantity",
   "linked_opportunity",
   "section_break_abdt",
   "container_information",
+  "section_break_yldr",
+  "description",
   "section_break_mkbo",
   "amended_from"
  ],
@@ -37,7 +39,9 @@
   {
    "fieldname": "bl_number",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Bill of Lading Number",
+   "reqd": 1,
    "unique": 1
   },
   {
@@ -48,8 +52,10 @@
   {
    "fieldname": "customer",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Customer",
    "options": "Customer",
+   "reqd": 1,
    "search_index": 1
   },
   {
@@ -86,6 +92,22 @@
    "fieldname": "quantity",
    "fieldtype": "Data",
    "label": "Quantity"
+  },
+  {
+   "fieldname": "shipment_type",
+   "fieldtype": "Link",
+   "label": "Shipment Type",
+   "options": "Shipment Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_yldr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
   }
  ],
  "grid_page_length": 50,
@@ -93,11 +115,11 @@
  "is_submittable": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-06-08 07:09:05.057558",
+ "modified": "2026-06-09 12:49:02.153129",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",
- "naming_rule": "By fieldname",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
@@ -117,5 +139,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "bl_number"
 }

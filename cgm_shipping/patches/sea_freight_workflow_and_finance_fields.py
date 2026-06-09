@@ -1,8 +1,7 @@
 """Align Shipment Dossier status options and map legacy statuses.
 
-Sea-clearance Workflow States are installed from ``fixtures``
-(workflow_state.json), so this patch only updates the legacy Shipment Dossier
-status field options and remaps old demo statuses.
+The workflow fixtures were removed, so this patch only updates the legacy
+Shipment Dossier status field options and remaps old demo statuses.
 """
 from __future__ import annotations
 

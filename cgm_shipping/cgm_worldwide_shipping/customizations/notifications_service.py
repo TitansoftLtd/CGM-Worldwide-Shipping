@@ -3,13 +3,20 @@ from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.constants import (
-	FINANCE_PAYMENT_ACTION,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
 	get_user_sea_task_department_stems,
 	user_has_finance_department_access,
 )
+
+# ERPNext Notification fixture names (see fixtures/notification.json).
+FINANCE_PAYMENT_ACTION = "CGM Task - Finance Payment Action"
+PERMIT_INVOICES_TO_FINANCE = "CGM Task - Permit Invoices to Finance"
+PERMIT_RECEIPTS_FOR_DECLARANT = "CGM Task - Permit Receipts for Declarant"
+PERMIT_RECEIPTS_VERIFY_FINANCE = "CGM Task - Permit Receipts Verify Finance"
+UCR_INVOICE_TO_FINANCE = "CGM Task - UCR Invoice to Finance"
+UCR_RECEIPT_FOR_DECLARANT = "CGM Task - UCR Receipt for Declarant"
+UCR_RECEIPT_VERIFY_FINANCE = "CGM Task - UCR Receipt Verify Finance"
+DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 
 
 @frappe.request_cache

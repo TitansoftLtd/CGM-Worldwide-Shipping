@@ -21,7 +21,6 @@ CONTAINER_DEPENDS = (
 
 FIELD_DEPENDS = {
 	"Opportunity-custom_bill_of_lading": SEA_SHIPMENT_EXPR,
-	"Opportunity-custom_airway_bill": AIR_SHIPMENT_EXPR,
 	"Opportunity-custom_air_waybill": AIR_SHIPMENT_EXPR,
 	"Opportunity-custom_section_break_idqn5": SEA_OR_AIR_SHIPMENT_EXPR,
 	"Opportunity-custom_container_information": CONTAINER_DEPENDS,

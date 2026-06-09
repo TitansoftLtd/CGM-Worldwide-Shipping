@@ -1,9 +1,9 @@
 # Copyright (c) 2026, Titansoft Limited and contributors
 # For license information, please see license.txt
 
-# import frappe
 from frappe.model.document import Document
 
 
-class ClearanceStationCode(Document):
-	pass
+class ModeofTransport(Document):
+	def autoname(self):
+		self.name = (self.mode or "").strip()

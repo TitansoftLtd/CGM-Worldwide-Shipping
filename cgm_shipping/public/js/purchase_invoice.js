@@ -62,6 +62,7 @@ function add_cgm_finance_buttons(frm) {
 	frm.add_custom_button(__("Back to Task"), () => {
 		frappe.set_route("Form", "Task", task_name);
 	}, __("CGM"));
+	frm.page.set_inner_btn_group_as_primary(__("CGM"));
 
 	if (frm.doc.docstatus === 1 && flt(frm.doc.outstanding_amount) > 0 && !frm.doc.on_hold) {
 		frm.add_custom_button(

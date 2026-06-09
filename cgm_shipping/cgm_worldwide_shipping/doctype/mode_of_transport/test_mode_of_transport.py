@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestClearanceStationCode(IntegrationTestCase):
+class IntegrationTestModeofTransport(IntegrationTestCase):
 	"""
-	Integration tests for ClearanceStationCode.
+	Integration tests for ModeofTransport.
 	Use this class for testing interactions between multiple components.
 	"""
 

@@ -1,40 +1,35 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-05-19 00:00:00",
+ "creation": "2026-06-09 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "station_code",
-  "column_break_hkvi",
-  "cfs_name"
+  "mode",
+  "description"
  ],
  "fields": [
   {
-   "fieldname": "cfs_name",
+   "fieldname": "mode",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Clearance Station",
-   "reqd": 1
+   "label": "Mode of Transport",
+   "reqd": 1,
+   "unique": 1
   },
   {
-   "fieldname": "station_code",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Station Code",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_hkvi",
-   "fieldtype": "Column Break"
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
   }
  ],
+ "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 12:37:17.001393",
+ "modified": "2026-06-09 10:44:35.671196",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
- "name": "Clearance Station",
+ "name": "Mode of Transport",
  "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
@@ -45,14 +40,15 @@
    "export": 1,
    "print": 1,
    "read": 1,
+   "report": 1,
    "role": "System Manager",
    "share": 1,
    "write": 1
   }
  ],
  "row_format": "Dynamic",
- "sort_field": "modified",
- "sort_order": "DESC",
- "states": [],
- "track_changes": 1
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
 }

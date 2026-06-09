@@ -126,9 +126,20 @@ function add_back_to_opportunity_button(frm) {
 	frm.add_custom_button(__("Back to Opportunity"), () => {
 		frappe.set_route("Form", "Opportunity", opportunity);
 	}, __("CGM"));
+	frm.page.set_inner_btn_group_as_primary(__("CGM"));
 }
 
 function add_create_opportunity_button(frm) {
+	if (frm.doc.linked_opportunity) {
+		frm.add_custom_button(
+			__("Opportunity"),
+			() => frappe.set_route("Form", "Opportunity", frm.doc.linked_opportunity),
+			__("View")
+		);
+		frm.page.set_inner_btn_group_as_primary(__("View"));
+		return;
+	}
+
 	// Branch a CRM Opportunity off a submitted Bill of Lading.
 	frm.add_custom_button(
 		__("Opportunity"),
@@ -150,6 +161,7 @@ function add_create_opportunity_button(frm) {
 		},
 		__("Create")
 	);
+	frm.page.set_inner_btn_group_as_primary(__("Create"));
 }
 
 function return_to_opportunity_after_submit(frm) {
