@@ -12,6 +12,19 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 # Approved state of the "CGM Opportunity Pre-Shipment" workflow.
 APPROVED_WORKFLOW_STATE = "Approved"
 
+# Doctypes that carry a soft back-link to the Opportunity via "linked_opportunity".
+BACK_LINKED_DOCTYPES = ("Air Waybill", "Bill of Lading")
+
+
+def clear_back_links_on_trash(doc, method=None) -> None:
+	for doctype in BACK_LINKED_DOCTYPES:
+		for name in frappe.get_all(
+			doctype, filters={"linked_opportunity": doc.name}, pluck="name"
+		):
+			frappe.db.set_value(
+				doctype, name, "linked_opportunity", None, update_modified=False
+			)
+
 
 def stamp_verified_documents_on_approval(doc, method=None) -> None:
 	"""Stamp Verified By / Verified On on the document rows once the Opportunity

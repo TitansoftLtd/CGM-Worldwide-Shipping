@@ -197,6 +197,10 @@ doc_events = {
 				".stamp_verified_documents_on_approval"
 			),
 		],
+		"on_trash": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			".clear_back_links_on_trash"
+		),
 	},
 	"Lead": {
 		"before_save": (

@@ -7,22 +7,22 @@
  "field_order": [
   "section_break_2k6q",
   "shipment_type_name",
-  "cgm_ref_prefix",
   "default_mode_of_transport",
-  "description",
+  "cgm_ref_prefix",
   "column_break_st_cfg",
-  "use_sea_import_workflow",
   "is_active",
-  "requires_bill_of_lading",
-  "requires_air_waybill",
+  "use_sea_import_workflow",
   "uses_unit_tracking",
-  "amended_from"
+  "amended_from",
+  "section_break_newf",
+  "description"
  ],
  "fields": [
   {
    "fieldname": "shipment_type_name",
    "fieldtype": "Data",
    "label": " Shipment Type Name",
+   "reqd": 1,
    "unique": 1
   },
   {
@@ -37,7 +37,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Mode of Transport",
-   "options": "Mode of Transport"
+   "options": "Mode of Transport",
+   "reqd": 1
   },
   {
    "fieldname": "description",
@@ -62,18 +63,6 @@
    "label": "Is Active"
   },
   {
-   "default": "0",
-   "fieldname": "requires_bill_of_lading",
-   "fieldtype": "Check",
-   "label": "Requires Bill of Lading"
-  },
-  {
-   "default": "0",
-   "fieldname": "requires_air_waybill",
-   "fieldtype": "Check",
-   "label": "Requires Air Waybill"
-  },
-  {
    "fieldname": "section_break_2k6q",
    "fieldtype": "Section Break"
   },
@@ -92,12 +81,16 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "section_break_newf",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 11:07:41.174649",
+ "modified": "2026-06-09 13:33:16.014510",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Type",
