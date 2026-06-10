@@ -5,23 +5,23 @@ import frappe
 from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.constants import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 	PERMIT_INVOICES_TO_FINANCE,
 	PERMIT_RECEIPTS_FOR_DECLARANT,
 	PERMIT_RECEIPTS_VERIFY_FINANCE,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
 	send_notification,
 	workflow_notify_message,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
 	user_has_finance_department_access,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules import (
 	TASK_PERMITS_FIELD,
 	sync_task_permits_to_project,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	PRE_CLEARANCE_STAGE,
 	get_permit_finance_sequence_for_application,
 	get_permit_stage_for_sequence,
@@ -288,20 +288,6 @@ def ensure_finance_permit_rows_saved(finance_task) -> bool:
 	return sync_permit_invoices_to_finance_task(finance_task, save=True)
 
 
-@frappe.whitelist()
-def ensure_finance_permit_rows(task_name: str) -> dict:
-	"""Load permit invoice rows onto Finance pays Pre-Clearance Permits (from declarant task)."""
-	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-	task = frappe.get_doc("Task", task_name)
-	if int(task.get("custom_sequence_no") or 0) != 6:
-		frappe.throw("This action is only for <b>Finance pays Pre-Clearance Permits</b>.")
-	added = ensure_finance_permit_rows_saved(task)
-	task.reload()
-	return {
-		"added": added,
-		"rows": len(task.get(TASK_PERMITS_FIELD) or []),
-		"task": task.name,
-	}
 def seed_finance_task_permits_from_project(task) -> None:
 	if not is_pre_clearance_finance_permit_task(task):
 		return
@@ -532,7 +518,7 @@ def validate_permit_application_can_complete(task) -> None:
 
 	if not task.get("custom_permit_invoices_submitted"):
 		frappe.throw(
-			"Click <b>Notify Finance — invoices ready</b> before completing this task."
+			"Click <b>Notify Finance - invoices ready</b> before completing this task."
 		)
 
 	if not finance_payment_completed(task.project, seq):
@@ -780,7 +766,7 @@ def verify_all_permit_receipts(task_name: str) -> dict:
 		"application_status": app_status,
 		"auto_completed": completed,
 		"message": (
-			"All permit receipts verified — finance and declarant tasks are completed."
+			"All permit receipts verified - finance and declarant tasks are completed."
 			if completed
 			else "Receipts verified. Tick any remaining rows or refresh the page."
 		),
@@ -832,12 +818,7 @@ def get_permit_finance_workflow_status(task_name: str) -> dict:
 # Backward-compatible aliases (existing imports / patches)
 # ------------------------------------------------------------------
 
-PERMIT_FINANCE_SEQ_BY_APPLICATION = permit_finance_by_application_sequence()
-all_permit_rows_have_invoices = has_all_permit_invoices
 permit_invoices_ready = permit_invoices_submitted
 permit_invoices_ready_for_project = project_has_submitted_permit_invoices
-finance_permit_payment_recorded = finance_payment_completed
-permit_finance_ready_to_complete = can_complete_finance_permit_task
 try_auto_complete_permit_finance_task = auto_complete_finance_permit_task
-get_permit_application_task = get_permit_application_task_name
 get_permit_finance_task = get_finance_permit_task_name

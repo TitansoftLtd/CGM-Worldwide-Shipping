@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import frappe
 
-# Operational types from CGM tracking sheets (prefix = CGM/FCL001/1022 segment).
 SHIPMENT_TYPE_BOOTSTRAP_DATA: list[dict] = [
 	{
 		"shipment_type_name": "Sea FCL",

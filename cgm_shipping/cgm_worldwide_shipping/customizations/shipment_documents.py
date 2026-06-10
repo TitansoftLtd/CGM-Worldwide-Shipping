@@ -192,6 +192,11 @@ DOCUMENT_TYPE_DEFAULTS = {
 		"default_required": 0,
 		"required_stage": "Pre-IDF",
 	},
+	"AWB": {
+		"category": "Transport",
+		"default_required": 0,
+		"required_stage": "Arrival & manifest",
+	},
 }
 
 # Customer Attach field → Document Type code.
@@ -388,8 +393,10 @@ def carry_project_shipment_documents_to_sea_tasks(project_name, task_sequences=N
 	Copy Project shipment document rows onto sea clearance tasks (audit trail on Task 1–2).
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
-		SEA_AUTO_COMPLETE_TASK_SEQS,
 		SEA_TASK_FLOW_KEY,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
+		auto_complete_sequences,
 	)
 
 	if not project_name or not frappe.db.exists("Project", project_name):
@@ -397,7 +404,7 @@ def carry_project_shipment_documents_to_sea_tasks(project_name, task_sequences=N
 	if not frappe.get_meta("Task").has_field(TASK_DOCUMENTS_FIELD):
 		return []
 
-	task_sequences = task_sequences or sorted(SEA_AUTO_COMPLETE_TASK_SEQS)
+	task_sequences = task_sequences or sorted(auto_complete_sequences())
 	project = frappe.get_doc("Project", project_name)
 	source_rows = [
 		r

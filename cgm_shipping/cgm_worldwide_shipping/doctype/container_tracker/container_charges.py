@@ -117,7 +117,7 @@ def derive_current_location(
 		return delivery_location or "Delivered to customer"
 	if gate_out:
 		if delivery_location:
-			return f"In transit — {delivery_location}"
+			return f"In transit - {delivery_location}"
 		return "Out of port (gate out)"
 	if data.get("icd_gate_in_date") or data.get("icd_gate_out_date"):
 		return "ICD Nairobi"
@@ -126,7 +126,7 @@ def derive_current_location(
 			return "ICD / discharge yard"
 		return "Port (discharged, not gated out)"
 	if data.get("ata"):
-		return "Vessel arrived — port"
+		return "Vessel arrived - port"
 	if data.get("eta"):
 		return "En route to port"
 	return "Pending arrival"

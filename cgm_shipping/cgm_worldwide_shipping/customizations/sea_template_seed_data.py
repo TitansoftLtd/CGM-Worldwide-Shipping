@@ -1,4 +1,5 @@
 """One-time seed data for sea import task template patches (not used at runtime)."""
+from __future__ import annotations
 
 DEFAULT_SEA_IMPORT_TASK_TEMPLATE: list[dict[str, str]] = [
 	{"task_subject": "Receive shipment documents from Client", "department": "Operations"},

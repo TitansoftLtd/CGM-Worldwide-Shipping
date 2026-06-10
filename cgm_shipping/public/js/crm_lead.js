@@ -19,13 +19,13 @@ frappe.ui.form.on("Lead", {
 						method: "erpnext.crm.doctype.lead.lead.make_customer",
 						frm,
 					});
-				});
+				}).addClass("btn-primary");
 				return;
 			}
 
 			frm.add_custom_button(__("Create Shipment Project"), () => {
 				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_lead",
+					method: "cgm_shipping.cgm_worldwide_shipping.customizations.project.create_project_from_lead",
 					args: { lead: frm.doc.name },
 					freeze: true,
 					callback(r) {
@@ -38,7 +38,7 @@ frappe.ui.form.on("Lead", {
 						}
 					},
 				});
-			});
+			}).addClass("btn-primary");
 		}, 0);
 	},
 });

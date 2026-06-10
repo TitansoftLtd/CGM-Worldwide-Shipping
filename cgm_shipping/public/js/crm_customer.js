@@ -1,26 +1,34 @@
 frappe.ui.form.on("Customer", {
 	refresh(frm) {
+		// Hide the standard ERPNext "Create" options so only the CGM
+		// shipping documents (Bill of Lading & Air Waybill) remain.
+		[
+			"Quotation",
+			"Sales Order",
+			"Opportunity",
+			"Payment Entry",
+			"Pricing Rule",
+			"Bank Account",
+		].forEach((label) => {
+			frm.remove_custom_button(__(label), __("Create"));
+		});
+
 		frm.add_custom_button(
-			__("Create Shipment Project"),
+			__("Bill of Lading"),
 			() => {
-				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_customer",
-					args: { customer: frm.doc.name },
-					freeze: true,
-					callback(r) {
-						if (!r.exc && r.message) {
-							frappe.show_alert({
-								message: __(
-									"Shipment Project created. Sea tasks 1–2 are auto-completed when CI/PKL came from CRM."
-								),
-								indicator: "green",
-							});
-							frappe.set_route("Form", "Project", r.message);
-						}
-					},
-				});
+				frappe.new_doc("Bill of Lading", { customer: frm.doc.name });
 			},
 			__("Create")
 		);
+
+		frm.add_custom_button(
+			__("Air Waybill"),
+			() => {
+				frappe.new_doc("Air Waybill", { customer: frm.doc.name });
+			},
+			__("Create")
+		);
+
+		frm.page.set_inner_btn_group_as_primary(__("Create"));
 	},
 });

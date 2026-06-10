@@ -111,7 +111,7 @@ def resolve_purchase_item_for_permit_type(permit_type: str) -> str | None:
 
 
 def get_purchase_item_for_permit_type(permit_type: str, company: str | None = None) -> str:
-	"""Item for PI line — Permit Type master, then name match, then global default."""
+	"""Item for PI line - Permit Type master, then name match, then global default."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link import (
 		get_default_purchase_item_code,
 	)

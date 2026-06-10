@@ -5,101 +5,6 @@ app_description = "CGM Customizations"
 app_email = "nkubitudouglas@gmail.com"
 app_license = "mit"
 
-fixtures = [
-    # Workflow definitions
-    {
-        "doctype": "Workflow",
-        "filters": [["name", "in", [
-            "CGM Lead Pre-Shipment",
-            "CGM Opportunity Pre-Shipment",
-            "CGM Sea Import Workflow",
-        ]]]
-    },
-    # Workflow states
-    {
-        "doctype": "Workflow State",
-        "filters": [["name", "in", [
-            # Lead states
-            "Lead Intake",
-            "Lead Docs Verified",
-            "Lead Docs Rejected",
-            "Lead Ready to Convert",
-            # Opportunity states
-            "Opp Intake",
-            "Opp Docs Verified",
-            "Opp Docs Rejected",
-            "Opp Ready for Project",
-            # Project — sea freight clearance (custom_shipment_status)
-            "Draft",
-            "Documents Received",
-            "UCR Applied",
-            "UCR Paid",
-            "Pre-clearance",
-            "Client Inspection",
-            "In Transit",
-            "Final Docs Received",
-            "Entry Lodged",
-            "Manifest Requested",
-            "Line Paid & DO Lodged",
-            "Entry Paid",
-            "Post-clearance",
-            "Field Clearance",
-            "KPA Paid",
-            "In Delivery",
-            "Containers Returned",
-            "Completed",
-            "Settled",
-        ]]]
-    },
-    # Workflow actions
-    {
-        "doctype": "Workflow Action Master",
-        "filters": [["name", "in", [
-            # CRM actions
-            "Approve CI/PKL",
-            "Reject CI/PKL",
-            "Approve customer onboarding",
-            "Authorize Shipment File",
-            # Project — sea freight clearance actions
-            "Receive Client Documents",
-            "Create UCR Application",
-            "Confirm UCR Paid",
-            "Start Pre-clearance Permits",
-            "Request Client Inspection",
-            "Start Shipment Tracking",
-            "Receive Final Documents",
-            "Request Manifest and Charges",
-            "Lodge Customs Entry",
-            "Confirm Line Paid and DO Lodged",
-            "Confirm Entry Paid",
-            "Complete Post-clearance Permits",
-            "Hand to Field Officers",
-            "Confirm KPA Paid",
-            "Dispatch Cargo",
-            "Confirm Containers Returned",
-            "Complete Shipment File",
-            "Settle File",
-        ]]]
-    },
-    {
-        "doctype": "Custom Field",
-        "filters": [["module", "=", "CGM Worldwide Shipping"], ["name", "like", "custom_%"]],
-    },
-    {
-        "doctype": "Role",
-        "filters": [["name", "in", [
-            "Operations Manager",
-            "Declarant",
-            "Finance User",
-            "Field Officer",
-            "Transport Officer",
-        ]]],
-    },
-    {
-        "doctype": "Notification",
-        "filters": [["name", "like", "CGM%"]],
-    },
-]
 # Apps
 # ------------------
 
@@ -124,8 +29,14 @@ app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
 app_include_js = "/assets/cgm_shipping/js/cgm_container_tracking.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/cgm_shipping/css/cgm_shipping.css"
-# web_include_js = "/assets/cgm_shipping/js/cgm_shipping.js"
+# Customer portal: shared design-system CSS + browser-side timezone
+# localization for the /portal, /my-shipments, /shipment and /documents pages.
+web_include_css = [
+	"/assets/cgm_shipping/css/customer_portal.css",
+]
+web_include_js = [
+	"/assets/cgm_shipping/js/portal_localize_time.js",
+]
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "cgm_shipping/public/scss/website"
@@ -147,7 +58,6 @@ doctype_js = {
 		"public/js/cgm_bl_containers.js",
 		"public/js/project.js",
 	],
-	"Container Tracker": "public/js/container_tracker.js",
 	"Lead": [
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_lead.js",
@@ -157,8 +67,7 @@ doctype_js = {
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_opportunity.js",
-	],
-	"Bill of Lading": "public/js/bill_of_lading.js",
+	]
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -176,9 +85,14 @@ doctype_js = {
 # home_page = "login"
 
 # website user home page (by Role)
-# role_home_page = {
-# 	"Role": "home_page"
-# }
+# Customers (Website Users) land on the branded shipment portal.
+role_home_page = {
+	"Customer": "portal",
+}
+
+on_session_creation = [
+	"cgm_shipping.cgm_worldwide_shipping.customizations.website.route_customer_to_portal",
+]
 
 # Generators
 # ----------
@@ -193,10 +107,13 @@ doctype_js = {
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "cgm_shipping.utils.jinja_methods",
-# 	"filters": "cgm_shipping.utils.jinja_filters"
-# }
+# `local_datetime_iso` powers the timezone-aware <time> macros used across
+# the customer portal templates.
+jinja = {
+	"methods": [
+		"cgm_shipping.cgm_worldwide_shipping.customizations.portal_localize.local_datetime_iso",
+	],
+}
 
 # Installation
 # ------------
@@ -283,22 +200,27 @@ doc_events = {
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
 	},
-	"Bill of Lading": {
-		"on_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-			".bill_of_lading_on_submit"
-		),
-	},
 	"Opportunity": {
 		"before_save": (
 			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
 			".sync_preshipment_containers_from_bl"
 		),
+		"before_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			".stamp_verified_documents_on_approval"
+		),
+		"before_update_after_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			".stamp_verified_documents_on_approval"
+		),
+		"on_trash": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			".clear_back_links_on_trash"
+		),
 	},
 	"Lead": {
 		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-			".sync_preshipment_containers_from_bl"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl"
 		),
 	},
 	"Task": {
@@ -364,6 +286,9 @@ scheduler_events = {
 # override_doctype_dashboards = {
 # 	"Task": "cgm_shipping.task.get_dashboard_data"
 # }
+override_doctype_dashboards = {
+	"Opportunity": "cgm_shipping.cgm_worldwide_shipping.customizations.opportunity.get_dashboard_data",
+}
 
 # exempt linked doctypes from being automatically cancelled
 #

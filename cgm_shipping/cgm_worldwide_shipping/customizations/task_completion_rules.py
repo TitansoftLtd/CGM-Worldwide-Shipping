@@ -1,5 +1,5 @@
 """
-Sea task completion rules — driven by CGM Shipping Settings where possible.
+Sea task completion rules - driven by CGM Shipping Settings where possible.
 
 Task level: invoices/receipts on Task Finance Lines; clearance docs on Task Documents; permits on Task Permits.
 Project level: custom_permit_register synced from Task permits (see sync_task_permits_to_project).
@@ -9,7 +9,7 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
 	TASK_DOCUMENTS_FIELD,
 	get_document_type_link_name,
 )
@@ -17,7 +17,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 	PERMIT_REGISTER_FIELD,
 	derive_permit_clearance_phase,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements.service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
 	SUPPLIER_INVOICE_CODE,
 	get_permit_stage_for_sequence,
 	get_required_document_codes,
@@ -77,7 +77,7 @@ TASK_DOCUMENT_TYPE_DEFAULTS: dict[str, dict] = {
 
 
 def ensure_task_document_types() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents.service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
 		DOCUMENT_TYPE_DEFAULTS,
 		ensure_document_types,
 	)
@@ -225,14 +225,24 @@ def validate_light_proof_task(task) -> None:
 		)
 
 
+def _permit_type_examples(limit: int = 5) -> str:
+	"""Example permit codes from the Permit Type master (no hardcoded list)."""
+	if not frappe.db.exists("DocType", "Permit Type"):
+		return ""
+	names = frappe.get_all("Permit Type", pluck="name", order_by="name asc", limit=limit)
+	return ", ".join(names)
+
+
 def validate_permit_application_task(task, seq: int) -> None:
 	if not task.meta.has_field(TASK_PERMITS_FIELD):
 		frappe.throw("Task Permits table is not available on this site. Run <b>bench migrate</b>.")
 
 	rows = task.get(TASK_PERMITS_FIELD) or []
+	examples = _permit_type_examples()
+	eg = f" (e.g. {examples})" if examples else ""
 	if not rows:
 		frappe.throw(
-			"Add at least one permit on <b>Task Permits</b> (e.g. DVS, NBA, VMD, ACA, SCA) "
+			f"Add at least one permit on <b>Task Permits</b>{eg} "
 			"and attach the <b>Permit Invoice</b> for each before completing this task."
 		)
 
@@ -240,10 +250,10 @@ def validate_permit_application_task(task, seq: int) -> None:
 	for row in rows:
 		label = row.permit_type or "Permit"
 		if not row.permit_type:
-			missing.append("Permit type (select DVS / NBA / VMD / ACA / SCA)")
+			missing.append(f"Permit type{eg}")
 			continue
 		if not row.get("payment_invoice"):
-			missing.append(f"{label} — supplier/permit invoice")
+			missing.append(f"{label} - supplier/permit invoice")
 
 	if missing:
 		frappe.throw(
@@ -372,40 +382,3 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 	task.save(ignore_permissions=True)
 	sync_task_permits_to_project(task)
 	return {"task": task.name, "status": task.status, "missing_invoices": missing}
-
-
-@frappe.whitelist()
-def get_project_permit_invoices(project: str) -> list[dict]:
-	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
-	if not frappe.db.exists("Project", project):
-		frappe.throw("Project not found.")
-	project_doc = frappe.get_doc("Project", project)
-	return [
-		{
-			"permit_type": r.permit_type,
-			"payment_invoice": r.get("payment_invoice"),
-			"invoice_amount": r.get("invoice_amount"),
-			"clearance_phase": r.get("clearance_phase"),
-			"status": r.get("status"),
-			"name": r.name,
-		}
-		for r in project_doc.get(PERMIT_REGISTER_FIELD) or []
-	]
-
-
-# Backward-compatible alias for patches and finance modules.
-attached_codes = attached_document_codes
-
-
-@frappe.whitelist()
-def get_task_completion_hint(task_name: str) -> dict:
-	frappe.has_permission("Task", ptype="read", doc=task_name, throw=True)
-	task = frappe.get_doc("Task", task_name)
-	seq = int(task.get("custom_sequence_no") or 0)
-	return {
-		"sequence_no": seq,
-		"requires_supplier_invoice": is_finance_payment_task(seq)
-		and not is_permit_finance_payment_task(seq),
-		"requires_permits": is_permit_application_task(seq),
-		"required_doc_codes": get_required_document_codes(seq),
-	}

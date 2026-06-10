@@ -1,5 +1,3 @@
-// ─── Opportunity form ─────────────────────────────────────────────────────────
-
 frappe.ui.form.on("Opportunity", {
     onload(frm) {
         register_clients_documents_remove_handler(frm);
@@ -10,6 +8,7 @@ frappe.ui.form.on("Opportunity", {
     },
 
     refresh(frm) {
+        hide_procurement_create_buttons(frm);
         register_clients_documents_remove_handler(frm);
         sync_opportunity_transport_and_containers(frm);
         setup_opportunity_bill_of_lading_create(frm);
@@ -23,89 +22,26 @@ frappe.ui.form.on("Opportunity", {
     },
 });
 
-
-// ─── Shipment Document child table ────────────────────────────────────────────
-
 frappe.ui.form.on("Shipment Document", {
-    document_type(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.document_type) {
-            return;
-        }
-
-        const master_doctype = frappe.meta.get_docfield(cdt, "document_type")?.options;
-        if (!master_doctype) {
-            return;
-        }
-
-        frappe.db.get_value(
-            master_doctype,
-            row.document_type,
-            ["linked_doctype", "attachment_field", "populate_containers"],
-            (values) => {
-                if (!values) {
-                    return;
-                }
-                frappe.model.set_value(cdt, cdn, "linked_doctype", values.linked_doctype || "");
-                frappe.model.set_value(cdt, cdn, "attachment_field", values.attachment_field || "");
-                frappe.model.set_value(
-                    cdt,
-                    cdn,
-                    "populate_containers",
-                    cint(values.populate_containers)
-                );
-                frappe.model.set_value(cdt, cdn, "document_reference", "");
-                frappe.model.set_value(cdt, cdn, "attachment", "");
-            }
-        );
-    },
-
-    document_reference(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.document_reference || !row.linked_doctype) {
-            return;
-        }
-
-        if (cint(row.populate_containers)) {
-            fetch_and_apply_bl_data(frm, row, cdt, cdn);
-            return;
-        }
-
-        if (!row.attachment_field) {
-            return;
-        }
-
-        frappe.db.get_value(
-            row.linked_doctype,
-            row.document_reference,
-            row.attachment_field,
-            (values) => {
-                if (!values) {
-                    return;
-                }
-                frappe.model.set_value(
-                    cdt,
-                    cdn,
-                    "attachment",
-                    values[row.attachment_field] || ""
-                );
-            }
-        );
+    custom_clients_documents_add(frm, cdt, cdn) {
+        frappe.model.set_value(cdt, cdn, "uploaded_by", frappe.session.user);
+        frappe.model.set_value(cdt, cdn, "uploaded_on", frappe.datetime.now_datetime());
     },
 });
 
-
-// ─── Meta discovery ───────────────────────────────────────────────────────────
+function meta_has_field(doctype, fieldname) {
+    const meta = doctype && frappe.get_meta(doctype);
+    return Boolean(meta && (meta.fields || []).some((df) => df.fieldname === fieldname));
+}
 
 function get_shipment_documents_field(frm) {
     for (const df of frappe.meta.get_docfields(frm.doctype, frm.doc.name)) {
         if (df.fieldtype !== "Table") {
             continue;
         }
-        const child_meta = frappe.get_meta(df.options);
         if (
-            child_meta?.has_field("document_type") &&
-            child_meta?.has_field("document_reference")
+            meta_has_field(df.options, "document_type") &&
+            meta_has_field(df.options, "document_reference")
         ) {
             return df.fieldname;
         }
@@ -134,7 +70,7 @@ function linked_doctype_has_container_table(doctype) {
         if (df.fieldtype !== "Table") {
             return false;
         }
-        return Boolean(frappe.get_meta(df.options)?.has_field("container_number"));
+        return meta_has_field(df.options, "container_number");
     });
 }
 
@@ -155,7 +91,7 @@ function get_container_table_field(frm) {
         if (df.fieldtype !== "Table") {
             continue;
         }
-        if (frappe.get_meta(df.options)?.has_field("container_number")) {
+        if (meta_has_field(df.options, "container_number")) {
             return df.fieldname;
         }
     }
@@ -228,7 +164,7 @@ function on_clients_documents_removed(frm) {
 function sync_opportunity_transport_and_containers(frm) {
     const bl_link_field = get_opportunity_bl_link_field(frm);
     cgm_shipping.transport_reference.toggle(frm, {
-        air_waybill: "custom_airway_bill",
+        air_waybill: "custom_air_waybill",
         bill_of_lading: bl_link_field || undefined,
         section: "custom_section_break_idqn5",
     });
@@ -312,7 +248,7 @@ function apply_pending_bl_from_submit(frm) {
 
     localStorage.removeItem("cgm_pending_bl_link");
     frappe.show_alert({
-        message: __("Bill of Lading {0} linked — continue completing this Opportunity.", [
+        message: __("Bill of Lading {0} linked - continue completing this Opportunity.", [
             pending.bl_name,
         ]),
         indicator: "green",
@@ -332,10 +268,9 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
     }
 
     frm.clear_table(docs_field);
-    const new_row = frm.add_child(docs_field, {
+    frm.add_child(docs_field, {
         document_type: pending.document_type,
         attachment: pending.attachment,
-        document_reference: pending.bl_name || "",
         status: "Uploaded",
     });
     rows.forEach((row) => {
@@ -351,48 +286,15 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
         });
     });
     frm.refresh_field(docs_field);
-    enrich_shipment_document_row_from_type(new_row, pending.document_type);
-}
-
-function enrich_shipment_document_row_from_type(row, document_type) {
-    if (!row || !document_type) {
-        return;
-    }
-
-    const master_doctype = frappe.meta.get_docfield(row.doctype, "document_type")?.options;
-    if (!master_doctype) {
-        return;
-    }
-
-    frappe.db.get_value(
-        master_doctype,
-        document_type,
-        ["linked_doctype", "attachment_field", "populate_containers"],
-        (values) => {
-            if (!values) {
-                return;
-            }
-            frappe.model.set_value(row.doctype, row.name, "linked_doctype", values.linked_doctype || "");
-            frappe.model.set_value(
-                row.doctype,
-                row.name,
-                "attachment_field",
-                values.attachment_field || ""
-            );
-            frappe.model.set_value(
-                row.doctype,
-                row.name,
-                "populate_containers",
-                cint(values.populate_containers)
-            );
-        }
-    );
 }
 
 
 // ─── BL data sync (single API call) ───────────────────────────────────────────
 
 function sync_bl_from_clients_documents(frm) {
+    if (frm.doc.docstatus !== 0) {
+        return;
+    }
     const bl_row = find_populate_containers_row(frm);
     if (!bl_row) {
         const bl_link_field = get_opportunity_bl_link_field(frm);
@@ -439,7 +341,8 @@ function apply_bl_data_from_response(frm, row, cdt, cdn, data) {
     if (quantity_field) {
         frm.set_value(quantity_field, data.quantity || "");
     }
-    if (container_field) {
+
+    if (container_field && !container_rows_match(frm.doc[container_field], data.containers)) {
         frm.clear_table(container_field);
         (data.containers || []).forEach((container) => {
             Object.assign(frm.add_child(container_field), container);
@@ -448,53 +351,86 @@ function apply_bl_data_from_response(frm, row, cdt, cdn, data) {
     }
 }
 
+function container_rows_match(existing, incoming) {
+    existing = existing || [];
+    incoming = incoming || [];
+    if (existing.length !== incoming.length) {
+        return false;
+    }
+    return incoming.every((row, i) =>
+        Object.keys(row).every(
+            (key) => (existing[i]?.[key] ?? "") === (row[key] ?? "")
+        )
+    );
+}
+
 function clear_bl_derived_opportunity_fields(frm) {
     const bl_link_field = get_opportunity_bl_link_field(frm);
     const container_field = get_container_table_field(frm);
     const quantity_field = bl_link_field ? get_quantity_field(frm, bl_link_field) : null;
 
-    if (container_field) {
+    if (container_field && (frm.doc[container_field] || []).length) {
         frm.clear_table(container_field);
         frm.refresh_field(container_field);
     }
-    if (quantity_field) {
+    if (quantity_field && frm.doc[quantity_field]) {
         frm.set_value(quantity_field, "");
     }
-    if (bl_link_field) {
+    if (bl_link_field && frm.doc[bl_link_field]) {
         frm.set_value(bl_link_field, "");
     }
 }
 
-
-// ─── Create Shipment Project button ───────────────────────────────────────────
-
 function setup_create_shipment_project_button(frm) {
     if (
-        frm.doc.custom_cgm_preshipment_status !== "Opp Ready for Project" ||
+        frm.doc.workflow_state !== "Approved" ||
         frm.doc.opportunity_from !== "Customer"
     ) {
         return;
     }
 
-    frm.add_custom_button(
-        __("Create Shipment Project"),
-        () => {
-            frappe.call({
-                method:
-                    "cgm_shipping.cgm_worldwide_shipping.customizations.utils.create_project_from_opportunity",
-                args: { opportunity: frm.doc.name },
-                freeze: true,
-                callback(r) {
-                    if (!r.exc && r.message) {
-                        frappe.show_alert({
-                            message: __("Shipment Project created"),
-                            indicator: "green",
+    frappe.db
+        .get_value("Project", { custom_source_opportunity: frm.doc.name }, "name")
+        .then((r) => {
+            const existing = r?.message?.name;
+            if (existing) {
+                frm.add_custom_button(
+                    __("View Project"),
+                    () => frappe.set_route("Form", "Project", existing),
+                    __("Create")
+                );
+            } else {
+                frm.add_custom_button(
+                    __("Create Shipment Project"),
+                    () => {
+                        frappe.call({
+                            method:
+                                "cgm_shipping.cgm_worldwide_shipping.customizations.project.create_project_from_opportunity",
+                            args: { opportunity: frm.doc.name },
+                            freeze: true,
+                            callback(r) {
+                                if (!r.exc && r.message) {
+                                    frappe.show_alert({
+                                        message: __("Shipment Project created"),
+                                        indicator: "green",
+                                    });
+                                    frappe.set_route("Form", "Project", r.message);
+                                }
+                            },
                         });
-                        frappe.set_route("Form", "Project", r.message);
-                    }
-                },
-            });
-        },
-        __("Create")
-    );
+                    },
+                    __("Create")
+                );
+            }
+            frm.page.set_inner_btn_group_as_primary(__("Create"));
+        });
+}
+
+function hide_procurement_create_buttons(frm) {
+    const remove = () => {
+        frm.remove_custom_button(__("Supplier Quotation"), __("Create"));
+        frm.remove_custom_button(__("Request For Quotation"), __("Create"));
+    };
+    remove();
+    [50, 200, 600].forEach((delay) => setTimeout(remove, delay));
 }

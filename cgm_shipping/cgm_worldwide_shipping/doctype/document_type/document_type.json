@@ -1,34 +1,23 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:code",
  "creation": "2026-04-30 11:23:10.954917",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_anoz",
-  "amended_from",
   "code",
   "category",
   "mode_of_transport",
   "required_stage",
   "default_required",
+  "column_break_jjki",
   "text_editor_eisl"
  ],
  "fields": [
   {
    "fieldname": "section_break_anoz",
    "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "Document Type",
-   "print_hide": 1,
-   "read_only": 1,
-   "search_index": 1
   },
   {
    "fieldname": "code",
@@ -41,18 +30,23 @@
   {
    "fieldname": "category",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Category",
    "options": "\nCommercial\nCustoms\nTransport\nCompliance\nFinance\nInsurance\nOther"
   },
   {
    "fieldname": "mode_of_transport",
-   "fieldtype": "Select",
+   "fieldtype": "Table MultiSelect",
+   "in_standard_filter": 1,
    "label": "Mode of Transport",
-   "options": "\nAir\nSea\nRoad"
+   "options": "Mode of Transport Item"
   },
   {
    "fieldname": "required_stage",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Required Stage",
    "options": "\nPre-IDF\nIDF & UCR\nPermits (pre-clearance)\nClient inspection\nPre-arrival\nArrival & manifest\nCustoms entry & taxes\nPost-clearance permits\nField clearance & release\nPort & line (DO / charges)\nTransport & delivery\nClosure\nNot stage-specific"
   },
@@ -66,17 +60,20 @@
    "fieldname": "text_editor_eisl",
    "fieldtype": "Text Editor",
    "label": "Description"
+  },
+  {
+   "fieldname": "column_break_jjki",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "is_submittable": 1,
  "links": [],
- "modified": "2026-06-08 06:31:17.552350",
+ "modified": "2026-06-09 21:58:38.232864",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Document Type",
- "naming_rule": "By fieldname",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
@@ -89,7 +86,6 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
-   "submit": 1,
    "write": 1
   }
  ],

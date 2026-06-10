@@ -5,17 +5,18 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "client_ref",
+  "customer",
   "air_waybill",
-  "table_uwao",
-  "section_break_ztvo",
+  "client_ref",
+  "column_break_utxs",
+  "shipment_type",
+  "attach_airwaybill",
+  "section_break_rpnc",
+  "description",
+  "linked_opportunity",
   "amended_from"
  ],
  "fields": [
-  {
-   "fieldname": "section_break_ztvo",
-   "fieldtype": "Section Break"
-  },
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
@@ -34,22 +35,61 @@
   {
    "fieldname": "air_waybill",
    "fieldtype": "Data",
-   "label": "Air Waybill"
+   "label": "Air Waybill",
+   "reqd": 1
   },
   {
-   "fieldname": "table_uwao",
-   "fieldtype": "Table",
-   "options": "Container"
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_utxs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "shipment_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Shipment Type",
+   "options": "Shipment Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "attach_airwaybill",
+   "fieldtype": "Attach",
+   "label": "Attach Airwaybill"
+  },
+  {
+   "fieldname": "section_break_rpnc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "reqd": 1
+  },
+  {
+   "fieldname": "linked_opportunity",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Linked Opportunity",
+   "options": "Opportunity"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-28 14:51:48.754989",
+ "modified": "2026-06-09 18:17:04.726358",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Air Waybill",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
