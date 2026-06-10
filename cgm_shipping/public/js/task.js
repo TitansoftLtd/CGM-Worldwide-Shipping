@@ -146,7 +146,7 @@ frappe.ui.form.on("Task", {
 		) {
 			frm.add_custom_button(__("Submit UCR invoice to Finance"), () => {
 				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow.submit_ucr_invoice_to_finance",
+					method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.submit_ucr_invoice_to_finance",
 					args: { task_name: frm.doc.name },
 					freeze: true,
 					callback(r) {
@@ -191,7 +191,7 @@ frappe.ui.form.on("Task", {
 		) {
 			frm.add_custom_button(__("Notify Finance - invoices ready"), () => {
 				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow.submit_permit_invoices_to_finance",
+					method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.submit_permit_invoices_to_finance",
 					args: { task_name: frm.doc.name },
 					freeze: true,
 					callback(r) {
@@ -259,7 +259,7 @@ frappe.ui.form.on("Task", {
 		if (ui.show_permits && frm.doc.status === "Completed" && !permit_rows_have_invoices(frm)) {
 			frm.add_custom_button(__("Re-open to attach invoices"), () => {
 				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.task_completion_rules.reopen_task_for_permit_attachments",
+					method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.reopen_task_for_permit_attachments",
 					args: { task_name: frm.doc.name },
 					callback(r) {
 						if (!r.exc) {
@@ -295,7 +295,7 @@ frappe.ui.form.on("Task", {
 			) {
 				add_cgm_toolbar_button(frm, __("Link Invoice & Payment"), () => {
 					frappe.call({
-						method: "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.sync_finance_links_from_documents",
+						method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.sync_finance_links_from_documents",
 						args: { task_name: frm.doc.name },
 						freeze: true,
 						callback(r) {
@@ -401,7 +401,7 @@ function load_cgm_sea_ui_sequences(frm) {
 	frm._cgm_sea_seq_loading = true;
 	frappe.call({
 		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service.get_sea_task_ui_sequences",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.get_sea_task_ui_sequences",
 		callback(r) {
 			frm._cgm_sea_seq_loading = false;
 			frm._cgm_sea_seq_config = r.message || CGM_SEA_UI_SEQUENCES_EMPTY;
@@ -425,7 +425,7 @@ function get_cgm_sea_seq_config(frm) {
 	return frm._cgm_sea_seq_config || CGM_SEA_UI_SEQUENCES_EMPTY;
 }
 
-function get_cgm_task_permissions(frm) {
+function get_cgm_permissions(frm) {
 	const perms = get_cgm_sea_seq_config(frm).permissions;
 	if (perms && Object.keys(perms).length) {
 		return perms;
@@ -627,12 +627,12 @@ function apply_sea_task_form_layout(frm, ui) {
 
 	SEA_TASK_HIDDEN_FIELDS.forEach((f) => toggle(f, false));
 	const show_finance = Boolean(ui.show_finance_lines && frm.fields_dict.custom_task_finance_lines);
-	toggle("custom_section_task_finance", show_finance);
+	toggle("custom_section_task", show_finance);
 	toggle("custom_task_finance_lines", show_finance);
 	if (show_finance) {
 		configure_finance_line_grid(frm, ui);
-		if (frm.fields_dict.custom_section_task_finance) {
-			frm.set_df_property("custom_section_task_finance", "description", "");
+		if (frm.fields_dict.custom_section_task) {
+			frm.set_df_property("custom_section_task", "description", "");
 		}
 	}
 	toggle("custom_section_break_0gs4o", ui.show_documents);
@@ -694,7 +694,7 @@ function verify_all_permit_receipts_from_form(frm) {
 	}
 	frm._cgm_verifying_permit_receipts = true;
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow.verify_all_permit_receipts",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.verify_all_permit_receipts",
 		args: { task_name: frm.doc.name },
 		freeze: true,
 		freeze_message: __("Verifying receipts…"),
@@ -791,7 +791,7 @@ function ensure_finance_permit_rows_on_form(frm) {
 	}
 	frm._cgm_finance_permit_rows_ensuring = true;
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow.ensure_finance_permit_rows",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.ensure_finance_permit_rows",
 		args: { task_name: frm.doc.name },
 		callback(r) {
 			frm._cgm_finance_permit_rows_ensuring = false;
@@ -812,7 +812,7 @@ function ensure_ucr_finance_lines_on_form(frm) {
 	}
 	frm._cgm_finance_lines_ensuring = true;
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow.ensure_ucr_finance_lines",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.ensure_ucr_finance_lines",
 		args: { task_name: frm.doc.name },
 		callback(r) {
 			frm._cgm_finance_lines_ensuring = false;
@@ -842,7 +842,7 @@ function load_ucr_declarant_workflow_status(frm) {
 	}
 	frm._cgm_declarant_status_loading = true;
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow.get_ucr_declarant_workflow_status",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.get_ucr_declarant_workflow_status",
 		args: { task_name: frm.doc.name },
 		callback(r) {
 			frm._cgm_declarant_status_loading = false;
@@ -1054,7 +1054,7 @@ frappe.ui.form.on("Permit Register", {
 		if (row.payment_receipt) {
 			frappe.model.set_value(cdt, cdn, "status", "Receipt Submitted");
 			frappe.call({
-				method: "cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow.notify_finance_verify_receipts",
+				method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.notify_finance_verify_receipts",
 				args: { task_name: frm.doc.name },
 			});
 		}
@@ -1095,7 +1095,7 @@ function ensure_ucr_finance_task_completed_on_form(frm) {
 	}
 	frm._cgm_finance_complete_checking = true;
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow.ensure_ucr_finance_task_completed",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.ensure_ucr_finance_task_completed",
 		args: { task_name: frm.doc.name },
 		callback(r) {
 			frm._cgm_finance_complete_checking = false;
@@ -1118,7 +1118,7 @@ function ensure_ucr_finance_task_completed_on_form(frm) {
 
 function verify_ucr_finance_line(frm, line_type) {
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow.verify_ucr_finance_line",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.verify_ucr_finance_line",
 		args: { task_name: frm.doc.name, line_type },
 		freeze: true,
 		callback(r) {
@@ -1140,7 +1140,7 @@ function verify_ucr_finance_line(frm, line_type) {
 }
 
 function user_can_make_payment(frm) {
-	const perms = frm ? get_cgm_task_permissions(frm) : null;
+	const perms = frm ? get_cgm_permissions(frm) : null;
 	if (perms) {
 		return !!perms.can_make_payment;
 	}
@@ -1150,7 +1150,7 @@ function user_can_make_payment(frm) {
 }
 
 function user_can_upload_receipt(frm) {
-	const perms = frm ? get_cgm_task_permissions(frm) : null;
+	const perms = frm ? get_cgm_permissions(frm) : null;
 	if (perms) {
 		return !!perms.can_upload_receipt;
 	}
@@ -1171,7 +1171,7 @@ function open_purchase_invoice_from_task(frm) {
 		project: frm.doc.project,
 	};
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.get_task_finance_defaults",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.get_task_defaults",
 		args: { task_name: frm.doc.name },
 		callback(r) {
 			if (r.exc || !r.message) {
@@ -1184,7 +1184,7 @@ function open_purchase_invoice_from_task(frm) {
 
 function sync_pi_project_from_task(frm) {
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.sync_finance_docs_from_task",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.sync_finance_docs_from_task",
 		args: { task_name: frm.doc.name },
 		callback(r) {
 			if (!r.exc) {
@@ -1242,7 +1242,7 @@ function open_payment_entry_from_task(frm) {
 }
 
 function user_can_record_purchase_invoice(frm) {
-	const perms = frm ? get_cgm_task_permissions(frm) : null;
+	const perms = frm ? get_cgm_permissions(frm) : null;
 	if (perms) {
 		return !!perms.can_record_purchase_invoice;
 	}

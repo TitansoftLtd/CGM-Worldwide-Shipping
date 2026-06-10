@@ -1,21 +1,235 @@
+"""Department resolution, RBAC, and Task permissions."""
+from __future__ import annotations
+
+
+
+import frappe
+from erpnext import get_default_company
+
+# Map template labels or old department names -> ERPNext department_name (before company suffix).
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	DEPARTMENT_NAME_ALIASES,
+	SEA_TASK_FLOW_KEY,
+)
+
+
+def get_department_name_stem(raw):
+	"""Extract the department name before the company abbreviation suffix."""
+	value = (raw or "").strip()
+	if not value:
+		return ""
+
+	# 1. ERPNext department docnames follow `{department_name} - {abbr}` - strip the suffix.
+	if " - " in value:
+		return value.split(" - ", 1)[0].strip()
+	return value
+
+
+def normalize_department_stem(raw) -> str:
+	"""Template / task stem only (e.g. Finance), never Finance - C from another site."""
+	stem = get_department_name_stem(raw)
+	if not stem:
+		return ""
+	return DEPARTMENT_NAME_ALIASES.get(stem, stem)
+
+
+def _department_matches_company(department: str, company: str) -> bool:
+	"""True when Department link belongs to the given company."""
+	if not department or not company:
+		return False
+	dept_company = frappe.db.get_value("Department", department, "company")
+	if dept_company:
+		return dept_company == company
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	return bool(abbr and department.endswith(f" - {abbr}"))
+
+
+def resolve_department_name(department_value, company=None):
+	"""Resolve stem or link to ERPNext Department for *company* (e.g. Finance - CWSCL)."""
+	if not (department_value or "").strip():
+		return None
+
+	value = department_value.strip()
+	stem = normalize_department_stem(value)
+	if not stem:
+		frappe.throw("Department value is invalid.")
+
+	def pick_one(filters_list):
+		"""Return the single matching department name or throw on ambiguity."""
+		names = frappe.get_all(
+			"Department",
+			filters=filters_list + [["disabled", "=", 0]],
+			pluck="name",
+			order_by="name asc",
+		)
+		if len(names) == 1:
+			return names[0]
+		if len(names) > 1:
+			preview = ", ".join(names[:8])
+			suffix = f"... ({len(names)} total)" if len(names) > 8 else ""
+			frappe.throw(
+				f"Multiple Departments match '{stem}' ({preview}{suffix}). "
+				"Pick an exact ERPNext Department link name."
+			)
+		return None
+
+	def resolve_for_company(co: str | None) -> str | None:
+		if not co:
+			return None
+		abbr = frappe.db.get_value("Company", co, "abbr")
+		if abbr:
+			candidate = f"{stem} - {abbr}".strip()
+			if frappe.db.exists("Department", candidate):
+				return candidate
+		return pick_one([["company", "=", co], ["department_name", "=", stem]])
+
+	# 1. Always prefer the project / target company (local Finance - C must not stick on server).
+	if company:
+		matched = resolve_for_company(company)
+		if matched:
+			return matched
+
+	# 2. Accept an exact link only when it matches that company.
+	if frappe.db.exists("Department", value):
+		if not company or _department_matches_company(value, company):
+			return value
+
+	fallback_company = get_default_company()
+	if fallback_company and fallback_company != company:
+		matched = resolve_for_company(fallback_company)
+		if matched:
+			return matched
+
+	# 3. Unique department_name across companies.
+	all_match = frappe.get_all(
+		"Department",
+		filters=[["department_name", "=", stem], ["disabled", "=", 0]],
+		pluck="name",
+		order_by="name asc",
+	)
+	if len(all_match) == 1:
+		return all_match[0]
+	if len(all_match) > 1:
+		frappe.throw(
+			f"Multiple Departments named '{stem}' exist across companies. "
+			"Set Project.company or rename one."
+		)
+
+	frappe.throw(
+		f"No Department found for '{stem}'"
+		+ (f" under company {company}." if company else ".")
+		+ f" Create Department '{stem} - <company abbr>' for that company."
+	)
+
+
+# ============================================================
+
+"""
+ERPNext RBAC helpers for sea clearance tasks.
+
+Administrators create Roles in Desk (names should match sea task template departments).
+Access checks use frappe.get_roles() against template department stems - no role lists in code.
+"""
+from __future__ import annotations
+
+import frappe
+
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+	load_sea_task_template,
+)
+
+
+@frappe.request_cache
+def _department_stem_by_sequence() -> dict[int, str]:
+	return {
+		sequence_no: row["department"]
+		for sequence_no, row in enumerate(load_sea_task_template(), start=1)
+	}
+
+
+def user_roles(user: str | None = None) -> set[str]:
+	return set(frappe.get_roles(user or frappe.session.user))
+
+
+def get_sea_task_template_department_stems() -> frozenset[str]:
+	return frozenset(_department_stem_by_sequence().values())
+
+
+def department_stem_for_sequence(sequence_no: int) -> str | None:
+	return _department_stem_by_sequence().get(int(sequence_no or 0))
+
+
+def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
+	"""Template department stems the user may access via matching ERPNext Role names."""
+	return set(get_sea_task_template_department_stems()) & user_roles(user)
+
+
+def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool:
+	stem = department_stem_for_sequence(sequence_no)
+	return bool(stem and stem in user_roles(user))
+
+
+@frappe.request_cache
+def finance_payment_department_stems() -> frozenset[str]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		finance_payment_sequences,
+	)
+
+	stems: set[str] = set()
+	for seq in finance_payment_sequences():
+		stem = department_stem_for_sequence(seq)
+		if stem:
+			stems.add(stem)
+	return frozenset(stems)
+
+
+def user_has_finance_department_access(user: str | None = None) -> bool:
+	"""True when the user has a Role matching a finance-payment task department from Settings."""
+	return bool(get_user_sea_task_department_stems(user) & finance_payment_department_stems())
+
+
+def application_department_stems_for_linked_pairs(
+	pairs: tuple[tuple[int, int], ...],
+) -> frozenset[str]:
+	stems: set[str] = set()
+	for app_seq, _fin_seq in pairs:
+		stem = department_stem_for_sequence(app_seq)
+		if stem:
+			stems.add(stem)
+	return frozenset(stems)
+
+
+def finance_department_stems_for_linked_pairs(
+	pairs: tuple[tuple[int, int], ...],
+) -> frozenset[str]:
+	stems: set[str] = set()
+	for _app_seq, fin_seq in pairs:
+		stem = department_stem_for_sequence(fin_seq)
+		if stem:
+			stems.add(stem)
+	return frozenset(stems)
+
+
+# ============================================================
+
 """Restrict sea clearance Task list/form access by department and role."""
 from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 	application_department_stems_for_linked_pairs,
 	finance_department_stems_for_linked_pairs,
 	finance_payment_department_stems,
 	get_user_sea_task_department_stems,
 	user_has_department_for_sequence,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	finance_payment_sequences,
 	permit_linked_task_pairs,
 	ucr_linked_task_pairs,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	SEA_TASK_FLOW_KEY,
 	normalize_department_stem,
 )

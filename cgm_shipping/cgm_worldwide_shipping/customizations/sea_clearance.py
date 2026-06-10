@@ -11,17 +11,17 @@ import frappe
 from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.department import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 	normalize_department_stem,
 	resolve_department_name,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	PRE_CLEARANCE_STAGE,
 	get_permit_stage_for_sequence,
 	is_permit_application_task,
 	is_ucr_application_task,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_gates import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 	get_sea_import_workflow_states,
 )
 
@@ -43,7 +43,7 @@ def sea_task_count() -> int:
 
 def is_sea_payment_task(task) -> bool:
 	"""Finance payment step on sea import (delegates to CGM Shipping Settings)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		is_sea_finance_payment_task,
 	)
 
@@ -54,14 +54,14 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 	"""Attach Project docs to auto-complete steps, then mark them Completed."""
 	from frappe.utils import now_datetime
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		carry_project_shipment_documents_to_sea_tasks,
 	)
 
 	carry_project_shipment_documents_to_sea_tasks(project)
 
 	completed = []
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		auto_complete_sequences,
 	)
 
@@ -127,7 +127,7 @@ def derive_workflow_progress_from_tasks(
 	max_seq = max(completed_seqs)
 	progress_status = states[0]
 	progress_index = 0
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_gates import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		get_workflow_task_gates,
 	)
 
@@ -189,10 +189,10 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 	"""Tasks with sequence < before_sequence that are not Completed/Cancelled."""
 	if before_sequence <= 1:
 		return []
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		permit_invoices_ready,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		ucr_invoice_ready,
 	)
 
@@ -225,7 +225,7 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 
 def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
 	"""All sea clearance tasks on a project visible to the user (incl. Completed)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		filter_sea_tasks_for_user,
 	)
 
@@ -246,7 +246,7 @@ def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list
 
 
 def get_open_sea_tasks(project: str, user: str | None = None) -> list[dict]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		filter_sea_tasks_for_user,
 	)
 
@@ -279,7 +279,7 @@ def enforce_sea_tasks_exist(project: str) -> None:
 
 def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 	"""Block workflow advance until prior sea tasks in the chart are Completed."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_gates import get_gate_for_state
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import get_gate_for_state
 
 	gate_row = get_gate_for_state(new_status)
 	if not gate_row:
@@ -293,7 +293,7 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 	enforce_sea_tasks_exist(project)
 
 	if gate_rule == "Permit Invoices Submitted":
-		from cgm_shipping.cgm_worldwide_shipping.customizations.permit_payment_workflow import (
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			permit_invoices_ready_for_project,
 		)
 
@@ -305,7 +305,7 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 		return
 
 	if gate_rule == "UCR Finance Complete":
-		from cgm_shipping.cgm_worldwide_shipping.customizations.ucr_payment_workflow import (
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			get_ucr_finance_task,
 			ucr_finance_ready_to_complete,
 		)
@@ -413,7 +413,7 @@ def load_sea_task_template():
 def backfill_intake_documents_on_sea_tasks(project):
 	"""Copy Project shipment documents onto tasks 1–2 (for projects created before this feature)."""
 	frappe.has_permission("Project", ptype="write", throw=True)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		carry_project_shipment_documents_to_sea_tasks,
 	)
 
@@ -429,7 +429,7 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 		project_has_intake_documents,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 		sea_import_enabled_for_project,
 	)
 
@@ -454,10 +454,10 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 		project_has_intake_documents,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 		sea_import_enabled_for_project,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		ensure_sea_task_requirements_configured,
 	)
 

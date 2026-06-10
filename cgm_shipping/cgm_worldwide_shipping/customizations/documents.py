@@ -1,7 +1,7 @@
 """Shipment document carrying & sync: pull CI/PKL/BL/customer files into the
 Project shipment-documents table and onto sea-clearance tasks.
 
-Extracted from utils.py. Depends only on frappe and shipment_reference, so it has
+Extracted from utils.py. Depends only on frappe and shipment, so it has
 no import cycle with utils, which re-exports these names for existing call sites.
 """
 
@@ -10,14 +10,19 @@ from __future__ import annotations
 import frappe
 from frappe.utils import now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_reference import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	normalize_shipment_fields_on_doc,
 )
 
 
-SHIPMENT_DOCUMENTS_FIELD = "custom_shipment_documents"
-OPPORTUNITY_DOCUMENTS_FIELD = "custom_clients_documents"
-TASK_DOCUMENTS_FIELD = "custom_task_documents"
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CUSTOMER_ATTACH_TO_DOCUMENT_CODE,
+	OPPORTUNITY_DOCUMENTS_FIELD,
+	SHIPMENT_DOCUMENTS_FIELD,
+	TASK_DOCUMENTS_FIELD,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_field_from_meta
+
 
 
 def get_project_documents_fieldname():
@@ -28,7 +33,7 @@ def get_project_documents_fieldname():
 	return None
 
 
-def ensure_project_shipment_documents_field():
+def ensure_project_documents_field():
 	"""Create the Shipment Documents table on Project when it is missing."""
 	# 1. Return early when the field already exists.
 	if get_project_documents_fieldname():
@@ -388,14 +393,14 @@ def append_task_document_row(task_doc, document_type, attachment_url, status=Non
 	)
 
 
-def carry_project_shipment_documents_to_sea_tasks(project_name, task_sequences=None):
+def carry_project_documents_to_sea_tasks(project_name, task_sequences=None):
 	"""
 	Copy Project shipment document rows onto sea clearance tasks (audit trail on Task 1–2).
 	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 		SEA_TASK_FLOW_KEY,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_requirements_service import (
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		auto_complete_sequences,
 	)
 
@@ -503,7 +508,7 @@ def sync_linked_attachments_to_project(project_doc):
 		carry_task_documents_to_project(project_doc)
 
 
-def refresh_project_shipment_documents(project_name):
+def refresh_project_documents(project_name):
 	"""Re-sync shipment document rows from linked Customer / Tasks and save the Project."""
 	if not project_name or not frappe.db.exists("Project", project_name):
 		return
@@ -525,14 +530,14 @@ def refresh_projects_for_customer(customer):
 	if not customer:
 		return
 	for project_name in frappe.get_all("Project", filters={"customer": customer}, pluck="name"):
-		refresh_project_shipment_documents(project_name)
+		refresh_project_documents(project_name)
 
 
 @frappe.whitelist()
-def sync_project_shipment_documents(project):
+def sync_project_documents(project):
 	"""Re-pull Lead / Customer / Task files into Project shipment documents (for support / backfill)."""
 	frappe.has_permission("Project", ptype="write", throw=True)
-	refresh_project_shipment_documents(project)
+	refresh_project_documents(project)
 	return project
 
 
@@ -551,3 +556,37 @@ def get_document_type_link_name(code):
 		return code
 
 	return None
+
+@frappe.request_cache
+def get_opportunity_documents_field() -> str | None:
+	"""Clients Documents table fieldname on Opportunity."""
+	return get_field_from_meta("Opportunity", "clients_documents") or next(
+		(
+			field.fieldname
+			for field in frappe.get_meta("Opportunity").fields
+			if field.fieldtype == "Table" and "clients_documents" in field.fieldname
+		),
+		None,
+	)
+
+
+@frappe.request_cache
+def get_project_shipment_documents_field() -> str | None:
+	"""Shipment Documents table fieldname on Project."""
+	if frappe.get_meta("Project").has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return SHIPMENT_DOCUMENTS_FIELD
+	return get_field_from_meta("Project", "shipment_documents")
+
+
+# Backward-compatible alias
+get_project_documents_field = get_project_shipment_documents_field
+
+
+def sync_documents(project_doc) -> None:
+	"""Pull shipment files from linked Lead, Customer, and Tasks."""
+	sync_linked_attachments_to_project(project_doc)
+
+
+# Backward-compatible aliases
+refresh_project_shipment_documents = refresh_project_documents
+sync_linked_attachments_to_project = sync_documents

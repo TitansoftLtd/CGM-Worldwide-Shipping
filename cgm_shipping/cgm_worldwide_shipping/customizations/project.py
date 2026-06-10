@@ -1,43 +1,43 @@
 import frappe
 from frappe.utils import now_datetime, today
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	INTAKE_DOCUMENT_CODES,
+	PERMIT_REGISTER_FIELD,
+	SHIPMENT_DOCUMENTS_FIELD,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+	carry_bill_of_lading_attachment_to_project,
+	carry_clients_documents_to_project,
+	get_opportunity_documents_field,
+	get_project_shipment_documents_field,
+	sync_documents,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	bootstrap_sea_task_plan_for_project,
 	enforce_workflow_task_gate,
 	get_sea_closure_blockers,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
-	carry_bill_of_lading_attachment_to_project,
-	carry_clients_documents_to_project,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
-	SEA_TASK_FLOW_KEY,
-	SHIPMENT_DOCUMENTS_FIELD,
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	apply_bill_of_lading_from_source,
 	apply_shipment_data,
 	assign_cgm_project_reference,
 	get_awb_value_from_doc,
 	get_bl_config,
 	get_bl_container_child_field,
+	get_project_awb_field,
+	is_cgm_ref,
+	normalize_shipment_fields_on_doc,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
 	get_field_from_meta,
 	get_link_field_for_doctype,
-	get_opportunity_documents_field,
-	get_project_awb_field,
-	get_project_shipment_documents_field,
-	is_cgm_ref,
-	normalize_shipment_fields_on_doc,
-	sync_linked_attachments_to_project,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.bill_of_lading_sync import (
-		apply_bill_of_lading_from_source,
-	)
-
-INTAKE_DOCUMENT_CODES = ("CI", "PKL")
-PERMIT_REGISTER_FIELD = "custom_permit_register"
 
 
 # ─── Shipment Document Table ──────────────────────────────────────────────────
-def get_shipment_documents(doc):
+def get_documents(doc):
 	return doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
 
 # ─── Workflow Stage Requirements ─────────────────────────────────────────────
@@ -107,7 +107,7 @@ def apply_shipment_document_automation(doc, _method=None):
 		normalize_shipment_fields_on_doc(doc)
 	# 1. Pull files from linked Lead, Customer, and Tasks into shipment documents.
 	if not frappe.flags.get("cgm_syncing_shipment_documents"):
-		sync_linked_attachments_to_project(doc)
+		sync_documents(doc)
 	# 2. Normalise row status and uploader/verifier metadata.
 	normalize_document_rows(doc)
 	normalize_permit_register_rows(doc)
@@ -124,7 +124,7 @@ def apply_shipment_document_automation(doc, _method=None):
 
 def _shipment_document_row_map(doc):
 	rows = {}
-	for row in get_shipment_documents(doc):
+	for row in get_documents(doc):
 		if row.document_type:
 			rows[row.document_type] = row
 	return rows
@@ -164,7 +164,7 @@ def _required_document_types(mode, stages=None):
 	]
 
 def normalize_document_rows(doc):
-	rows = list(get_shipment_documents(doc))
+	rows = list(get_documents(doc))
 	# Batch the Document Type 'default_required' lookups (was one query per row).
 	doc_types = {r.document_type for r in rows if r.document_type}
 	required_map = {}
@@ -263,7 +263,7 @@ def enforce_intake_documents_before_documents_received(doc):
 		return
 	missing = []
 	rows_by_code = {}
-	for row in get_shipment_documents(doc):
+	for row in get_documents(doc):
 		if not row.document_type:
 			continue
 		code = frappe.db.get_value("Document Type", row.document_type, "code")
@@ -594,7 +594,7 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 		if value not in (None, "") and not project.get(dest_field):
 			project.set(dest_field, value)
 
-def sync_preshipment_documents_from_source(project, source_doc) -> None:
+def sync_predocuments_from_source(project, source_doc) -> None:
 	"""Pull client docs and B/L attachment from Lead/Opportunity onto Project shipment documents."""
 	bl_config = get_bl_config()
 	bl_link_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
@@ -603,7 +603,7 @@ def sync_preshipment_documents_from_source(project, source_doc) -> None:
 	clients_field = get_opportunity_documents_field()
 	if clients_field and source_doc.meta.has_field(clients_field):
 		carry_clients_documents_to_project(project, source_doc)
-	sync_linked_attachments_to_project(project)
+	sync_documents(project)
 	project_bl = project.get(bl_link_field) if bl_link_field else None
 	source_bl = source_doc.get(bl_link_field) if bl_link_field else None
 	carry_bill_of_lading_attachment_to_project(
@@ -661,7 +661,7 @@ def create_project_from_lead(lead, project_name=None):
 
 
 	apply_bill_of_lading_from_source(proj, lead_doc)
-	sync_preshipment_documents_from_source(proj, lead_doc)
+	sync_predocuments_from_source(proj, lead_doc)
 	return insert_shipment_project(proj)
 
 
@@ -718,5 +718,5 @@ def create_project_from_opportunity(opportunity, project_name=None):
 
 	apply_opportunity_to_project_mappings(proj, opp)
 	apply_preshipment_transport_defaults(proj, opp)
-	sync_preshipment_documents_from_source(proj, opp)
+	sync_predocuments_from_source(proj, opp)
 	return insert_shipment_project(proj)

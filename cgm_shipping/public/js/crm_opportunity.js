@@ -34,7 +34,7 @@ function meta_has_field(doctype, fieldname) {
     return Boolean(meta && (meta.fields || []).some((df) => df.fieldname === fieldname));
 }
 
-function get_shipment_documents_field(frm) {
+function get_documents_field(frm) {
     for (const df of frappe.meta.get_docfields(frm.doctype, frm.doc.name)) {
         if (df.fieldtype !== "Table") {
             continue;
@@ -123,7 +123,7 @@ function get_quantity_field(frm, bl_link_field) {
 }
 
 function find_populate_containers_row(frm) {
-    const docs_field = get_shipment_documents_field(frm);
+    const docs_field = get_documents_field(frm);
     if (!docs_field) {
         return null;
     }
@@ -136,7 +136,7 @@ function find_populate_containers_row(frm) {
 // ─── Clients Documents remove handler ─────────────────────────────────────────
 
 function register_clients_documents_remove_handler(frm) {
-    const docs_field = get_shipment_documents_field(frm);
+    const docs_field = get_documents_field(frm);
     if (!docs_field || frm.__cgm_docs_remove_registered) {
         return;
     }
@@ -231,7 +231,7 @@ function apply_pending_bl_from_submit(frm) {
         get_link_field_for_doctype(frm, pending.linked_doctype) ||
         get_opportunity_bl_link_field(frm);
     const quantity_field = bl_link_field ? get_quantity_field(frm, bl_link_field) : null;
-    const docs_field = get_shipment_documents_field(frm);
+    const docs_field = get_documents_field(frm);
 
     if (pending.bl_name && bl_link_field && frm.doc[bl_link_field] !== pending.bl_name) {
         frm.set_value(bl_link_field, pending.bl_name);
@@ -313,7 +313,7 @@ function fetch_and_apply_bl_data(frm, row, cdt, cdn) {
 
     frappe.call({
         method:
-            "cgm_shipping.cgm_worldwide_shipping.customizations.bill_of_lading_sync.get_containers_for_bl_attachment",
+            "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_containers_for_bl_attachment",
         args: { attachment: row.document_reference },
         callback(r) {
             if (r.exc || !r.message) {
