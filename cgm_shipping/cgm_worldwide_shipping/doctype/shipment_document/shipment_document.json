@@ -12,8 +12,7 @@
   "uploaded_by",
   "uploaded_on",
   "verified_by",
-  "verified_on",
-  "remarks"
+  "verified_on"
  ],
  "fields": [
   {
@@ -45,12 +44,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "remarks",
-   "fieldtype": "Small Text",
-   "in_list_view": 1,
-   "label": "Remarks"
-  },
-  {
    "fieldname": "uploaded_by",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -70,7 +63,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-09 20:13:39.402279",
+ "modified": "2026-06-10 12:41:24.889692",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Document",
