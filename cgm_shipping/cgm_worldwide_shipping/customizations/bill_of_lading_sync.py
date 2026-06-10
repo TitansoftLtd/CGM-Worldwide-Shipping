@@ -8,7 +8,12 @@ creation) lives on the controller in
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config
-
+from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		summarize_bl_container_quantities,
+	)
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
+		carry_bill_of_lading_attachment_to_project,
+	)
 
 # ─── Container field helpers ──────────────────────────────────────────────────
 def get_container_fields() -> list[str]:
@@ -41,11 +46,6 @@ def get_bl_quantity_summary(bl_doc) -> str:
 	summary_field = "container_summary"
 	if bl_doc.meta.has_field(summary_field) and bl_doc.get(summary_field):
 		return bl_doc.get(summary_field)
-
-	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
-		summarize_bl_container_quantities,
-	)
-
 	return summarize_bl_container_quantities(bl_doc.name)
 
 # ─── Container row fetching ───────────────────────────────────────────────────
@@ -108,10 +108,6 @@ def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 
 	target_doc.set(bl_field, bl_name)
 	sync_preshipment_containers_from_bl(target_doc)
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment_documents import (
-		carry_bill_of_lading_attachment_to_project,
-	)
 
 	carry_bill_of_lading_attachment_to_project(
 		target_doc, bl_name=bl_name, source_doc=source_doc

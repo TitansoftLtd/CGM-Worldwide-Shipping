@@ -28,21 +28,19 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	normalize_shipment_fields_on_doc,
 	sync_linked_attachments_to_project,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.bill_of_lading_sync import (
+		apply_bill_of_lading_from_source,
+	)
 
 INTAKE_DOCUMENT_CODES = ("CI", "PKL")
 PERMIT_REGISTER_FIELD = "custom_permit_register"
 
 
 # ─── Shipment Document Table ──────────────────────────────────────────────────
-
-
 def get_shipment_documents(doc):
 	return doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
 
-
 # ─── Workflow Stage Requirements ─────────────────────────────────────────────
-
-
 def get_stage_requirements():
 	"""Map Project shipment status to required Document Type stages (from CGM Shipping Settings)."""
 	settings = frappe.get_single("CGM Shipping Settings")
@@ -61,8 +59,6 @@ def get_stage_requirements():
 
 
 # ─── Project Save Hooks ───────────────────────────────────────────────────────
-
-
 def assign_cgm_reference_on_insert(doc, _method=None):
 	"""Allocate CGM/FCL001/0526 as project_name and custom_cgm_ref_no on new shipments."""
 	if is_cgm_ref(doc.project_name) or is_cgm_ref(doc.get("custom_cgm_ref_no")):
@@ -72,7 +68,6 @@ def assign_cgm_reference_on_insert(doc, _method=None):
 		return
 	assign_cgm_project_reference(doc)
 
-
 def sync_consignee_from_customer(doc, _method=None):
 	"""Keep consignee aligned with the linked customer."""
 	if not doc.get("customer") or not doc.meta.has_field("custom_consignee"):
@@ -81,7 +76,6 @@ def sync_consignee_from_customer(doc, _method=None):
 	customer_label = frappe.db.get_value("Customer", doc.customer, "customer_name") or doc.customer
 	if not doc.get("custom_consignee") or doc.has_value_changed("customer"):
 		doc.custom_consignee = customer_label
-
 
 def apply_shipment_document_automation(doc, _method=None):
 	# Legacy workflow statuses that existed before we switched Project tracking to
@@ -128,14 +122,12 @@ def apply_shipment_document_automation(doc, _method=None):
 	# 7. Project Completed only when tasks, docs, permits, payments, and billing are done.
 	enforce_project_closure_on_workflow_change(doc)
 
-
 def _shipment_document_row_map(doc):
 	rows = {}
 	for row in get_shipment_documents(doc):
 		if row.document_type:
 			rows[row.document_type] = row
 	return rows
-
 
 def _required_document_types(mode, stages=None):
 	"""Document Type names required for a mode (and optional workflow stages).
@@ -170,7 +162,6 @@ def _required_document_types(mode, stages=None):
 		for name in candidates
 		if not modes_by_dt.get(name) or mode in modes_by_dt[name]
 	]
-
 
 def normalize_document_rows(doc):
 	rows = list(get_shipment_documents(doc))
@@ -221,7 +212,6 @@ def normalize_document_rows(doc):
 			row.verified_by = None
 			row.verified_on = None
 
-
 def enforce_document_gate_on_workflow_change(doc):
 	# 1. Detect a shipment status change.
 	prev = doc.get_doc_before_save()
@@ -252,7 +242,6 @@ def enforce_document_gate_on_workflow_change(doc):
 		labels = ", ".join(sorted(set(missing)))
 		frappe.throw(f"Cannot move shipment to <b>{new_status}</b>. Verify required documents first: {labels}")
 
-
 def enforce_sea_workflow_task_gates(doc):
 	"""Sea import: each workflow state requires prior tasks in the 24-step clearance chart."""
 	prev = doc.get_doc_before_save()
@@ -265,7 +254,6 @@ def enforce_sea_workflow_task_gates(doc):
 	if doc.get("custom_mode_of_transport") != "Sea":
 		return
 	enforce_workflow_task_gate(doc.name, new_status)
-
 
 def enforce_intake_documents_before_documents_received(doc):
 	prev = doc.get_doc_before_save()
@@ -292,14 +280,12 @@ def enforce_intake_documents_before_documents_received(doc):
 			"Use <b>custom_shipment_documents</b> - not Permit Register."
 		)
 
-
 def normalize_permit_register_rows(doc):
 	"""Derive Pre-Cleared / Post-Cleared from invoice, payment, and permit document fields."""
 	if not doc.meta.has_field(PERMIT_REGISTER_FIELD):
 		return
 	for row in doc.get(PERMIT_REGISTER_FIELD) or []:
 		row.clearance_phase = derive_permit_clearance_phase(row)
-
 
 def derive_permit_clearance_phase(row) -> str:
 	"""Map permit row finance fields to high-level clearance phase (see OPERATIONS_PROCESS.md §7)."""
@@ -324,7 +310,6 @@ def derive_permit_clearance_phase(row) -> str:
 		return "Pre-Cleared"
 	return "Not Started"
 
-
 def enforce_permits_post_cleared_before_entry_lodged(doc):
 	prev = doc.get_doc_before_save()
 	if not prev:
@@ -344,8 +329,7 @@ def enforce_permits_post_cleared_before_entry_lodged(doc):
 		frappe.throw(
 			"Cannot lodge customs entry until all permits are <b>Post-Cleared</b> "
 			f"(payment, receipt verified, permit document issued). Pending: {', '.join(pending)}."
-		)
-
+	)
 
 def enforce_project_closure_on_workflow_change(doc):
 	"""FINAL RULE: Completed only when tasks, documents, permits, payments, and customer invoice are done."""
@@ -422,7 +406,6 @@ def enforce_project_closure_on_workflow_change(doc):
 			+ "</ul>"
 		)
 
-
 # ─── Project creation from Lead / Opportunity (moved from utils.py) ───────────
 def project_has_intake_documents(project_doc) -> bool:
 	"""True when CI and PKL are present on the project shipment document table."""
@@ -466,7 +449,6 @@ def bootstrap_project_workflow_status(project_name: str) -> None:
 		update_modified=False,
 	)
 
-
 def insert_shipment_project(project) -> str:
 	"""Insert a new shipment project and apply post-insert workflow status.
 
@@ -491,13 +473,11 @@ def get_lead_field_value(lead, *candidates: str):
 			return value
 	return None
 
-
 def apply_project_tracking_defaults(project) -> None:
 	"""Seed tracking sheet fields on new projects (opened date; CGM ref assigned on insert)."""
 	opened_date_field = get_field_from_meta("Project", "opened_date")
 	if opened_date_field and not project.get(opened_date_field):
 		project.set(opened_date_field, today())
-
 
 def get_container_rows_from_preshipment_source(source_doc) -> list[dict]:
 	"""Container rows from preshipment child table, or from linked Bill of Lading when empty."""
@@ -534,7 +514,6 @@ def get_container_rows_from_preshipment_source(source_doc) -> list[dict]:
 		for row in bl.get(bl_container_field) or []
 	]
 
-
 def copy_container_rows_to_project(project, rows: list[dict]) -> None:
 	container_field = get_container_table_field_for_doctype("Project")
 	if not rows or not container_field or not project.meta.has_field(container_field):
@@ -548,7 +527,6 @@ def copy_container_rows_to_project(project, rows: list[dict]) -> None:
 				"type_of_container": row.get("type_of_container"),
 			},
 		)
-
 
 def apply_preshipment_transport_defaults(project, source_doc) -> None:
 	"""Copy B/L, AWB, and container rows from Lead/Opportunity onto a new Project."""
@@ -575,7 +553,6 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 	container_field = get_container_table_field_for_doctype("Project")
 	if container_field and project_meta.has_field(container_field) and not project.get(container_field):
 		copy_container_rows_to_project(project, get_container_rows_from_preshipment_source(source_doc))
-
 
 def apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
 	"""Copy shipment hints from Lead onto Project when fields are empty."""
@@ -617,7 +594,6 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 		if value not in (None, "") and not project.get(dest_field):
 			project.set(dest_field, value)
 
-
 def sync_preshipment_documents_from_source(project, source_doc) -> None:
 	"""Pull client docs and B/L attachment from Lead/Opportunity onto Project shipment documents."""
 	bl_config = get_bl_config()
@@ -636,14 +612,12 @@ def sync_preshipment_documents_from_source(project, source_doc) -> None:
 		source_doc=source_doc,
 	)
 
-
 def lead_has_customer(lead):
 	"""Return True when a Customer is already linked to this Lead."""
 	if frappe.db.get_value("Customer", {"lead_name": lead}, "name"):
 		return True
 	lead_customer = frappe.db.get_value("Lead", lead, "customer")
 	return bool(lead_customer and frappe.db.exists("Customer", lead_customer))
-
 
 @frappe.whitelist()
 def create_project_from_lead(lead, project_name=None):
@@ -685,9 +659,6 @@ def create_project_from_lead(lead, project_name=None):
 	if project_fields.has_field("custom_source_lead"):
 		proj.custom_source_lead = lead
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers import (
-		apply_bill_of_lading_from_source,
-	)
 
 	apply_bill_of_lading_from_source(proj, lead_doc)
 	sync_preshipment_documents_from_source(proj, lead_doc)

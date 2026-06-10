@@ -3,7 +3,7 @@
 """Bill of Lading controller and its Opportunity-sync logic.
 
 Container helpers shared with Opportunity/Lead/Project live in
-``customizations.bl_containers``; the Bill of Lading–specific logic lives here,
+``customizations.bill_of_lading_sync``; the Bill of Lading–specific logic lives here,
 on the custom doctype it belongs to.
 """
 
@@ -11,7 +11,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.bill_of_lading_sync import (
 	get_bl_quantity_summary,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (

@@ -313,7 +313,7 @@ function fetch_and_apply_bl_data(frm, row, cdt, cdn) {
 
     frappe.call({
         method:
-            "cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.get_containers_for_bl_attachment",
+            "cgm_shipping.cgm_worldwide_shipping.customizations.bill_of_lading_sync.get_containers_for_bl_attachment",
         args: { attachment: row.document_reference },
         callback(r) {
             if (r.exc || !r.message) {

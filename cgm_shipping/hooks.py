@@ -183,7 +183,7 @@ doc_events = {
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bill_of_lading_sync.sync_preshipment_containers_from_bl",
 		],
 	},
 	"Purchase Invoice": {
@@ -202,7 +202,7 @@ doc_events = {
 	},
 	"Opportunity": {
 		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bill_of_lading_sync"
 			".sync_preshipment_containers_from_bl"
 		),
 		"before_submit": (
@@ -220,7 +220,7 @@ doc_events = {
 	},
 	"Lead": {
 		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.bill_of_lading_sync.sync_preshipment_containers_from_bl"
 		),
 	},
 	"Task": {
