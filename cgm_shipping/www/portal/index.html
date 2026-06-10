@@ -1,0 +1,173 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/portal_localize.html" import local_date %}
+
+{% block title %}{{ _("Shipment Portal") }}{% endblock %}
+
+{% block page_content %}
+<div class="cp-page">
+
+  <!-- HERO -->
+  <section class="cp-hero" aria-label="{{ _('Welcome banner') }}">
+    <div class="cp-hero-row">
+      <div class="cp-avatar" aria-hidden="true">
+        {% if user_image %}<img src="{{ user_image }}" alt="">{% else %}{{ (first_name or "?")[0]|upper }}{% endif %}
+      </div>
+      <div style="flex:1; min-width:0;">
+        <h1>{{ greeting }}, {{ first_name }}</h1>
+        <p class="cp-sub">{{ _("Track your shipments with CGM Worldwide Shipping.") }}</p>
+        {% if is_customer %}
+          <span class="cp-chip"><span class="dot"></span>{{ _("Signed in as") }}: {{ customer_name }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% if is_customer %}
+  <!-- KPI STRIP -->
+  <section class="cp-kpis" aria-label="{{ _('Key metrics') }}">
+    <a class="cp-kpi blue" href="/my-shipments">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20M2 12l3-7h14l3 7M5 12v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/></svg>
+      </div>
+      <div><div class="cp-kpi-num">{{ stat_active }}</div><div class="cp-kpi-label">{{ _("Active Shipments") }}</div></div>
+    </a>
+    <a class="cp-kpi amber" href="/my-shipments?status=In+Transit">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7M5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/></svg>
+      </div>
+      <div><div class="cp-kpi-num">{{ stat_in_transit }}</div><div class="cp-kpi-label">{{ _("In Transit") }}</div></div>
+    </a>
+    <a class="cp-kpi purple" href="/my-shipments">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>
+      <div><div class="cp-kpi-num">{{ stat_at_port }}</div><div class="cp-kpi-label">{{ _("At Port") }}</div></div>
+    </a>
+    <a class="cp-kpi green" href="/my-shipments">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      </div>
+      <div><div class="cp-kpi-num">{{ stat_delivered }}</div><div class="cp-kpi-label">{{ _("Delivered") }}</div></div>
+    </a>
+    {% if stat_demurrage %}
+    <a class="cp-kpi rose" href="/my-shipments">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+      </div>
+      <div><div class="cp-kpi-num">{{ stat_demurrage }}</div><div class="cp-kpi-label">{{ _("Demurrage Alerts") }}</div></div>
+    </a>
+    {% endif %}
+    <a class="cp-kpi teal" href="/my-quotations">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>
+      </div>
+      <div><div class="cp-kpi-num">{{ stat_open_quotations|default(0) }}</div><div class="cp-kpi-label">{{ _("Open Quotations") }}</div></div>
+    </a>
+    <a class="cp-kpi rose" href="/my-invoices">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
+      </div>
+      <div><div class="cp-kpi-num" style="font-size:1.15rem;">{{ frappe.utils.fmt_money(stat_amount_due|default(0), currency=amount_due_currency|default(None)) }}</div><div class="cp-kpi-label">{{ _("Amount Due") }}</div></div>
+    </a>
+  </section>
+  {% endif %}
+
+  <!-- QUICK ACTIONS -->
+  <div class="cp-section-h"><h2>{{ _("Quick actions") }}</h2></div>
+  <section class="cp-actions" aria-label="{{ _('Quick actions') }}">
+    <a class="cp-action" href="/my-shipments">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20M2 12l3-7h14l3 7M5 12v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/></svg></span>
+      <div><h3>{{ _("My Shipments") }}</h3><p>{{ _("Track every shipment and its current status.") }}</p></div>
+    </a>
+    <a class="cp-action" href="/my-quotations">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg></span>
+      <div><h3>{{ _("Quotations") }}</h3><p>{{ _("Review quotes prepared for you and their status.") }}</p></div>
+    </a>
+    <a class="cp-action" href="/my-invoices">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg></span>
+      <div><h3>{{ _("Invoices") }}</h3><p>{{ _("View invoices and outstanding balances.") }}</p></div>
+    </a>
+    <a class="cp-action" href="/documents">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg></span>
+      <div><h3>{{ _("Documents") }}</h3><p>{{ _("Download bills of lading and shipping paperwork.") }}</p></div>
+    </a>
+    <a class="cp-action" href="/me">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
+      <div><h3>{{ _("My Account") }}</h3><p>{{ _("Profile, password and preferences.") }}</p></div>
+    </a>
+  </section>
+
+  <!-- TWO COLUMNS -->
+  <div class="cp-grid" style="margin-top: 1.5rem;">
+
+    <!-- Arriving soon -->
+    <div class="cp-card">
+      <div class="cp-card-head">
+        <h3>{{ _("Arriving soon") }}</h3>
+        <a class="cp-link" href="/my-shipments">{{ _("View all") }} →</a>
+      </div>
+      {% if arriving_soon %}
+        <ul class="cp-list">
+          {% for o in arriving_soon %}
+            {% set days = o.days_until %}
+            {% set urgency = 'critical' if days is not none and days <= 1 else ('urgent' if days is not none and days <= 5 else '') %}
+            <a class="cp-list-item" href="{{ o.url }}">
+              <span class="cp-kind">{{ (o.mode or 'SEA')[:3]|upper }}</span>
+              <div class="cp-list-body">
+                <div class="cp-list-title">{{ o.ref }}</div>
+                <div class="cp-list-sub">{{ o.status }}{% if o.eta %} · {{ _("ETA") }} {{ local_date(o.eta) }}{% endif %}</div>
+              </div>
+              <div class="cp-deadline {{ urgency }}">
+                {% if days is not none %}
+                  {% if days < 0 %}<span class="cp-days">{{ _("Overdue") }}</span>
+                  {% elif days == 0 %}<span class="cp-days">{{ _("Today") }}</span>
+                  {% elif days == 1 %}<span class="cp-days">{{ _("1 day") }}</span>
+                  {% else %}<span class="cp-days">{{ days }} {{ _("days") }}</span>{% endif %}
+                {% else %}<span class="cp-days">{{ _("Scheduled") }}</span>{% endif %}
+              </div>
+            </a>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="cp-empty" style="border:none;">
+          <div class="cp-empty-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20M2 12l3-7h14l3 7M5 12v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/></svg></div>
+          <p>{% if is_customer %}{{ _("No shipments are currently in transit.") }}{% else %}{{ _("Sign-in linked to a customer is required to see shipments.") }}{% endif %}</p>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Recent shipments -->
+    <div class="cp-card">
+      <div class="cp-card-head">
+        <h3>{{ _("Recent shipments") }}</h3>
+        {% if is_customer %}<a class="cp-link" href="/my-shipments">{{ _("View all") }} →</a>{% endif %}
+      </div>
+      {% if is_customer and recent_shipments %}
+        <ul class="cp-list">
+          {% for a in recent_shipments %}
+            <a class="cp-list-item" href="{{ a.url }}">
+              <span class="cp-kind">{{ a.ref[:3]|upper }}</span>
+              <div class="cp-list-body">
+                <div class="cp-list-title">{{ a.ref }}</div>
+                <div class="cp-list-sub">{% if a.bl %}{{ _("B/L") }} {{ a.bl }}{% else %}{{ _("Shipment") }}{% endif %}</div>
+              </div>
+              <span class="cp-status {{ a.tone }}"><span class="dot"></span>{{ a.status }}</span>
+            </a>
+          {% endfor %}
+        </ul>
+      {% elif not is_customer %}
+        <div class="cp-empty" style="border:none;">
+          <div class="cp-empty-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 2"/></svg></div>
+          <p>{{ _("Your account isn't linked to a customer yet. Contact CGM Worldwide Shipping to get connected.") }}</p>
+        </div>
+      {% else %}
+        <div class="cp-empty" style="border:none;">
+          <div class="cp-empty-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+          <p>{{ _("No shipments on record yet.") }}</p>
+        </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}

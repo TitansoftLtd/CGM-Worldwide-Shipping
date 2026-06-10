@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+	load_sea_task_template,
+)
 
 
 @frappe.request_cache

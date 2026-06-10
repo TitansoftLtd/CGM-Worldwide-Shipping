@@ -14,14 +14,9 @@
   "section_break_rpnc",
   "description",
   "linked_opportunity",
-  "section_break_ztvo",
   "amended_from"
  ],
  "fields": [
-  {
-   "fieldname": "section_break_ztvo",
-   "fieldtype": "Section Break"
-  },
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
@@ -75,7 +70,8 @@
   {
    "fieldname": "description",
    "fieldtype": "Small Text",
-   "label": "Description"
+   "label": "Description",
+   "reqd": 1
   },
   {
    "fieldname": "linked_opportunity",
@@ -89,7 +85,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-09 12:53:07.542577",
+ "modified": "2026-06-09 18:17:04.726358",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Air Waybill",
