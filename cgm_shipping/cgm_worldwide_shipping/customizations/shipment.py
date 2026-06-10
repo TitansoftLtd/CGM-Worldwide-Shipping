@@ -11,7 +11,7 @@ these names for callers that still import them from
 cgm_shipping...customizations.utils.
 """
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import re
 
@@ -318,15 +318,8 @@ creation) lives on the controller in
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import get_bl_config
-from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
-		summarize_bl_container_quantities,
-	)
-from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		carry_bill_of_lading_attachment_to_project,
-	)
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config
 
-# ─── Container field helpers ──────────────────────────────────────────────────
 def get_container_fields() -> list[str]:
 	"""Dynamically fetch relevant fields from Container DocType."""
 	skip_types = {
@@ -357,6 +350,9 @@ def get_bl_quantity_summary(bl_doc) -> str:
 	summary_field = "container_summary"
 	if bl_doc.meta.has_field(summary_field) and bl_doc.get(summary_field):
 		return bl_doc.get(summary_field)
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		summarize_bl_container_quantities,
+	)
 	return summarize_bl_container_quantities(bl_doc.name)
 
 # ─── Container row fetching ───────────────────────────────────────────────────
@@ -419,6 +415,10 @@ def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 
 	target_doc.set(bl_field, bl_name)
 	sync_preshipment_containers_from_bl(target_doc)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		carry_bill_of_lading_attachment_to_project,
+	)
 
 	carry_bill_of_lading_attachment_to_project(
 		target_doc, bl_name=bl_name, source_doc=source_doc
@@ -518,9 +518,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	APPROVED_WORKFLOW_STATE,
 	BACK_LINKED_DOCTYPES,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-	get_opportunity_documents_field,
-)
 
 
 def clear_back_links_on_trash(doc, method=None) -> None:
@@ -539,6 +536,10 @@ def stamp_verified_documents_on_approval(doc, method=None) -> None:
 	already-approved Opportunity does not churn the values."""
 	if doc.get("workflow_state") != APPROVED_WORKFLOW_STATE:
 		return
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		get_opportunity_documents_field,
+	)
 
 	field = get_opportunity_documents_field()
 	if not field or not doc.meta.has_field(field):
@@ -574,56 +575,6 @@ def get_dashboard_data(data):
 
 
 # ─── BL / AWB configuration (from former utils.py) ───────────────────────────
-
-
-@frappe.request_cache
-def get_bl_config() -> dict:
-	"""Fetch Bill of Lading config from Document Type master."""
-	import frappe
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
-		get_container_table_field_for_doctype,
-		get_field_from_meta,
-		get_link_field_for_doctype,
-		get_quantity_field_after,
-	)
-
-	dt_meta = frappe.get_meta("Document Type")
-	config_fields = [
-		name
-		for name in (
-			"linked_doctype",
-			"attachment_field",
-			"opportunity_bl_field",
-			"opportunity_quantity_field",
-			"opportunity_container_field",
-			"opportunity_source_field",
-		)
-		if dt_meta.has_field(name)
-	]
-	config = {}
-	if config_fields and dt_meta.has_field("linked_doctype"):
-		config = (
-			frappe.db.get_value(
-				"Document Type",
-				{"linked_doctype": "Bill of Lading"},
-				config_fields,
-				as_dict=True,
-			)
-			or {}
-		)
-	if not config.get("attachment_field"):
-		config["attachment_field"] = get_field_from_meta("Bill of Lading", "attach_bill")
-	if not config.get("opportunity_bl_field"):
-		config["opportunity_bl_field"] = get_link_field_for_doctype("Opportunity", "Bill of Lading")
-	if not config.get("opportunity_quantity_field"):
-		bl_field = config.get("opportunity_bl_field")
-		if bl_field:
-			config["opportunity_quantity_field"] = get_quantity_field_after("Opportunity", bl_field)
-	if not config.get("opportunity_container_field"):
-		config["opportunity_container_field"] = get_container_table_field_for_doctype("Opportunity")
-	if not config.get("opportunity_source_field"):
-		config["opportunity_source_field"] = get_link_field_for_doctype("Bill of Lading", "Opportunity")
-	return config
 
 
 def get_bl_container_child_field() -> str | None:

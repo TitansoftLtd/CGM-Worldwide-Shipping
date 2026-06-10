@@ -11,16 +11,13 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-	get_bl_quantity_summary,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	document_types_match,
 	ensure_document_types,
 	get_document_type_link_name,
 	get_opportunity_documents_field,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import get_bl_config
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config
 
 
 class BillofLading(Document):
@@ -156,7 +153,7 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 		if prepend_opportunity_bl_document(opp, attachment_url, bl_name=bl_doc.name):
 			changed = True
 
-	quantity_summary = get_bl_quantity_summary(bl_doc)
+	quantity_summary = bl_doc._summarize_container_quantities()
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		if opp.get(quantity_field) != quantity_summary:
 			opp.set(quantity_field, quantity_summary)
@@ -233,7 +230,7 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 		"bl_name": doc.name,
 		"attachment": doc.get(attachment_field) or "" if attachment_field else "",
 		"document_type": get_document_type_link_name("BL"),
-		"quantity": get_bl_quantity_summary(doc),
+		"quantity": doc._summarize_container_quantities(),
 		"opportunity": linked_opportunity,
 	}
 
@@ -305,7 +302,7 @@ def create_opportunity_from_bill_of_lading(bill_of_lading: str) -> str:
 
 	# Carry the BL quantity summary onto the Opportunity.
 	quantity_field = config.get("opportunity_quantity_field")
-	quantity_summary = get_bl_quantity_summary(bl)
+	quantity_summary = bl._summarize_container_quantities()
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		opp.set(quantity_field, quantity_summary)
 

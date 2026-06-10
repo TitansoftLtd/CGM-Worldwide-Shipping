@@ -1,19 +1,9 @@
-"""Shipment document carrying & sync: pull CI/PKL/BL/customer files into the
-Project shipment-documents table and onto sea-clearance tasks.
-
-Extracted from utils.py. Depends only on frappe and shipment, so it has
-no import cycle with utils, which re-exports these names for existing call sites.
-"""
+"""Document extraction, synchronization, and validation for shipment files."""
 
 from __future__ import annotations
 
 import frappe
 from frappe.utils import now_datetime
-
-from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-	normalize_shipment_fields_on_doc,
-)
-
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CUSTOMER_ATTACH_TO_DOCUMENT_CODE,
@@ -517,6 +507,10 @@ def refresh_project_documents(project_name):
 
 	frappe.flags.cgm_syncing_shipment_documents = True
 	try:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+			normalize_shipment_fields_on_doc,
+		)
+
 		project = frappe.get_doc("Project", project_name)
 		normalize_shipment_fields_on_doc(project)
 		sync_linked_attachments_to_project(project)

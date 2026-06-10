@@ -22,13 +22,13 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_shipment_data,
 	assign_cgm_project_reference,
 	get_awb_value_from_doc,
-	get_bl_config,
 	get_bl_container_child_field,
 	get_project_awb_field,
 	is_cgm_ref,
 	normalize_shipment_fields_on_doc,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	get_bl_config,
 	get_container_table_field_for_doctype,
 	get_field_from_meta,
 	get_link_field_for_doctype,
