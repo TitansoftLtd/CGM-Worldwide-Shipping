@@ -57,7 +57,8 @@
    "fieldname": "container_information",
    "fieldtype": "Table",
    "label": "Container Information",
-   "options": "Container"
+   "options": "Container",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_sqbc",
@@ -81,12 +82,14 @@
   {
    "fieldname": "attach_bill_of_lading",
    "fieldtype": "Attach",
-   "label": "Attach Bill of Lading"
+   "label": "Attach Bill of Lading",
+   "reqd": 1
   },
   {
    "fieldname": "quantity",
    "fieldtype": "Data",
-   "label": "Quantity"
+   "label": "Quantity",
+   "read_only": 1
   },
   {
    "fieldname": "shipment_type",
@@ -111,7 +114,7 @@
  "is_submittable": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-06-09 18:16:41.314350",
+ "modified": "2026-06-10 12:35:23.525557",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",
