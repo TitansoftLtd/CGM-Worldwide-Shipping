@@ -47,9 +47,6 @@ def get_sea_import_workflow_states() -> list[str]:
 # ============================================================
 
 """Permit invoice → Finance → Payment → Declarant receipt → Finance verify → Complete."""
-from __future__ import annotations
-
-import frappe
 from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
@@ -69,8 +66,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	TASK_PERMITS_FIELD,
 	sync_task_permits_to_project,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import PRE_CLEARANCE_STAGE
 from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-	PRE_CLEARANCE_STAGE,
 	get_permit_finance_sequence_for_application,
 	get_permit_stage_for_sequence,
 	get_pre_clearance_permit_application_sequence,
@@ -875,11 +872,8 @@ get_permit_finance_task = get_finance_permit_task_name
 # ============================================================
 
 """UCR invoice → Finance payment → Declarant receipt → Finance verify → Complete."""
-from __future__ import annotations
-
 from collections.abc import Callable
 
-import frappe
 from frappe.utils import get_url, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY

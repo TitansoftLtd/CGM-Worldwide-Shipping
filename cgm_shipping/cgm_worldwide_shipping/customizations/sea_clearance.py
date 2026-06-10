@@ -10,20 +10,11 @@ from __future__ import annotations
 import frappe
 from frappe.utils import now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-	normalize_department_stem,
-	resolve_department_name,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
-	get_permit_stage_for_sequence,
-	is_permit_application_task,
-	is_ucr_application_task,
+	SEA_TASK_FLOW_KEY,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-	get_sea_import_workflow_states,
-)
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
 
 AUTO_COMPLETE_INTAKE_REMARK = (
 	"Auto-completed at Project creation: shipment documents were received and "
@@ -33,6 +24,10 @@ AUTO_COMPLETE_INTAKE_REMARK = (
 
 def get_tracking_workflow_states() -> list[str]:
 	"""Ordered shipment workflow states for progress chart and gate sync."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		get_sea_import_workflow_states,
+	)
+
 	return get_sea_import_workflow_states()
 
 
@@ -96,6 +91,11 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 
 def effective_completed_task_seqs(tasks: list) -> set[int]:
 	"""Task sequences that count as done for workflow progress."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_permit_stage_for_sequence,
+		is_permit_application_task,
+	)
+
 	completed: set[int] = set()
 	for row in tasks:
 		seq = int(row.get("custom_sequence_no") or 0)
@@ -189,10 +189,13 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 	"""Tasks with sequence < before_sequence that are not Completed/Cancelled."""
 	if before_sequence <= 1:
 		return []
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		permit_invoices_ready,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_permit_stage_for_sequence,
+		is_permit_application_task,
+		is_ucr_application_task,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		permit_invoices_ready,
 		ucr_invoice_ready,
 	)
 
@@ -386,29 +389,6 @@ def mark_task_completed(task) -> None:
 	frappe.clear_document_cache("Task", task.name)
 
 
-def load_sea_task_template():
-	"""Return sea import tasks from CGM Shipping Settings."""
-	# 1. Load and sort template rows by their index.
-	settings = frappe.get_single("CGM Shipping Settings")
-	rows = sorted(settings.get("custom_sea_import_task_template") or [], key=lambda r: r.idx or 0)
-
-	# 2. Validate and collect each row.
-	out = []
-	for row in rows:
-		subject = (row.task_subject or "").strip()
-		dept = normalize_department_stem(row.department)
-		if not subject:
-			continue
-		if not dept:
-			frappe.throw(f"Sea import task template: Department is required for task: {subject}")
-		out.append({"subject": subject, "department": dept})
-
-	if not out:
-		frappe.throw("Add at least one row to Sea import task template in CGM Shipping Settings.")
-
-	return out
-
-
 @frappe.whitelist()
 def backfill_intake_documents_on_sea_tasks(project):
 	"""Copy Project shipment documents onto tasks 1–2 (for projects created before this feature)."""
@@ -487,6 +467,10 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	task_template = load_sea_task_template()
 	created = []
 	prev_task = None
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		resolve_department_name,
+	)
 
 	for idx, item in enumerate(task_template, start=1):
 		subject = item.get("subject")

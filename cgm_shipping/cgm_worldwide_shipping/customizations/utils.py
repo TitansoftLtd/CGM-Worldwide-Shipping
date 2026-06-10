@@ -94,3 +94,28 @@ def get_bl_config() -> dict:
 	if not config.get("opportunity_source_field"):
 		config["opportunity_source_field"] = get_link_field_for_doctype("Bill of Lading", "Opportunity")
 	return config
+
+
+def load_sea_task_template() -> list[dict[str, str]]:
+	"""Return sea import tasks from CGM Shipping Settings."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		normalize_department_stem,
+	)
+
+	settings = frappe.get_single("CGM Shipping Settings")
+	rows = sorted(settings.get("custom_sea_import_task_template") or [], key=lambda r: r.idx or 0)
+
+	out: list[dict[str, str]] = []
+	for row in rows:
+		subject = (row.task_subject or "").strip()
+		dept = normalize_department_stem(row.department)
+		if not subject:
+			continue
+		if not dept:
+			frappe.throw(f"Sea import task template: Department is required for task: {subject}")
+		out.append({"subject": subject, "department": dept})
+
+	if not out:
+		frappe.throw("Add at least one row to Sea import task template in CGM Shipping Settings.")
+
+	return out

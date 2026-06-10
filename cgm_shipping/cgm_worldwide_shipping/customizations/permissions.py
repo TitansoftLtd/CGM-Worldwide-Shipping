@@ -124,23 +124,13 @@ def resolve_department_name(department_value, company=None):
 
 # ============================================================
 
-"""
-ERPNext RBAC helpers for sea clearance tasks.
-
-Administrators create Roles in Desk (names should match sea task template departments).
-Access checks use frappe.get_roles() against template department stems - no role lists in code.
-"""
-from __future__ import annotations
-
-import frappe
-
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-	load_sea_task_template,
-)
+# ERPNext RBAC helpers for sea clearance tasks (roles match template departments).
 
 
 @frappe.request_cache
 def _department_stem_by_sequence() -> dict[int, str]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
+
 	return {
 		sequence_no: row["department"]
 		for sequence_no, row in enumerate(load_sea_task_template(), start=1)
@@ -211,35 +201,18 @@ def finance_department_stems_for_linked_pairs(
 
 
 # ============================================================
-
-"""Restrict sea clearance Task list/form access by department and role."""
-from __future__ import annotations
-
-import frappe
-
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-	application_department_stems_for_linked_pairs,
-	finance_department_stems_for_linked_pairs,
-	finance_payment_department_stems,
-	get_user_sea_task_department_stems,
-	user_has_department_for_sequence,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-	finance_payment_sequences,
-	permit_linked_task_pairs,
-	ucr_linked_task_pairs,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-	SEA_TASK_FLOW_KEY,
-	normalize_department_stem,
-)
+# Restrict sea clearance Task list/form access by department and role.
 
 # UCR / permit: cross-read on paired workflow steps (Settings-driven sequences).
 def _ucr_linked_pairs() -> tuple[tuple[int, int], ...]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import ucr_linked_task_pairs
+
 	return ucr_linked_task_pairs()
 
 
 def _permit_linked_pairs() -> tuple[tuple[int, int], ...]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import permit_linked_task_pairs
+
 	return permit_linked_task_pairs()
 
 
@@ -344,6 +317,8 @@ def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
+
 	if seq not in finance_payment_sequences():
 		return False
 	return user_has_department_for_sequence(user, seq)
@@ -431,6 +406,8 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	if linked:
 		visibility_parts.append(linked)
 	if stems & finance_payment_department_stems():
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
+
 		finance_seqs = sorted(finance_payment_sequences())
 		if finance_seqs:
 			seq_list = ", ".join(str(s) for s in finance_seqs)

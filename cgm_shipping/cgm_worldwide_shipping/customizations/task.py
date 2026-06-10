@@ -4,16 +4,13 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	PRE_CLEARANCE_STAGE,
 	SEA_TASK_FLOW_KEY,
 	TASK_DOCUMENTS_FIELD,
 	TASK_FINANCE_FIELD,
 	TASK_PERMITS_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import refresh_project_documents
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-	get_incomplete_sea_tasks,
-	sync_project_shipment_status_from_tasks,
-)
 
 
 def task_sequence(task) -> int:
@@ -42,12 +39,8 @@ Strict interpreter for sea task requirements in CGM Shipping Settings.
 
 Settings hold the rules; this module reads and validates them - no runtime fallbacks.
 """
-from __future__ import annotations
-
-import frappe
 
 SUPPLIER_INVOICE_CODE = "SUP_INV"
-PRE_CLEARANCE_STAGE = "Pre-clearance"
 
 _SETTINGS_REQUIREMENTS_FIELD = "custom_sea_clearance_task_requirements"
 _SETTINGS_LINK = "CGM Shipping Settings → Sea clearance task requirements"
@@ -360,9 +353,6 @@ def get_sea_task_ui_sequences() -> dict:
 # ==================== Task finance lines ====================
 
 """Task Finance Lines - invoices and receipts (separate from clearance documents)."""
-from __future__ import annotations
-
-import frappe
 from frappe.utils import cint, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import TASK_DOCUMENTS_FIELD
@@ -1013,9 +1003,6 @@ Sea task completion rules - driven by CGM Shipping Settings where possible.
 Task level: invoices/receipts on Task Finance Lines; clearance docs on Task Documents; permits on Task Permits.
 Project level: custom_permit_register synced from Task permits (see sync_task_permits_to_project).
 """
-from __future__ import annotations
-
-import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import get_document_type_link_name
 from cgm_shipping.cgm_worldwide_shipping.customizations.project import derive_permit_clearance_phase
@@ -1375,9 +1362,6 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 # ==================== Finance document linking ====================
 
 """Link Purchase Invoice / Payment Entry to sea finance Tasks and Project."""
-from __future__ import annotations
-
-import frappe
 from frappe.utils import flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
@@ -1976,9 +1960,6 @@ def sync_finance_links_from_documents(task_name: str) -> dict:
 # ==================== Permit item mapping ====================
 
 """Map Permit Type → ERPNext Item for Purchase Invoice lines."""
-from __future__ import annotations
-
-import frappe
 from frappe.utils import cint
 
 # Common Item name/code variants in CGM item master (longest / most specific first).
@@ -2273,6 +2254,10 @@ def on_task_update(doc, _method=None):
 					sync_permit_invoices_to_finance_task(
 						frappe.get_doc("Task", fin_name), save=True
 					)
+			from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+				sync_project_shipment_status_from_tasks,
+			)
+
 			sync_project_shipment_status_from_tasks(doc.project)
 	prev = doc.get_doc_before_save()
 	if doc.status == "Completed" and (not prev or prev.status != "Completed"):
@@ -2313,6 +2298,10 @@ def validate_task_completion_requirements(doc, _method=None):
 
 	if _is_sea_task(doc):
 		if seq > 1:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+				get_incomplete_sea_tasks,
+			)
+
 			incomplete = get_incomplete_sea_tasks(doc.project, seq)
 			if incomplete:
 				prev_task = incomplete[0]
