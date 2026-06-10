@@ -19,7 +19,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	get_sea_closure_blockers,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-	apply_bill_of_lading_from_source,
 	apply_shipment_data,
 	assign_cgm_project_reference,
 	get_awb_value_from_doc,
@@ -462,17 +461,6 @@ def insert_shipment_project(project) -> str:
 	return project.name
 
 
-def get_lead_field_value(lead, *candidates: str):
-	"""Return the first non-empty attribute present on the Lead document."""
-	lead_meta = lead.meta
-	for name in candidates:
-		if not lead_meta.has_field(name):
-			continue
-		value = lead.get(name)
-		if value not in (None, ""):
-			return value
-	return None
-
 def apply_project_tracking_defaults(project) -> None:
 	"""Seed tracking sheet fields on new projects (opened date; CGM ref assigned on insert)."""
 	opened_date_field = get_field_from_meta("Project", "opened_date")
@@ -529,7 +517,7 @@ def copy_container_rows_to_project(project, rows: list[dict]) -> None:
 		)
 
 def apply_preshipment_transport_defaults(project, source_doc) -> None:
-	"""Copy B/L, AWB, and container rows from Lead/Opportunity onto a new Project."""
+	"""Copy B/L, AWB, and container rows from Opportunity onto a new Project."""
 	bl_config = get_bl_config()
 	project_meta = project.meta
 	source_bl_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
@@ -554,26 +542,6 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 	if container_field and project_meta.has_field(container_field) and not project.get(container_field):
 		copy_container_rows_to_project(project, get_container_rows_from_preshipment_source(source_doc))
 
-def apply_lead_shipment_defaults(project, lead_name: str | None) -> None:
-	"""Copy shipment hints from Lead onto Project when fields are empty."""
-	if not lead_name or not frappe.db.exists("Lead", lead_name):
-		return
-	lead = frappe.get_doc("Lead", lead_name)
-	project_meta = project.meta
-	pairs = (
-		("custom_consignee", get_lead_field_value(lead, "company_name", "lead_name")),
-		(
-			"custom_shipment_description",
-			get_lead_field_value(lead, "description", "notes", "title"),
-		),
-		("custom_shipment_remarks", get_lead_field_value(lead, "notes")),
-	)
-	for fieldname, value in pairs:
-		if project_meta.has_field(fieldname) and value and not project.get(fieldname):
-			project.set(fieldname, value)
-	apply_preshipment_transport_defaults(project, lead)
-
-
 def apply_opportunity_to_project_mappings(project, opp) -> None:
 	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""
 	meta = project.meta
@@ -595,7 +563,7 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 			project.set(dest_field, value)
 
 def sync_predocuments_from_source(project, source_doc) -> None:
-	"""Pull client docs and B/L attachment from Lead/Opportunity onto Project shipment documents."""
+	"""Pull client docs and B/L attachment from Opportunity onto Project shipment documents."""
 	bl_config = get_bl_config()
 	bl_link_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
 		"Opportunity", "Bill of Lading"
@@ -611,59 +579,6 @@ def sync_predocuments_from_source(project, source_doc) -> None:
 		bl_name=project_bl or source_bl,
 		source_doc=source_doc,
 	)
-
-def lead_has_customer(lead):
-	"""Return True when a Customer is already linked to this Lead."""
-	if frappe.db.get_value("Customer", {"lead_name": lead}, "name"):
-		return True
-	lead_customer = frappe.db.get_value("Lead", lead, "customer")
-	return bool(lead_customer and frappe.db.exists("Customer", lead_customer))
-
-@frappe.whitelist()
-def create_project_from_lead(lead, project_name=None):
-	"""Create a shipment project from an approved Lead."""
-	frappe.has_permission("Project", ptype="create", throw=True)
-	# Prevent copying data out of a source record the user cannot read.
-	frappe.has_permission("Lead", ptype="read", doc=lead, throw=True)
-	lead_doc = frappe.get_doc("Lead", lead)
-
-	# 1. Ensure the lead is in the correct pre-shipment status.
-	if lead_doc.get("custom_cgm_preshipment_status") != "Lead Ready to Convert":
-		frappe.throw("Lead must be in **Lead Ready to Convert** before creating a Project.")
-
-	# 2. Ensure a Customer is already linked to the lead.
-	if not lead_has_customer(lead):
-		frappe.throw(
-			"No Customer linked to this Lead. Use **Create Customer** from the Lead first, then try again."
-		)
-
-	customer = frappe.db.get_value("Customer", {"lead_name": lead}, "name") or lead_doc.customer
-
-	# 3. Build and save the new Project.
-	proj = frappe.new_doc("Project")
-	proj.customer = customer
-	apply_shipment_data(
-		proj,
-		shipment_type=lead_doc.get("custom_shipment_type"),
-		mode=lead_doc.get("custom_mode_of_transport"),
-	)
-	apply_lead_shipment_defaults(proj, lead)
-	apply_project_tracking_defaults(proj)
-	if project_name:
-		proj.project_name = project_name
-		cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
-		if cgm_ref_field:
-			proj.set(cgm_ref_field, project_name)
-
-	project_fields = frappe.get_meta("Project")
-	if project_fields.has_field("custom_source_lead"):
-		proj.custom_source_lead = lead
-
-
-	apply_bill_of_lading_from_source(proj, lead_doc)
-	sync_predocuments_from_source(proj, lead_doc)
-	return insert_shipment_project(proj)
-
 
 @frappe.whitelist()
 def create_project_from_opportunity(opportunity, project_name=None):

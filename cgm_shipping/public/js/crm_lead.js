@@ -13,39 +13,19 @@ frappe.ui.form.on("Lead", {
 				return;
 			}
 
-			if (!lead_has_customer(frm)) {
-				frm.add_custom_button(__("Customer"), () => {
-					frappe.model.open_mapped_doc({
-						method: "erpnext.crm.doctype.lead.lead.make_customer",
-						frm,
-					});
-				}).addClass("btn-primary");
+			if (frm.doc.customer || frm.doc.__onload?.is_customer) {
 				return;
 			}
 
-			frm.add_custom_button(__("Create Shipment Project"), () => {
-				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.project.create_project_from_lead",
-					args: { lead: frm.doc.name },
-					freeze: true,
-					callback(r) {
-						if (!r.exc && r.message) {
-							frappe.show_alert({
-								message: __("Shipment Project created"),
-								indicator: "green",
-							});
-							frappe.set_route("Form", "Project", r.message);
-						}
-					},
+			frm.add_custom_button(__("Customer"), () => {
+				frappe.model.open_mapped_doc({
+					method: "erpnext.crm.doctype.lead.lead.make_customer",
+					frm,
 				});
 			}).addClass("btn-primary");
 		}, 0);
 	},
 });
-
-function lead_has_customer(frm) {
-	return Boolean(frm.doc.customer || frm.doc.__onload?.is_customer);
-}
 
 function cleanup_lead_toolbar(frm) {
 	// ERPNext adds mapped-doc shortcuts under these inner groups (not removable by label alone).
