@@ -1,5 +1,18 @@
 frappe.ui.form.on("Customer", {
 	refresh(frm) {
+		// Hide the standard ERPNext "Create" options so only the CGM
+		// shipping documents (Bill of Lading & Air Waybill) remain.
+		[
+			"Quotation",
+			"Sales Order",
+			"Opportunity",
+			"Payment Entry",
+			"Pricing Rule",
+			"Bank Account",
+		].forEach((label) => {
+			frm.remove_custom_button(__(label), __("Create"));
+		});
+
 		frm.add_custom_button(
 			__("Bill of Lading"),
 			() => {

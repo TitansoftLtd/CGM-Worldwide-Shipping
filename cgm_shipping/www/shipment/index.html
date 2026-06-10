@@ -1,0 +1,151 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/portal_localize.html" import local_date %}
+
+{% block title %}{{ ref or _("Shipment") }}{% endblock %}
+
+{% block head_include %}
+<style>
+  .sh-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+  .sh-head h1 { margin:0; font-size:1.5rem; font-weight:700; letter-spacing:-0.01em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .sh-consignee { color: var(--cp-text-muted); font-size:.9rem; margin:.25rem 0 0; }
+  .sh-section-title { font-size:1.05rem; font-weight:700; margin: 1.75rem 0 .85rem; letter-spacing:-0.01em; }
+  .sh-container-head { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin-bottom:.85rem; }
+  .sh-container-num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight:700; font-size:1rem; }
+  .sh-charge { display:flex; gap:1.25rem; flex-wrap:wrap; margin-top:1rem; padding-top:1rem; border-top:1px dashed var(--cp-border); }
+  .sh-charge .lab { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--cp-text-muted); font-weight:600; }
+  .sh-charge .val { font-size:.95rem; font-weight:700; color:#be123c; }
+  .sh-doc-row { display:flex; align-items:center; gap:1rem; padding:.85rem 1.25rem; border-bottom:1px solid var(--cp-border); }
+  .sh-doc-row:last-child { border-bottom:none; }
+  .sh-doc-icon { width:38px; height:38px; flex-shrink:0; border-radius:10px; background:var(--cp-brand-soft); color:var(--cp-brand); display:inline-flex; align-items:center; justify-content:center; }
+  .sh-doc-body { flex:1; min-width:0; }
+  .sh-doc-title { font-weight:600; font-size:.9rem; }
+  .sh-doc-sub { font-size:.76rem; color:var(--cp-text-muted); margin-top:.1rem; }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="cp-page cp-page-narrow">
+
+{% include "templates/includes/portal_back_link.html" %}
+
+{% if error_title %}
+  <div class="cp-banner-error"><h4>{{ error_title }}</h4><p>{{ error_message }}</p></div>
+  <a class="cp-btn" href="/my-shipments">{{ _("Go to My Shipments") }}</a>
+{% else %}
+
+  <!-- HEADER -->
+  <div class="cp-hero" style="padding:1.5rem 1.75rem;">
+    <div class="sh-head">
+      <div>
+        <h1>{{ ref }}</h1>
+        <p class="sh-consignee">{% if shipment.custom_consignee %}{{ shipment.custom_consignee }} · {% endif %}{{ shipment.custom_shipment_type or shipment.custom_mode_of_transport or _("Shipment") }}</p>
+      </div>
+      <span class="cp-status {{ status_tone }}" style="font-size:.8rem;padding:.35rem .8rem;"><span class="dot"></span>{{ shipment.custom_shipment_status }}</span>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="cp-card">
+    <div class="cp-card-body">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div><strong>{{ progress.current_label }}</strong> <span style="color:var(--cp-text-muted);font-size:.85rem;">· {{ shipment.custom_shipment_status }}</span></div>
+        <div style="color:var(--cp-text-muted);font-size:.82rem;font-weight:600;">{{ progress.percent }}%</div>
+      </div>
+      <div class="cp-stepper">
+        {% for step in progress.steps %}
+          <div class="cp-step {{ step.state }}">
+            <span class="cp-step-dot">{% if step.state == 'done' %}✓{% else %}{{ loop.index }}{% endif %}</span>
+            <div class="cp-step-label">{{ step.label }}</div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="cp-progress-track" style="margin-top:1rem;"><div class="cp-progress-fill" style="width: {{ progress.percent }}%;"></div></div>
+    </div>
+  </div>
+
+  <!-- DETAILS -->
+  <div class="sh-section-title">{{ _("Shipment details") }}</div>
+  <div class="cp-card"><div class="cp-card-body">
+    <div class="cp-defs">
+      {% macro def(label, value) %}
+        {% if value %}<div><div class="cp-def-label">{{ label }}</div><div class="cp-def-value">{{ value }}</div></div>{% endif %}
+      {% endmacro %}
+      {{ def(_("B/L Number"), shipment.custom_bl_number) }}
+      {{ def(_("Air Waybill"), shipment.custom_awb_number) }}
+      {{ def(_("Batch No"), shipment.custom_batch_no) }}
+      {{ def(_("Mode of Transport"), shipment.custom_mode_of_transport) }}
+      {{ def(_("Vessel / Airline"), shipment.custom_vessel_flight) }}
+      {{ def(_("Current Location"), shipment.custom_current_location) }}
+      <div><div class="cp-def-label">{{ _("ETA") }}</div><div class="cp-def-value">{% if shipment.custom_eta %}{{ local_date(shipment.custom_eta) }}{% else %}—{% endif %}</div></div>
+      <div><div class="cp-def-label">{{ _("ATA") }}</div><div class="cp-def-value">{% if shipment.custom_ata %}{{ local_date(shipment.custom_ata) }}{% else %}—{% endif %}</div></div>
+      {{ def(_("Clearance Station"), shipment.custom_cfs) }}
+      {{ def(_("Entry No"), shipment.custom_entry_no) }}
+      {{ def(_("Delivery Order"), shipment.custom_do_reference) }}
+      {{ def(_("Delivery Type"), shipment.custom_delivery_type) }}
+      {{ def(_("Quantity"), shipment.custom_shipment_quantity) }}
+      {{ def(_("Gross Weight (kg)"), shipment.custom_gross_weightkg) }}
+      {{ def(_("Cargo"), shipment.custom_shipment_description) }}
+    </div>
+  </div></div>
+
+  <!-- CONTAINERS -->
+  <div class="sh-section-title">{{ _("Containers") }} {% if containers %}<span style="color:var(--cp-text-muted);font-weight:600;font-size:.85rem;">({{ containers|length }})</span>{% endif %}</div>
+  {% if containers %}
+    {% for c in containers %}
+      <div class="cp-card" style="margin-bottom:1rem;"><div class="cp-card-body">
+        <div class="sh-container-head">
+          <div>
+            <span class="sh-container-num">{{ c.container_number or _("Container") }}</span>
+            {% if c.current_location %}<span style="color:var(--cp-text-muted);font-size:.82rem;"> · {{ c.current_location }}</span>{% endif %}
+          </div>
+          {% if c.status %}<span class="cp-status {{ 'success' if c.status in ('Delivered','Empty Returned') else ('danger' if c.status == 'Overdue' else 'info') }}"><span class="dot"></span>{{ c.status }}</span>{% endif %}
+        </div>
+
+        <ul class="cp-timeline">
+          {% for t in c.timeline %}
+            <li class="{{ 'done' if t.done else '' }}">
+              <div class="cp-tl-label">{{ t.label }}</div>
+              {% if t.date %}<div class="cp-tl-date">{{ local_date(t.date) }}</div>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+
+        {% if c.has_charges %}
+          <div class="sh-charge">
+            {% if c.demurrage_days %}
+              <div><div class="lab">{{ _("Demurrage") }}</div><div class="val">{{ c.demurrage_days }} {{ _("days") }}{% if c.demurrage_amount %} · {{ frappe.utils.fmt_money(c.demurrage_amount) }}{% endif %}</div></div>
+            {% endif %}
+            {% if c.detention_days %}
+              <div><div class="lab">{{ _("Detention") }}</div><div class="val">{{ c.detention_days }} {{ _("days") }}{% if c.detention_amount %} · {{ frappe.utils.fmt_money(c.detention_amount) }}{% endif %}</div></div>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div></div>
+    {% endfor %}
+  {% else %}
+    <div class="cp-empty" style="padding:1.75rem;"><p>{{ _("Container tracking will appear here once your shipment is on the water.") }}</p></div>
+  {% endif %}
+
+  <!-- DOCUMENTS -->
+  <div class="sh-section-title">{{ _("Documents") }}</div>
+  <div class="cp-card">
+    {% if documents %}
+      {% for d in documents %}
+        <div class="sh-doc-row">
+          <span class="sh-doc-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+          <div class="sh-doc-body">
+            <div class="sh-doc-title">{{ d.doc_label }}</div>
+            <div class="sh-doc-sub">{% if d.verified_on %}{{ _("Verified") }} {{ local_date(d.verified_on) }}{% endif %}{% if d.remarks %} · {{ d.remarks }}{% endif %}</div>
+          </div>
+          <a class="cp-btn cp-btn-ghost" style="padding:.35rem .9rem;font-size:.8rem;" href="{{ d.download_url }}">{{ _("Download") }}</a>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="cp-empty" style="border:none;padding:1.75rem;"><p>{{ _("No documents have been shared for this shipment yet.") }}</p></div>
+    {% endif %}
+  </div>
+
+{% endif %}
+
+</div>
+{% endblock %}

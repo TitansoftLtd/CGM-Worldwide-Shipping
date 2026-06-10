@@ -1,0 +1,68 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/portal_localize.html" import local_date %}
+
+{% block title %}{{ _("My Shipments") }}{% endblock %}
+
+{% block page_content %}
+<div class="cp-page cp-page-narrow">
+
+{% include "templates/includes/portal_back_link.html" %}
+
+{% if error_title %}
+  <div class="cp-banner-error"><h4>{{ error_title }}</h4><p>{{ error_message }}</p></div>
+{% else %}
+
+  <div class="cp-hero" style="padding:1.5rem 1.75rem;">
+    <h1 style="margin:0;font-size:1.4rem;font-weight:700;">{{ _("My Shipments") }}</h1>
+    <p class="cp-sub">
+      {% if customer_name %}{{ _("Shipments consigned to") }} <strong>{{ customer_name }}</strong>{% else %}{{ _("Your shipments") }}{% endif %}
+      {% if status_filter %} · {{ _("filtered by") }} <strong>{{ status_filter }}</strong> (<a class="cp-link" href="/my-shipments">{{ _("clear") }}</a>){% endif %}
+    </p>
+  </div>
+
+  {% if no_customer %}
+    <div class="cp-empty">
+      <h4>{{ _("No customer linked to your account") }}</h4>
+      <p>{{ _("Your portal account isn't connected to a Customer yet. Contact CGM Worldwide Shipping.") }}</p>
+    </div>
+  {% elif not shipments %}
+    <div class="cp-empty">
+      <h4>{{ _("No shipments found") }}</h4>
+      <p>{% if status_filter %}{{ _("No shipments match this status.") }}{% else %}{{ _("You don't have any shipments on record yet.") }}{% endif %}</p>
+      {% if status_filter %}<a class="cp-btn" href="/my-shipments">{{ _("Show all shipments") }}</a>{% endif %}
+    </div>
+  {% else %}
+    <div class="cp-table-wrap">
+      <table class="cp-table">
+        <thead>
+          <tr>
+            <th>{{ _("CGM Ref") }}</th>
+            <th>{{ _("B/L Number") }}</th>
+            <th>{{ _("Mode") }}</th>
+            <th>{{ _("Status") }}</th>
+            <th>{{ _("ETA") }}</th>
+            <th>{{ _("ATA") }}</th>
+            <th>{{ _("Actions") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in shipments %}
+            <tr>
+              <td data-label="{{ _('CGM Ref') }}"><a class="ref-link" href="{{ s.url }}">{{ s.custom_cgm_ref_no or s.name }}</a></td>
+              <td data-label="{{ _('B/L Number') }}">{{ s.custom_bl_number or s.custom_awb_number or '-' }}</td>
+              <td data-label="{{ _('Mode') }}">{{ s.custom_mode_of_transport or '-' }}</td>
+              <td data-label="{{ _('Status') }}"><span class="cp-status {{ s.tone }}"><span class="dot"></span>{{ s.custom_shipment_status }}</span></td>
+              <td data-label="{{ _('ETA') }}">{% if s.custom_eta %}{{ local_date(s.custom_eta) }}{% else %}-{% endif %}</td>
+              <td data-label="{{ _('ATA') }}">{% if s.custom_ata %}{{ local_date(s.custom_ata) }}{% else %}-{% endif %}</td>
+              <td data-label="{{ _('Actions') }}"><a class="cp-btn-ghost cp-btn" style="padding:.25rem .7rem;font-size:.78rem;" href="{{ s.url }}">{{ _("Track") }}</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+{% endif %}
+
+</div>
+{% endblock %}

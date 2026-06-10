@@ -1,0 +1,46 @@
+{# Reusable timezone-aware datetime macros for the CGM customer portal.
+
+   Usage in any portal template:
+     {% from "templates/includes/portal_localize.html" import local_datetime, local_date %}
+     {{ local_datetime(c.creation) }}
+     {{ local_date(shipment.custom_eta) }}
+
+   What you get:
+     <time datetime="2026-05-19T07:22:11+00:00" data-localize="datetime">
+       19-05-2026 07:22:11 am
+     </time>
+
+   The fallback text inside is what the server thinks (system-tz formatted).
+   `public/js/portal_localize_time.js` runs on DOMContentLoaded and rewrites
+   the inner text to the browser-local equivalent. JS-disabled browsers still
+   see a sensible value.
+
+   `format` argument controls the JS hydration format:
+     - "datetime"       full date + time  (default for local_datetime)
+     - "datetime_short" date + HH:mm only
+     - "date"           date-only (for local_date - the timezone matters
+                                   if the date itself shifts across midnight)
+     - "time"           time-of-day only
+#}
+
+{%- macro local_datetime(value, format='datetime') -%}
+  {%- if value -%}
+    {%- set iso = local_datetime_iso(value) -%}
+    {%- if iso -%}
+      <time datetime="{{ iso }}" data-localize="{{ format }}">{{ frappe.utils.format_datetime(value) }}</time>
+    {%- else -%}
+      {{ frappe.utils.format_datetime(value) }}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{%- macro local_date(value, format='date') -%}
+  {%- if value -%}
+    {%- set iso = local_datetime_iso(value) -%}
+    {%- if iso -%}
+      <time datetime="{{ iso }}" data-localize="{{ format }}">{{ frappe.utils.format_date(value) }}</time>
+    {%- else -%}
+      {{ frappe.utils.format_date(value) }}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
