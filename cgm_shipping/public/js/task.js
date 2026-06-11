@@ -57,7 +57,9 @@ frappe.ui.form.on("Task", {
 		const ui = get_sea_task_ui(frm);
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
-		if (!frm._cgm_sea_layout_ready) {
+		// Wait until the async sea-sequence config has loaded, otherwise the layout
+		// runs against the empty config and leaves finance lines / permits hidden.
+		if (!frm._cgm_sea_layout_ready && (!is_sea_clearance_task(frm) || frm._cgm_sea_seq_config)) {
 			apply_sea_task_form_layout(frm, ui);
 			frm._cgm_sea_layout_ready = true;
 		}
@@ -111,7 +113,7 @@ frappe.ui.form.on("Task", {
 					);
 				} else {
 					intro = __(
-						"<b>Declaration:</b> Attach <b>Permit Invoice (for Finance)</b> on every permit row and save — " +
+						"<b>Declaration:</b> Attach <b>Permit Invoice (for Finance)</b> on every permit row and save - " +
 							"Finance is notified automatically when all invoices are attached."
 					);
 				}
@@ -606,12 +608,12 @@ function apply_sea_task_form_layout(frm, ui) {
 
 	SEA_TASK_HIDDEN_FIELDS.forEach((f) => toggle(f, false));
 	const show_finance = Boolean(ui.show_finance_lines && frm.fields_dict.custom_task_finance_lines);
-	toggle("custom_section_task", show_finance);
+	toggle("custom_section_task_finance", show_finance);
 	toggle("custom_task_finance_lines", show_finance);
 	if (show_finance) {
 		configure_finance_line_grid(frm, ui);
-		if (frm.fields_dict.custom_section_task) {
-			frm.set_df_property("custom_section_task", "description", "");
+		if (frm.fields_dict.custom_section_task_finance) {
+			frm.set_df_property("custom_section_task_finance", "description", "");
 		}
 	}
 	toggle("custom_section_break_0gs4o", ui.show_documents);
@@ -897,7 +899,7 @@ function apply_ucr_application_intro(frm, status) {
 	} else {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>UCR Invoice</b>, enter the <b>Amount</b>, and save on " +
-				"<b>Invoices & Receipts</b> — Finance is notified automatically. After payment, attach the " +
+				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, attach the " +
 				"supplier <b>UCR Receipt</b> and the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
 		);
 	}
@@ -926,15 +928,17 @@ function configure_permit_grid(frm) {
 	});
 
 	const invoices_sent = cint(frm.doc.custom_permit_invoices_submitted);
-	const invoices_ready = invoices_sent || permit_rows_have_invoices(frm);
+	const has_invoices = permit_rows_have_invoices(frm);
+	const invoices_ready = invoices_sent || has_invoices;
+	const lock_invoices = invoices_sent && has_invoices;
 	const can_upload_proof =
 		user_can_upload_receipt(frm) ||
 		frm.doc.owner === frappe.session.user ||
 		frappe.session.user === "Administrator";
 
 	if (is_permit_application_step(frm, seq)) {
-		grid.update_docfield_property("payment_invoice", "read_only", invoices_sent ? 1 : can_upload_proof ? 0 : 1);
-		grid.update_docfield_property("invoice_amount", "read_only", invoices_sent ? 1 : can_upload_proof ? 0 : 1);
+		grid.update_docfield_property("payment_invoice", "read_only", lock_invoices ? 1 : can_upload_proof ? 0 : 1);
+		grid.update_docfield_property("invoice_amount", "read_only", lock_invoices ? 1 : can_upload_proof ? 0 : 1);
 		grid.update_docfield_property("payment_receipt", "hidden", invoices_ready ? 0 : 1);
 		grid.update_docfield_property("payment_receipt", "read_only", can_upload_proof ? 0 : 1);
 		grid.update_docfield_property("permit_document", "hidden", invoices_ready ? 0 : 1);
@@ -961,12 +965,12 @@ frappe.ui.form.on("Task Finance Line", {
 		if (is_ucr_application_step(frm) && row.attachment) {
 			if (row.line_type === "Invoice") {
 				frappe.show_alert({
-					message: __("UCR invoice saved — Finance will be notified when you save."),
+					message: __("UCR invoice saved - Finance will be notified when you save."),
 					indicator: "green",
 				});
 			} else if (row.line_type === "Receipt") {
 				frappe.show_alert({
-					message: __("UCR receipt saved — Finance will be notified to verify when you save."),
+					message: __("UCR receipt saved - Finance will be notified to verify when you save."),
 					indicator: "green",
 				});
 			}
@@ -1018,6 +1022,17 @@ frappe.ui.form.on("Permit Register", {
 			get_permit_stage_for_seq(frm, seq)
 		);
 		frappe.model.set_value(cdt, cdn, "status", "Applied");
+		// A new row has no invoice yet, so the invoice columns must be editable
+		// again even if earlier invoices were already submitted (the column-wide
+		// read-only is otherwise only re-evaluated on form refresh).
+		configure_permit_grid(frm);
+	},
+
+	custom_task_permits_remove(frm) {
+		if (frm.doctype !== "Task") {
+			return;
+		}
+		configure_permit_grid(frm);
 	},
 
 	payment_invoice(frm, cdt, cdn) {
@@ -1031,7 +1046,7 @@ frappe.ui.form.on("Permit Register", {
 		if (is_pre_clearance_permit_application_step(frm) && row.payment_invoice) {
 			frappe.show_alert({
 				message: __(
-					"Permit invoice saved — Finance will be notified when all invoices are attached and you save."
+					"Permit invoice saved - Finance will be notified when all invoices are attached and you save."
 				),
 				indicator: "green",
 			});

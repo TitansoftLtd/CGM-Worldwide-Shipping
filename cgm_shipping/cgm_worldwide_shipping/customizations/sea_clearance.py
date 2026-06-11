@@ -50,10 +50,10 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 	from frappe.utils import now_datetime
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		carry_project_shipment_documents_to_sea_tasks,
+		carry_project_documents_to_sea_tasks,
 	)
 
-	carry_project_shipment_documents_to_sea_tasks(project)
+	carry_project_documents_to_sea_tasks(project)
 
 	completed = []
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
@@ -394,10 +394,10 @@ def backfill_intake_documents_on_sea_tasks(project):
 	"""Copy Project shipment documents onto tasks 1–2 (for projects created before this feature)."""
 	frappe.has_permission("Project", ptype="write", throw=True)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		carry_project_shipment_documents_to_sea_tasks,
+		carry_project_documents_to_sea_tasks,
 	)
 
-	carried = carry_project_shipment_documents_to_sea_tasks(project)
+	carried = carry_project_documents_to_sea_tasks(project)
 	auto_complete_initial_sea_tasks(project)
 	return {"tasks_updated": carried}
 

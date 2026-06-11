@@ -266,6 +266,20 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 			"custom_shipment_quantity",
 			"custom_gross_weightkg",
 			"custom_net_weightkg",
+			# Route / carrier / document fields added to Project.
+			"custom_etd",
+			"custom_country_of_origin",
+			"custom_final_destination",
+			"custom_vessel",
+			"custom_airline",
+			"custom_shipping_line",
+			"custom_bill_of_lading",
+			"custom_air_waybill",
+			"custom_description_of_goods",
+			# Pass-through charges billed on the shipment.
+			"custom_breakbulk_charges",
+			"custom_handling_charges",
+			"custom_kebs_charges",
 			"modified",
 		],
 		as_dict=True,
@@ -484,7 +498,7 @@ def download_transaction_pdf(doctype: str, name: str, disposition: str = "attach
 # ─── Documents ───────────────────────────────────────────────────────────────
 
 
-def get_documents(project_name: str) -> list[dict]:
+def get_shipment_documents(project_name: str) -> list[dict]:
 	"""Vetted documents on a shipment that a customer may download.
 
 	Only rows that (a) have an attachment and (b) have been verified by
@@ -527,7 +541,7 @@ def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
 
 	One join over Shipment Document → Project keeps this to a single query
 	instead of one per shipment. Same vetting rule as
-	`get_documents`: attachment present and verified by staff.
+	`get_shipment_documents`: attachment present and verified by staff.
 	Each row carries its owning shipment's ref + a guarded download URL.
 	"""
 	if not customer:
