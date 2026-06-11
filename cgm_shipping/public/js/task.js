@@ -1179,6 +1179,7 @@ function open_journal_entry_payment_dialog(frm) {
 				reqd: 1,
 				get_query: () => ({ filters: journal_account_filters(frm, false) }),
 			},
+			{ fieldname: "cb2", fieldtype: "Column Break" },
 			{
 				fieldname: "pay_from_account",
 				label: __("Pay From: Account (Credit)"),
