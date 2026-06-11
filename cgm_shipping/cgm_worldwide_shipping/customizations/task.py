@@ -4,6 +4,7 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	PERMIT_REGISTER_FIELD,
 	PRE_CLEARANCE_STAGE,
 	SEA_TASK_FLOW_KEY,
 	TASK_DOCUMENTS_FIELD,
@@ -1452,8 +1453,6 @@ def get_default_purchase_item_code(company: str | None = None) -> str:
 
 def get_permit_rows_for_purchase_invoice(task) -> list[dict]:
 	"""Permit rows with invoice + amount for PI line pre-fill (permit finance steps)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import PERMIT_REGISTER_FIELD
-
 	seq = int(task.get("custom_sequence_no") or 0)
 	if not is_permit_finance_payment_task(seq):
 		return []

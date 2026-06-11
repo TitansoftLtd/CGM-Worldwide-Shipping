@@ -173,9 +173,24 @@ def finance_payment_department_stems() -> frozenset[str]:
 	return frozenset(stems)
 
 
+@frappe.request_cache
+def configured_finance_roles() -> frozenset[str]:
+	"""Finance roles from CGM Shipping Settings → Roles tab."""
+	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+		return frozenset()
+	meta = frappe.get_meta("CGM Shipping Settings")
+	if not meta.has_field("custom_finance_roles"):
+		return frozenset()
+	rows = frappe.get_single("CGM Shipping Settings").get("custom_finance_roles") or []
+	return frozenset(row.role for row in rows if row.role)
+
+
 def user_has_finance_department_access(user: str | None = None) -> bool:
-	"""True when the user has a Role matching a finance-payment task department from Settings."""
-	return bool(get_user_sea_task_department_stems(user) & finance_payment_department_stems())
+	"""True when the user has a sea-template Finance department role or a Settings finance role."""
+	roles = user_roles(user)
+	if roles & finance_payment_department_stems():
+		return True
+	return bool(roles & configured_finance_roles())
 
 
 def application_department_stems_for_linked_pairs(
@@ -321,7 +336,7 @@ def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
 
 	if seq not in finance_payment_sequences():
 		return False
-	return user_has_department_for_sequence(user, seq)
+	return user_has_finance_department_access(user)
 
 
 def _department_link_sql_fragment(stem: str) -> str:
@@ -405,7 +420,7 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	linked = _build_linked_sea_task_sql(stems)
 	if linked:
 		visibility_parts.append(linked)
-	if stems & finance_payment_department_stems():
+	if user_has_finance_department_access(user):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
 
 		finance_seqs = sorted(finance_payment_sequences())

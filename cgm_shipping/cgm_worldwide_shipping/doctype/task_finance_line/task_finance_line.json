@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-06-02 12:00:00.000000",
+ "creation": "2026-06-02 12:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -9,7 +9,6 @@
   "line_type",
   "payment_item",
   "attachment",
-  "amount",
   "verified",
   "verified_by",
   "verified_on"
@@ -44,12 +43,6 @@
    "label": "Attachment"
   },
   {
-   "fieldname": "amount",
-   "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Amount"
-  },
-  {
    "default": "0",
    "fieldname": "verified",
    "fieldtype": "Check",
@@ -74,7 +67,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-02 12:00:00.000000",
+ "modified": "2026-06-11 07:30:36.851519",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Task Finance Line",

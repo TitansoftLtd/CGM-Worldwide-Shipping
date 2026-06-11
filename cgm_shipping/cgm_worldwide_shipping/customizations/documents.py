@@ -286,9 +286,13 @@ def get_bill_of_lading_attachment_url(
 ) -> str | None:
 	"""Resolve BL file URL from the Bill of Lading record or source Clients Documents."""
 	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
-		attachment_url = frappe.db.get_value("Bill of Lading", bl_name, "bill_of_lading")
-		if attachment_url:
-			return attachment_url
+		from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config
+
+		attachment_field = get_bl_config().get("attachment_field")
+		if attachment_field and frappe.get_meta("Bill of Lading").has_field(attachment_field):
+			attachment_url = frappe.db.get_value("Bill of Lading", bl_name, attachment_field)
+			if attachment_url:
+				return attachment_url
 
 	if not source_doc:
 		return None
