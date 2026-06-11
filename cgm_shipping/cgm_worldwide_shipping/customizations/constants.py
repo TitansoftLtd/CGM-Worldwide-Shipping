@@ -39,6 +39,66 @@ DEPARTMENT_NAME_ALIASES = {
 	"Administration": "Documentation",
 }
 
+# Container lifecycle status (Container Tracker doctype).
+CONTAINER_STATUS_AT_PORT = "At Port"
+CONTAINER_STATUS_DISPATCHED = "Dispatched"
+CONTAINER_STATUS_IN_TRANSIT = "In Transit"
+CONTAINER_STATUS_DELIVERED = "Delivered"
+CONTAINER_STATUS_EMPTY_PENDING = "Empty Pending Return"
+CONTAINER_STATUS_EMPTY_RETURNED = "Empty Returned"
+CONTAINER_STATUS_INTERCHANGE = "Interchange Received"
+CONTAINER_STATUS_OVERDUE = "Overdue"
+
+# Fallback sequence numbers used when CGM Shipping Settings fields are
+# not yet configured. Configure in CGM Shipping Settings → Container
+# tracking tasks to override these.
+CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
+	"custom_track_eta_task_seq": 8,
+	"custom_vessel_arrival_task_seq": 11,
+	"custom_field_clearance_task_seq": 16,
+	"custom_kpa_paid_task_seq": 18,
+	"custom_book_trucks_task_seq": 19,
+	"custom_gate_out_task_seq": 20,
+	"custom_monitor_delivery_task_seq": 21,
+	"custom_offload_task_seq": 22,
+	"custom_empty_return_task_seq": 23,
+	"custom_interchange_task_seq": 24,
+}
+
+# Backward-compatible aliases.
+TASK_SEQ_LOAD_AND_EXIT_PORT = CONTAINER_TASK_SEQ_DEFAULTS["custom_gate_out_task_seq"]
+TASK_SEQ_EMPTY_RETURN = CONTAINER_TASK_SEQ_DEFAULTS["custom_empty_return_task_seq"]
+
+# Task fields used to identify a single container for container-specific lifecycle events.
+TASK_CONTAINER_TRACKER_FIELD = "custom_container_tracker"
+TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
+TASK_TYPE_OF_CONTAINER_FIELD = "custom_type_of_container"
+
+# Settings fieldnames — bulk events update every tracker on the project.
+BULK_CONTAINER_TASK_SEQ_FIELDS = (
+	"custom_track_eta_task_seq",
+	"custom_vessel_arrival_task_seq",
+	"custom_field_clearance_task_seq",
+	"custom_kpa_paid_task_seq",
+	"custom_book_trucks_task_seq",
+)
+
+# Settings fieldnames — require a single-container identifier on the Task.
+CONTAINER_SPECIFIC_TASK_SEQ_FIELDS = (
+	"custom_gate_out_task_seq",
+	"custom_monitor_delivery_task_seq",
+	"custom_offload_task_seq",
+	"custom_empty_return_task_seq",
+	"custom_interchange_task_seq",
+)
+
+DEPOSIT_REFUND_STATUSES = (
+	"Pending",
+	"Applied",
+	"Received",
+	"Forfeited",
+)
+
 # ERPNext Notification fixture names (see fixtures/notification.json).
 FINANCE_PAYMENT_ACTION = "CGM Task - Finance Payment Action"
 PERMIT_INVOICES_TO_FINANCE = "CGM Task - Permit Invoices to Finance"

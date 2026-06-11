@@ -120,6 +120,7 @@ def apply_shipment_document_automation(doc, _method=None):
 	enforce_permits_post_cleared_before_entry_lodged(doc)
 	# 7. Project Completed only when tasks, docs, permits, payments, and billing are done.
 	enforce_project_closure_on_workflow_change(doc)
+	# Container demurrage/detention lives on Container Tracker (created at Book Trucks task).
 
 def _shipment_document_row_map(doc):
 	rows = {}
