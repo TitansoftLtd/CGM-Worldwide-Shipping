@@ -155,14 +155,14 @@ jinja = {
 
 permission_query_conditions = {
 	"Task": (
-		"cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions"
+		"cgm_shipping.cgm_worldwide_shipping.customizations.permissions"
 		".get_permission_query_conditions"
 	),
 }
 
 has_permission = {
 	"Task": (
-		"cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions.has_permission"
+		"cgm_shipping.cgm_worldwide_shipping.customizations.permissions.has_permission"
 	),
 }
 
@@ -170,7 +170,7 @@ has_permission = {
 # ------------------------
 
 override_doctype_class = {
-	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task_overrides.CGMTask"],
+	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
 }
 
 # Document Events
@@ -183,44 +183,44 @@ doc_events = {
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
 		],
 	},
 	"Purchase Invoice": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_validate_from_task",
-		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_on_submit",
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_validate_from_task",
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_on_submit",
 	},
 	"Payment Entry": {
 		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.payment_entry_validate_from_task",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.payment_entry_validate_from_task",
 		],
-		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.payment_entry_on_submit",
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.payment_entry_on_submit",
 	},
 	"Customer": {
-		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.on_customer_update",
 	},
 	"Opportunity": {
 		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment"
 			".sync_preshipment_containers_from_bl"
 		),
 		"before_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment"
 			".stamp_verified_documents_on_approval"
 		),
 		"before_update_after_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment"
 			".stamp_verified_documents_on_approval"
 		),
 		"on_trash": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment"
 			".clear_back_links_on_trash"
 		),
 	},
 	"Lead": {
 		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl"
 		),
 	},
 	"Task": {
@@ -287,7 +287,7 @@ scheduler_events = {
 # 	"Task": "cgm_shipping.task.get_dashboard_data"
 # }
 override_doctype_dashboards = {
-	"Opportunity": "cgm_shipping.cgm_worldwide_shipping.customizations.opportunity.get_dashboard_data",
+	"Opportunity": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_dashboard_data",
 }
 
 # exempt linked doctypes from being automatically cancelled

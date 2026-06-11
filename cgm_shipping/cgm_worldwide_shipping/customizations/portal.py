@@ -5,7 +5,7 @@
 The portal lets a customer (consignee) track their own shipments. A
 shipment is a `Project`; granular tracking lives on `Container Tracker`
 rows linked to the project, and the customer-vetted paperwork lives on
-the project's `custom_shipment_documents` child table (Shipment Document).
+the project's `custom_documents` child table (Shipment Document).
 
 Everything customer-facing is resolved through `customer_for_user`, which
 maps the logged-in Website User to a single Customer via the standard
@@ -484,7 +484,7 @@ def download_transaction_pdf(doctype: str, name: str, disposition: str = "attach
 # ─── Documents ───────────────────────────────────────────────────────────────
 
 
-def get_shipment_documents(project_name: str) -> list[dict]:
+def get_documents(project_name: str) -> list[dict]:
 	"""Vetted documents on a shipment that a customer may download.
 
 	Only rows that (a) have an attachment and (b) have been verified by
@@ -527,7 +527,7 @@ def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
 
 	One join over Shipment Document → Project keeps this to a single query
 	instead of one per shipment. Same vetting rule as
-	`get_shipment_documents`: attachment present and verified by staff.
+	`get_documents`: attachment present and verified by staff.
 	Each row carries its owning shipment's ref + a guarded download URL.
 	"""
 	if not customer:

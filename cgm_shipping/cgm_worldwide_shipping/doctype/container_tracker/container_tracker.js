@@ -53,7 +53,7 @@ function fetch_bl_container_options(bill_of_lading) {
 		}
 		frappe.call({
 			method:
-				"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.get_bl_container_select_options",
+				"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_bl_container_select_options",
 			args: { bill_of_lading },
 			callback(r) {
 				if (r.exc) {

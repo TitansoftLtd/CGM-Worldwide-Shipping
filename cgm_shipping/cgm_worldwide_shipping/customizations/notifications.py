@@ -3,20 +3,20 @@ from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions_service import (
-	get_user_sea_task_department_stems,
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	DAILY_STATUS_RAG_ALERT,
+	FINANCE_PAYMENT_ACTION,
+	PERMIT_INVOICES_TO_FINANCE,
+	PERMIT_RECEIPTS_FOR_DECLARANT,
+	PERMIT_RECEIPTS_VERIFY_FINANCE,
+	UCR_INVOICE_TO_FINANCE,
+	UCR_RECEIPT_FOR_DECLARANT,
+	UCR_RECEIPT_VERIFY_FINANCE,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+	user_has_declarant_department_access,
 	user_has_finance_department_access,
 )
-
-# ERPNext Notification fixture names (see fixtures/notification.json).
-FINANCE_PAYMENT_ACTION = "CGM Task - Finance Payment Action"
-PERMIT_INVOICES_TO_FINANCE = "CGM Task - Permit Invoices to Finance"
-PERMIT_RECEIPTS_FOR_DECLARANT = "CGM Task - Permit Receipts for Declarant"
-PERMIT_RECEIPTS_VERIFY_FINANCE = "CGM Task - Permit Receipts Verify Finance"
-UCR_INVOICE_TO_FINANCE = "CGM Task - UCR Invoice to Finance"
-UCR_RECEIPT_FOR_DECLARANT = "CGM Task - UCR Receipt for Declarant"
-UCR_RECEIPT_VERIFY_FINANCE = "CGM Task - UCR Receipt Verify Finance"
-DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 
 
 @frappe.request_cache
@@ -30,12 +30,11 @@ def get_task_form_permissions() -> dict[str, bool]:
 		}
 
 	user = frappe.session.user
-	department_stems = get_user_sea_task_department_stems(user)
 	can_finance = user_has_finance_department_access(user)
 
 	return {
 		"can_make_payment": can_finance,
-		"can_upload_receipt": bool(department_stems),
+		"can_upload_receipt": user_has_declarant_department_access(user),
 		"can_record_purchase_invoice": can_finance
 		or frappe.has_permission("Purchase Invoice", ptype="create"),
 	}

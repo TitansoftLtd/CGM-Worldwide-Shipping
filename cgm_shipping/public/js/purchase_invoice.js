@@ -1,7 +1,7 @@
 frappe.ui.form.on("Purchase Invoice", {
 	onload(frm) {
 		persist_cgm_source_task(frm);
-		apply_task_finance_defaults(frm);
+		apply_task_defaults(frm);
 	},
 
 	refresh(frm) {
@@ -133,7 +133,7 @@ function return_to_cgm_task(frm, opts = {}) {
 	frappe.set_route("Form", "Task", task_name);
 }
 
-function apply_task_finance_defaults(frm) {
+function apply_task_defaults(frm) {
 	if (!frm.is_new() || frm._cgm_permit_defaults_applied) {
 		return;
 	}
@@ -146,7 +146,7 @@ function apply_task_finance_defaults(frm) {
 	localStorage.setItem("cgm_pi_for_task", "1");
 
 	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.get_task_finance_defaults",
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.get_task_defaults",
 		args: { task_name },
 		callback(r) {
 			if (r.exc || !r.message) {
@@ -170,7 +170,7 @@ function apply_task_finance_defaults(frm) {
 				apply_permit_lines_to_purchase_invoice(frm, permit_items).then(() => {
 					frappe.show_alert({
 						message: __(
-							"Added {0} permit line(s) from task {1} - submit, then use CGM → Make Payment.",
+							"Added {0} line(s) from task {1} - submit, then use CGM → Make Payment.",
 							[permit_items.length, task_name]
 						),
 						indicator: "green",

@@ -66,7 +66,7 @@ function show_container_field(frm) {
 function fetch_bl_container_rows(bill_of_lading) {
 	return new Promise((resolve, reject) => {
 		frappe.call({
-			method: "cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.get_container_rows_for_bill_of_lading",
+			method: "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_container_rows_for_bill_of_lading",
 			args: { bill_of_lading },
 			callback(r) {
 				if (r.exc) {
