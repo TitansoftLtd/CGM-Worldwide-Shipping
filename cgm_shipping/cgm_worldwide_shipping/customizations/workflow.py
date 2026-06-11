@@ -1122,24 +1122,17 @@ def sync_ucr_invoice_to_finance_task(project: str) -> str | None:
 # ------------------------------------------------------------------
 
 
-@frappe.whitelist()
-def submit_ucr_invoice_to_finance(task_name: str) -> dict:
-	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-	task = frappe.get_doc("Task", task_name)
+def _ucr_invoice_pending_finance_notification(task) -> bool:
+	"""True when Create UCR has an invoice but Finance has not been notified yet."""
 	if not is_ucr_create_task(task):
-		frappe.throw("This action is only for <b>Create UCR (IDF)</b> (task 3).")
+		return False
+	if task.get("custom_ucr_invoice_submitted"):
+		return False
+	return ucr_invoice_attached(task) or ucr_invoice_attached_legacy(task)
 
-	seed_ucr_finance_lines(task)
-	if not ucr_invoice_attached(task) and not ucr_invoice_attached_legacy(task):
-		frappe.throw(
-			"Attach the <b>UCR Invoice</b> on <b>Invoices & Receipts</b> before submitting to Finance."
-		)
 
-	if task.meta.has_field("custom_ucr_invoice_submitted"):
-		task.custom_ucr_invoice_submitted = 1
-	task.save(ignore_permissions=True)
-	sync_ucr_finance_lines_to_idf_record(task)
-
+def _notify_finance_for_ucr_invoice(task) -> dict:
+	"""Copy invoice to Finance pays UCR and send the finance notification."""
 	if not task.project:
 		frappe.throw("This task is not linked to a project.")
 
@@ -1150,8 +1143,6 @@ def submit_ucr_invoice_to_finance(task_name: str) -> dict:
 		)
 
 	finance_task = frappe.get_doc("Task", finance_task_name)
-	fin_inv = get_ucr_invoice_line(finance_task)
-
 	notify_result = send_notification(
 		UCR_INVOICE_TO_FINANCE,
 		finance_task,
@@ -1171,6 +1162,56 @@ def submit_ucr_invoice_to_finance(task_name: str) -> dict:
 			audience=FINANCE_AUDIENCE,
 		),
 	}
+
+
+def auto_submit_ucr_invoice_to_finance_if_needed(task) -> dict | None:
+	"""On save: notify Finance when the declarant attaches a UCR invoice (no manual submit)."""
+	if frappe.flags.get("cgm_auto_submitting_ucr_invoice"):
+		return None
+	if not _ucr_invoice_pending_finance_notification(task):
+		return None
+
+	frappe.flags.cgm_auto_submitting_ucr_invoice = True
+	try:
+		seed_ucr_finance_lines(task)
+		if task.meta.has_field("custom_ucr_invoice_submitted"):
+			frappe.db.set_value(
+				"Task",
+				task.name,
+				"custom_ucr_invoice_submitted",
+				1,
+				update_modified=False,
+			)
+			task.custom_ucr_invoice_submitted = 1
+		sync_ucr_finance_lines_to_idf_record(task)
+		return _notify_finance_for_ucr_invoice(task)
+	finally:
+		frappe.flags.cgm_auto_submitting_ucr_invoice = False
+
+
+@frappe.whitelist()
+def submit_ucr_invoice_to_finance(task_name: str) -> dict:
+	"""Manual fallback; normal path is auto-submit on invoice attachment."""
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	task = frappe.get_doc("Task", task_name)
+	if not is_ucr_create_task(task):
+		frappe.throw("This action is only for <b>Create UCR (IDF)</b> (task 3).")
+
+	seed_ucr_finance_lines(task)
+	if not ucr_invoice_attached(task) and not ucr_invoice_attached_legacy(task):
+		frappe.throw(
+			"Attach the <b>UCR Invoice</b> on <b>Invoices & Receipts</b> before submitting to Finance."
+		)
+
+	result = auto_submit_ucr_invoice_to_finance_if_needed(task)
+	if result:
+		return result
+
+	if task.meta.has_field("custom_ucr_invoice_submitted"):
+		task.custom_ucr_invoice_submitted = 1
+		task.save(ignore_permissions=True)
+	sync_ucr_finance_lines_to_idf_record(task)
+	return _notify_finance_for_ucr_invoice(task)
 
 
 def notify_declarant_upload_ucr_receipt(task) -> dict:
