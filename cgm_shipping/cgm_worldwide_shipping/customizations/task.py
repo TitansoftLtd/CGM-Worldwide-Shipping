@@ -377,6 +377,15 @@ def task_has_finance_table(task) -> bool:
 	return bool(task.meta.has_field(TASK_FINANCE_FIELD))
 
 
+@frappe.request_cache
+def task_finance_line_has_item_code() -> bool:
+	"""True when Task Finance Line.item_code is installed (after bench migrate)."""
+	meta = frappe.get_meta("Task Finance Line")
+	if not meta.has_field("item_code"):
+		return False
+	return bool(frappe.db.has_column("Task Finance Line", "item_code"))
+
+
 def _task_seq(task) -> int:
 	return int(task.get("custom_sequence_no") or 0)
 
@@ -516,7 +525,11 @@ def _ensure_line(task, line_type: str, label: str, payment_item: str = PAYMENT_U
 	if row:
 		if not row.line_label:
 			row.line_label = label
-		if line_type == LINE_INVOICE and not row.item_code:
+		if (
+			line_type == LINE_INVOICE
+			and task_finance_line_has_item_code()
+			and not row.get("item_code")
+		):
 			row.item_code = get_purchase_item_for_payment_item(payment_item, task.company)
 		return row
 	payload = {
@@ -524,7 +537,7 @@ def _ensure_line(task, line_type: str, label: str, payment_item: str = PAYMENT_U
 		"line_type": line_type,
 		"payment_item": payment_item,
 	}
-	if line_type == LINE_INVOICE:
+	if line_type == LINE_INVOICE and task_finance_line_has_item_code():
 		payload["item_code"] = get_purchase_item_for_payment_item(payment_item, task.company)
 	task.append(TASK_FINANCE_FIELD, payload)
 	return task.get(TASK_FINANCE_FIELD)[-1]
@@ -614,12 +627,15 @@ def copy_ucr_invoice_to_finance_task(finance_task) -> None:
 		fin_line.attachment = app_line.attachment
 	if app_line.amount and not fin_line.amount:
 		fin_line.amount = app_line.amount
-	if app_line.item_code and not fin_line.item_code:
-		fin_line.item_code = app_line.item_code
-	elif not fin_line.item_code:
-		fin_line.item_code = get_purchase_item_for_payment_item(
-			PAYMENT_UCR, finance_task.company
-		)
+	if task_finance_line_has_item_code():
+		app_item = app_line.get("item_code")
+		fin_item = fin_line.get("item_code")
+		if app_item and not fin_item:
+			fin_line.item_code = app_item
+		elif not fin_item:
+			fin_line.item_code = get_purchase_item_for_payment_item(
+				PAYMENT_UCR, finance_task.company
+			)
 
 
 def ucr_payment_made_for_project(project: str) -> bool:
@@ -1582,7 +1598,11 @@ def build_ucr_purchase_invoice_lines(task) -> list[dict]:
 
 	amount = flt(inv.amount)
 	payment_item = inv.payment_item or PAYMENT_UCR
-	item_code = inv.item_code or get_purchase_item_for_payment_item(payment_item, task.company)
+	item_code = (
+		inv.get("item_code")
+		if task_finance_line_has_item_code()
+		else None
+	) or get_purchase_item_for_payment_item(payment_item, task.company)
 	item_name = frappe.db.get_value("Item", item_code, "item_name") or UCR_INVOICE_LABEL
 	desc = UCR_INVOICE_LABEL
 	if inv.attachment:
