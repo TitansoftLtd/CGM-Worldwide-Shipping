@@ -13,7 +13,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	document_types_match,
 	ensure_document_types,
 	get_document_type_link_name,

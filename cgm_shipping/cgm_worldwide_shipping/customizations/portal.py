@@ -5,7 +5,7 @@
 The portal lets a customer (consignee) track their own shipments. A
 shipment is a `Project`; granular tracking lives on `Container Tracker`
 rows linked to the project, and the customer-vetted paperwork lives on
-the project's `custom_shipment_documents` child table (Shipment Document).
+the project's `custom_documents` child table (Shipment Document).
 
 Everything customer-facing is resolved through `customer_for_user`, which
 maps the logged-in Website User to a single Customer via the standard
@@ -266,6 +266,20 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 			"custom_shipment_quantity",
 			"custom_gross_weightkg",
 			"custom_net_weightkg",
+			# Route / carrier / document fields added to Project.
+			"custom_etd",
+			"custom_country_of_origin",
+			"custom_final_destination",
+			"custom_vessel",
+			"custom_airline",
+			"custom_shipping_line",
+			"custom_bill_of_lading",
+			"custom_air_waybill",
+			"custom_description_of_goods",
+			# Pass-through charges billed on the shipment.
+			"custom_breakbulk_charges",
+			"custom_handling_charges",
+			"custom_kebs_charges",
 			"modified",
 		],
 		as_dict=True,

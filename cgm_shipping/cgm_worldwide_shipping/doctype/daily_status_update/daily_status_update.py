@@ -15,10 +15,10 @@ class DailyStatusUpdate(Document):
 	def on_submit(self):
 		if self.rag_status not in ("Red", "Yellow"):
 			return
-		from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
+		from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 			DAILY_STATUS_RAG_ALERT,
 		)
-		from cgm_shipping.cgm_worldwide_shipping.customizations.notifications_service import (
+		from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 			send_notification,
 		)
 

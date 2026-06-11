@@ -4,6 +4,10 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+cgm_shipping.patches.seed_sea_import_task_template
+cgm_shipping.patches.seed_task_requirements
+cgm_shipping.patches.seed_sea_workflow_task_gates
 cgm_shipping.patches.seed_clearance_stations
 cgm_shipping.patches.seed_cfs_locations
 cgm_shipping.patches.drop_opportunity_preshipment_status_column
+cgm_shipping.patches.update_task9_document_checkpoint
