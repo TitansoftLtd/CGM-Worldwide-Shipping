@@ -20,6 +20,7 @@
   "roles_tab",
   "section_roles",
   "custom_finance_roles",
+  "custom_finance_department",
   "custom_operations_roles",
   "custom_declaration_roles",
   "section_email_templates",
@@ -118,6 +119,13 @@
    "options": "CGM Role Item"
   },
   {
+   "fieldname": "custom_finance_department",
+   "fieldtype": "Link",
+   "label": "Finance Department",
+   "options": "Department",
+   "description": "Tasks in this Department show the Make Payment (Journal Entry) action."
+  },
+  {
    "fieldname": "custom_operations_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Operations roles",
@@ -145,11 +153,11 @@
    "fieldtype": "Code",
    "label": "Permit finance notification template"
   },
- {
-  "fieldname": "custom_ucr_finance_email_template",
-  "fieldtype": "Code",
-  "label": "UCR finance notification template"
- }
+  {
+   "fieldname": "custom_ucr_finance_email_template",
+   "fieldtype": "Code",
+   "label": "UCR finance notification template"
+  }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
