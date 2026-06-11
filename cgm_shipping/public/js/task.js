@@ -97,8 +97,8 @@ frappe.ui.form.on("Task", {
 					);
 				} else {
 					intro = __(
-						"<b>Declaration:</b> Attach <b>Permit Invoice (for Finance)</b> on each row, then click " +
-							"<b>Notify Finance - invoices ready</b>."
+						"<b>Declaration:</b> Attach <b>Permit Invoice (for Finance)</b> on every permit row and save — " +
+							"Finance is notified automatically when all invoices are attached."
 					);
 				}
 			} else if (ui.is_ucr_application) {
@@ -154,34 +154,6 @@ frappe.ui.form.on("Task", {
 					});
 				}
 			}
-		}
-
-		if (
-			ui.show_permits &&
-			is_pre_clearance_permit_application_step(frm) &&
-			frm.doc.status !== "Completed" &&
-			!frm.doc.custom_permit_invoices_submitted
-		) {
-			frm.add_custom_button(__("Notify Finance - invoices ready"), () => {
-				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.submit_permit_invoices_to_finance",
-					args: { task_name: frm.doc.name },
-					freeze: true,
-					callback(r) {
-						if (!r.exc) {
-							showWorkflowNotifyResult(r, __("Finance notified"));
-							const fin = r.message && r.message.finance_task;
-							if (fin && fin !== frm.doc.name) {
-								frappe.show_alert({
-									message: __("Finance pays Pre-Clearance Permits: {0}", [fin]),
-									indicator: "blue",
-								});
-							}
-							frm.reload_doc();
-						}
-					},
-				});
-			}).addClass("btn-primary");
 		}
 
 		if (
@@ -1016,6 +988,14 @@ frappe.ui.form.on("Permit Register", {
 		const row = locals[cdt][cdn];
 		if (row.payment_invoice) {
 			frappe.model.set_value(cdt, cdn, "status", "Invoice Submitted");
+		}
+		if (is_pre_clearance_permit_application_step(frm) && row.payment_invoice) {
+			frappe.show_alert({
+				message: __(
+					"Permit invoice saved — Finance will be notified when all invoices are attached and you save."
+				),
+				indicator: "green",
+			});
 		}
 		if (frm.doc.status !== "Completed") {
 			frm.save();

@@ -405,21 +405,18 @@ def prepare_finance_permit_task(application_task) -> str | None:
 # ------------------------------------------------------------------
 
 
-@frappe.whitelist()
-def submit_permit_invoices_to_finance(task_name: str) -> dict:
-	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-	task = frappe.get_doc("Task", task_name)
+def _permit_invoices_pending_finance_notification(task) -> bool:
+	"""True when all permit invoices are attached but Finance has not been notified yet."""
 	if not is_permit_application_task_doc(task):
-		frappe.throw("This action is only for permit application tasks (5 and 15).")
+		return False
+	if task.get("custom_permit_invoices_submitted"):
+		return False
+	return has_all_permit_invoices(task)
 
-	if not has_all_permit_invoices(task):
-		frappe.throw(
-			"Attach <b>Permit Invoice (for Finance)</b> on every row in <b>Task Permits</b> first."
-		)
 
+def _notify_finance_for_permit_invoices(task) -> dict:
+	"""Sync permit invoices to Project/Finance task and send the finance notification."""
 	sync_task_permits_to_project(task)
-	task.custom_permit_invoices_submitted = 1
-	task.save(ignore_permissions=True)
 
 	finance_name = prepare_finance_permit_task(task)
 	if not finance_name:
@@ -435,8 +432,6 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 		audience=FINANCE_AUDIENCE,
 	)
 
-	from frappe.utils import get_url
-
 	return {
 		"task": task.name,
 		"status": task.status,
@@ -449,6 +444,52 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 			audience=FINANCE_AUDIENCE,
 		),
 	}
+
+
+def auto_submit_permit_invoices_to_finance_if_needed(task) -> dict | None:
+	"""On save: notify Finance when all permit invoices are attached (no manual submit)."""
+	if frappe.flags.get("cgm_auto_submitting_permit_invoices"):
+		return None
+	if not _permit_invoices_pending_finance_notification(task):
+		return None
+
+	frappe.flags.cgm_auto_submitting_permit_invoices = True
+	try:
+		if task.meta.has_field("custom_permit_invoices_submitted"):
+			frappe.db.set_value(
+				"Task",
+				task.name,
+				"custom_permit_invoices_submitted",
+				1,
+				update_modified=False,
+			)
+			task.custom_permit_invoices_submitted = 1
+		return _notify_finance_for_permit_invoices(task)
+	finally:
+		frappe.flags.cgm_auto_submitting_permit_invoices = False
+
+
+@frappe.whitelist()
+def submit_permit_invoices_to_finance(task_name: str) -> dict:
+	"""Manual fallback; normal path is auto-submit when all permit invoices are attached."""
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	task = frappe.get_doc("Task", task_name)
+	if not is_permit_application_task_doc(task):
+		frappe.throw("This action is only for permit application tasks (5 and 15).")
+
+	if not has_all_permit_invoices(task):
+		frappe.throw(
+			"Attach <b>Permit Invoice (for Finance)</b> on every row in <b>Task Permits</b> first."
+		)
+
+	result = auto_submit_permit_invoices_to_finance_if_needed(task)
+	if result:
+		return result
+
+	if task.meta.has_field("custom_permit_invoices_submitted"):
+		task.custom_permit_invoices_submitted = 1
+		task.save(ignore_permissions=True)
+	return _notify_finance_for_permit_invoices(task)
 
 
 def notify_declarant_upload_permit_receipts(task) -> dict:
@@ -563,7 +604,8 @@ def validate_permit_application_can_complete(task) -> None:
 
 	if not task.get("custom_permit_invoices_submitted"):
 		frappe.throw(
-			"Click <b>Notify Finance - invoices ready</b> before completing this task."
+			"Attach all permit invoices and save — Finance is notified automatically — "
+			"before completing this task."
 		)
 
 	if not finance_payment_completed(task.project, seq):

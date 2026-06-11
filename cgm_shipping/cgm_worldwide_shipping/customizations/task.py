@@ -2238,6 +2238,17 @@ def on_task_update(doc, _method=None):
 
 		try_auto_complete_permit_finance_task(doc)
 
+	if (
+		_is_sea_task(doc)
+		and is_permit_application_task(seq)
+		and doc.status not in ("Completed", "Cancelled")
+	):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			auto_submit_permit_invoices_to_finance_if_needed,
+		)
+
+		auto_submit_permit_invoices_to_finance_if_needed(doc)
+
 	if frappe.flags.get("cgm_skip_task_project_sync"):
 		return
 	if doc.get("project"):

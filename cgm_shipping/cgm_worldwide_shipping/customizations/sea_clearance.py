@@ -302,8 +302,8 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 
 		if not permit_invoices_ready_for_project(project, "Pre-clearance"):
 			frappe.throw(
-				"Submit all permit invoices to Finance on <b>Apply for Pre-Clearance Permits</b> "
-				"using <b>Notify Finance - invoices ready</b> before advancing workflow."
+				"Attach all permit invoices on <b>Apply for Pre-Clearance Permits</b> and save — "
+				"Finance is notified automatically — before advancing workflow."
 			)
 		return
 
