@@ -516,15 +516,17 @@ def _ensure_line(task, line_type: str, label: str, payment_item: str = PAYMENT_U
 	if row:
 		if not row.line_label:
 			row.line_label = label
+		if line_type == LINE_INVOICE and not row.item_code:
+			row.item_code = get_purchase_item_for_payment_item(payment_item, task.company)
 		return row
-	task.append(
-		TASK_FINANCE_FIELD,
-		{
-			"line_label": label,
-			"line_type": line_type,
-			"payment_item": payment_item,
-		},
-	)
+	payload = {
+		"line_label": label,
+		"line_type": line_type,
+		"payment_item": payment_item,
+	}
+	if line_type == LINE_INVOICE:
+		payload["item_code"] = get_purchase_item_for_payment_item(payment_item, task.company)
+	task.append(TASK_FINANCE_FIELD, payload)
 	return task.get(TASK_FINANCE_FIELD)[-1]
 
 
@@ -612,6 +614,12 @@ def copy_ucr_invoice_to_finance_task(finance_task) -> None:
 		fin_line.attachment = app_line.attachment
 	if app_line.amount and not fin_line.amount:
 		fin_line.amount = app_line.amount
+	if app_line.item_code and not fin_line.item_code:
+		fin_line.item_code = app_line.item_code
+	elif not fin_line.item_code:
+		fin_line.item_code = get_purchase_item_for_payment_item(
+			PAYMENT_UCR, finance_task.company
+		)
 
 
 def ucr_payment_made_for_project(project: str) -> bool:
@@ -1426,6 +1434,38 @@ def _task_context(task) -> dict:
 	}
 
 
+PAYMENT_ITEM_ITEM_CANDIDATES: dict[str, tuple[str, ...]] = {
+	"UCR": ("UCR Fee", "UCR", "CGM-UCR", "Import UCR"),
+	"Shipping Line": ("Shipping Line Charge", "Shipping Line", "Line Charges"),
+	"Customs Entry": ("Customs Entry", "Entry Payment", "Customs Entry Charge"),
+	"KPA": ("KPA Invoice", "KPA", "KPA Charge"),
+}
+
+
+def candidates_for_payment_item(payment_item: str) -> list[str]:
+	key = (payment_item or "").strip()
+	if not key:
+		return []
+	out: list[str] = []
+	for value in PAYMENT_ITEM_ITEM_CANDIDATES.get(key, ()):
+		out.append(value)
+	out.extend((f"{key} Charge", key, key.upper(), key.title()))
+	return out
+
+
+def resolve_purchase_item_for_payment_item(payment_item: str) -> str | None:
+	"""Return Item code for a task finance payment item, or None if no match."""
+	return _resolve_item_code(candidates_for_payment_item(payment_item))
+
+
+def get_purchase_item_for_payment_item(payment_item: str, company: str | None = None) -> str:
+	"""Item for PI line from Task Finance Line payment_item (UCR, KPA, etc.)."""
+	item = resolve_purchase_item_for_payment_item(payment_item)
+	if item:
+		return item
+	return get_default_purchase_item_code(company)
+
+
 def get_default_purchase_item_code(company: str | None = None) -> str:
 	"""Default PI item for permit / clearance lines."""
 	settings_item = None
@@ -1530,6 +1570,38 @@ def build_permit_purchase_invoice_lines(task) -> list[dict]:
 	return lines
 
 
+def build_ucr_purchase_invoice_lines(task) -> list[dict]:
+	"""Purchase Invoice Item rows from the UCR invoice finance line on Finance pays UCR."""
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not is_ucr_finance_payment_task(seq):
+		return []
+
+	inv = get_ucr_invoice_line(task)
+	if not inv or not flt(inv.amount):
+		return []
+
+	amount = flt(inv.amount)
+	payment_item = inv.payment_item or PAYMENT_UCR
+	item_code = inv.item_code or get_purchase_item_for_payment_item(payment_item, task.company)
+	item_name = frappe.db.get_value("Item", item_code, "item_name") or UCR_INVOICE_LABEL
+	desc = UCR_INVOICE_LABEL
+	if inv.attachment:
+		desc += f" (ref: {inv.attachment.split('/')[-1]})"
+
+	return [
+		{
+			"item_code": item_code,
+			"item_name": item_name,
+			"description": desc,
+			"qty": 1,
+			"rate": amount,
+			"amount": amount,
+			"project": task.project,
+			"payment_item": payment_item,
+		}
+	]
+
+
 @frappe.whitelist()
 def get_task_defaults(task_name: str) -> dict:
 	"""Defaults for Purchase Invoice / Payment Entry opened from a finance Task."""
@@ -1538,15 +1610,21 @@ def get_task_defaults(task_name: str) -> dict:
 	frappe.has_permission("Task", ptype="read", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
 	ctx = _task_context(task)
-	if is_permit_finance_payment_task(int(task.get("custom_sequence_no") or 0)):
+	seq = int(task.get("custom_sequence_no") or 0)
+	if is_permit_finance_payment_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			ensure_finance_permit_rows_saved,
 		)
 
 		ensure_finance_permit_rows_saved(task)
 		task.reload()
+	if is_ucr_finance_payment_task(seq):
+		ensure_ucr_finance_lines_saved(task)
+		task.reload()
 	permit_rows = get_permit_rows_for_purchase_invoice(task)
 	permit_lines = build_permit_purchase_invoice_lines(task)
+	ucr_lines = build_ucr_purchase_invoice_lines(task)
+	finance_line_items = permit_lines + ucr_lines
 	remarks = f"{task.subject} ({task.name}) - {ctx['project']}"
 	if is_ucr_finance_payment_task(int(task.get("custom_sequence_no") or 0)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -1556,12 +1634,14 @@ def get_task_defaults(task_name: str) -> dict:
 		app_task = get_ucr_application_task(task.project) if task.project else None
 		if app_task:
 			remarks += f" | UCR invoice on task {app_task}"
+		if ucr_lines:
+			remarks += f" | {UCR_INVOICE_LABEL}: {flt(ucr_lines[0].get('rate'))}"
 	if permit_rows:
 		remarks += " | Permits: " + ", ".join(r["permit_type"] for r in permit_rows if r.get("permit_type"))
 
 	return {
 		**ctx,
-		"permit_line_items": permit_lines,
+		"permit_line_items": finance_line_items,
 		"purchase_invoice_defaults": {
 			"project": ctx["project"],
 			"company": ctx["company"],

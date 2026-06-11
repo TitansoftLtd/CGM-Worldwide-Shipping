@@ -170,7 +170,7 @@ function apply_task_defaults(frm) {
 				apply_permit_lines_to_purchase_invoice(frm, permit_items).then(() => {
 					frappe.show_alert({
 						message: __(
-							"Added {0} permit line(s) from task {1} - submit, then use CGM → Make Payment.",
+							"Added {0} line(s) from task {1} - submit, then use CGM → Make Payment.",
 							[permit_items.length, task_name]
 						),
 						indicator: "green",

@@ -109,7 +109,7 @@ frappe.ui.form.on("Task", {
 			} else if (ui.is_ucr_finance) {
 				intro = __(
 					"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
-						"<b>2</b> <b>Actions → Create Purchase Invoice & Pay</b> · " +
+						"<b>2</b> <b>Actions → Create Purchase Invoice & Pay</b> (UCR item and amount pre-filled from this task) · " +
 						"<b>3 Declarant:</b> Upload <b>UCR Receipt</b> and IDF certificate on <b>Create UCR (IDF)</b> · " +
 						"<b>4 Finance:</b> Verify receipt - this task completes automatically when the receipt is verified."
 				);
@@ -692,16 +692,16 @@ function configure_finance_line_grid(frm, ui) {
 	}
 
 	if (is_ucr_application_step(frm, seq)) {
-		const attachment_df = grid.get_docfield("attachment");
-		if (attachment_df) {
-			attachment_df.read_only = 0;
-		}
+		grid.update_docfield_property("attachment", "read_only", 0);
+		grid.update_docfield_property("amount", "read_only", 0);
+		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_ucr_finance_step(frm, seq)) {
-		const attachment_df = grid.get_docfield("attachment");
-		if (attachment_df) {
-			// Invoice and receipt are copied from Create UCR (IDF); Finance verifies only.
-			attachment_df.read_only = 1;
-		}
+		// Invoice and receipt are copied from Create UCR (IDF); Finance verifies only.
+		grid.update_docfield_property("attachment", "read_only", 1);
+		grid.update_docfield_property("amount", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "hidden", 0);
 	}
 
 	frm._cgm_finance_grid_ready = true;
@@ -862,9 +862,9 @@ function apply_ucr_application_intro(frm, status) {
 		);
 	} else {
 		intro = __(
-			"<b>Declarant:</b> Attach <b>UCR Invoice</b> on <b>Invoices & Receipts</b> and save — " +
-				"Finance is notified automatically. After payment, attach the supplier <b>UCR Receipt</b> " +
-				"and the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
+			"<b>Declarant:</b> Attach <b>UCR Invoice</b>, enter the <b>Amount</b>, and save on " +
+				"<b>Invoices & Receipts</b> — Finance is notified automatically. After payment, attach the " +
+				"supplier <b>UCR Receipt</b> and the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
 		);
 	}
 	set_task_intro(frm, intro);

@@ -8,6 +8,7 @@
   "line_label",
   "line_type",
   "payment_item",
+  "item_code",
   "attachment",
   "amount",
   "verified",
@@ -38,6 +39,15 @@
    "options": "UCR\nShipping Line\nCustoms Entry\nKPA"
   },
   {
+   "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line.",
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Purchase Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
    "fieldname": "attachment",
    "fieldtype": "Attach",
    "in_list_view": 1,
@@ -66,6 +76,7 @@
   {
    "fieldname": "amount",
    "fieldtype": "Currency",
+   "in_list_view": 1,
    "label": "Amount"
   }
  ],
