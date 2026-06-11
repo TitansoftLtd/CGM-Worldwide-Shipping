@@ -154,9 +154,54 @@ def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
 	return set(get_sea_task_template_department_stems()) & user_roles(user)
 
 
+@frappe.request_cache
+def configured_declaration_roles() -> frozenset[str]:
+	"""Declarant roles from CGM Shipping Settings → Roles tab."""
+	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+		return frozenset()
+	meta = frappe.get_meta("CGM Shipping Settings")
+	if not meta.has_field("custom_declaration_roles"):
+		return frozenset()
+	rows = frappe.get_single("CGM Shipping Settings").get("custom_declaration_roles") or []
+	return frozenset(row.role for row in rows if row.role)
+
+
+@frappe.request_cache
+def declarant_application_department_stems() -> frozenset[str]:
+	"""Template department stems for UCR / permit application tasks."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		permit_application_sequences,
+		ucr_application_sequences,
+	)
+
+	stems: set[str] = set()
+	for seq in permit_application_sequences() | ucr_application_sequences():
+		stem = department_stem_for_sequence(seq)
+		if stem:
+			stems.add(stem)
+	return frozenset(stems)
+
+
+def user_has_declarant_department_access(user: str | None = None) -> bool:
+	"""True when the user may upload permit/UCR proofs on declarant workflow tasks."""
+	roles = user_roles(user)
+	if roles & declarant_application_department_stems():
+		return True
+	return bool(roles & configured_declaration_roles())
+
+
 def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool:
 	stem = department_stem_for_sequence(sequence_no)
-	return bool(stem and stem in user_roles(user))
+	if stem and stem in user_roles(user):
+		return True
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_permit_application_task,
+		is_ucr_application_task,
+	)
+
+	if is_permit_application_task(sequence_no) or is_ucr_application_task(sequence_no):
+		return user_has_declarant_department_access(user)
+	return False
 
 
 @frappe.request_cache
@@ -319,6 +364,12 @@ def user_can_access_sea_task(
 	if department_matches_stems(department, get_user_sea_task_department_stems(user)):
 		return True
 
+	if (
+		normalize_department_stem(department) in declarant_application_department_stems()
+		and user_has_declarant_department_access(user)
+	):
+		return True
+
 	if _user_can_access_sea_payment_task_by_role(doc, user):
 		return True
 
@@ -405,7 +456,9 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	if user_bypasses_sea_task_department_filter(user):
 		return None
 
-	stems = get_user_sea_task_department_stems(user)
+	stems = set(get_user_sea_task_department_stems(user))
+	if user_has_declarant_department_access(user):
+		stems |= set(declarant_application_department_stems())
 	escaped_user = frappe.db.escape(user)
 	assign_token = frappe.db.escape(f'"{user}"')
 	non_sea = f"(IFNULL(`tabTask`.`custom_task_flow_key`, '') != {frappe.db.escape(SEA_TASK_FLOW_KEY)})"

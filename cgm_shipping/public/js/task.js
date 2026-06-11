@@ -61,6 +61,9 @@ frappe.ui.form.on("Task", {
 			apply_sea_task_form_layout(frm, ui);
 			frm._cgm_sea_layout_ready = true;
 		}
+		if (ui.show_permits) {
+			configure_permit_grid(frm);
+		}
 
 		frm.set_df_property("status", "read_only", 1);
 		const show_completion_meta = frm.doc.status === "Completed";
@@ -891,16 +894,21 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property(fn, "hidden", 1);
 	});
 
-	const invoices_sent = frm.doc.custom_permit_invoices_submitted;
-	const can_upload_proof = user_can_upload_receipt(frm);
+	const invoices_sent = cint(frm.doc.custom_permit_invoices_submitted);
+	const invoices_ready = invoices_sent || permit_rows_have_invoices(frm);
+	const can_upload_proof =
+		user_can_upload_receipt(frm) ||
+		frm.doc.owner === frappe.session.user ||
+		frappe.session.user === "Administrator";
 
 	if (is_permit_application_step(frm, seq)) {
-		grid.update_docfield_property("payment_invoice", "read_only", invoices_sent ? 1 : 0);
-		grid.update_docfield_property("payment_receipt", "hidden", invoices_sent ? 0 : 1);
+		grid.update_docfield_property("payment_invoice", "read_only", invoices_sent ? 1 : can_upload_proof ? 0 : 1);
+		grid.update_docfield_property("invoice_amount", "read_only", invoices_sent ? 1 : can_upload_proof ? 0 : 1);
+		grid.update_docfield_property("payment_receipt", "hidden", invoices_ready ? 0 : 1);
 		grid.update_docfield_property("payment_receipt", "read_only", can_upload_proof ? 0 : 1);
-		grid.update_docfield_property("permit_document", "hidden", invoices_sent ? 0 : 1);
+		grid.update_docfield_property("permit_document", "hidden", invoices_ready ? 0 : 1);
 		grid.update_docfield_property("permit_document", "read_only", can_upload_proof ? 0 : 1);
-		grid.update_docfield_property("receipt_verified", "hidden", invoices_sent ? 0 : 1);
+		grid.update_docfield_property("receipt_verified", "hidden", invoices_ready ? 0 : 1);
 		grid.update_docfield_property("receipt_verified", "read_only", 1);
 	} else if (is_permit_finance_step(frm, seq)) {
 		["payment_invoice", "purchase_invoice", "payment_entry", "permit_document"].forEach((fn) => {
