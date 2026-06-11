@@ -47,6 +47,17 @@ frappe.ui.form.on("Task", {
 		frm.set_query("department", () => ({
 			filters: { parent_department: ["like", "Operations%"] },
 		}));
+		if (frm._cgm_finance_department === undefined) {
+			frm._cgm_finance_department = null;
+			frappe.db
+				.get_single_value("CGM Shipping Settings", "custom_finance_department")
+				.then((dept) => {
+					frm._cgm_finance_department = dept || null;
+					if (dept) {
+						frm.trigger("refresh");
+					}
+				});
+		}
 	},
 
 	before_save(frm) {
@@ -91,7 +102,7 @@ frappe.ui.form.on("Task", {
 				const seq = sea_task_sequence(frm);
 				if (is_permit_finance_step(frm, seq)) {
 					intro = __(
-						"<b>1 Finance:</b> Create PI & <b>Make Payment</b> · " +
+						"<b>1 Finance:</b> <b>Make Payment</b> (records a Journal Entry) · " +
 							"<b>2 Declarant:</b> Upload receipts on <b>Apply for Pre-Clearance Permits</b> · " +
 							"<b>3 Finance:</b> Use <b>Actions → Verify All Receipts</b> - this task and the declarant task complete automatically."
 					);
@@ -114,14 +125,14 @@ frappe.ui.form.on("Task", {
 			} else if (ui.is_ucr_finance) {
 				intro = __(
 					"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
-						"<b>2</b> <b>Actions → Create Purchase Invoice & Pay</b> (UCR item and amount pre-filled from this task) · " +
+						"<b>2</b> Use <b>Actions → Make Payment</b> to record the payment as a Journal Entry · " +
 						"<b>3 Declarant:</b> Upload <b>UCR Receipt</b> and IDF certificate on <b>Create UCR (IDF)</b> · " +
 						"<b>4 Finance:</b> Verify receipt - this task completes automatically when the receipt is verified."
 				);
 				intro_set = true;
 			} else if (ui.show_payments) {
 				intro = __(
-					"Attach the <b>Supplier Invoice</b> on Task Documents for Accounts, then <b>Create Purchase Invoice</b> and <b>Make Payment</b>."
+					"Use <b>Make Payment</b> to record this payment as a Journal Entry (Finance department)."
 				);
 			}
 			if (!intro_set) {
@@ -224,41 +235,25 @@ frappe.ui.form.on("Task", {
 			});
 		}
 
-		if (ui.show_payments && frm.doc.status !== "Completed" && frm.doc.status !== "Cancelled") {
-			if (!frm.doc.custom_purchase_invoice && user_can_record_purchase_invoice(frm)) {
-				add_cgm_toolbar_button(frm, __("Create Purchase Invoice & Pay"), () => {
-					open_purchase_invoice_from_task(frm);
+		// Finance department: Make Payment via draft Journal Entry. Department-driven
+		// (configured in CGM Shipping Settings), independent of the sea-flow sequence.
+		if (
+			is_finance_department_task(frm) &&
+			user_can_make_payment(frm) &&
+			frm.doc.status !== "Completed" &&
+			frm.doc.status !== "Cancelled"
+		) {
+			if (frm.doc.custom_journal_entry) {
+				add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
+					frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
 				});
-			}
-			if (frm.doc.custom_purchase_invoice && !frm.doc.custom_payment_entry && user_can_make_payment(frm)) {
-				add_cgm_toolbar_button(frm, __("Make Payment"), () => {
-					open_payment_entry_from_task(frm);
-				});
-			}
-			if (frm.doc.custom_purchase_invoice && frm.doc.project && user_can_record_purchase_invoice(frm)) {
-				add_cgm_toolbar_button(frm, __("Sync PI Project"), () => sync_pi_project_from_task(frm));
-			}
-			if (
-				!frm.doc.custom_purchase_invoice &&
-				user_can_record_purchase_invoice(frm) &&
-				frm.doc.status !== "Completed"
-			) {
-				add_cgm_toolbar_button(frm, __("Link Invoice & Payment"), () => {
-					frappe.call({
-						method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.sync_finance_links_from_documents",
-						args: { task_name: frm.doc.name },
-						freeze: true,
-						callback(r) {
-							if (!r.exc) {
-								frappe.show_alert({
-									message: r.message?.message || __("Finance documents linked"),
-									indicator: "green",
-								});
-								frm.reload_doc();
-							}
-						},
-					});
-				}).addClass("btn-primary");
+			} else {
+				add_cgm_toolbar_button(
+					frm,
+					__("Make Payment"),
+					() => open_journal_entry_payment_dialog(frm),
+					{ primary: true }
+				);
 			}
 		}
 
@@ -1142,86 +1137,96 @@ function user_can_upload_receipt(frm) {
 	);
 }
 
-function open_purchase_invoice_from_task(frm) {
-	if (!frm.doc.project) {
-		frappe.msgprint(__("This task must be linked to a Project first."));
-		return;
-	}
-	localStorage.setItem("cgm_return_task", frm.doc.name);
-	localStorage.setItem("cgm_pi_for_task", "1");
-	frappe.route_options = {
-		custom_cgm_source_task: frm.doc.name,
-		project: frm.doc.project,
-	};
-	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.get_task_defaults",
-		args: { task_name: frm.doc.name },
-		callback(r) {
-			if (r.exc || !r.message) {
-				return;
-			}
-			frappe.new_doc("Purchase Invoice");
-		},
-	});
+// ─── Make Payment → draft Journal Entry (Finance department) ──────────────────
+
+function is_finance_department_task(frm) {
+	const finance_dept =
+		frm._cgm_finance_department || get_cgm_sea_seq_config(frm).finance_department;
+	return Boolean(finance_dept && frm.doc.department && frm.doc.department === finance_dept);
 }
 
-function sync_pi_project_from_task(frm) {
-	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.sync_finance_docs_from_task",
-		args: { task_name: frm.doc.name },
-		callback(r) {
-			if (!r.exc) {
-				frappe.show_alert({
-					message: __("Purchase Invoice updated with Project {0}", [r.message.project]),
-					indicator: "green",
-				});
-			}
-		},
-	});
+function journal_account_filters(frm, bank_or_cash) {
+	const filters = { is_group: 0 };
+	if (frm.doc.company) {
+		filters.company = frm.doc.company;
+	}
+	if (bank_or_cash) {
+		filters.account_type = ["in", ["Bank", "Cash"]];
+	}
+	return filters;
 }
 
-function open_payment_entry_from_task(frm) {
-	const pi = frm.doc.custom_purchase_invoice;
-	if (!pi) {
-		frappe.msgprint(__("Link a submitted Purchase Invoice on this task first."));
+function open_journal_entry_payment_dialog(frm) {
+	if (!frm.doc.name || frm.is_new()) {
+		frappe.msgprint(__("Save the task before making a payment."));
 		return;
 	}
-	localStorage.setItem("cgm_return_task", frm.doc.name);
-	localStorage.setItem("cgm_pe_for_task", "1");
-	frappe.route_options = {
-		custom_cgm_source_task: frm.doc.name,
-		project: frm.doc.project,
-	};
-	frappe.call({
-		method: "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry",
-		args: {
-			dt: "Purchase Invoice",
-			dn: pi,
-		},
-		freeze: true,
-		freeze_message: __("Building Payment Entry for {0}…", [pi]),
-		callback(r) {
-			if (r.exc || !r.message) {
-				return;
-			}
-			const doclist = frappe.model.sync(r.message);
-			const pe = doclist[0];
-			if (pe && frm.doc.project) {
-				frappe.model.set_value(pe.doctype, pe.name, "project", frm.doc.project);
-				frappe.model.set_value(
-					pe.doctype,
-					pe.name,
-					"custom_cgm_source_task",
-					frm.doc.name
-				);
-			}
-			frappe.set_route("Form", pe.doctype, pe.name);
-			frappe.show_alert({
-				message: __("Payment Entry prefilled against {0}", [pi]),
-				indicator: "blue",
+	const dialog = new frappe.ui.Dialog({
+		title: __("Make Payment - Journal Entry"),
+		size: "large",
+		fields: [
+			{ fieldname: "posting_date", label: __("Posting Date"), fieldtype: "Date", default: frappe.datetime.get_today(), reqd: 1 },
+			{ fieldname: "amount", label: __("Amount"), fieldtype: "Currency", reqd: 1 },
+			{ fieldname: "cb1", fieldtype: "Column Break" },
+			{ fieldname: "cheque_no", label: __("Reference No"), fieldtype: "Data" },
+			{ fieldname: "cheque_date", label: __("Reference Date"), fieldtype: "Date" },
+			{ fieldname: "sec_accounts", fieldtype: "Section Break", label: __("Accounts") },
+			{
+				fieldname: "pay_to_account",
+				label: __("Pay To: Account (Debit)"),
+				fieldtype: "Link",
+				options: "Account",
+				reqd: 1,
+				get_query: () => ({ filters: journal_account_filters(frm, false) }),
+			},
+			{
+				fieldname: "pay_from_account",
+				label: __("Pay From: Account (Credit)"),
+				fieldtype: "Link",
+				options: "Account",
+				reqd: 1,
+				get_query: () => ({ filters: journal_account_filters(frm, true) }),
+			},
+			{ fieldname: "sec_party", fieldtype: "Section Break", label: __("Party (only for Payable/Receivable accounts)"), collapsible: 1 },
+			{ fieldname: "party_type", label: __("Party Type"), fieldtype: "Link", options: "Party Type" },
+			{ fieldname: "party", label: __("Party"), fieldtype: "Dynamic Link", options: "party_type" },
+			{ fieldname: "sec_remark", fieldtype: "Section Break" },
+			{ fieldname: "user_remark", label: __("Remark"), fieldtype: "Small Text" },
+		],
+		primary_action_label: __("Create Journal Entry"),
+		primary_action(values) {
+			frappe.call({
+				method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.create_journal_payment_from_task",
+				args: {
+					task_name: frm.doc.name,
+					amount: values.amount,
+					pay_from_account: values.pay_from_account,
+					pay_to_account: values.pay_to_account,
+					posting_date: values.posting_date,
+					party_type: values.party_type,
+					party: values.party,
+					cheque_no: values.cheque_no,
+					cheque_date: values.cheque_date,
+					user_remark: values.user_remark,
+				},
+				freeze: true,
+				freeze_message: __("Creating Journal Entry…"),
+				callback(r) {
+					if (r.exc || !r.message) {
+						return;
+					}
+					dialog.hide();
+					frappe.show_alert({
+						message: __("Draft Journal Entry {0} created", [r.message]),
+						indicator: "green",
+					});
+					frm.reload_doc();
+					frappe.set_route("Form", "Journal Entry", r.message);
+				},
 			});
 		},
 	});
+	dialog.show();
 }
 
 function user_can_record_purchase_invoice(frm) {

@@ -363,6 +363,9 @@ def get_sea_task_ui_sequences() -> dict:
 		"ucr_finance_seqs": ucr_finance,
 		"permit_stage_by_seq": {str(k): v for k, v in stage_by_seq.items()},
 		"permissions": get_task_form_permissions(),
+		"finance_department": frappe.db.get_single_value(
+			"CGM Shipping Settings", "custom_finance_department"
+		),
 	}
 
 
@@ -1493,6 +1496,115 @@ def _task_context(task) -> dict:
 	}
 
 
+@frappe.whitelist()
+def create_journal_payment_from_task(
+	task_name: str,
+	amount,
+	pay_from_account: str,
+	pay_to_account: str,
+	posting_date: str | None = None,
+	party_type: str | None = None,
+	party: str | None = None,
+	cheque_no: str | None = None,
+	cheque_date: str | None = None,
+	user_remark: str | None = None,
+) -> str:
+	"""Create a *draft* Journal Entry to pay a finance Task.
+
+	Accounts are chosen in the dialog: ``pay_to_account`` is debited (the expense
+	or payable being settled) and ``pay_from_account`` (Bank/Cash) is credited.
+	A Party is attached to whichever account is a Payable/Receivable account.
+	"""
+	from frappe.utils import flt, getdate, today
+
+	if not task_name or not frappe.db.exists("Task", task_name):
+		frappe.throw("Task not found.")
+	frappe.has_permission("Task", ptype="read", doc=task_name, throw=True)
+	frappe.has_permission("Journal Entry", ptype="create", throw=True)
+
+	task = frappe.get_doc("Task", task_name)
+	amount = flt(amount)
+	if amount <= 0:
+		frappe.throw("Enter a payment <b>Amount</b> greater than zero.")
+	if not pay_from_account or not pay_to_account:
+		frappe.throw("Select both the <b>Pay From</b> and <b>Pay To</b> accounts.")
+	if pay_from_account == pay_to_account:
+		frappe.throw("<b>Pay From</b> and <b>Pay To</b> accounts must be different.")
+
+	company = task.company or (
+		frappe.db.get_value("Project", task.project, "company") if task.project else None
+	)
+	if not company:
+		company = frappe.db.get_value("Account", pay_from_account, "company")
+	if not company:
+		frappe.throw("Could not determine the Company for this payment.")
+
+	for acc in (pay_from_account, pay_to_account):
+		acc_company = frappe.db.get_value("Account", acc, "company")
+		if acc_company and acc_company != company:
+			frappe.throw(f"Account <b>{acc}</b> does not belong to company <b>{company}</b>.")
+
+	pay_to_type = frappe.db.get_value("Account", pay_to_account, "account_type")
+	pay_from_type = frappe.db.get_value("Account", pay_from_account, "account_type")
+	party_side = None
+	if pay_to_type in ("Payable", "Receivable"):
+		party_side = "to"
+	elif pay_from_type in ("Payable", "Receivable"):
+		party_side = "from"
+	if party_side and not (party and party_type):
+		frappe.throw(
+			"A selected account is a <b>Party</b> account — choose a Party Type and Party."
+		)
+
+	remark = user_remark or f"{task.subject} ({task.name})"
+
+	company_currency = frappe.get_cached_value("Company", company, "default_currency")
+	from_currency = frappe.db.get_value("Account", pay_from_account, "account_currency") or company_currency
+	to_currency = frappe.db.get_value("Account", pay_to_account, "account_currency") or company_currency
+
+	je = frappe.new_doc("Journal Entry")
+	je.voucher_type = "Journal Entry"
+	je.company = company
+	if from_currency != company_currency or to_currency != company_currency:
+		je.multi_currency = 1
+	je.posting_date = getdate(posting_date) if posting_date else today()
+	je.user_remark = remark
+	if cheque_no:
+		je.cheque_no = cheque_no
+	if cheque_date:
+		je.cheque_date = getdate(cheque_date)
+	if je.meta.has_field("custom_cgm_source_task"):
+		je.custom_cgm_source_task = task.name
+
+	debit_row = {
+		"account": pay_to_account,
+		"debit_in_account_currency": amount,
+		"project": task.project,
+		"user_remark": remark,
+	}
+	credit_row = {
+		"account": pay_from_account,
+		"credit_in_account_currency": amount,
+		"project": task.project,
+		"user_remark": remark,
+	}
+	if party_side == "to":
+		debit_row.update({"party_type": party_type, "party": party})
+	elif party_side == "from":
+		credit_row.update({"party_type": party_type, "party": party})
+
+	je.append("accounts", debit_row)
+	je.append("accounts", credit_row)
+	je.insert()
+
+	if task.meta.has_field("custom_journal_entry"):
+		frappe.db.set_value(
+			"Task", task.name, "custom_journal_entry", je.name, update_modified=False
+		)
+
+	return je.name
+
+
 PAYMENT_ITEM_ITEM_CANDIDATES: dict[str, tuple[str, ...]] = {
 	"UCR": ("UCR Fee", "UCR", "CGM-UCR", "Import UCR"),
 	"Shipping Line": ("Shipping Line Charge", "Shipping Line", "Line Charges"),
@@ -2060,42 +2172,6 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 		"status": task.status,
 		"payment_entry": payment_entry,
 		"auto_completed": True,
-	}
-
-
-@frappe.whitelist()
-def sync_finance_docs_from_task(task_name: str) -> dict:
-	"""Backfill Project on PI linked to a finance task (e.g. after upgrade)."""
-	if not task_name or not frappe.db.exists("Task", task_name):
-		frappe.throw("Task not found.")
-	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-	task = frappe.get_doc("Task", task_name)
-	out = {"task": task_name, "project": task.project}
-	if task.get("custom_purchase_invoice"):
-		apply_project_from_task_to_purchase_invoice(task.custom_purchase_invoice, task_name)
-		out["purchase_invoice"] = task.custom_purchase_invoice
-	return out
-
-
-@frappe.whitelist()
-def sync_finance_links_from_documents(task_name: str) -> dict:
-	"""Link submitted PI/PE that reference this task (repair / backfill)."""
-	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-	pi_name = frappe.db.get_value(
-		"Purchase Invoice",
-		{"custom_cgm_source_task": task_name, "docstatus": 1},
-		"name",
-		order_by="modified desc",
-	)
-	if not pi_name:
-		frappe.throw("No submitted Purchase Invoice found for this task.")
-	job_link_pi_to_task(task_name, pi_name)
-	task = frappe.get_doc("Task", task_name)
-	return {
-		"task": task_name,
-		"purchase_invoice": task.get("custom_purchase_invoice") or pi_name,
-		"payment_entry": task.get("custom_payment_entry"),
-		"message": "Finance documents linked to this task.",
 	}
 
 
