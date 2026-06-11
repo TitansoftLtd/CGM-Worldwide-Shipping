@@ -450,6 +450,17 @@ def auto_submit_permit_invoices_to_finance_if_needed(task) -> dict | None:
 	"""On save: notify Finance when all permit invoices are attached (no manual submit)."""
 	if frappe.flags.get("cgm_auto_submitting_permit_invoices"):
 		return None
+	if (
+		task.get("custom_permit_invoices_submitted")
+		and not has_all_permit_invoices(task)
+		and not finance_payment_completed(task.get("project"), task_sequence(task))
+	):
+		if task.meta.has_field("custom_permit_invoices_submitted"):
+			frappe.db.set_value(
+				"Task", task.name, "custom_permit_invoices_submitted", 0, update_modified=False
+			)
+			task.custom_permit_invoices_submitted = 0
+		return None
 	if not _permit_invoices_pending_finance_notification(task):
 		return None
 
@@ -950,35 +961,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	is_ucr_application_task,
 	is_ucr_finance_payment_task,
 )
-# ------------------------------------------------------------------
-# Constants
-# ------------------------------------------------------------------
-
-FINANCE_AUDIENCE = "Finance"
-DECLARANT_AUDIENCE = "Declarant"
-
-
-# ------------------------------------------------------------------
-# Task lookups
-# ------------------------------------------------------------------
-
-
-def task_sequence(task) -> int:
-	return int(task.get("custom_sequence_no") or 0)
-
-
-def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
-	if not project or not sequence_no:
-		return None
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": sequence_no,
-		},
-		"name",
-	)
+# FINANCE_AUDIENCE / DECLARANT_AUDIENCE and the task_sequence /
+# get_task_name_by_sequence lookups are already defined at the top of this module
+# (this file merges the permit- and UCR-payment workflows); the UCR section below
+# reuses them rather than redefining them.
 
 
 def get_ucr_task(project: str, task_type: str) -> str | None:
