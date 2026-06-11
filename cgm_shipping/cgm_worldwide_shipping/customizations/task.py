@@ -2204,9 +2204,11 @@ def on_task_update(doc, _method=None):
 		"Cancelled",
 	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			auto_submit_ucr_invoice_to_finance_if_needed,
 			handle_ucr_application_receipt_upload,
 		)
 
+		auto_submit_ucr_invoice_to_finance_if_needed(doc)
 		handle_ucr_application_receipt_upload(doc)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			try_auto_complete_ucr_application_task,

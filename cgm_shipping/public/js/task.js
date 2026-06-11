@@ -139,33 +139,6 @@ frappe.ui.form.on("Task", {
 			ensure_finance_permit_rows_on_form(frm);
 		}
 
-		if (
-			ui.is_ucr_application &&
-			frm.doc.status !== "Completed" &&
-			!frm.doc.custom_ucr_invoice_submitted
-		) {
-			frm.add_custom_button(__("Submit UCR invoice to Finance"), () => {
-				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.submit_ucr_invoice_to_finance",
-					args: { task_name: frm.doc.name },
-					freeze: true,
-					callback(r) {
-						if (!r.exc) {
-							showWorkflowNotifyResult(r, __("Finance notified"));
-							const fin = r.message && r.message.finance_task;
-							if (fin && fin !== frm.doc.name) {
-								frappe.show_alert({
-									message: __("Open Finance pays UCR: {0}", [fin]),
-									indicator: "blue",
-								});
-							}
-							frm.reload_doc();
-						}
-					},
-				});
-			}).addClass("btn-primary");
-		}
-
 		if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
 			if (user_can_make_payment(frm)) {
 				const inv = get_finance_line(frm, "Invoice");
@@ -917,8 +890,8 @@ function apply_ucr_application_intro(frm, status) {
 		);
 	} else {
 		intro = __(
-			"<b>Declarant:</b> Attach <b>UCR Invoice</b> on <b>Invoices & Receipts</b>, " +
-				"<b>Submit UCR invoice to Finance</b>. After payment, attach the supplier <b>UCR Receipt</b> " +
+			"<b>Declarant:</b> Attach <b>UCR Invoice</b> on <b>Invoices & Receipts</b> and save — " +
+				"Finance is notified automatically. After payment, attach the supplier <b>UCR Receipt</b> " +
 				"and the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
 		);
 	}
@@ -974,11 +947,18 @@ frappe.ui.form.on("Task Finance Line", {
 			return;
 		}
 		const row = locals[cdt][cdn];
-		if (is_ucr_application_step(frm) && row.line_type === "Receipt" && row.attachment) {
-			frappe.show_alert({
-				message: __("UCR receipt saved - Finance will be notified to verify."),
-				indicator: "green",
-			});
+		if (is_ucr_application_step(frm) && row.attachment) {
+			if (row.line_type === "Invoice") {
+				frappe.show_alert({
+					message: __("UCR invoice saved — Finance will be notified when you save."),
+					indicator: "green",
+				});
+			} else if (row.line_type === "Receipt") {
+				frappe.show_alert({
+					message: __("UCR receipt saved — Finance will be notified to verify when you save."),
+					indicator: "green",
+				});
+			}
 		}
 		if (frm.doc.status !== "Completed") {
 			frm.save();

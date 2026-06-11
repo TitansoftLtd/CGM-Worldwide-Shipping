@@ -576,11 +576,6 @@ def get_project_shipment_documents_field() -> str | None:
 get_project_documents_field = get_project_shipment_documents_field
 
 
-def sync_documents(project_doc) -> None:
-	"""Pull shipment files from linked Lead, Customer, and Tasks."""
-	sync_linked_attachments_to_project(project_doc)
-
-
 # Backward-compatible aliases
 refresh_project_shipment_documents = refresh_project_documents
-sync_linked_attachments_to_project = sync_documents
+sync_documents = sync_linked_attachments_to_project
