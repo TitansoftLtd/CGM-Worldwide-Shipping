@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	derive_workflow_progress_from_tasks,
 	get_all_sea_tasks_for_project,
 	get_open_sea_tasks,
@@ -235,8 +235,8 @@ def ensure_project_shipment_core_fields() -> None:
 			"description": "CI, PKL, BL, COC, KRA PIN - synced from Lead/Opportunity/Customer/Tasks.",
 		},
 	)
-	# Shipment documents table (may already exist from ensure_project_shipment_documents_field).
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	# Shipment documents table (may already exist from ensure_project_documents_field).
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		ensure_project_shipment_documents_field,
 	)
 
@@ -620,7 +620,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	first_open = open_tasks[0] if open_tasks else None
 	workflow_behind = workflow_index < progress_index
 	if workflow_behind and doc.get("custom_mode_of_transport") == "Sea":
-		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 			sync_project_shipment_status_from_tasks,
 		)
 

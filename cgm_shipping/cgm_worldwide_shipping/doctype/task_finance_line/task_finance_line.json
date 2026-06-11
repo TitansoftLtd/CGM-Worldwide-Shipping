@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-06-02 12:00:00.000000",
+ "creation": "2026-06-02 12:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -8,6 +8,7 @@
   "line_label",
   "line_type",
   "payment_item",
+  "item_code",
   "attachment",
   "amount",
   "verified",
@@ -38,16 +39,19 @@
    "options": "UCR\nShipping Line\nCustoms Entry\nKPA"
   },
   {
+   "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line.",
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Purchase Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
    "fieldname": "attachment",
    "fieldtype": "Attach",
    "in_list_view": 1,
    "label": "Attachment"
-  },
-  {
-   "fieldname": "amount",
-   "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Amount"
   },
   {
    "default": "0",
@@ -68,13 +72,19 @@
    "fieldtype": "Datetime",
    "label": "Verified On",
    "read_only": 1
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-02 12:00:00.000000",
+ "modified": "2026-06-11 07:48:43.883057",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Task Finance Line",
