@@ -37,11 +37,12 @@ DEFAULT_SEA_IMPORT_TASK_TEMPLATE: list[dict[str, str]] = [
 	{"task_subject": "Receive interchange confirmation", "department": "Transport"},
 ]
 
+DEFAULT_DOCUMENT_CHECKPOINT_SEQS: frozenset[int] = frozenset({9})
+
 DEFAULT_DOC_CODES: dict[int, list[str]] = {
 	3: [],
 	4: [],
 	7: ["INSPECT"],
-	9: ["BL", "CI", "PKL"],
 	10: ["MANIFEST"],
 	11: ["ENTRY"],
 	12: [SUPPLIER_INVOICE_CODE],
@@ -104,6 +105,8 @@ def build_requirement_seed_rows() -> list[dict]:
 		)
 	for seq in sorted(DEFAULT_LIGHT_PROOF_SEQS):
 		rows.append({"sequence_no": seq, "requirement_type": "Light Proof", "value": ""})
+	for seq in sorted(DEFAULT_DOCUMENT_CHECKPOINT_SEQS):
+		rows.append({"sequence_no": seq, "requirement_type": "Document Checkpoint", "value": ""})
 	for seq in sorted(DEFAULT_FINANCE_PAYMENT_SEQS):
 		rows.append(
 			{

@@ -110,6 +110,12 @@ def is_light_proof_task(sequence_no: int) -> bool:
 	return any(r.requirement_type == "Light Proof" for r in rows_by_sequence().get(sequence_no, []))
 
 
+def is_document_checkpoint_task(sequence_no: int) -> bool:
+	return any(
+		r.requirement_type == "Document Checkpoint" for r in rows_by_sequence().get(sequence_no, [])
+	)
+
+
 def is_ucr_application_task(sequence_no: int) -> bool:
 	return any(
 		r.requirement_type == "UCR Application" for r in rows_by_sequence().get(sequence_no, [])
@@ -203,6 +209,14 @@ def light_proof_sequences() -> frozenset[int]:
 		seq
 		for seq, rows in rows_by_sequence().items()
 		if any(r.requirement_type == "Light Proof" for r in rows)
+	)
+
+
+def document_checkpoint_sequences() -> frozenset[int]:
+	return frozenset(
+		seq
+		for seq, rows in rows_by_sequence().items()
+		if any(r.requirement_type == "Document Checkpoint" for r in rows)
 	)
 
 
@@ -342,6 +356,7 @@ def get_sea_task_ui_sequences() -> dict:
 		"auto_complete_seqs": sorted(auto_complete_sequences()),
 		"permit_application_seqs": sorted(permit_application_sequences()),
 		"light_proof_seqs": sorted(light_proof_sequences()),
+		"document_checkpoint_seqs": sorted(document_checkpoint_sequences()),
 		"ucr_application_seqs": sorted(ucr_application_sequences()),
 		"finance_document_seqs": sorted(finance_payment_with_supplier_invoice_sequences()),
 		"permit_finance_seqs": permit_finance,
@@ -1110,10 +1125,26 @@ def attached_document_codes(task) -> set[str]:
 	return codes
 
 
+def strip_task_documents_for_checkpoint(task) -> bool:
+	"""Document checkpoint tasks review Project files — no Task Documents child rows."""
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not is_document_checkpoint_task(seq) or not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	rows = list(task.get(TASK_DOCUMENTS_FIELD) or [])
+	if not rows:
+		return False
+	for row in rows:
+		task.remove(row)
+	return True
+
+
 def seed_required_task_document_rows(task) -> None:
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
 	seq = int(task.get("custom_sequence_no") or 0)
+	if is_document_checkpoint_task(seq):
+		strip_task_documents_for_checkpoint(task)
+		return
 	if is_ucr_application_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 			ensure_idf_certificate_document_row,
@@ -1163,6 +1194,8 @@ def validate_sea_task_can_complete(task) -> None:
 		)
 
 		validate_ucr_application_not_manually_completed(task)
+	elif is_document_checkpoint_task(seq):
+		validate_document_checkpoint_task(task)
 	elif is_light_proof_task(seq):
 		validate_light_proof_task(task)
 	elif not is_finance_payment_task(seq):
@@ -1212,6 +1245,16 @@ def validate_required_documents(task, seq: int) -> None:
 		frappe.throw(
 			"Remove empty document rows or upload attachments for: "
 			f"<b>{', '.join(empty_rows)}</b>."
+		)
+
+
+def validate_document_checkpoint_task(task) -> None:
+	"""Human confirmation only — documents live on the Project, not on the Task."""
+	if not (task.description or "").strip():
+		frappe.throw(
+			"Add a brief confirmation note in <b>Description</b> "
+			"(e.g. <i>Final BL and COC confirmed received from client</i>) after reviewing "
+			"documents on the linked <b>Project</b>."
 		)
 
 
@@ -2266,6 +2309,15 @@ def on_task_onload(doc, _method=None):
 		)
 
 		if merge_project_permits_into_application_task(doc):
+			doc.reload()
+
+	if _is_sea_task(doc) and is_document_checkpoint_task(_sea_task_seq(doc)):
+		if strip_task_documents_for_checkpoint(doc):
+			frappe.flags.cgm_strip_checkpoint_documents = True
+			try:
+				doc.save(ignore_permissions=True)
+			finally:
+				frappe.flags.cgm_strip_checkpoint_documents = False
 			doc.reload()
 
 
