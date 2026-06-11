@@ -547,13 +547,15 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 	meta = project.meta
 	pairs = (
 		("custom_entry_no", "custom_entry_no"),
-		("custom_batch_no", "custom_batch_no"),
 		("custom_consignee", "custom_consignee"),
-		("custom_quantity", "custom_shipment_quantity"),
-		("custom_vesselairline", "custom_vessel_flight"),
+		("custom_quantity", "custom_quantity"),
+		("custom_vessel", "custom_vessel"),
 		("custom_gross_weight", "custom_gross_weightkg"),
 		("custom_weight_nw", "custom_net_weightkg"),
-		("custom_description_of_goods", "custom_shipment_description"),
+		("custom_description_of_goods", "custom_description_of_goods"),
+		("custom_clearance_station", "custom_clearance_station"),
+		("custom_station_code", "custom_station_code"),
+		("custom_country_of_origin", "custom_country_of_origin"),
 	)
 	for src_field, dest_field in pairs:
 		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):

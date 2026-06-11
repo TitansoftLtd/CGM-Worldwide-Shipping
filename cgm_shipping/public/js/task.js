@@ -57,7 +57,9 @@ frappe.ui.form.on("Task", {
 		const ui = get_sea_task_ui(frm);
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
-		if (!frm._cgm_sea_layout_ready) {
+		// Wait until the async sea-sequence config has loaded, otherwise the layout
+		// runs against the empty config and leaves finance lines / permits hidden.
+		if (!frm._cgm_sea_layout_ready && (!is_sea_clearance_task(frm) || frm._cgm_sea_seq_config)) {
 			apply_sea_task_form_layout(frm, ui);
 			frm._cgm_sea_layout_ready = true;
 		}
@@ -575,12 +577,12 @@ function apply_sea_task_form_layout(frm, ui) {
 
 	SEA_TASK_HIDDEN_FIELDS.forEach((f) => toggle(f, false));
 	const show_finance = Boolean(ui.show_finance_lines && frm.fields_dict.custom_task_finance_lines);
-	toggle("custom_section_task", show_finance);
+	toggle("custom_section_task_finance", show_finance);
 	toggle("custom_task_finance_lines", show_finance);
 	if (show_finance) {
 		configure_finance_line_grid(frm, ui);
-		if (frm.fields_dict.custom_section_task) {
-			frm.set_df_property("custom_section_task", "description", "");
+		if (frm.fields_dict.custom_section_task_finance) {
+			frm.set_df_property("custom_section_task_finance", "description", "");
 		}
 	}
 	toggle("custom_section_break_0gs4o", ui.show_documents);
