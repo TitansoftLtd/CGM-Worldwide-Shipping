@@ -63,6 +63,7 @@ doctype_js = {
 		"public/js/crm_lead.js",
 	],
 	"Customer": "public/js/crm_customer.js",
+	"Quotation": "public/js/quotation.js",
 	"Opportunity": [
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
@@ -171,6 +172,7 @@ has_permission = {
 
 override_doctype_class = {
 	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
+	"Quotation": ["cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation"],
 }
 
 # Document Events
