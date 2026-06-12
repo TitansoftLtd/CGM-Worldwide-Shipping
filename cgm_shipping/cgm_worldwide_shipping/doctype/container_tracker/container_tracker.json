@@ -30,28 +30,34 @@
   "demurrage_start_date",
   "section_icd",
   "icd_mombasa_discharge_date",
+  "column_break_btiy",
   "icd_gate_in_date",
+  "column_break_quen",
   "icd_gate_out_date",
   "section_transport",
+  "transporter",
   "truck_number",
+  "column_break_pxob",
   "driver_name",
   "driver_contact",
-  "transporter",
   "section_warehouse",
   "gate_in_date_warehouse",
   "offloading_date",
+  "column_break_luhf",
   "delivery_date",
   "warehouse_loading_date",
   "section_transit",
   "border_clearance_date",
+  "column_break_qkej",
   "transit_gate_in_date",
+  "column_break_mtin",
   "transit_gate_out_date",
   "section_charges",
   "free_days",
   "detention_free_days",
   "rate_source",
-  "column_break_charges",
   "port_days_used",
+  "column_break_charges",
   "demurrage_days",
   "demurrage_amount",
   "detention_days",
@@ -408,11 +414,35 @@
    "fieldname": "deposit_refund_applied_on",
    "fieldtype": "Date",
    "label": "Deposit Refund Applied On"
+  },
+  {
+   "fieldname": "column_break_btiy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_quen",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_pxob",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_luhf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_qkej",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_mtin",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-11 18:00:00.000000",
+ "modified": "2026-06-12 13:54:54.751803",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",
