@@ -11,4 +11,4 @@ cgm_shipping.patches.seed_clearance_stations
 cgm_shipping.patches.seed_cfs_locations
 cgm_shipping.patches.drop_opportunity_preshipment_status_column
 cgm_shipping.patches.update_task9_document_checkpoint
-cgm_shipping.patches.ensure_container_tracking_fields
+cgm_shipping.patches.replace_sup_inv_with_kpa_invoice

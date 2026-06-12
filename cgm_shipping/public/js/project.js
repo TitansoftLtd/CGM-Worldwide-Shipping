@@ -280,10 +280,9 @@ function render_container_tracking_table(frm, dashboard) {
 	field.$wrapper.find(".cgm-add-container").on("click", () => {
 		frappe.new_doc("Container Tracker", {
 			project: frm.doc.name,
-			batch_bl_no: frm.doc.custom_batch_no,
-			bl_number: frm.doc.custom_bl_number,
+			bl_number: frm.doc.custom_bill_of_lading || frm.doc.custom_bl_number,
 			eta: frm.doc.custom_eta,
-			shipment_quantity: frm.doc.custom_shipment_quantity,
+			shipping_line: frm.doc.custom_shipping_line,
 		});
 	});
 }

@@ -18,6 +18,7 @@
   "payment_status",
   "payment_invoice",
   "invoice_verified",
+  "purchase_item",
   "column_break_fin",
   "purchase_invoice",
   "payment_entry",
@@ -94,6 +95,13 @@
    "fieldname": "invoice_verified",
    "fieldtype": "Check",
    "label": "Invoice Verified by Finance"
+  },
+  {
+   "description": "ERPNext Item used on Purchase Invoice when Finance pays this UCR.",
+   "fieldname": "purchase_item",
+   "fieldtype": "Link",
+   "label": "Purchase Item",
+   "options": "Item"
   },
   {
    "fieldname": "column_break_fin",

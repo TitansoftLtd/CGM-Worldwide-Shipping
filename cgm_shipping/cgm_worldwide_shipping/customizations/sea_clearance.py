@@ -50,10 +50,10 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 	from frappe.utils import now_datetime
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		carry_project_shipment_documents_to_sea_tasks,
+		carry_project_documents_to_sea_tasks,
 	)
 
-	carry_project_shipment_documents_to_sea_tasks(project)
+	carry_project_documents_to_sea_tasks(project)
 
 	completed = []
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
@@ -185,12 +185,20 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	return progress_status
 
 
-def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
-	"""Tasks with sequence < before_sequence that are not Completed/Cancelled."""
+def get_incomplete_sea_tasks(
+	project: str, before_sequence: int, exclude_finance: bool = False
+) -> list[dict]:
+	"""Tasks with sequence < before_sequence that are not Completed/Cancelled.
+
+	exclude_finance: drop Finance Payment steps from the blocking list so the
+	operational chain can advance while Finance pays in parallel. Finance steps
+	are still required at final project closure (caller passes the default).
+	"""
 	if before_sequence <= 1:
 		return []
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_permit_stage_for_sequence,
+		is_finance_payment_task,
 		is_permit_application_task,
 		is_ucr_application_task,
 	)
@@ -223,6 +231,7 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 			and permit_invoices_ready(r.name)
 		)
 		and not (is_ucr_application_task(r.seq) and ucr_invoice_ready(r.name))
+		and not (exclude_finance and is_finance_payment_task(r.seq))
 	]
 
 
@@ -328,7 +337,9 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 		enforce_all_sea_tasks_complete(project)
 		return
 
-	incomplete = get_incomplete_sea_tasks(project, required_seq + 1)
+	# Finance payment steps don't block status moves — they settle in parallel and
+	# are enforced only at final closure (All Sea Tasks Complete).
+	incomplete = get_incomplete_sea_tasks(project, required_seq + 1, exclude_finance=True)
 	if incomplete:
 		lines = [
 			f"Task {r.seq}: {r.subject} ({r.status or 'Open'})" for r in incomplete[:5]
@@ -394,10 +405,10 @@ def backfill_intake_documents_on_sea_tasks(project):
 	"""Copy Project shipment documents onto tasks 1–2 (for projects created before this feature)."""
 	frappe.has_permission("Project", ptype="write", throw=True)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		carry_project_shipment_documents_to_sea_tasks,
+		carry_project_documents_to_sea_tasks,
 	)
 
-	carried = carry_project_shipment_documents_to_sea_tasks(project)
+	carried = carry_project_documents_to_sea_tasks(project)
 	auto_complete_initial_sea_tasks(project)
 	return {"tasks_updated": carried}
 

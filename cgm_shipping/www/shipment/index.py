@@ -81,6 +81,26 @@ def _build_context(context, project):
 	context.progress = shipment_progress(shipment.custom_shipment_status)
 	context.status_tone = status_tone(shipment.custom_shipment_status)
 
+	# Prefer the newer "Description of Goods" field, falling back to the
+	# legacy cargo description so older shipments still show something.
+	context.cargo = shipment.get("custom_description_of_goods") or shipment.get(
+		"custom_shipment_description"
+	)
+
+	# Pass-through charges billed on the shipment. Only surfaced when at
+	# least one is non-zero, so clean shipments don't show an empty block.
+	from frappe.utils import flt
+
+	charge_fields = [
+		(_("Breakbulk"), shipment.get("custom_breakbulk_charges")),
+		(_("Handling"), shipment.get("custom_handling_charges")),
+		(_("KEBS"), shipment.get("custom_kebs_charges")),
+	]
+	charges = [{"label": label, "amount": flt(amt)} for label, amt in charge_fields if flt(amt)]
+	context.charges = charges
+	context.charges_total = sum(c["amount"] for c in charges)
+	context.charges_currency = frappe.defaults.get_global_default("currency")
+
 	containers = get_containers_for_shipment(project)
 	for c in containers:
 		c["timeline"] = container_timeline(c)

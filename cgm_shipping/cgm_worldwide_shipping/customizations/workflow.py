@@ -192,10 +192,16 @@ def finance_payment_completed(project: str, application_seq: int | None = None) 
 	fin_name = get_finance_permit_task_name(project, application_seq)
 	if not fin_name:
 		return False
-	pe = frappe.db.get_value("Task", fin_name, "custom_payment_entry")
-	if not pe or not frappe.db.exists("Payment Entry", pe):
-		return False
-	return int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1
+	# Finance pays via Journal Entry. A Journal Entry attached to the finance task
+	# counts as "payment recorded" even while still a Draft (docstatus 0) — only a
+	# Cancelled JE (docstatus 2) does not count. This unblocks the operational chain
+	# (downstream tasks may proceed) before the JE is posted; the finance task itself
+	# stays Unpaid until the JE is submitted.
+	je = frappe.db.get_value("Task", fin_name, "custom_journal_entry")
+	if je and frappe.db.exists("Journal Entry", je):
+		if int(frappe.db.get_value("Journal Entry", je, "docstatus") or 0) != 2:
+			return True
+	return False
 
 
 # ------------------------------------------------------------------
@@ -450,6 +456,19 @@ def auto_submit_permit_invoices_to_finance_if_needed(task) -> dict | None:
 	"""On save: notify Finance when all permit invoices are attached (no manual submit)."""
 	if frappe.flags.get("cgm_auto_submitting_permit_invoices"):
 		return None
+	if is_permit_application_task_doc(task) and not is_pre_clearance_permit_application_task(task):
+		return None
+	if (
+		task.get("custom_permit_invoices_submitted")
+		and not has_all_permit_invoices(task)
+		and not finance_payment_completed(task.get("project"), task_sequence(task))
+	):
+		if task.meta.has_field("custom_permit_invoices_submitted"):
+			frappe.db.set_value(
+				"Task", task.name, "custom_permit_invoices_submitted", 0, update_modified=False
+			)
+			task.custom_permit_invoices_submitted = 0
+		return None
 	if not _permit_invoices_pending_finance_notification(task):
 		return None
 
@@ -602,6 +621,18 @@ def validate_permit_application_can_complete(task) -> None:
 	if not is_permit_application_task(seq):
 		return
 
+	merge_project_permits_into_application_task(task)
+	rows = task.get(TASK_PERMITS_FIELD) or []
+
+	# Post-clearance permits are self-contained: the Declaration team prepares and
+	# pays directly — there is no separate "Finance pays" task, hence no finance
+	# handoff and no Finance receipt-verification. Enforce the tangible permit
+	# evidence only, and allow completion when there are no post-clearance permits.
+	if not is_pre_clearance_permit_application_task(task):
+		if rows:
+			_throw_missing_permit_evidence(rows)
+		return
+
 	if not task.get("custom_permit_invoices_submitted"):
 		frappe.throw(
 			"Attach all permit invoices and save — Finance is notified automatically — "
@@ -614,11 +645,22 @@ def validate_permit_application_can_complete(task) -> None:
 			"before this task can be completed."
 		)
 
-	merge_project_permits_into_application_task(task)
-	rows = task.get(TASK_PERMITS_FIELD) or []
 	if not rows:
 		frappe.throw("Add permit rows on <b>Task Permits</b> first.")
 
+	_throw_missing_permit_evidence(rows)
+
+	unverified = [r.permit_type for r in rows if r.permit_type and not r.get("receipt_verified")]
+	if unverified:
+		frappe.throw(
+			"Finance must tick <b>Receipt Verified</b> on each permit (on "
+			"<b>Finance pays Pre-Clearance Permits</b>) before completing. Pending: "
+			f"<b>{', '.join(unverified)}</b>."
+		)
+
+
+def _throw_missing_permit_evidence(rows) -> None:
+	"""Require Payment Receipt + Permit Certificate on each permit row."""
 	missing_receipts = [r.permit_type for r in rows if r.permit_type and not r.get("payment_receipt")]
 	if missing_receipts:
 		frappe.throw(
@@ -631,14 +673,6 @@ def validate_permit_application_can_complete(task) -> None:
 		frappe.throw(
 			"Upload <b>Permit Certificate</b> for each permit. Missing: "
 			f"<b>{', '.join(missing_certs)}</b>."
-		)
-
-	unverified = [r.permit_type for r in rows if r.permit_type and not r.get("receipt_verified")]
-	if unverified:
-		frappe.throw(
-			"Finance must tick <b>Receipt Verified</b> on each permit (on "
-			"<b>Finance pays Pre-Clearance Permits</b>) before completing. Pending: "
-			f"<b>{', '.join(unverified)}</b>."
 		)
 
 
@@ -950,35 +984,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	is_ucr_application_task,
 	is_ucr_finance_payment_task,
 )
-# ------------------------------------------------------------------
-# Constants
-# ------------------------------------------------------------------
-
-FINANCE_AUDIENCE = "Finance"
-DECLARANT_AUDIENCE = "Declarant"
-
-
-# ------------------------------------------------------------------
-# Task lookups
-# ------------------------------------------------------------------
-
-
-def task_sequence(task) -> int:
-	return int(task.get("custom_sequence_no") or 0)
-
-
-def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
-	if not project or not sequence_no:
-		return None
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": sequence_no,
-		},
-		"name",
-	)
+# FINANCE_AUDIENCE / DECLARANT_AUDIENCE and the task_sequence /
+# get_task_name_by_sequence lookups are already defined at the top of this module
+# (this file merges the permit- and UCR-payment workflows); the UCR section below
+# reuses them rather than redefining them.
 
 
 def get_ucr_task(project: str, task_type: str) -> str | None:
@@ -1567,12 +1576,13 @@ def get_ucr_declarant_workflow_status(task_name: str) -> dict:
 	fin_inv = get_ucr_invoice_line(finance_task) if finance_task else None
 	fin_rec = get_ucr_receipt_line(finance_task) if finance_task else None
 
+	# "Paid" means the Journal Entry is submitted (posted); a draft JE is still Unpaid.
 	payment_made = bool(
 		finance_task
-		and finance_task.get("custom_payment_entry")
+		and finance_task.get("custom_journal_entry")
 		and int(
 			frappe.db.get_value(
-				"Payment Entry", finance_task.custom_payment_entry, "docstatus"
+				"Journal Entry", finance_task.custom_journal_entry, "docstatus"
 			)
 			or 0
 		)

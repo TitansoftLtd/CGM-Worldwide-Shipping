@@ -53,7 +53,6 @@ web_include_js = [
 doctype_js = {
 	"Task": "public/js/task.js",
 	"Purchase Invoice": "public/js/purchase_invoice.js",
-	"Payment Entry": "public/js/payment_entry.js",
 	"Project": [
 		"public/js/cgm_bl_containers.js",
 		"public/js/project.js",
@@ -63,6 +62,7 @@ doctype_js = {
 		"public/js/crm_lead.js",
 	],
 	"Customer": "public/js/crm_customer.js",
+	"Quotation": "public/js/quotation.js",
 	"Opportunity": [
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
@@ -171,6 +171,7 @@ has_permission = {
 
 override_doctype_class = {
 	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
+	"Quotation": ["cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation"],
 }
 
 # Document Events
@@ -191,11 +192,11 @@ doc_events = {
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_on_submit",
 	},
 	"Payment Entry": {
-		"validate": [
-			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
-			"cgm_shipping.cgm_worldwide_shipping.customizations.task.payment_entry_validate_from_task",
-		],
-		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.payment_entry_on_submit",
+		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
+	},
+	"Journal Entry": {
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
+		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_cancel",
 	},
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.on_customer_update",

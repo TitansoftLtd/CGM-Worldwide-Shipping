@@ -120,6 +120,7 @@ def apply_shipment_document_automation(doc, _method=None):
 	enforce_permits_post_cleared_before_entry_lodged(doc)
 	# 7. Project Completed only when tasks, docs, permits, payments, and billing are done.
 	enforce_project_closure_on_workflow_change(doc)
+	# Container demurrage/detention lives on Container Tracker (created at Book Trucks task).
 
 def _shipment_document_row_map(doc):
 	rows = {}
@@ -547,13 +548,15 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 	meta = project.meta
 	pairs = (
 		("custom_entry_no", "custom_entry_no"),
-		("custom_batch_no", "custom_batch_no"),
 		("custom_consignee", "custom_consignee"),
-		("custom_quantity", "custom_shipment_quantity"),
-		("custom_vesselairline", "custom_vessel_flight"),
+		("custom_quantity", "custom_quantity"),
+		("custom_vessel", "custom_vessel"),
 		("custom_gross_weight", "custom_gross_weightkg"),
 		("custom_weight_nw", "custom_net_weightkg"),
-		("custom_description_of_goods", "custom_shipment_description"),
+		("custom_description_of_goods", "custom_description_of_goods"),
+		("custom_clearance_station", "custom_clearance_station"),
+		("custom_station_code", "custom_station_code"),
+		("custom_country_of_origin", "custom_country_of_origin"),
 	)
 	for src_field, dest_field in pairs:
 		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
