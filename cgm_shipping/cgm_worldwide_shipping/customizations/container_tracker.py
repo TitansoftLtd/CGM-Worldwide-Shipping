@@ -1,0 +1,683 @@
+"""Container Tracker — per-container lifecycle engine (one tracker = one physical container)."""
+from __future__ import annotations
+
+from datetime import timedelta
+from typing import Any
+
+import frappe
+from frappe import _
+from frappe.utils import getdate, today
+
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	BULK_CONTAINER_TASK_SEQ_FIELDS,
+	CONTAINER_SPECIFIC_TASK_SEQ_FIELDS,
+	CONTAINER_STATUS_AT_PORT,
+	CONTAINER_STATUS_DELIVERED,
+	CONTAINER_STATUS_DISPATCHED,
+	CONTAINER_STATUS_EMPTY_PENDING,
+	CONTAINER_STATUS_EMPTY_RETURNED,
+	CONTAINER_STATUS_INTERCHANGE,
+	CONTAINER_STATUS_OVERDUE,
+	CONTAINER_TASK_SEQ_DEFAULTS,
+	DEPOSIT_REFUND_STATUSES,
+	TASK_CONTAINER_NUMBER_FIELD,
+	TASK_CONTAINER_TRACKER_FIELD,
+	TASK_TYPE_OF_CONTAINER_FIELD,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates import (
+	COUNT_FROM_BERTHING,
+	COUNT_FROM_DISCHARGE,
+	build_rate_source_label,
+	calculate_tiered_charge,
+	default_destination_name,
+	get_charge_tiers,
+	get_free_days_rule,
+	get_valid_destinations,
+	resolve_container_category,
+	resolve_container_type_key,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	get_container_table_field_for_doctype,
+)
+
+
+class ContainerEventResolutionError(frappe.ValidationError):
+	pass
+
+
+def get_container_task_sequence(fieldname: str) -> int:
+	default = CONTAINER_TASK_SEQ_DEFAULTS.get(fieldname)
+	if default is None:
+		frappe.throw(f"Unknown container task sequence field: {fieldname}")
+	if frappe.db.exists("DocType", "CGM Shipping Settings"):
+		meta = frappe.get_meta("CGM Shipping Settings")
+		if meta.has_field(fieldname):
+			val = frappe.db.get_single_value("CGM Shipping Settings", fieldname)
+			if val:
+				return int(val)
+	return default
+
+
+def get_gate_out_task_sequence() -> int:
+	return get_container_task_sequence("custom_gate_out_task_seq")
+
+
+def get_empty_return_task_sequence() -> int:
+	return get_container_task_sequence("custom_empty_return_task_seq")
+
+
+@frappe.request_cache
+def _bulk_task_sequences() -> frozenset[int]:
+	return frozenset(get_container_task_sequence(f) for f in BULK_CONTAINER_TASK_SEQ_FIELDS)
+
+
+@frappe.request_cache
+def _container_specific_task_sequences() -> frozenset[int]:
+	return frozenset(
+		get_container_task_sequence(f) for f in CONTAINER_SPECIFIC_TASK_SEQ_FIELDS
+	)
+
+
+def is_bulk_container_event(seq: int) -> bool:
+	return seq in _bulk_task_sequences()
+
+
+def is_container_specific_event(seq: int) -> bool:
+	return seq in _container_specific_task_sequences()
+
+
+def _anchor_date(doc: dict[str, Any] | object) -> Any:
+	data = doc if isinstance(doc, dict) else doc.as_dict()
+	count_from = data.get("free_days_count_from") or COUNT_FROM_DISCHARGE
+	if count_from == COUNT_FROM_BERTHING:
+		return data.get("ata")
+	return data.get("discharging_date") or data.get("icd_mombasa_discharge_date")
+
+
+def populate_rates_from_shipping_line(doc, *, force: bool = False) -> None:
+	if not doc.get("shipping_line") or doc.get("__islocal"):
+		return
+
+	destination = doc.get("delivery_destination") or _project_delivery_destination(
+		doc.get("project")
+	)
+	category = resolve_container_category(
+		doc.get("type_of_container"), doc.get("container_number")
+	)
+	rule = get_free_days_rule(doc.shipping_line, destination, category)
+	if not rule:
+		return
+
+	if force or not doc.get("free_days"):
+		doc.free_days = int(rule.get("free_days") or 0)
+	if force or not doc.get("detention_free_days"):
+		doc.detention_free_days = int(
+			rule.get("detention_free_days") or rule.get("free_days") or 0
+		)
+	doc.free_days_count_from = rule.get("count_from") or COUNT_FROM_DISCHARGE
+	doc.rate_source = build_rate_source_label(doc.shipping_line, destination, category, rule)
+
+
+def _project_delivery_destination(project_name: str | None) -> str:
+	if not project_name:
+		return default_destination_name()
+	if frappe.get_meta("Project").has_field("custom_delivery_destination"):
+		val = frappe.db.get_value("Project", project_name, "custom_delivery_destination")
+		if val:
+			return _normalize_destination(val)
+	return default_destination_name()
+
+
+def _normalize_destination(value: str) -> str:
+	label = (value or "").strip()
+	if label:
+		for dest in get_valid_destinations():
+			if dest.lower() == label.lower():
+				return dest
+	return default_destination_name()
+
+
+def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
+	ref_date = getdate(today())
+	anchor = getdate(_anchor_date(data))
+	gate_out = getdate(data.get("gate_out_date_port"))
+	actual_return = getdate(data.get("actual_empty_return"))
+	offloading = getdate(data.get("offloading_date"))
+	delivery = getdate(data.get("delivery_date"))
+	gate_in_wh = getdate(data.get("gate_in_date_warehouse"))
+	interchange = getdate(data.get("interchange_date"))
+
+	free_days = int(data.get("free_days") or 0)
+	detention_free = int(data.get("detention_free_days") or 0)
+	type_key = resolve_container_type_key(data.get("type_of_container"))
+	shipping_line = data.get("shipping_line")
+
+	out: dict[str, Any] = {
+		"port_days_used": 0,
+		"demurrage_start_date": None,
+		"demurrage_days": 0,
+		"demurrage_amount": 0.0,
+		"detention_days": 0,
+		"detention_amount": 0.0,
+		"expected_empty_return": None,
+		"days_outstanding": 0,
+		"status": CONTAINER_STATUS_AT_PORT,
+	}
+
+	if anchor and free_days:
+		out["demurrage_start_date"] = anchor + timedelta(days=free_days)
+
+	if anchor:
+		end_port = gate_out or ref_date
+		port_days = max(0, (end_port - anchor).days)
+		out["port_days_used"] = port_days
+		dem_days = max(0, port_days - free_days) if free_days else 0
+		out["demurrage_days"] = dem_days
+		if dem_days and shipping_line:
+			tiers = get_charge_tiers(shipping_line, "demurrage", type_key)
+			out["demurrage_amount"] = calculate_tiered_charge(dem_days, tiers)
+
+	if gate_out and detention_free:
+		out["expected_empty_return"] = gate_out + timedelta(days=detention_free)
+
+	if gate_out:
+		end_det = actual_return or ref_date
+		days_out = max(0, (end_det - gate_out).days)
+		det_days = max(0, days_out - detention_free) if detention_free else 0
+		out["detention_days"] = det_days
+		if det_days and shipping_line:
+			tiers = get_charge_tiers(shipping_line, "detention", type_key)
+			out["detention_amount"] = calculate_tiered_charge(det_days, tiers)
+
+	expected = getdate(out.get("expected_empty_return"))
+	if expected and not actual_return and ref_date > expected:
+		out["days_outstanding"] = (ref_date - expected).days
+
+	out["status"] = _derive_status(
+		interchange=interchange,
+		actual_return=actual_return,
+		expected_return=expected,
+		offloading=offloading,
+		delivery=delivery,
+		gate_in_wh=gate_in_wh,
+		gate_out=gate_out,
+		anchor=anchor,
+		ref_date=ref_date,
+	)
+	return out
+
+
+def apply_metrics_to_doc(doc) -> None:
+	metrics = compute_container_metrics(doc.as_dict())
+	for field, value in metrics.items():
+		setattr(doc, field, value)
+
+
+def _derive_status(
+	*,
+	interchange,
+	actual_return,
+	expected_return,
+	offloading,
+	delivery,
+	gate_in_wh,
+	gate_out,
+	anchor,
+	ref_date,
+) -> str:
+	if interchange:
+		return CONTAINER_STATUS_INTERCHANGE
+	if actual_return:
+		return CONTAINER_STATUS_EMPTY_RETURNED
+	if expected_return and ref_date > expected_return:
+		return CONTAINER_STATUS_OVERDUE
+	if offloading:
+		return CONTAINER_STATUS_EMPTY_PENDING
+	if delivery or gate_in_wh:
+		return CONTAINER_STATUS_DELIVERED
+	if gate_out:
+		return CONTAINER_STATUS_DISPATCHED
+	if anchor:
+		return CONTAINER_STATUS_AT_PORT
+	return CONTAINER_STATUS_AT_PORT
+
+
+def _derive_container_mode(project) -> str:
+	delivery_type = (project.get("custom_delivery_type") or "").lower()
+	if "icd" in delivery_type:
+		return "ICD Nairobi"
+	if "transit" in delivery_type or "border" in delivery_type:
+		return "Transit Kenya→Border"
+	if project.get("custom_shipment_type") == "Export":
+		return "Export"
+	return "Mombasa Port"
+
+
+def find_tracker_by_identity(
+	project_name: str,
+	container_number: str,
+	type_of_container: str | None = None,
+) -> str | None:
+	if not project_name or not container_number:
+		return None
+	filters: dict[str, Any] = {
+		"project": project_name,
+		"container_number": container_number,
+	}
+	if type_of_container:
+		filters["type_of_container"] = type_of_container
+	return frappe.db.get_value("Container Tracker", filters, "name")
+
+
+def _container_identity_filters(
+	project_name: str,
+	container_number: str,
+	type_of_container: str | None,
+) -> dict[str, Any]:
+	filters: dict[str, Any] = {
+		"project": project_name,
+		"container_number": container_number,
+	}
+	if type_of_container:
+		filters["type_of_container"] = type_of_container
+	return filters
+
+
+def resolve_single_tracker(
+	project_name: str,
+	*,
+	container_tracker: str | None = None,
+	container_number: str | None = None,
+	type_of_container: str | None = None,
+) -> frappe.Document:
+	"""Resolve exactly one Container Tracker for a container-specific lifecycle event."""
+	if container_tracker:
+		if not frappe.db.exists("Container Tracker", container_tracker):
+			frappe.throw(
+				_("Container Tracker {0} does not exist.").format(container_tracker),
+				ContainerEventResolutionError,
+			)
+		ct = frappe.get_doc("Container Tracker", container_tracker)
+		if ct.project != project_name:
+			frappe.throw(
+				_(
+					"Container Tracker {0} belongs to project {1}, not {2}."
+				).format(container_tracker, ct.project, project_name),
+				ContainerEventResolutionError,
+			)
+		return ct
+
+	if not container_number:
+		frappe.throw(
+			_(
+				"This task affects a single container. Set <b>Container Tracker</b> "
+				"or <b>Container Number</b> (+ Type of Container when required) on the Task."
+			),
+			ContainerEventResolutionError,
+		)
+
+	filters = _container_identity_filters(
+		project_name, container_number, type_of_container
+	)
+	names = frappe.get_all(
+		"Container Tracker",
+		filters=filters,
+		pluck="name",
+		limit=2,
+	)
+
+	if len(names) == 1:
+		return frappe.get_doc("Container Tracker", names[0])
+
+	if len(names) > 1:
+		frappe.throw(
+			_(
+				"Multiple Container Tracker records match container <b>{0}</b> on this project. "
+				"Set <b>Type of Container</b> or link the exact <b>Container Tracker</b>."
+			).format(container_number),
+			ContainerEventResolutionError,
+		)
+
+	if not type_of_container:
+		without_type = frappe.get_all(
+			"Container Tracker",
+			filters={"project": project_name, "container_number": container_number},
+			pluck="name",
+			limit=2,
+		)
+		if len(without_type) > 1:
+			frappe.throw(
+				_(
+					"Container <b>{0}</b> appears more than once on this project. "
+					"Set <b>Type of Container</b> or link the exact <b>Container Tracker</b>."
+				).format(container_number),
+				ContainerEventResolutionError,
+			)
+
+	frappe.throw(
+		_(
+			"No Container Tracker found for container <b>{0}</b> on project <b>{1}</b>. "
+			"Complete Task 19 (Book trucks) first or check the container identity."
+		).format(container_number, project_name),
+		ContainerEventResolutionError,
+	)
+
+
+def _event_context_from_task(task_doc) -> dict[str, Any]:
+	if not task_doc:
+		return {}
+	return {
+		"container_tracker": task_doc.get(TASK_CONTAINER_TRACKER_FIELD),
+		"container_number": task_doc.get(TASK_CONTAINER_NUMBER_FIELD),
+		"type_of_container": task_doc.get(TASK_TYPE_OF_CONTAINER_FIELD),
+	}
+
+
+def _resolve_tracker_from_row_link(project_name: str, row) -> frappe.Document | None:
+	tracker_name = row.get("container_tracker")
+	if not tracker_name or not frappe.db.exists("Container Tracker", tracker_name):
+		return None
+	ct = frappe.get_doc("Container Tracker", tracker_name)
+	if ct.project != project_name:
+		return None
+	if (
+		ct.container_number == row.container_number
+		and (ct.type_of_container or "") == (row.get("type_of_container") or "")
+	):
+		return ct
+	return None
+
+
+def _link_container_row(row, tracker_name: str) -> None:
+	if row.get("container_tracker") != tracker_name:
+		row.db_set("container_tracker", tracker_name, update_modified=False)
+
+
+def _populate_tracker_from_project_and_row(ct, project, row) -> None:
+	ct.project = project.name
+	ct.container_number = row.container_number
+	ct.type_of_container = row.get("type_of_container")
+	ct.seal_no = row.get("seal_no")
+	ct.bl_number = project.get("custom_bill_of_lading")
+	ct.shipping_line = project.get("custom_shipping_line")
+	ct.delivery_destination = _project_delivery_destination(project.name)
+	ct.eta = project.get("custom_eta")
+	ct.ata = project.get("custom_ata")
+	ct.container_mode = _derive_container_mode(project)
+	populate_rates_from_shipping_line(ct, force=True)
+	apply_metrics_to_doc(ct)
+	if not ct.status:
+		ct.status = CONTAINER_STATUS_AT_PORT
+
+
+def create_or_sync_tracker_for_row(project, row) -> str:
+	"""Create or reuse tracker by (project, container_number, type_of_container)."""
+	existing_name = find_tracker_by_identity(
+		project.name,
+		row.container_number,
+		row.get("type_of_container"),
+	)
+	if existing_name:
+		ct = frappe.get_doc("Container Tracker", existing_name)
+		_populate_tracker_from_project_and_row(ct, project, row)
+		ct.status = ct.status or CONTAINER_STATUS_AT_PORT
+		ct.save(ignore_permissions=True)
+		_link_container_row(row, existing_name)
+		return existing_name
+
+	linked = _resolve_tracker_from_row_link(project.name, row)
+	if linked:
+		_populate_tracker_from_project_and_row(linked, project, row)
+		linked.save(ignore_permissions=True)
+		_link_container_row(row, linked.name)
+		return linked.name
+
+	ct = frappe.new_doc("Container Tracker")
+	_populate_tracker_from_project_and_row(ct, project, row)
+	ct.status = CONTAINER_STATUS_AT_PORT
+	ct.insert(ignore_permissions=True)
+	_link_container_row(row, ct.name)
+	return ct.name
+
+
+def create_container_trackers_for_project(project_name: str) -> list[str]:
+	if not project_name or not frappe.db.exists("Project", project_name):
+		return []
+
+	project = frappe.get_doc("Project", project_name)
+	container_field = get_container_table_field_for_doctype("Project")
+	if not container_field:
+		return []
+
+	touched: list[str] = []
+	for row in project.get(container_field) or []:
+		if not row.get("container_number"):
+			continue
+		touched.append(create_or_sync_tracker_for_row(project, row))
+
+	if touched:
+		frappe.db.commit()
+	return touched
+
+
+def _trackers_for_project(project_name: str) -> list:
+	names = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project_name},
+		pluck="name",
+		order_by="container_number asc",
+	)
+	return [frappe.get_doc("Container Tracker", name) for name in names]
+
+
+def _save_trackers(trackers: list) -> None:
+	for ct in trackers:
+		apply_metrics_to_doc(ct)
+		ct.save(ignore_permissions=True)
+
+
+def _save_tracker(ct) -> None:
+	apply_metrics_to_doc(ct)
+	ct.save(ignore_permissions=True)
+
+
+def _apply_transport_from_task(ct, task_doc) -> None:
+	if not task_doc:
+		return
+	meta = frappe.get_meta("Task")
+	for ct_field, task_field in (
+		("truck_number", "custom_truck_number"),
+		("driver_name", "custom_driver_name"),
+		("driver_contact", "custom_driver_contact"),
+		("transporter", "custom_transporter"),
+	):
+		if meta.has_field(task_field) and task_doc.get(task_field):
+			ct.set(ct_field, task_doc.get(task_field))
+
+
+def _apply_bulk_eta(project, trackers: list) -> None:
+	eta = project.get("custom_eta")
+	if not eta or not trackers:
+		return
+	for ct in trackers:
+		ct.eta = eta
+	_save_trackers(trackers)
+
+
+def _apply_bulk_vessel_arrival(project, trackers: list, today_date) -> None:
+	if not trackers:
+		return
+	ata = project.get("custom_ata") or today_date
+	for ct in trackers:
+		ct.ata = ata
+		if not ct.discharging_date:
+			ct.discharging_date = today_date
+		populate_rates_from_shipping_line(ct)
+		ct.status = CONTAINER_STATUS_AT_PORT
+	_save_trackers(trackers)
+
+
+def _apply_bulk_field_clearance(project, trackers: list) -> None:
+	location = project.get("custom_final_destination") or project.get(
+		"custom_clearance_station"
+	)
+	if not location or not trackers:
+		return
+	for ct in trackers:
+		ct.current_location = location
+	_save_trackers(trackers)
+
+
+def _apply_bulk_kpa_paid(project, trackers: list, today_date) -> None:
+	if not trackers:
+		return
+	release = project.get("custom_custom_release_date") or today_date
+	for ct in trackers:
+		ct.custom_release_date = release
+	_save_trackers(trackers)
+
+
+def _apply_gate_out(ct, today_date, task_doc) -> None:
+	if not ct.gate_out_date_port:
+		ct.gate_out_date_port = today_date
+	_apply_transport_from_task(ct, task_doc)
+
+
+def _apply_delivery(ct, today_date) -> None:
+	if not ct.gate_in_date_warehouse:
+		ct.gate_in_date_warehouse = today_date
+	if not ct.delivery_date:
+		ct.delivery_date = today_date
+
+
+def _apply_offload(ct, today_date) -> None:
+	if not ct.offloading_date:
+		ct.offloading_date = today_date
+
+
+def _apply_empty_return(ct, today_date) -> None:
+	if not ct.actual_empty_return:
+		ct.actual_empty_return = today_date
+	if not ct.gate_in_date_depot:
+		ct.gate_in_date_depot = today_date
+
+
+def _apply_interchange(ct, today_date, task_doc) -> None:
+	if not ct.interchange_date:
+		ct.interchange_date = today_date
+	if not ct.deposit_refund_status:
+		ct.deposit_refund_status = DEPOSIT_REFUND_STATUSES[0]
+	if task_doc:
+		meta = frappe.get_meta("Task")
+		if meta.has_field("custom_interchange_document") and task_doc.get(
+			"custom_interchange_document"
+		):
+			ct.interchange_document = task_doc.custom_interchange_document
+
+
+def _apply_container_specific_event(
+	seq: int,
+	project_name: str,
+	task_doc,
+	today_date,
+) -> None:
+	ctx = _event_context_from_task(task_doc)
+	ct = resolve_single_tracker(
+		project_name,
+		container_tracker=ctx.get("container_tracker"),
+		container_number=ctx.get("container_number"),
+		type_of_container=ctx.get("type_of_container"),
+	)
+
+	if seq == get_gate_out_task_sequence():
+		_apply_gate_out(ct, today_date, task_doc)
+	elif seq == get_container_task_sequence("custom_monitor_delivery_task_seq"):
+		_apply_delivery(ct, today_date)
+	elif seq == get_container_task_sequence("custom_offload_task_seq"):
+		_apply_offload(ct, today_date)
+	elif seq == get_empty_return_task_sequence():
+		_apply_empty_return(ct, today_date)
+	elif seq == get_container_task_sequence("custom_interchange_task_seq"):
+		_apply_interchange(ct, today_date, task_doc)
+	else:
+		return
+
+	_save_tracker(ct)
+
+
+def handle_sea_task_container_event(
+	project_name: str,
+	seq: int,
+	*,
+	task_doc=None,
+) -> None:
+	if not project_name:
+		return
+
+	if is_container_specific_event(seq):
+		_apply_container_specific_event(seq, project_name, task_doc, getdate(today()))
+		return
+
+	if not is_bulk_container_event(seq):
+		return
+
+	project = frappe.get_cached_doc("Project", project_name)
+	today_date = getdate(today())
+	trackers = _trackers_for_project(project_name)
+
+	if seq == get_container_task_sequence("custom_track_eta_task_seq"):
+		_apply_bulk_eta(project, trackers)
+	elif seq == get_container_task_sequence("custom_vessel_arrival_task_seq"):
+		_apply_bulk_vessel_arrival(project, trackers, today_date)
+	elif seq == get_container_task_sequence("custom_field_clearance_task_seq"):
+		_apply_bulk_field_clearance(project, trackers)
+	elif seq == get_container_task_sequence("custom_kpa_paid_task_seq"):
+		_apply_bulk_kpa_paid(project, trackers, today_date)
+	elif seq == get_container_task_sequence("custom_book_trucks_task_seq"):
+		create_container_trackers_for_project(project_name)
+
+
+def on_gate_out(project_name: str, *, task_doc=None) -> None:
+	handle_sea_task_container_event(
+		project_name, get_gate_out_task_sequence(), task_doc=task_doc
+	)
+
+
+def on_empty_return(project_name: str, *, task_doc=None) -> None:
+	handle_sea_task_container_event(
+		project_name, get_empty_return_task_sequence(), task_doc=task_doc
+	)
+
+
+def get_containers_for_project(project_name: str) -> list[dict]:
+	frappe.has_permission("Project", ptype="read", doc=project_name, throw=True)
+	if not frappe.db.exists("DocType", "Container Tracker"):
+		return []
+	rows = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project_name},
+		order_by="container_number asc",
+	)
+	out: list[dict] = []
+	for row in rows:
+		data = frappe.get_doc("Container Tracker", row.name).as_dict()
+		data.update(compute_container_metrics(data))
+		out.append(data)
+	return out
+
+
+def get_overdue_containers(project_name: str) -> list[dict]:
+	return [
+		c
+		for c in get_containers_for_project(project_name)
+		if c.get("status") == CONTAINER_STATUS_OVERDUE
+	]
+
+
+@frappe.whitelist()
+def refresh_open_project_container_metrics() -> int:
+	from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
+		refresh_open_container_metrics,
+	)
+
+	return refresh_open_container_metrics()

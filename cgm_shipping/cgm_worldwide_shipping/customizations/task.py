@@ -2500,6 +2500,18 @@ def on_task_update(doc, _method=None):
 
 			sync_project_shipment_status_from_tasks(doc.project)
 	prev = doc.get_doc_before_save()
+	if (
+		_is_sea_task(doc)
+		and doc.status == "Completed"
+		and (not prev or prev.status != "Completed")
+		and doc.project
+	):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+			handle_sea_task_container_event,
+		)
+
+		handle_sea_task_container_event(doc.project, seq, task_doc=doc)
+
 	if doc.status == "Completed" and (not prev or prev.status != "Completed"):
 		apply_finance_payment_to_project_permits(doc)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (

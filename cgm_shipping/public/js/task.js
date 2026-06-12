@@ -92,6 +92,17 @@ frappe.ui.form.on("Task", {
 					"Completed automatically at Project creation. Documents were copied from the Project file (approved on Lead/Opportunity)."
 				)
 			);
+		} else if (ui.is_document_checkpoint && frm.doc.project) {
+			set_task_intro(
+				frm,
+				__(
+					"Confirm that all shipment documents required for customs clearance are present and correct on the " +
+						"<b>Project</b>. Use <b>Open Shipment Project</b> below, review the <b>Client Documents</b> section, " +
+						"and ensure the final versions of all documents have been received from the client. " +
+						"Then add a brief note in <b>Description</b> (e.g. <i>Final BL and COC confirmed received from client</i>) " +
+						"and mark this task complete."
+				)
+			);
 		} else if (ui.is_sea_task && frm.doc.project) {
 			let intro = __(
 				"Use <b>Invoices & Receipts</b> for supplier invoices and payment proofs. " +
@@ -294,6 +305,7 @@ const CGM_SEA_UI_SEQUENCES_EMPTY = {
 	auto_complete_seqs: [],
 	permit_application_seqs: [],
 	light_proof_seqs: [],
+	document_checkpoint_seqs: [],
 	ucr_application_seqs: [],
 	finance_document_seqs: [],
 	permit_finance_seqs: [],
@@ -391,6 +403,11 @@ function get_cgm_permissions(frm) {
 
 function seq_in_list(seq, list) {
 	return (list || []).includes(seq);
+}
+
+function is_document_checkpoint_step(frm, seq) {
+	const s = seq !== undefined ? seq : sea_task_sequence(frm);
+	return seq_in_list(s, get_cgm_sea_seq_config(frm).document_checkpoint_seqs);
 }
 
 function is_ucr_application_step(frm, seq) {
@@ -529,6 +546,20 @@ function get_sea_task_ui(frm) {
 			show_description: true,
 			auto_intake_intro: false,
 			hide_mark_complete: true,
+		};
+	}
+	if (seq_in_list(seq, cfg.document_checkpoint_seqs)) {
+		return {
+			is_sea_task: true,
+			is_document_checkpoint: true,
+			show_documents: false,
+			documents_read_only: false,
+			show_permits: false,
+			show_payments: false,
+			show_external_ref: false,
+			show_description: true,
+			auto_intake_intro: false,
+			hide_mark_complete: false,
 		};
 	}
 	if (seq_in_list(seq, cfg.light_proof_seqs)) {
