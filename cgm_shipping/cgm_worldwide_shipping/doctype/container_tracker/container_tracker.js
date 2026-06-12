@@ -6,6 +6,7 @@ const CGM_CONTAINER_TRACKING_PROJECT_KEY = "cgm_container_tracking_project";
 
 const MODE_SECTIONS = {
 	"Mombasa Port": [
+		"section_identity",
 		"section_dates",
 		"section_warehouse",
 		"section_transport",
@@ -13,6 +14,7 @@ const MODE_SECTIONS = {
 		"section_empty_return",
 	],
 	"ICD Nairobi": [
+		"section_identity",
 		"section_dates",
 		"section_icd",
 		"section_warehouse",
@@ -21,6 +23,7 @@ const MODE_SECTIONS = {
 		"section_empty_return",
 	],
 	"Transit Kenya→Border": [
+		"section_identity",
 		"section_dates",
 		"section_transit",
 		"section_warehouse",
@@ -29,6 +32,7 @@ const MODE_SECTIONS = {
 		"section_empty_return",
 	],
 	"Transit Border→Kenya": [
+		"section_identity",
 		"section_dates",
 		"section_transit",
 		"section_warehouse",
@@ -37,6 +41,7 @@ const MODE_SECTIONS = {
 		"section_empty_return",
 	],
 	Export: [
+		"section_identity",
 		"section_dates",
 		"section_transport",
 		"section_charges",

@@ -6,6 +6,8 @@ project_container_tracking / project_tracking_layout modules.
 """
 from __future__ import annotations
 
+import json
+
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
@@ -19,6 +21,17 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 
 MODULE = "CGM Worldwide Shipping"
 
+SUPPLIER_CONTAINER_CHARGE_FIELDS = (
+	"custom_demurrage_free_days",
+	"custom_demurrage_daily_rate",
+	"custom_detention_free_days",
+	"custom_detention_daily_rate",
+	"custom_section_shipping_line_rules",
+	"custom_shipping_line_free_days_rules",
+	"custom_shipping_line_demurrage_tiers",
+	"custom_shipping_line_detention_tiers",
+)
+
 
 def _create_cf(dt: str, values: dict) -> None:
 	name = f"{dt}-{values['fieldname']}"
@@ -30,6 +43,18 @@ def _create_cf(dt: str, values: dict) -> None:
 	for key, value in values.items():
 		setattr(doc, key, value)
 	doc.insert(ignore_permissions=True)
+
+
+def _upsert_cf(dt: str, values: dict) -> None:
+	"""Create or update a Custom Field (keeps Supplier child tables in sync on migrate)."""
+	name = f"{dt}-{values['fieldname']}"
+	if frappe.db.exists("Custom Field", name):
+		doc = frappe.get_doc("Custom Field", name)
+		for key, value in values.items():
+			setattr(doc, key, value)
+		doc.save(ignore_permissions=True)
+		return
+	_create_cf(dt, values)
 
 
 def ensure_project_shipment_core_fields() -> None:
@@ -293,24 +318,53 @@ def _set_cf_property(fieldname: str, **kwargs) -> None:
 		frappe.db.set_value("Custom Field", name, key, value, update_modified=False)
 
 
+def ensure_supplier_field_order() -> None:
+	"""Ensure CGM Supplier fields are listed in field_order (otherwise they stay hidden)."""
+	ps_name = "Supplier-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+	raw = frappe.db.get_value("Property Setter", ps_name, "value") or "[]"
+	try:
+		order = json.loads(raw)
+	except json.JSONDecodeError:
+		return
+	if not isinstance(order, list):
+		return
+
+	order = [f for f in order if f not in SUPPLIER_CONTAINER_CHARGE_FIELDS]
+	anchor = "image" if "image" in order else "supplier_group"
+	if anchor in order:
+		idx = order.index(anchor) + 1
+		for offset, fieldname in enumerate(SUPPLIER_CONTAINER_CHARGE_FIELDS):
+			order.insert(idx + offset, fieldname)
+	else:
+		order.extend(SUPPLIER_CONTAINER_CHARGE_FIELDS)
+
+	frappe.db.set_value(
+		"Property Setter", ps_name, "value", json.dumps(order), update_modified=False
+	)
+
+
 def ensure_supplier_container_charge_fields() -> None:
 	"""Per shipping line: legacy flat fields (fallback) and tiered rule child tables."""
+	insert_after = "image"
 	for fieldname, label in (
 		("custom_demurrage_free_days", "Demurrage Free Days (legacy)"),
-		("custom_detention_free_days", "Detention Free Days (legacy)"),
 		("custom_demurrage_daily_rate", "Demurrage Daily Rate (legacy USD)"),
+		("custom_detention_free_days", "Detention Free Days (legacy)"),
 		("custom_detention_daily_rate", "Detention Daily Rate (legacy USD)"),
 	):
-		_create_cf(
+		_upsert_cf(
 			"Supplier",
 			{
 				"fieldname": fieldname,
 				"label": label,
 				"fieldtype": "Int" if "days" in fieldname else "Currency",
-				"insert_after": "supplier_group",
+				"insert_after": insert_after,
 			},
 		)
-	_create_cf(
+		insert_after = fieldname
+	_upsert_cf(
 		"Supplier",
 		{
 			"fieldname": "custom_section_shipping_line_rules",
@@ -320,33 +374,36 @@ def ensure_supplier_container_charge_fields() -> None:
 			"collapsible": 1,
 		},
 	)
+	insert_after = "custom_section_shipping_line_rules"
 	for fieldname, label, options in (
 		(
 			"custom_shipping_line_free_days_rules",
-			"Free Days Rules",
+			"Shipping Line Free Days Rules",
 			"Shipping Line Free Days Rule",
 		),
 		(
 			"custom_shipping_line_demurrage_tiers",
-			"Demurrage Rate Tiers",
+			"Shipping Line Demurrage Tiers",
 			"Shipping Line Demurrage Tier",
 		),
 		(
 			"custom_shipping_line_detention_tiers",
-			"Detention Rate Tiers",
+			"Shipping Line Detention Tiers",
 			"Shipping Line Detention Tier",
 		),
 	):
-		_create_cf(
+		_upsert_cf(
 			"Supplier",
 			{
 				"fieldname": fieldname,
 				"label": label,
 				"fieldtype": "Table",
 				"options": options,
-				"insert_after": "custom_section_shipping_line_rules",
+				"insert_after": insert_after,
 			},
 		)
+		insert_after = fieldname
+	ensure_supplier_field_order()
 	frappe.clear_cache(doctype="Supplier")
 
 
