@@ -202,7 +202,7 @@ frappe.ui.form.on("Task", {
 		if (
 			is_permit_finance_step(frm) &&
 			frm.doc.status !== "Completed" &&
-			frm.doc.custom_payment_entry &&
+			(frm.doc.custom_payment_entry || frm.doc.custom_journal_entry) &&
 			user_can_make_payment(frm) &&
 			permit_rows_pending_receipt_verification(frm).length
 		) {
@@ -267,6 +267,8 @@ frappe.ui.form.on("Task", {
 				);
 			}
 		}
+
+		show_finance_payment_indicator(frm);
 
 		if (ui.is_sea_task && frm.doc.project) {
 			frm.add_custom_button(__("Open Shipment Project"), () => {
@@ -1174,6 +1176,33 @@ function is_finance_department_task(frm) {
 	const finance_dept =
 		frm._cgm_finance_department || get_cgm_sea_seq_config(frm).finance_department;
 	return Boolean(finance_dept && frm.doc.department && frm.doc.department === finance_dept);
+}
+
+// Finance tasks show "Unpaid" until the payment Journal Entry is submitted
+// (posted). A drafted JE still reads as Unpaid here — it only unblocks the
+// downstream tasks — and turns "Paid" once the JE is submitted.
+function show_finance_payment_indicator(frm) {
+	if (frm.is_new() || !is_finance_department_task(frm)) {
+		return;
+	}
+	if (frm.doc.docstatus === 2 || frm.doc.status === "Cancelled") {
+		return;
+	}
+	const je = frm.doc.custom_journal_entry;
+	if (!je) {
+		frm.dashboard.add_indicator(__("Unpaid"), "red");
+		return;
+	}
+	frappe.db.get_value("Journal Entry", je, "docstatus").then((r) => {
+		const docstatus = r && r.message ? r.message.docstatus : 0;
+		if (docstatus === 1) {
+			frm.dashboard.add_indicator(__("Paid"), "green");
+		} else if (docstatus === 2) {
+			frm.dashboard.add_indicator(__("Unpaid"), "red");
+		} else {
+			frm.dashboard.add_indicator(__("Payment Drafted - Unpaid"), "orange");
+		}
+	});
 }
 
 function journal_account_filters(frm, bank_or_cash) {

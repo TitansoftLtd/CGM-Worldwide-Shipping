@@ -192,10 +192,16 @@ def finance_payment_completed(project: str, application_seq: int | None = None) 
 	fin_name = get_finance_permit_task_name(project, application_seq)
 	if not fin_name:
 		return False
-	pe = frappe.db.get_value("Task", fin_name, "custom_payment_entry")
-	if not pe or not frappe.db.exists("Payment Entry", pe):
-		return False
-	return int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1
+	# Finance pays via Journal Entry. A Journal Entry attached to the finance task
+	# counts as "payment recorded" even while still a Draft (docstatus 0) — only a
+	# Cancelled JE (docstatus 2) does not count. This unblocks the operational chain
+	# (downstream tasks may proceed) before the JE is posted; the finance task itself
+	# stays Unpaid until the JE is submitted.
+	je = frappe.db.get_value("Task", fin_name, "custom_journal_entry")
+	if je and frappe.db.exists("Journal Entry", je):
+		if int(frappe.db.get_value("Journal Entry", je, "docstatus") or 0) != 2:
+			return True
+	return False
 
 
 # ------------------------------------------------------------------
@@ -1553,12 +1559,13 @@ def get_ucr_declarant_workflow_status(task_name: str) -> dict:
 	fin_inv = get_ucr_invoice_line(finance_task) if finance_task else None
 	fin_rec = get_ucr_receipt_line(finance_task) if finance_task else None
 
+	# "Paid" means the Journal Entry is submitted (posted); a draft JE is still Unpaid.
 	payment_made = bool(
 		finance_task
-		and finance_task.get("custom_payment_entry")
+		and finance_task.get("custom_journal_entry")
 		and int(
 			frappe.db.get_value(
-				"Payment Entry", finance_task.custom_payment_entry, "docstatus"
+				"Journal Entry", finance_task.custom_journal_entry, "docstatus"
 			)
 			or 0
 		)
