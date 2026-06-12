@@ -1178,29 +1178,38 @@ function is_finance_department_task(frm) {
 	return Boolean(finance_dept && frm.doc.department && frm.doc.department === finance_dept);
 }
 
-// Finance tasks show "Unpaid" until the payment Journal Entry is submitted
-// (posted). A drafted JE still reads as Unpaid here — it only unblocks the
-// downstream tasks — and turns "Paid" once the JE is submitted.
+function set_finance_payment_indicator(frm, label, color) {
+	if (frm._cgm_payment_indicator_el) {
+		frm._cgm_payment_indicator_el.remove();
+		frm._cgm_payment_indicator_el = null;
+	}
+	if (label) {
+		frm._cgm_payment_indicator_el = frm.dashboard.add_indicator(__(label), color);
+	}
+}
+
 function show_finance_payment_indicator(frm) {
 	if (frm.is_new() || !is_finance_department_task(frm)) {
+		set_finance_payment_indicator(frm, null);
 		return;
 	}
 	if (frm.doc.docstatus === 2 || frm.doc.status === "Cancelled") {
+		set_finance_payment_indicator(frm, null);
 		return;
 	}
 	const je = frm.doc.custom_journal_entry;
 	if (!je) {
-		frm.dashboard.add_indicator(__("Unpaid"), "red");
+		set_finance_payment_indicator(frm, "Unpaid", "red");
 		return;
 	}
 	frappe.db.get_value("Journal Entry", je, "docstatus").then((r) => {
 		const docstatus = r && r.message ? r.message.docstatus : 0;
 		if (docstatus === 1) {
-			frm.dashboard.add_indicator(__("Paid"), "green");
+			set_finance_payment_indicator(frm, "Paid", "green");
 		} else if (docstatus === 2) {
-			frm.dashboard.add_indicator(__("Unpaid"), "red");
+			set_finance_payment_indicator(frm, null);
 		} else {
-			frm.dashboard.add_indicator(__("Payment Drafted - Unpaid"), "orange");
+			set_finance_payment_indicator(frm, "Payment Pending - Unpaid", "orange");
 		}
 	});
 }

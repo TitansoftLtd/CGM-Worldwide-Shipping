@@ -456,6 +456,8 @@ def auto_submit_permit_invoices_to_finance_if_needed(task) -> dict | None:
 	"""On save: notify Finance when all permit invoices are attached (no manual submit)."""
 	if frappe.flags.get("cgm_auto_submitting_permit_invoices"):
 		return None
+	if is_permit_application_task_doc(task) and not is_pre_clearance_permit_application_task(task):
+		return None
 	if (
 		task.get("custom_permit_invoices_submitted")
 		and not has_all_permit_invoices(task)
@@ -619,6 +621,18 @@ def validate_permit_application_can_complete(task) -> None:
 	if not is_permit_application_task(seq):
 		return
 
+	merge_project_permits_into_application_task(task)
+	rows = task.get(TASK_PERMITS_FIELD) or []
+
+	# Post-clearance permits are self-contained: the Declaration team prepares and
+	# pays directly — there is no separate "Finance pays" task, hence no finance
+	# handoff and no Finance receipt-verification. Enforce the tangible permit
+	# evidence only, and allow completion when there are no post-clearance permits.
+	if not is_pre_clearance_permit_application_task(task):
+		if rows:
+			_throw_missing_permit_evidence(rows)
+		return
+
 	if not task.get("custom_permit_invoices_submitted"):
 		frappe.throw(
 			"Attach all permit invoices and save — Finance is notified automatically — "
@@ -631,11 +645,22 @@ def validate_permit_application_can_complete(task) -> None:
 			"before this task can be completed."
 		)
 
-	merge_project_permits_into_application_task(task)
-	rows = task.get(TASK_PERMITS_FIELD) or []
 	if not rows:
 		frappe.throw("Add permit rows on <b>Task Permits</b> first.")
 
+	_throw_missing_permit_evidence(rows)
+
+	unverified = [r.permit_type for r in rows if r.permit_type and not r.get("receipt_verified")]
+	if unverified:
+		frappe.throw(
+			"Finance must tick <b>Receipt Verified</b> on each permit (on "
+			"<b>Finance pays Pre-Clearance Permits</b>) before completing. Pending: "
+			f"<b>{', '.join(unverified)}</b>."
+		)
+
+
+def _throw_missing_permit_evidence(rows) -> None:
+	"""Require Payment Receipt + Permit Certificate on each permit row."""
 	missing_receipts = [r.permit_type for r in rows if r.permit_type and not r.get("payment_receipt")]
 	if missing_receipts:
 		frappe.throw(
@@ -648,14 +673,6 @@ def validate_permit_application_can_complete(task) -> None:
 		frappe.throw(
 			"Upload <b>Permit Certificate</b> for each permit. Missing: "
 			f"<b>{', '.join(missing_certs)}</b>."
-		)
-
-	unverified = [r.permit_type for r in rows if r.permit_type and not r.get("receipt_verified")]
-	if unverified:
-		frappe.throw(
-			"Finance must tick <b>Receipt Verified</b> on each permit (on "
-			"<b>Finance pays Pre-Clearance Permits</b>) before completing. Pending: "
-			f"<b>{', '.join(unverified)}</b>."
 		)
 
 
