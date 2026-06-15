@@ -12,7 +12,7 @@ cgm_shipping.container_tracking.open_from_task = function (frm) {
 	frappe.db.get_value(
 		"Project",
 		frm.doc.project,
-		["custom_bill_of_lading", "custom_eta", "custom_batch_no"],
+		["custom_bill_of_lading", "custom_eta", "custom_shipping_line", "custom_final_destination"],
 		(values) => {
 			if (!values) {
 				frappe.msgprint(__("Could not load Project details."));
@@ -33,8 +33,11 @@ cgm_shipping.container_tracking.open_from_task = function (frm) {
 				if (values.custom_eta) {
 					doc.eta = values.custom_eta;
 				}
-				if (values.custom_batch_no) {
-					doc.batch_bl_no = values.custom_batch_no;
+				if (values.custom_shipping_line) {
+					doc.shipping_line = values.custom_shipping_line;
+				}
+				if (values.custom_final_destination) {
+					doc.delivery_destination = values.custom_final_destination;
 				}
 
 				frappe.show_alert({
