@@ -5,6 +5,9 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "tab_quotation_customs",
+  "section_default_customs_taxes",
+  "custom_default_customs_taxes",
   "sea_import_task_plan_tab",
   "section_break_sea_import",
   "custom_sea_import_task_template",
@@ -38,6 +41,23 @@
   "custom_ucr_finance_email_template"
  ],
  "fields": [
+  {
+   "fieldname": "tab_quotation_customs",
+   "fieldtype": "Tab Break",
+   "label": "Quotation customs"
+  },
+  {
+   "description": "Default percentage rates applied when VAT, IDF, or RDL is selected on a Quotation.",
+   "fieldname": "section_default_customs_taxes",
+   "fieldtype": "Section Break",
+   "label": "Default customs taxes"
+  },
+  {
+   "fieldname": "custom_default_customs_taxes",
+   "fieldtype": "Table",
+   "label": "Default Customs Taxes",
+   "options": "Default Customs Tax"
+  },
   {
    "fieldname": "sea_import_task_plan_tab",
    "fieldtype": "Tab Break",
