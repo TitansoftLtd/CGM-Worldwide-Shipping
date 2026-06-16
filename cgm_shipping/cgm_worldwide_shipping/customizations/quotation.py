@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import frappe
 from erpnext import get_company_currency
 from erpnext.selling.doctype.quotation.quotation import Quotation
 from erpnext.setup.utils import get_exchange_rate
 from frappe.utils import flt, round_based_on_smallest_currency_fraction
 
 IMPORT_COST_TABLE = "custom_import_cost_component"
+CUSTOMS_TAX_TABLE = "custom_customs_taxes"
 USD_CURRENCY = "USD"
+
+DEFAULT_RATE_TAX_TYPES = frozenset({"VAT", "IDF", "RDL"})
+MANUAL_RATE_TAX_TYPES = frozenset({"Duty", "Excise Duty"})
+FIXED_AMOUNT_TAX_TYPES = frozenset({"MSS Levy"})
 
 
 class CGMQuotation(Quotation):
@@ -38,26 +44,52 @@ class CGMQuotation(Quotation):
 		self.custom_customs_value_kes = customs_value_kes
 		self.custom_customs_value_usd = customs_value_usd
 
-		duty_amount = self._set_percent_of(
-			customs_value_kes, "custom_duty_rate_", "custom_duty_amount_kes"
-		)
-		idf_amount = self._set_percent_of(customs_value_kes, "custom_idf_rate_", "custom_idf_amount_kes")
-		rdl_amount = self._set_percent_of(customs_value_kes, "custom_rdl_rate_", "custom_rdl_amount_kes")
-		excise_amount = self._set_percent_of(
-			customs_value_kes + duty_amount,
-			"custom_excise_duty_rate_",
-			"custom_excise_duty_amount_kes",
-		)
-		vat_base = customs_value_kes + duty_amount + excise_amount + idf_amount + rdl_amount
-		vat_amount = self._set_percent_of(vat_base, "custom_vat_rate_", "custom_vat_amount_kes")
+		if not self.meta.has_field(CUSTOMS_TAX_TABLE):
+			return
 
-		mss_levy = self._money(self.custom_mss_levy_kes, "custom_mss_levy_kes")
-		total_taxes = self._money(
-			duty_amount + excise_amount + vat_amount + idf_amount + rdl_amount + mss_levy,
-			"custom_total_taxes_kes",
-		)
-		self.custom_total_taxes_kes = total_taxes
-		self._apply_customs_to_standard_totals(total_taxes)
+		usd_to_kes_rate = self._get_usd_to_kes_rate(rows, company_currency)
+		total_taxes_kes = 0.0
+		total_taxes_usd = 0.0
+		seen_tax_types: set[str] = set()
+
+		for tax_row in self.get(CUSTOMS_TAX_TABLE) or []:
+			tax_type = tax_row.tax_type
+			if not tax_type:
+				continue
+			if tax_type in seen_tax_types:
+				frappe.throw(
+					frappe._("Duplicate customs tax type {0} is not allowed.").format(tax_type)
+				)
+			seen_tax_types.add(tax_type)
+
+			calculation_type = frappe.db.get_value(
+				"Customs Tax Type", tax_type, "calculation_type"
+			)
+			if calculation_type == "Fixed Amount":
+				amount_kes = self._money(flt(tax_row.fixed_amount_kes), "amount_kes", tax_row)
+			else:
+				amount_kes = self._money(
+					customs_value_kes * (flt(tax_row.rate) / 100),
+					"amount_kes",
+					tax_row,
+				)
+
+			amount_usd = self._money(
+				flt(amount_kes / usd_to_kes_rate) if usd_to_kes_rate else 0.0,
+				"amount_usd",
+				tax_row,
+			)
+			tax_row.amount_kes = amount_kes
+			tax_row.amount_usd = amount_usd
+			total_taxes_kes += flt(amount_kes)
+			total_taxes_usd += flt(amount_usd)
+
+		total_taxes_kes = self._money(total_taxes_kes, "custom_total_taxes_kes")
+		total_taxes_usd = self._money(total_taxes_usd, "custom_total_taxes_usd")
+		self.custom_total_taxes_kes = total_taxes_kes
+		if self.meta.has_field("custom_total_taxes_usd"):
+			self.custom_total_taxes_usd = total_taxes_usd
+		self._apply_customs_to_standard_totals(total_taxes_kes)
 
 	def _apply_customs_to_standard_totals(self, total_taxes_kes: float) -> None:
 		"""Reflect import/customs taxes in ERPNext standard total fields."""
@@ -164,13 +196,33 @@ class CGMQuotation(Quotation):
 
 		return flt(get_exchange_rate(USD_CURRENCY, company_currency, self.transaction_date) or 0)
 
-	def _money(self, value, fieldname: str) -> float:
+	def _money(self, value, fieldname: str, row=None) -> float:
+		if row is not None:
+			return flt(value, row.precision(fieldname))
 		return flt(value, self.precision(fieldname))
 
-	def _rate(self, fieldname: str) -> float:
-		return flt(self.get(fieldname))
 
-	def _set_percent_of(self, base: float, rate_field: str, amount_field: str) -> float:
-		amount = self._money(base * (self._rate(rate_field) / 100), amount_field)
-		self.set(amount_field, amount)
-		return amount
+@frappe.whitelist()
+def get_customs_tax_type_info(tax_type: str) -> dict:
+	"""Return calculation type and default rate for a customs tax row."""
+	if not tax_type:
+		return {}
+
+	calculation_type = frappe.db.get_value("Customs Tax Type", tax_type, "calculation_type")
+	default_rate = None
+
+	if tax_type in DEFAULT_RATE_TAX_TYPES:
+		default_rate = frappe.db.get_value(
+			"Default Customs Tax",
+			{"parent": "CGM Shipping Settings", "parenttype": "CGM Shipping Settings", "tax_type": tax_type},
+			"default_rate",
+		)
+
+	return {
+		"calculation_type": calculation_type,
+		"default_rate": default_rate,
+		"uses_default_rate": tax_type in DEFAULT_RATE_TAX_TYPES,
+		"uses_manual_rate": tax_type in MANUAL_RATE_TAX_TYPES,
+		"uses_fixed_amount": tax_type in FIXED_AMOUNT_TAX_TYPES
+		or calculation_type == "Fixed Amount",
+	}
