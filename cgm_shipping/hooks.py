@@ -171,8 +171,8 @@ has_permission = {
 # ------------------------
 
 override_doctype_class = {
-	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
-	"Quotation": ["cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation"],
+	# "Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
+	# "Quotation": ["cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation"],
 }
 
 # Document Events
@@ -231,6 +231,7 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.before_task_save",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.validate_task_completion_requirements",
 		],
+	# "Quotation": ["cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation"],
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_update",
 	},
 }
