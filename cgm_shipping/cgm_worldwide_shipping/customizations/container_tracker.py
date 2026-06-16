@@ -575,19 +575,56 @@ def _apply_interchange(ct, today_date, task_doc) -> None:
 			ct.interchange_document = task_doc.custom_interchange_document
 
 
+def _resolve_event_tracker(project_name: str, ctx: dict):
+	"""Best-effort tracker resolution for a container-specific event.
+
+	Returns None — so task completion is NOT blocked — when the project has no
+	Container Tracker (e.g. LCL / consolidated cargo) or when the container is
+	ambiguous and the task does not pin one. The ambiguous / lookup-failure cases
+	show a non-blocking warning instead of throwing.
+	"""
+	container_tracker = ctx.get("container_tracker")
+	container_number = ctx.get("container_number")
+	if container_tracker or container_number:
+		try:
+			return resolve_single_tracker(
+				project_name,
+				container_tracker=container_tracker,
+				container_number=container_number,
+				type_of_container=ctx.get("type_of_container"),
+			)
+		except ContainerEventResolutionError as exc:
+			frappe.msgprint(str(exc), indicator="orange", alert=True)
+			return None
+
+	trackers = _trackers_for_project(project_name)
+	if not trackers:
+		# No containers on this project (LCL / consolidated) — nothing to update.
+		return None
+	if len(trackers) == 1:
+		# Unambiguous: use the project's sole container.
+		return trackers[0]
+	frappe.msgprint(
+		_(
+			"This task affects a single container but the project has multiple. "
+			"Set <b>Container Tracker</b> or <b>Container Number</b> on the task to "
+			"record this event on the right container."
+		),
+		indicator="orange",
+		alert=True,
+	)
+	return None
+
+
 def _apply_container_specific_event(
 	seq: int,
 	project_name: str,
 	task_doc,
 	today_date,
 ) -> None:
-	ctx = _event_context_from_task(task_doc)
-	ct = resolve_single_tracker(
-		project_name,
-		container_tracker=ctx.get("container_tracker"),
-		container_number=ctx.get("container_number"),
-		type_of_container=ctx.get("type_of_container"),
-	)
+	ct = _resolve_event_tracker(project_name, _event_context_from_task(task_doc))
+	if ct is None:
+		return
 
 	if seq == get_gate_out_task_sequence():
 		_apply_gate_out(ct, today_date, task_doc)
