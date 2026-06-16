@@ -114,14 +114,25 @@ def _rule_row_dict(rule: Any) -> dict[str, Any]:
 	return rule if isinstance(rule, dict) else rule.as_dict()
 
 
-def _rule_delivery_destination(rule: dict[str, Any]) -> str | None:
-	"""Read destination from rule row; supports legacy destination_region column."""
-	return rule.get("delivery_destination") or rule.get("destination_region")
-
-
 def _category_matches(rule_category: str | None, category: str) -> bool:
 	rule_cat = rule_category or "All"
 	return rule_cat in (category, "All")
+
+
+def _rule_delivery_destination(rule: dict[str, Any]) -> str | None:
+	"""Read destination from rule row (supports legacy destination_region column)."""
+	dest = rule.get("delivery_destination") or rule.get("destination_region")
+	return (dest or "").strip() or None
+
+
+def _normalize_rule_destination(value: str | None) -> str | None:
+	label = (value or "").strip()
+	if not label:
+		return None
+	for dest in get_valid_destinations():
+		if dest.lower() == label.lower():
+			return dest
+	return label
 
 
 def _match_rule(
@@ -143,8 +154,9 @@ def _match_rule(
 			fallback.append((score, rule))
 			continue
 
-		region = _rule_delivery_destination(rule)
-		if region and region == destination:
+		region = _normalize_rule_destination(_rule_delivery_destination(rule))
+		dest = _normalize_rule_destination(destination)
+		if region and dest and region == dest:
 			specific.append((score + 2, rule))
 
 	if specific:
@@ -168,7 +180,8 @@ def get_free_days_rule(
 	rules = get_supplier_child_rows(shipping_line, FREE_DAYS_RULES_FIELD)
 	if not rules:
 		return _legacy_supplier_rule(shipping_line)
-	return _match_rule(rules, destination or default_destination_name(), category)
+	normalized = _normalize_rule_destination(destination) or default_destination_name()
+	return _match_rule(rules, normalized, category)
 
 
 def _legacy_supplier_rule(shipping_line: str) -> dict[str, Any] | None:

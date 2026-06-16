@@ -26,24 +26,25 @@ def execute():
 		supplier = frappe.get_doc("Supplier", supplier_name)
 		changed = False
 		for row in supplier.get(FREE_DAYS_RULES_FIELD) or []:
-			region = (
-				row.get("delivery_destination") or row.get("destination_region") or ""
-			).strip()
+			dest_field = (
+				"delivery_destination"
+				if child_meta.has_field("delivery_destination")
+				else "destination_region"
+			)
+			region = (row.get(dest_field) or row.get("destination_region") or "").strip()
 			if not region:
 				continue
 			if region.lower() == "default":
 				if has_checkbox:
 					row.applies_to_all_destinations = 1
-				row.delivery_destination = None
-				if child_meta.has_field("destination_region"):
+				row.set(dest_field, None)
+				if dest_field != "destination_region" and hasattr(row, "destination_region"):
 					row.destination_region = None
 				changed = True
 				continue
 			canonical = valid_destinations.get(region.lower())
 			if canonical and canonical != region:
-				row.delivery_destination = canonical
-				if child_meta.has_field("destination_region"):
-					row.destination_region = None
+				row.set(dest_field, canonical)
 				changed = True
 
 		if changed:
