@@ -2526,6 +2526,12 @@ def on_task_onload(doc, _method=None):
 				frappe.flags.cgm_strip_checkpoint_documents = False
 			doc.reload()
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+		on_task_onload_container_updates,
+	)
+
+	on_task_onload_container_updates(doc)
+
 
 def before_task_save(doc, _method=None):
 	"""Pre-fill required document rows while the task is still open."""
@@ -2556,6 +2562,14 @@ def before_task_save(doc, _method=None):
 
 def on_task_update(doc, _method=None):
 	seq = _sea_task_seq(doc)
+
+	if _is_sea_task(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			apply_container_updates_from_task,
+		)
+
+		apply_container_updates_from_task(doc)
+
 	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status not in (
 		"Completed",
 		"Cancelled",
@@ -2694,6 +2708,12 @@ def validate_task_completion_requirements(doc, _method=None):
 					f"<b>Task {prev_task.seq}: {prev_task.subject}</b> ({prev_task.status or 'Open'})."
 				)
 		validate_sea_task_can_complete(doc)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+		validate_task_19_container_updates,
+	)
+
+	validate_task_19_container_updates(doc)
 
 
 # ==================== CGMTask override ====================
