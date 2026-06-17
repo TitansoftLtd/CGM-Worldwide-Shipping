@@ -5,43 +5,30 @@ const CGM_CONTAINER_TRACKING_TASK_KEY = "cgm_container_tracking_task";
 const CGM_CONTAINER_TRACKING_PROJECT_KEY = "cgm_container_tracking_project";
 
 const MODE_SECTIONS = {
-	"Mombasa Port": [
-		"section_dates",
-		"section_warehouse",
-		"section_transport",
-		"section_charges",
-		"section_empty_return",
-	],
+	"Mombasa Port": ["section_mombasa", "section_warehouse", "section_transport", "section_empty_return", "section_calculations"],
 	"ICD Nairobi": [
-		"section_dates",
+		"section_mombasa",
 		"section_icd",
 		"section_warehouse",
 		"section_transport",
-		"section_charges",
 		"section_empty_return",
+		"section_calculations",
 	],
 	"Transit Kenya→Border": [
-		"section_dates",
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
-		"section_charges",
 		"section_empty_return",
+		"section_calculations",
 	],
 	"Transit Border→Kenya": [
-		"section_dates",
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
-		"section_charges",
 		"section_empty_return",
+		"section_calculations",
 	],
-	Export: [
-		"section_dates",
-		"section_transport",
-		"section_charges",
-		"section_empty_return",
-	],
+	Export: ["section_mombasa", "section_transport", "section_empty_return", "section_calculations"],
 };
 
 function apply_container_mode_layout(frm) {
@@ -207,6 +194,9 @@ function apply_container_tracker_route_defaults(frm) {
 	if (opts.eta && !frm.doc.eta) {
 		frm.set_value("eta", opts.eta);
 	}
+	if (opts.batch_bl_no && !frm.doc.batch_bl_no) {
+		frm.set_value("batch_bl_no", opts.batch_bl_no);
+	}
 	frappe.route_options = null;
 }
 
@@ -222,6 +212,7 @@ function prompt_track_next_container(frm) {
 			doc.custom_bill_of_lading = bl;
 			doc.bl_number = bl;
 			doc.eta = frm.doc.eta;
+			doc.batch_bl_no = frm.doc.batch_bl_no;
 			frappe.set_route("Form", "Container Tracker", doc.name);
 		});
 	};

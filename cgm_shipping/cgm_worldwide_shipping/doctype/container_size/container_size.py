@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class ContainerCategory(Document):
+class ContainerSize(Document):
 	pass
