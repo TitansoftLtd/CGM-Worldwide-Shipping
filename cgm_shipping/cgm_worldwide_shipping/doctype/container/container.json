@@ -59,6 +59,7 @@
   },
   {
    "fetch_from": "container_tracker.status",
+   "fetch_if_empty": 0,
    "fieldname": "status",
    "fieldtype": "Data",
    "in_list_view": 1,

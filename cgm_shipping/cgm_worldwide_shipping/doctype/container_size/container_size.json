@@ -2,28 +2,28 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "allow_rename": 1,
- "autoname": "field:container_category",
- "creation": "2026-06-11 18:25:02.580194",
+ "autoname": "field:container_size",
+ "creation": "2026-06-16 19:12:29.792177",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "container_category"
+  "container_size"
  ],
  "fields": [
   {
-   "fieldname": "container_category",
+   "fieldname": "container_size",
    "fieldtype": "Data",
-   "label": "Container Category",
+   "label": "Container Size",
    "unique": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-11 18:29:03.048679",
+ "modified": "2026-06-16 19:13:38.823808",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
- "name": "Container Category",
+ "name": "Container Size",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [

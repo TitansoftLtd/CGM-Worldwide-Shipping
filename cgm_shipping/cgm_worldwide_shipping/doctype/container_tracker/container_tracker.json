@@ -34,34 +34,48 @@
   "icd_gate_in_date",
   "column_break_quen",
   "icd_gate_out_date",
-  "section_transport",
-  "transporter",
-  "truck_number",
-  "column_break_pxob",
-  "driver_name",
-  "driver_contact",
-  "section_warehouse",
-  "gate_in_date_warehouse",
-  "offloading_date",
-  "column_break_luhf",
-  "delivery_date",
-  "warehouse_loading_date",
   "section_transit",
   "border_clearance_date",
   "column_break_qkej",
   "transit_gate_in_date",
   "column_break_mtin",
   "transit_gate_out_date",
+  "free_days_and_charges_tab",
   "section_charges",
+  "free_days_start_date",
+  "free_days_end_date",
+  "detention_free_start_date",
+  "detention_free_end_date",
   "free_days",
   "detention_free_days",
+  "demurrage_daily_rate",
+  "detention_daily_rate",
+  "kpa_free_days",
+  "kpa_daily_rate",
   "rate_source",
   "port_days_used",
   "column_break_charges",
   "demurrage_days",
   "demurrage_amount",
+  "kpa_days",
+  "kpa_amount",
   "detention_days",
   "detention_amount",
+  "transport_and_delivery_tab",
+  "section_transport",
+  "transporter",
+  "truck_number",
+  "column_break_pxob",
+  "driver_name",
+  "driver_contact",
+  "warehouse_tab",
+  "section_warehouse",
+  "gate_in_date_warehouse",
+  "offloading_date",
+  "column_break_luhf",
+  "delivery_date",
+  "warehouse_loading_date",
+  "empty_return_and_interchange_tab",
   "section_empty_return",
   "expected_empty_return",
   "actual_empty_return",
@@ -140,14 +154,15 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Status",
-   "options": "At Port\nDispatched\nIn Transit\nDelivered\nEmpty Pending Return\nOverdue\nEmpty Returned\nInterchange Received",
+   "label": "Operational Status",
+   "options": "Pending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received",
    "read_only": 1
   },
   {
    "fieldname": "current_location",
    "fieldtype": "Data",
-   "label": "Current Location"
+   "label": "Current Location",
+   "read_only": 1
   },
   {
    "fieldname": "delivery_location",
@@ -172,7 +187,19 @@
   {
    "fieldname": "discharging_date",
    "fieldtype": "Date",
-   "label": "Discharging Date"
+   "label": "Gate In Port / Discharge Date"
+  },
+  {
+   "description": "Start of shipping-line free period (usually discharge or berthing date)",
+   "fieldname": "free_days_start_date",
+   "fieldtype": "Date",
+   "label": "Free Days Start Date"
+  },
+  {
+   "description": "Last day of shipping-line free period",
+   "fieldname": "free_days_end_date",
+   "fieldtype": "Date",
+   "label": "Free Days End Date"
   },
   {
    "fieldname": "custom_release_date",
@@ -186,7 +213,7 @@
   {
    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
-   "label": "Gate Out Date (Port)"
+   "label": "Gate Out Port Date"
   },
   {
    "fieldname": "free_days_count_from",
@@ -224,10 +251,8 @@
    "label": "ICD Gate Out Date"
   },
   {
-   "collapsible": 1,
    "fieldname": "section_transport",
-   "fieldtype": "Section Break",
-   "label": "Transport & Delivery"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "truck_number",
@@ -251,10 +276,8 @@
    "options": "Supplier"
   },
   {
-   "collapsible": 1,
    "fieldname": "section_warehouse",
-   "fieldtype": "Section Break",
-   "label": "Warehouse"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "gate_in_date_warehouse",
@@ -299,22 +322,54 @@
    "label": "Transit Gate Out Date"
   },
   {
-   "collapsible": 1,
    "fieldname": "section_charges",
-   "fieldtype": "Section Break",
-   "label": "Free Days & Charges"
+   "fieldtype": "Section Break"
   },
   {
-   "description": "Auto-filled from shipping line; editable for exceptions",
+   "description": "Derived from free days start/end when both are set",
    "fieldname": "free_days",
    "fieldtype": "Int",
-   "label": "Free Days (Demurrage)"
+   "label": "Free Days (Demurrage)",
+   "read_only": 1
   },
   {
-   "description": "Auto-filled from shipping line; editable for exceptions",
+   "description": "Derived from detention free start/end when both are set",
    "fieldname": "detention_free_days",
    "fieldtype": "Int",
-   "label": "Detention Free Days"
+   "label": "Detention Free Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "detention_free_start_date",
+   "fieldtype": "Date",
+   "label": "Detention Free Start Date"
+  },
+  {
+   "fieldname": "detention_free_end_date",
+   "fieldtype": "Date",
+   "label": "Detention Free End Date"
+  },
+  {
+   "description": "From shipping line guarantee / waiver",
+   "fieldname": "demurrage_daily_rate",
+   "fieldtype": "Currency",
+   "label": "Demurrage Daily Rate"
+  },
+  {
+   "description": "From shipping line guarantee / waiver",
+   "fieldname": "detention_daily_rate",
+   "fieldtype": "Currency",
+   "label": "Detention Daily Rate"
+  },
+  {
+   "fieldname": "kpa_free_days",
+   "fieldtype": "Int",
+   "label": "KPA Free Days"
+  },
+  {
+   "fieldname": "kpa_daily_rate",
+   "fieldtype": "Currency",
+   "label": "KPA Daily Rate"
   },
   {
    "fieldname": "rate_source",
@@ -323,14 +378,14 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_charges",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "port_days_used",
    "fieldtype": "Int",
    "label": "Port Days Used",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_charges",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "demurrage_days",
@@ -342,6 +397,18 @@
    "fieldname": "demurrage_amount",
    "fieldtype": "Currency",
    "label": "Demurrage Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kpa_days",
+   "fieldtype": "Int",
+   "label": "KPA Chargeable Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kpa_amount",
+   "fieldtype": "Currency",
+   "label": "KPA Amount",
    "read_only": 1
   },
   {
@@ -357,10 +424,8 @@
    "read_only": 1
   },
   {
-   "collapsible": 1,
    "fieldname": "section_empty_return",
-   "fieldtype": "Section Break",
-   "label": "Empty Return & Interchange"
+   "fieldtype": "Section Break"
   },
   {
    "description": "Gate out + detention free days",
@@ -438,11 +503,31 @@
   {
    "fieldname": "column_break_mtin",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "free_days_and_charges_tab",
+   "fieldtype": "Tab Break",
+   "label": "Free Days and Charges"
+  },
+  {
+   "fieldname": "transport_and_delivery_tab",
+   "fieldtype": "Tab Break",
+   "label": "Transport and Delivery"
+  },
+  {
+   "fieldname": "warehouse_tab",
+   "fieldtype": "Tab Break",
+   "label": "Warehouse"
+  },
+  {
+   "fieldname": "empty_return_and_interchange_tab",
+   "fieldtype": "Tab Break",
+   "label": "Empty Return and Interchange"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-12 13:54:54.751803",
+ "modified": "2026-06-17 11:12:40.478798",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

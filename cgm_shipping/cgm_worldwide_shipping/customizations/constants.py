@@ -39,15 +39,24 @@ DEPARTMENT_NAME_ALIASES = {
 	"Administration": "Documentation",
 }
 
-# Container lifecycle status (Container Tracker doctype).
-CONTAINER_STATUS_AT_PORT = "At Port"
-CONTAINER_STATUS_DISPATCHED = "Dispatched"
-CONTAINER_STATUS_IN_TRANSIT = "In Transit"
-CONTAINER_STATUS_DELIVERED = "Delivered"
-CONTAINER_STATUS_EMPTY_PENDING = "Empty Pending Return"
+# Container lifecycle operational status (derived from dates only).
+CONTAINER_STATUS_PENDING_ARRIVAL = "Pending Arrival"
+CONTAINER_STATUS_VESSEL_BERTHED = "Vessel Berthed"
+CONTAINER_STATUS_DISCHARGED_AT_PORT = "Discharged / At Port"
+CONTAINER_STATUS_RELEASED_IN_TRANSIT = "Released / In Transit"
+CONTAINER_STATUS_AT_WAREHOUSE = "At Warehouse"
+CONTAINER_STATUS_CARGO_OFFLOADED = "Cargo Offloaded"
 CONTAINER_STATUS_EMPTY_RETURNED = "Empty Returned"
 CONTAINER_STATUS_INTERCHANGE = "Interchange Received"
-CONTAINER_STATUS_OVERDUE = "Overdue"
+CONTAINER_STATUS_RETURN_OVERDUE = "Return Overdue"
+
+# Legacy aliases (reports / portal may still reference these strings).
+CONTAINER_STATUS_AT_PORT = CONTAINER_STATUS_DISCHARGED_AT_PORT
+CONTAINER_STATUS_AWAITING_DISCHARGE = CONTAINER_STATUS_VESSEL_BERTHED
+CONTAINER_STATUS_DISPATCHED = CONTAINER_STATUS_RELEASED_IN_TRANSIT
+CONTAINER_STATUS_DELIVERED = CONTAINER_STATUS_AT_WAREHOUSE
+CONTAINER_STATUS_EMPTY_PENDING = CONTAINER_STATUS_CARGO_OFFLOADED
+CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 
 # Fallback sequence numbers used when CGM Shipping Settings fields are
 # not yet configured. Configure in CGM Shipping Settings → Container
@@ -73,6 +82,11 @@ TASK_SEQ_EMPTY_RETURN = CONTAINER_TASK_SEQ_DEFAULTS["custom_empty_return_task_se
 TASK_CONTAINER_TRACKER_FIELD = "custom_container_tracker"
 TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
 TASK_TYPE_OF_CONTAINER_FIELD = "custom_type_of_container"
+
+# Task child table for per-container data entry (tasks 11, 16, 18–24).
+TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
+CONTAINER_UPDATE_TASK_SEQS = frozenset({11, 16, 18, 19, 20, 21, 22, 23, 24})
+CONTAINER_UPDATE_SEED_SEQS = frozenset({11, 16, 18, 19, 20, 21, 22, 23, 24})
 
 # Settings fieldnames — bulk events update every tracker on the project.
 BULK_CONTAINER_TASK_SEQ_FIELDS = (

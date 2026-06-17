@@ -62,7 +62,6 @@ doctype_js = {
 		"public/js/crm_lead.js",
 	],
 	"Customer": "public/js/crm_customer.js",
-	"Quotation": "public/js/quotation.js",
 	"Opportunity": [
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
@@ -120,6 +119,7 @@ jinja = {
 
 # before_install = "cgm_shipping.install.before_install"
 # after_install = "cgm_shipping.install.after_install"
+after_migrate = ["cgm_shipping.install.after_migrate"]
 
 # Uninstallation
 # ------------
@@ -171,7 +171,6 @@ has_permission = {
 
 override_doctype_class = {
 	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
-	"Quotation": ["cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation"],
 }
 
 # Document Events

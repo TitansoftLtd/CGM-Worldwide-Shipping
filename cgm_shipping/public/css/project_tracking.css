@@ -134,3 +134,86 @@
 	color: #c62828;
 	font-weight: 600;
 }
+
+.cgm-container-dashboard {
+	margin-top: 8px;
+	border: 1px solid #d1d8dd;
+	border-radius: 6px;
+	padding: 12px;
+	background: #fff;
+}
+
+.cgm-container-dashboard-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+
+.cgm-container-dashboard-title {
+	margin: 0 0 4px;
+	font-size: 14px;
+}
+
+.cgm-container-dashboard-actions {
+	display: flex;
+	gap: 6px;
+}
+
+.cgm-container-kpis {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px;
+	font-size: 12px;
+	margin-bottom: 12px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid #eef0f3;
+}
+
+.cgm-container-cards {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.cgm-container-card {
+	border: 1px solid #e8eaed;
+	border-radius: 6px;
+	padding: 10px 12px;
+	background: #fafbfc;
+}
+
+.cgm-container-card-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 6px;
+	font-size: 13px;
+}
+
+.cgm-container-card-status {
+	font-weight: 600;
+	font-size: 12px;
+}
+
+.cgm-container-card-body {
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.cgm-container-card-alert {
+	margin-top: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #c62828;
+}
+
+.cgm-container-card-actions {
+	margin-top: 8px;
+}
+
+.cgm-container-empty {
+	padding: 12px 0;
+	font-size: 12px;
+}

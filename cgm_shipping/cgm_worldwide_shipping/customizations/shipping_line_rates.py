@@ -13,6 +13,27 @@ DETENTION_TIERS_FIELD = "custom_shipping_line_detention_tiers"
 COUNT_FROM_BERTHING = "Berthing Date"
 COUNT_FROM_DISCHARGE = "Discharge Date"
 
+SUPPLIER_CHILD_TABLE_FIELDS = (
+	FREE_DAYS_RULES_FIELD,
+	DEMURRAGE_TIERS_FIELD,
+	DETENTION_TIERS_FIELD,
+)
+
+
+def supplier_has_child_table_field(fieldname: str) -> bool:
+	if not frappe.db.exists("DocType", "Supplier"):
+		return False
+	return frappe.get_meta("Supplier").has_field(fieldname)
+
+
+def get_supplier_child_rows(supplier_name: str, fieldname: str) -> list:
+	"""Safely read a Supplier child table; returns [] when the field is not on the DocType."""
+	if not supplier_name or not frappe.db.exists("Supplier", supplier_name):
+		return []
+	if not supplier_has_child_table_field(fieldname):
+		return []
+	return frappe.get_doc("Supplier", supplier_name).get(fieldname) or []
+
 
 @frappe.request_cache
 def get_valid_destinations() -> list[str]:
@@ -89,29 +110,64 @@ def resolve_container_type_key(type_of_container: str | None) -> str:
 	return "All"
 
 
+def _rule_row_dict(rule: Any) -> dict[str, Any]:
+	return rule if isinstance(rule, dict) else rule.as_dict()
+
+
+def _category_matches(rule_category: str | None, category: str) -> bool:
+	rule_cat = rule_category or "All"
+	return rule_cat in (category, "All")
+
+
+def _rule_delivery_destination(rule: dict[str, Any]) -> str | None:
+	"""Read destination from rule row (supports legacy destination_region column)."""
+	dest = rule.get("delivery_destination") or rule.get("destination_region")
+	return (dest or "").strip() or None
+
+
+def _normalize_rule_destination(value: str | None) -> str | None:
+	label = (value or "").strip()
+	if not label:
+		return None
+	for dest in get_valid_destinations():
+		if dest.lower() == label.lower():
+			return dest
+	return label
+
+
 def _match_rule(
-	rules: list[dict[str, Any]],
+	rules: list[Any],
 	destination: str,
 	category: str,
 ) -> dict[str, Any] | None:
-	candidates: list[tuple[int, dict[str, Any]]] = []
-	for rule in rules:
-		region = rule.get("destination_region") or "Default"
-		rule_cat = rule.get("container_category") or "All"
-		if region not in (destination, "Default"):
+	specific: list[tuple[int, dict[str, Any]]] = []
+	fallback: list[tuple[int, dict[str, Any]]] = []
+
+	for raw in rules:
+		rule = _rule_row_dict(raw)
+		if not _category_matches(rule.get("container_category"), category):
 			continue
-		if rule_cat not in (category, "All"):
+
+		score = 1 if rule.get("container_category") == category else 0
+
+		if rule.get("applies_to_all_destinations"):
+			fallback.append((score, rule))
 			continue
-		score = 0
-		if region == destination:
-			score += 2
-		if rule_cat == category:
-			score += 1
-		candidates.append((score, rule))
-	if not candidates:
-		return None
-	candidates.sort(key=lambda item: item[0], reverse=True)
-	return candidates[0][1]
+
+		region = _normalize_rule_destination(_rule_delivery_destination(rule))
+		dest = _normalize_rule_destination(destination)
+		if region and dest and region == dest:
+			specific.append((score + 2, rule))
+
+	if specific:
+		specific.sort(key=lambda item: item[0], reverse=True)
+		return specific[0][1]
+
+	if fallback:
+		fallback.sort(key=lambda item: item[0], reverse=True)
+		return fallback[0][1]
+
+	return None
 
 
 def get_free_days_rule(
@@ -119,13 +175,13 @@ def get_free_days_rule(
 	destination: str,
 	category: str,
 ) -> dict[str, Any] | None:
-	if not shipping_line or not frappe.db.exists("Supplier", shipping_line):
+	if not shipping_line:
 		return None
-	supplier = frappe.get_doc("Supplier", shipping_line)
-	rules = supplier.get(FREE_DAYS_RULES_FIELD) or []
+	rules = get_supplier_child_rows(shipping_line, FREE_DAYS_RULES_FIELD)
 	if not rules:
 		return _legacy_supplier_rule(shipping_line)
-	return _match_rule(rules, destination or default_destination_name(), category)
+	normalized = _normalize_rule_destination(destination) or default_destination_name()
+	return _match_rule(rules, normalized, category)
 
 
 def _legacy_supplier_rule(shipping_line: str) -> dict[str, Any] | None:
@@ -144,7 +200,8 @@ def _legacy_supplier_rule(shipping_line: str) -> dict[str, Any] | None:
 		"free_days": int(values.custom_demurrage_free_days),
 		"detention_free_days": values.get("custom_detention_free_days"),
 		"count_from": COUNT_FROM_DISCHARGE,
-		"destination_region": "Default",
+		"applies_to_all_destinations": 1,
+		"delivery_destination": None,
 		"container_category": "All",
 	}
 
@@ -154,7 +211,10 @@ def build_rate_source_label(
 ) -> str:
 	if not rule:
 		return shipping_line or ""
-	region = rule.get("destination_region") or destination
+	if rule.get("applies_to_all_destinations"):
+		region = "All Destinations"
+	else:
+		region = _rule_delivery_destination(rule) or destination
 	free_days = rule.get("free_days")
 	return f"{shipping_line} {region} {category} ({free_days}-day)"
 
@@ -162,19 +222,26 @@ def build_rate_source_label(
 def get_charge_tiers(
 	shipping_line: str, charge_type: str, container_type_key: str
 ) -> list[dict[str, Any]]:
-	if not shipping_line or not frappe.db.exists("Supplier", shipping_line):
+	if not shipping_line:
 		return []
 	field = DEMURRAGE_TIERS_FIELD if charge_type == "demurrage" else DETENTION_TIERS_FIELD
-	supplier = frappe.get_doc("Supplier", shipping_line)
-	rows = supplier.get(field) or []
+	rows = get_supplier_child_rows(shipping_line, field)
 	if not rows and charge_type == "demurrage":
 		return _legacy_flat_demurrage_tier(shipping_line, container_type_key)
 	if not rows and charge_type == "detention":
 		return _legacy_flat_detention_tier(shipping_line, container_type_key)
-	matched = [r for r in rows if r.container_type in (container_type_key, "All")]
+	matched = [
+		_rule_row_dict(r)
+		for r in rows
+		if _rule_row_dict(r).get("container_type") in (container_type_key, "All")
+	]
 	if not matched:
-		matched = [r for r in rows if r.container_type == "All"]
-	return sorted(matched, key=lambda r: int(r.from_day or 1))
+		matched = [
+			_rule_row_dict(r)
+			for r in rows
+			if _rule_row_dict(r).get("container_type") == "All"
+		]
+	return sorted(matched, key=lambda r: int(r.get("from_day") or 1))
 
 
 def _legacy_flat_demurrage_tier(shipping_line: str, container_type_key: str) -> list[dict]:
