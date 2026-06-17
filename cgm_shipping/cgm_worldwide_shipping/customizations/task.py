@@ -657,12 +657,7 @@ def copy_ucr_invoice_to_finance_task(finance_task) -> None:
 
 
 def ucr_payment_made_for_project(project: str) -> bool:
-	"""True when Finance pays UCR has a Journal Entry (Draft or Submitted).
-
-	A Journal Entry attached to the finance task counts as "payment recorded"
-	even before it is posted, so Operations can upload the UCR receipt without
-	waiting for Finance to submit; only a Cancelled JE (docstatus 2) does not.
-	"""
+	"""True when Finance pays UCR has a submitted Payment Entry."""
 	if not project:
 		return False
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -672,10 +667,10 @@ def ucr_payment_made_for_project(project: str) -> bool:
 	finance_name = get_ucr_finance_task(project)
 	if not finance_name:
 		return False
-	je_name = frappe.db.get_value("Task", finance_name, "custom_journal_entry")
-	if not je_name or not frappe.db.exists("Journal Entry", je_name):
+	pe_name = frappe.db.get_value("Task", finance_name, "custom_payment_entry")
+	if not pe_name:
 		return False
-	return int(frappe.db.get_value("Journal Entry", je_name, "docstatus") or 0) != 2
+	return int(frappe.db.get_value("Payment Entry", pe_name, "docstatus") or 0) == 1
 
 
 def copy_ucr_receipt_to_finance_task(application_task) -> str | None:
@@ -1317,20 +1312,26 @@ def validate_permit_application_task(task, seq: int) -> None:
 
 def validate_finance_task(task) -> None:
 	seq = int(task.get("custom_sequence_no") or 0)
-	# Permit finance completes via the declarant receipt-verification flow.
-	if is_permit_finance_payment_task(seq):
-		return
-	je = task.get("custom_journal_entry")
-	# A Journal Entry (even a Draft) lets the finance task proceed/complete so work
-	# can move on; only a Cancelled JE (docstatus 2) does not count. The task is
-	# flagged "Unpaid" (see show_finance_payment_indicator) until the JE is
-	# submitted, at which point it reads "Paid".
-	je_ok = bool(je) and int(frappe.db.get_value("Journal Entry", je, "docstatus") or 0) != 2
-	if not je_ok:
+	attached = attached_document_codes(task)
+	if not is_permit_finance_payment_task(seq) and SUPPLIER_INVOICE_CODE not in attached:
 		frappe.throw(
-			"Record payment via <b>Make Payment</b> (a <b>Journal Entry</b> is created) "
+			"Attach the <b>Supplier Invoice</b> on <b>Task Documents</b> for Accounts to verify "
 			"before completing this finance task."
 		)
+
+	task_fields = frappe.get_meta("Task")
+	if task_fields.has_field("custom_purchase_invoice") and not task.get("custom_purchase_invoice"):
+		frappe.throw(
+			"Create and submit a <b>Purchase Invoice</b> from this task before completion."
+		)
+	if task_fields.has_field("custom_payment_entry") and not task.get("custom_payment_entry"):
+		frappe.throw(
+			"Record payment via <b>Make Payment</b> and submit the <b>Payment Entry</b> before completion."
+		)
+	if task.get("custom_payment_entry"):
+		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
+		if int(pe_status or 0) != 1:
+			frappe.throw("Payment Entry must be <b>submitted</b> before completing this finance task.")
 
 
 def sync_task_permits_to_project(task) -> None:
@@ -2174,137 +2175,6 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 	}
 
 
-# ==================== Journal Entry payment → task completion ====================
-def journal_entry_on_submit(doc, method=None) -> None:
-	"""Complete the source finance Task when its payment Journal Entry is submitted.
-
-	The Journal Entry (created from the task's Make Payment dialog) replaces the
-	old Purchase Invoice + Payment Entry completion flow.
-	"""
-	task_name = doc.get("custom_cgm_source_task")
-	if not task_name or not frappe.db.exists("Task", task_name):
-		return
-	try:
-		complete_task_with_journal_entry(task_name, doc.name)
-	except Exception:
-		frappe.log_error(
-			title="CGM complete task from Journal Entry failed",
-			message=f"JE {doc.name} -> task {task_name}",
-		)
-
-
-def journal_entry_on_cancel(doc, method=None) -> None:
-	"""Unlink a cancelled payment Journal Entry from its Task and reopen the task
-	if that Journal Entry had completed it."""
-	task_name = doc.get("custom_cgm_source_task") or frappe.db.get_value(
-		"Task", {"custom_journal_entry": doc.name}, "name"
-	)
-	if not task_name or not frappe.db.exists("Task", task_name):
-		return
-	task = frappe.get_doc("Task", task_name)
-	if task.get("custom_journal_entry") != doc.name:
-		return
-	updates = {"custom_journal_entry": None}
-	if task.status == "Completed":
-		updates.update({"status": "Open", "completed_by": None, "completed_on": None})
-	frappe.flags.cgm_skip_task_project_sync = True
-	try:
-		_set_task_fields(task.name, updates)
-	finally:
-		frappe.flags.cgm_skip_task_project_sync = False
-
-
-@frappe.whitelist()
-def complete_task_with_journal_entry(task_name: str, journal_entry: str) -> dict:
-	"""Link a submitted payment Journal Entry to its finance Task and complete it.
-
-	Mirrors complete_task_with_payment_enhanced for the Journal-Entry payment flow:
-	plain finance-payment tasks complete immediately; UCR / permit finance tasks
-	record the payment and wait for the declarant receipts before completing.
-	"""
-	if not task_name or not frappe.db.exists("Task", task_name):
-		frappe.throw(f"Task {task_name} not found")
-	if not journal_entry or not frappe.db.exists("Journal Entry", journal_entry):
-		frappe.throw(f"Journal Entry {journal_entry} not found")
-	if int(frappe.db.get_value("Journal Entry", journal_entry, "docstatus") or 0) != 1:
-		frappe.throw("Journal Entry must be submitted before completing the task.")
-
-	task = frappe.get_doc("Task", task_name)
-	task_fields = frappe.get_meta("Task")
-	if task_fields.has_field("custom_journal_entry") and task.get("custom_journal_entry") != journal_entry:
-		_set_task_fields(task.name, {"custom_journal_entry": journal_entry})
-		task = frappe.get_doc("Task", task.name)
-
-	seq = int(task.get("custom_sequence_no") or 0)
-
-	# UCR / permit finance: record payment only - complete after receipts verified.
-	if is_ucr_finance_payment_task(seq) or is_permit_finance_payment_task(seq):
-		frappe.flags.cgm_skip_task_project_sync = True
-		try:
-			if is_permit_finance_payment_task(seq):
-				apply_finance_payment_to_project_permits(task)
-				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-					notify_declarant_upload_permit_receipts,
-					seed_finance_task_permits_from_project,
-				)
-
-				seed_finance_task_permits_from_project(task)
-				sync_task_permits_to_project(task)
-				notify_declarant_upload_permit_receipts(task)
-				message = (
-					"Payment recorded. Declarant must upload payment receipts and permit "
-					"certificates on Apply for Pre-Clearance Permits; Finance must verify "
-					"receipts before completing this task."
-				)
-			else:
-				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-					notify_operations_upload_ucr_receipt,
-					sync_ucr_payment_to_idf_record,
-				)
-
-				sync_ucr_payment_to_idf_record(task)
-				notify_operations_upload_ucr_receipt(task)
-				message = (
-					"Payment recorded. Declarant must upload the UCR payment receipt on "
-					"<b>Create UCR (IDF)</b>; Finance verifies the receipt before completing this task."
-				)
-		finally:
-			frappe.flags.cgm_skip_task_project_sync = False
-		return {
-			"task": task.name,
-			"status": task.status,
-			"journal_entry": journal_entry,
-			"auto_completed": False,
-			"message": message,
-		}
-
-	if task.status == "Completed":
-		return {
-			"task": task.name,
-			"status": "Completed",
-			"journal_entry": journal_entry,
-			"auto_completed": True,
-			"message": "Task already completed.",
-		}
-
-	task.completed_by = frappe.session.user
-	task.completed_on = now_datetime()
-	task.status = "Completed"
-	frappe.flags.cgm_skip_task_project_sync = True
-	try:
-		task.save(ignore_permissions=True)
-	finally:
-		frappe.flags.cgm_skip_task_project_sync = False
-	apply_finance_payment_to_project_permits(task)
-
-	return {
-		"task": task.name,
-		"status": task.status,
-		"journal_entry": journal_entry,
-		"auto_completed": True,
-	}
-
-
 # ==================== Permit item mapping ====================
 
 """Map Permit Type → ERPNext Item for Purchase Invoice lines."""
@@ -2644,18 +2514,6 @@ def on_task_update(doc, _method=None):
 
 			sync_project_shipment_status_from_tasks(doc.project)
 	prev = doc.get_doc_before_save()
-	if (
-		_is_sea_task(doc)
-		and doc.status == "Completed"
-		and (not prev or prev.status != "Completed")
-		and doc.project
-	):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
-			handle_sea_task_container_event,
-		)
-
-		handle_sea_task_container_event(doc.project, seq, task_doc=doc)
-
 	if doc.status == "Completed" and (not prev or prev.status != "Completed"):
 		apply_finance_payment_to_project_permits(doc)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -2698,9 +2556,7 @@ def validate_task_completion_requirements(doc, _method=None):
 				get_incomplete_sea_tasks,
 			)
 
-			# Finance payment steps don't block downstream tasks — Finance pays in
-			# parallel; finance steps are still enforced at final project closure.
-			incomplete = get_incomplete_sea_tasks(doc.project, seq, exclude_finance=True)
+			incomplete = get_incomplete_sea_tasks(doc.project, seq)
 			if incomplete:
 				prev_task = incomplete[0]
 				frappe.throw(

@@ -1,30 +1,39 @@
 {
  "actions": [],
- "allow_bulk_edit": 1,
  "allow_rename": 1,
- "autoname": "field:location_name",
- "creation": "2026-06-11 17:40:20.682464",
+ "autoname": "field:tax_name",
+ "creation": "2026-06-15 10:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "location_name"
+  "tax_name",
+  "calculation_type"
  ],
  "fields": [
   {
-   "fieldname": "location_name",
+   "fieldname": "tax_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Location Name",
+   "label": "Tax Name",
+   "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "calculation_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Calculation Type",
+   "options": "Percentage\nFixed Amount",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-11 18:37:57.011760",
+ "modified": "2026-06-15 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
- "name": "Delivery Destination",
+ "name": "Customs Tax Type",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
