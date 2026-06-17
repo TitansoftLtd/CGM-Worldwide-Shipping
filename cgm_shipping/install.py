@@ -8,6 +8,17 @@ import frappe
 def after_migrate() -> None:
 	"""Re-apply idempotent schema installers after every bench migrate."""
 	reinstall_supplier_shipping_line_schema()
+	ensure_task_container_schema()
+
+
+def ensure_task_container_schema() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
+		ensure_task_container_update_fields,
+	)
+
+	if frappe.db.exists("DocType", "Task Container Update"):
+		ensure_task_container_update_fields()
+		frappe.db.commit()
 
 
 def reinstall_supplier_shipping_line_schema() -> None:
