@@ -78,9 +78,10 @@ def apply_metrics_to_doc(doc) -> None:
 		delivery_date=doc.get("delivery_date"),
 	)
 	if not doc.get("current_location") or doc.get("status") in (
-		"Dispatched",
-		"In Transit",
-		"Delivered",
-		"At Port",
+		"Released / In Transit",
+		"At Warehouse",
+		"Cargo Offloaded",
+		"Discharged / At Port",
+		"Vessel Berthed",
 	):
 		doc.current_location = location
