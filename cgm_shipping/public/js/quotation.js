@@ -6,95 +6,105 @@
 //
 //   1. row.exchange_rate  (on Import Cost Component)
 //      → Company-chosen rate for customs value calculation.
-//      → Each FOB/Freight/Insurance row can have its OWN rate.
+//      → Each row can have its OWN rate.
 //
 //   2. frm.doc.conversion_rate  (on the Quotation itself — bank rate)
 //      → Used for ALL local charges (Quotation Items).
 //      → Used to convert taxes back to transaction currency for grand total.
 //
-// KEBS Inspection Fee is auto-calculated:
-//      MAX(0.6% of customs_value_usd, USD 300)
-//      Using the bank rate (conversion_rate) because it is a local charge.
+// Customs Value (Foreign Currency) = sum of row.amount (raw foreign amounts).
+// Customs Value (KES) = sum of row.amount * row.exchange_rate.
 //
-// MSS Levy is weight-based: weight_tons × rate_per_ton (NOT a percentage).
-// VAT stacks: calculated on customs_value + Import Duty + Excise Duty.
-// All other taxes are flat % on raw customs_value_kes.
+// Tax stacking order (matches Python):
+//   Import Duty   = customs_value_kes × rate%
+//   Excise Duty   = (customs_value_kes + import_duty) × rate%
+//   IDF           = customs_value_kes × rate%
+//   RDL           = customs_value_kes × rate%
+//   VAT           = (customs_value_kes + all prior duties) × rate%
+//   MSS Levy      = weight_tons × rate_per_ton  OR  fixed_amount
+//   Other flat    = customs_value_kes × rate%
+//
+// All stacking behaviour is driven by the Customs Tax Type doctype flags,
+// not by hardcoded tax-type names.
 // ============================================================
 
-const KEBS_ITEM_CODE  = "Kebs Inspection Fee";
-const KEBS_MIN_USD    = 300;
-const KEBS_PERCENT    = 0.006; // 0.6%
-const KES_CURRENCY    = "KES"; // fallback; overridden by company_currency at runtime
+const KES_OPTIONS = ["Company:company:default_currency", "company_currency"];
 
-// Tax types whose amounts stack into the base for subsequent taxes
-const STACKING_TAX_TYPES  = new Set(["VAT"]);
-// Tax types calculated as weight × rate_per_ton
-const WEIGHT_TAX_TYPES    = new Set(["MSS Levy"]);
+// Tax types whose base accumulates (VAT stacks on top of prior duties).
+// Populated dynamically from server metadata; seeded with known defaults.
+const _STACKING_TYPES  = new Set(["VAT"]);
+const _WEIGHT_TYPES    = new Set(["MSS Levy"]);
+// Excise stacks on customs_value + import_duty only.
+const _EXCISE_TYPES    = new Set(["Excise Duty"]);
+
+// Cache of tax-type metadata fetched from server { [tax_type]: info }
+const _TAX_TYPE_META   = {};
 
 // ============================================================
 // CURRENCY LABEL HELPERS
 // ============================================================
 
-/**
- * Warms the Company doc into frappe.locals then re-renders ALL currency
- * field labels on the form and every child table — fully dynamic.
- * No hardcoded field names: any Currency field with options set to
- * "currency" or "Company:company:default_currency" is picked up automatically.
- */
 function setup_currency_labels(frm) {
     if (!frm.doc.company) return;
 
     frappe.model.with_doc("Company", frm.doc.company, () => {
-        const company_currency = frappe.model.get_value(
-            "Company", frm.doc.company, "default_currency"
+    const company_currency = frappe.model.get_value(
+        "Company", frm.doc.company, "default_currency"
+    );
+    const txn_currency = frm.doc.currency || company_currency;
+
+    if (frm.fields_dict.custom_custom_value) {
+        frm.set_df_property(
+            "custom_custom_value",
+            "options",
+            "currency"
         );
-        const txn_currency = frm.doc.currency;
+    }
 
-        // ── Parent doc fields ──────────────────────────────────
-        (frm.meta.fields || []).forEach(df => {
-            if (df.fieldtype !== "Currency") return;
-            if (_is_company_currency_field(df.options)) {
-                frm.set_df_property(df.fieldname, "label",
-                    _currency_label(df.label, company_currency));
-            } else if (df.options === "currency") {
-                frm.set_df_property(df.fieldname, "label",
-                    _currency_label(df.label, txn_currency));
-            }
-        });
+    if (frm.fields_dict.custom_base_customs_value) {
+        frm.set_df_property(
+            "custom_base_customs_value",
+            "options",
+            "Company:company:default_currency"
+        );
+    }
 
-        // ── All child tables ───────────────────────────────────
-        (frm.meta.fields || [])
-            .filter(df => df.fieldtype === "Table")
-            .forEach(table_df => {
-                const child_meta = frappe.get_meta(table_df.options);
-                if (!child_meta) return;
-                const grid = frm.fields_dict[table_df.fieldname]?.grid;
-                if (!grid) return;
+    if (frm.fields_dict.custom_total_taxes_kes) {
+        frm.set_df_property(
+            "custom_total_taxes_kes",
+            "options",
+            "Company:company:default_currency"
+        );
+    }
 
-                (child_meta.fields || []).forEach(df => {
-                    if (df.fieldtype !== "Currency") return;
-                    if (_is_company_currency_field(df.options)) {
-                        grid.update_docfield_property(df.fieldname, "label",
-                            _currency_label(df.label, company_currency));
-                    } else if (df.options === "currency") {
-                        grid.update_docfield_property(df.fieldname, "label",
-                            _currency_label(df.label, txn_currency));
-                    }
-                });
+    frm.refresh_fields([
+        "custom_custom_value",
+        "custom_base_customs_value",
+        "custom_total_taxes_kes"
+    ]);
+});
+}
 
-                grid.refresh();
-            });
+function _relabel_fields(frm, fields, grid, company_currency, txn_currency) {
+    (fields || []).forEach(df => {
+        if (df.fieldtype !== "Currency") return;
+        let new_label = null;
+        const options = (df.options || "").trim();
 
-        frm.refresh_fields();
+    if (KES_OPTIONS.includes(options)) {
+            new_label = _currency_label(df.label, company_currency);
+        } else if (df.options === "currency") {
+            new_label = _currency_label(df.label, txn_currency);
+        }
+        if (!new_label) return;
+        if (grid) {
+            grid.update_docfield_property(df.fieldname, "label", new_label);
+        } else {
+            frm.set_df_property(df.fieldname, "label", new_label);
+        }
     });
 }
 
-function _is_company_currency_field(options) {
-    return options === "Company:company:default_currency"
-        || options === "company_currency";
-}
-
-/** Strip existing "(XXX)" suffix and append current currency. */
 function _currency_label(label, currency) {
     if (!currency) return label;
     return label.replace(/ \(.*?\)$/, "") + ` (${currency})`;
@@ -104,56 +114,39 @@ function _currency_label(label, currency) {
 // EXCHANGE RATE HELPERS
 // ============================================================
 
-/** Bank rate — used for local charges and grand total conversion. */
 function get_bank_rate(frm) {
     return flt(frm.doc.conversion_rate) || 1;
 }
 
-/**
- * Customs rate for a specific Import Cost Component row.
- * Falls back to bank rate if not set.
- */
 function get_customs_rate(frm, row) {
     return flt(row.exchange_rate) || get_bank_rate(frm);
-}
-
-/** KES per USD — from first USD import cost row, else bank rate. */
-function get_usd_to_kes_rate(frm) {
-    for (const row of frm.doc.custom_import_cost_component || []) {
-        if (row.currency === "USD" && flt(row.exchange_rate)) {
-            return flt(row.exchange_rate);
-        }
-    }
-    return get_bank_rate(frm);
 }
 
 // ============================================================
 // IMPORT COST COMPONENT HELPERS
 // ============================================================
 
-/**
- * Lock exchange_rate to 1 and make read-only when the row currency
- * matches the company currency — no conversion needed.
- */
-function enforce_kes_exchange_rate(frm, cdt, cdn) {
+function enforce_company_currency_exchange_rate(frm, cdt, cdn) {
+    if (!frm.doc.company) return;
     frappe.model.with_doc("Company", frm.doc.company, () => {
         const company_currency = frappe.model.get_value(
             "Company", frm.doc.company, "default_currency"
         );
         const row = locals[cdt][cdn];
-        const is_kes = row.currency === company_currency;
+        const is_company_currency = row.currency === company_currency;
 
-        if (is_kes) {
+        if (is_company_currency) {
             frappe.model.set_value(cdt, cdn, "exchange_rate", 1);
         }
 
         frm.fields_dict.custom_import_cost_component?.grid
-            .update_docfield_property("exchange_rate", "read_only", is_kes ? 1 : 0);
+            .update_docfield_property("exchange_rate", "read_only",
+                is_company_currency ? 1 : 0);
     });
 }
 
-/** Show exchange_rate column only when a conversion is actually needed. */
 function toggle_import_cost_exchange_rate(frm, cdt, cdn) {
+    if (!frm.doc.company) return;
     frappe.model.with_doc("Company", frm.doc.company, () => {
         const company_currency = frappe.model.get_value(
             "Company", frm.doc.company, "default_currency"
@@ -165,31 +158,33 @@ function toggle_import_cost_exchange_rate(frm, cdt, cdn) {
 }
 
 // ============================================================
-// KEBS AUTO-CALCULATION
+// CUSTOMS VALUE CALCULATION
 // ============================================================
 
 /**
- * KEBS Inspection Fee = MAX(0.6% of customs_value_usd, USD 300)
- * This is a local charge → uses bank rate (conversion_rate) for KES conversion.
- * Updates the matching Quotation Item row directly.
+ * Returns { customs_value_foreign, customs_value_kes }
+ *
+ * customs_value_foreign = sum of row.amount   (raw foreign amounts, no conversion)
+ * customs_value_kes     = sum of row.amount * row.exchange_rate
+ *
+ * The "foreign" total uses amounts as entered in the child table.
+ * It does NOT convert back from KES — that would lose precision.
  */
-function recalculate_kebs(frm, customs_value_usd) {
-    const kebs_usd = Math.max(
-        flt(customs_value_usd) * KEBS_PERCENT,
-        KEBS_MIN_USD
-    );
-    const bank_rate = get_bank_rate(frm);
+function _compute_customs_value(frm) {
+    let customs_value_foreign = 0;
+    let customs_value_kes     = 0;
 
-    (frm.doc.items || []).forEach(item => {
-        if (item.item_code !== KEBS_ITEM_CODE) return;
+    (frm.doc.custom_import_cost_component || []).forEach(row => {
+        const rate = get_customs_rate(frm, row);
+        const kes  = flt(row.amount) * rate;
 
-        frappe.model.set_value(item.doctype, item.name, "rate", kebs_usd);
-        frappe.model.set_value(item.doctype, item.name, "amount", kebs_usd * flt(item.qty || 1));
-        frappe.model.set_value(item.doctype, item.name, "base_rate", kebs_usd * bank_rate);
-        frappe.model.set_value(item.doctype, item.name, "base_amount", kebs_usd * bank_rate * flt(item.qty || 1));
+        frappe.model.set_value(row.doctype, row.name, "amount_kes", kes);
+
+        customs_value_foreign += flt(row.amount);
+        customs_value_kes     += kes;
     });
 
-    frm.refresh_field("items");
+    return { customs_value_foreign, customs_value_kes };
 }
 
 // ============================================================
@@ -197,90 +192,109 @@ function recalculate_kebs(frm, customs_value_usd) {
 // ============================================================
 
 /**
- * Full recalculation — mirrors the Python logic exactly so the user
- * sees live results before saving.
+ * Full recalculation.
  *
- * Tax order matters:
- *   Flat taxes (Import Duty, Excise, IDF, RDL) → on raw customs_value_kes
- *   Weight taxes (MSS Levy) → weight_tons × rate_per_ton
- *   Stacking taxes (VAT) → on (customs_value_kes + all prior duties)
+ * Stacking logic (mirrors Python):
+ *   running_base_kes starts at customs_value_kes.
+ *   Each flat/percentage tax adds its amount to running_base_kes
+ *   so subsequent stacking taxes (VAT) see the cumulative base.
  *
- * TWO rates used here:
- *   - row.exchange_rate (customs rate, company chosen) for import cost rows
- *   - frm.doc.conversion_rate (bank rate) for local charges
+ *   Excise Duty is special: it only stacks on
+ *   customs_value_kes + Import Duty (not all prior taxes).
+ *   This is handled by passing the excise_base separately.
+ *
+ *   VAT stacks on running_base_kes (everything before it).
  */
 function calculate_customs_taxes(frm) {
-    const bank_rate      = get_bank_rate(frm);
-    const usd_to_kes     = get_usd_to_kes_rate(frm);
-    const weight_tons    = flt(frm.doc.custom_weight) || 0;
+    const bank_rate   = get_bank_rate(frm);
+    const weight_tons = flt(frm.doc.custom_weight) || 0;
 
-    // ── Step 1: Sum import cost rows → customs value ───────────
-    let customs_value_kes = 0;
-    let customs_value_usd = 0;
+    // ── Step 1: Import Cost Component → customs values ─────────
+    const { customs_value_foreign, customs_value_kes } = _compute_customs_value(frm);
 
-    (frm.doc.custom_import_cost_component || []).forEach(row => {
-        const rate     = get_customs_rate(frm, row);  // company-chosen rate
-        const kes      = flt(row.amount) * rate;
+    // Set values then explicitly set the currency on each field so Frappe
+    // renders the correct currency symbol in the read-only currency widget.
+    // custom_custom_value  → transaction currency (frm.doc.currency)
+    // custom_base_customs_value → company currency (KES)
+    frm.set_value("custom_custom_value", customs_value_foreign);
+    frm.set_value("custom_base_customs_value", customs_value_kes);
 
-        frappe.model.set_value(row.doctype, row.name, "amount_kes", kes);
-        customs_value_kes += kes;
-        customs_value_usd += usd_to_kes ? (kes / usd_to_kes) : 0;
+    // Force Frappe to re-render currency widgets with the correct symbol
+    frappe.model.with_doc("Company", frm.doc.company, () => {
+        const company_currency = frappe.model.get_value(
+            "Company", frm.doc.company, "default_currency"
+        );
+        const txn_currency = frm.doc.currency || company_currency;
+
+        // Patch the field's currency property so the widget knows which symbol to show
+        if (frm.fields_dict.custom_custom_value) {
+            frm.fields_dict.custom_custom_value.df.options = "currency";
+            frm.fields_dict.custom_custom_value.currency = txn_currency;
+        }
+        if (frm.fields_dict.custom_base_customs_value) {
+            frm.fields_dict.custom_base_customs_value.currency = company_currency;
+        }
+        if (frm.fields_dict.custom_total_taxes_kes) {
+            frm.fields_dict.custom_total_taxes_kes.currency = company_currency;
+        }
+
+        frm.refresh_field("custom_custom_value");
+        frm.refresh_field("custom_base_customs_value");
     });
 
-    frm.set_value("custom_base_customs_value", customs_value_kes);
-    frm.set_value("custom_custom_value", customs_value_usd);
-
-    // ── Step 2: KEBS auto-calc (local charge, uses bank rate) ──
-    recalculate_kebs(frm, customs_value_usd);
-
-    // ── Step 3: Customs taxes ───────────────────────────────────
-    let running_base_kes = customs_value_kes; // grows as stacking taxes apply
+    // ── Step 2: Customs Tax rows ────────────────────────────────
+    let running_base_kes = customs_value_kes;
+    let import_duty_kes  = 0;   // tracked separately for Excise base
     let total_taxes_kes  = 0;
-    let total_taxes_usd  = 0;
 
-    // Sort by idx to ensure correct stacking order
     const tax_rows = [...(frm.doc.custom_customs_taxes || [])]
         .sort((a, b) => a.idx - b.idx);
 
     tax_rows.forEach(row => {
         if (!row.tax_type) return;
 
+        const meta = _TAX_TYPE_META[row.tax_type] || {};
         let amount_kes = 0;
 
-        if (flt(row.fixed_amount_kes) > 0) {
-            // Fixed amount (e.g. set directly on the row)
+        if (flt(row.fixed_amount_kes) > 0 || meta.is_fixed) {
+            // Fixed amount
             amount_kes = flt(row.fixed_amount_kes);
 
-        } else if (WEIGHT_TAX_TYPES.has(row.tax_type)) {
-            // MSS Levy: weight_tons × rate_per_ton (rate field = KES per ton)
+        } else if (_WEIGHT_TYPES.has(row.tax_type) || meta.is_weight_based) {
+            // Weight-based: weight_tons × rate_per_ton
             amount_kes = weight_tons * flt(row.rate);
 
-        } else if (STACKING_TAX_TYPES.has(row.tax_type)) {
-            // VAT: on customs_value + all prior duties
+        } else if (_EXCISE_TYPES.has(row.tax_type)) {
+            // Excise stacks on customs_value + import_duty only
+            const excise_base = customs_value_kes + import_duty_kes;
+            amount_kes = excise_base * (flt(row.rate) / 100);
+            running_base_kes += amount_kes;
+
+        } else if (_STACKING_TYPES.has(row.tax_type) || meta.is_stacking) {
+            // VAT: stacks on cumulative running_base_kes
             amount_kes = running_base_kes * (flt(row.rate) / 100);
-            running_base_kes += amount_kes; // grow base for any tax after VAT
+            running_base_kes += amount_kes;
 
         } else {
-            // Flat % on raw customs value (Import Duty, Excise, IDF, RDL)
+            // Flat % on raw customs value (Import Duty, IDF, RDL, …)
             amount_kes = customs_value_kes * (flt(row.rate) / 100);
-            running_base_kes += amount_kes; // duties also grow base for VAT
+            running_base_kes += amount_kes;
+
+            // Track Import Duty for Excise base
+            if ((row.tax_type || "").toLowerCase().includes("import duty") ||
+                (row.tax_type || "").toLowerCase().includes("duty") &&
+                !(row.tax_type || "").toLowerCase().includes("excise")) {
+                import_duty_kes += amount_kes;
+            }
         }
 
-        const amount_usd = usd_to_kes ? (amount_kes / usd_to_kes) : 0;
-
         frappe.model.set_value(row.doctype, row.name, "amount_kes", amount_kes);
-        frappe.model.set_value(row.doctype, row.name, "amount_usd", amount_usd);
-        // keep legacy field in sync if it exists
         frappe.model.set_value(row.doctype, row.name, "tax_amount_kes", amount_kes);
 
         total_taxes_kes += amount_kes;
-        total_taxes_usd += amount_usd;
     });
 
     frm.set_value("custom_total_taxes_kes", total_taxes_kes);
-    if (frm.fields_dict.custom_total_taxes_usd) {
-        frm.set_value("custom_total_taxes_usd", total_taxes_usd);
-    }
 
     frm.refresh_fields([
         "custom_import_cost_component",
@@ -297,49 +311,75 @@ function calculate_customs_taxes(frm) {
 // ============================================================
 
 /**
- * Fetch tax type metadata from server and apply defaults + toggle UI.
- * Dynamically sets rate label to "Rate per Ton (KES)" for weight-based taxes.
+ * Fetch tax-type metadata from server, cache it, apply defaults + toggle UI.
  */
 function apply_customs_tax_defaults(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
     if (!row.tax_type) return;
 
+    if (_TAX_TYPE_META[row.tax_type]) {
+        _apply_meta_to_row(frm, cdt, cdn, _TAX_TYPE_META[row.tax_type]);
+        return;
+    }
+
     frappe.call({
-        method: "your_app.overrides.cgm_quotation.get_customs_tax_type_info",
+        method: "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.get_customs_tax_type_info",
         args: { tax_type: row.tax_type },
         callback(r) {
             if (!r.message) return;
-            const info = r.message;
-
-            if (info.default_rate != null) {
-                frappe.model.set_value(cdt, cdn, "rate", info.default_rate);
-            }
-
-            // Update rate field label dynamically
-            const grid = frm.fields_dict.custom_customs_taxes?.grid;
-            if (grid) {
-                grid.update_docfield_property("rate", "label",
-                    info.is_weight_based ? "Rate per Ton (KES)" : "Rate (%)");
-                grid.update_docfield_property("rate", "hidden", info.show_rate ? 0 : 1);
-                grid.update_docfield_property("fixed_amount_kes", "hidden",
-                    info.show_fixed_amount ? 0 : 1);
-                grid.refresh();
-            }
-
-            frappe.model.set_value(cdt, cdn, "is_fixed_amount", info.is_fixed ? 1 : 0);
-            calculate_customs_taxes(frm);
+            _TAX_TYPE_META[row.tax_type] = r.message;
+            _apply_meta_to_row(frm, cdt, cdn, r.message);
         },
     });
 }
 
-function toggle_customs_tax_fields(frm, cdt, cdn) {
-    const row = locals[cdt][cdn];
-    const is_fixed = flt(row.is_fixed_amount) === 1;
+function _apply_meta_to_row(frm, cdt, cdn, info) {
+    if (info.default_rate != null) {
+        frappe.model.set_value(cdt, cdn, "rate", info.default_rate);
+    }
+
+    frappe.model.set_value(cdt, cdn, "is_fixed_amount", info.is_fixed ? 1 : 0);
+
+    const grid = frm.fields_dict.custom_customs_taxes?.grid;
+    if (grid) {
+        grid.update_docfield_property("rate", "label",
+            info.is_weight_based ? "Rate per Ton (KES)" : "Rate (%)");
+        grid.update_docfield_property("rate", "hidden",
+            info.show_rate ? 0 : 1);
+        grid.update_docfield_property("fixed_amount_kes", "hidden",
+            info.show_fixed_amount ? 0 : 1);
+        grid.refresh();
+    }
+
+    _toggle_row_read_only(frm, cdt, cdn, info.is_fixed);
+    calculate_customs_taxes(frm);
+}
+
+/**
+ * Toggle read-only state on rate / fixed_amount_kes based on is_fixed flag.
+ *
+ * Percentage-based tax → rate editable, fixed_amount read-only
+ * Fixed-amount tax     → rate read-only,  fixed_amount editable
+ */
+function _toggle_row_read_only(frm, cdt, cdn, is_fixed) {
     const grid = frm.fields_dict.custom_customs_taxes?.grid;
     if (!grid) return;
 
-    grid.update_docfield_property("rate", "hidden", is_fixed ? 1 : 0);
-    grid.update_docfield_property("fixed_amount_kes", "hidden", is_fixed ? 0 : 1);
+    grid.update_docfield_property("rate",            "read_only", is_fixed ? 1 : 0);
+    grid.update_docfield_property("fixed_amount_kes","read_only", is_fixed ? 0 : 1);
+    grid.refresh();
+}
+
+function toggle_customs_tax_fields(frm, cdt, cdn) {
+    const row     = locals[cdt][cdn];
+    const is_fixed = flt(row.is_fixed_amount) === 1;
+    const grid    = frm.fields_dict.custom_customs_taxes?.grid;
+    if (!grid) return;
+
+    grid.update_docfield_property("rate",            "hidden",    is_fixed ? 1 : 0);
+    grid.update_docfield_property("fixed_amount_kes","hidden",    is_fixed ? 0 : 1);
+    grid.update_docfield_property("rate",            "read_only", is_fixed ? 1 : 0);
+    grid.update_docfield_property("fixed_amount_kes","read_only", is_fixed ? 0 : 1);
     grid.refresh();
 }
 
@@ -349,10 +389,8 @@ function toggle_customs_tax_fields(frm, cdt, cdn) {
 
 frappe.ui.form.on("Quotation", {
     refresh(frm) {
-        // Warm company cache → renders all currency labels
         setup_currency_labels(frm);
 
-        // Apply per-row UI state to existing rows
         (frm.doc.custom_import_cost_component || []).forEach(row => {
             toggle_import_cost_exchange_rate(frm, row.doctype, row.name);
         });
@@ -369,18 +407,15 @@ frappe.ui.form.on("Quotation", {
     },
 
     currency(frm) {
-        // Transaction currency changed → relabel + note that bank rate may need update
         setup_currency_labels(frm);
         calculate_customs_taxes(frm);
     },
 
     conversion_rate(frm) {
-        // Bank rate changed → affects local charges KES values and KEBS
         calculate_customs_taxes(frm);
     },
 
     custom_weight(frm) {
-        // Weight changed → MSS Levy recalculates
         calculate_customs_taxes(frm);
     },
 
@@ -399,14 +434,13 @@ frappe.ui.form.on("Quotation", {
 
 frappe.ui.form.on("Import Cost Component", {
     currency(frm, cdt, cdn) {
-        enforce_kes_exchange_rate(frm, cdt, cdn);
+        enforce_company_currency_exchange_rate(frm, cdt, cdn);
         toggle_import_cost_exchange_rate(frm, cdt, cdn);
         calculate_customs_taxes(frm);
     },
 
     exchange_rate(frm, cdt, cdn) {
-        // This is the COMPANY-CHOSEN customs rate — not the bank rate
-        enforce_kes_exchange_rate(frm, cdt, cdn);
+        enforce_company_currency_exchange_rate(frm, cdt, cdn);
         calculate_customs_taxes(frm);
     },
 
@@ -415,7 +449,7 @@ frappe.ui.form.on("Import Cost Component", {
     },
 
     form_render(frm, cdt, cdn) {
-        enforce_kes_exchange_rate(frm, cdt, cdn);
+        enforce_company_currency_exchange_rate(frm, cdt, cdn);
         toggle_import_cost_exchange_rate(frm, cdt, cdn);
     },
 });
@@ -426,7 +460,6 @@ frappe.ui.form.on("Import Cost Component", {
 
 frappe.ui.form.on("Customs Tax Component", {
     tax_type(frm, cdt, cdn) {
-        // Fetches defaults from server + toggles UI fields dynamically
         apply_customs_tax_defaults(frm, cdt, cdn);
     },
 
@@ -435,6 +468,11 @@ frappe.ui.form.on("Customs Tax Component", {
     },
 
     fixed_amount_kes(frm) {
+        calculate_customs_taxes(frm);
+    },
+
+    is_fixed_amount(frm, cdt, cdn) {
+        toggle_customs_tax_fields(frm, cdt, cdn);
         calculate_customs_taxes(frm);
     },
 
