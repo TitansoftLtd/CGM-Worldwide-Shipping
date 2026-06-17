@@ -1,69 +1,131 @@
 # Copyright (c) 2026, Titansoft Limited and contributors
-# For license information, please see license.txt
 
 from __future__ import annotations
 
 import frappe
 from frappe.model.document import Document
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+	compute_container_metrics,
+	populate_rates_from_shipping_line,
+)
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_charges import (
 	apply_metrics_to_doc,
-	compute_container_metrics,
 )
 
 
 class ContainerTracker(Document):
 	def validate(self):
-		self._apply_bill_of_lading_defaults()
+		populate_rates_from_shipping_line(self)
 		apply_metrics_to_doc(self)
-
-	def _apply_bill_of_lading_defaults(self):
-		bl = self.get("custom_bill_of_lading")
-		if bl:
-			self.bl_number = bl
-		if self.get("custom_bl_container_select") and not self.container_number:
-			self.container_number = self.custom_bl_container_select
 
 	def on_update(self):
 		sync_container_summary_to_project(self.project)
+		_sync_project_child_row(self)
+
+
+def _sync_project_child_row(doc) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_container_table_field_for_doctype,
+	)
+
+	container_field = get_container_table_field_for_doctype("Project")
+	if not container_field or not doc.project:
+		return
+
+	child_rows = frappe.get_all(
+		"Container",
+		filters={
+			"parent": doc.project,
+			"parenttype": "Project",
+			"parentfield": container_field,
+		},
+		fields=["name", "container_tracker", "container_number", "type_of_container"],
+	)
+
+	for row in child_rows:
+		matched = row.container_tracker == doc.name or (
+			row.container_number == doc.container_number
+			and (row.type_of_container or "") == (doc.type_of_container or "")
+		)
+		if not matched:
+			continue
+
+		frappe.db.set_value(
+			"Container",
+			row.name,
+			{
+				"container_tracker": doc.name,
+				"status": doc.status or "",
+				"demurrage_days": doc.demurrage_days or 0,
+				"detention_days": doc.detention_days or 0,
+			},
+			update_modified=False,
+		)
+		break
 
 
 _CONTAINER_TRACKER_FIELDS = [
 	"name",
 	"project",
 	"container_number",
-	"batch_bl_no",
 	"bl_number",
 	"container_mode",
+	"type_of_container",
+	"seal_no",
+	"shipping_line",
+	"delivery_destination",
 	"delivery_location",
 	"eta",
 	"ata",
 	"discharging_date",
-	"icd_mombasa_discharge_date",
 	"custom_release_date",
 	"gate_out_date_port",
-	"delivery_date",
-	"actual_empty_return",
-	"expected_empty_return",
-	"gate_in_date_depot",
+	"free_days_start_date",
+	"free_days_end_date",
+	"detention_free_start_date",
+	"detention_free_end_date",
+	"free_days",
+	"detention_free_days",
+	"demurrage_daily_rate",
+	"detention_daily_rate",
+	"kpa_free_days",
+	"kpa_daily_rate",
+	"free_days_count_from",
+	"demurrage_start_date",
+	"icd_mombasa_discharge_date",
 	"icd_gate_in_date",
 	"icd_gate_out_date",
-	"free_days",
+	"gate_in_date_warehouse",
+	"offloading_date",
+	"delivery_date",
+	"warehouse_loading_date",
+	"border_clearance_date",
+	"transit_gate_in_date",
+	"transit_gate_out_date",
+	"truck_number",
+	"driver_name",
+	"driver_contact",
+	"transporter",
+	"rate_source",
 	"port_days_used",
-	"daily_demurrage_rate",
-	"daily_detention_rate",
 	"demurrage_days",
 	"detention_days",
 	"demurrage_amount",
 	"detention_amount",
-	"demurrage_date",
+	"kpa_days",
+	"kpa_amount",
+	"expected_empty_return",
+	"actual_empty_return",
+	"gate_in_date_depot",
+	"interchange_date",
 	"days_outstanding",
 	"status",
+	"current_location",
 ]
 
 
 def sync_container_summary_to_project(project: str | None) -> None:
-	"""Roll up first/latest container dates onto Project header."""
 	if not project or not frappe.db.exists("Project", project):
 		return
 	meta = frappe.get_meta("Project")
@@ -74,7 +136,6 @@ def sync_container_summary_to_project(project: str | None) -> None:
 			"eta",
 			"ata",
 			"bl_number",
-			"batch_bl_no",
 			"custom_release_date",
 			"discharging_date",
 			"status",
@@ -85,7 +146,6 @@ def sync_container_summary_to_project(project: str | None) -> None:
 		return
 
 	updates = {}
-	# Don't clobber a manually-set Project ATA; only fill when empty (mirrors custom_eta below).
 	existing_ata = (
 		frappe.db.get_value("Project", project, "custom_ata")
 		if meta.has_field("custom_ata")
@@ -107,12 +167,6 @@ def sync_container_summary_to_project(project: str | None) -> None:
 				updates["custom_bl_number"] = r.bl_number
 				break
 
-	if meta.has_field("custom_batch_no"):
-		for r in rows:
-			if r.batch_bl_no:
-				updates["custom_batch_no"] = r.batch_bl_no
-				break
-
 	if meta.has_field("custom_custom_release_date"):
 		releases = [r.custom_release_date for r in rows if r.custom_release_date]
 		if releases:
@@ -129,7 +183,6 @@ def sync_container_summary_to_project(project: str | None) -> None:
 
 
 def enrich_container_row(row: dict) -> dict:
-	"""Merge stored DB values with live computed metrics (for dashboards/reports)."""
 	metrics = compute_container_metrics(row)
 	row.update(metrics)
 	return row
@@ -148,13 +201,17 @@ def get_containers_for_project(project: str) -> list[dict]:
 
 
 _COMPUTED_METRIC_FIELDS = (
+	"free_days",
+	"detention_free_days",
 	"expected_empty_return",
 	"port_days_used",
+	"demurrage_start_date",
 	"demurrage_days",
-	"demurrage_date",
 	"detention_days",
 	"demurrage_amount",
 	"detention_amount",
+	"kpa_days",
+	"kpa_amount",
 	"days_outstanding",
 	"status",
 )
@@ -162,9 +219,6 @@ _COMPUTED_METRIC_FIELDS = (
 
 @frappe.whitelist()
 def refresh_open_container_metrics() -> int:
-	"""Daily job: recompute outstanding/detention for containers not yet returned."""
-	# Read rows as dicts and batch-update only the computed metric fields, rather
-	# than loading a full document per container (avoids an N+1 of get_doc/db_update).
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"actual_empty_return": ["is", "not set"]},
@@ -182,5 +236,25 @@ def refresh_open_container_metrics() -> int:
 
 	for project in projects:
 		sync_container_summary_to_project(project)
+		for name in frappe.get_all(
+			"Container Tracker", filters={"project": project}, pluck="name"
+		):
+			ct = frappe.get_doc("Container Tracker", name)
+			_sync_project_child_row(ct)
 
 	return len(rows)
+
+
+@frappe.whitelist()
+def resync_project_container_child_rows(project: str) -> int:
+	"""Push tracker status/charges back to Project Container child rows."""
+	frappe.has_permission("Project", ptype="write", doc=project, throw=True)
+	count = 0
+	for name in frappe.get_all("Container Tracker", filters={"project": project}, pluck="name"):
+		ct = frappe.get_doc("Container Tracker", name)
+		apply_metrics_to_doc(ct)
+		ct.save(ignore_permissions=True)
+		_sync_project_child_row(ct)
+		count += 1
+	frappe.db.commit()
+	return count

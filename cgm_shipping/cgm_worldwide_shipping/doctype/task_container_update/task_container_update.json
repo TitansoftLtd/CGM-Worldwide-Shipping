@@ -1,0 +1,242 @@
+{
+ "actions": [],
+ "creation": "2026-06-12 15:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "container_tracker",
+  "container_number",
+  "type_of_container",
+  "current_status",
+  "column_break_identity",
+  "discharging_date",
+  "verification_location",
+  "free_days_start_date",
+  "free_days_end_date",
+  "demurrage_daily_rate",
+  "kpa_daily_rate",
+  "kpa_free_days_override",
+  "transporter",
+  "truck_number",
+  "driver_name",
+  "driver_contact",
+  "gate_out_date_port",
+  "container_not_emptied_reason",
+  "gate_in_date_warehouse",
+  "delivery_location",
+  "offloading_date",
+  "container_emptied_location",
+  "offloading_exception_reason",
+  "actual_empty_return",
+  "gate_in_date_depot",
+  "transporter_at_return",
+  "interchange_date",
+  "interchange_document"
+ ],
+ "fields": [
+  {
+   "fieldname": "container_tracker",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Container",
+   "options": "Container Tracker",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "container_tracker.container_number",
+   "fieldname": "container_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Container Number",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "container_tracker.type_of_container",
+   "fieldname": "type_of_container",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Type",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "container_tracker.status",
+   "fieldname": "current_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 11",
+   "description": "Date this specific container came off the vessel",
+   "fieldname": "discharging_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Discharge Date"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 16",
+   "fieldname": "verification_location",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Current Location at Port"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "fieldname": "free_days_start_date",
+   "fieldtype": "Date",
+   "label": "Free Days Start Date"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "fieldname": "free_days_end_date",
+   "fieldtype": "Date",
+   "label": "Free Days End Date"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "fieldname": "demurrage_daily_rate",
+   "fieldtype": "Currency",
+   "label": "Demurrage Daily Rate"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "fieldname": "kpa_daily_rate",
+   "fieldtype": "Currency",
+   "label": "KPA Daily Rate"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "description": "Leave blank to use CGM Shipping Settings default",
+   "fieldname": "kpa_free_days_override",
+   "fieldtype": "Int",
+   "label": "KPA Free Days"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "fieldname": "transporter",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Transporter Company",
+   "options": "Supplier"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "fieldname": "truck_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Truck Number"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Driver Name"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "fieldname": "driver_contact",
+   "fieldtype": "Data",
+   "label": "Driver Contact Number"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 20",
+   "fieldname": "gate_out_date_port",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Gate Out Date (Port)",
+   "mandatory_depends_on": "eval:parent.custom_sequence_no == 20"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 20",
+   "fieldname": "container_not_emptied_reason",
+   "fieldtype": "Small Text",
+   "label": "If container not exiting today — reason"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 21",
+   "fieldname": "gate_in_date_warehouse",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date Arrived at Warehouse"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 21",
+   "fieldname": "delivery_location",
+   "fieldtype": "Data",
+   "label": "Delivery Location / Warehouse"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 22",
+   "fieldname": "offloading_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date Offloaded",
+   "mandatory_depends_on": "eval:parent.custom_sequence_no == 22"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 22",
+   "fieldname": "container_emptied_location",
+   "fieldtype": "Data",
+   "label": "Offloading Location"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 22",
+   "fieldname": "offloading_exception_reason",
+   "fieldtype": "Small Text",
+   "label": "If not offloaded — reason"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 23",
+   "fieldname": "actual_empty_return",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Empty Return Date",
+   "mandatory_depends_on": "eval:parent.custom_sequence_no == 23"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 23",
+   "fieldname": "gate_in_date_depot",
+   "fieldtype": "Date",
+   "label": "Gate In at Depot"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 23",
+   "fieldname": "transporter_at_return",
+   "fieldtype": "Data",
+   "label": "Driver/Transporter returning container"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 24",
+   "fieldname": "interchange_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Interchange Date"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 24",
+   "fieldname": "interchange_document",
+   "fieldtype": "Attach",
+   "label": "Interchange Receipt (EIR)"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-12 15:00:00",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Task Container Update",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

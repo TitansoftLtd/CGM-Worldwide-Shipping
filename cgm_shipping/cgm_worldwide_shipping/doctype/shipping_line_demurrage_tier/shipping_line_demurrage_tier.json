@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "creation": "2026-06-11 12:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "container_type",
+  "from_day",
+  "to_day",
+  "daily_rate"
+ ],
+ "fields": [
+  {
+   "fieldname": "container_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Container Type",
+   "options": "Container Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "from_day",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "From Day",
+   "reqd": 1
+  },
+  {
+   "description": "0 = unlimited",
+   "fieldname": "to_day",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "To Day"
+  },
+  {
+   "fieldname": "daily_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Daily Rate (USD)",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-12 11:48:58.255011",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Shipping Line Demurrage Tier",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

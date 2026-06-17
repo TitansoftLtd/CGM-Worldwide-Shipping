@@ -5,30 +5,48 @@ const CGM_CONTAINER_TRACKING_TASK_KEY = "cgm_container_tracking_task";
 const CGM_CONTAINER_TRACKING_PROJECT_KEY = "cgm_container_tracking_project";
 
 const MODE_SECTIONS = {
-	"Mombasa Port": ["section_mombasa", "section_warehouse", "section_transport", "section_empty_return", "section_calculations"],
+	"Mombasa Port": [
+		"section_identity",
+		"section_dates",
+		"section_warehouse",
+		"section_transport",
+		"section_charges",
+		"section_empty_return",
+	],
 	"ICD Nairobi": [
-		"section_mombasa",
+		"section_identity",
+		"section_dates",
 		"section_icd",
 		"section_warehouse",
 		"section_transport",
+		"section_charges",
 		"section_empty_return",
-		"section_calculations",
 	],
 	"Transit Kenya→Border": [
+		"section_identity",
+		"section_dates",
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
+		"section_charges",
 		"section_empty_return",
-		"section_calculations",
 	],
 	"Transit Border→Kenya": [
+		"section_identity",
+		"section_dates",
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
+		"section_charges",
 		"section_empty_return",
-		"section_calculations",
 	],
-	Export: ["section_mombasa", "section_transport", "section_empty_return", "section_calculations"],
+	Export: [
+		"section_identity",
+		"section_dates",
+		"section_transport",
+		"section_charges",
+		"section_empty_return",
+	],
 };
 
 function apply_container_mode_layout(frm) {
@@ -194,9 +212,6 @@ function apply_container_tracker_route_defaults(frm) {
 	if (opts.eta && !frm.doc.eta) {
 		frm.set_value("eta", opts.eta);
 	}
-	if (opts.batch_bl_no && !frm.doc.batch_bl_no) {
-		frm.set_value("batch_bl_no", opts.batch_bl_no);
-	}
 	frappe.route_options = null;
 }
 
@@ -212,7 +227,6 @@ function prompt_track_next_container(frm) {
 			doc.custom_bill_of_lading = bl;
 			doc.bl_number = bl;
 			doc.eta = frm.doc.eta;
-			doc.batch_bl_no = frm.doc.batch_bl_no;
 			frappe.set_route("Form", "Container Tracker", doc.name);
 		});
 	};
@@ -239,6 +253,81 @@ function prompt_track_next_container(frm) {
 	);
 }
 
+function render_container_tracker_alerts(frm) {
+	frm.dashboard.clear_comment();
+	const d = frm.doc;
+	let alert = null;
+
+	if (d.discharging_date && !d.gate_out_date_port) {
+		const today = frappe.datetime.get_today();
+		const days_in_port = frappe.datetime.get_diff(today, d.discharging_date);
+		const free = d.free_days || 0;
+		if (free > 0) {
+			const remaining = free - days_in_port;
+			if (remaining <= 0) {
+				alert = {
+					msg: __(
+						"Demurrage accruing — container has been in port {0} days ({1} days over free period)",
+						[days_in_port, Math.abs(remaining)]
+					),
+					color: "red",
+				};
+			} else if (remaining <= 3) {
+				alert = {
+					msg: __(
+						"Free days expiring — only {0} day(s) remaining before demurrage starts",
+						[remaining]
+					),
+					color: "orange",
+				};
+			}
+		} else {
+			alert = {
+				msg: __(
+					"Free days not set — enter from your shipping line guarantee form to track demurrage exposure"
+				),
+				color: "orange",
+			};
+		}
+	}
+
+	if (d.expected_empty_return && !d.actual_empty_return) {
+		const diff = frappe.datetime.get_diff(
+			frappe.datetime.get_today(),
+			d.expected_empty_return
+		);
+		if (diff > 0) {
+			alert = {
+				msg: __(
+					"Return overdue by {0} day(s) — contact transporter immediately. Detention charges may be accruing.",
+					[diff]
+				),
+				color: "red",
+			};
+		} else if (diff >= -3) {
+			alert = {
+				msg: __(
+					"Container return due in {0} day(s) — arrange empty return now",
+					[Math.abs(diff)]
+				),
+				color: "orange",
+			};
+		}
+	}
+
+	if (d.demurrage_daily_rate === 0 && d.discharging_date) {
+		frm.dashboard.add_comment(
+			__("Enter Demurrage Rate from guarantee form to calculate charges"),
+			"yellow",
+			true
+		);
+	}
+
+	if (alert) {
+		frm.dashboard.add_comment(alert.msg, alert.color, true);
+	}
+}
+
 frappe.ui.form.on("Container Tracker", {
 	onload(frm) {
 		apply_container_tracker_route_defaults(frm);
@@ -257,6 +346,7 @@ frappe.ui.form.on("Container Tracker", {
 
 	refresh(frm) {
 		apply_container_mode_layout(frm);
+		render_container_tracker_alerts(frm);
 		if (frm.doc.custom_bill_of_lading) {
 			sync_bl_container_pick_list(frm);
 		}

@@ -179,112 +179,151 @@ function format_currency_amount(value) {
 	});
 }
 
+function container_status_dot(status, alert_status) {
+	const alert = alert_status || "";
+	if (alert.includes("🔴") || alert.includes("🚨") || status === "Return Overdue") {
+		return "🔴";
+	}
+	if (alert.includes("⚠️")) {
+		return "🟡";
+	}
+	if (status === "Interchange Received" || alert.includes("✅")) {
+		return "🟢";
+	}
+	if (["At Warehouse", "Cargo Offloaded", "Empty Returned"].includes(status)) {
+		return "🟢";
+	}
+	if (["Discharged / At Port", "Vessel Berthed"].includes(status)) {
+		return "🟡";
+	}
+	if (status === "Released / In Transit") {
+		return "🟠";
+	}
+	return "⚪";
+}
+
+function container_card_detail(c) {
+	const parts = [];
+	if (c.discharging_date) {
+		parts.push(`${__("Discharged")}: ${frappe.datetime.str_to_user(c.discharging_date)}`);
+	}
+	if (c.gate_out_date_port) {
+		parts.push(`${__("Gate Out")}: ${frappe.datetime.str_to_user(c.gate_out_date_port)}`);
+	}
+	if (c.offloading_date) {
+		parts.push(`${__("Offloaded")}: ${frappe.datetime.str_to_user(c.offloading_date)}`);
+	}
+	if (c.free_days != null && c.discharging_date && !c.gate_out_date_port) {
+		const days_in_port = frappe.datetime.get_diff(frappe.datetime.get_today(), c.discharging_date);
+		const remaining = (c.free_days || 0) - days_in_port;
+		parts.push(
+			`${__("Free days")}: ${c.free_days} | ${__("Days in port")}: ${days_in_port} | ${remaining} ${__("remaining")}`
+		);
+	}
+	if (c.expected_empty_return) {
+		parts.push(
+			`${__("Expected return")}: ${frappe.datetime.str_to_user(c.expected_empty_return)}`
+		);
+	}
+	if (parts.length) {
+		return parts.join(" | ");
+	}
+	if (!c.free_days && c.discharging_date) {
+		return __("Free days not set — enter from guarantee form");
+	}
+	return __("No movement dates recorded yet");
+}
+
 function render_container_tracking_table(frm, dashboard) {
 	const field = frm.get_field("custom_container_tracking_html");
 	if (!field || !frm.doc.name) {
 		return;
 	}
 	const rows = dashboard.containers || [];
-	const overdue = dashboard.containers_overdue || 0;
-	const pending = dashboard.containers_pending_empty || 0;
-	const demurrage_total = dashboard.total_demurrage_amount || 0;
-	const detention_total = dashboard.total_detention_amount || 0;
+	const ref = frappe.utils.escape_html(dashboard.cgm_ref_no || frm.doc.name);
 
-	let tableBody = "";
+	let cards = "";
 	if (!rows.length) {
-		tableBody = `<tr><td colspan="12" class="text-muted">${__(
-			"No containers yet. Create Container Tracker rows linked to this Project."
-		)}</td></tr>`;
+		cards = `<div class="text-muted cgm-container-empty">${__(
+			"No containers yet. Complete Task 11 (Create Entry) to create Container Trackers."
+		)}</div>`;
 	} else {
-		tableBody = rows
+		cards = rows
 			.map((c) => {
-				const statusClass =
-					c.status === "Overdue"
-						? "cgm-rag-red"
-						: c.status === "Empty Returned"
-							? "cgm-rag-green"
-							: "cgm-rag-yellow";
-				return `<tr>
-					<td><a href="/app/container-tracker/${encodeURIComponent(c.name)}">${frappe.utils.escape_html(
-						c.container_number || c.name
-					)}</a></td>
-					<td>${frappe.utils.escape_html(c.bl_number || "")}</td>
-					<td title="${frappe.utils.escape_html(c.current_location || "")}">${frappe.utils.escape_html(
-						(c.current_location || "").slice(0, 28)
-					)}${(c.current_location || "").length > 28 ? "…" : ""}</td>
-					<td><span class="${statusClass}">${frappe.utils.escape_html(c.status || "")}</span></td>
-					<td class="text-right">${c.free_days != null ? c.free_days : ""}</td>
-					<td class="text-right">${c.demurrage_days != null ? c.demurrage_days : ""}</td>
-					<td class="text-right">${format_currency_amount(c.demurrage_amount)}</td>
-					<td class="text-right">${c.detention_days != null ? c.detention_days : ""}</td>
-					<td class="text-right">${format_currency_amount(c.detention_amount)}</td>
-					<td>${frappe.utils.escape_html(c.gate_out_date_port || "")}</td>
-					<td>${frappe.utils.escape_html(c.expected_empty_return || "")}</td>
-					<td>${frappe.utils.escape_html(c.actual_empty_return || "")}</td>
-				</tr>`;
+				const dot = container_status_dot(c.status, c.alert_status);
+				const alert = c.alert_status
+					? `<div class="cgm-container-card-alert">${frappe.utils.escape_html(c.alert_status)}</div>`
+					: "";
+				return `<div class="cgm-container-card">
+					<div class="cgm-container-card-head">
+						<span>${dot} <b>${frappe.utils.escape_html(c.container_number || c.name)}</b>
+						<span class="text-muted">${frappe.utils.escape_html(c.type_of_container || "")}</span></span>
+						<span class="cgm-container-card-status">${frappe.utils.escape_html(c.status || "")}</span>
+					</div>
+					<div class="cgm-container-card-body text-muted">${frappe.utils.escape_html(
+						container_card_detail(c)
+					)}</div>
+					${alert}
+					<div class="cgm-container-card-actions">
+						<button type="button" class="btn btn-xs btn-default cgm-view-tracker" data-tracker="${frappe.utils.escape_html(
+							c.name
+						)}">${__("View Details")}</button>
+					</div>
+				</div>`;
 			})
 			.join("");
 	}
 
-	const exposureLine =
-		demurrage_total || detention_total
-			? `<span>${__("Est. demurrage")}: <b>${format_currency_amount(demurrage_total)}</b> · ${__(
-					"Est. detention"
-				)}: <b>${format_currency_amount(detention_total)}</b></span>`
-			: "";
-
 	field.$wrapper.html(`
-		<div class="cgm-container-summary">
-			<div class="cgm-container-summary-head">
-				<span>${__("Container tracking")}</span>
-				<span class="cgm-container-stats">
-					${pending ? `<b>${pending}</b> ${__("empty pending")} · ` : ""}
-					${overdue ? `<span class="cgm-rag-red"><b>${overdue}</b> ${__("overdue")}</span> · ` : ""}
-					${exposureLine}
-				</span>
-				<button type="button" class="btn btn-default btn-xs cgm-open-tracking-report">${__(
-					"Full Report"
-				)}</button>
-				<button type="button" class="btn btn-default btn-xs cgm-add-container">${__(
-					"New Container"
-				)}</button>
+		<div class="cgm-container-dashboard">
+			<div class="cgm-container-dashboard-head">
+				<div>
+					<h4 class="cgm-container-dashboard-title">${__("Container Tracking")}</h4>
+					<div class="text-muted">${ref}</div>
+				</div>
+				<div class="cgm-container-dashboard-actions">
+					<button type="button" class="btn btn-default btn-xs cgm-resync-containers">${__(
+						"Resync Status"
+					)}</button>
+					<button type="button" class="btn btn-default btn-xs cgm-open-tracking-report">${__(
+						"Full Report"
+					)}</button>
+				</div>
 			</div>
-			<div class="cgm-container-table-scroll">
-				<table class="table table-bordered table-condensed">
-					<thead>
-						<tr>
-							<th>${__("Container")}</th>
-							<th>${__("B/L")}</th>
-							<th>${__("Location")}</th>
-							<th>${__("Status")}</th>
-							<th>${__("Free")}</th>
-							<th>${__("Dem. Days")}</th>
-							<th>${__("Dem. Amt")}</th>
-							<th>${__("Det. Days")}</th>
-							<th>${__("Det. Amt")}</th>
-							<th>${__("Gate Out")}</th>
-							<th>${__("Expected")}</th>
-							<th>${__("Returned")}</th>
-						</tr>
-					</thead>
-					<tbody>${tableBody}</tbody>
-				</table>
+			<div class="cgm-container-kpis">
+				<span>${__("Total")}: <b>${dashboard.container_total || 0}</b></span>
+				<span>${__("Released")}: <b>${dashboard.containers_released || 0}</b></span>
+				<span>${__("Warehouse")}: <b>${dashboard.containers_at_warehouse || 0}</b></span>
+				<span>${__("Returned")}: <b>${dashboard.containers_returned || 0}</b></span>
+				<span>${__("Alerts")}: <b class="${dashboard.containers_alerts ? "cgm-rag-red" : ""}">${
+					dashboard.containers_alerts || 0
+				}</b></span>
 			</div>
+			<div class="cgm-container-cards">${cards}</div>
 		</div>
 	`);
 
-	field.$wrapper.find(".cgm-open-tracking-report").on("click", () => {
-		frappe.set_route("query-report", "Container Tracking Detail", { project: frm.doc.name });
+	field.$wrapper.find(".cgm-view-tracker").on("click", function () {
+		const tracker = $(this).data("tracker");
+		if (tracker) {
+			frappe.set_route("Form", "Container Tracker", tracker);
+		}
 	});
 
-	field.$wrapper.find(".cgm-add-container").on("click", () => {
-		frappe.new_doc("Container Tracker", {
-			project: frm.doc.name,
-			batch_bl_no: frm.doc.custom_batch_no,
-			bl_number: frm.doc.custom_bl_number,
-			eta: frm.doc.custom_eta,
-			shipment_quantity: frm.doc.custom_shipment_quantity,
+	field.$wrapper.find(".cgm-resync-containers").on("click", () => {
+		frappe.call({
+			method:
+				"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.resync_project_container_child_rows",
+			args: { project: frm.doc.name },
+			callback() {
+				render_shipment_progress_chart(frm);
+				frappe.show_alert({ message: __("Container statuses resynced"), indicator: "green" });
+			},
 		});
+	});
+
+	field.$wrapper.find(".cgm-open-tracking-report").on("click", () => {
+		frappe.set_route("query-report", "Container Tracking Report", { project: frm.doc.name });
 	});
 }
 

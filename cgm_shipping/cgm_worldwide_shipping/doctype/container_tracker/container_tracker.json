@@ -6,68 +6,99 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "section_identity",
   "project",
-  "bl_number",
   "container_number",
-  "batch_bl_no",
-  "shipment_quantity",
+  "bl_number",
   "container_mode",
-  "column_break_core",
-  "eta",
-  "ata",
+  "type_of_container",
+  "seal_no",
+  "column_break_identity",
+  "shipping_line",
+  "delivery_destination",
   "status",
   "current_location",
   "delivery_location",
-  "section_mombasa",
+  "section_dates",
+  "eta",
+  "ata",
   "discharging_date",
   "custom_release_date",
-  "column_break_cjca",
+  "column_break_dates",
   "gate_out_date_port",
-  "demurrage_date",
+  "free_days_count_from",
+  "demurrage_start_date",
   "section_icd",
   "icd_mombasa_discharge_date",
+  "column_break_btiy",
   "icd_gate_in_date",
+  "column_break_quen",
   "icd_gate_out_date",
-  "section_calculations",
+  "section_transit",
+  "border_clearance_date",
+  "column_break_qkej",
+  "transit_gate_in_date",
+  "column_break_mtin",
+  "transit_gate_out_date",
+  "free_days_and_charges_tab",
+  "section_charges",
+  "free_days_start_date",
+  "free_days_end_date",
+  "detention_free_start_date",
+  "detention_free_end_date",
   "free_days",
+  "detention_free_days",
+  "demurrage_daily_rate",
+  "detention_daily_rate",
+  "kpa_free_days",
+  "kpa_daily_rate",
+  "rate_source",
   "port_days_used",
+  "column_break_charges",
   "demurrage_days",
-  "detention_days",
-  "column_break_lncp",
-  "daily_demurrage_rate",
   "demurrage_amount",
-  "daily_detention_rate",
+  "kpa_days",
+  "kpa_amount",
+  "detention_days",
   "detention_amount",
+  "transport_and_delivery_tab",
+  "section_transport",
+  "transporter",
+  "truck_number",
+  "column_break_pxob",
+  "driver_name",
+  "driver_contact",
+  "warehouse_tab",
   "section_warehouse",
   "gate_in_date_warehouse",
   "offloading_date",
-  "column_break_uhcq",
+  "column_break_luhf",
   "delivery_date",
   "warehouse_loading_date",
-  "section_transit",
-  "border_clearance_date",
-  "transit_gate_in_date",
-  "transit_gate_out_date",
-  "section_transport",
-  "truck_number",
-  "driver_name",
-  "column_break_jkue",
-  "driver_contact",
-  "transporter",
+  "empty_return_and_interchange_tab",
   "section_empty_return",
   "expected_empty_return",
   "actual_empty_return",
-  "column_break_awuc",
   "gate_in_date_depot",
   "interchange_date",
-  "days_outstanding"
+  "interchange_document",
+  "column_break_empty",
+  "days_outstanding",
+  "deposit_amount",
+  "deposit_refund_status",
+  "deposit_refund_applied_on"
  ],
  "fields": [
+  {
+   "fieldname": "section_identity",
+   "fieldtype": "Section Break",
+   "label": "Identity & Links"
+  },
   {
    "fieldname": "project",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Project (Shipment)",
+   "label": "Project",
    "options": "Project",
    "reqd": 1
   },
@@ -79,76 +110,96 @@
    "reqd": 1
   },
   {
-   "fieldname": "batch_bl_no",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Shipment Id / Batch No"
-  },
-  {
    "fieldname": "bl_number",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "B/L Number"
   },
   {
-   "fieldname": "shipment_quantity",
-   "fieldtype": "Float",
-   "label": "Shipment Quantity"
-  },
-  {
    "default": "Mombasa Port",
    "fieldname": "container_mode",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Tracking Mode",
+   "label": "Container Mode",
    "options": "\nMombasa Port\nICD Nairobi\nTransit Kenya\u2192Border\nTransit Border\u2192Kenya\nExport"
   },
   {
-   "fieldname": "delivery_location",
-   "fieldtype": "Data",
-   "label": "Customer / Delivery Location"
+   "fieldname": "type_of_container",
+   "fieldtype": "Link",
+   "label": "Type of Container",
+   "options": "Container Type"
   },
   {
-   "fieldname": "column_break_core",
+   "fieldname": "seal_no",
+   "fieldtype": "Data",
+   "label": "Seal Number"
+  },
+  {
+   "fieldname": "column_break_identity",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "eta",
-   "fieldtype": "Date",
-   "in_list_view": 1,
-   "label": "ETA"
+   "fieldname": "shipping_line",
+   "fieldtype": "Link",
+   "label": "Shipping Line",
+   "options": "Supplier"
   },
   {
-   "fieldname": "ata",
-   "fieldtype": "Date",
-   "in_list_view": 1,
-   "label": "ATA"
+   "fieldname": "delivery_destination",
+   "fieldtype": "Select",
+   "label": "Delivery Destination",
+   "options": "\nKenya\nUganda\nTanzania\nRwanda\nDRC"
   },
   {
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Status",
-   "options": "Dispatched\nDelivered\nEmpty Pending\nEmpty Returned\nOverdue",
+   "label": "Operational Status",
+   "options": "Pending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received",
    "read_only": 1
   },
   {
    "fieldname": "current_location",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Current Location",
    "read_only": 1
   },
   {
-   "collapsible": 1,
-   "fieldname": "section_mombasa",
+   "fieldname": "delivery_location",
+   "fieldtype": "Data",
+   "label": "Delivery Location"
+  },
+  {
+   "fieldname": "section_dates",
    "fieldtype": "Section Break",
-   "label": "Mombasa Port"
+   "label": "Arrival & Port Dates"
+  },
+  {
+   "fieldname": "eta",
+   "fieldtype": "Date",
+   "label": "ETA"
+  },
+  {
+   "fieldname": "ata",
+   "fieldtype": "Date",
+   "label": "ATA / Berthing Date"
   },
   {
    "fieldname": "discharging_date",
    "fieldtype": "Date",
-   "label": "Discharging Date (Mombasa)"
+   "label": "Gate In Port / Discharge Date"
+  },
+  {
+   "description": "Start of shipping-line free period (usually discharge or berthing date)",
+   "fieldname": "free_days_start_date",
+   "fieldtype": "Date",
+   "label": "Free Days Start Date"
+  },
+  {
+   "description": "Last day of shipping-line free period",
+   "fieldname": "free_days_end_date",
+   "fieldtype": "Date",
+   "label": "Free Days End Date"
   },
   {
    "fieldname": "custom_release_date",
@@ -156,90 +207,52 @@
    "label": "Custom Release Date"
   },
   {
-   "fieldname": "gate_out_date_port",
-   "fieldtype": "Date",
-   "label": "Gate Out Date (Mombasa Port)"
+   "fieldname": "column_break_dates",
+   "fieldtype": "Column Break"
   },
   {
-   "description": "First day after free time at port (auto)",
-   "fieldname": "demurrage_date",
+   "fieldname": "gate_out_date_port",
+   "fieldtype": "Date",
+   "label": "Gate Out Port Date"
+  },
+  {
+   "fieldname": "free_days_count_from",
+   "fieldtype": "Data",
+   "label": "Free Days Count From",
+   "read_only": 1
+  },
+  {
+   "description": "Anchor date + demurrage free days",
+   "fieldname": "demurrage_start_date",
    "fieldtype": "Date",
    "label": "Demurrage Start Date",
    "read_only": 1
   },
   {
    "collapsible": 1,
+   "depends_on": "eval:['ICD Nairobi'].includes(doc.container_mode)",
    "fieldname": "section_icd",
    "fieldtype": "Section Break",
-   "label": "ICD Nairobi"
+   "label": "ICD"
   },
   {
    "fieldname": "icd_mombasa_discharge_date",
    "fieldtype": "Date",
-   "label": "Discharging Date from Mombasa"
+   "label": "ICD Mombasa Discharge Date"
   },
   {
    "fieldname": "icd_gate_in_date",
    "fieldtype": "Date",
-   "label": "Gate In Date (ICD)"
+   "label": "ICD Gate In Date"
   },
   {
    "fieldname": "icd_gate_out_date",
    "fieldtype": "Date",
-   "label": "Gate Out Date (ICD)"
+   "label": "ICD Gate Out Date"
   },
   {
-   "collapsible": 1,
-   "fieldname": "section_warehouse",
-   "fieldtype": "Section Break",
-   "label": "Warehouse"
-  },
-  {
-   "fieldname": "gate_in_date_warehouse",
-   "fieldtype": "Date",
-   "label": "Gate In Date (Warehouse)"
-  },
-  {
-   "fieldname": "offloading_date",
-   "fieldtype": "Date",
-   "label": "Offloading Date (Warehouse)"
-  },
-  {
-   "fieldname": "delivery_date",
-   "fieldtype": "Date",
-   "label": "Delivery Date"
-  },
-  {
-   "fieldname": "warehouse_loading_date",
-   "fieldtype": "Date",
-   "label": "Loading Date (Warehouse)"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "section_transit",
-   "fieldtype": "Section Break",
-   "label": "Transit / Border"
-  },
-  {
-   "fieldname": "border_clearance_date",
-   "fieldtype": "Date",
-   "label": "Clearance at Border Date"
-  },
-  {
-   "fieldname": "transit_gate_in_date",
-   "fieldtype": "Date",
-   "label": "Gate In Date (Transit)"
-  },
-  {
-   "fieldname": "transit_gate_out_date",
-   "fieldtype": "Date",
-   "label": "Gate Out Date (Transit)"
-  },
-  {
-   "collapsible": 1,
    "fieldname": "section_transport",
-   "fieldtype": "Section Break",
-   "label": "Transport"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "truck_number",
@@ -263,12 +276,159 @@
    "options": "Supplier"
   },
   {
-   "collapsible": 1,
-   "fieldname": "section_empty_return",
-   "fieldtype": "Section Break",
-   "label": "Empty Return & Interchange"
+   "fieldname": "section_warehouse",
+   "fieldtype": "Section Break"
   },
   {
+   "fieldname": "gate_in_date_warehouse",
+   "fieldtype": "Date",
+   "label": "Gate In Date Warehouse"
+  },
+  {
+   "fieldname": "offloading_date",
+   "fieldtype": "Date",
+   "label": "Offloading Date"
+  },
+  {
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "label": "Delivery Date"
+  },
+  {
+   "fieldname": "warehouse_loading_date",
+   "fieldtype": "Date",
+   "label": "Warehouse Loading Date"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "section_transit",
+   "fieldtype": "Section Break",
+   "label": "Transit"
+  },
+  {
+   "fieldname": "border_clearance_date",
+   "fieldtype": "Date",
+   "label": "Border Clearance Date"
+  },
+  {
+   "fieldname": "transit_gate_in_date",
+   "fieldtype": "Date",
+   "label": "Transit Gate In Date"
+  },
+  {
+   "fieldname": "transit_gate_out_date",
+   "fieldtype": "Date",
+   "label": "Transit Gate Out Date"
+  },
+  {
+   "fieldname": "section_charges",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Derived from free days start/end when both are set",
+   "fieldname": "free_days",
+   "fieldtype": "Int",
+   "label": "Free Days (Demurrage)",
+   "read_only": 1
+  },
+  {
+   "description": "Derived from detention free start/end when both are set",
+   "fieldname": "detention_free_days",
+   "fieldtype": "Int",
+   "label": "Detention Free Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "detention_free_start_date",
+   "fieldtype": "Date",
+   "label": "Detention Free Start Date"
+  },
+  {
+   "fieldname": "detention_free_end_date",
+   "fieldtype": "Date",
+   "label": "Detention Free End Date"
+  },
+  {
+   "description": "From shipping line guarantee / waiver",
+   "fieldname": "demurrage_daily_rate",
+   "fieldtype": "Currency",
+   "label": "Demurrage Daily Rate"
+  },
+  {
+   "description": "From shipping line guarantee / waiver",
+   "fieldname": "detention_daily_rate",
+   "fieldtype": "Currency",
+   "label": "Detention Daily Rate"
+  },
+  {
+   "fieldname": "kpa_free_days",
+   "fieldtype": "Int",
+   "label": "KPA Free Days"
+  },
+  {
+   "fieldname": "kpa_daily_rate",
+   "fieldtype": "Currency",
+   "label": "KPA Daily Rate"
+  },
+  {
+   "fieldname": "rate_source",
+   "fieldtype": "Data",
+   "label": "Rate Source",
+   "read_only": 1
+  },
+  {
+   "fieldname": "port_days_used",
+   "fieldtype": "Int",
+   "label": "Port Days Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_charges",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "demurrage_days",
+   "fieldtype": "Int",
+   "label": "Demurrage Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "demurrage_amount",
+   "fieldtype": "Currency",
+   "label": "Demurrage Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kpa_days",
+   "fieldtype": "Int",
+   "label": "KPA Chargeable Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kpa_amount",
+   "fieldtype": "Currency",
+   "label": "KPA Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "detention_days",
+   "fieldtype": "Int",
+   "label": "Detention Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "detention_amount",
+   "fieldtype": "Currency",
+   "label": "Detention Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_empty_return",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Gate out + detention free days",
    "fieldname": "expected_empty_return",
    "fieldtype": "Date",
    "label": "Expected Empty Return",
@@ -282,94 +442,92 @@
   {
    "fieldname": "gate_in_date_depot",
    "fieldtype": "Date",
-   "label": "Gate In Date (Empty Depot)"
+   "label": "Gate In Date Depot"
   },
   {
    "fieldname": "interchange_date",
    "fieldtype": "Date",
-   "label": "Interchange Return Date"
+   "label": "Interchange Date"
+  },
+  {
+   "fieldname": "interchange_document",
+   "fieldtype": "Attach",
+   "label": "Interchange Document"
+  },
+  {
+   "fieldname": "column_break_empty",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "days_outstanding",
    "fieldtype": "Int",
-   "label": "Days Outstanding (Empty)",
+   "label": "Days Outstanding",
    "read_only": 1
   },
   {
-   "collapsible": 1,
-   "fieldname": "section_calculations",
-   "fieldtype": "Section Break",
-   "label": "Demurrage & Detention"
-  },
-  {
-   "fieldname": "free_days",
-   "fieldtype": "Int",
-   "label": "Free Days (Port)"
-  },
-  {
-   "fieldname": "port_days_used",
-   "fieldtype": "Int",
-   "label": "Port Days (Discharge to Gate Out)",
-   "read_only": 1
-  },
-  {
-   "fieldname": "demurrage_days",
-   "fieldtype": "Int",
-   "label": "Demurrage Days",
-   "read_only": 1
-  },
-  {
-   "fieldname": "detention_days",
-   "fieldtype": "Int",
-   "label": "Detention Days",
-   "read_only": 1
-  },
-  {
-   "fieldname": "daily_demurrage_rate",
+   "fieldname": "deposit_amount",
    "fieldtype": "Currency",
-   "label": "Daily Demurrage Rate"
+   "label": "Deposit Amount"
   },
   {
-   "fieldname": "demurrage_amount",
-   "fieldtype": "Currency",
-   "label": "Demurrage Amount",
-   "read_only": 1
+   "fieldname": "deposit_refund_status",
+   "fieldtype": "Select",
+   "label": "Deposit Refund Status",
+   "options": "\nPending\nApplied\nReceived\nForfeited"
   },
   {
-   "fieldname": "daily_detention_rate",
-   "fieldtype": "Currency",
-   "label": "Daily Detention Rate"
+   "fieldname": "deposit_refund_applied_on",
+   "fieldtype": "Date",
+   "label": "Deposit Refund Applied On"
   },
   {
-   "fieldname": "detention_amount",
-   "fieldtype": "Currency",
-   "label": "Detention Amount",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_cjca",
+   "fieldname": "column_break_btiy",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "column_break_lncp",
+   "fieldname": "column_break_quen",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "column_break_uhcq",
+   "fieldname": "column_break_pxob",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "column_break_jkue",
+   "fieldname": "column_break_luhf",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "column_break_awuc",
+   "fieldname": "column_break_qkej",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_mtin",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "free_days_and_charges_tab",
+   "fieldtype": "Tab Break",
+   "label": "Free Days and Charges"
+  },
+  {
+   "fieldname": "transport_and_delivery_tab",
+   "fieldtype": "Tab Break",
+   "label": "Transport and Delivery"
+  },
+  {
+   "fieldname": "warehouse_tab",
+   "fieldtype": "Tab Break",
+   "label": "Warehouse"
+  },
+  {
+   "fieldname": "empty_return_and_interchange_tab",
+   "fieldtype": "Tab Break",
+   "label": "Empty Return and Interchange"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-04 18:44:58.561586",
+ "modified": "2026-06-17 11:12:40.478798",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

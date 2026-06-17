@@ -6,6 +6,8 @@ project_container_tracking / project_tracking_layout modules.
 """
 from __future__ import annotations
 
+import json
+
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
@@ -19,6 +21,17 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 
 MODULE = "CGM Worldwide Shipping"
 
+SUPPLIER_CONTAINER_CHARGE_FIELDS = (
+	"custom_demurrage_free_days",
+	"custom_demurrage_daily_rate",
+	"custom_detention_free_days",
+	"custom_detention_daily_rate",
+	"custom_section_shipping_line_rules",
+	"custom_shipping_line_free_days_rules",
+	"custom_shipping_line_demurrage_tiers",
+	"custom_shipping_line_detention_tiers",
+)
+
 
 def _create_cf(dt: str, values: dict) -> None:
 	name = f"{dt}-{values['fieldname']}"
@@ -30,6 +43,18 @@ def _create_cf(dt: str, values: dict) -> None:
 	for key, value in values.items():
 		setattr(doc, key, value)
 	doc.insert(ignore_permissions=True)
+
+
+def _upsert_cf(dt: str, values: dict) -> None:
+	"""Create or update a Custom Field (keeps Supplier child tables in sync on migrate)."""
+	name = f"{dt}-{values['fieldname']}"
+	if frappe.db.exists("Custom Field", name):
+		doc = frappe.get_doc("Custom Field", name)
+		for key, value in values.items():
+			setattr(doc, key, value)
+		doc.save(ignore_permissions=True)
+		return
+	_create_cf(dt, values)
 
 
 def ensure_project_shipment_core_fields() -> None:
@@ -293,7 +318,250 @@ def _set_cf_property(fieldname: str, **kwargs) -> None:
 		frappe.db.set_value("Custom Field", name, key, value, update_modified=False)
 
 
+def ensure_supplier_field_order() -> None:
+	"""Ensure CGM Supplier fields are listed in field_order (otherwise they stay hidden)."""
+	ps_name = "Supplier-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+	raw = frappe.db.get_value("Property Setter", ps_name, "value") or "[]"
+	try:
+		order = json.loads(raw)
+	except json.JSONDecodeError:
+		return
+	if not isinstance(order, list):
+		return
+
+	order = [f for f in order if f not in SUPPLIER_CONTAINER_CHARGE_FIELDS]
+	anchor = "image" if "image" in order else "supplier_group"
+	if anchor in order:
+		idx = order.index(anchor) + 1
+		for offset, fieldname in enumerate(SUPPLIER_CONTAINER_CHARGE_FIELDS):
+			order.insert(idx + offset, fieldname)
+	else:
+		order.extend(SUPPLIER_CONTAINER_CHARGE_FIELDS)
+
+	frappe.db.set_value(
+		"Property Setter", ps_name, "value", json.dumps(order), update_modified=False
+	)
+
+
+def ensure_supplier_container_charge_fields() -> None:
+	"""Per shipping line: legacy flat fields (fallback) and tiered rule child tables."""
+	insert_after = "image"
+	for fieldname, label in (
+		("custom_demurrage_free_days", "Demurrage Free Days (legacy)"),
+		("custom_demurrage_daily_rate", "Demurrage Daily Rate (legacy USD)"),
+		("custom_detention_free_days", "Detention Free Days (legacy)"),
+		("custom_detention_daily_rate", "Detention Daily Rate (legacy USD)"),
+	):
+		_upsert_cf(
+			"Supplier",
+			{
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": "Int" if "days" in fieldname else "Currency",
+				"insert_after": insert_after,
+			},
+		)
+		insert_after = fieldname
+	_upsert_cf(
+		"Supplier",
+		{
+			"fieldname": "custom_section_shipping_line_rules",
+			"label": "Container charge rules",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_detention_daily_rate",
+			"collapsible": 1,
+		},
+	)
+	insert_after = "custom_section_shipping_line_rules"
+	for fieldname, label, options in (
+		(
+			"custom_shipping_line_free_days_rules",
+			"Shipping Line Free Days Rules",
+			"Shipping Line Free Days Rule",
+		),
+		(
+			"custom_shipping_line_demurrage_tiers",
+			"Shipping Line Demurrage Tiers",
+			"Shipping Line Demurrage Tier",
+		),
+		(
+			"custom_shipping_line_detention_tiers",
+			"Shipping Line Detention Tiers",
+			"Shipping Line Detention Tier",
+		),
+	):
+		_upsert_cf(
+			"Supplier",
+			{
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": "Table",
+				"options": options,
+				"insert_after": insert_after,
+			},
+		)
+		insert_after = fieldname
+	ensure_supplier_field_order()
+	frappe.clear_cache(doctype="Supplier")
+
+
+def ensure_container_tracking_settings_fields() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_TASK_SEQ_DEFAULTS,
+	)
+
+	_create_cf(
+		"CGM Shipping Settings",
+		{
+			"fieldname": "section_container_task_sequences",
+			"label": "Container tracking tasks",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_ucr_finance_email_template",
+			"description": "Sea task sequence numbers that update Container Tracker records.",
+		},
+	)
+	insert_after = "section_container_task_sequences"
+	for fieldname, default in CONTAINER_TASK_SEQ_DEFAULTS.items():
+		label = fieldname.replace("custom_", "").replace("_task_seq", "").replace("_", " ").title()
+		_create_cf(
+			"CGM Shipping Settings",
+			{
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": "Int",
+				"default": str(default),
+				"insert_after": insert_after,
+			},
+		)
+		insert_after = fieldname
+	_create_cf(
+		"CGM Shipping Settings",
+		{
+			"fieldname": "custom_kpa_free_days",
+			"label": "Default KPA Free Days",
+			"fieldtype": "Int",
+			"default": "5",
+			"insert_after": insert_after,
+			"description": "Default KPA free days applied to new Container Tracker records.",
+		},
+	)
+	frappe.clear_cache(doctype="CGM Shipping Settings")
+
+
+def ensure_task_container_fields() -> None:
+	"""Task fields to identify one container for container-specific lifecycle events."""
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_section_container_event",
+			"label": "Container Event",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_sequence_no",
+			"collapsible": 1,
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+			),
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_tracker",
+			"label": "Container Tracker",
+			"fieldtype": "Link",
+			"options": "Container Tracker",
+			"insert_after": "custom_section_container_event",
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+			),
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_number",
+			"label": "Container Number",
+			"fieldtype": "Data",
+			"insert_after": "custom_container_tracker",
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+			),
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_type_of_container",
+			"label": "Type of Container",
+			"fieldtype": "Link",
+			"options": "Container Type",
+			"insert_after": "custom_container_number",
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+			),
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
+def ensure_task_container_update_fields() -> None:
+	"""Task child table for per-container data entry (tasks 11, 16, 18–24)."""
+	container_seqs = "11,16,18,19,20,21,22,23,24"
+	depends = (
+		f"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+		f"[{container_seqs}].includes(doc.custom_sequence_no)"
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_section_container_updates",
+			"label": "Container Updates",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_sequence_no",
+			"collapsible": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_updates",
+			"label": "Container Updates",
+			"fieldtype": "Table",
+			"options": "Task Container Update",
+			"insert_after": "custom_section_container_updates",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_not_emptied_reason",
+			"label": "If containers not exiting port — reason",
+			"fieldtype": "Small Text",
+			"insert_after": "custom_container_updates",
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"doc.custom_sequence_no == 19"
+			),
+			"description": (
+				"Required when task is completed but no truck details are filled "
+				"for any container."
+			),
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
 def ensure_project_container_tracking_fields() -> None:
+	ensure_supplier_container_charge_fields()
+	ensure_container_tracking_settings_fields()
 	_create_cf(
 		"Project",
 		{
@@ -633,17 +901,25 @@ def get_project_tracking_dashboard(project: str) -> dict:
 				workflow_index = progress_index
 			workflow_behind = False
 
-	containers = []
-	if frappe.db.exists("DocType", "Container Tracker"):
-		from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
-			get_containers_for_project,
-		)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+		get_containers_for_project,
+	)
 
-		containers = get_containers_for_project(project)
+	containers = get_containers_for_project(project)
 
 	berth_phase = doc.get("custom_berth_phase") or "Before Vessel Berth"
-	if doc.get("custom_ata") or any(c.get("discharging_date") for c in containers):
+	if doc.get("custom_ata") or any(
+		c.get("discharging_date") or c.get("discharge_date") for c in containers
+	):
 		berth_phase = "After Vessel Berthed"
+
+	def _count_status(*statuses):
+		return sum(1 for c in containers if c.get("status") in statuses)
+
+	alert_count = sum(1 for c in containers if c.get("alert_status"))
+	released = _count_status("Released / In Transit")
+	at_warehouse = _count_status("At Warehouse", "Cargo Offloaded")
+	returned = _count_status("Empty Returned", "Interchange Received")
 
 	return {
 		"current_status": progress_status,
@@ -658,10 +934,29 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"first_open_task": first_open,
 		"mode": doc.get("custom_mode_of_transport"),
 		"berth_phase": berth_phase,
+		"cgm_ref_no": doc.get("custom_cgm_ref_no") or doc.name,
 		"containers": containers,
-		"containers_overdue": sum(1 for c in containers if c.get("status") == "Overdue"),
+		"container_total": len(containers),
+		"containers_released": released,
+		"containers_at_warehouse": at_warehouse,
+		"containers_returned": returned,
+		"containers_alerts": alert_count,
+		"containers_overdue": sum(
+			1
+			for c in containers
+			if c.get("status") == "Return Overdue"
+			or (c.get("alert_status") or "").startswith("🚨")
+		),
 		"containers_pending_empty": sum(
-			1 for c in containers if c.get("status") in ("Empty Pending", "Overdue", "Dispatched")
+			1
+			for c in containers
+			if c.get("status")
+			in (
+				"Released / In Transit",
+				"At Warehouse",
+				"Cargo Offloaded",
+				"Return Overdue",
+			)
 		),
 		"total_demurrage_amount": sum(c.get("demurrage_amount") or 0 for c in containers),
 		"total_detention_amount": sum(c.get("detention_amount") or 0 for c in containers),

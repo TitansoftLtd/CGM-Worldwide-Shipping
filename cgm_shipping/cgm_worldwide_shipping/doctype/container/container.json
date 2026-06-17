@@ -8,9 +8,14 @@
  "field_order": [
   "container_number",
   "column_break_onuu",
-  "container_size",
+  "type_of_container",
   "column_break_fcyk",
-  "seal_no"
+  "seal_no",
+  "column_break_summary",
+  "container_tracker",
+  "status",
+  "demurrage_days",
+  "detention_days"
  ],
  "fields": [
   {
@@ -18,6 +23,13 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Container Number"
+  },
+  {
+   "fieldname": "type_of_container",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Type of Container",
+   "options": "Container Type"
   },
   {
    "fieldname": "column_break_onuu",
@@ -31,21 +43,51 @@
    "fieldname": "seal_no",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Seal No."
+   "label": "Seal Number"
   },
   {
-   "fieldname": "container_size",
+   "fieldname": "column_break_summary",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "container_tracker",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Container Size",
-   "options": "Container Size"
+   "label": "Container Tracker",
+   "options": "Container Tracker",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "container_tracker.status",
+   "fetch_if_empty": 0,
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "container_tracker.demurrage_days",
+   "fieldname": "demurrage_days",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Demurrage Days",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "container_tracker.detention_days",
+   "fieldname": "detention_days",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Detention Days",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-17 00:19:27.978472",
+ "modified": "2026-06-11 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container",
