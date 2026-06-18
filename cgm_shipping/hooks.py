@@ -184,7 +184,7 @@ override_doctype_class = {
 
 doc_events = {
 	"Project": {
-		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_cgm_reference_on_insert",
+		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",

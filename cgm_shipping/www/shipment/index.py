@@ -22,6 +22,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	get_containers_for_shipment,
 	get_shipment_documents,
 	get_shipment_for_customer,
+	shipment_display_ref,
 	shipment_progress,
 	status_tone,
 )
@@ -77,7 +78,7 @@ def _build_context(context, project):
 		return
 
 	context.shipment = shipment
-	context.ref = shipment.custom_cgm_ref_no or shipment.name
+	context.ref = shipment.get("ref") or shipment_display_ref(shipment)
 	context.progress = shipment_progress(shipment.custom_shipment_status)
 	context.status_tone = status_tone(shipment.custom_shipment_status)
 

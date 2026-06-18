@@ -18,14 +18,16 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	enforce_workflow_task_gate,
 	get_sea_closure_blockers,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+	assign_lp_project_reference,
+	is_lp_project_reference,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-	assign_cgm_project_reference,
 	copy_shipment_classification_from_source,
 	copy_tracking_fields_from_source,
 	get_awb_value_from_doc,
 	get_bl_container_child_field,
 	get_project_awb_field,
-	is_cgm_ref,
 	normalize_shipment_fields_on_doc,
 	sync_container_type_from_linked_bl,
 )
@@ -60,14 +62,9 @@ def get_stage_requirements():
 
 
 # ─── Project Save Hooks ───────────────────────────────────────────────────────
-def assign_cgm_reference_on_insert(doc, _method=None):
-	"""Allocate CGM/{prefix}001/0526 as project_name and custom_cgm_ref_no on new shipments."""
-	if is_cgm_ref(doc.project_name) or is_cgm_ref(doc.get("custom_cgm_ref_no")):
-		assign_cgm_project_reference(doc)
-		return
-	if doc.project_name and not str(doc.project_name).startswith("Shipment -"):
-		return
-	assign_cgm_project_reference(doc)
+def assign_project_reference_on_insert(doc, _method=None):
+	"""Allocate LP {qty}X{size}-{batch}/{seq} on project_name and custom_project_reference."""
+	assign_lp_project_reference(doc)
 
 def sync_consignee_from_customer(doc, _method=None):
 	"""Keep consignee aligned with the linked customer."""
@@ -451,12 +448,7 @@ def bootstrap_project_workflow_status(project_name: str) -> None:
 	)
 
 def insert_shipment_project(project) -> str:
-	"""Insert a new shipment project and apply post-insert workflow status.
-
-	A concurrent creation grabbing the same CGM reference is caught by the unique
-	index on custom_cgm_ref_no (patch v2_39); Frappe surfaces that as a
-	UniqueValidationError ("CGM Ref No must be unique") so the user can retry.
-	"""
+	"""Insert a new shipment project and apply post-insert workflow status."""
 	project.insert(ignore_permissions=True)
 	bootstrap_project_workflow_status(project.name)
 	bootstrap_sea_task_plan_for_project(project.name)
@@ -626,11 +618,11 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	if proj.meta.has_field("custom_shipment_status") and not proj.get("custom_shipment_status"):
 		proj.custom_shipment_status = "Draft"
 	apply_project_tracking_defaults(proj)
-	if project_name:
-		proj.project_name = project_name
-		cgm_ref_field = get_field_from_meta("Project", "cgm_ref_no")
-		if cgm_ref_field:
-			proj.set(cgm_ref_field, project_name)
+	if project_name and not is_lp_project_reference(project_name):
+		frappe.throw(
+			"Projects use the LP {qty}X{size}-{batch}/{seq} naming format. "
+			"Leave project_name blank to auto-generate."
+		)
 
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_source_opportunity"):

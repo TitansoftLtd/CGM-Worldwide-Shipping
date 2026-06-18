@@ -281,7 +281,9 @@ function render_container_tracking_table(frm, dashboard) {
 		return;
 	}
 	const rows = dashboard.containers || [];
-	const ref = frappe.utils.escape_html(dashboard.cgm_ref_no || frm.doc.name);
+	const ref = frappe.utils.escape_html(
+		dashboard.project_reference || dashboard.cgm_ref_no || frm.doc.custom_project_reference || frm.doc.project_name || frm.doc.name
+	);
 
 	let cards = "";
 	if (!rows.length) {
@@ -429,17 +431,25 @@ frappe.ui.form.on("Project", {
 			frm.page.set_inner_btn_group_as_primary(__("View"));
 		}
 
-		if (frm.is_new() && frm.doc.project_name && frm.fields_dict.custom_cgm_ref_no) {
-			if (!frm.doc.custom_cgm_ref_no) {
-				frm.set_value("custom_cgm_ref_no", frm.doc.project_name);
+		const refField =
+			frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
+		if (frm.is_new() && frm.doc.project_name && refField) {
+			const refValue = frm.doc.custom_project_reference || frm.doc.custom_cgm_ref_no;
+			if (!refValue) {
+				frm.set_value(refField.df.fieldname, frm.doc.project_name);
 			}
 		}
 
 	},
 
 	project_name(frm) {
-		if (frm.fields_dict.custom_cgm_ref_no && !frm.doc.custom_cgm_ref_no) {
-			frm.set_value("custom_cgm_ref_no", frm.doc.project_name);
+		const refField =
+			frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
+		if (refField) {
+			const refValue = frm.doc.custom_project_reference || frm.doc.custom_cgm_ref_no;
+			if (!refValue) {
+				frm.set_value(refField.df.fieldname, frm.doc.project_name);
+			}
 		}
 	},
 
