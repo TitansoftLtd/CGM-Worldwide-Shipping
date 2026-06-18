@@ -121,11 +121,10 @@
  "is_submittable": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-06-17 00:08:24.531628",
+ "modified": "2026-06-18 03:15:12.914016",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",
- "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
@@ -145,6 +144,5 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": [],
- "title_field": "bl_number"
+ "states": []
 }
