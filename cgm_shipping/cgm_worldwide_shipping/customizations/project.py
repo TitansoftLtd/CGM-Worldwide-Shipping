@@ -19,13 +19,15 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	get_sea_closure_blockers,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-	apply_shipment_data,
 	assign_cgm_project_reference,
+	copy_shipment_classification_from_source,
+	copy_tracking_fields_from_source,
 	get_awb_value_from_doc,
 	get_bl_container_child_field,
 	get_project_awb_field,
 	is_cgm_ref,
 	normalize_shipment_fields_on_doc,
+	sync_container_type_from_linked_bl,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_bl_config,
@@ -59,7 +61,7 @@ def get_stage_requirements():
 
 # ─── Project Save Hooks ───────────────────────────────────────────────────────
 def assign_cgm_reference_on_insert(doc, _method=None):
-	"""Allocate CGM/FCL001/0526 as project_name and custom_cgm_ref_no on new shipments."""
+	"""Allocate CGM/{prefix}001/0526 as project_name and custom_cgm_ref_no on new shipments."""
 	if is_cgm_ref(doc.project_name) or is_cgm_ref(doc.get("custom_cgm_ref_no")):
 		assign_cgm_project_reference(doc)
 		return
@@ -549,13 +551,15 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 		("custom_entry_no", "custom_entry_no"),
 		("custom_consignee", "custom_consignee"),
 		("custom_quantity", "custom_quantity"),
-		("custom_vessel", "custom_vessel"),
 		("custom_gross_weight", "custom_gross_weightkg"),
 		("custom_weight_nw", "custom_net_weightkg"),
 		("custom_description_of_goods", "custom_description_of_goods"),
 		("custom_clearance_station", "custom_clearance_station"),
 		("custom_station_code", "custom_station_code"),
 		("custom_country_of_origin", "custom_country_of_origin"),
+		("custom_container_type", "custom_container_type"),
+		("custom_client_refrence_no", "custom_client_refrence_no"),
+		("custom_batch_no", "custom_batch_no"),
 	)
 	for src_field, dest_field in pairs:
 		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
@@ -617,11 +621,10 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	proj.customer = customer
 	if opp.get("company"):
 		proj.company = opp.company
-	apply_shipment_data(
-		proj,
-		shipment_type=opp.get("custom_shipment_type"),
-		mode=opp.get("custom_mode_of_transport"),
-	)
+	copy_shipment_classification_from_source(proj, opp)
+	copy_tracking_fields_from_source(proj, opp)
+	if proj.meta.has_field("custom_shipment_status") and not proj.get("custom_shipment_status"):
+		proj.custom_shipment_status = "Draft"
 	apply_project_tracking_defaults(proj)
 	if project_name:
 		proj.project_name = project_name
@@ -635,5 +638,6 @@ def create_project_from_opportunity(opportunity, project_name=None):
 
 	apply_opportunity_to_project_mappings(proj, opp)
 	apply_preshipment_transport_defaults(proj, opp)
+	sync_container_type_from_linked_bl(proj)
 	sync_predocuments_from_source(proj, opp)
 	return insert_shipment_project(proj)

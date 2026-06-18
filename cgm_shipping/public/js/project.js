@@ -81,22 +81,12 @@ function sync_consignee_from_customer(frm) {
 }
 
 function toggle_project_transport_reference_fields(frm) {
-	const mode = frm.doc.custom_mode_of_transport;
-	const hide_awb = mode === "Sea";
-	const hide_bl = mode === "Air";
-
-	if (frm.fields_dict.custom_awb_number) {
-		frm.toggle_display("custom_awb_number", !hide_awb);
-	}
-	if (frm.fields_dict.custom_bill_of_lading) {
-		frm.toggle_display("custom_bill_of_lading", !hide_bl);
-	}
-	if (frm.fields_dict.custom_container_information) {
-		frm.toggle_display(
-			"custom_container_information",
-			!hide_bl && Boolean(frm.doc.custom_bill_of_lading)
-		);
-	}
+	cgm_shipping.transport_reference.toggle(frm, {
+		air_waybill: "custom_awb_number",
+		bill_of_lading: "custom_bill_of_lading",
+		container_table: "custom_container_information",
+	});
+	cgm_shipping.transport_reference.toggle_container_type(frm);
 }
 
 function project_clearance_indicator(doc) {
@@ -204,6 +194,23 @@ function container_status_dot(status, alert_status) {
 
 function container_card_detail(c) {
 	const parts = [];
+	const status = c.status || "";
+	const today = frappe.datetime.get_today();
+
+	if (["Vessel Berthed", "Discharged / At Port"].includes(status) && !c.gate_out_date_port) {
+		const berth_ref = c.discharging_date || c.ata;
+		if (berth_ref) {
+			const days = frappe.datetime.get_diff(today, berth_ref);
+			parts.push(
+				`${__("No movement dates yet")} — ${__(
+					"vessel berthed"
+				)} ${days} ${__("days ago")}`
+			);
+		} else {
+			parts.push(__("No movement dates recorded yet"));
+		}
+	}
+
 	if (c.discharging_date) {
 		parts.push(`${__("Discharged")}: ${frappe.datetime.str_to_user(c.discharging_date)}`);
 	}
@@ -214,15 +221,27 @@ function container_card_detail(c) {
 		parts.push(`${__("Offloaded")}: ${frappe.datetime.str_to_user(c.offloading_date)}`);
 	}
 	if (c.free_days != null && c.discharging_date && !c.gate_out_date_port) {
-		const days_in_port = frappe.datetime.get_diff(frappe.datetime.get_today(), c.discharging_date);
+		const days_in_port = frappe.datetime.get_diff(today, c.discharging_date);
 		const remaining = (c.free_days || 0) - days_in_port;
 		parts.push(
 			`${__("Free days")}: ${c.free_days} | ${__("Days in port")}: ${days_in_port} | ${remaining} ${__("remaining")}`
 		);
 	}
-	if (c.expected_empty_return) {
+	if (
+		c.expected_empty_return &&
+		["Released / In Transit", "At Warehouse", "Cargo Offloaded", "Empty Returned"].includes(status)
+	) {
+		const remaining = frappe.datetime.get_diff(c.expected_empty_return, today);
+		const remaining_label =
+			remaining > 0
+				? `${remaining} ${__("days remaining")}`
+				: remaining === 0
+					? __("due today")
+					: `${Math.abs(remaining)} ${__("days overdue")}`;
 		parts.push(
-			`${__("Expected return")}: ${frappe.datetime.str_to_user(c.expected_empty_return)}`
+			`${__("Expected return")}: ${frappe.datetime.str_to_user(
+				c.expected_empty_return
+			)} (${remaining_label})`
 		);
 	}
 	if (parts.length) {
@@ -232,6 +251,28 @@ function container_card_detail(c) {
 		return __("Free days not set — enter from guarantee form");
 	}
 	return __("No movement dates recorded yet");
+}
+
+function container_status_badge_class(status) {
+	if (!status) {
+		return "gray";
+	}
+	if (status.includes("Overdue")) {
+		return "red";
+	}
+	if (status === "Interchange Received" || status === "Empty Returned") {
+		return "green";
+	}
+	if (["At Warehouse", "Cargo Offloaded"].includes(status)) {
+		return "blue";
+	}
+	if (status === "Released / In Transit") {
+		return "orange";
+	}
+	if (["Vessel Berthed", "Discharged / At Port"].includes(status)) {
+		return "yellow";
+	}
+	return "gray";
 }
 
 function render_container_tracking_table(frm, dashboard) {
@@ -258,7 +299,9 @@ function render_container_tracking_table(frm, dashboard) {
 					<div class="cgm-container-card-head">
 						<span>${dot} <b>${frappe.utils.escape_html(c.container_number || c.name)}</b>
 						<span class="text-muted">${frappe.utils.escape_html(c.type_of_container || "")}</span></span>
-						<span class="cgm-container-card-status">${frappe.utils.escape_html(c.status || "")}</span>
+						<span class="indicator-pill ${container_status_badge_class(
+							c.status
+						)} cgm-container-card-status">${frappe.utils.escape_html(c.status || "")}</span>
 					</div>
 					<div class="cgm-container-card-body text-muted">${frappe.utils.escape_html(
 						container_card_detail(c)
@@ -401,6 +444,10 @@ frappe.ui.form.on("Project", {
 	},
 
 	custom_mode_of_transport(frm) {
+		toggle_project_transport_reference_fields(frm);
+	},
+
+	custom_shipment_type(frm) {
 		toggle_project_transport_reference_fields(frm);
 	},
 
