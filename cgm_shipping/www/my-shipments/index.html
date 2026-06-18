@@ -48,7 +48,7 @@
         <tbody>
           {% for s in shipments %}
             <tr>
-              <td data-label="{{ _('CGM Ref') }}"><a class="ref-link" href="{{ s.url }}">{{ s.custom_cgm_ref_no or s.name }}</a></td>
+              <td data-label="{{ _('Project Ref') }}"><a class="ref-link" href="{{ s.url }}">{{ s.ref or s.name }}</a></td>
               <td data-label="{{ _('B/L Number') }}">{{ s.custom_bl_number or s.custom_awb_number or '-' }}</td>
               <td data-label="{{ _('Mode') }}">{{ s.custom_mode_of_transport or '-' }}</td>
               <td data-label="{{ _('Status') }}"><span class="cp-status {{ s.tone }}"><span class="dot"></span>{{ s.custom_shipment_status }}</span></td>

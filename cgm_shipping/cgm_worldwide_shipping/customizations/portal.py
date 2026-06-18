@@ -193,6 +193,8 @@ def status_tone(status: str | None) -> str:
 # page, dashboard and detail header stay consistent.
 SHIPMENT_LIST_FIELDS = [
 	"name",
+	"project_name",
+	"custom_project_reference",
 	"custom_cgm_ref_no",
 	"custom_consignee",
 	"custom_shipment_status",
@@ -229,6 +231,14 @@ def get_customer_shipments(customer: str, limit: int = 200) -> list[dict]:
 	)
 
 
+def shipment_display_ref(row: dict) -> str:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+		display_ref_from_values,
+	)
+
+	return display_ref_from_values(row)
+
+
 def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 	"""Fetch a single shipment, enforcing customer ownership.
 
@@ -243,8 +253,10 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 		project_name,
 		[
 			"name",
-			"customer",
+			"project_name",
+			"custom_project_reference",
 			"custom_cgm_ref_no",
+			"customer",
 			"custom_consignee",
 			"custom_shipment_status",
 			"custom_mode_of_transport",
@@ -286,6 +298,7 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 	)
 	if not row or row.customer != customer:
 		return None
+	row["ref"] = shipment_display_ref(row)
 	return row
 
 
@@ -549,7 +562,13 @@ def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
 	rows = frappe.db.sql(
 		"""
 		SELECT sd.name, sd.document_type, sd.attachment, sd.verified_on,
-		       sd.remarks, p.name AS project, p.custom_cgm_ref_no AS ref
+		       sd.remarks, p.name AS project,
+		       COALESCE(
+		           NULLIF(p.custom_project_reference, ''),
+		           NULLIF(p.custom_cgm_ref_no, ''),
+		           NULLIF(p.project_name, ''),
+		           p.name
+		       ) AS ref
 		FROM `tabShipment Document` sd
 		JOIN `tabProject` p ON p.name = sd.parent
 		WHERE sd.parenttype = 'Project'

@@ -369,8 +369,17 @@ def _derive_container_mode(project) -> str:
 		return "ICD Nairobi"
 	if "transit" in delivery_type or "border" in delivery_type:
 		return "Transit Kenya→Border"
-	if project.get("custom_shipment_type") == "Export":
-		return "Export"
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+		container_tracking_mode_for_shipment_type,
+	)
+
+	tracked = container_tracking_mode_for_shipment_type(
+		project.get("custom_shipment_type"),
+		project.get("custom_mode_of_transport"),
+	)
+	if tracked:
+		return tracked
 	return "Mombasa Port"
 
 

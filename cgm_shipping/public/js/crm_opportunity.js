@@ -9,6 +9,14 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	refresh(frm) {
+		if (frm.doc.docstatus > 0) {
+			// Submitted Opportunity — show fields only; never run BL sync / clear logic.
+			sync_opportunity_transport_and_containers(frm);
+			setup_create_shipment_project_button(frm);
+			hide_procurement_create_buttons(frm);
+			return;
+		}
+
 		const skip_readonly_sync = frm._cgm_skip_readonly_sync;
 
 		if (skip_readonly_sync) {
@@ -32,6 +40,10 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	custom_shipment_type(frm) {
+		sync_opportunity_transport_and_containers(frm);
+	},
+
+	custom_bill_of_lading(frm) {
 		sync_opportunity_transport_and_containers(frm);
 	},
 });
@@ -176,6 +188,42 @@ function find_populate_containers_row(frm) {
 	return find_bl_clients_document_row(frm);
 }
 
+function get_opportunity_container_type_field(frm) {
+	if (frm.fields_dict.custom_container_type) {
+		return "custom_container_type";
+	}
+	if (frm.fields_dict.custom_container_type_) {
+		return "custom_container_type_";
+	}
+	return null;
+}
+
+function apply_bl_classification_fields(frm, data) {
+	if (!data) {
+		return;
+	}
+	if (data.shipment_type && frm.fields_dict.custom_shipment_type) {
+		frm.set_value("custom_shipment_type", data.shipment_type);
+	}
+	if (data.default_mode_of_transport && frm.fields_dict.custom_mode_of_transport) {
+		frm.set_value("custom_mode_of_transport", data.default_mode_of_transport);
+	}
+	const container_type_field = get_opportunity_container_type_field(frm);
+	if (data.container_type && container_type_field) {
+		frm.set_value(container_type_field, data.container_type);
+	}
+
+	const tracking_fields = [
+		["client_refrence_no", "custom_client_refrence_no"],
+		["batch_no", "custom_batch_no"],
+	];
+	for (const [src, dest] of tracking_fields) {
+		if (data[src] != null && data[src] !== "" && frm.fields_dict[dest]) {
+			frm.set_value(dest, data[src]);
+		}
+	}
+}
+
 
 // ─── Clients Documents remove handler ─────────────────────────────────────────
 
@@ -211,6 +259,9 @@ function sync_opportunity_transport_and_containers(frm) {
 		air_waybill: "custom_air_waybill",
 		bill_of_lading: bl_link_field || undefined,
 		section: "custom_section_break_idqn5",
+	});
+	cgm_shipping.transport_reference.toggle_container_type(frm, {
+		bill_of_lading: bl_link_field || "custom_bill_of_lading",
 	});
 }
 
@@ -280,6 +331,7 @@ function apply_pending_bl_from_submit(frm) {
 	if (pending.bl_name && bl_link_field && frm.doc[bl_link_field] !== pending.bl_name) {
 		frm.set_value(bl_link_field, pending.bl_name);
 	}
+	apply_bl_classification_fields(frm, pending);
 	if (pending.quantity && quantity_field && frm.doc[quantity_field] !== pending.quantity) {
 		frm.set_value(quantity_field, pending.quantity);
 	}
@@ -426,6 +478,7 @@ function apply_bl_data_from_response(frm, row, cdt, cdn, data, opts = {}) {
 	if (bl_link_field && bl_name && frm.doc[bl_link_field] !== bl_name) {
 		frm.set_value(bl_link_field, bl_name);
 	}
+	apply_bl_classification_fields(frm, data);
 	if (quantity_field && String(frm.doc[quantity_field] ?? "") !== String(data.quantity ?? "")) {
 		frm.set_value(quantity_field, data.quantity || "");
 	}
@@ -450,6 +503,10 @@ function clear_bl_derived_opportunity_fields(frm) {
 	const bl_link_field = get_opportunity_bl_link_field(frm);
 	const container_field = get_container_table_field(frm);
 	const quantity_field = bl_link_field ? get_quantity_field(frm, bl_link_field) : null;
+	const tracking_fields = [
+		"custom_client_refrence_no",
+		"custom_batch_no",
+	];
 
 	if (container_field && (frm.doc[container_field] || []).length) {
 		frm.clear_table(container_field);
@@ -458,54 +515,87 @@ function clear_bl_derived_opportunity_fields(frm) {
 	if (quantity_field && frm.doc[quantity_field]) {
 		frm.set_value(quantity_field, "");
 	}
+	for (const fieldname of tracking_fields) {
+		if (frm.fields_dict[fieldname] && frm.doc[fieldname]) {
+			frm.set_value(fieldname, "");
+		}
+	}
 	if (bl_link_field && frm.doc[bl_link_field]) {
 		frm.set_value(bl_link_field, "");
 	}
 }
 
 function setup_create_shipment_project_button(frm) {
-	if (
-		frm.doc.workflow_state !== "Approved" ||
-		frm.doc.opportunity_from !== "Customer"
-	) {
+	if (frm.is_new() || !frm.doc.name || frm.doc.opportunity_from !== "Customer") {
 		return;
 	}
+
+	clearTimeout(frm._cgm_project_btn_timer);
+	frm._cgm_project_btn_timer = setTimeout(() => {
+		render_shipment_project_buttons(frm);
+	}, 450);
+}
+
+function render_shipment_project_buttons(frm) {
+	if (cur_frm !== frm || frm.is_new() || frm.doc.opportunity_from !== "Customer") {
+		return;
+	}
+
+	const is_approved = frm.doc.workflow_state === "Approved";
 
 	frappe.db
 		.get_value("Project", { custom_source_opportunity: frm.doc.name }, "name")
 		.then((r) => {
+			if (cur_frm !== frm) {
+				return;
+			}
+
 			const existing = r?.message?.name;
 			if (existing) {
-				frm.add_custom_button(
-					__("View Project"),
-					() => frappe.set_route("Form", "Project", existing),
-					__("Create")
-				);
-			} else {
-				frm.add_custom_button(
-					__("Create Shipment Project"),
-					() => {
-						frappe.call({
-							method:
-								"cgm_shipping.cgm_worldwide_shipping.customizations.project.create_project_from_opportunity",
-							args: { opportunity: frm.doc.name },
-							freeze: true,
-							callback(r) {
-								if (!r.exc && r.message) {
-									frappe.show_alert({
-										message: __("Shipment Project created"),
-										indicator: "green",
-									});
-									frappe.set_route("Form", "Project", r.message);
-								}
-							},
-						});
-					},
-					__("Create")
-				);
+				const open_project = () => frappe.set_route("Form", "Project", existing);
+				frm.add_custom_button(__("View Project"), open_project, __("Create"));
+				frm.page.set_inner_btn_group_as_primary(__("Create"));
+				return;
 			}
+
+			if (is_approved) {
+				const create_fn = () => create_shipment_project_from_opportunity(frm);
+				frm.add_custom_button(__("Create Shipment Project"), create_fn, __("Create"));
+				frm.page.set_inner_btn_group_as_primary(__("Create"));
+				return;
+			}
+
+			const explain = () => {
+				frappe.msgprint({
+					title: __("Approval required"),
+					message: __(
+						"This Opportunity must be <b>Approved</b> before creating a Shipment Project. Current status: <b>{0}</b>.",
+						[frm.doc.workflow_state || __("Not set")]
+					),
+					indicator: "orange",
+				});
+			};
+			frm.add_custom_button(__("Create Shipment Project"), explain, __("Create"));
 			frm.page.set_inner_btn_group_as_primary(__("Create"));
 		});
+}
+
+function create_shipment_project_from_opportunity(frm) {
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.create_project_from_opportunity",
+		args: { opportunity: frm.doc.name },
+		freeze: true,
+		callback(r) {
+			if (!r.exc && r.message) {
+				frappe.show_alert({
+					message: __("Shipment Project created"),
+					indicator: "green",
+				});
+				frappe.set_route("Form", "Project", r.message);
+			}
+		},
+	});
 }
 
 function hide_procurement_create_buttons(frm) {
