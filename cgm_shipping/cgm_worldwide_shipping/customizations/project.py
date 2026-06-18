@@ -23,17 +23,18 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	is_lp_project_reference,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	apply_bill_of_lading_from_source,
+	copy_carrier_fields_from_source,
 	copy_shipment_classification_from_source,
 	copy_tracking_fields_from_source,
 	get_awb_value_from_doc,
-	get_bl_container_child_field,
+	get_bl_quantity_summary,
 	get_project_awb_field,
 	normalize_shipment_fields_on_doc,
 	sync_container_type_from_linked_bl,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_bl_config,
-	get_container_table_field_for_doctype,
 	get_field_from_meta,
 	get_link_field_for_doctype,
 )
@@ -461,80 +462,38 @@ def apply_project_tracking_defaults(project) -> None:
 	if opened_date_field and not project.get(opened_date_field):
 		project.set(opened_date_field, today())
 
-def get_container_rows_from_preshipment_source(source_doc) -> list[dict]:
-	"""Container rows from preshipment child table, or from linked Bill of Lading when empty."""
-	bl_config = get_bl_config()
-	container_field = bl_config.get("opportunity_container_field") or get_container_table_field_for_doctype(
-		source_doc.doctype
-	)
-	rows = []
-	if container_field:
-		for row in source_doc.get(container_field) or []:
-			rows.append(
-				{
-					"container_number": row.get("container_number"),
-					"type_of_container": row.get("type_of_container"),
-				}
-			)
-	if rows:
-		return rows
-
-	bl_link_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
-		source_doc.doctype, "Bill of Lading"
-	)
-	bl_name = source_doc.get(bl_link_field) if bl_link_field else None
-	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
-		return []
-
-	bl = frappe.get_doc("Bill of Lading", bl_name)
-	bl_container_field = get_bl_container_child_field()
-	return [
-		{
-			"container_number": row.get("container_number"),
-			"type_of_container": row.get("type_of_container"),
-		}
-		for row in bl.get(bl_container_field) or []
-	]
-
-def copy_container_rows_to_project(project, rows: list[dict]) -> None:
-	container_field = get_container_table_field_for_doctype("Project")
-	if not rows or not container_field or not project.meta.has_field(container_field):
-		return
-	project.set(container_field, [])
-	for row in rows:
-		project.append(
-			container_field,
-			{
-				"container_number": row.get("container_number"),
-				"type_of_container": row.get("type_of_container"),
-			},
-		)
-
 def apply_preshipment_transport_defaults(project, source_doc) -> None:
-	"""Copy B/L, AWB, and container rows from Opportunity onto a new Project."""
+	"""Copy B/L, AWB, containers, quantity, vessel, and airline from Opportunity onto Project."""
 	bl_config = get_bl_config()
 	project_meta = project.meta
-	source_bl_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
-		source_doc.doctype, "Bill of Lading"
-	)
-	project_bl_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
-		"Project", "Bill of Lading"
-	)
 
-	if project_bl_field and project_meta.has_field(project_bl_field) and source_bl_field:
-		bl = source_doc.get(source_bl_field)
-		if bl and not project.get(project_bl_field):
-			project.set(project_bl_field, bl)
+	apply_bill_of_lading_from_source(project, source_doc)
+	copy_carrier_fields_from_source(project, source_doc)
 
-	project_awb_field = get_project_awb_field()
-	if project_awb_field and project_meta.has_field(project_awb_field):
-		awb = get_awb_value_from_doc(source_doc)
+	project_awb_field = get_project_awb_field() or "custom_air_waybill"
+	source_awb_field = get_link_field_for_doctype(source_doc.doctype, "Air Waybill") or "custom_air_waybill"
+	if project_meta.has_field(project_awb_field):
+		awb = None
+		if source_doc.meta.has_field(source_awb_field):
+			awb = source_doc.get(source_awb_field)
+		if not awb:
+			awb = get_awb_value_from_doc(source_doc)
 		if awb and not project.get(project_awb_field):
 			project.set(project_awb_field, awb)
 
-	container_field = get_container_table_field_for_doctype("Project")
-	if container_field and project_meta.has_field(container_field) and not project.get(container_field):
-		copy_container_rows_to_project(project, get_container_rows_from_preshipment_source(source_doc))
+	quantity_field = bl_config.get("opportunity_quantity_field")
+	if quantity_field and project_meta.has_field(quantity_field) and not project.get(quantity_field):
+		qty = source_doc.get(quantity_field)
+		if qty not in (None, ""):
+			project.set(quantity_field, qty)
+		else:
+			bl_field = bl_config.get("opportunity_bl_field")
+			bl_name = project.get(bl_field) if bl_field else None
+			if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+				project.set(
+					quantity_field,
+					get_bl_quantity_summary(frappe.get_doc("Bill of Lading", bl_name)),
+				)
 
 def apply_opportunity_to_project_mappings(project, opp) -> None:
 	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""

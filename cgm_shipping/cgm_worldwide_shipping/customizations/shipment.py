@@ -349,6 +349,21 @@ OPPORTUNITY_TO_PROJECT_TRACKING_FIELDS = (
 	("custom_batch_no", "custom_batch_no"),
 )
 
+OPPORTUNITY_TO_PROJECT_CARRIER_FIELDS = (
+	("custom_vessel", "custom_vessel"),
+	("custom_airline", "custom_airline"),
+)
+
+
+def copy_carrier_fields_from_source(target, source) -> None:
+	"""Copy vessel and/or airline onto Project when filled on the preshipment source."""
+	for src_field, dest_field in OPPORTUNITY_TO_PROJECT_CARRIER_FIELDS:
+		if not target.meta.has_field(dest_field) or not source.meta.has_field(src_field):
+			continue
+		value = source.get(src_field)
+		if value not in (None, "") and not target.get(dest_field):
+			target.set(dest_field, value)
+
 
 def _bl_batch_number_value(bl_doc) -> str | None:
 	batch = (bl_doc.get("batch_no") or "").strip()
@@ -443,125 +458,17 @@ def sea_import_enabled_for_project(project) -> bool:
 	mode = project.get("custom_mode_of_transport") if hasattr(project, "get") else None
 	return get_transport_category(None, mode) == "sea"
 
-# ─── CGM reference / Project Name ─────────────────────────────────────────────
-# Tracking sheet format: CGM/{prefix}001/1022  (prefix + 3-digit seq + MMYY period)
-# Prefix comes from Container Type master (FCL, LCL, …) when set on the project,
-# otherwise from Shipment Type master (e.g. air/road shipments without container type).
+# ─── Legacy CGM reference (old project names) ────────────────────────────────
+# New Projects use LP {qty}X{size}-{batch}/{seq} via project_naming.py.
 
-
-CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$")
+LEGACY_CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$", re.IGNORECASE)
 
 
 def is_cgm_ref(value: str | None) -> bool:
+	"""True for legacy CGM/FCL001/0626-style references."""
 	if not value:
 		return False
-	return bool(CGM_REF_PATTERN.match(str(value).strip().upper()))
-
-
-def cgm_ref_prefix(shipment_type=None, mode=None, container_type=None) -> str | None:
-	"""Tracking-sheet prefix from Container Type or Shipment Type master when configured."""
-	ct = (container_type or "").strip()
-	if ct:
-		prefix = cgm_ref_prefix_from_container_type(ct)
-		if prefix:
-			return prefix
-
-	st = (shipment_type or "").strip()
-	m = (mode or "").strip()
-	prefix = cgm_ref_prefix_from_master(st, m)
-	if prefix:
-		return prefix
-
-	row = get_shipment_type_record(st, mode=m)
-	link = row.get("name") if row else resolve_shipment_type_from_legacy(st, m)
-	if link:
-		prefix = cgm_ref_prefix_from_master(link, m)
-		if prefix:
-			return prefix
-
-	return None
-
-
-def _next_cgm_ref_sequence(prefix: str, period: str) -> int:
-	"""Next 3-digit sequence for CGM/{prefix}NNN/{period} in this calendar month."""
-	like = f"CGM/{prefix}%/{period}"
-	rows = frappe.db.sql(
-		"""
-		SELECT project_name AS ref FROM `tabProject` WHERE UPPER(project_name) LIKE %s
-		UNION
-		SELECT custom_cgm_ref_no AS ref FROM `tabProject`
-		WHERE custom_cgm_ref_no IS NOT NULL AND custom_cgm_ref_no != ''
-		  AND UPPER(custom_cgm_ref_no) LIKE %s
-		""",
-		(like.upper(), like.upper()),
-		as_dict=True,
-	)
-	seq_pattern = re.compile(rf"^CGM/{re.escape(prefix)}(\d{{3}})/{re.escape(period)}$")
-	max_seq = 0
-	for row in rows:
-		ref = (row.ref or "").strip().upper()
-		match = seq_pattern.match(ref)
-		if match:
-			max_seq = max(max_seq, int(match.group(1)))
-	return max_seq + 1
-
-
-def _cgm_ref_in_use(ref: str) -> bool:
-	"""True if a Project already uses this reference as its name or CGM ref."""
-	return bool(
-		frappe.db.exists("Project", {"project_name": ref})
-		or frappe.db.exists("Project", {"custom_cgm_ref_no": ref})
-	)
-
-
-def build_cgm_ref_no(
-	shipment_type=None,
-	mode=None,
-	opened_date=None,
-	container_type=None,
-) -> str | None:
-	"""Allocate CGM/{prefix}001/1022-style reference when a prefix is configured on master.
-
-	Returns None when Container Type / Shipment Type have no CGM Ref Prefix yet.
-	"""
-	prefix = cgm_ref_prefix(shipment_type, mode, container_type)
-	if not prefix:
-		return None
-	dt = getdate(opened_date or today())
-	period = dt.strftime("%m%y")
-	seq = _next_cgm_ref_sequence(prefix, period)
-	for candidate_seq in range(seq, seq + 1000):
-		ref = f"CGM/{prefix}{candidate_seq:03d}/{period}"
-		if not _cgm_ref_in_use(ref):
-			return ref
-	frappe.throw("Could not allocate a unique CGM reference number.")
-
-
-def assign_cgm_project_reference(project) -> None:
-	"""Set project_name and custom_cgm_ref_no to the tracking-sheet CGM reference."""
-	if project.get("custom_cgm_ref_no") and is_cgm_ref(project.custom_cgm_ref_no):
-		if not is_cgm_ref(project.project_name):
-			project.project_name = project.custom_cgm_ref_no
-		return
-
-	if project.project_name and is_cgm_ref(project.project_name):
-		if project.meta.has_field("custom_cgm_ref_no") and not project.get("custom_cgm_ref_no"):
-			project.custom_cgm_ref_no = project.project_name
-		return
-
-	container_field = get_container_type_field(project.meta)
-	container_type = project.get(container_field) if container_field else None
-	ref = build_cgm_ref_no(
-		project.get("custom_shipment_type"),
-		project.get("custom_mode_of_transport"),
-		project.get("custom_opened_date"),
-		container_type,
-	)
-	if not ref:
-		return
-	project.project_name = ref
-	if project.meta.has_field("custom_cgm_ref_no"):
-		project.custom_cgm_ref_no = ref
+	return bool(LEGACY_CGM_REF_PATTERN.match(str(value).strip().upper()))
 
 
 # ─── Project Field Helpers ────────────────────────────────────────────────────
@@ -688,6 +595,48 @@ def resolve_bill_of_lading_name(attachment: str) -> str | None:
 	return frappe.db.get_value("Bill of Lading", {attachment_field: attachment}, "name")
 
 
+def resolve_bl_name_from_preshipment(source_doc) -> str | None:
+	"""Resolve Bill of Lading from link field, client documents, or back-link on BL."""
+	if not source_doc:
+		return None
+
+	config = get_bl_config()
+	bl_field = config.get("opportunity_bl_field")
+	if bl_field and source_doc.meta.has_field(bl_field):
+		bl_name = source_doc.get(bl_field)
+		if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+			return bl_name
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		document_types_match,
+		get_document_type_link_name,
+		get_opportunity_documents_field,
+	)
+
+	clients_field = get_opportunity_documents_field()
+	if clients_field and source_doc.meta.has_field(clients_field):
+		bl_type = get_document_type_link_name("BL")
+		if bl_type:
+			for row in source_doc.get(clients_field) or []:
+				if not row.attachment or not document_types_match(row.document_type, bl_type):
+					continue
+				bl_name = resolve_bill_of_lading_name(row.attachment)
+				if bl_name:
+					return bl_name
+
+	source_field = config.get("opportunity_source_field")
+	if source_field and source_doc.name:
+		bl_name = frappe.db.get_value(
+			"Bill of Lading",
+			{source_field: source_doc.name, "docstatus": 1},
+			"name",
+			order_by="modified desc",
+		)
+		if bl_name:
+			return bl_name
+	return None
+
+
 # ─── Preshipment container sync (Opportunity / Lead / Project) ─────────────────
 def sync_opportunity_bl_from_clients_documents(doc, method=None) -> None:
 	"""Link Bill of Lading from Clients Documents BL attachment when the link field is empty."""
@@ -700,45 +649,14 @@ def sync_opportunity_bl_from_clients_documents(doc, method=None) -> None:
 	if not bl_field or doc.get(bl_field):
 		return
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		document_types_match,
-		get_document_type_link_name,
-		get_opportunity_documents_field,
-	)
-
-	clients_field = get_opportunity_documents_field()
-	if not clients_field or not doc.meta.has_field(clients_field):
+	bl_name = resolve_bl_name_from_preshipment(doc)
+	if not bl_name:
 		return
 
-	bl_type = get_document_type_link_name("BL")
-	if not bl_type:
-		return
-
-	for row in doc.get(clients_field) or []:
-		if not row.attachment or not document_types_match(row.document_type, bl_type):
-			continue
-		bl_name = resolve_bill_of_lading_name(row.attachment)
-		if not bl_name:
-			continue
-		doc.set(bl_field, bl_name)
-		if quantity_field and doc.meta.has_field(quantity_field) and not doc.get(quantity_field):
-			bl_doc = frappe.get_doc("Bill of Lading", bl_name)
-			doc.set(quantity_field, get_bl_quantity_summary(bl_doc))
-		return
-
-	source_field = config.get("opportunity_source_field")
-	if source_field:
-		bl_name = frappe.db.get_value(
-			"Bill of Lading",
-			{source_field: doc.name, "docstatus": 1},
-			"name",
-			order_by="modified desc",
-		)
-		if bl_name:
-			doc.set(bl_field, bl_name)
-			if quantity_field and doc.meta.has_field(quantity_field) and not doc.get(quantity_field):
-				bl_doc = frappe.get_doc("Bill of Lading", bl_name)
-				doc.set(quantity_field, get_bl_quantity_summary(bl_doc))
+	doc.set(bl_field, bl_name)
+	if quantity_field and doc.meta.has_field(quantity_field) and not doc.get(quantity_field):
+		bl_doc = frappe.get_doc("Bill of Lading", bl_name)
+		doc.set(quantity_field, get_bl_quantity_summary(bl_doc))
 
 
 def sync_preshipment_containers_from_bl(doc, method=None) -> None:
@@ -776,7 +694,7 @@ def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 	if not bl_field or not source_doc or not target_doc.meta.has_field(bl_field):
 		return
 
-	bl_name = source_doc.get(bl_field)
+	bl_name = resolve_bl_name_from_preshipment(source_doc)
 	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
 		return
 
