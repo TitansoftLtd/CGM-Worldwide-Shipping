@@ -10,6 +10,10 @@ import json
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+	display_ref_from_values,
+	get_project_reference,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	derive_workflow_progress_from_tasks,
 	get_all_sea_tasks_for_project,
@@ -559,6 +563,94 @@ def ensure_task_container_update_fields() -> None:
 	frappe.clear_cache(doctype="Task")
 
 
+def ensure_field_officer_task_fields() -> None:
+	"""Task 16 field-officer clearance tracking fields."""
+	depends = (
+		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 16"
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_section_field_clearance",
+			"label": "Field Clearance",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_task_documents",
+			"collapsible": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_verification_type",
+			"label": "Verification Type",
+			"fieldtype": "Select",
+			"options": (
+				"\nPartial Verification\n100% Verification\nDirect Release\nScanning"
+			),
+			"insert_after": "custom_section_field_clearance",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_verification_status",
+			"label": "Verification Status",
+			"fieldtype": "Select",
+			"options": (
+				"\nNot Started\nIn Progress\nVerification Done\nReleased by CRO"
+			),
+			"insert_after": "custom_verification_type",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_customs_issue",
+			"label": "Customs Issues / Holds",
+			"fieldtype": "Small Text",
+			"description": "Any holds, queries, or issues from KRA/KEBS",
+			"insert_after": "custom_verification_status",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_delivery_note_status",
+			"label": "Delivery Note Status",
+			"fieldtype": "Select",
+			"options": "\nNot Required\nAwaiting\nIssued",
+			"insert_after": "custom_customs_issue",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_coc_status",
+			"label": "COC Approval Status",
+			"fieldtype": "Select",
+			"options": "\nNot Required\nAwaiting COC\nCOC Received\nApproved",
+			"insert_after": "custom_delivery_note_status",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_verification_report_attached",
+			"label": "Verification Report Attached",
+			"fieldtype": "Check",
+			"insert_after": "custom_coc_status",
+			"depends_on": depends,
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
 def ensure_project_container_tracking_fields() -> None:
 	ensure_supplier_container_charge_fields()
 	ensure_container_tracking_settings_fields()
@@ -682,7 +774,7 @@ def ensure_project_container_tracking_fields() -> None:
 
 
 def _ensure_tracking_fields() -> None:
-	"""Fields matching the LCL Shipment Tracking Sheet columns."""
+	"""Fields matching the shipment tracking sheet columns."""
 	_create_cf(
 		"Project",
 		{
@@ -718,12 +810,27 @@ def _ensure_tracking_fields() -> None:
 	_create_cf(
 		"Project",
 		{
+			"fieldname": "custom_project_reference",
+			"label": "Project Reference",
+			"fieldtype": "Data",
+			"insert_after": "project_name",
+			"in_list_view": 1,
+			"in_standard_filter": 1,
+			"in_global_search": 1,
+			"read_only": 1,
+			"description": "Business project reference (e.g. LP 4X40-8/0082).",
+		},
+	)
+	_create_cf(
+		"Project",
+		{
 			"fieldname": "custom_cgm_ref_no",
 			"label": "CGM Ref No",
 			"fieldtype": "Data",
-			"insert_after": "custom_opened_date",
-			"in_list_view": 1,
-			"description": "e.g. CGM/LCL001/1022 - can match Project Name",
+			"hidden": 1,
+			"insert_after": "custom_project_reference",
+			"read_only": 1,
+			"description": "Legacy CGM reference (superseded by Project Reference).",
 		},
 	)
 	_create_cf(
@@ -731,7 +838,7 @@ def _ensure_tracking_fields() -> None:
 		{
 			"fieldname": "custom_column_break_tracking_1",
 			"fieldtype": "Column Break",
-			"insert_after": "custom_cgm_ref_no",
+			"insert_after": "custom_project_reference",
 		},
 	)
 	_create_cf(
@@ -795,8 +902,8 @@ def _reorder_tracking_field_chain() -> None:
 		("custom_shipment_progress_html", "custom_section_tracking_sheet"),
 		("custom_opened_date", "custom_shipment_progress_html"),
 		("custom_consignee", "custom_opened_date"),
-		("custom_cgm_ref_no", "custom_consignee"),
-		("custom_column_break_tracking_1", "custom_cgm_ref_no"),
+		("custom_project_reference", "custom_consignee"),
+		("custom_column_break_tracking_1", "custom_project_reference"),
 		("custom_shipment_type", "custom_column_break_tracking_1"),
 		("custom_mode_of_transport", "custom_shipment_type"),
 		("custom_client_ref_no", "custom_mode_of_transport"),
@@ -916,7 +1023,14 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	def _count_status(*statuses):
 		return sum(1 for c in containers if c.get("status") in statuses)
 
-	alert_count = sum(1 for c in containers if c.get("alert_status"))
+	alert_count = sum(
+		1
+		for c in containers
+		if c.get("alert_status")
+		or (c.get("demurrage_days") or 0) > 0
+		or (c.get("detention_days") or 0) > 0
+		or (c.get("days_outstanding") or 0) > 0
+	)
 	released = _count_status("Released / In Transit")
 	at_warehouse = _count_status("At Warehouse", "Cargo Offloaded")
 	returned = _count_status("Empty Returned", "Interchange Received")
@@ -934,7 +1048,8 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"first_open_task": first_open,
 		"mode": doc.get("custom_mode_of_transport"),
 		"berth_phase": berth_phase,
-		"cgm_ref_no": doc.get("custom_cgm_ref_no") or doc.name,
+		"project_reference": get_project_reference(doc) or doc.name,
+		"cgm_ref_no": get_project_reference(doc) or doc.name,
 		"containers": containers,
 		"container_total": len(containers),
 		"containers_released": released,

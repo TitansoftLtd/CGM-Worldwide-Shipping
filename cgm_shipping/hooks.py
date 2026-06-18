@@ -54,10 +54,12 @@ doctype_js = {
 	"Task": "public/js/task.js",
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Project": [
+		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/project.js",
 	],
 	"Lead": [
+		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_lead.js",
 	],
@@ -68,6 +70,7 @@ doctype_js = {
 		"public/js/crm_opportunity.js",
 	],
 	"Quotation": "public/js/quotation.js",
+	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -181,7 +184,7 @@ override_doctype_class = {
 
 doc_events = {
 	"Project": {
-		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_cgm_reference_on_insert",
+		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
@@ -203,27 +206,16 @@ doc_events = {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.on_customer_update",
 	},
 	"Opportunity": {
-		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment"
-			".sync_preshipment_containers_from_bl"
-		),
-		"before_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment"
-			".stamp_verified_documents_on_approval"
-		),
-		"before_update_after_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment"
-			".stamp_verified_documents_on_approval"
-		),
-		"on_trash": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment"
-			".clear_back_links_on_trash"
-		),
+		"before_save": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_bl_from_clients_documents",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
+		],
+		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
+		"before_update_after_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
+		"on_trash": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.clear_back_links_on_trash",
 	},
 	"Lead": {
-		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl"
-		),
+		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
 	},
 	"Task": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_onload",

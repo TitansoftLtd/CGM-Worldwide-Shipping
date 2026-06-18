@@ -17,6 +17,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	get_document_type_link_name,
 	get_opportunity_documents_field,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	apply_bl_fields_to_doc,
+	bl_propagation_payload,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config, get_link_field_for_doctype
 
 
@@ -38,6 +42,9 @@ class BillofLading(Document):
 
 	def validate(self):
 		sanitize_bill_of_lading_linked_opportunity(self)
+		batch_number = resolve_batch_number_for_bl(self)
+		if not self.get("batch_no"):
+			self.batch_no = str(batch_number)
 		summary = self._summarize_container_quantities()
 		if self.meta.has_field("container_summary"):
 			self.container_summary = summary
@@ -257,6 +264,9 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 			opp.set(quantity_field, quantity_summary)
 			changed = True
 
+	if apply_bl_fields_to_doc(opp, bl_doc):
+		changed = True
+
 	if changed:
 		opp.save(ignore_permissions=True)
 
@@ -330,6 +340,7 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 		"document_type": get_document_type_link_name("BL"),
 		"quantity": doc._summarize_container_quantities(),
 		"opportunity": linked_opportunity,
+		**bl_propagation_payload(doc),
 	}
 
 
@@ -383,18 +394,16 @@ def create_opportunity_from_bill_of_lading(bill_of_lading: str) -> str:
 
 	if bl_field and opp.meta.has_field(bl_field):
 		opp.set(bl_field, bl.name)
-	# A Bill of Lading is an ocean-freight document, so default the mode to Sea.
-	if opp.meta.has_field("custom_mode_of_transport") and not opp.get("custom_mode_of_transport"):
-		opp.set("custom_mode_of_transport", "Sea")
+
+	apply_bl_fields_to_doc(opp, bl)
+
 	if opp.meta.has_field("custom_consignee"):
 		opp.set(
 			"custom_consignee",
 			frappe.db.get_value("Customer", customer, "customer_name") or customer,
 		)
 
-	# Carry the shipment classification details from the BL onto the Opportunity.
-	if opp.meta.has_field("custom_shipment_type") and bl.get("shipment_type"):
-		opp.set("custom_shipment_type", bl.get("shipment_type"))
+	# Shipment type, mode, and tracking fields are copied from the BL via apply_bl_fields_to_doc.
 	if opp.meta.has_field("custom_description_of_goods") and bl.get("description"):
 		opp.set("custom_description_of_goods", bl.get("description"))
 
