@@ -8,6 +8,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	get_project_shipment_documents_field,
+	is_shipment_document_verified,
 	sync_documents,
 	sync_project_documents_from_opportunity,
 )
@@ -423,9 +424,28 @@ def project_has_intake_documents(project_doc) -> bool:
 	return True
 
 
+def project_has_verified_client_documents(project_doc) -> bool:
+	"""True when every attached client document row on the project is verified."""
+	docs = [
+		row
+		for row in get_documents(project_doc)
+		if row.document_type and row.attachment
+	]
+	if not docs:
+		return False
+	return all(is_shipment_document_verified(row) for row in docs)
+
+
+def project_ready_for_documents_received(project_doc) -> bool:
+	"""True when CRM pre-shipment evidence allows the Documents Received state."""
+	if project_doc.get("custom_source_opportunity"):
+		return project_has_verified_client_documents(project_doc)
+	return project_has_intake_documents(project_doc)
+
+
 def bootstrap_project_workflow_status(project_name: str) -> None:
 	"""
-	After insert: move to Documents Received when CRM already supplied CI/PKL.
+	After insert: move to Documents Received when CRM already supplied verified client docs.
 
 	Uses db.set_value to avoid Frappe's 'no transition on insert' workflow check.
 	"""
@@ -436,7 +456,7 @@ def bootstrap_project_workflow_status(project_name: str) -> None:
 		return
 	if project.get("custom_shipment_status") != "Draft":
 		return
-	if not project_has_intake_documents(project):
+	if not project_ready_for_documents_received(project):
 		return
 	frappe.db.set_value(
 		"Project",

@@ -112,6 +112,25 @@ def get_preshipment_attachments(source_doc):
 	return attachments
 
 
+def resolve_document_row_status(row) -> str:
+	"""Derive row status from explicit status or verification/upload metadata."""
+	status = row.get("status")
+	if status in ("Verified", "Rejected", "Uploaded", "Missing"):
+		return status
+	if row.get("verified_on"):
+		return "Verified"
+	if row.get("attachment"):
+		return "Uploaded"
+	return "Missing"
+
+
+def is_shipment_document_verified(row) -> bool:
+	"""True when a Shipment Document row is verified."""
+	if row.meta.has_field("status") and row.get("status") == "Verified":
+		return True
+	return bool(row.get("verified_on"))
+
+
 def document_types_match(existing_type, incoming_type):
 	"""Match Document Type rows by link name or shared code (e.g. CI vs Commercial Invoice)."""
 	if not existing_type or not incoming_type:
@@ -252,8 +271,9 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 			continue
 		if not existing.attachment:
 			existing.attachment = source_row.attachment
-		if source_row.status and source_row.status != "Missing":
-			existing.status = source_row.status
+		status = resolve_document_row_status(source_row)
+		if existing.meta.has_field("status") and status != "Missing":
+			existing.status = status
 		for field in (
 			"uploaded_by",
 			"uploaded_on",
@@ -266,19 +286,18 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 				existing.set(field, value)
 		return
 
-	project_doc.append(
-		SHIPMENT_DOCUMENTS_FIELD,
-		{
-			"document_type": source_row.document_type,
-			"attachment": source_row.attachment,
-			"status": source_row.status or "Uploaded",
-			"uploaded_by": source_row.uploaded_by,
-			"uploaded_on": source_row.uploaded_on,
-			"verified_by": source_row.verified_by,
-			"verified_on": source_row.verified_on,
-			"remarks": source_row.remarks,
-		},
-	)
+	row_data = {
+		"document_type": source_row.document_type,
+		"attachment": source_row.attachment,
+		"uploaded_by": source_row.uploaded_by,
+		"uploaded_on": source_row.uploaded_on,
+		"verified_by": source_row.verified_by,
+		"verified_on": source_row.verified_on,
+		"remarks": source_row.remarks,
+	}
+	if frappe.get_meta("Shipment Document").has_field("status"):
+		row_data["status"] = resolve_document_row_status(source_row)
+	project_doc.append(SHIPMENT_DOCUMENTS_FIELD, row_data)
 
 
 def get_bill_of_lading_attachment_url(
