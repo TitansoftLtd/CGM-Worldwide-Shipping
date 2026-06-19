@@ -403,9 +403,9 @@ def apply_bl_tracking_fields_to_doc(target_doc, bl_doc) -> bool:
 
 def apply_bl_fields_to_doc(target_doc, bl_doc) -> bool:
 	"""Copy shipment classification and tracking fields from Bill of Lading."""
-	return apply_bl_classification_to_doc(target_doc, bl_doc) or apply_bl_tracking_fields_to_doc(
-		target_doc, bl_doc
-	)
+	classification_changed = apply_bl_classification_to_doc(target_doc, bl_doc)
+	tracking_changed = apply_bl_tracking_fields_to_doc(target_doc, bl_doc)
+	return classification_changed or tracking_changed
 
 
 def bl_classification_payload(bl_doc) -> dict:

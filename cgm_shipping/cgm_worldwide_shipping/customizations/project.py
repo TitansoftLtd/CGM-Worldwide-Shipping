@@ -7,11 +7,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	SHIPMENT_DOCUMENTS_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-	carry_bill_of_lading_attachment_to_project,
-	carry_clients_documents_to_project,
-	get_opportunity_documents_field,
 	get_project_shipment_documents_field,
+	is_shipment_document_verified,
 	sync_documents,
+	sync_project_documents_from_opportunity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	bootstrap_sea_task_plan_for_project,
@@ -425,9 +424,28 @@ def project_has_intake_documents(project_doc) -> bool:
 	return True
 
 
+def project_has_verified_client_documents(project_doc) -> bool:
+	"""True when every attached client document row on the project is verified."""
+	docs = [
+		row
+		for row in get_documents(project_doc)
+		if row.document_type and row.attachment
+	]
+	if not docs:
+		return False
+	return all(is_shipment_document_verified(row) for row in docs)
+
+
+def project_ready_for_documents_received(project_doc) -> bool:
+	"""True when CRM pre-shipment evidence allows the Documents Received state."""
+	if project_doc.get("custom_source_opportunity"):
+		return project_has_verified_client_documents(project_doc)
+	return project_has_intake_documents(project_doc)
+
+
 def bootstrap_project_workflow_status(project_name: str) -> None:
 	"""
-	After insert: move to Documents Received when CRM already supplied CI/PKL.
+	After insert: move to Documents Received when CRM already supplied verified client docs.
 
 	Uses db.set_value to avoid Frappe's 'no transition on insert' workflow check.
 	"""
@@ -438,7 +456,7 @@ def bootstrap_project_workflow_status(project_name: str) -> None:
 		return
 	if project.get("custom_shipment_status") != "Draft":
 		return
-	if not project_has_intake_documents(project):
+	if not project_ready_for_documents_received(project):
 		return
 	frappe.db.set_value(
 		"Project",
@@ -520,22 +538,8 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 			project.set(dest_field, value)
 
 def sync_predocuments_from_source(project, source_doc) -> None:
-	"""Pull client docs and B/L attachment from Opportunity onto Project shipment documents."""
-	bl_config = get_bl_config()
-	bl_link_field = bl_config.get("opportunity_bl_field") or get_link_field_for_doctype(
-		"Opportunity", "Bill of Lading"
-	)
-	clients_field = get_opportunity_documents_field()
-	if clients_field and source_doc.meta.has_field(clients_field):
-		carry_clients_documents_to_project(project, source_doc)
-	sync_documents(project)
-	project_bl = project.get(bl_link_field) if bl_link_field else None
-	source_bl = source_doc.get(bl_link_field) if bl_link_field else None
-	carry_bill_of_lading_attachment_to_project(
-		project,
-		bl_name=project_bl or source_bl,
-		source_doc=source_doc,
-	)
+	"""Copy Opportunity Clients Documents and Customer KRA PIN onto Project shipment documents."""
+	sync_project_documents_from_opportunity(project, source_doc)
 
 @frappe.whitelist()
 def create_project_from_opportunity(opportunity, project_name=None):
