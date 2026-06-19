@@ -462,12 +462,40 @@ def carry_task_documents_to_project(project_doc, project_name=None):
 				append_verified_doc_row(project_doc, row.document_type, row.attachment)
 
 
+def sync_project_documents_from_opportunity(
+	project_doc, opportunity_doc, *, replace=False
+) -> None:
+	"""Copy Opportunity Clients Documents exactly, plus Customer KRA PIN only."""
+	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return
+
+	ensure_document_types()
+	if replace:
+		project_doc.set(SHIPMENT_DOCUMENTS_FIELD, [])
+
+	if opportunity_doc:
+		carry_clients_documents_to_project(project_doc, opportunity_doc)
+
+	customer = project_doc.get("customer") or (
+		opportunity_doc.get("party_name") if opportunity_doc else None
+	)
+	if customer:
+		carry_customer_attachments_to_project(project_doc, customer)
+
+
 def sync_linked_attachments_to_project(project_doc):
 	"""Pull shipment files from linked Lead, Customer, and Project tasks into custom_shipment_documents."""
 	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
 		return
 
 	ensure_document_types()
+
+	# Opportunity-sourced projects inherit only Clients Documents + Customer KRA PIN.
+	opp_name = project_doc.get("custom_source_opportunity")
+	if opp_name and frappe.db.exists("Opportunity", opp_name):
+		opp_doc = frappe.get_doc("Opportunity", opp_name)
+		sync_project_documents_from_opportunity(project_doc, opp_doc)
+		return
 
 	# 1. Lead (explicit source or via customer).
 	lead_name = project_doc.get("custom_source_lead")
@@ -482,22 +510,11 @@ def sync_linked_attachments_to_project(project_doc):
 			source_doc=lead_doc,
 		)
 
-	# 2. Opportunity source when present.
-	opp_name = project_doc.get("custom_source_opportunity")
-	if opp_name and frappe.db.exists("Opportunity", opp_name):
-		opp_doc = frappe.get_doc("Opportunity", opp_name)
-		carry_clients_documents_to_project(project_doc, opp_doc)
-		carry_bill_of_lading_attachment_to_project(
-			project_doc,
-			bl_name=project_doc.get("custom_bill_of_lading") or opp_doc.get("custom_bill_of_lading"),
-			source_doc=opp_doc,
-		)
-
-	# 3. Customer attach fields (KRA PIN, etc.).
+	# 2. Customer attach fields (KRA PIN, etc.).
 	if project_doc.get("customer"):
 		carry_customer_attachments_to_project(project_doc, project_doc.customer)
 
-	# 4. Task Documents on tasks linked to this project.
+	# 3. Task Documents on tasks linked to this project.
 	if project_doc.name:
 		carry_task_documents_to_project(project_doc)
 
@@ -517,7 +534,12 @@ def refresh_project_documents(project_name):
 
 		project = frappe.get_doc("Project", project_name)
 		normalize_shipment_fields_on_doc(project)
-		sync_linked_attachments_to_project(project)
+		opp_name = project.get("custom_source_opportunity")
+		if opp_name and frappe.db.exists("Opportunity", opp_name):
+			opp_doc = frappe.get_doc("Opportunity", opp_name)
+			sync_project_documents_from_opportunity(project, opp_doc, replace=True)
+		else:
+			sync_linked_attachments_to_project(project)
 		project.save(ignore_permissions=True)
 	finally:
 		frappe.flags.cgm_syncing_shipment_documents = False
