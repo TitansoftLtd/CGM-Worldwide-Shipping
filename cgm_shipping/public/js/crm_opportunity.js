@@ -45,6 +45,7 @@ frappe.ui.form.on("Opportunity", {
 
 	custom_bill_of_lading(frm) {
 		sync_opportunity_transport_and_containers(frm);
+		sync_bl_propagation_from_link(frm, { silent: true });
 	},
 });
 
@@ -198,19 +199,34 @@ function get_opportunity_container_type_field(frm) {
 	return null;
 }
 
+function set_opportunity_bl_field(frm, fieldname, value) {
+	if (value == null || value === "") {
+		return;
+	}
+	if (frm.fields_dict[fieldname]) {
+		frm.set_value(fieldname, value);
+		frm.refresh_field(fieldname);
+		return;
+	}
+	frm.doc[fieldname] = value;
+	if (frm.doc.name && !frm.is_new()) {
+		frappe.model.set_value(frm.doctype, frm.doc.name, fieldname, value);
+	}
+}
+
 function apply_bl_classification_fields(frm, data) {
 	if (!data) {
 		return;
 	}
-	if (data.shipment_type && frm.fields_dict.custom_shipment_type) {
-		frm.set_value("custom_shipment_type", data.shipment_type);
+	if (data.shipment_type) {
+		set_opportunity_bl_field(frm, "custom_shipment_type", data.shipment_type);
 	}
-	if (data.default_mode_of_transport && frm.fields_dict.custom_mode_of_transport) {
-		frm.set_value("custom_mode_of_transport", data.default_mode_of_transport);
+	if (data.default_mode_of_transport) {
+		set_opportunity_bl_field(frm, "custom_mode_of_transport", data.default_mode_of_transport);
 	}
 	const container_type_field = get_opportunity_container_type_field(frm);
 	if (data.container_type && container_type_field) {
-		frm.set_value(container_type_field, data.container_type);
+		set_opportunity_bl_field(frm, container_type_field, data.container_type);
 	}
 
 	const tracking_fields = [
@@ -218,10 +234,59 @@ function apply_bl_classification_fields(frm, data) {
 		["batch_no", "custom_batch_no"],
 	];
 	for (const [src, dest] of tracking_fields) {
-		if (data[src] != null && data[src] !== "" && frm.fields_dict[dest]) {
-			frm.set_value(dest, data[src]);
+		if (data[src] != null && data[src] !== "") {
+			set_opportunity_bl_field(frm, dest, data[src]);
 		}
 	}
+}
+
+function apply_bl_propagation_data(frm, data) {
+	if (!data) {
+		return;
+	}
+	const bl_link_field = get_opportunity_bl_link_field(frm);
+	const quantity_field = bl_link_field ? get_quantity_field(frm, bl_link_field) : null;
+
+	apply_bl_classification_fields(frm, data);
+	if (
+		quantity_field &&
+		data.quantity != null &&
+		String(frm.doc[quantity_field] ?? "") !== String(data.quantity ?? "")
+	) {
+		set_opportunity_bl_field(frm, quantity_field, data.quantity || "");
+	}
+}
+
+function sync_bl_propagation_from_link(frm, opts = {}) {
+	if (frm.doc.docstatus !== 0) {
+		return;
+	}
+
+	const bl_link_field = get_opportunity_bl_link_field(frm);
+	const bl_name = bl_link_field && frm.doc[bl_link_field];
+	if (!bl_name) {
+		return;
+	}
+
+	const sync_id = (frm._cgm_bl_sync_id = (frm._cgm_bl_sync_id || 0) + 1);
+
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_containers_for_bl_attachment",
+		args: { attachment: bl_name },
+		callback(r) {
+			if (sync_id !== frm._cgm_bl_sync_id || cur_frm !== frm) {
+				return;
+			}
+			if (r.exc || !r.message) {
+				return;
+			}
+			apply_bl_propagation_data(frm, r.message);
+			if (opts.silent) {
+				restore_opportunity_clean_state(frm);
+			}
+		},
+	});
 }
 
 
@@ -325,16 +390,12 @@ function apply_pending_bl_from_submit(frm) {
 	const bl_link_field =
 		get_link_field_for_doctype(frm, pending.linked_doctype) ||
 		get_opportunity_bl_link_field(frm);
-	const quantity_field = bl_link_field ? get_quantity_field(frm, bl_link_field) : null;
 	const docs_field = get_clients_documents_field(frm);
 
 	if (pending.bl_name && bl_link_field && frm.doc[bl_link_field] !== pending.bl_name) {
 		frm.set_value(bl_link_field, pending.bl_name);
 	}
-	apply_bl_classification_fields(frm, pending);
-	if (pending.quantity && quantity_field && frm.doc[quantity_field] !== pending.quantity) {
-		frm.set_value(quantity_field, pending.quantity);
-	}
+	apply_bl_propagation_data(frm, pending);
 	if (pending.attachment && docs_field && pending.document_type) {
 		prepend_opportunity_bl_client_document(frm, pending, docs_field);
 	}
@@ -403,6 +464,7 @@ function sync_bl_from_clients_documents(frm, opts = {}) {
 	}
 
 	if (bl_link_field && frm.doc[bl_link_field]) {
+		sync_bl_propagation_from_link(frm, opts);
 		if (cgm_shipping?.bl_containers?.schedule_sync) {
 			cgm_shipping.bl_containers.schedule_sync(frm, { silent: true });
 		}
@@ -459,7 +521,6 @@ function apply_bl_data_from_response(frm, row, cdt, cdn, data, opts = {}) {
 	const silent = Boolean(opts.silent);
 	const bl_link_field = get_link_field_for_doctype(frm, row.linked_doctype);
 	const container_field = get_container_table_field(frm);
-	const quantity_field = bl_link_field ? get_quantity_field(frm, bl_link_field) : null;
 	const bl_name = data.bl_name || "";
 	const attachment = data.attachment || "";
 
@@ -478,10 +539,7 @@ function apply_bl_data_from_response(frm, row, cdt, cdn, data, opts = {}) {
 	if (bl_link_field && bl_name && frm.doc[bl_link_field] !== bl_name) {
 		frm.set_value(bl_link_field, bl_name);
 	}
-	apply_bl_classification_fields(frm, data);
-	if (quantity_field && String(frm.doc[quantity_field] ?? "") !== String(data.quantity ?? "")) {
-		frm.set_value(quantity_field, data.quantity || "");
-	}
+	apply_bl_propagation_data(frm, data);
 
 	if (
 		container_field &&
