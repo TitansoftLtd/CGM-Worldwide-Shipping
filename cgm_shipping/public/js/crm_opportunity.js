@@ -531,53 +531,89 @@ function setup_create_shipment_project_button(frm) {
 	}
 
 	clearTimeout(frm._cgm_project_btn_timer);
-	frm._cgm_project_btn_timer = setTimeout(() => {
-		render_shipment_project_buttons(frm);
-	}, 450);
+	const run = () => render_shipment_project_buttons(frm);
+	// Run once after current refresh handlers, then again after workflow UI settles.
+	run();
+	frm._cgm_project_btn_timer = setTimeout(run, 600);
+}
+
+function clear_shipment_project_buttons(frm) {
+	frm.remove_custom_button(__("Create Shipment Project"), __("Create"));
+	frm.remove_custom_button(__("View Project"), __("Create"));
+	[__("Create Shipment Project"), __("View Project")].forEach((label) => {
+		frm.page?.inner_toolbar
+			?.find(`button[data-label="${encodeURIComponent(label)}"]`)
+			?.remove();
+	});
+}
+
+function add_prominent_shipment_project_button(frm, label, fn) {
+	if (frm.page?.add_inner_button) {
+		frm.page.add_inner_button(label, fn, null, "primary");
+		return;
+	}
+	frm.add_custom_button(label, fn, __("Create"));
+	frm.page.set_inner_btn_group_as_primary(__("Create"));
 }
 
 function render_shipment_project_buttons(frm) {
-	if (cur_frm !== frm || frm.is_new() || frm.doc.opportunity_from !== "Customer") {
+	if (frm.is_new() || !frm.doc.name || frm.doc.opportunity_from !== "Customer") {
 		return;
 	}
 
+	const opp_name = frm.doc.name;
 	const is_approved = frm.doc.workflow_state === "Approved";
 
-	frappe.db
-		.get_value("Project", { custom_source_opportunity: frm.doc.name }, "name")
-		.then((r) => {
-			if (cur_frm !== frm) {
-				return;
-			}
+	clear_shipment_project_buttons(frm);
 
-			const existing = r?.message?.name;
-			if (existing) {
-				const open_project = () => frappe.set_route("Form", "Project", existing);
-				frm.add_custom_button(__("View Project"), open_project, __("Create"));
-				frm.page.set_inner_btn_group_as_primary(__("Create"));
-				return;
-			}
+	const show_buttons = (existing) => {
+		if (frm.doc.name !== opp_name) {
+			return;
+		}
 
-			if (is_approved) {
-				const create_fn = () => create_shipment_project_from_opportunity(frm);
-				frm.add_custom_button(__("Create Shipment Project"), create_fn, __("Create"));
-				frm.page.set_inner_btn_group_as_primary(__("Create"));
-				return;
-			}
+		clear_shipment_project_buttons(frm);
 
-			const explain = () => {
-				frappe.msgprint({
-					title: __("Approval required"),
-					message: __(
-						"This Opportunity must be <b>Approved</b> before creating a Shipment Project. Current status: <b>{0}</b>.",
-						[frm.doc.workflow_state || __("Not set")]
-					),
-					indicator: "orange",
-				});
-			};
-			frm.add_custom_button(__("Create Shipment Project"), explain, __("Create"));
-			frm.page.set_inner_btn_group_as_primary(__("Create"));
+		if (existing) {
+			add_prominent_shipment_project_button(frm, __("View Project"), () =>
+				frappe.set_route("Form", "Project", existing)
+			);
+			return;
+		}
+
+		if (is_approved) {
+			add_prominent_shipment_project_button(frm, __("Create Shipment Project"), () =>
+				create_shipment_project_from_opportunity(frm)
+			);
+			return;
+		}
+
+		add_prominent_shipment_project_button(frm, __("Create Shipment Project"), () => {
+			frappe.msgprint({
+				title: __("Approval required"),
+				message: __(
+					"This Opportunity must be <b>Approved</b> before creating a Shipment Project. Current status: <b>{0}</b>.",
+					[frm.doc.workflow_state || __("Not set")]
+				),
+				indicator: "orange",
+			});
 		});
+	};
+
+	const project_meta = frappe.get_meta("Project");
+	const has_source_link = Boolean(
+		project_meta &&
+			(project_meta.fields || []).some((df) => df.fieldname === "custom_source_opportunity")
+	);
+
+	if (!has_source_link) {
+		show_buttons(null);
+		return;
+	}
+
+	frappe.db
+		.get_value("Project", { custom_source_opportunity: opp_name }, "name")
+		.then((r) => show_buttons(r?.message?.name))
+		.catch(() => show_buttons(null));
 }
 
 function create_shipment_project_from_opportunity(frm) {
