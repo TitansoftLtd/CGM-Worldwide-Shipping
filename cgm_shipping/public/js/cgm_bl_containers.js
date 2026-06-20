@@ -45,10 +45,13 @@ function apply_bl_containers(frm, bl_rows) {
 function restore_clean_form_state(frm) {
 	frappe.after_ajax(() => {
 		frm.dirty(false);
+		frm.doc.__unsaved = 0;
 		frm.toolbar?.set_indicator?.();
 		frm.states?.refresh?.();
 	});
 }
+
+cgm_shipping.bl_containers.restore_clean_form_state = restore_clean_form_state;
 
 function is_readonly_bl_container_form(frm) {
 	return frm.doctype === "Opportunity" || frm.doctype === "Lead";
@@ -86,7 +89,9 @@ function fetch_bl_container_rows(bill_of_lading) {
  * Wait until depends_on has rendered the container grid (often one tick after link change).
  */
 cgm_shipping.bl_containers.schedule_sync = function (frm, opts = {}) {
-	const run = () => cgm_shipping.bl_containers.sync_from_bl(frm, opts);
+	const sync_id = (frm._cgm_bl_sync_id = (frm._cgm_bl_sync_id || 0) + 1);
+	const run_opts = { ...opts, sync_id };
+	const run = () => cgm_shipping.bl_containers.sync_from_bl(frm, run_opts);
 
 	if (frm.fields_dict[BL_CONTAINER_FIELD]) {
 		return run();
@@ -129,6 +134,7 @@ cgm_shipping.bl_containers.schedule_sync = function (frm, opts = {}) {
  */
 cgm_shipping.bl_containers.sync_from_bl = function (frm, opts = {}) {
 	const silent = Boolean(opts.silent);
+	const sync_id = opts.sync_id;
 
 	if (!frm.fields_dict[BL_CONTAINER_FIELD]) {
 		return Promise.resolve();
@@ -151,7 +157,16 @@ cgm_shipping.bl_containers.sync_from_bl = function (frm, opts = {}) {
 
 	return fetch_bl_container_rows(frm.doc[BL_LINK_FIELD])
 		.then((bl_rows) => {
+			if (sync_id != null && sync_id !== frm._cgm_bl_sync_id) {
+				return;
+			}
+			if (cur_frm !== frm) {
+				return;
+			}
 			if (container_rows_match(existing, bl_rows)) {
+				if (silent) {
+					restore_clean_form_state(frm);
+				}
 				return;
 			}
 			apply_bl_containers(frm, bl_rows);
@@ -191,8 +206,11 @@ BL_CONTAINER_DOCTYPES.forEach((doctype) => {
 		},
 	};
 
-	if (doctype === "Project") {
+	if (doctype === "Project" || doctype === "Opportunity") {
 		handlers.refresh = function (frm) {
+			if (frm._cgm_skip_readonly_sync || frm.doc.docstatus !== 0) {
+				return;
+			}
 			cgm_shipping.bl_containers.schedule_sync(frm, { silent: true });
 		};
 	}

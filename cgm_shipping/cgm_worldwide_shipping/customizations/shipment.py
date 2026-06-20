@@ -28,11 +28,90 @@ _OPTIONAL_SHIPMENT_TYPE_FIELDS = (
 	"requires_air_waybill",
 	"uses_unit_tracking",
 	"default_mode_of_transport",
+	"cgm_ref_prefix",
+	"legacy_crm_labels",
+	"container_tracking_mode",
 	"is_active",
 	"description",
 )
 
-_LEGACY_ALIASES = {"Road Import": "Cross-Border Road Import"}
+
+def _parse_label_lines(value: str | None) -> list[str]:
+	if not value:
+		return []
+	return [line.strip() for line in str(value).splitlines() if line.strip()]
+
+
+def resolve_shipment_type_from_legacy(label: str | None, mode: str | None = None) -> str | None:
+	"""Map a former CRM label to a Shipment Type Link using master legacy_crm_labels."""
+	label = (label or "").strip()
+	if not label or not _shipment_type_field_queryable("legacy_crm_labels"):
+		return None
+
+	mode = (mode or "").strip()
+	filters: dict = {}
+	if _shipment_type_field_queryable("is_active"):
+		filters["is_active"] = 1
+
+	fields = ["name", "legacy_crm_labels", "default_mode_of_transport"]
+	matches = []
+	for row in frappe.get_all("Shipment Type", filters=filters, fields=fields):
+		if label not in _parse_label_lines(row.get("legacy_crm_labels")):
+			continue
+		matches.append(row)
+
+	if not matches:
+		return None
+	if mode:
+		for row in matches:
+			if (row.get("default_mode_of_transport") or "").strip() == mode:
+				return row.name
+	if len(matches) == 1:
+		return matches[0].name
+	return matches[0].name
+
+
+def canonical_shipment_type_link(shipment_type: str | None, mode: str | None = None) -> str | None:
+	"""Return the Shipment Type Link name from master (including legacy label resolution)."""
+	st = (shipment_type or "").strip()
+	if not st:
+		return None
+	row = get_shipment_type_record(st, mode=mode)
+	if row:
+		return row.get("name") or st
+	resolved = resolve_shipment_type_from_legacy(st, mode)
+	return resolved or st
+
+
+def sync_mode_from_shipment_type(doc) -> None:
+	"""Derive custom_mode_of_transport from the linked Shipment Type master."""
+	if not doc.meta.has_field("custom_shipment_type"):
+		return
+	if not doc.meta.has_field("custom_mode_of_transport"):
+		return
+	st = doc.get("custom_shipment_type")
+	mode = mode_from_master(st)
+	if mode:
+		doc.custom_mode_of_transport = mode
+
+
+def copy_shipment_classification_from_source(target, source) -> None:
+	"""Copy shipment type, mode, and container type from a preshipment source document."""
+	if source.get("custom_shipment_type") and target.meta.has_field("custom_shipment_type"):
+		mode = source.get("custom_mode_of_transport")
+		link = canonical_shipment_type_link(source.get("custom_shipment_type"), mode)
+		target.custom_shipment_type = link or source.get("custom_shipment_type")
+	sync_mode_from_shipment_type(target)
+	if not target.get("custom_mode_of_transport") and source.get("custom_mode_of_transport"):
+		if target.meta.has_field("custom_mode_of_transport"):
+			target.custom_mode_of_transport = source.get("custom_mode_of_transport")
+
+	dest_container = get_container_type_field(target.meta)
+	src_container = get_container_type_field(source.meta)
+	if dest_container and src_container:
+		value = source.get(src_container)
+		if value not in (None, ""):
+			target.set(dest_container, value)
 
 
 def _shipment_type_meta():
@@ -49,22 +128,13 @@ def _shipment_type_field_queryable(fieldname: str) -> bool:
 
 
 def _shipment_type_query_fields() -> list[str]:
-	candidates = ["name", "shipment_type_name", "cgm_ref_prefix", *_OPTIONAL_SHIPMENT_TYPE_FIELDS]
+	candidates = ["name", "shipment_type_name", *_OPTIONAL_SHIPMENT_TYPE_FIELDS]
 	return [f for f in candidates if _shipment_type_field_queryable(f)] or ["name"]
 
 
-def _normalize_shipment_type_name(shipment_type: str | None) -> str | None:
-	if not shipment_type:
-		return None
-	st = str(shipment_type).strip()
-	if not st:
-		return None
-	return _LEGACY_ALIASES.get(st, st)
-
-
-def get_shipment_type_record(shipment_type: str | None) -> dict | None:
-	"""Load Shipment Type by Link name or shipment_type_name label."""
-	st = _normalize_shipment_type_name(shipment_type)
+def get_shipment_type_record(shipment_type: str | None, mode: str | None = None) -> dict | None:
+	"""Load Shipment Type by Link name, shipment_type_name, or legacy CRM label."""
+	st = (shipment_type or "").strip()
 	if not st:
 		return None
 
@@ -78,13 +148,74 @@ def get_shipment_type_record(shipment_type: str | None) -> dict | None:
 	if meta and meta.has_field("is_active") and _shipment_type_field_queryable("is_active"):
 		filters["is_active"] = 1
 
-	return frappe.db.get_value("Shipment Type", filters, fields, as_dict=True)
+	row = frappe.db.get_value("Shipment Type", filters, fields, as_dict=True)
+	if row:
+		return row
+
+	legacy_link = resolve_shipment_type_from_legacy(st, mode)
+	if legacy_link and frappe.db.exists("Shipment Type", legacy_link):
+		return frappe.db.get_value("Shipment Type", legacy_link, fields, as_dict=True)
+
+	return None
 
 
 def cgm_ref_prefix_from_master(shipment_type: str | None, mode: str | None = None) -> str | None:
-	row = get_shipment_type_record(shipment_type)
+	row = get_shipment_type_record(shipment_type, mode=mode)
 	if row and row.get("cgm_ref_prefix"):
 		return str(row.cgm_ref_prefix).strip().upper()
+	return None
+
+
+def _container_type_meta():
+	if not frappe.db.exists("DocType", "Container Type"):
+		return None
+	return frappe.get_meta("Container Type")
+
+
+def _container_type_field_queryable(fieldname: str) -> bool:
+	meta = _container_type_meta()
+	if not meta or not meta.has_field(fieldname):
+		return False
+	return frappe.db.has_column("Container Type", fieldname)
+
+
+def get_container_type_record(container_type: str | None) -> dict | None:
+	"""Load Container Type by Link name or container_type label."""
+	ct = (container_type or "").strip()
+	if not ct or not frappe.db.exists("DocType", "Container Type"):
+		return None
+
+	fields = ["name", "container_type"]
+	if _container_type_field_queryable("cgm_ref_prefix"):
+		fields.append("cgm_ref_prefix")
+
+	if frappe.db.exists("Container Type", ct):
+		return frappe.db.get_value("Container Type", ct, fields, as_dict=True)
+
+	return frappe.db.get_value(
+		"Container Type",
+		{"container_type": ct},
+		fields,
+		as_dict=True,
+	)
+
+
+def cgm_ref_prefix_from_container_type(container_type: str | None) -> str | None:
+	row = get_container_type_record(container_type)
+	if row and row.get("cgm_ref_prefix"):
+		return str(row.cgm_ref_prefix).strip().upper()
+	return None
+
+
+def container_tracking_mode_for_shipment_type(
+	shipment_type: str | None, mode: str | None = None
+) -> str | None:
+	"""Container Tracker mode from Shipment Type master (container_tracking_mode field)."""
+	row = get_shipment_type_record(shipment_type, mode=mode)
+	if row and _shipment_type_field_queryable("container_tracking_mode"):
+		value = (row.get("container_tracking_mode") or "").strip()
+		if value:
+			return value
 	return None
 
 
@@ -95,20 +226,227 @@ def mode_from_master(shipment_type: str | None) -> str | None:
 	return None
 
 
+def transport_category_from_mode(mode: str | None) -> str | None:
+	"""Map Mode of Transport label to UI category: sea, air, or road."""
+	if not mode:
+		return None
+	key = str(mode).strip().lower()
+	if key == "sea":
+		return "sea"
+	if key == "air":
+		return "air"
+	if key == "road":
+		return "road"
+	return None
+
+
+def get_transport_category(shipment_type: str | None = None, mode: str | None = None) -> str | None:
+	"""Resolve sea/air/road from Shipment Type master (preferred) or explicit mode."""
+	mode_val = (mode or "").strip()
+	row = get_shipment_type_record(shipment_type)
+	if row and row.get("default_mode_of_transport"):
+		mode_val = str(row.default_mode_of_transport).strip()
+	return transport_category_from_mode(mode_val)
+
+
+def shipment_type_profile(shipment_type: str | None) -> dict | None:
+	"""Single Shipment Type row as a transport profile dict."""
+	row = get_shipment_type_record(shipment_type)
+	if not row:
+		return None
+	name = row.get("name") or shipment_type
+	mode = mode_from_master(name) or (row.get("default_mode_of_transport") or "")
+	profile = {
+		"name": name,
+		"shipment_type_name": row.get("shipment_type_name") or name,
+		"default_mode_of_transport": mode,
+		"category": get_transport_category(name, mode),
+		"use_sea_import_workflow": bool(row.get("use_sea_import_workflow")),
+		"uses_unit_tracking": bool(row.get("uses_unit_tracking")),
+	}
+	if _shipment_type_field_queryable("container_tracking_mode") and row.get("container_tracking_mode"):
+		profile["container_tracking_mode"] = row.get("container_tracking_mode")
+	return profile
+
+
+def apply_shipment_type_profile_to_doc(doc, shipment_type: str | None) -> bool:
+	"""Set custom_shipment_type and custom_mode_of_transport from Shipment Type master."""
+	if not shipment_type:
+		return False
+	link_name = canonical_shipment_type_link(shipment_type, doc.get("custom_mode_of_transport"))
+	if not link_name:
+		return False
+	changed = False
+	if doc.meta.has_field("custom_shipment_type") and doc.get("custom_shipment_type") != link_name:
+		doc.set("custom_shipment_type", link_name)
+		changed = True
+	sync_mode_from_shipment_type(doc)
+	return changed or bool(doc.has_value_changed("custom_mode_of_transport"))
+
+
+def get_container_type_field(meta) -> str | None:
+	"""Return the container-type Link field on Opportunity, Project, or Lead."""
+	for fieldname in ("custom_container_type", "custom_container_type_"):
+		if meta.has_field(fieldname):
+			return fieldname
+	return None
+
+
+def get_opportunity_container_type_field(meta=None) -> str | None:
+	"""Backward-compatible alias for get_container_type_field on Opportunity."""
+	return get_container_type_field(meta or frappe.get_meta("Opportunity"))
+
+
+def sync_container_type_from_linked_bl(doc) -> None:
+	"""Keep container type aligned with the linked Bill of Lading."""
+	container_field = get_container_type_field(doc.meta)
+	if not container_field:
+		return
+
+	bl_field = _bill_of_lading_link_field(doc)
+	if not bl_field:
+		return
+
+	bl_name = doc.get(bl_field)
+	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
+		return
+
+	container_type = frappe.db.get_value("Bill of Lading", bl_name, "container_type")
+	if container_type and doc.get(container_field) != container_type:
+		doc.set(container_field, container_type)
+
+
+def _bill_of_lading_link_field(doc) -> str | None:
+	config = get_bl_config()
+	candidate = config.get("opportunity_bl_field")
+	if candidate and doc.meta.has_field(candidate):
+		return candidate
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_link_field_for_doctype
+
+	return get_link_field_for_doctype(doc.doctype, "Bill of Lading")
+
+
+def apply_bl_classification_to_doc(target_doc, bl_doc) -> bool:
+	"""Copy shipment type, derived mode, and container type from Bill of Lading."""
+	changed = False
+	if apply_shipment_type_profile_to_doc(target_doc, bl_doc.get("shipment_type")):
+		changed = True
+	container_type = bl_doc.get("container_type")
+	container_field = get_container_type_field(target_doc.meta)
+	if container_type and container_field and target_doc.get(container_field) != container_type:
+		target_doc.set(container_field, container_type)
+		changed = True
+	return changed
+
+
+BL_TO_OPPORTUNITY_TRACKING_FIELDS = (
+	("client_refrence_no", "custom_client_refrence_no"),
+	("batch_no", "custom_batch_no"),
+)
+
+OPPORTUNITY_TO_PROJECT_TRACKING_FIELDS = (
+	("custom_client_refrence_no", "custom_client_refrence_no"),
+	("custom_batch_no", "custom_batch_no"),
+)
+
+OPPORTUNITY_TO_PROJECT_CARRIER_FIELDS = (
+	("custom_vessel", "custom_vessel"),
+	("custom_airline", "custom_airline"),
+)
+
+
+def copy_carrier_fields_from_source(target, source) -> None:
+	"""Copy vessel and/or airline onto Project when filled on the preshipment source."""
+	for src_field, dest_field in OPPORTUNITY_TO_PROJECT_CARRIER_FIELDS:
+		if not target.meta.has_field(dest_field) or not source.meta.has_field(src_field):
+			continue
+		value = source.get(src_field)
+		if value not in (None, "") and not target.get(dest_field):
+			target.set(dest_field, value)
+
+
+def _bl_batch_number_value(bl_doc) -> str | None:
+	batch = (bl_doc.get("batch_no") or "").strip()
+	if batch:
+		return batch
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		parse_batch_number_from_bl_name,
+	)
+
+	parsed = parse_batch_number_from_bl_name(bl_doc.name)
+	return str(parsed) if parsed else None
+
+
+def bl_tracking_payload(bl_doc) -> dict:
+	"""Client ref and batch from Bill of Lading (vessel/ETA/ATA/CGM ref are Project-only)."""
+	return {
+		"client_refrence_no": bl_doc.get("client_refrence_no"),
+		"batch_no": _bl_batch_number_value(bl_doc),
+	}
+
+
+def apply_bl_tracking_fields_to_doc(target_doc, bl_doc) -> bool:
+	"""Copy client ref and batch from Bill of Lading onto Opportunity."""
+	changed = False
+	values = bl_tracking_payload(bl_doc)
+	for src_field, dest_field in BL_TO_OPPORTUNITY_TRACKING_FIELDS:
+		if not target_doc.meta.has_field(dest_field):
+			continue
+		value = values.get(src_field)
+		if value in (None, ""):
+			continue
+		if target_doc.get(dest_field) != value:
+			target_doc.set(dest_field, value)
+			changed = True
+	return changed
+
+
+def apply_bl_fields_to_doc(target_doc, bl_doc) -> bool:
+	"""Copy shipment classification and tracking fields from Bill of Lading."""
+	classification_changed = apply_bl_classification_to_doc(target_doc, bl_doc)
+	tracking_changed = apply_bl_tracking_fields_to_doc(target_doc, bl_doc)
+	return classification_changed or tracking_changed
+
+
+def bl_classification_payload(bl_doc) -> dict:
+	"""Shipment classification fields from a Bill of Lading for client-side apply."""
+	shipment_type = bl_doc.get("shipment_type")
+	link_name = canonical_shipment_type_link(shipment_type) if shipment_type else None
+	profile = shipment_type_profile(link_name or shipment_type) if shipment_type else None
+	return {
+		"shipment_type": link_name or shipment_type,
+		"default_mode_of_transport": (profile or {}).get("default_mode_of_transport"),
+		"container_type": bl_doc.get("container_type"),
+	}
+
+
+def bl_propagation_payload(bl_doc) -> dict:
+	"""Classification + tracking fields from Bill of Lading for API responses."""
+	return {**bl_classification_payload(bl_doc), **bl_tracking_payload(bl_doc)}
+
+
+def copy_tracking_fields_from_source(target, source) -> None:
+	"""Copy client ref and batch from Opportunity onto Project."""
+	for src_field, dest_field in OPPORTUNITY_TO_PROJECT_TRACKING_FIELDS:
+		if not target.meta.has_field(dest_field) or not source.meta.has_field(src_field):
+			continue
+		value = source.get(src_field)
+		if value not in (None, ""):
+			target.set(dest_field, value)
+
+
 def is_sea_import_enabled(shipment_type: str | None) -> bool:
-	"""True when the Shipment Type master flags sea import workflow (or mode fallback)."""
+	"""True when the Shipment Type master flags sea import workflow."""
 	row = get_shipment_type_record(shipment_type)
 	if not row:
 		return False
 	if _shipment_type_field_queryable("use_sea_import_workflow"):
 		return bool(row.get("use_sea_import_workflow"))
-	if _shipment_type_field_queryable("default_mode_of_transport"):
-		return (row.get("default_mode_of_transport") or "").strip() == "Sea"
-	return False
+	return get_transport_category(shipment_type) == "sea"
 
 
 def sea_import_enabled_for_project(project) -> bool:
-	"""Project-level sea import gate: master flag when typed, else legacy mode-of-transport."""
+	"""Project-level sea import gate from Shipment Type master configuration."""
 	shipment_type = project.get("custom_shipment_type") if hasattr(project, "get") else None
 	if shipment_type:
 		if is_sea_import_enabled(shipment_type):
@@ -118,142 +456,36 @@ def sea_import_enabled_for_project(project) -> bool:
 		):
 			return False
 	mode = project.get("custom_mode_of_transport") if hasattr(project, "get") else None
-	return (mode or "").strip() == "Sea"
+	return get_transport_category(None, mode) == "sea"
 
-# ─── CGM reference / Project Name ─────────────────────────────────────────────
-# Tracking sheet format: CGM/FCL001/1022  (prefix + 3-digit seq + MMYY period)
+# ─── Legacy CGM reference (old project names) ────────────────────────────────
+# New Projects use LP {qty}X{size}-{batch}/{seq} via project_naming.py.
 
-
-CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$")
+LEGACY_CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$", re.IGNORECASE)
 
 
 def is_cgm_ref(value: str | None) -> bool:
+	"""True for legacy CGM/FCL001/0626-style references."""
 	if not value:
 		return False
-	return bool(CGM_REF_PATTERN.match(str(value).strip().upper()))
-
-
-def cgm_ref_prefix(shipment_type=None, mode=None) -> str:
-	"""Map shipment classification to tracking-sheet prefix (FCL, LCL, IM, …)."""
-	st = (shipment_type or "").strip()
-	prefix = cgm_ref_prefix_from_master(st, mode)
-	if prefix:
-		return prefix
-
-	mode = (mode or "").strip()
-	if st == "Import":
-		if mode == "Sea":
-			return "FCL"
-		if mode == "Air":
-			return "AIR"
-		if mode == "Road":
-			return "ROD"
-		return "IM"
-	if st == "Export":
-		return "EX"
-	if mode == "Sea":
-		return "FCL"
-	if mode == "Air":
-		return "AIR"
-	if mode == "Road":
-		return "ROD"
-	return "IM"
-
-
-def _next_cgm_ref_sequence(prefix: str, period: str) -> int:
-	"""Next 3-digit sequence for CGM/{prefix}NNN/{period} in this calendar month."""
-	like = f"CGM/{prefix}%/{period}"
-	rows = frappe.db.sql(
-		"""
-		SELECT project_name AS ref FROM `tabProject` WHERE UPPER(project_name) LIKE %s
-		UNION
-		SELECT custom_cgm_ref_no AS ref FROM `tabProject`
-		WHERE custom_cgm_ref_no IS NOT NULL AND custom_cgm_ref_no != ''
-		  AND UPPER(custom_cgm_ref_no) LIKE %s
-		""",
-		(like.upper(), like.upper()),
-		as_dict=True,
-	)
-	seq_pattern = re.compile(rf"^CGM/{re.escape(prefix)}(\d{{3}})/{re.escape(period)}$")
-	max_seq = 0
-	for row in rows:
-		ref = (row.ref or "").strip().upper()
-		match = seq_pattern.match(ref)
-		if match:
-			max_seq = max(max_seq, int(match.group(1)))
-	return max_seq + 1
-
-
-def _cgm_ref_in_use(ref: str) -> bool:
-	"""True if a Project already uses this reference as its name or CGM ref."""
-	return bool(
-		frappe.db.exists("Project", {"project_name": ref})
-		or frappe.db.exists("Project", {"custom_cgm_ref_no": ref})
-	)
-
-
-def build_cgm_ref_no(shipment_type=None, mode=None, opened_date=None) -> str:
-	"""Allocate CGM/LCL001/1022-style reference for the shipment tracking sheet.
-
-	Collisions are guarded two ways: this checks both project_name and
-	custom_cgm_ref_no when allocating, and patch v2_39 adds a unique index on
-	custom_cgm_ref_no so a concurrent race fails loudly at insert (surfaced as a
-	retryable message in insert_shipment_project) instead of silently duplicating.
-	"""
-	prefix = cgm_ref_prefix(shipment_type, mode)
-	dt = getdate(opened_date or today())
-	period = dt.strftime("%m%y")
-	seq = _next_cgm_ref_sequence(prefix, period)
-	for candidate_seq in range(seq, seq + 1000):
-		ref = f"CGM/{prefix}{candidate_seq:03d}/{period}"
-		if not _cgm_ref_in_use(ref):
-			return ref
-	frappe.throw("Could not allocate a unique CGM reference number.")
-
-
-def assign_cgm_project_reference(project) -> None:
-	"""Set project_name and custom_cgm_ref_no to the tracking-sheet CGM reference."""
-	if project.get("custom_cgm_ref_no") and is_cgm_ref(project.custom_cgm_ref_no):
-		if not is_cgm_ref(project.project_name):
-			project.project_name = project.custom_cgm_ref_no
-		return
-
-	if project.project_name and is_cgm_ref(project.project_name):
-		if project.meta.has_field("custom_cgm_ref_no") and not project.get("custom_cgm_ref_no"):
-			project.custom_cgm_ref_no = project.project_name
-		return
-
-	ref = build_cgm_ref_no(
-		normalize_shipment_classification(
-			project.get("custom_shipment_type"),
-			project.get("custom_mode_of_transport"),
-		)[0],
-		project.get("custom_mode_of_transport"),
-		project.get("custom_opened_date"),
-	)
-	project.project_name = ref
-	if project.meta.has_field("custom_cgm_ref_no"):
-		project.custom_cgm_ref_no = ref
+	return bool(LEGACY_CGM_REF_PATTERN.match(str(value).strip().upper()))
 
 
 # ─── Project Field Helpers ────────────────────────────────────────────────────
 
 
 def apply_shipment_data(project, shipment_type=None, mode=None):
-	"""Set shipment classification; derive mode from operational shipment type when known."""
+	"""Set shipment classification; derive mode from Shipment Type master when known."""
 	if shipment_type:
-		project.custom_shipment_type = shipment_type
+		link = canonical_shipment_type_link(
+			shipment_type,
+			mode or project.get("custom_mode_of_transport"),
+		)
+		project.custom_shipment_type = link or shipment_type
 	if mode and project.meta.has_field("custom_mode_of_transport"):
 		project.custom_mode_of_transport = mode
 
-	normalized_type, derived_mode = normalize_shipment_classification(
-		project.get("custom_shipment_type"),
-		project.get("custom_mode_of_transport"),
-	)
-	if normalized_type:
-		project.custom_shipment_type = normalized_type
-	if derived_mode and project.meta.has_field("custom_mode_of_transport"):
-		project.custom_mode_of_transport = derived_mode
+	sync_mode_from_shipment_type(project)
 
 	project_fields = frappe.get_meta("Project")
 	if project_fields.has_field("custom_shipment_status"):
@@ -262,40 +494,24 @@ def apply_shipment_data(project, shipment_type=None, mode=None):
 
 def normalize_shipment_classification(shipment_type=None, mode=None):
 	"""
-	Return (shipment_type, mode) using operational types (Sea FCL, Air Import, …).
+	Return (shipment_type_link, mode) using Shipment Type master only.
 
-	Legacy CRM values (Import/Export + Sea/Air/Road) are mapped for old records only.
+	Legacy CRM labels are resolved via each record's legacy_crm_labels field.
 	"""
 	st = (shipment_type or "").strip()
 	m = (mode or "").strip()
-
-	row = get_shipment_type_record(st)
+	row = get_shipment_type_record(st, mode=m)
 	if row:
-		return row.shipment_type_name or st, mode_from_master(st) or m
-
-	# Legacy Lead/Opportunity: Import + mode → operational default (blank mode → Sea FCL).
-	if st == "Import":
-		if m in ("", "Sea", None):
-			return "Sea FCL", "Sea"
-		if m == "Air":
-			return "Air Import", "Air"
-		if m == "Road":
-			return "Cross-Border Road Import", "Road"
-		return "Sea FCL", "Sea"
-	if st == "Export":
-		return "Export", m or "Sea"
-	if st == "Transit":
-		return "Transit", m or "Sea"
-	if st == "Road Import":
-		return "Cross-Border Road Import", "Road"
-
+		link_name = row.get("name") or st
+		return link_name, mode_from_master(link_name) or m
 	return st or None, m or None
 
 
 def normalize_shipment_fields_on_doc(doc) -> None:
-	"""Rewrite legacy Import/Export values before Select validation on save."""
+	"""Resolve shipment type Link + mode from Shipment Type master configuration."""
 	if not doc.meta.has_field("custom_shipment_type"):
 		return
+
 	mode = doc.get("custom_mode_of_transport") if doc.meta.has_field("custom_mode_of_transport") else None
 	normalized_type, derived_mode = normalize_shipment_classification(
 		doc.get("custom_shipment_type"),
@@ -379,19 +595,88 @@ def resolve_bill_of_lading_name(attachment: str) -> str | None:
 	return frappe.db.get_value("Bill of Lading", {attachment_field: attachment}, "name")
 
 
+def resolve_bl_name_from_preshipment(source_doc) -> str | None:
+	"""Resolve Bill of Lading from link field, client documents, or back-link on BL."""
+	if not source_doc:
+		return None
+
+	config = get_bl_config()
+	bl_field = config.get("opportunity_bl_field")
+	if bl_field and source_doc.meta.has_field(bl_field):
+		bl_name = source_doc.get(bl_field)
+		if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+			return bl_name
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		document_types_match,
+		get_document_type_link_name,
+		get_opportunity_documents_field,
+	)
+
+	clients_field = get_opportunity_documents_field()
+	if clients_field and source_doc.meta.has_field(clients_field):
+		bl_type = get_document_type_link_name("BL")
+		if bl_type:
+			for row in source_doc.get(clients_field) or []:
+				if not row.attachment or not document_types_match(row.document_type, bl_type):
+					continue
+				bl_name = resolve_bill_of_lading_name(row.attachment)
+				if bl_name:
+					return bl_name
+
+	source_field = config.get("opportunity_source_field")
+	if source_field and source_doc.name:
+		bl_name = frappe.db.get_value(
+			"Bill of Lading",
+			{source_field: source_doc.name, "docstatus": 1},
+			"name",
+			order_by="modified desc",
+		)
+		if bl_name:
+			return bl_name
+	return None
+
+
 # ─── Preshipment container sync (Opportunity / Lead / Project) ─────────────────
+def sync_opportunity_bl_from_clients_documents(doc, method=None) -> None:
+	"""Link Bill of Lading from Clients Documents BL attachment when the link field is empty."""
+	if doc.doctype != "Opportunity":
+		return
+
+	config = get_bl_config()
+	bl_field = config.get("opportunity_bl_field")
+	quantity_field = config.get("opportunity_quantity_field")
+	if not bl_field or doc.get(bl_field):
+		return
+
+	bl_name = resolve_bl_name_from_preshipment(doc)
+	if not bl_name:
+		return
+
+	doc.set(bl_field, bl_name)
+	if quantity_field and doc.meta.has_field(quantity_field) and not doc.get(quantity_field):
+		bl_doc = frappe.get_doc("Bill of Lading", bl_name)
+		doc.set(quantity_field, get_bl_quantity_summary(bl_doc))
+
+
 def sync_preshipment_containers_from_bl(doc, method=None) -> None:
-	"""Populate read-only container rows from the linked Bill of Lading before save."""
+	"""Populate container rows and BL tracking fields from the linked Bill of Lading."""
 	config = get_bl_config()
 	bl_field = config.get("opportunity_bl_field")
 	container_field = config.get("opportunity_container_field")
+
+	sync_container_type_from_linked_bl(doc)
+
+	bl_name = doc.get(bl_field) if bl_field else None
+	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+		bl_doc = frappe.get_doc("Bill of Lading", bl_name)
+		apply_bl_fields_to_doc(doc, bl_doc)
 
 	if not bl_field or not container_field:
 		return
 	if not doc.meta.has_field(container_field):
 		return
 
-	bl_name = doc.get(bl_field)
 	rows = fetch_container_rows(bl_name) if bl_name else []
 
 	doc.set(container_field, [])
@@ -409,7 +694,7 @@ def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 	if not bl_field or not source_doc or not target_doc.meta.has_field(bl_field):
 		return
 
-	bl_name = source_doc.get(bl_field)
+	bl_name = resolve_bl_name_from_preshipment(source_doc)
 	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
 		return
 
@@ -469,10 +754,58 @@ def get_containers_for_bl_attachment(attachment: str, opportunity: str = None) -
 	attachment_field = get_bl_config().get("attachment_field")
 
 	return {
+		"bl_name": bl_name,
 		"containers": fetch_container_rows(bl_name),
 		"quantity": get_bl_quantity_summary(bl_doc),
 		"attachment": bl_doc.get(attachment_field) or "" if attachment_field else "",
+		**bl_propagation_payload(bl_doc),
 	}
+
+
+@frappe.whitelist()
+def get_shipment_type_profiles() -> dict:
+	"""Active Shipment Type master rows keyed by name (source of truth for client UI)."""
+	if not frappe.db.exists("DocType", "Shipment Type"):
+		return {}
+
+	fields = ["name", "shipment_type_name", "default_mode_of_transport"]
+	for optional in (
+		"use_sea_import_workflow",
+		"uses_unit_tracking",
+		"requires_bill_of_lading",
+		"requires_air_waybill",
+		"container_tracking_mode",
+		"legacy_crm_labels",
+		"is_active",
+	):
+		if _shipment_type_field_queryable(optional):
+			fields.append(optional)
+
+	filters = {}
+	if _shipment_type_field_queryable("is_active"):
+		filters["is_active"] = 1
+
+	profiles: dict[str, dict] = {}
+	for row in frappe.get_all("Shipment Type", filters=filters, fields=fields, order_by="name asc"):
+		name = row.name
+		mode = (row.get("default_mode_of_transport") or "").strip()
+		profile = {
+			"shipment_type_name": row.get("shipment_type_name") or name,
+			"default_mode_of_transport": mode,
+			"category": transport_category_from_mode(mode),
+			"use_sea_import_workflow": bool(row.get("use_sea_import_workflow")),
+			"uses_unit_tracking": bool(row.get("uses_unit_tracking")),
+			"requires_bill_of_lading": bool(row.get("requires_bill_of_lading")),
+			"requires_air_waybill": bool(row.get("requires_air_waybill")),
+		}
+		if row.get("container_tracking_mode"):
+			profile["container_tracking_mode"] = row.get("container_tracking_mode")
+		profiles[name] = profile
+		if _shipment_type_field_queryable("legacy_crm_labels"):
+			for label in _parse_label_lines(row.get("legacy_crm_labels")):
+				if label and label not in profiles:
+					profiles[label] = profile
+	return profiles
 
 @frappe.whitelist()
 def get_container_rows_for_bill_of_lading(bill_of_lading: str | None = None) -> list[dict]:
