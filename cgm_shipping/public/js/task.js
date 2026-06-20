@@ -44,6 +44,7 @@ frappe.ui.form.on("Task", {
 		frm._cgm_declarant_status_loading = false;
 		frm._cgm_declarant_status_loaded = false;
 		frm._cgm_finance_lines_ensuring = false;
+		frm._cgm_checkpoint_seed_requested = false;
 		frm.set_query("department", () => ({
 			filters: { parent_department: ["like", "Operations%"] },
 		}));
@@ -143,6 +144,12 @@ frappe.ui.form.on("Task", {
 						"<b>4 Finance:</b> Verify receipt - this task completes automatically when the receipt is verified."
 				);
 				intro_set = true;
+			} else if (ui.is_document_checkpoint) {
+				intro = __(
+					"<b>Initial documents</b> were copied from the Project (read-only). " +
+						"Attach each <b>Final Document</b> here — finals sync to the Project when you save."
+				);
+				intro_set = true;
 			} else if (ui.show_payments) {
 				intro = __(
 					"Use <b>Make Payment</b> to record this payment as a Journal Entry (Finance department)."
@@ -181,6 +188,10 @@ frappe.ui.form.on("Task", {
 
 		if (ui.show_permits && is_permit_finance_step(frm) && frm.doc.status !== "Completed") {
 			ensure_finance_permit_task_completed_on_form(frm);
+		}
+
+		if (ui.is_document_checkpoint && frm.doc.name && !frm.is_new()) {
+			ensure_checkpoint_task_documents_on_form(frm);
 		}
 
 		if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
@@ -286,6 +297,8 @@ frappe.ui.form.on("Task", {
 				);
 			}
 		}
+
+		setup_client_inspection_buttons(frm);
 
 		if (
 			is_permit_finance_step(frm) &&
@@ -624,6 +637,22 @@ function get_sea_task_ui(frm) {
 			hide_mark_complete: false,
 		};
 	}
+	if (seq_in_list(seq, cfg.document_checkpoint_seqs)) {
+		return {
+			is_sea_task: true,
+			is_document_checkpoint: true,
+			show_documents: true,
+			documents_read_only: false,
+			documents_versioned: true,
+			documents_initial_read_only: true,
+			show_permits: false,
+			show_payments: false,
+			show_external_ref: true,
+			show_description: true,
+			auto_intake_intro: false,
+			hide_mark_complete: false,
+		};
+	}
 	return {
 		is_sea_task: true,
 		show_documents: true,
@@ -664,6 +693,7 @@ function apply_sea_task_form_layout(frm, ui) {
 	toggle("custom_task_documents", ui.show_documents);
 	if (ui.show_documents && frm.fields_dict.custom_task_documents) {
 		frm.set_df_property("custom_task_documents", "read_only", ui.documents_read_only ? 1 : 0);
+		configure_task_document_version_grid(frm, ui);
 		if (frm.fields_dict.custom_section_break_0gs4o) {
 			frm.set_df_property("custom_section_break_0gs4o", "label", __("Clearance Documents"));
 		}
@@ -687,6 +717,7 @@ function apply_sea_task_form_layout(frm, ui) {
 	toggle("custom_external_ref_no", ui.show_external_ref);
 	toggle("description", ui.show_description);
 	apply_field_officer_task_fields(frm);
+	apply_client_inspection_task_fields(frm);
 	toggle("sb_timeline", false);
 	toggle("sb_costing", false);
 	toggle("depends_on_tab", false);
@@ -708,6 +739,114 @@ function apply_field_officer_task_fields(frm) {
 		if (frm.fields_dict[fieldname]) {
 			frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
 		}
+	});
+}
+
+const CLIENT_INSPECTION_TASK_SEQ = 7;
+
+function is_client_inspection_task(frm) {
+	return is_sea_clearance_task(frm) && sea_task_sequence(frm) === CLIENT_INSPECTION_TASK_SEQ;
+}
+
+function apply_client_inspection_task_fields(frm) {
+	const show = is_client_inspection_task(frm);
+	const fields = [
+		"custom_section_client_inspection",
+		"custom_client_notified_on",
+		"custom_client_notified_by",
+		"custom_inspection_confirmed_on",
+		"custom_inspection_confirmed_by",
+	];
+	fields.forEach((fieldname) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
+		}
+	});
+}
+
+function setup_client_inspection_buttons(frm) {
+	if (!is_client_inspection_task(frm) || frm.is_new()) {
+		return;
+	}
+	if (frm.doc.custom_inspection_confirmed_on) {
+		const when = frappe.datetime.str_to_user(frm.doc.custom_inspection_confirmed_on);
+		const by = frm.doc.custom_inspection_confirmed_by || "";
+		set_task_intro(
+			frm,
+			__("Inspection confirmed on {0}{1}", [
+				when,
+				by ? ` (${frappe.utils.escape_html(by)})` : "",
+			]),
+			"green"
+		);
+		return;
+	}
+	if (frm.doc.custom_client_notified_on) {
+		const when = frappe.datetime.str_to_user(frm.doc.custom_client_notified_on);
+		const by = frm.doc.custom_client_notified_by || "";
+		set_task_intro(frm, __("Notified on {0} by {1}", [when, by]), "blue");
+		add_cgm_toolbar_button(frm, __("Notify Again"), () => notify_client_for_inspection_from_form(frm));
+		add_cgm_toolbar_button(
+			frm,
+			__("Client Has Completed Inspection"),
+			() => confirm_client_inspection_from_task_form(frm)
+		);
+		return;
+	}
+	add_cgm_toolbar_button(
+		frm,
+		__("Notify Client for Inspection"),
+		() => notify_client_for_inspection_from_form(frm),
+		{ primary: true }
+	);
+}
+
+function notify_client_for_inspection_from_form(frm) {
+	if (frm.is_dirty()) {
+		frappe.msgprint({
+			title: __("Save first"),
+			message: __("Save the task, then notify the client."),
+			indicator: "orange",
+		});
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.inspection.notify_client_for_inspection",
+		args: { task_name: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Notifying client…"),
+		callback(r) {
+			if (r.exc) {
+				return;
+			}
+			frappe.show_alert({
+				message: r.message?.message || __("Client notified for inspection."),
+				indicator: "green",
+			});
+			frm.reload_doc();
+		},
+	});
+}
+
+function confirm_client_inspection_from_task_form(frm) {
+	frappe.confirm(__("Record that the client has completed inspection for this shipment?"), () => {
+		frappe.call({
+			method:
+				"cgm_shipping.cgm_worldwide_shipping.customizations.inspection.confirm_client_inspection_from_task",
+			args: { task_name: frm.doc.name },
+			freeze: true,
+			callback(r) {
+				if (r.exc) {
+					return;
+				}
+				frappe.show_alert({
+					message: r.message?.message || __("Inspection marked as complete."),
+					indicator: "green",
+				});
+				frm.reload_doc();
+			},
+		});
 	});
 }
 
@@ -815,6 +954,44 @@ function ucr_finance_ready_on_form(frm) {
 	const inv = get_finance_line(frm, "Invoice");
 	const rec = get_finance_line(frm, "Receipt");
 	return Boolean(inv && inv.verified && rec && rec.attachment && rec.verified);
+}
+
+function configure_task_document_version_grid(frm, ui) {
+	const grid = frm.fields_dict.custom_task_documents?.grid;
+	if (!grid) {
+		return;
+	}
+	const versioned = Boolean(frappe.meta.get_docfield("Shipment Document", "initial_attachment"));
+	grid.update_docfield_property("attachment", "hidden", versioned ? 1 : 0);
+	["initial_attachment", "final_attachment", "version_status"].forEach((fieldname) => {
+		if (frappe.meta.get_docfield("Shipment Document", fieldname)) {
+			grid.update_docfield_property(fieldname, "hidden", versioned ? 0 : 1);
+		}
+	});
+	if (versioned && ui.documents_initial_read_only) {
+		grid.update_docfield_property("initial_attachment", "read_only", 1);
+		grid.update_docfield_property("document_type", "read_only", 1);
+	}
+}
+
+function ensure_checkpoint_task_documents_on_form(frm) {
+	const rows = frm.doc.custom_task_documents || [];
+	if (rows.length || frm._cgm_checkpoint_seed_requested || frm.doc.__unsaved) {
+		return;
+	}
+	frm._cgm_checkpoint_seed_requested = true;
+	frappe.call({
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.documents.ensure_checkpoint_task_documents",
+		args: { task_name: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Loading clearance documents from Project…"),
+		callback(r) {
+			if (r.exc || !r.message?.seeded) {
+				return;
+			}
+			frm.reload_doc();
+		},
+	});
 }
 
 function configure_finance_line_grid(frm, ui) {

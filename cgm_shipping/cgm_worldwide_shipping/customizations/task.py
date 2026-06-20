@@ -1173,25 +1173,27 @@ def get_document_type_code(document_type_link: str | None) -> str | None:
 
 
 def attached_document_codes(task) -> set[str]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
+
 	codes = set()
 	for row in task.get(TASK_DOCUMENTS_FIELD) or []:
 		code = get_document_type_code(row.document_type)
-		if code and row.attachment:
+		if code and primary_attachment(row):
 			codes.add(code)
 	return codes
 
 
 def strip_task_documents_for_checkpoint(task) -> bool:
-	"""Document checkpoint tasks review Project files — no Task Documents child rows."""
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_document_checkpoint_task(seq) or not task.meta.has_field(TASK_DOCUMENTS_FIELD):
-		return False
-	rows = list(task.get(TASK_DOCUMENTS_FIELD) or [])
-	if not rows:
-		return False
-	for row in rows:
-		task.remove(row)
-	return True
+	"""Legacy no-op — checkpoint tasks now carry versioned document rows."""
+	return False
+
+
+def seed_checkpoint_task_documents(task) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		seed_checkpoint_task_documents_from_project,
+	)
+
+	return seed_checkpoint_task_documents_from_project(task)
 
 
 def seed_required_task_document_rows(task) -> None:
@@ -1199,7 +1201,7 @@ def seed_required_task_document_rows(task) -> None:
 		return
 	seq = int(task.get("custom_sequence_no") or 0)
 	if is_document_checkpoint_task(seq):
-		strip_task_documents_for_checkpoint(task)
+		seed_checkpoint_task_documents(task)
 		return
 	if is_ucr_application_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
@@ -1337,13 +1339,18 @@ def validate_required_documents(task, seq: int) -> None:
 
 
 def validate_document_checkpoint_task(task) -> None:
-	"""Human confirmation only — documents live on the Project, not on the Task."""
-	if not (task.description or "").strip():
-		frappe.throw(
-			"Add a brief confirmation note in <b>Description</b> "
-			"(e.g. <i>Final BL and COC confirmed received from client</i>) after reviewing "
-			"documents on the linked <b>Project</b>."
+	"""Final clearance docs: upload finals on Task Documents or add a confirmation note."""
+	rows = task.get(TASK_DOCUMENTS_FIELD) or []
+	has_final = any((row.get("final_attachment") or "").strip() for row in rows)
+	has_note = bool((task.description or "").strip())
+	if has_final or has_note:
+		return
+	frappe.throw(
+		_(
+			"Upload at least one <b>Final Document</b> on Task Documents, or add a brief "
+			"confirmation note in <b>Description</b> (e.g. <i>Final BL and COC confirmed received</i>)."
 		)
+	)
 
 
 def validate_light_proof_task(task) -> None:
@@ -2578,15 +2585,6 @@ def on_task_onload(doc, _method=None):
 		if merge_project_permits_into_application_task(doc):
 			doc.reload()
 
-	if _is_sea_task(doc) and is_document_checkpoint_task(_sea_task_seq(doc)):
-		if strip_task_documents_for_checkpoint(doc):
-			frappe.flags.cgm_strip_checkpoint_documents = True
-			try:
-				doc.save(ignore_permissions=True)
-			finally:
-				frappe.flags.cgm_strip_checkpoint_documents = False
-			doc.reload()
-
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
 		on_task_onload_container_updates,
 	)
@@ -2632,6 +2630,14 @@ def before_task_save(doc, _method=None):
 	if doc.status != "Cancelled":
 		sync_ucr_payment_to_idf_record(doc)
 		sync_application_payment_hooks(doc, APPLICATION_FINANCE_PROFILES["Entry Application"])
+
+	seq = _sea_task_seq(doc)
+	if _is_sea_task(doc) and is_document_checkpoint_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+			normalize_shipment_documents_table,
+		)
+
+		normalize_shipment_documents_table(doc.get(TASK_DOCUMENTS_FIELD))
 
 
 def on_task_update(doc, _method=None):
@@ -2710,6 +2716,12 @@ def on_task_update(doc, _method=None):
 	if frappe.flags.get("cgm_skip_task_project_sync"):
 		return
 	if doc.get("project"):
+		if _is_sea_task(doc) and is_document_checkpoint_task(seq):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+				sync_checkpoint_finals_to_project,
+			)
+
+			sync_checkpoint_finals_to_project(doc)
 		refresh_project_documents(doc.project)
 		sync_task_permits_to_project(doc)
 		if _is_sea_task(doc):
