@@ -190,8 +190,10 @@ def status_tone(status: str | None) -> str:
 # ─── Shipment queries ────────────────────────────────────────────────────────
 
 # Fields pulled for the list / dashboard. Kept in one place so the list
-# page, dashboard and detail header stay consistent.
-SHIPMENT_LIST_FIELDS = [
+# page, dashboard and detail header stay consistent. Some sites still have
+# the legacy custom_cgm_ref_no column but not custom_project_reference yet;
+# filter through Project meta so get_all never selects a missing column.
+_SHIPMENT_LIST_FIELD_CANDIDATES = [
 	"name",
 	"project_name",
 	"custom_project_reference",
@@ -210,6 +212,26 @@ SHIPMENT_LIST_FIELDS = [
 ]
 
 
+def shipment_list_fields() -> list[str]:
+	meta = frappe.get_meta("Project")
+	return [
+		field
+		for field in _SHIPMENT_LIST_FIELD_CANDIDATES
+		if field == "name" or meta.has_field(field)
+	]
+
+
+def _project_ref_sql_coalesce(alias: str = "p") -> str:
+	meta = frappe.get_meta("Project")
+	parts = []
+	if meta.has_field("custom_project_reference"):
+		parts.append(f"NULLIF({alias}.custom_project_reference, '')")
+	if meta.has_field("custom_cgm_ref_no"):
+		parts.append(f"NULLIF({alias}.custom_cgm_ref_no, '')")
+	parts.extend([f"NULLIF({alias}.project_name, '')", f"{alias}.name"])
+	return "COALESCE(" + ", ".join(parts) + ")"
+
+
 def get_customer_shipments(customer: str, limit: int = 200) -> list[dict]:
 	"""All non-Draft shipments for a customer, newest activity first.
 
@@ -225,7 +247,7 @@ def get_customer_shipments(customer: str, limit: int = 200) -> list[dict]:
 			"customer": customer,
 			"custom_shipment_status": ["!=", "Draft"],
 		},
-		fields=SHIPMENT_LIST_FIELDS,
+		fields=shipment_list_fields(),
 		order_by="modified desc",
 		limit=limit,
 	)
@@ -248,52 +270,55 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 	"""
 	if not project_name or not customer:
 		return None
+	detail_fields = [
+		"name",
+		"project_name",
+		"custom_project_reference",
+		"custom_cgm_ref_no",
+		"customer",
+		"custom_consignee",
+		"custom_shipment_status",
+		"custom_mode_of_transport",
+		"custom_current_location",
+		"custom_berth_phase",
+		"custom_bl_number",
+		"custom_batch_no",
+		"custom_awb_number",
+		"custom_do_reference",
+		"custom_entry_no",
+		"custom_vessel_flight",
+		"custom_eta",
+		"custom_ata",
+		"custom_cfs",
+		"custom_clearance_station_code",
+		"custom_delivery_type",
+		"custom_shipment_type",
+		"custom_shipment_description",
+		"custom_shipment_quantity",
+		"custom_gross_weightkg",
+		"custom_net_weightkg",
+		# Route / carrier / document fields added to Project.
+		"custom_etd",
+		"custom_country_of_origin",
+		"custom_final_destination",
+		"custom_vessel",
+		"custom_airline",
+		"custom_shipping_line",
+		"custom_bill_of_lading",
+		"custom_air_waybill",
+		"custom_description_of_goods",
+		# Pass-through charges billed on the shipment.
+		"custom_breakbulk_charges",
+		"custom_handling_charges",
+		"custom_kebs_charges",
+		"modified",
+	]
+	meta = frappe.get_meta("Project")
+	fields = [f for f in detail_fields if f == "name" or meta.has_field(f)]
 	row = frappe.db.get_value(
 		"Project",
 		project_name,
-		[
-			"name",
-			"project_name",
-			"custom_project_reference",
-			"custom_cgm_ref_no",
-			"customer",
-			"custom_consignee",
-			"custom_shipment_status",
-			"custom_mode_of_transport",
-			"custom_current_location",
-			"custom_berth_phase",
-			"custom_bl_number",
-			"custom_batch_no",
-			"custom_awb_number",
-			"custom_do_reference",
-			"custom_entry_no",
-			"custom_vessel_flight",
-			"custom_eta",
-			"custom_ata",
-			"custom_cfs",
-			"custom_clearance_station_code",
-			"custom_delivery_type",
-			"custom_shipment_type",
-			"custom_shipment_description",
-			"custom_shipment_quantity",
-			"custom_gross_weightkg",
-			"custom_net_weightkg",
-			# Route / carrier / document fields added to Project.
-			"custom_etd",
-			"custom_country_of_origin",
-			"custom_final_destination",
-			"custom_vessel",
-			"custom_airline",
-			"custom_shipping_line",
-			"custom_bill_of_lading",
-			"custom_air_waybill",
-			"custom_description_of_goods",
-			# Pass-through charges billed on the shipment.
-			"custom_breakbulk_charges",
-			"custom_handling_charges",
-			"custom_kebs_charges",
-			"modified",
-		],
+		fields,
 		as_dict=True,
 	)
 	if not row or row.customer != customer:
@@ -559,16 +584,12 @@ def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
 	"""
 	if not customer:
 		return []
+	ref_sql = _project_ref_sql_coalesce("p")
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT sd.name, sd.document_type, sd.attachment, sd.verified_on,
 		       sd.remarks, p.name AS project,
-		       COALESCE(
-		           NULLIF(p.custom_project_reference, ''),
-		           NULLIF(p.custom_cgm_ref_no, ''),
-		           NULLIF(p.project_name, ''),
-		           p.name
-		       ) AS ref
+		       {ref_sql} AS ref
 		FROM `tabShipment Document` sd
 		JOIN `tabProject` p ON p.name = sd.parent
 		WHERE sd.parenttype = 'Project'
