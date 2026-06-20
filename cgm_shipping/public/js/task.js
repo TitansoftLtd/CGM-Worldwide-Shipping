@@ -866,7 +866,6 @@ function configure_finance_line_grid(frm, ui) {
 	}
 
 	frm._cgm_finance_grid_ready = true;
-	refresh_cgm_grid_attach_rows(frm, "custom_task_finance_lines");
 }
 
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
@@ -1080,7 +1079,6 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property("receipt_verified", "hidden", 0);
 		grid.update_docfield_property("receipt_verified", "read_only", user_can_make_payment(frm) ? 0 : 1);
 	}
-	refresh_cgm_grid_attach_rows(frm, "custom_task_permits");
 }
 
 frappe.ui.form.on("Task Finance Line", {
