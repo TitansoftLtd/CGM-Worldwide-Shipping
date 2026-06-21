@@ -22,12 +22,14 @@
   "delivery_location",
   "section_dates",
   "eta",
+  "column_break_whjv",
   "ata",
+  "section_mombasa",
   "discharging_date",
   "custom_release_date",
   "column_break_dates",
-  "gate_out_date_port",
   "free_days_count_from",
+  "gate_out_date_port",
   "demurrage_start_date",
   "section_icd",
   "icd_mombasa_discharge_date",
@@ -45,13 +47,13 @@
   "section_charges",
   "free_days_start_date",
   "free_days_end_date",
+  "free_days",
   "detention_free_start_date",
   "detention_free_end_date",
-  "free_days",
   "detention_free_days",
   "kpa_free_days",
-  "port_days_used",
   "column_break_charges",
+  "port_days_used",
   "demurrage_days",
   "kpa_days",
   "detention_days",
@@ -65,14 +67,13 @@
   "warehouse_tab",
   "section_warehouse",
   "gate_in_date_warehouse",
-  "offloading_date",
-  "column_break_luhf",
-  "delivery_date",
   "warehouse_loading_date",
+  "column_break_luhf",
+  "offloading_date",
   "empty_return_and_interchange_tab",
   "section_empty_return",
-  "expected_empty_return",
   "actual_empty_return",
+  "expected_empty_return",
   "gate_in_date_depot",
   "interchange_date",
   "interchange_document",
@@ -175,23 +176,32 @@
    "label": "ATA / Berthing Date"
   },
   {
+   "collapsible": 1,
+   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "fieldname": "section_mombasa",
+   "fieldtype": "Section Break",
+   "label": "Mombasa Port"
+  },
+  {
+   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
    "fieldname": "discharging_date",
    "fieldtype": "Date",
    "label": "Gate In Port / Discharge Date"
   },
   {
-   "description": "Start of shipping-line free period (usually discharge or berthing date)",
+   "description": "First day of the shipping-line free period (usually when released from port)",
    "fieldname": "free_days_start_date",
    "fieldtype": "Date",
    "label": "Free Days Start Date"
   },
   {
-   "description": "Last day of shipping-line free period",
+   "description": "Last day of the free period \u2014 demurrage starts the day after this date",
    "fieldname": "free_days_end_date",
    "fieldtype": "Date",
    "label": "Free Days End Date"
   },
   {
+   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
    "fieldname": "custom_release_date",
    "fieldtype": "Date",
    "label": "Custom Release Date"
@@ -201,6 +211,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
    "label": "Gate Out Port Date"
@@ -208,11 +219,13 @@
   {
    "fieldname": "free_days_count_from",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Free Days Count From",
    "read_only": 1
   },
   {
-   "description": "Anchor date + demurrage free days",
+   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "description": "First chargeable day \u2014 the day after Free Days End Date",
    "fieldname": "demurrage_start_date",
    "fieldtype": "Date",
    "label": "Demurrage Start Date",
@@ -241,8 +254,10 @@
    "label": "ICD Gate Out Date"
   },
   {
+   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
    "fieldname": "section_transport",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Transport"
   },
   {
    "fieldname": "truck_number",
@@ -266,8 +281,10 @@
    "options": "Supplier"
   },
   {
+   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
    "fieldname": "section_warehouse",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Warehouse"
   },
   {
    "fieldname": "gate_in_date_warehouse",
@@ -278,11 +295,6 @@
    "fieldname": "offloading_date",
    "fieldtype": "Date",
    "label": "Offloading Date"
-  },
-  {
-   "fieldname": "delivery_date",
-   "fieldtype": "Date",
-   "label": "Delivery Date"
   },
   {
    "fieldname": "warehouse_loading_date",
@@ -316,14 +328,14 @@
    "fieldtype": "Section Break"
   },
   {
-   "description": "Derived from free days start/end when both are set",
+   "description": "Calculated from Free Days Start Date and Free Days End Date",
    "fieldname": "free_days",
    "fieldtype": "Int",
-   "label": "Free Days (Demurrage)",
+   "label": "Free Days",
    "read_only": 1
   },
   {
-   "description": "Derived from detention free start/end when both are set",
+   "description": "Calculated from Detention Free Start Date and Detention Free End Date",
    "fieldname": "detention_free_days",
    "fieldtype": "Int",
    "label": "Detention Free Days",
@@ -373,11 +385,13 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
    "fieldname": "section_empty_return",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Empty Return & Interchange"
   },
   {
-   "description": "Gate out + detention free days",
+   "description": "Last day to return the empty without detention \u2014 day after is chargeable",
    "fieldname": "expected_empty_return",
    "fieldtype": "Date",
    "label": "Expected Empty Return",
@@ -482,11 +496,15 @@
    "fieldname": "free_days_tab",
    "fieldtype": "Tab Break",
    "label": "Free Days"
+  },
+  {
+   "fieldname": "column_break_whjv",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-20 17:36:28.887117",
+ "modified": "2026-06-21 20:03:40.849494",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

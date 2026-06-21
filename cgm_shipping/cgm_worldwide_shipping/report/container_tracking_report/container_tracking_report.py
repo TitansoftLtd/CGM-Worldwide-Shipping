@@ -17,11 +17,8 @@ from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tra
 
 EXPANDED_COLUMNS = [
 	{"fieldname": "demurrage_days", "label": _("Demurrage Days"), "fieldtype": "Int", "width": 100},
-	{"fieldname": "demurrage_amount", "label": _("Demurrage Amount"), "fieldtype": "Currency", "width": 110},
 	{"fieldname": "detention_days", "label": _("Detention Days"), "fieldtype": "Int", "width": 100},
-	{"fieldname": "detention_amount", "label": _("Detention Amount"), "fieldtype": "Currency", "width": 110},
 	{"fieldname": "kpa_days", "label": _("KPA Days"), "fieldtype": "Int", "width": 80},
-	{"fieldname": "kpa_amount", "label": _("KPA Amount"), "fieldtype": "Currency", "width": 100},
 	{"fieldname": "days_outstanding", "label": _("Days Outstanding"), "fieldtype": "Int", "width": 110},
 	{"fieldname": "seal_no", "label": _("Seal Number"), "fieldtype": "Data", "width": 90},
 	{"fieldname": "type_of_container", "label": _("Type of Container"), "fieldtype": "Data", "width": 100},
@@ -238,8 +235,8 @@ def get_data(filters, station_label: str | None = None):
 			enriched.get("detention_days") or 0,
 			enriched.get("days_outstanding") or 0,
 		)
-		group_demurrage += enriched.get("demurrage_amount") or 0
-		group_detention += enriched.get("detention_amount") or 0
+		group_demurrage += enriched.get("demurrage_days") or 0
+		group_detention += enriched.get("detention_days") or 0
 		data.append(enriched)
 
 	if current_key is not None:
@@ -251,8 +248,8 @@ def get_data(filters, station_label: str | None = None):
 def _subtotal_row(demurrage: float, detention: float) -> dict:
 	return {
 		"container_number": _("Subtotal"),
-		"demurrage_amount": demurrage,
-		"detention_amount": detention,
+		"demurrage_days": demurrage,
+		"detention_days": detention,
 		"is_subtotal": 1,
 		"row_style": "font-weight:bold;background-color:#f8f9fa;",
 	}

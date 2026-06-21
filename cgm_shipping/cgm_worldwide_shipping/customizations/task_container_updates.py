@@ -1,4 +1,4 @@
-"""Task form → Container Tracker sync (tasks are the data-entry UI)."""
+"""Task form ↔ Container Tracker sync (tasks are the data-entry UI)."""
 
 from __future__ import annotations
 
@@ -12,56 +12,100 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_UPDATE_TASK_SEQS,
 	SEA_TASK_FLOW_KEY,
 	TASK_CONTAINER_UPDATES_FIELD,
-	TRANSPORT_TASK_SEQS,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	get_container_task_sequence,
 )
 
-# Task Container Update row field → Container Tracker field
-SEQ_FIELD_MAP: dict[int, list[tuple[str, str]]] = {
-	11: [("discharging_date", "discharging_date")],
-	16: [("verification_location", "current_location")],
-	18: [
-		("free_days_start_date", "free_days_start_date"),
-		("free_days_end_date", "free_days_end_date"),
-		("demurrage_daily_rate", "demurrage_daily_rate"),
-		("kpa_daily_rate", "kpa_daily_rate"),
-		("kpa_free_days_override", "kpa_free_days"),
-	],
-	19: [
-		("transporter", "transporter"),
-		("truck_number", "truck_number"),
-		("driver_name", "driver_name"),
-		("driver_contact", "driver_contact"),
-	],
-	20: [("gate_out_date_port", "gate_out_date_port")],
-	21: [
-		("gate_in_date_warehouse", "gate_in_date_warehouse"),
-		("delivery_location", "delivery_location"),
-	],
-	22: [
-		("offloading_date", "offloading_date"),
-		("container_emptied_location", "delivery_location"),
-	],
-	23: [
-		("actual_empty_return", "actual_empty_return"),
-		("gate_in_date_depot", "gate_in_date_depot"),
-	],
-	24: [
-		("interchange_date", "interchange_date"),
-		("interchange_document", "interchange_document"),
-	],
-}
+TRACKER_TO_TASK_FIELDS = (
+	"transporter",
+	"truck_number",
+	"driver_name",
+	"driver_contact",
+	"free_days_start_date",
+	"free_days_end_date",
+	"detention_free_start_date",
+	"detention_free_end_date",
+	"gate_out_date_port",
+	"gate_in_date_warehouse",
+	"delivery_location",
+	"offloading_date",
+	"actual_empty_return",
+	"interchange_date",
+)
 
-COMPLETION_FIELD_BY_SEQ: dict[int, str] = {
-	19: "truck_number",
-	20: "gate_out_date_port",
-	21: "gate_in_date_warehouse",
-	22: "offloading_date",
-	23: "actual_empty_return",
-	24: "interchange_date",
-}
+TRANSPORT_TRACKER_FIELDS = (
+	"transporter",
+	"truck_number",
+	"driver_name",
+	"driver_contact",
+)
+
+
+def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
+	"""Task grid field → Container Tracker field, keyed by configured sequence number."""
+	return {
+		get_container_task_sequence("custom_vessel_arrival_task_seq"): [
+			("discharging_date", "discharging_date"),
+		],
+		get_container_task_sequence("custom_field_clearance_task_seq"): [
+			("verification_location", "current_location"),
+		],
+		get_container_task_sequence("custom_book_trucks_task_seq"): [
+			("transporter", "transporter"),
+			("truck_number", "truck_number"),
+			("driver_name", "driver_name"),
+			("driver_contact", "driver_contact"),
+		],
+		get_container_task_sequence("custom_gate_out_task_seq"): [
+			("gate_out_date_port", "gate_out_date_port"),
+			("free_days_start_date", "free_days_start_date"),
+			("free_days_end_date", "free_days_end_date"),
+		],
+		get_container_task_sequence("custom_monitor_delivery_task_seq"): [
+			("gate_in_date_warehouse", "gate_in_date_warehouse"),
+			("delivery_location", "delivery_location"),
+		],
+		get_container_task_sequence("custom_offload_task_seq"): [
+			("offloading_date", "offloading_date"),
+			("container_emptied_location", "delivery_location"),
+		],
+		get_container_task_sequence("custom_empty_return_task_seq"): [
+			("actual_empty_return", "actual_empty_return"),
+			("gate_in_date_depot", "gate_in_date_depot"),
+			("detention_free_start_date", "detention_free_start_date"),
+			("detention_free_end_date", "detention_free_end_date"),
+		],
+		get_container_task_sequence("custom_interchange_task_seq"): [
+			("interchange_date", "interchange_date"),
+			("interchange_document", "interchange_document"),
+		],
+	}
+
+
+def _completion_field_by_seq() -> dict[int, str]:
+	return {
+		get_container_task_sequence("custom_book_trucks_task_seq"): "truck_number",
+		get_container_task_sequence("custom_gate_out_task_seq"): "gate_out_date_port",
+		get_container_task_sequence("custom_monitor_delivery_task_seq"): "gate_in_date_warehouse",
+		get_container_task_sequence("custom_offload_task_seq"): "offloading_date",
+		get_container_task_sequence("custom_empty_return_task_seq"): "actual_empty_return",
+		get_container_task_sequence("custom_interchange_task_seq"): "interchange_date",
+	}
+
+
+def _trackers_missing_field(project: str, field: str) -> list[str]:
+	trackers = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project},
+		fields=["name", "container_number", field],
+	)
+	return [
+		t.container_number
+		for t in trackers
+		if not t.get(field)
+	]
+
 
 TRACKER_SEED_FIELDS = [
 	"name",
@@ -73,11 +117,16 @@ TRACKER_SEED_FIELDS = [
 	"driver_contact",
 	"transporter",
 	"gate_out_date_port",
+	"free_days_start_date",
+	"free_days_end_date",
 	"offloading_date",
 	"actual_empty_return",
 	"interchange_date",
+	"interchange_document",
 	"gate_in_date_warehouse",
 	"delivery_location",
+	"detention_free_start_date",
+	"detention_free_end_date",
 ]
 
 
@@ -98,28 +147,45 @@ def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
 		row.current_status = tracker.get("status")
 		changed = True
 
-	if seq == 19:
-		for field in ("truck_number", "driver_name", "driver_contact", "transporter"):
+	book_seq = get_container_task_sequence("custom_book_trucks_task_seq")
+	gate_out_seq = get_container_task_sequence("custom_gate_out_task_seq")
+	monitor_seq = get_container_task_sequence("custom_monitor_delivery_task_seq")
+	offload_seq = get_container_task_sequence("custom_offload_task_seq")
+	empty_seq = get_container_task_sequence("custom_empty_return_task_seq")
+	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
+
+	if seq == book_seq:
+		for field in TRANSPORT_TRACKER_FIELDS:
 			if not row.get(field) and tracker.get(field):
 				row.set(field, tracker.get(field))
 				changed = True
-	elif seq == 20 and not row.get("gate_out_date_port") and tracker.get("gate_out_date_port"):
-		row.gate_out_date_port = tracker.get("gate_out_date_port")
-		changed = True
-	elif seq == 21:
+	elif seq == gate_out_seq:
+		for field in ("gate_out_date_port", "free_days_start_date", "free_days_end_date"):
+			if not row.get(field) and tracker.get(field):
+				row.set(field, tracker.get(field))
+				changed = True
+	elif seq == monitor_seq:
 		for field in ("gate_in_date_warehouse", "delivery_location"):
 			if not row.get(field) and tracker.get(field):
 				row.set(field, tracker.get(field))
 				changed = True
-	elif seq == 22 and not row.get("offloading_date") and tracker.get("offloading_date"):
+	elif seq == offload_seq and not row.get("offloading_date") and tracker.get("offloading_date"):
 		row.offloading_date = tracker.get("offloading_date")
 		changed = True
-	elif seq == 23 and not row.get("actual_empty_return") and tracker.get("actual_empty_return"):
-		row.actual_empty_return = tracker.get("actual_empty_return")
-		changed = True
-	elif seq == 24 and not row.get("interchange_date") and tracker.get("interchange_date"):
-		row.interchange_date = tracker.get("interchange_date")
-		changed = True
+	elif seq == empty_seq:
+		for field in (
+			"actual_empty_return",
+			"detention_free_start_date",
+			"detention_free_end_date",
+		):
+			if not row.get(field) and tracker.get(field):
+				row.set(field, tracker.get(field))
+				changed = True
+	elif seq == interchange_seq:
+		for field in ("interchange_date", "interchange_document"):
+			if not row.get(field) and tracker.get(field):
+				row.set(field, tracker.get(field))
+				changed = True
 	return changed
 
 
@@ -147,6 +213,8 @@ def seed_container_update_rows(doc) -> bool:
 	)
 
 	changed = False
+	book_seq = get_container_task_sequence("custom_book_trucks_task_seq")
+	monitor_seq = get_container_task_sequence("custom_monitor_delivery_task_seq")
 	for tracker in trackers:
 		if tracker.name in existing:
 			if _prefill_row_from_tracker(existing[tracker.name], tracker, seq):
@@ -159,7 +227,7 @@ def seed_container_update_rows(doc) -> bool:
 			"type_of_container": tracker.type_of_container,
 			"current_status": tracker.status,
 		}
-		if seq == 19:
+		if seq == book_seq:
 			row_data.update(
 				{
 					"truck_number": tracker.truck_number or "",
@@ -168,7 +236,7 @@ def seed_container_update_rows(doc) -> bool:
 					"transporter": tracker.transporter or "",
 				}
 			)
-		elif seq == 21:
+		elif seq == monitor_seq:
 			row_data.update(
 				{
 					"gate_in_date_warehouse": tracker.gate_in_date_warehouse,
@@ -189,7 +257,7 @@ def apply_container_updates_from_task(doc) -> None:
 		return
 
 	seq = _sea_task_seq(doc)
-	field_pairs = SEQ_FIELD_MAP.get(seq, [])
+	field_pairs = _seq_field_map().get(seq, [])
 	if not field_pairs:
 		return
 
@@ -219,6 +287,144 @@ def apply_container_updates_from_task(doc) -> None:
 		ct.save(ignore_permissions=True)
 
 
+def sync_tracker_fields_to_open_task_rows(tracker) -> None:
+	"""Push tracker edits back to open transport/delivery task grids."""
+	if not tracker.project or frappe.flags.get("cgm_syncing_tracker_to_task"):
+		return
+
+	sync_seqs = {
+		get_container_task_sequence("custom_book_trucks_task_seq"): TRANSPORT_TRACKER_FIELDS,
+		get_container_task_sequence("custom_gate_out_task_seq"): (
+			"gate_out_date_port",
+			"free_days_start_date",
+			"free_days_end_date",
+		),
+		get_container_task_sequence("custom_monitor_delivery_task_seq"): (
+			"gate_in_date_warehouse",
+			"delivery_location",
+		),
+		get_container_task_sequence("custom_offload_task_seq"): ("offloading_date",),
+		get_container_task_sequence("custom_empty_return_task_seq"): (
+			"actual_empty_return",
+			"gate_in_date_depot",
+			"detention_free_start_date",
+			"detention_free_end_date",
+		),
+		get_container_task_sequence("custom_interchange_task_seq"): (
+			"interchange_date",
+			"interchange_document",
+		),
+	}
+
+	tasks = frappe.get_all(
+		"Task",
+		filters={
+			"project": tracker.project,
+			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"status": ["not in", ["Completed", "Cancelled"]],
+			"custom_sequence_no": ["in", list(sync_seqs.keys())],
+		},
+		fields=["name", "custom_sequence_no"],
+	)
+	if not tasks:
+		return
+
+	frappe.flags.cgm_syncing_tracker_to_task = True
+	try:
+		for task_row in tasks:
+			fields = sync_seqs.get(int(task_row.custom_sequence_no or 0))
+			if not fields:
+				continue
+			task = frappe.get_doc("Task", task_row.name)
+			if not task.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
+				continue
+			changed = False
+			for row in task.get(TASK_CONTAINER_UPDATES_FIELD) or []:
+				if row.get("container_tracker") != tracker.name:
+					continue
+				for field in fields:
+					val = tracker.get(field)
+					if val and row.get(field) != val:
+						row.set(field, val)
+						changed = True
+			if changed:
+				task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_tracker_to_task = False
+
+
+def _auto_complete_container_task(task_name: str, project: str) -> bool:
+	if frappe.flags.get("cgm_auto_completing_container_task"):
+		return False
+
+	frappe.flags.cgm_auto_completing_container_task = True
+	try:
+		frappe.db.set_value(
+			"Task",
+			task_name,
+			{
+				"status": "Completed",
+				"completed_by": frappe.session.user,
+				"completed_on": now_datetime(),
+			},
+			update_modified=True,
+		)
+		frappe.clear_document_cache("Task", task_name)
+	finally:
+		frappe.flags.cgm_auto_completing_container_task = False
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+		sync_project_shipment_status_from_tasks,
+	)
+
+	sync_project_shipment_status_from_tasks(project)
+	frappe.publish_realtime(
+		"cgm_project_tracking_refresh",
+		{"project": project},
+		doctype="Project",
+		docname=project,
+	)
+	return True
+
+
+def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
+	"""Complete an open container step task when every tracker has the step field filled."""
+	check_field = _completion_field_by_seq().get(seq)
+	if not check_field or not project:
+		return False
+
+	if _trackers_missing_field(project, check_field):
+		return False
+
+	task_name = frappe.db.get_value(
+		"Task",
+		{
+			"project": project,
+			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"custom_sequence_no": seq,
+			"status": ["not in", ["Completed", "Cancelled"]],
+		},
+		"name",
+	)
+	if not task_name:
+		return False
+
+	return _auto_complete_container_task(task_name, project)
+
+
+def check_all_container_tasks_for_project(project: str) -> None:
+	"""After tracker updates, auto-complete any open transport step whose containers are all done."""
+	if not project or frappe.flags.get("cgm_checking_container_task_completion"):
+		return
+
+	frappe.flags.cgm_checking_container_task_completion = True
+	try:
+		for seq in _completion_field_by_seq():
+			try_auto_complete_container_task_for_seq(project, seq)
+	finally:
+		frappe.flags.cgm_checking_container_task_completion = False
+
+
 def check_task_container_completion(doc) -> None:
 	"""Auto-complete transport tasks when every project container satisfies the step."""
 	if doc.status == "Completed":
@@ -227,48 +433,41 @@ def check_task_container_completion(doc) -> None:
 		return
 
 	seq = _sea_task_seq(doc)
-	check_field = COMPLETION_FIELD_BY_SEQ.get(seq)
-	if not check_field:
+	if not _completion_field_by_seq().get(seq):
 		return
 
-	trackers = frappe.get_all(
-		"Container Tracker",
-		filters={"project": doc.project},
-		fields=["name", "container_number", check_field],
-	)
-	if not trackers:
+	try_auto_complete_container_task_for_seq(doc.project, seq)
+
+
+def validate_container_step_task_completion(doc) -> None:
+	"""Manual Complete only when every container tracker has the step recorded."""
+	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+		return
+	if doc.status != "Completed":
 		return
 
-	if not all(t.get(check_field) for t in trackers):
+	prev = doc.get_doc_before_save()
+	if prev and prev.status == "Completed":
 		return
 
-	frappe.db.set_value(
-		"Task",
-		doc.name,
-		{
-			"status": "Completed",
-			"completed_by": frappe.session.user,
-			"completed_on": now_datetime(),
-		},
-		update_modified=True,
-	)
-	frappe.clear_document_cache("Task", doc.name)
+	seq = _sea_task_seq(doc)
+	check_field = _completion_field_by_seq().get(seq)
+	if not check_field or not doc.get("project"):
+		return
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-		sync_project_shipment_status_from_tasks,
-	)
-
-	sync_project_shipment_status_from_tasks(doc.project)
-	frappe.publish_realtime(
-		"cgm_project_tracking_refresh",
-		{"project": doc.project},
-		doctype="Project",
-		docname=doc.project,
-	)
+	missing = _trackers_missing_field(doc.project, check_field)
+	if missing:
+		label = frappe.unscrub(check_field.replace("_", " "))
+		frappe.throw(
+			_(
+				"Every container must have <b>{0}</b> before completing this task. "
+				"Still open: {1}"
+			).format(label, ", ".join(missing))
+		)
 
 
 def validate_task_19_container_updates(doc) -> None:
-	"""Task 19: truck details for at least one container OR task-level reason."""
+	"""Book-trucks task: truck details for at least one container OR task-level reason."""
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
 		return
 	if _sea_task_seq(doc) != get_container_task_sequence("custom_book_trucks_task_seq"):

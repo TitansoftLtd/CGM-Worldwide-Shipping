@@ -30,6 +30,8 @@
   "offloading_exception_reason",
   "actual_empty_return",
   "gate_in_date_depot",
+  "detention_free_start_date",
+  "detention_free_end_date",
   "transporter_at_return",
   "interchange_date",
   "interchange_document"
@@ -87,25 +89,26 @@
    "label": "Current Location at Port"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "depends_on": "eval:parent.custom_sequence_no == 22",
    "fieldname": "free_days_start_date",
    "fieldtype": "Date",
    "label": "Free Days Start Date"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "depends_on": "eval:parent.custom_sequence_no == 22",
    "fieldname": "free_days_end_date",
    "fieldtype": "Date",
    "label": "Free Days End Date"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "depends_on": "eval:parent.custom_sequence_no == 22",
    "fieldname": "demurrage_daily_rate",
    "fieldtype": "Currency",
+   "hidden": 1,
    "label": "Demurrage Daily Rate"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "depends_on": "eval:parent.custom_sequence_no == 22",
    "fieldname": "kpa_daily_rate",
    "fieldtype": "Currency",
    "label": "KPA Daily Rate"
@@ -207,6 +210,18 @@
    "fieldname": "gate_in_date_depot",
    "fieldtype": "Date",
    "label": "Gate In at Depot"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 25",
+   "fieldname": "detention_free_start_date",
+   "fieldtype": "Date",
+   "label": "Detention Free Start Date"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 25",
+   "fieldname": "detention_free_end_date",
+   "fieldtype": "Date",
+   "label": "Detention Free End Date"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 25",
