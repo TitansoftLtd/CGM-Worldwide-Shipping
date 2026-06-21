@@ -195,7 +195,9 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_permit_stage_for_sequence,
 		is_entry_application_task,
+		is_kpa_application_task,
 		is_permit_application_task,
+		is_shipping_line_application_task,
 		is_ucr_application_task,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -237,11 +239,23 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 				r.name, APPLICATION_FINANCE_PROFILES["Entry Application"]
 			)
 		)
+		and not (
+			is_shipping_line_application_task(r.seq)
+			and application_invoice_submitted(
+				r.name, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
+			)
+		)
+		and not (
+			is_kpa_application_task(r.seq)
+			and application_invoice_submitted(
+				r.name, APPLICATION_FINANCE_PROFILES["KPA Application"]
+			)
+		)
 	]
-	# Transport tasks (19–24) run in parallel — do not block each other.
-	if 19 <= before_sequence <= 24:
+	# Transport tasks (21–26) run in parallel — do not block each other.
+	if 21 <= before_sequence <= 26:
 		filtered = [
-			r for r in filtered if not (19 <= r.seq < before_sequence)
+			r for r in filtered if not (21 <= r.seq < before_sequence)
 		]
 	return filtered
 
@@ -359,6 +373,14 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 		)
 
 		enforce_entry_finance_gate(project)
+		return
+
+	if gate_rule == "KPA Finance Complete":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+			enforce_kpa_finance_gate,
+		)
+
+		enforce_kpa_finance_gate(project)
 		return
 
 	if gate_rule == "All Sea Tasks Complete":

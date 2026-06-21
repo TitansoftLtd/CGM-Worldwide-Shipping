@@ -171,6 +171,7 @@ def declarant_application_department_stems() -> frozenset[str]:
 	"""Template department stems for UCR / permit application tasks."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		entry_application_sequences,
+		kpa_application_sequences,
 		permit_application_sequences,
 		shipping_line_application_sequences,
 		ucr_application_sequences,
@@ -182,6 +183,7 @@ def declarant_application_department_stems() -> frozenset[str]:
 		| ucr_application_sequences()
 		| entry_application_sequences()
 		| shipping_line_application_sequences()
+		| kpa_application_sequences()
 	):
 		stem = department_stem_for_sequence(seq)
 		if stem:

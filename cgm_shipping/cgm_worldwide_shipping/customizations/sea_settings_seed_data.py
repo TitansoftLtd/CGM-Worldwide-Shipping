@@ -49,8 +49,6 @@ DEFAULT_DOC_CODES: dict[int, list[str]] = {
 	12: [],
 	15: ["DO"],
 	18: ["FIELD", "DELIVERY_NOTE"],
-	19: [SUPPLIER_INVOICE_CODE],
-	20: [SUPPLIER_INVOICE_CODE],
 }
 
 DEFAULT_PERMIT_APPLICATION_SEQS: frozenset[int] = frozenset({5, 16})
@@ -60,6 +58,7 @@ DEFAULT_AUTO_COMPLETE_SEQS: frozenset[int] = frozenset({1, 2})
 DEFAULT_UCR_APPLICATION_SEQS: frozenset[int] = frozenset({3})
 DEFAULT_ENTRY_APPLICATION_SEQS: frozenset[int] = frozenset({11})
 DEFAULT_SHIPPING_LINE_APPLICATION_SEQS: frozenset[int] = frozenset({13})
+DEFAULT_KPA_APPLICATION_SEQS: frozenset[int] = frozenset({19})
 DEFAULT_FINANCE_PAYMENT_SEQS: frozenset[int] = frozenset({4, 6, 12, 14, 17, 20})
 DEFAULT_FINANCE_KIND_BY_SEQ: dict[int, str] = {
 	4: "UCR",
@@ -67,7 +66,7 @@ DEFAULT_FINANCE_KIND_BY_SEQ: dict[int, str] = {
 	12: "Entry Slip",
 	14: "Shipping Line",
 	17: "Permit",
-	20: "Standard",
+	20: "KPA",
 }
 
 DEFAULT_SEA_WORKFLOW_TASK_GATES: list[dict] = [
@@ -84,7 +83,7 @@ DEFAULT_SEA_WORKFLOW_TASK_GATES: list[dict] = [
 	{"shipment_workflow_state": "Line Paid & DO Lodged", "min_completed_task_seq": 15, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "Post-clearance", "min_completed_task_seq": 16, "gate_rule": "Permit Invoices Submitted"},
 	{"shipment_workflow_state": "Field Clearance", "min_completed_task_seq": 18, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "KPA Paid", "min_completed_task_seq": 20, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "KPA Paid", "min_completed_task_seq": 20, "gate_rule": "KPA Finance Complete"},
 	{"shipment_workflow_state": "In Delivery", "min_completed_task_seq": 20, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "Containers Returned", "min_completed_task_seq": 25, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "Completed", "min_completed_task_seq": 26, "gate_rule": "All Sea Tasks Complete"},
@@ -101,6 +100,8 @@ def build_requirement_seed_rows() -> list[dict]:
 		rows.append({"sequence_no": seq, "requirement_type": "Entry Application", "value": ""})
 	for seq in sorted(DEFAULT_SHIPPING_LINE_APPLICATION_SEQS):
 		rows.append({"sequence_no": seq, "requirement_type": "Shipping Line Application", "value": ""})
+	for seq in sorted(DEFAULT_KPA_APPLICATION_SEQS):
+		rows.append({"sequence_no": seq, "requirement_type": "KPA Application", "value": ""})
 	for seq in sorted(DEFAULT_PERMIT_APPLICATION_SEQS):
 		rows.append({"sequence_no": seq, "requirement_type": "Permit Application", "value": ""})
 		rows.append(

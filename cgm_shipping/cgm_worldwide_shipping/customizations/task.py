@@ -7,6 +7,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_TASK_SEQ_DEFAULTS,
 	PERMIT_REGISTER_FIELD,
 	PRE_CLEARANCE_STAGE,
+	POST_CLEARANCE_STAGE,
 	SEA_TASK_FLOW_KEY,
 	TASK_DOCUMENTS_FIELD,
 	TASK_FINANCE_FIELD,
@@ -136,6 +137,12 @@ def is_shipping_line_application_task(sequence_no: int) -> bool:
 	)
 
 
+def is_kpa_application_task(sequence_no: int) -> bool:
+	return any(
+		r.requirement_type == "KPA Application" for r in rows_by_sequence().get(sequence_no, [])
+	)
+
+
 def is_finance_payment_task(sequence_no: int) -> bool:
 	return any(
 		r.requirement_type == "Finance Payment" for r in rows_by_sequence().get(sequence_no, [])
@@ -178,6 +185,8 @@ def _normalize_finance_payment_kind(value: str) -> str:
 		return "Shipping Line"
 	if normalized == "PERMIT":
 		return "Permit"
+	if normalized == "KPA":
+		return "KPA"
 	if normalized == "STANDARD":
 		return "Standard"
 	return value.strip()
@@ -238,6 +247,14 @@ def shipping_line_application_sequences() -> frozenset[int]:
 	)
 
 
+def kpa_application_sequences() -> frozenset[int]:
+	return frozenset(
+		seq
+		for seq, rows in rows_by_sequence().items()
+		if any(r.requirement_type == "KPA Application" for r in rows)
+	)
+
+
 def light_proof_sequences() -> frozenset[int]:
 	return frozenset(
 		seq
@@ -282,6 +299,10 @@ def is_shipping_line_finance_payment_task(sequence_no: int) -> bool:
 	return get_finance_payment_kind(sequence_no) == "Shipping Line"
 
 
+def is_kpa_finance_payment_task(sequence_no: int) -> bool:
+	return get_finance_payment_kind(sequence_no) == "KPA"
+
+
 def is_permit_finance_payment_task(sequence_no: int) -> bool:
 	return get_finance_payment_kind(sequence_no) == "Permit"
 
@@ -298,6 +319,10 @@ def is_shipping_line_workflow_task(sequence_no: int) -> bool:
 	return is_shipping_line_application_task(sequence_no) or is_shipping_line_finance_payment_task(
 		sequence_no
 	)
+
+
+def is_kpa_workflow_task(sequence_no: int) -> bool:
+	return is_kpa_application_task(sequence_no) or is_kpa_finance_payment_task(sequence_no)
 
 
 def is_configured_application_workflow_task(sequence_no: int) -> bool:
@@ -338,9 +363,16 @@ def permit_finance_by_application_sequence() -> dict[int, int]:
 	)
 	if not permit_finance:
 		return mapping
+
+	pre_finance = permit_finance[0]
+	post_finance = permit_finance[1] if len(permit_finance) > 1 else None
+
 	for app_seq in sorted(permit_application_sequences()):
-		if _permit_stage_value_for_application(app_seq) == PRE_CLEARANCE_STAGE:
-			mapping[app_seq] = permit_finance[0]
+		stage = _permit_stage_value_for_application(app_seq)
+		if stage == PRE_CLEARANCE_STAGE:
+			mapping[app_seq] = pre_finance
+		elif stage == POST_CLEARANCE_STAGE and post_finance:
+			mapping[app_seq] = post_finance
 	return mapping
 
 
@@ -352,6 +384,24 @@ def get_pre_clearance_permit_application_sequence() -> int | None:
 	for seq in sorted(permit_application_sequences()):
 		if _permit_stage_value_for_application(seq) == PRE_CLEARANCE_STAGE:
 			return seq
+	return None
+
+
+def get_post_clearance_permit_application_sequence() -> int | None:
+	for seq in sorted(permit_application_sequences()):
+		if _permit_stage_value_for_application(seq) == POST_CLEARANCE_STAGE:
+			return seq
+	return None
+
+
+def get_application_sequence_for_finance_task(task) -> int | None:
+	"""Permit application seq paired with this finance permit payment task."""
+	fin_seq = int(task.get("custom_sequence_no") or 0)
+	if not is_permit_finance_payment_task(fin_seq):
+		return None
+	for app_seq, mapped_fin in permit_finance_by_application_sequence().items():
+		if mapped_fin == fin_seq:
+			return app_seq
 	return None
 
 
@@ -425,6 +475,7 @@ def get_sea_task_ui_sequences() -> dict:
 	shipping_line_finance = sorted(
 		s for s in finance_payment_sequences() if is_shipping_line_finance_payment_task(s)
 	)
+	kpa_finance = sorted(s for s in finance_payment_sequences() if is_kpa_finance_payment_task(s))
 	stage_by_seq = permit_stage_by_sequence()
 	return {
 		"payment_seqs": sorted(finance_payment_sequences()),
@@ -435,11 +486,13 @@ def get_sea_task_ui_sequences() -> dict:
 		"ucr_application_seqs": sorted(ucr_application_sequences()),
 		"entry_application_seqs": sorted(entry_application_sequences()),
 		"shipping_line_application_seqs": sorted(shipping_line_application_sequences()),
+		"kpa_application_seqs": sorted(kpa_application_sequences()),
 		"finance_document_seqs": sorted(finance_payment_with_supplier_invoice_sequences()),
 		"permit_finance_seqs": permit_finance,
 		"ucr_finance_seqs": ucr_finance,
 		"entry_finance_seqs": entry_finance,
 		"shipping_line_finance_seqs": shipping_line_finance,
+		"kpa_finance_seqs": kpa_finance,
 		"permit_stage_by_seq": {str(k): v for k, v in stage_by_seq.items()},
 		"permissions": get_task_form_permissions(),
 		"finance_department": frappe.db.get_single_value(
@@ -1270,6 +1323,22 @@ def seed_required_task_document_rows(task) -> None:
 
 		ensure_certificate_document_row(task, APPLICATION_FINANCE_PROFILES["Entry Application"])
 		return
+	if is_shipping_line_application_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			APPLICATION_FINANCE_PROFILES,
+			ensure_certificate_document_row,
+		)
+
+		ensure_certificate_document_row(task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"])
+		return
+	if is_kpa_application_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			APPLICATION_FINANCE_PROFILES,
+			ensure_certificate_document_row,
+		)
+
+		ensure_certificate_document_row(task, APPLICATION_FINANCE_PROFILES["KPA Application"])
+		return
 
 	required = get_required_document_codes(seq)
 	if not required:
@@ -1334,6 +1403,17 @@ def validate_sea_task_can_complete(task) -> None:
 		validate_application_not_manually_completed(
 			task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
 		)
+	elif is_kpa_application_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			APPLICATION_FINANCE_PROFILES,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+			validate_application_not_manually_completed,
+		)
+
+		validate_application_not_manually_completed(
+			task, APPLICATION_FINANCE_PROFILES["KPA Application"]
+		)
 	elif is_document_checkpoint_task(seq):
 		validate_document_checkpoint_task(task)
 	elif is_light_proof_task(seq):
@@ -1371,6 +1451,17 @@ def validate_sea_task_can_complete(task) -> None:
 
 			validate_finance_application_payment_task(
 				task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
+			)
+		elif is_kpa_finance_payment_task(seq):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+				APPLICATION_FINANCE_PROFILES,
+			)
+			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+				validate_finance_application_payment_task,
+			)
+
+			validate_finance_application_payment_task(
+				task, APPLICATION_FINANCE_PROFILES["KPA Application"]
 			)
 		else:
 			validate_finance_task(task)
@@ -1994,6 +2085,18 @@ def build_shipping_line_purchase_invoice_lines(task) -> list[dict]:
 	)
 
 
+def build_kpa_purchase_invoice_lines(task) -> list[dict]:
+	"""Purchase Invoice Item rows from the KPA invoice finance line."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		build_application_purchase_invoice_lines,
+	)
+
+	return build_application_purchase_invoice_lines(
+		task, APPLICATION_FINANCE_PROFILES["KPA Application"]
+	)
+
+
 @frappe.whitelist()
 def get_task_defaults(task_name: str) -> dict:
 	"""Defaults for Purchase Invoice / Payment Entry opened from a finance Task."""
@@ -2033,12 +2136,23 @@ def get_task_defaults(task_name: str) -> dict:
 			task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
 		)
 		task.reload()
+	if is_kpa_finance_payment_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			APPLICATION_FINANCE_PROFILES,
+			ensure_application_finance_lines_saved,
+		)
+
+		ensure_application_finance_lines_saved(
+			task, APPLICATION_FINANCE_PROFILES["KPA Application"]
+		)
+		task.reload()
 	permit_rows = get_permit_rows_for_purchase_invoice(task)
 	permit_lines = build_permit_purchase_invoice_lines(task)
 	ucr_lines = build_ucr_purchase_invoice_lines(task)
 	entry_lines = build_entry_purchase_invoice_lines(task)
 	shipping_line_lines = build_shipping_line_purchase_invoice_lines(task)
-	finance_line_items = permit_lines + ucr_lines + entry_lines + shipping_line_lines
+	kpa_lines = build_kpa_purchase_invoice_lines(task)
+	finance_line_items = permit_lines + ucr_lines + entry_lines + shipping_line_lines + kpa_lines
 	remarks = f"{task.subject} ({task.name}) - {ctx['project']}"
 	if is_ucr_finance_payment_task(int(task.get("custom_sequence_no") or 0)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (

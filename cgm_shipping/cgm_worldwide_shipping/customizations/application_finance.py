@@ -18,6 +18,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	SHIPPING_LINE_INVOICE_TO_FINANCE,
 	SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
 	SHIPPING_LINE_RECEIPT_VERIFY_FINANCE,
+	KPA_INVOICE_TO_FINANCE,
+	KPA_RECEIPT_FOR_SUPERVISOR,
+	KPA_RECEIPT_VERIFY_FINANCE,
 	SEA_TASK_FLOW_KEY,
 	SHIPMENT_DOCUMENTS_FIELD,
 	TASK_DOCUMENTS_FIELD,
@@ -106,6 +109,24 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		notification_invoice=SHIPPING_LINE_INVOICE_TO_FINANCE,
 		notification_receipt_declarant=SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
 		notification_receipt_verify=SHIPPING_LINE_RECEIPT_VERIFY_FINANCE,
+		application_submitted_field=None,
+		application_invoice_verified_field=None,
+		application_receipt_verified_field=None,
+		sync_to_idf_record=False,
+		legacy_certificate_codes=frozenset(),
+	),
+	"KPA Application": ApplicationFinanceProfile(
+		key="kpa",
+		application_requirement_type="KPA Application",
+		finance_payment_kind="KPA",
+		payment_item="KPA",
+		invoice_label="KPA Invoice",
+		receipt_label="KPA Receipt",
+		certificate_document_code="",
+		gate_rule="KPA Finance Complete",
+		notification_invoice=KPA_INVOICE_TO_FINANCE,
+		notification_receipt_declarant=KPA_RECEIPT_FOR_SUPERVISOR,
+		notification_receipt_verify=KPA_RECEIPT_VERIFY_FINANCE,
 		application_submitted_field=None,
 		application_invoice_verified_field=None,
 		application_receipt_verified_field=None,
@@ -398,6 +419,28 @@ def copy_application_receipt_to_finance_task(
 	return finance_name
 
 
+def ensure_application_receipt_on_finance_task(
+	finance_task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""Copy the application-task receipt onto the finance task when missing."""
+	seq = int(finance_task.get("custom_sequence_no") or 0)
+	if not is_application_finance_task(seq, profile):
+		return False
+	if receipt_attached(finance_task, profile):
+		return True
+	if not finance_task.project:
+		return False
+	app_name = get_application_task(finance_task.project, profile)
+	if not app_name:
+		return False
+	if not copy_application_receipt_to_finance_task(
+		frappe.get_doc("Task", app_name), profile
+	):
+		return False
+	finance_task.reload()
+	return receipt_attached(finance_task, profile)
+
+
 def application_payment_made_for_project(
 	project: str, profile: ApplicationFinanceProfile
 ) -> bool:
@@ -406,7 +449,11 @@ def application_payment_made_for_project(
 	finance_name = get_application_finance_task(project, profile)
 	if not finance_name:
 		return False
-	pe_name = frappe.db.get_value("Task", finance_name, "custom_payment_entry")
+	pe_name, je_name = frappe.db.get_value(
+		"Task", finance_name, ("custom_payment_entry", "custom_journal_entry")
+	)
+	if je_name:
+		return True
 	if not pe_name:
 		return False
 	return int(frappe.db.get_value("Payment Entry", pe_name, "docstatus") or 0) == 1
