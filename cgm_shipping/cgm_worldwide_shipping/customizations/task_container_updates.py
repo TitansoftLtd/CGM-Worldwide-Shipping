@@ -6,11 +6,13 @@ from typing import Any
 
 import frappe
 from frappe import _
+from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_UPDATE_TASK_SEQS,
 	SEA_TASK_FLOW_KEY,
 	TASK_CONTAINER_UPDATES_FIELD,
+	TRANSPORT_TASK_SEQS,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	get_container_task_sequence,
@@ -52,6 +54,32 @@ SEQ_FIELD_MAP: dict[int, list[tuple[str, str]]] = {
 	],
 }
 
+COMPLETION_FIELD_BY_SEQ: dict[int, str] = {
+	19: "truck_number",
+	20: "gate_out_date_port",
+	21: "gate_in_date_warehouse",
+	22: "offloading_date",
+	23: "actual_empty_return",
+	24: "interchange_date",
+}
+
+TRACKER_SEED_FIELDS = [
+	"name",
+	"container_number",
+	"type_of_container",
+	"status",
+	"truck_number",
+	"driver_name",
+	"driver_contact",
+	"transporter",
+	"gate_out_date_port",
+	"offloading_date",
+	"actual_empty_return",
+	"interchange_date",
+	"gate_in_date_warehouse",
+	"delivery_location",
+]
+
 
 def _sea_task_seq(doc) -> int:
 	return int(doc.get("custom_sequence_no") or 0)
@@ -64,8 +92,39 @@ def is_container_update_task(doc) -> bool:
 	)
 
 
+def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
+	changed = False
+	if row.current_status != tracker.get("status"):
+		row.current_status = tracker.get("status")
+		changed = True
+
+	if seq == 19:
+		for field in ("truck_number", "driver_name", "driver_contact", "transporter"):
+			if not row.get(field) and tracker.get(field):
+				row.set(field, tracker.get(field))
+				changed = True
+	elif seq == 20 and not row.get("gate_out_date_port") and tracker.get("gate_out_date_port"):
+		row.gate_out_date_port = tracker.get("gate_out_date_port")
+		changed = True
+	elif seq == 21:
+		for field in ("gate_in_date_warehouse", "delivery_location"):
+			if not row.get(field) and tracker.get(field):
+				row.set(field, tracker.get(field))
+				changed = True
+	elif seq == 22 and not row.get("offloading_date") and tracker.get("offloading_date"):
+		row.offloading_date = tracker.get("offloading_date")
+		changed = True
+	elif seq == 23 and not row.get("actual_empty_return") and tracker.get("actual_empty_return"):
+		row.actual_empty_return = tracker.get("actual_empty_return")
+		changed = True
+	elif seq == 24 and not row.get("interchange_date") and tracker.get("interchange_date"):
+		row.interchange_date = tracker.get("interchange_date")
+		changed = True
+	return changed
+
+
 def seed_container_update_rows(doc) -> bool:
-	"""Pre-fill custom_container_updates from project Container Trackers."""
+	"""Pre-fill custom_container_updates from live Container Tracker data."""
 	if doc.is_new() or not is_container_update_task(doc):
 		return False
 	if not doc.get("project"):
@@ -73,8 +132,9 @@ def seed_container_update_rows(doc) -> bool:
 	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
 		return False
 
+	seq = _sea_task_seq(doc)
 	existing = {
-		row.container_tracker
+		row.container_tracker: row
 		for row in doc.get(TASK_CONTAINER_UPDATES_FIELD) or []
 		if row.get("container_tracker")
 	}
@@ -82,29 +142,47 @@ def seed_container_update_rows(doc) -> bool:
 	trackers = frappe.get_all(
 		"Container Tracker",
 		filters={"project": doc.project},
-		fields=["name", "container_number", "type_of_container", "status"],
+		fields=TRACKER_SEED_FIELDS,
 		order_by="container_number asc",
 	)
 
 	changed = False
 	for tracker in trackers:
 		if tracker.name in existing:
+			if _prefill_row_from_tracker(existing[tracker.name], tracker, seq):
+				changed = True
 			continue
-		doc.append(
-			TASK_CONTAINER_UPDATES_FIELD,
-			{
-				"container_tracker": tracker.name,
-				"container_number": tracker.container_number,
-				"type_of_container": tracker.type_of_container,
-				"current_status": tracker.status,
-			},
-		)
+
+		row_data = {
+			"container_tracker": tracker.name,
+			"container_number": tracker.container_number,
+			"type_of_container": tracker.type_of_container,
+			"current_status": tracker.status,
+		}
+		if seq == 19:
+			row_data.update(
+				{
+					"truck_number": tracker.truck_number or "",
+					"driver_name": tracker.driver_name or "",
+					"driver_contact": tracker.driver_contact or "",
+					"transporter": tracker.transporter or "",
+				}
+			)
+		elif seq == 21:
+			row_data.update(
+				{
+					"gate_in_date_warehouse": tracker.gate_in_date_warehouse,
+					"delivery_location": tracker.delivery_location or "",
+				}
+			)
+
+		doc.append(TASK_CONTAINER_UPDATES_FIELD, row_data)
 		changed = True
 	return changed
 
 
 def apply_container_updates_from_task(doc) -> None:
-	"""Push task container grid rows to linked Container Trackers."""
+	"""Push filled task container grid rows to linked Container Trackers (partial saves OK)."""
 	if not is_container_update_task(doc):
 		return
 	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
@@ -141,6 +219,54 @@ def apply_container_updates_from_task(doc) -> None:
 		ct.save(ignore_permissions=True)
 
 
+def check_task_container_completion(doc) -> None:
+	"""Auto-complete transport tasks when every project container satisfies the step."""
+	if doc.status == "Completed":
+		return
+	if not doc.get("project"):
+		return
+
+	seq = _sea_task_seq(doc)
+	check_field = COMPLETION_FIELD_BY_SEQ.get(seq)
+	if not check_field:
+		return
+
+	trackers = frappe.get_all(
+		"Container Tracker",
+		filters={"project": doc.project},
+		fields=["name", "container_number", check_field],
+	)
+	if not trackers:
+		return
+
+	if not all(t.get(check_field) for t in trackers):
+		return
+
+	frappe.db.set_value(
+		"Task",
+		doc.name,
+		{
+			"status": "Completed",
+			"completed_by": frappe.session.user,
+			"completed_on": now_datetime(),
+		},
+		update_modified=True,
+	)
+	frappe.clear_document_cache("Task", doc.name)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+		sync_project_shipment_status_from_tasks,
+	)
+
+	sync_project_shipment_status_from_tasks(doc.project)
+	frappe.publish_realtime(
+		"cgm_project_tracking_refresh",
+		{"project": doc.project},
+		doctype="Project",
+		docname=doc.project,
+	)
+
+
 def validate_task_19_container_updates(doc) -> None:
 	"""Task 19: truck details for at least one container OR task-level reason."""
 	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
@@ -173,7 +299,4 @@ def validate_task_19_container_updates(doc) -> None:
 def on_task_onload_container_updates(doc) -> None:
 	if doc.is_new():
 		return
-	if seed_container_update_rows(doc):
-		# Keep this strictly in-memory on load. Persist only on explicit user save
-		# to avoid "modified after you opened it" conflicts.
-		return
+	seed_container_update_rows(doc)
