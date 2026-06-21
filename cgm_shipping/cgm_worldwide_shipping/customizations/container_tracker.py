@@ -35,6 +35,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates impo
 	get_valid_destinations,
 	resolve_container_category,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+	build_project_ata_updates,
+	get_project_ata,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
 )
@@ -558,7 +562,7 @@ def _populate_tracker_from_project_and_row(ct, project, row, *, at_creation: boo
 	ct.delivery_destination = _project_delivery_destination(project.name)
 	if at_creation or not ct.get("eta"):
 		ct.eta = project.get("custom_eta")
-	project_ata = project.get("custom_ata")
+	project_ata = get_project_ata(project)
 	if project_ata and (at_creation or not ct.get("ata")):
 		ct.ata = project_ata
 	ct.container_mode = _derive_container_mode(project)
@@ -666,7 +670,7 @@ def _apply_bulk_vessel_arrival(project, trackers: list, today_date, task_doc=Non
 	"""Task 11 — create trackers (vessel arrived); discharge dates come from task grid."""
 	create_container_trackers_for_project(project.name)
 	trackers = _trackers_for_project(project.name)
-	ata = project.get("custom_ata")
+	ata = get_project_ata(project)
 	for ct in trackers:
 		if ata:
 			ct.ata = ata
@@ -874,7 +878,7 @@ def handle_sea_task_container_event(
 	if not is_bulk_container_event(seq):
 		return
 
-	project = frappe.get_cached_doc("Project", project_name)
+	project = frappe.get_doc("Project", project_name)
 	today_date = getdate(today())
 	trackers = _trackers_for_project(project_name)
 
@@ -899,6 +903,110 @@ def on_gate_out(project_name: str, *, task_doc=None) -> None:
 def on_empty_return(project_name: str, *, task_doc=None) -> None:
 	handle_sea_task_container_event(
 		project_name, get_empty_return_task_sequence(), task_doc=task_doc
+	)
+
+
+def _project_container_rows(project) -> list:
+	container_field = get_container_table_field_for_doctype("Project")
+	if not container_field:
+		return []
+	return [
+		row
+		for row in project.get(container_field) or []
+		if (row.get("container_number") or "").strip()
+	]
+
+
+def ensure_container_trackers_at_port_arrival(
+	project_name: str,
+	*,
+	task_doc=None,
+	mark_confirmed: bool = False,
+	user: str | None = None,
+	ata=None,
+) -> dict:
+	"""Create/sync container trackers when shipment arrives at port (early or on Entry task)."""
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	if not frappe.db.exists("Project", project_name):
+		frappe.throw(_("Project not found"))
+
+	project = frappe.get_doc("Project", project_name)
+	if project.get("custom_mode_of_transport") != "Sea":
+		frappe.throw(_("Container tracking at port arrival applies to Sea shipments only."))
+
+	if not _project_container_rows(project):
+		frappe.throw(_("Add containers on the project before creating container trackers."))
+
+	updates: dict[str, Any] = {}
+	if ata:
+		updates.update(build_project_ata_updates(project, ata))
+	elif not get_project_ata(project):
+		updates.update(build_project_ata_updates(project, getdate(today())))
+
+	if mark_confirmed and project.meta.has_field("custom_port_arrival_confirmed"):
+		if not project.get("custom_port_arrival_confirmed"):
+			updates["custom_port_arrival_confirmed"] = 1
+			updates["custom_port_arrival_confirmed_on"] = frappe.utils.now_datetime()
+			updates["custom_port_arrival_confirmed_by"] = user or frappe.session.user
+
+	if project.meta.has_field("custom_berth_phase"):
+		updates["custom_berth_phase"] = "After Vessel Berthed"
+
+	if updates:
+		frappe.db.set_value("Project", project_name, updates, update_modified=True)
+		frappe.clear_document_cache("Project", project_name)
+		project = frappe.get_doc("Project", project_name)
+
+	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
+	handle_sea_task_container_event(project_name, seq, task_doc=task_doc)
+
+	trackers = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project_name},
+		pluck="name",
+	)
+	frappe.publish_realtime("cgm_project_tracking_refresh", {"project": project_name})
+
+	return {
+		"ok": True,
+		"trackers": trackers,
+		"tracker_count": len(trackers),
+		"port_arrival_confirmed": bool(
+			project.get("custom_port_arrival_confirmed") or mark_confirmed
+		),
+		"ata": str(get_project_ata(project) or ""),
+	}
+
+
+def ensure_container_trackers_on_entry_task_complete(task_doc) -> dict | None:
+	"""Fallback when Create Entry completes without an early port-arrival confirmation."""
+	project_name = task_doc.get("project")
+	if not project_name:
+		return None
+
+	project = frappe.get_cached_doc("Project", project_name)
+	if project.get("custom_port_arrival_confirmed"):
+		return None
+	if _trackers_for_project(project_name):
+		return None
+
+	return ensure_container_trackers_at_port_arrival(
+		project_name,
+		task_doc=task_doc,
+		mark_confirmed=False,
+	)
+
+
+@frappe.whitelist()
+def confirm_shipment_arrival_at_port(project_name: str, ata: str | None = None) -> dict:
+	"""Confirm shipment arrival at port and create container trackers before Entry is paid."""
+	project = frappe.get_doc("Project", project_name)
+	if project.get("custom_port_arrival_confirmed"):
+		frappe.throw(_("Port arrival has already been confirmed for this project."))
+	return ensure_container_trackers_at_port_arrival(
+		project_name,
+		mark_confirmed=True,
+		ata=ata,
 	)
 
 
