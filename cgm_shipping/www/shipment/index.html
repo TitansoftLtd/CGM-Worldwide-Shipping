@@ -11,6 +11,19 @@
   .sh-section-title { font-size:1.05rem; font-weight:700; margin: 1.75rem 0 .85rem; letter-spacing:-0.01em; }
   .sh-container-head { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin-bottom:.85rem; }
   .sh-container-num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight:700; font-size:1rem; }
+  .sh-container-panel { margin-bottom: 1rem; overflow: hidden; }
+  .sh-container-panel > summary { list-style: none; cursor: pointer; padding: 1rem 1.25rem; user-select: none; }
+  .sh-container-panel > summary::-webkit-details-marker { display: none; }
+  .sh-container-panel > summary::marker { display: none; content: ""; }
+  .sh-container-summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+  .sh-container-summary-main { min-width: 0; }
+  .sh-container-loc { color: var(--cp-text-muted); font-size: .82rem; }
+  .sh-container-summary-end { display: flex; align-items: center; gap: .65rem; flex-shrink: 0; }
+  .sh-container-chevron { width: 28px; height: 28px; border-radius: 8px; background: var(--cp-brand-soft); color: var(--cp-brand); display: inline-flex; align-items: center; justify-content: center; transition: transform .2s ease, background .2s ease; }
+  .sh-container-panel[open] .sh-container-chevron { transform: rotate(180deg); background: var(--cp-brand); color: #fff; }
+  .sh-container-panel > summary:hover .sh-container-chevron { background: var(--cp-brand); color: #fff; }
+  .sh-container-body { padding: 0 1.25rem 1.25rem; border-top: 1px solid var(--cp-border); }
+  .sh-container-body .cp-timeline { padding-top: 1rem; }
   .sh-charge { display:flex; gap:1.25rem; flex-wrap:wrap; margin-top:1rem; padding-top:1rem; border-top:1px dashed var(--cp-border); }
   .sh-charge .lab { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--cp-text-muted); font-weight:600; }
   .sh-charge .val { font-size:.95rem; font-weight:700; color:#be123c; }
@@ -124,35 +137,41 @@
   <div class="sh-section-title">{{ _("Containers") }} {% if containers %}<span style="color:var(--cp-text-muted);font-weight:600;font-size:.85rem;">({{ containers|length }})</span>{% endif %}</div>
   {% if containers %}
     {% for c in containers %}
-      <div class="cp-card" style="margin-bottom:1rem;"><div class="cp-card-body">
-        <div class="sh-container-head">
-          <div>
+      <details class="cp-card sh-container-panel">
+        <summary class="sh-container-summary">
+          <div class="sh-container-summary-main">
             <span class="sh-container-num">{{ c.container_number or _("Container") }}</span>
-            {% if c.current_location %}<span style="color:var(--cp-text-muted);font-size:.82rem;"> · {{ c.current_location }}</span>{% endif %}
+            {% if c.current_location %}<span class="sh-container-loc"> · {{ c.current_location }}</span>{% endif %}
           </div>
-          {% if c.status %}<span class="cp-status {{ 'success' if c.status in ('Delivered','Empty Returned') else ('danger' if c.status == 'Overdue' else 'info') }}"><span class="dot"></span>{{ c.status }}</span>{% endif %}
+          <div class="sh-container-summary-end">
+            {% if c.status %}<span class="cp-status {{ 'success' if c.status in ('Delivered','Empty Returned') else ('danger' if c.status == 'Overdue' else 'info') }}"><span class="dot"></span>{{ c.status }}</span>{% endif %}
+            <span class="sh-container-chevron" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
+          </div>
+        </summary>
+        <div class="sh-container-body">
+          <ul class="cp-timeline">
+            {% for t in c.timeline %}
+              <li class="{{ 'done' if t.done else '' }}">
+                <div class="cp-tl-label">{{ t.label }}</div>
+                {% if t.date %}<div class="cp-tl-date">{{ local_date(t.date) }}</div>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+
+          {% if c.has_charges %}
+            <div class="sh-charge">
+              {% if c.demurrage_days %}
+                <div><div class="lab">{{ _("Demurrage") }}</div><div class="val">{{ c.demurrage_days }} {{ _("days") }}{% if c.demurrage_amount %} · {{ frappe.utils.fmt_money(c.demurrage_amount) }}{% endif %}</div></div>
+              {% endif %}
+              {% if c.detention_days %}
+                <div><div class="lab">{{ _("Detention") }}</div><div class="val">{{ c.detention_days }} {{ _("days") }}{% if c.detention_amount %} · {{ frappe.utils.fmt_money(c.detention_amount) }}{% endif %}</div></div>
+              {% endif %}
+            </div>
+          {% endif %}
         </div>
-
-        <ul class="cp-timeline">
-          {% for t in c.timeline %}
-            <li class="{{ 'done' if t.done else '' }}">
-              <div class="cp-tl-label">{{ t.label }}</div>
-              {% if t.date %}<div class="cp-tl-date">{{ local_date(t.date) }}</div>{% endif %}
-            </li>
-          {% endfor %}
-        </ul>
-
-        {% if c.has_charges %}
-          <div class="sh-charge">
-            {% if c.demurrage_days %}
-              <div><div class="lab">{{ _("Demurrage") }}</div><div class="val">{{ c.demurrage_days }} {{ _("days") }}{% if c.demurrage_amount %} · {{ frappe.utils.fmt_money(c.demurrage_amount) }}{% endif %}</div></div>
-            {% endif %}
-            {% if c.detention_days %}
-              <div><div class="lab">{{ _("Detention") }}</div><div class="val">{{ c.detention_days }} {{ _("days") }}{% if c.detention_amount %} · {{ frappe.utils.fmt_money(c.detention_amount) }}{% endif %}</div></div>
-            {% endif %}
-          </div>
-        {% endif %}
-      </div></div>
+      </details>
     {% endfor %}
   {% else %}
     <div class="cp-empty" style="padding:1.75rem;"><p>{{ _("Container tracking will appear here once your shipment is on the water.") }}</p></div>

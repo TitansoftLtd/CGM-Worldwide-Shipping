@@ -568,6 +568,9 @@ def _is_portal_visible_document(row: dict) -> bool:
 _PORTAL_INTERNAL_REMARKS = frozenset(
 	{"Carried from Project (approved on Lead/Opportunity/Customer)"}
 )
+_PORTAL_INTERNAL_REMARK_PREFIXES = (
+	"From submitted Bill of Lading",
+)
 
 
 def _portal_document_remarks(remarks: str | None) -> str:
@@ -576,6 +579,8 @@ def _portal_document_remarks(remarks: str | None) -> str:
 		return ""
 	trimmed = remarks.strip()
 	if trimmed in _PORTAL_INTERNAL_REMARKS:
+		return ""
+	if any(trimmed.startswith(prefix) for prefix in _PORTAL_INTERNAL_REMARK_PREFIXES):
 		return ""
 	return trimmed
 
