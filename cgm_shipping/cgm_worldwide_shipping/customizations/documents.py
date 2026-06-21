@@ -112,6 +112,25 @@ def get_preshipment_attachments(source_doc):
 	return attachments
 
 
+def resolve_document_row_status(row) -> str:
+	"""Derive row status from explicit status or verification/upload metadata."""
+	status = row.get("status")
+	if status in ("Verified", "Rejected", "Uploaded", "Missing"):
+		return status
+	if row.get("verified_on"):
+		return "Verified"
+	if row.get("attachment"):
+		return "Uploaded"
+	return "Missing"
+
+
+def is_shipment_document_verified(row) -> bool:
+	"""True when a Shipment Document row is verified."""
+	if row.meta.has_field("status") and row.get("status") == "Verified":
+		return True
+	return bool(row.get("verified_on"))
+
+
 def document_types_match(existing_type, incoming_type):
 	"""Match Document Type rows by link name or shared code (e.g. CI vs Commercial Invoice)."""
 	if not existing_type or not incoming_type:
@@ -252,8 +271,9 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 			continue
 		if not existing.attachment:
 			existing.attachment = source_row.attachment
-		if source_row.status and source_row.status != "Missing":
-			existing.status = source_row.status
+		status = resolve_document_row_status(source_row)
+		if existing.meta.has_field("status") and status != "Missing":
+			existing.status = status
 		for field in (
 			"uploaded_by",
 			"uploaded_on",
@@ -266,19 +286,18 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 				existing.set(field, value)
 		return
 
-	project_doc.append(
-		SHIPMENT_DOCUMENTS_FIELD,
-		{
-			"document_type": source_row.document_type,
-			"attachment": source_row.attachment,
-			"status": source_row.status or "Uploaded",
-			"uploaded_by": source_row.uploaded_by,
-			"uploaded_on": source_row.uploaded_on,
-			"verified_by": source_row.verified_by,
-			"verified_on": source_row.verified_on,
-			"remarks": source_row.remarks,
-		},
-	)
+	row_data = {
+		"document_type": source_row.document_type,
+		"attachment": source_row.attachment,
+		"uploaded_by": source_row.uploaded_by,
+		"uploaded_on": source_row.uploaded_on,
+		"verified_by": source_row.verified_by,
+		"verified_on": source_row.verified_on,
+		"remarks": source_row.remarks,
+	}
+	if frappe.get_meta("Shipment Document").has_field("status"):
+		row_data["status"] = resolve_document_row_status(source_row)
+	project_doc.append(SHIPMENT_DOCUMENTS_FIELD, row_data)
 
 
 def get_bill_of_lading_attachment_url(
@@ -462,12 +481,40 @@ def carry_task_documents_to_project(project_doc, project_name=None):
 				append_verified_doc_row(project_doc, row.document_type, row.attachment)
 
 
+def sync_project_documents_from_opportunity(
+	project_doc, opportunity_doc, *, replace=False
+) -> None:
+	"""Copy Opportunity Clients Documents exactly, plus Customer KRA PIN only."""
+	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return
+
+	ensure_document_types()
+	if replace:
+		project_doc.set(SHIPMENT_DOCUMENTS_FIELD, [])
+
+	if opportunity_doc:
+		carry_clients_documents_to_project(project_doc, opportunity_doc)
+
+	customer = project_doc.get("customer") or (
+		opportunity_doc.get("party_name") if opportunity_doc else None
+	)
+	if customer:
+		carry_customer_attachments_to_project(project_doc, customer)
+
+
 def sync_linked_attachments_to_project(project_doc):
 	"""Pull shipment files from linked Lead, Customer, and Project tasks into custom_shipment_documents."""
 	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
 		return
 
 	ensure_document_types()
+
+	# Opportunity-sourced projects inherit only Clients Documents + Customer KRA PIN.
+	opp_name = project_doc.get("custom_source_opportunity")
+	if opp_name and frappe.db.exists("Opportunity", opp_name):
+		opp_doc = frappe.get_doc("Opportunity", opp_name)
+		sync_project_documents_from_opportunity(project_doc, opp_doc)
+		return
 
 	# 1. Lead (explicit source or via customer).
 	lead_name = project_doc.get("custom_source_lead")
@@ -482,22 +529,11 @@ def sync_linked_attachments_to_project(project_doc):
 			source_doc=lead_doc,
 		)
 
-	# 2. Opportunity source when present.
-	opp_name = project_doc.get("custom_source_opportunity")
-	if opp_name and frappe.db.exists("Opportunity", opp_name):
-		opp_doc = frappe.get_doc("Opportunity", opp_name)
-		carry_clients_documents_to_project(project_doc, opp_doc)
-		carry_bill_of_lading_attachment_to_project(
-			project_doc,
-			bl_name=project_doc.get("custom_bill_of_lading") or opp_doc.get("custom_bill_of_lading"),
-			source_doc=opp_doc,
-		)
-
-	# 3. Customer attach fields (KRA PIN, etc.).
+	# 2. Customer attach fields (KRA PIN, etc.).
 	if project_doc.get("customer"):
 		carry_customer_attachments_to_project(project_doc, project_doc.customer)
 
-	# 4. Task Documents on tasks linked to this project.
+	# 3. Task Documents on tasks linked to this project.
 	if project_doc.name:
 		carry_task_documents_to_project(project_doc)
 
@@ -517,7 +553,12 @@ def refresh_project_documents(project_name):
 
 		project = frappe.get_doc("Project", project_name)
 		normalize_shipment_fields_on_doc(project)
-		sync_linked_attachments_to_project(project)
+		opp_name = project.get("custom_source_opportunity")
+		if opp_name and frappe.db.exists("Opportunity", opp_name):
+			opp_doc = frappe.get_doc("Opportunity", opp_name)
+			sync_project_documents_from_opportunity(project, opp_doc, replace=True)
+		else:
+			sync_linked_attachments_to_project(project)
 		project.save(ignore_permissions=True)
 	finally:
 		frappe.flags.cgm_syncing_shipment_documents = False
