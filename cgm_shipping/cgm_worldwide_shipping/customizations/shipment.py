@@ -883,6 +883,8 @@ def stamp_verified_documents_on_approval(doc, method=None) -> None:
 			row.verified_by = frappe.session.user
 		if not row.verified_on:
 			row.verified_on = now_datetime()
+		if row.meta.has_field("status"):
+			row.status = "Verified"
 
 
 # ─── Connections (form dashboard) ─────────────────────────────────────────────
