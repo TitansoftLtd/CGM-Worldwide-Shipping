@@ -102,8 +102,6 @@ const WORKFLOW_COLOURS = {
 	Info: "light-blue",
 };
 
-const CGM_ACTION_GROUP = __("Actions");
-
 function project_has_containers(frm) {
 	return (frm.doc.custom_container_information || []).some(
 		(row) => (row.container_number || "").trim()
@@ -182,59 +180,25 @@ function setup_port_arrival_confirmation_button(frm) {
 		frappe.confirm(confirmMessage, () => submit(project_ata_value(frm)));
 	};
 
-	// Added to inner Actions first; consolidate_project_actions moves it to workflow Actions.
-	frm.add_custom_button(__("Confirm Shipment Arrival at the Port"), on_confirm, CGM_ACTION_GROUP);
-}
-
-function move_inner_group_to_workflow_menu(frm, groupLabel) {
-	const $group = frm.page.get_inner_group_button(__(groupLabel));
-	if (!$group?.length) {
-		return;
-	}
-
-	$group.find(".dropdown-menu > a.dropdown-item").each(function () {
-		const $item = $(this);
-		const label =
-			decodeURIComponent($item.attr("data-label") || "") || $item.text().trim();
-		if (!label) {
-			return;
-		}
-		frm.page.add_action_item(label, () => {
-			$item.trigger("click");
-		});
-	});
-
-	$group.remove();
-	if (!frm.page.inner_toolbar.children().not(".inner-page-message").length) {
-		frm.page.inner_toolbar.addClass("hide");
-	}
-}
-
-function consolidate_project_actions(frm) {
-	if (!is_clearance_project(frm) || frm.is_new()) {
-		return;
-	}
-
-	const run = (attempt = 0) => {
-		const $innerActions = frm.page.get_inner_group_button(CGM_ACTION_GROUP);
-		if (!$innerActions?.length) {
-			return;
-		}
-
-		const wfItemCount = frm.page.actions?.find("li").length || 0;
-		if (wfItemCount === 0 && attempt < 25) {
-			setTimeout(() => run(attempt + 1), 100);
-			return;
-		}
-		if (wfItemCount === 0) {
-			return;
-		}
-
-		move_inner_group_to_workflow_menu(frm, CGM_ACTION_GROUP);
+	const register_action = () => {
+		frm.page.add_action_item(__("Confirm Shipment Arrival at the Port"), on_confirm);
 		frm.page.show_actions_menu();
 	};
 
-	setTimeout(() => run(0), 0);
+	// Workflow rebuilds the Actions menu on render_complete; register after it finishes.
+	const schedule_register = () => {
+		const state_field = frappe.workflow.get_state_fieldname(frm.doctype);
+		if (state_field && !frm.doc.__islocal) {
+			frappe.workflow.get_transitions(frm.doc).finally(() => {
+				setTimeout(register_action, 0);
+			});
+			return;
+		}
+		register_action();
+	};
+
+	schedule_register();
+	$(frm.wrapper).off("render_complete.cgm_port_arrival").on("render_complete.cgm_port_arrival", schedule_register);
 }
 
 function is_clearance_project(frm) {
@@ -618,7 +582,6 @@ frappe.ui.form.on("Project", {
 		configure_project_document_grid(frm);
 
 		setup_port_arrival_confirmation_button(frm);
-		consolidate_project_actions(frm);
 
 		if (frm.doc.name && !frm.is_new()) {
 			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass("btn-primary");
