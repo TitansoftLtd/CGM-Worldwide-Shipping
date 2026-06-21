@@ -102,6 +102,37 @@ const WORKFLOW_COLOURS = {
 	Info: "light-blue",
 };
 
+function configure_project_container_grid(frm) {
+	const grid = frm.fields_dict.custom_container_information?.grid;
+	if (!grid) {
+		return;
+	}
+	if (!frm.doc.name || frm.is_new()) {
+		return;
+	}
+	if (frm._cgm_container_modes_loaded === frm.doc.name) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.get_containers_for_project",
+		args: { project: frm.doc.name },
+		callback(r) {
+			if (r.exc || frm.doc.name !== frm._cgm_container_modes_loading) {
+				return;
+			}
+			frm._cgm_container_modes_loaded = frm.doc.name;
+			const modes = new Set((r.message || []).map((row) => row.container_mode).filter(Boolean));
+			const hideCharges =
+				modes.size === 1 && modes.has("Export");
+			["demurrage_days", "detention_days"].forEach((fieldname) => {
+				grid.update_docfield_property(fieldname, "hidden", hideCharges ? 1 : 0);
+			});
+		},
+	});
+	frm._cgm_container_modes_loading = frm.doc.name;
+}
+
 function project_has_containers(frm) {
 	return (frm.doc.custom_container_information || []).some(
 		(row) => (row.container_number || "").trim()
@@ -580,6 +611,7 @@ frappe.ui.form.on("Project", {
 
 		render_shipment_progress_chart(frm);
 		configure_project_document_grid(frm);
+		configure_project_container_grid(frm);
 
 		setup_port_arrival_confirmation_button(frm);
 
@@ -592,6 +624,10 @@ frappe.ui.form.on("Project", {
 				frappe.set_route("query-report", "Container Tracking Detail", {
 					project: frm.doc.name,
 				});
+			}, __("View"));
+			frm.add_custom_button(__("Container Ops Board"), () => {
+				frappe.route_options = { project: frm.doc.name };
+				frappe.set_route("container-ops-board");
 			}, __("View"));
 			frm.add_custom_button(__("Daily Status"), () => {
 				frappe.new_doc("Daily Status Update");

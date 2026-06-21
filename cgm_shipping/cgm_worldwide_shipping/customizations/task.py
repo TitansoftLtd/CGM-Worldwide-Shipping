@@ -2868,17 +2868,22 @@ def before_task_save(doc, _method=None):
 
 		sync_single_task_documents_to_project(doc)
 
+	if _is_sea_task(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			apply_container_updates_from_task,
+		)
+
+		apply_container_updates_from_task(doc)
+
 
 def on_task_update(doc, _method=None):
 	seq = _sea_task_seq(doc)
 
 	if _is_sea_task(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
-			apply_container_updates_from_task,
 			check_task_container_completion,
 		)
 
-		apply_container_updates_from_task(doc)
 		check_task_container_completion(doc)
 
 	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status not in (
@@ -3036,9 +3041,11 @@ def validate_task_completion_requirements(doc, _method=None):
 		validate_sea_task_can_complete(doc)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+		validate_container_step_task_completion,
 		validate_task_19_container_updates,
 	)
 
+	validate_container_step_task_completion(doc)
 	validate_task_19_container_updates(doc)
 
 
