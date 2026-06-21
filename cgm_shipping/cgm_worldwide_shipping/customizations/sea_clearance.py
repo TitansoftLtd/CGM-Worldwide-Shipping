@@ -15,7 +15,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	POST_CLEARANCE_STAGE,
 	SEA_TASK_FLOW_KEY,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_permit_stage_for_sequence
 from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
 	sea_import_task_sequence_no,
 )
@@ -318,6 +317,7 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 
 	if gate_rule == "Permit Invoices Submitted":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			get_permit_stage_for_sequence,
 			is_permit_application_task,
 		)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
