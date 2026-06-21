@@ -9,15 +9,50 @@ def after_migrate() -> None:
 	"""Re-apply idempotent schema installers after every bench migrate."""
 	reinstall_supplier_shipping_line_schema()
 	ensure_task_container_schema()
+	ensure_shipment_document_versioning()
+
+
+def ensure_shipment_document_versioning() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		ensure_shipment_document_version_fields,
+		migrate_legacy_shipment_document_attachments,
+	)
+
+	if not frappe.db.exists("DocType", "Shipment Document"):
+		return
+	ensure_shipment_document_version_fields()
+	migrate_legacy_shipment_document_attachments()
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		hide_computed_shipment_document_columns,
+	)
+
+	hide_computed_shipment_document_columns()
+	frappe.db.commit()
 
 
 def ensure_task_container_schema() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		ensure_shipment_document_version_fields,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
+		ensure_client_inspection_task_fields,
+		ensure_field_officer_task_fields,
+		ensure_project_inspection_notification_fields,
+		ensure_project_port_arrival_fields,
 		ensure_task_container_update_fields,
 	)
 
+	ensure_shipment_document_version_fields()
+
 	if frappe.db.exists("DocType", "Task Container Update"):
 		ensure_task_container_update_fields()
+	if frappe.db.exists("DocType", "Task"):
+		ensure_field_officer_task_fields()
+		ensure_client_inspection_task_fields()
+		frappe.db.commit()
+	if frappe.db.exists("DocType", "Project"):
+		ensure_project_inspection_notification_fields()
+		ensure_project_port_arrival_fields()
 		frappe.db.commit()
 
 

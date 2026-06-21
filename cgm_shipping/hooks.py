@@ -51,9 +51,13 @@ web_include_js = [
 
 # include js in doctype views
 doctype_js = {
-	"Task": "public/js/task.js",
+	"Task": [
+		"public/js/shipment_document_grid.js",
+		"public/js/task.js",
+	],
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Project": [
+		"public/js/shipment_document_grid.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/project.js",
@@ -185,8 +189,10 @@ override_doctype_class = {
 doc_events = {
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
+		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.project.on_project_onload",
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_ata_fields",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
 		],

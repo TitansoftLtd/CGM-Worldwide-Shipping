@@ -248,6 +248,10 @@ a.cp-kpi:hover, a.cp-kpi:focus-visible {
 .cp-banner-error h4 { margin: 0 0 .25rem; font-weight: 600; font-size: 1rem; color: var(--cp-red); }
 .cp-banner-error p { margin: 0; }
 
+.cp-banner-info { padding: 1.1rem 1.35rem; border-radius: var(--cp-radius); background: var(--cp-brand-soft); color: var(--cp-text); border: 1px solid var(--cp-border); margin-bottom: 1.25rem; }
+.cp-banner-info h4 { margin: 0 0 .35rem; font-weight: 600; font-size: .98rem; color: var(--cp-text); }
+.cp-banner-info p { margin: 0 0 .85rem; color: var(--cp-text-muted); font-size: .9rem; line-height: 1.45; }
+
 .cp-alert { display: flex; align-items: center; gap: .9rem; padding: 1rem 1.25rem; border-radius: var(--cp-radius); margin-bottom: 1.25rem; background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%); border: 1px solid #fcd34d; }
 .cp-alert .icon { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; background: var(--cp-amber); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 .cp-alert h4 { margin: 0; font-size: .95rem; font-weight: 700; color: #92400e; }

@@ -78,6 +78,9 @@ frappe.ui.form.on("Task", {
 		if (ui.show_permits) {
 			configure_permit_grid(frm);
 		}
+		if (ui.show_documents) {
+			configure_task_document_version_grid(frm, ui);
+		}
 
 		frm.set_df_property("status", "read_only", 1);
 		const show_completion_meta = frm.doc.status === "Completed";
@@ -817,14 +820,10 @@ function notify_client_for_inspection_from_form(frm) {
 		freeze: true,
 		freeze_message: __("Notifying client…"),
 		callback(r) {
-			if (r.exc) {
-				return;
+			showWorkflowNotifyResult(r, __("Client notified for inspection."));
+			if (!r.exc) {
+				frm.reload_doc();
 			}
-			frappe.show_alert({
-				message: r.message?.message || __("Client notified for inspection."),
-				indicator: "green",
-			});
-			frm.reload_doc();
 		},
 	});
 }
@@ -961,17 +960,17 @@ function configure_task_document_version_grid(frm, ui) {
 	if (!grid) {
 		return;
 	}
-	const versioned = Boolean(frappe.meta.get_docfield("Shipment Document", "initial_attachment"));
-	grid.update_docfield_property("attachment", "hidden", versioned ? 1 : 0);
-	["initial_attachment", "final_attachment", "version_status"].forEach((fieldname) => {
-		if (frappe.meta.get_docfield("Shipment Document", fieldname)) {
-			grid.update_docfield_property(fieldname, "hidden", versioned ? 0 : 1);
-		}
-	});
-	if (versioned && ui.documents_initial_read_only) {
-		grid.update_docfield_property("initial_attachment", "read_only", 1);
-		grid.update_docfield_property("document_type", "read_only", 1);
+	ui = ui || get_sea_task_ui(frm);
+
+	if (cgm_has_shipment_document_versioning() && cgm_hydrate_legacy_document_rows(frm, "custom_task_documents")) {
+		frm.refresh_field("custom_task_documents");
 	}
+
+	const checkpoint = Boolean(ui.is_document_checkpoint);
+	const versioned = checkpoint || Boolean(ui.documents_versioned);
+	cgm_configure_shipment_document_grid(grid, {
+		initial_read_only: versioned && ui.documents_initial_read_only,
+	});
 }
 
 function ensure_checkpoint_task_documents_on_form(frm) {
@@ -986,10 +985,12 @@ function ensure_checkpoint_task_documents_on_form(frm) {
 		freeze: true,
 		freeze_message: __("Loading clearance documents from Project…"),
 		callback(r) {
-			if (r.exc || !r.message?.seeded) {
+			if (r.exc) {
 				return;
 			}
-			frm.reload_doc();
+			if (r.message?.seeded || r.message?.backfilled) {
+				frm.reload_doc();
+			}
 		},
 	});
 }

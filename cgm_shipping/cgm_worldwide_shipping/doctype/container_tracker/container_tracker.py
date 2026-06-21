@@ -146,15 +146,17 @@ def sync_container_summary_to_project(project: str | None) -> None:
 		return
 
 	updates = {}
-	existing_ata = (
-		frappe.db.get_value("Project", project, "custom_ata")
-		if meta.has_field("custom_ata")
-		else None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+		PROJECT_ATA_FIELDS,
+		build_project_ata_updates,
+		get_project_ata,
 	)
-	if meta.has_field("custom_ata"):
-		atas = [r.ata for r in rows if r.ata]
-		if atas and not existing_ata:
-			updates["custom_ata"] = min(atas)
+
+	project_doc = frappe.get_doc("Project", project)
+	existing_ata = get_project_ata(project_doc)
+	atas = [r.ata for r in rows if r.ata]
+	if atas and not existing_ata:
+		updates.update(build_project_ata_updates(project_doc, min(atas)))
 
 	if meta.has_field("custom_eta"):
 		etas = [r.eta for r in rows if r.eta]
@@ -173,7 +175,11 @@ def sync_container_summary_to_project(project: str | None) -> None:
 			updates["custom_custom_release_date"] = max(releases)
 
 	if meta.has_field("custom_berth_phase"):
-		if existing_ata or updates.get("custom_ata") or any(r.discharging_date for r in rows):
+		if (
+			existing_ata
+			or any(updates.get(field) for field in PROJECT_ATA_FIELDS)
+			or any(r.discharging_date for r in rows)
+		):
 			updates["custom_berth_phase"] = "After Vessel Berthed"
 		else:
 			updates["custom_berth_phase"] = "Before Vessel Berth"

@@ -14,6 +14,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
 	SEA_TASK_FLOW_KEY,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
+	sea_import_task_sequence_no,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
 
 AUTO_COMPLETE_INTAKE_REMARK = (
@@ -505,18 +508,19 @@ def create_sea_import_task_plan_internal(project, reset=False):
 		if not subject:
 			frappe.throw(f"Task template item at position {idx} has no subject.")
 
+		seq = sea_import_task_sequence_no(idx)
 		task = frappe.new_doc("Task")
 		task.subject = subject
 		task.project = project
 		task.custom_task_flow_key = SEA_TASK_FLOW_KEY
-		task.custom_sequence_no = idx
+		task.custom_sequence_no = seq
 		task.department = resolve_department_name(item.get("department"), company=project_doc.company)
 		task.status = "Open"
 		task.insert(ignore_permissions=True)
 
 		if prev_task:
 			# Transport tasks (19–24) are independent; only task 19 chains from task 18.
-			if idx in TRANSPORT_TASK_SEQS and idx != 19:
+			if seq in TRANSPORT_TASK_SEQS and seq != 19:
 				pass
 			else:
 				task.append("depends_on", {"task": prev_task.name})
