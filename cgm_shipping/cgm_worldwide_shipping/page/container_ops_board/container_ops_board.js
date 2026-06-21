@@ -130,9 +130,16 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			)}</a>`;
 		}
 
-		function projectLine(row) {
-			const parts = [row.project_ref, row.batch_no, row.bl_number].filter(Boolean);
-			return frappe.utils.escape_html(parts.join(" · ") || row.project || "");
+		function projectCell(row) {
+			return frappe.utils.escape_html(row.project_ref || row.project || "—");
+		}
+
+		function batchCell(row) {
+			return frappe.utils.escape_html(row.batch_no || "—");
+		}
+
+		function blCell(row) {
+			return frappe.utils.escape_html(row.bl_number || "—");
 		}
 
 		function updateFilterHint() {
@@ -209,7 +216,9 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		function transportTableHeaders() {
 			return `
 				<th class="cgm-ops-sticky-col">${__("Container")}</th>
-				<th>${__("Batch / B/L")}</th>
+				<th>${__("Project")}</th>
+				<th>${__("Batch")}</th>
+				<th>${__("B/L")}</th>
 				<th>${__("Gate In MBA")}</th>
 				<th>${__("Gate Out MBA")}</th>
 				<th>${__("Truck No")}</th>
@@ -232,7 +241,9 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				: "";
 			return `<tr class="${frappe.utils.escape_html(row.traffic_css || "")}">
 				<td class="cgm-ops-sticky-col">${trackerLink(row)}${alert}</td>
-				<td>${projectLine(row)}</td>
+				<td>${projectCell(row)}</td>
+				<td>${batchCell(row)}</td>
+				<td>${blCell(row)}</td>
 				<td>${fmtDate(row.gate_in_port)}</td>
 				<td>${fmtDate(row.gate_out_date_port)}</td>
 				<td>${frappe.utils.escape_html(row.truck_number || "—")}</td>
