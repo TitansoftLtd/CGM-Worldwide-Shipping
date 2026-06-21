@@ -15,6 +15,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	ENTRY_INVOICE_TO_FINANCE,
 	ENTRY_RECEIPT_FOR_DECLARANT,
 	ENTRY_RECEIPT_VERIFY_FINANCE,
+	SHIPPING_LINE_INVOICE_TO_FINANCE,
+	SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
+	SHIPPING_LINE_RECEIPT_VERIFY_FINANCE,
 	SEA_TASK_FLOW_KEY,
 	SHIPMENT_DOCUMENTS_FIELD,
 	TASK_DOCUMENTS_FIELD,
@@ -90,6 +93,24 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		application_receipt_verified_field=None,
 		sync_to_idf_record=False,
 		legacy_certificate_codes=frozenset({"ENTRY"}),
+	),
+	"Shipping Line Application": ApplicationFinanceProfile(
+		key="shipping_line",
+		application_requirement_type="Shipping Line Application",
+		finance_payment_kind="Shipping Line",
+		payment_item="Shipping Line",
+		invoice_label="Shipping Line Invoice",
+		receipt_label="Shipping Line Receipt",
+		certificate_document_code="",
+		gate_rule="Standard",
+		notification_invoice=SHIPPING_LINE_INVOICE_TO_FINANCE,
+		notification_receipt_declarant=SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
+		notification_receipt_verify=SHIPPING_LINE_RECEIPT_VERIFY_FINANCE,
+		application_submitted_field=None,
+		application_invoice_verified_field=None,
+		application_receipt_verified_field=None,
+		sync_to_idf_record=False,
+		legacy_certificate_codes=frozenset(),
 	),
 }
 
@@ -430,6 +451,8 @@ def prepare_application_task_tables(task, profile: ApplicationFinanceProfile) ->
 
 
 def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
+	if not profile.certificate_document_code and not profile.legacy_certificate_codes:
+		return True
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_document_type_code
 
 	for row in task.get(TASK_DOCUMENTS_FIELD) or []:

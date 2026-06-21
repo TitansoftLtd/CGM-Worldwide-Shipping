@@ -80,45 +80,45 @@
    "label": "Discharge Date"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 16",
+   "depends_on": "eval:parent.custom_sequence_no == 17",
    "fieldname": "verification_location",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Current Location at Port"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "depends_on": "eval:parent.custom_sequence_no == 19",
    "fieldname": "free_days_start_date",
    "fieldtype": "Date",
    "label": "Free Days Start Date"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "depends_on": "eval:parent.custom_sequence_no == 19",
    "fieldname": "free_days_end_date",
    "fieldtype": "Date",
    "label": "Free Days End Date"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "depends_on": "eval:parent.custom_sequence_no == 19",
    "fieldname": "demurrage_daily_rate",
    "fieldtype": "Currency",
    "label": "Demurrage Daily Rate"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "depends_on": "eval:parent.custom_sequence_no == 19",
    "fieldname": "kpa_daily_rate",
    "fieldtype": "Currency",
    "label": "KPA Daily Rate"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 18",
+   "depends_on": "eval:parent.custom_sequence_no == 19",
    "description": "Leave blank to use CGM Shipping Settings default",
    "fieldname": "kpa_free_days_override",
    "fieldtype": "Int",
    "label": "KPA Free Days"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "depends_on": "eval:parent.custom_sequence_no == 20",
    "fieldname": "transporter",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -126,101 +126,103 @@
    "options": "Supplier"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "depends_on": "eval:parent.custom_sequence_no == 20",
    "fieldname": "truck_number",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Truck Number"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "depends_on": "eval:parent.custom_sequence_no == 20",
    "fieldname": "driver_name",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Driver Name"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
+   "depends_on": "eval:parent.custom_sequence_no == 20",
    "fieldname": "driver_contact",
    "fieldtype": "Data",
    "label": "Driver Contact Number"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 20",
+   "depends_on": "eval:parent.custom_sequence_no == 21",
    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Gate Out Date (Port)",
-   "mandatory_depends_on": "eval:parent.custom_sequence_no == 20"
+   "mandatory_depends_on": "eval:parent.custom_sequence_no == 21"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 20",
+   "depends_on": "eval:parent.custom_sequence_no == 21",
    "fieldname": "container_not_emptied_reason",
    "fieldtype": "Small Text",
    "label": "If container not exiting today — reason"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 21",
+   "depends_on": "eval:parent.custom_sequence_no == 22",
    "fieldname": "gate_in_date_warehouse",
    "fieldtype": "Date",
    "in_list_view": 1,
-   "label": "Date Arrived at Warehouse"
-  },
-  {
-   "depends_on": "eval:parent.custom_sequence_no == 21",
-   "fieldname": "delivery_location",
-   "fieldtype": "Data",
-   "label": "Delivery Location / Warehouse"
+   "label": "Gate In Date (Clearance Station / Warehouse)"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 22",
+   "fieldname": "delivery_location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Clearance Station",
+   "options": "Clearance Station"
+  },
+  {
+   "depends_on": "eval:parent.custom_sequence_no == 23",
    "fieldname": "offloading_date",
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Date Offloaded",
-   "mandatory_depends_on": "eval:parent.custom_sequence_no == 22"
+   "mandatory_depends_on": "eval:parent.custom_sequence_no == 23"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 22",
+   "depends_on": "eval:parent.custom_sequence_no == 23",
    "fieldname": "container_emptied_location",
    "fieldtype": "Data",
    "label": "Offloading Location"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 22",
+   "depends_on": "eval:parent.custom_sequence_no == 23",
    "fieldname": "offloading_exception_reason",
    "fieldtype": "Small Text",
    "label": "If not offloaded — reason"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 23",
+   "depends_on": "eval:parent.custom_sequence_no == 24",
    "fieldname": "actual_empty_return",
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Empty Return Date",
-   "mandatory_depends_on": "eval:parent.custom_sequence_no == 23"
+   "mandatory_depends_on": "eval:parent.custom_sequence_no == 24"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 23",
+   "depends_on": "eval:parent.custom_sequence_no == 24",
    "fieldname": "gate_in_date_depot",
    "fieldtype": "Date",
    "label": "Gate In at Depot"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 23",
+   "depends_on": "eval:parent.custom_sequence_no == 24",
    "fieldname": "transporter_at_return",
    "fieldtype": "Data",
    "label": "Driver/Transporter returning container"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 24",
+   "depends_on": "eval:parent.custom_sequence_no == 25",
    "fieldname": "interchange_date",
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Interchange Date"
   },
   {
-   "depends_on": "eval:parent.custom_sequence_no == 24",
+   "depends_on": "eval:parent.custom_sequence_no == 25",
    "fieldname": "interchange_document",
    "fieldtype": "Attach",
    "label": "Interchange Receipt (EIR)"

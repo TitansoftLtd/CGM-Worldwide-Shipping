@@ -172,6 +172,7 @@ def declarant_application_department_stems() -> frozenset[str]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		entry_application_sequences,
 		permit_application_sequences,
+		shipping_line_application_sequences,
 		ucr_application_sequences,
 	)
 
@@ -180,6 +181,7 @@ def declarant_application_department_stems() -> frozenset[str]:
 		permit_application_sequences()
 		| ucr_application_sequences()
 		| entry_application_sequences()
+		| shipping_line_application_sequences()
 	):
 		stem = department_stem_for_sequence(seq)
 		if stem:
@@ -202,6 +204,7 @@ def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		is_entry_application_task,
 		is_permit_application_task,
+		is_shipping_line_application_task,
 		is_ucr_application_task,
 	)
 
@@ -209,6 +212,7 @@ def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool
 		is_permit_application_task(sequence_no)
 		or is_ucr_application_task(sequence_no)
 		or is_entry_application_task(sequence_no)
+		or is_shipping_line_application_task(sequence_no)
 	):
 		return user_has_declarant_department_access(user)
 	return False

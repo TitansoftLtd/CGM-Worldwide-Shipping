@@ -131,6 +131,14 @@ frappe.ui.form.on("Task", {
 					apply_entry_application_intro(frm, frm._cgm_entry_declarant_status);
 					intro_set = true;
 				}
+			} else if (ui.is_shipping_line_application) {
+				if (
+					frm._cgm_shipping_line_declarant_status_loaded &&
+					frm._cgm_shipping_line_declarant_status
+				) {
+					apply_shipping_line_application_intro(frm, frm._cgm_shipping_line_declarant_status);
+					intro_set = true;
+				}
 			} else if (ui.is_ucr_finance) {
 				intro = __(
 					"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
@@ -144,6 +152,14 @@ frappe.ui.form.on("Task", {
 					"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> · " +
 						"<b>2</b> Use <b>Actions → Make Payment</b> to record the payment as a Journal Entry · " +
 						"<b>3 Declarant:</b> Upload <b>Entry Slip Receipt</b> and ENTRY document on <b>Create Entry</b> · " +
+						"<b>4 Finance:</b> Verify receipt - this task completes automatically when the receipt is verified."
+				);
+				intro_set = true;
+			} else if (ui.is_shipping_line_finance) {
+				intro = __(
+					"<b>1 Finance:</b> Verify <b>Shipping Line Invoice</b> · " +
+						"<b>2</b> Use <b>Actions → Make Payment</b> to record the payment as a Journal Entry · " +
+						"<b>3 Operations:</b> Upload <b>Shipping Line Receipt</b> on <b>Attach Shipping Line Invoice</b> · " +
 						"<b>4 Finance:</b> Verify receipt - this task completes automatically when the receipt is verified."
 				);
 				intro_set = true;
@@ -177,12 +193,23 @@ frappe.ui.form.on("Task", {
 			}
 		}
 
+		if (ui.is_shipping_line_application && frm.doc.project) {
+			ensure_shipping_line_finance_lines_on_form(frm);
+			if (!frm._cgm_shipping_line_declarant_status_loaded) {
+				load_shipping_line_declarant_workflow_status(frm);
+			}
+		}
+
 		if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
 			ensure_ucr_finance_task_completed_on_form(frm);
 		}
 
 		if (ui.is_entry_finance && frm.doc.status !== "Completed") {
 			ensure_entry_finance_task_completed_on_form(frm);
+		}
+
+		if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
+			ensure_shipping_line_finance_task_completed_on_form(frm);
 		}
 
 		if (ui.show_permits && is_permit_finance_step(frm) && frm.doc.project) {
@@ -226,6 +253,23 @@ frappe.ui.form.on("Task", {
 				if (rec && rec.attachment && !rec.verified) {
 					add_cgm_toolbar_button(frm, __("Verify Entry Slip Receipt"), () => {
 						verify_entry_finance_line(frm, "Receipt");
+					});
+				}
+			}
+		}
+
+		if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
+			if (user_can_make_payment(frm)) {
+				const inv = get_finance_line(frm, "Invoice");
+				const rec = get_finance_line(frm, "Receipt");
+				if (inv?.attachment && !inv?.verified) {
+					add_cgm_toolbar_button(frm, __("Verify Shipping Line Invoice"), () => {
+						verify_shipping_line_finance_line(frm, "Invoice");
+					}, { primary: true });
+				}
+				if (rec && rec.attachment && !rec.verified) {
+					add_cgm_toolbar_button(frm, __("Verify Shipping Line Receipt"), () => {
+						verify_shipping_line_finance_line(frm, "Receipt");
 					});
 				}
 			}
@@ -357,10 +401,12 @@ const CGM_SEA_UI_SEQUENCES_EMPTY = {
 	light_proof_seqs: [],
 	ucr_application_seqs: [],
 	entry_application_seqs: [],
+	shipping_line_application_seqs: [],
 	finance_document_seqs: [],
 	permit_finance_seqs: [],
 	ucr_finance_seqs: [],
 	entry_finance_seqs: [],
+	shipping_line_finance_seqs: [],
 	permit_stage_by_seq: {},
 	permissions: {},
 };
@@ -476,6 +522,16 @@ function is_entry_finance_step(frm, seq) {
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).entry_finance_seqs);
 }
 
+function is_shipping_line_application_step(frm, seq) {
+	const s = seq !== undefined ? seq : sea_task_sequence(frm);
+	return seq_in_list(s, get_cgm_sea_seq_config(frm).shipping_line_application_seqs);
+}
+
+function is_shipping_line_finance_step(frm, seq) {
+	const s = seq !== undefined ? seq : sea_task_sequence(frm);
+	return seq_in_list(s, get_cgm_sea_seq_config(frm).shipping_line_finance_seqs);
+}
+
 function is_permit_application_step(frm, seq) {
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).permit_application_seqs);
@@ -581,8 +637,30 @@ function get_sea_task_ui(frm) {
 			is_ucr_finance: false,
 			is_entry_application: true,
 			is_entry_finance: false,
+			is_shipping_line_application: false,
+			is_shipping_line_finance: false,
 			show_finance_lines: true,
 			show_documents: true,
+			documents_read_only: false,
+			show_permits: false,
+			show_payments: false,
+			show_external_ref: true,
+			show_description: true,
+			auto_intake_intro: false,
+			hide_mark_complete: true,
+		};
+	}
+	if (seq_in_list(seq, cfg.shipping_line_application_seqs)) {
+		return {
+			is_sea_task: true,
+			is_ucr_application: false,
+			is_ucr_finance: false,
+			is_entry_application: false,
+			is_entry_finance: false,
+			is_shipping_line_application: true,
+			is_shipping_line_finance: false,
+			show_finance_lines: true,
+			show_documents: false,
 			documents_read_only: false,
 			show_permits: false,
 			show_payments: false,
@@ -610,13 +688,16 @@ function get_sea_task_ui(frm) {
 	if (seq_in_list(seq, cfg.payment_seqs)) {
 		const ucr_finance = seq_in_list(seq, cfg.ucr_finance_seqs);
 		const entry_finance = seq_in_list(seq, cfg.entry_finance_seqs);
+		const shipping_line_finance = seq_in_list(seq, cfg.shipping_line_finance_seqs);
 		return {
 			is_sea_task: true,
 			is_ucr_application: false,
 			is_ucr_finance: ucr_finance,
 			is_entry_application: false,
 			is_entry_finance: entry_finance,
-			show_finance_lines: ucr_finance || entry_finance,
+			is_shipping_line_application: false,
+			is_shipping_line_finance: shipping_line_finance,
+			show_finance_lines: ucr_finance || entry_finance || shipping_line_finance,
 			show_documents: seq_in_list(seq, cfg.finance_document_seqs),
 			documents_read_only: false,
 			show_permits: seq_in_list(seq, cfg.permit_finance_seqs),
@@ -728,7 +809,7 @@ function apply_sea_task_form_layout(frm, ui) {
 
 function apply_field_officer_task_fields(frm) {
 	const seq = sea_task_sequence(frm);
-	const show = is_sea_clearance_task(frm) && seq === 16;
+	const show = is_sea_clearance_task(frm) && seq === 17;
 	const fields = [
 		"custom_section_field_clearance",
 		"custom_verification_type",
@@ -1013,7 +1094,9 @@ function configure_finance_line_grid(frm, ui) {
 	}
 	if (verified_df) {
 		verified_df.read_only =
-			is_ucr_application_step(frm, seq) || is_entry_application_step(frm, seq)
+			is_ucr_application_step(frm, seq) ||
+			is_entry_application_step(frm, seq) ||
+			is_shipping_line_application_step(frm, seq)
 				? 1
 				: is_finance
 					? 0
@@ -1030,6 +1113,11 @@ function configure_finance_line_grid(frm, ui) {
 		grid.update_docfield_property("amount", "read_only", 0);
 		grid.update_docfield_property("item_code", "read_only", 1);
 		grid.update_docfield_property("item_code", "hidden", 0);
+	} else if (is_shipping_line_application_step(frm, seq)) {
+		grid.update_docfield_property("attachment", "read_only", 0);
+		grid.update_docfield_property("amount", "read_only", 0);
+		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_ucr_finance_step(frm, seq)) {
 		// Invoice and receipt are copied from Create UCR (IDF); Finance verifies only.
 		grid.update_docfield_property("attachment", "read_only", 1);
@@ -1037,6 +1125,11 @@ function configure_finance_line_grid(frm, ui) {
 		grid.update_docfield_property("item_code", "read_only", 1);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_entry_finance_step(frm, seq)) {
+		grid.update_docfield_property("attachment", "read_only", 1);
+		grid.update_docfield_property("amount", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "hidden", 0);
+	} else if (is_shipping_line_finance_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
 		grid.update_docfield_property("item_code", "read_only", 1);
@@ -1061,7 +1154,12 @@ function hide_ucr_legacy_fields(frm) {
 }
 
 function configure_ucr_finance_fields(frm, ui) {
-	if (ui.is_ucr_finance || ui.is_entry_finance || ui.show_finance_lines) {
+	if (
+		ui.is_ucr_finance ||
+		ui.is_entry_finance ||
+		ui.is_shipping_line_finance ||
+		ui.show_finance_lines
+	) {
 		hide_ucr_legacy_fields(frm);
 	}
 }
@@ -1291,6 +1389,21 @@ frappe.ui.form.on("Task Finance Line", {
 				});
 			}
 		}
+		if (is_shipping_line_application_step(frm) && row.attachment) {
+			if (row.line_type === "Invoice") {
+				frappe.show_alert({
+					message: __("Shipping Line invoice saved - Finance will be notified when you save."),
+					indicator: "green",
+				});
+			} else if (row.line_type === "Receipt") {
+				frappe.show_alert({
+					message: __(
+						"Shipping Line receipt saved - Finance will be notified to verify when you save."
+					),
+					indicator: "green",
+				});
+			}
+		}
 		if (frm.doc.status !== "Completed") {
 			frm.save();
 		}
@@ -1324,6 +1437,19 @@ frappe.ui.form.on("Task Finance Line", {
 			}
 			return;
 		}
+		if (is_shipping_line_application_step(frm)) {
+			frappe.show_alert({
+				message: __(
+					"Finance verifies the Shipping Line invoice on the Finance pays Shipping Line Charges task."
+				),
+				indicator: "orange",
+			});
+			const inv = get_finance_line(frm, "Invoice");
+			if (cint(row.verified) !== cint(inv?.verified)) {
+				frappe.model.set_value(cdt, cdn, "verified", inv?.verified ? 1 : 0);
+			}
+			return;
+		}
 		if (row.verified) {
 			frappe.model.set_value(cdt, cdn, "verified_by", frappe.session.user);
 			frappe.model.set_value(cdt, cdn, "verified_on", frappe.datetime.now_datetime());
@@ -1334,6 +1460,9 @@ frappe.ui.form.on("Task Finance Line", {
 			}
 			if (is_entry_finance_step(frm)) {
 				ensure_entry_finance_task_completed_on_form(frm);
+			}
+			if (is_shipping_line_finance_step(frm)) {
+				ensure_shipping_line_finance_task_completed_on_form(frm);
 			}
 		});
 	},
@@ -1650,6 +1779,173 @@ function verify_entry_finance_line(frm, line_type) {
 				if (r.message?.task_status === "Completed" && frm.doc.status !== "Completed") {
 					frappe.show_alert({
 						message: __("Finance Pays Entry Slip task completed"),
+						indicator: "green",
+					});
+				}
+				frm.reload_doc();
+			}
+		},
+	});
+}
+
+function ensure_shipping_line_finance_lines_on_form(frm) {
+	if (get_finance_line(frm, "Receipt") || frm._cgm_shipping_line_finance_lines_ensuring) {
+		return;
+	}
+	frm._cgm_shipping_line_finance_lines_ensuring = true;
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.ensure_application_finance_lines",
+		args: { task_name: frm.doc.name, profile_key: "shipping_line" },
+		callback(r) {
+			frm._cgm_shipping_line_finance_lines_ensuring = false;
+			if (!r.exc && r.message?.added) {
+				frm.reload_doc();
+			}
+		},
+		error() {
+			frm._cgm_shipping_line_finance_lines_ensuring = false;
+		},
+	});
+}
+
+function load_shipping_line_declarant_workflow_status(frm) {
+	if (frm._cgm_shipping_line_declarant_status_loading || frm._cgm_shipping_line_declarant_status_loaded) {
+		return;
+	}
+	frm._cgm_shipping_line_declarant_status_loading = true;
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.get_application_declarant_workflow_status",
+		args: { task_name: frm.doc.name, profile_key: "shipping_line" },
+		callback(r) {
+			frm._cgm_shipping_line_declarant_status_loading = false;
+			if (r.exc || !r.message) {
+				set_task_intro(
+					frm,
+					__(
+						"Could not load Shipping Line workflow status. Refresh the page or contact support if this persists."
+					),
+					"orange"
+				);
+				return;
+			}
+			frm._cgm_shipping_line_declarant_status = r.message;
+			frm._cgm_shipping_line_declarant_status_loaded = true;
+			if (r.message.task_status === "Completed" && frm.doc.status !== "Completed") {
+				frappe.show_alert({
+					message: __("Attach Shipping Line Invoice task completed"),
+					indicator: "green",
+				});
+				frm.reload_doc();
+				return;
+			}
+			apply_shipping_line_application_intro(frm, r.message);
+		},
+		error() {
+			frm._cgm_shipping_line_declarant_status_loading = false;
+			set_task_intro(
+				frm,
+				__(
+					"Could not load Shipping Line workflow status. Refresh the page or contact support if this persists."
+				),
+				"orange"
+			);
+		},
+	});
+}
+
+function apply_shipping_line_application_intro(frm, status) {
+	if (!is_shipping_line_application_step(frm) || !frm.doc.project) {
+		return;
+	}
+	status = status || {};
+	const invoiceLabel = status.invoice_label || __("Shipping Line Invoice");
+	const receiptLabel = status.receipt_label || __("Shipping Line Receipt");
+	let intro;
+	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
+		intro = __("<b>All documents are in place.</b> This task is <b>Completed</b>.");
+	} else if (status.application_ready_to_complete) {
+		intro = __("<b>All documents are in place.</b> Completing this task…");
+	} else if (status.receipt_attached) {
+		intro = __("<b>Shipping Line receipt uploaded.</b> This task will complete automatically.");
+	} else if (status.payment_made) {
+		intro = __(
+			"<b>Finance has paid the Shipping Line invoice.</b> Attach the supplier <b>{0}</b> on " +
+				"<b>Invoices &amp; Receipts</b> below.",
+			[receiptLabel]
+		);
+	} else if (status.invoice_verified) {
+		intro = __(
+			"<b>{0} verified by Finance.</b> Waiting for payment. After payment, attach the " +
+				"<b>{1}</b> here.",
+			[invoiceLabel, receiptLabel]
+		);
+	} else if (status.invoice_submitted) {
+		intro = __(
+			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify and pay. " +
+				"After payment you will upload the supplier receipt here.",
+			[invoiceLabel]
+		);
+	} else {
+		intro = __(
+			"<b>Documentation:</b> Attach <b>{0}</b>, enter the <b>Amount</b>, and save on " +
+				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, attach the " +
+				"supplier <b>{1}</b>.",
+			[invoiceLabel, receiptLabel]
+		);
+	}
+	set_task_intro(frm, intro);
+}
+
+function ensure_shipping_line_finance_task_completed_on_form(frm) {
+	if (frm._cgm_shipping_line_finance_complete_checking) {
+		return;
+	}
+	const inv = get_finance_line(frm, "Invoice");
+	const rec = get_finance_line(frm, "Receipt");
+	if (!inv?.verified || !rec?.verified || !rec?.attachment) {
+		return;
+	}
+	frm._cgm_shipping_line_finance_complete_checking = true;
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.ensure_application_finance_task_completed",
+		args: { task_name: frm.doc.name, profile_key: "shipping_line" },
+		callback(r) {
+			frm._cgm_shipping_line_finance_complete_checking = false;
+			if (r.exc || !r.message) {
+				return;
+			}
+			if (r.message.status === "Completed" && frm.doc.status !== "Completed") {
+				frappe.show_alert({
+					message: __("Finance pays Shipping Line Charges task completed"),
+					indicator: "green",
+				});
+				frm.reload_doc();
+			}
+		},
+		error() {
+			frm._cgm_shipping_line_finance_complete_checking = false;
+		},
+	});
+}
+
+function verify_shipping_line_finance_line(frm, line_type) {
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.verify_application_finance_line",
+		args: { task_name: frm.doc.name, profile_key: "shipping_line", line_type },
+		freeze: true,
+		callback(r) {
+			if (!r.exc) {
+				frappe.show_alert({
+					message: r.message?.message || __("Verified"),
+					indicator: "green",
+				});
+				if (r.message?.task_status === "Completed" && frm.doc.status !== "Completed") {
+					frappe.show_alert({
+						message: __("Finance pays Shipping Line Charges task completed"),
 						indicator: "green",
 					});
 				}

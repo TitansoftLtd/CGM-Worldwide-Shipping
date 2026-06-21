@@ -519,8 +519,9 @@ def create_sea_import_task_plan_internal(project, reset=False):
 		task.insert(ignore_permissions=True)
 
 		if prev_task:
-			# Transport tasks (19–24) are independent; only task 19 chains from task 18.
-			if seq in TRANSPORT_TASK_SEQS and seq != 19:
+			# Transport tasks (20–25) are independent; only the first transport step chains from KPA paid.
+			book_trucks_seq = min(TRANSPORT_TASK_SEQS)
+			if seq in TRANSPORT_TASK_SEQS and seq != book_trucks_seq:
 				pass
 			else:
 				task.append("depends_on", {"task": prev_task.name})

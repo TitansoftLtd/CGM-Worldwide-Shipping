@@ -270,10 +270,15 @@ def validate_application_not_manually_completed(
 		return
 	if task.status == "Completed" and can_complete_application_task(task, profile):
 		return
+	cert_hint = (
+		f", the <b>{profile.receipt_label}</b>, and the <b>{profile.certificate_document_code}</b> "
+		f"certificate"
+		if profile.certificate_document_code
+		else f" and the <b>{profile.receipt_label}</b>"
+	)
 	frappe.throw(
-		f"Complete this task by attaching a verified <b>{profile.invoice_label}</b>, "
-		f"the <b>{profile.receipt_label}</b>, and the <b>{profile.certificate_document_code}</b> "
-		f"certificate on this form. The task will mark itself <b>Completed</b> automatically "
+		f"Complete this task by attaching a verified <b>{profile.invoice_label}</b>{cert_hint} "
+		f"on this form. The task will mark itself <b>Completed</b> automatically "
 		"when all requirements are in place."
 	)
 
