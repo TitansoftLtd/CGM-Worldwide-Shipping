@@ -466,7 +466,7 @@ def ensure_task_container_fields() -> None:
 			"collapsible": 1,
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -480,7 +480,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_section_container_event",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -493,7 +493,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_container_tracker",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -507,7 +507,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_container_number",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -516,7 +516,7 @@ def ensure_task_container_fields() -> None:
 
 def ensure_task_container_update_fields() -> None:
 	"""Task child table for per-container data entry (tasks 11, 16, 18–24)."""
-	container_seqs = "11,16,18,19,20,21,22,23,24"
+	container_seqs = "11,18,20,21,22,23,24,25,26"
 	depends = (
 		f"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
 		f"[{container_seqs}].includes(doc.custom_sequence_no)"
@@ -552,7 +552,7 @@ def ensure_task_container_update_fields() -> None:
 			"insert_after": "custom_container_updates",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"doc.custom_sequence_no == 19"
+				"doc.custom_sequence_no == 21"
 			),
 			"description": (
 				"Required when task is completed but no truck details are filled "
@@ -566,7 +566,7 @@ def ensure_task_container_update_fields() -> None:
 def ensure_field_officer_task_fields() -> None:
 	"""Task 16 field-officer clearance tracking fields."""
 	depends = (
-		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 16"
+		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 18"
 	)
 	_create_cf(
 		"Task",

@@ -6,6 +6,7 @@ import frappe
 from frappe.model.document import Document
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+	CLOSED_CONTAINER_STATUSES,
 	compute_container_metrics,
 	populate_rates_from_shipping_line,
 )
@@ -22,6 +23,13 @@ class ContainerTracker(Document):
 	def on_update(self):
 		sync_container_summary_to_project(self.project)
 		_sync_project_child_row(self)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			check_all_container_tasks_for_project,
+			sync_tracker_fields_to_open_task_rows,
+		)
+
+		sync_tracker_fields_to_open_task_rows(self)
+		check_all_container_tasks_for_project(self.project)
 
 
 def _sync_project_child_row(doc) -> None:
@@ -107,14 +115,10 @@ _CONTAINER_TRACKER_FIELDS = [
 	"driver_name",
 	"driver_contact",
 	"transporter",
-	"rate_source",
 	"port_days_used",
 	"demurrage_days",
 	"detention_days",
-	"demurrage_amount",
-	"detention_amount",
 	"kpa_days",
-	"kpa_amount",
 	"expected_empty_return",
 	"actual_empty_return",
 	"gate_in_date_depot",
@@ -214,10 +218,7 @@ _COMPUTED_METRIC_FIELDS = (
 	"demurrage_start_date",
 	"demurrage_days",
 	"detention_days",
-	"demurrage_amount",
-	"detention_amount",
 	"kpa_days",
-	"kpa_amount",
 	"days_outstanding",
 	"status",
 )
@@ -227,7 +228,7 @@ _COMPUTED_METRIC_FIELDS = (
 def refresh_open_container_metrics() -> int:
 	rows = frappe.get_all(
 		"Container Tracker",
-		filters={"actual_empty_return": ["is", "not set"]},
+		filters={"status": ["not in", list(CLOSED_CONTAINER_STATUSES)]},
 		fields=_CONTAINER_TRACKER_FIELDS,
 	)
 	projects = set()

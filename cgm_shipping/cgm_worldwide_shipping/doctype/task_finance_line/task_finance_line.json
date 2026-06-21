@@ -36,7 +36,7 @@
    "fieldtype": "Select",
    "hidden": 1,
    "label": "Payment Item",
-   "options": "UCR\nShipping Line\nCustoms Entry\nKPA"
+   "options": "UCR\nENTRY_SLIP\nShipping Line\nCustoms Entry\nKPA"
   },
   {
    "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line.",

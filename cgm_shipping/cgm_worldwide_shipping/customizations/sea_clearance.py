@@ -12,6 +12,7 @@ from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
+	POST_CLEARANCE_STAGE,
 	SEA_TASK_FLOW_KEY,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
@@ -108,10 +109,9 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 			completed.add(seq)
 		elif (
 			is_permit_application_task(seq)
-			and get_permit_stage_for_sequence(seq) == PRE_CLEARANCE_STAGE
 			and row.get("custom_permit_invoices_submitted")
 		):
-			# Pre-clearance permit application stays Open until finance completes - still unlocks finance step.
+			# Permit application stays Open until finance completes - still unlocks finance step.
 			completed.add(seq)
 	return completed
 
@@ -195,7 +195,9 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_permit_stage_for_sequence,
 		is_entry_application_task,
+		is_kpa_application_task,
 		is_permit_application_task,
+		is_shipping_line_application_task,
 		is_ucr_application_task,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -237,11 +239,23 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 				r.name, APPLICATION_FINANCE_PROFILES["Entry Application"]
 			)
 		)
+		and not (
+			is_shipping_line_application_task(r.seq)
+			and application_invoice_submitted(
+				r.name, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
+			)
+		)
+		and not (
+			is_kpa_application_task(r.seq)
+			and application_invoice_submitted(
+				r.name, APPLICATION_FINANCE_PROFILES["KPA Application"]
+			)
+		)
 	]
-	# Transport tasks (19–24) run in parallel — do not block each other.
-	if 19 <= before_sequence <= 24:
+	# Transport tasks (21–26) run in parallel — do not block each other.
+	if 21 <= before_sequence <= 26:
 		filtered = [
-			r for r in filtered if not (19 <= r.seq < before_sequence)
+			r for r in filtered if not (21 <= r.seq < before_sequence)
 		]
 	return filtered
 
@@ -316,13 +330,22 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 	enforce_sea_tasks_exist(project)
 
 	if gate_rule == "Permit Invoices Submitted":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			get_permit_stage_for_sequence,
+			is_permit_application_task,
+		)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			permit_invoices_ready_for_project,
 		)
 
-		if not permit_invoices_ready_for_project(project, "Pre-clearance"):
+		stage = (
+			get_permit_stage_for_sequence(required_seq)
+			if is_permit_application_task(required_seq)
+			else PRE_CLEARANCE_STAGE
+		)
+		if not permit_invoices_ready_for_project(project, stage):
 			frappe.throw(
-				"Attach all permit invoices on <b>Apply for Pre-Clearance Permits</b> and save — "
+				f"Attach all permit invoices on the <b>{stage}</b> permit application task and save — "
 				"Finance is notified automatically — before advancing workflow."
 			)
 		return
@@ -350,6 +373,14 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 		)
 
 		enforce_entry_finance_gate(project)
+		return
+
+	if gate_rule == "KPA Finance Complete":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+			enforce_kpa_finance_gate,
+		)
+
+		enforce_kpa_finance_gate(project)
 		return
 
 	if gate_rule == "All Sea Tasks Complete":
@@ -519,8 +550,9 @@ def create_sea_import_task_plan_internal(project, reset=False):
 		task.insert(ignore_permissions=True)
 
 		if prev_task:
-			# Transport tasks (19–24) are independent; only task 19 chains from task 18.
-			if seq in TRANSPORT_TASK_SEQS and seq != 19:
+			# Transport tasks (20–25) are independent; only the first transport step chains from KPA paid.
+			book_trucks_seq = min(TRANSPORT_TASK_SEQS)
+			if seq in TRANSPORT_TASK_SEQS and seq != book_trucks_seq:
 				pass
 			else:
 				task.append("depends_on", {"task": prev_task.name})

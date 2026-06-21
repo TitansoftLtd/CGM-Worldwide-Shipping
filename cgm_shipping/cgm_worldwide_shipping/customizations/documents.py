@@ -463,6 +463,79 @@ def upsert_shipment_document_row(
 		row.uploaded_on = row.uploaded_on or now_datetime()
 
 
+def serialize_clients_document_row(row) -> dict:
+	"""Dict for re-appending a Clients Documents / Shipment Document child row."""
+	normalize_shipment_document_row(row)
+	data = {
+		"document_type": row.document_type,
+		"status": row.status,
+		"uploaded_by": row.uploaded_by,
+		"uploaded_on": row.uploaded_on,
+		"verified_by": row.verified_by,
+		"verified_on": row.verified_on,
+		"remarks": row.remarks,
+	}
+	if has_document_versioning():
+		data["initial_attachment"] = row.get("initial_attachment")
+		data["final_attachment"] = row.get("final_attachment")
+		data["attachment"] = primary_attachment(row)
+		if row.meta.has_field("version_status"):
+			data["version_status"] = row.get("version_status")
+	else:
+		data["attachment"] = primary_attachment(row) or row.get("attachment")
+	return data
+
+
+def prepend_clients_document_row(
+	parent_doc,
+	table_field: str,
+	document_type: str,
+	attachment_url: str,
+	*,
+	status: str = "Uploaded",
+	remarks: str | None = None,
+) -> bool:
+	"""Insert one document row first, preserving other rows (Opportunity Clients Documents)."""
+	if not attachment_url or not document_type or not parent_doc.meta.has_field(table_field):
+		return False
+	if not frappe.db.exists("Document Type", document_type):
+		return False
+
+	existing = list(parent_doc.get(table_field) or [])
+	other_rows = [
+		row for row in existing if not document_types_match(row.document_type, document_type)
+	]
+
+	parent_doc.set(table_field, [])
+	upsert_shipment_document_row(
+		parent_doc,
+		table_field,
+		document_type,
+		initial_url=attachment_url,
+		status=status,
+		remarks=remarks,
+	)
+
+	rows = parent_doc.get(table_field) or []
+	if rows:
+		rows[0].uploaded_by = rows[0].uploaded_by or frappe.session.user
+		rows[0].uploaded_on = rows[0].uploaded_on or now_datetime()
+
+	for row in other_rows:
+		parent_doc.append(table_field, serialize_clients_document_row(row))
+	return True
+
+
+def normalize_opportunity_clients_documents(doc, _method=None) -> None:
+	"""Hydrate initial/final slots on Opportunity Clients Documents before save."""
+	if doc.doctype != "Opportunity":
+		return
+	field = get_opportunity_documents_field()
+	if not field or not doc.meta.has_field(field):
+		return
+	normalize_shipment_documents_table(doc.get(field))
+
+
 def seed_checkpoint_task_documents_from_project(task) -> bool:
 	"""Document-checkpoint tasks mirror Project rows (initial + any existing final)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
@@ -873,8 +946,8 @@ def get_bill_of_lading_attachment_url(
 		return None
 
 	for row in source_doc.get(clients_field) or []:
-		if document_types_match(row.document_type, bl_type) and row.attachment:
-			return row.attachment
+		if document_types_match(row.document_type, bl_type) and primary_attachment(row):
+			return primary_attachment(row)
 	return None
 
 

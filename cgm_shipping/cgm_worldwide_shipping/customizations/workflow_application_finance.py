@@ -14,6 +14,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	can_complete_application_task,
 	copy_application_receipt_to_finance_task,
 	ensure_application_finance_lines_saved,
+	ensure_application_receipt_on_finance_task,
 	get_application_finance_task,
 	get_application_task,
 	get_invoice_line,
@@ -27,6 +28,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	profile_for_task,
 	project_has_submitted_invoice,
 	receipt_attached,
+	receipt_attached_for_payment_workflow,
 	seed_application_finance_lines,
 	sync_application_finance_lines_to_idf_record,
 	sync_certificate_to_project,
@@ -270,10 +272,15 @@ def validate_application_not_manually_completed(
 		return
 	if task.status == "Completed" and can_complete_application_task(task, profile):
 		return
+	cert_hint = (
+		f", the <b>{profile.receipt_label}</b>, and the <b>{profile.certificate_document_code}</b> "
+		f"certificate"
+		if profile.certificate_document_code
+		else f" and the <b>{profile.receipt_label}</b>"
+	)
 	frappe.throw(
-		f"Complete this task by attaching a verified <b>{profile.invoice_label}</b>, "
-		f"the <b>{profile.receipt_label}</b>, and the <b>{profile.certificate_document_code}</b> "
-		f"certificate on this form. The task will mark itself <b>Completed</b> automatically "
+		f"Complete this task by attaching a verified <b>{profile.invoice_label}</b>{cert_hint} "
+		f"on this form. The task will mark itself <b>Completed</b> automatically "
 		"when all requirements are in place."
 	)
 
@@ -456,6 +463,24 @@ def close_application_when_finance_done(
 
 
 @frappe.whitelist()
+def sync_application_receipt_for_finance_task(
+	task_name: str, profile_key: str
+) -> dict:
+	frappe.has_permission("Task", ptype="read", doc=task_name, throw=True)
+	profile = _profile_by_key(profile_key)
+	task = frappe.get_doc("Task", task_name)
+	if not is_application_payment_task_doc(task, profile):
+		frappe.throw(f"This action is only for the <b>{profile.finance_payment_kind}</b> finance task.")
+	had_receipt = receipt_attached(task, profile)
+	synced = ensure_application_receipt_on_finance_task(task, profile) and not had_receipt
+	task.reload()
+	return {
+		"synced": synced,
+		"receipt_attached": receipt_attached_for_payment_workflow(task, profile),
+	}
+
+
+@frappe.whitelist()
 def ensure_application_finance_lines(task_name: str, profile_key: str) -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	profile = _profile_by_key(profile_key)
@@ -584,6 +609,10 @@ def verify_application_finance_line(
 	if line_type not in ("Invoice", "Receipt"):
 		frappe.throw("Invalid line type.")
 	seed_application_finance_lines(task, profile)
+	if line_type == "Receipt":
+		ensure_application_receipt_on_finance_task(task, profile)
+		task.reload()
+		seed_application_finance_lines(task, profile)
 	line = (
 		get_invoice_line(task, profile)
 		if line_type == "Invoice"
@@ -592,9 +621,24 @@ def verify_application_finance_line(
 	if not line:
 		frappe.throw(f"<b>{profile.invoice_label if line_type == 'Invoice' else profile.receipt_label}</b> row is missing.")
 	if not line.attachment:
-		frappe.throw(
-			f"Attach the <b>{profile.invoice_label if line_type == 'Invoice' else profile.receipt_label}</b> before verifying."
-		)
+		if line_type == "Receipt" and receipt_attached_for_payment_workflow(task, profile):
+			app_name = get_application_task(task.project, profile) if task.project else None
+			app_line = (
+				get_receipt_line(frappe.get_doc("Task", app_name), profile) if app_name else None
+			)
+			if app_line and app_line.attachment:
+				line.attachment = app_line.attachment
+				if app_line.amount and not line.amount:
+					line.amount = app_line.amount
+		if not line.attachment:
+			if line_type == "Receipt":
+				frappe.throw(
+					f"The <b>{profile.receipt_label}</b> must be attached on the linked "
+					f"application task before Finance can verify it."
+				)
+			frappe.throw(
+				f"Attach the <b>{profile.invoice_label if line_type == 'Invoice' else profile.receipt_label}</b> before verifying."
+			)
 	line.verified = 1
 	line.verified_by = frappe.session.user
 	line.verified_on = now_datetime()
@@ -664,10 +708,10 @@ def process_application_workflow_onload(task) -> bool:
 		"Cancelled",
 	):
 		if task.project:
-			app_name = get_application_task(task.project, profile)
-			if app_name:
-				copy_application_receipt_to_finance_task(frappe.get_doc("Task", app_name), profile)
+			had_receipt = receipt_attached(task, profile)
+			if ensure_application_receipt_on_finance_task(task, profile) and not had_receipt:
 				task.reload()
+				changed = True
 			if try_auto_complete_application_finance_task(task, profile):
 				changed = True
 	return changed
@@ -687,4 +731,21 @@ def enforce_entry_finance_gate(project: str) -> None:
 		frappe.throw(
 			"Cannot move to <b>Entry Paid</b> until <b>Finance Pays Entry Slip</b> is completed: "
 			"Entry Slip invoice verified, payment recorded, receipt verified, and ENTRY document uploaded."
+		)
+
+
+def enforce_kpa_finance_gate(project: str) -> None:
+	profile = APPLICATION_FINANCE_PROFILES["KPA Application"]
+	finance_task_name = get_application_finance_task(project, profile)
+	if not finance_task_name:
+		frappe.throw(
+			"Generate the sea task plan and complete <b>Finance pays KPA Invoice</b> first."
+		)
+	finance_task = frappe.get_doc("Task", finance_task_name)
+	if finance_task.status != "Completed" or not can_complete_application_finance_task(
+		finance_task, profile
+	):
+		frappe.throw(
+			"Cannot move to <b>KPA Paid</b> until <b>Finance pays KPA Invoice</b> is completed: "
+			"KPA invoice verified, payment recorded, and KPA receipt verified."
 		)

@@ -536,13 +536,78 @@ def download_transaction_pdf(doctype: str, name: str, disposition: str = "attach
 # ─── Documents ───────────────────────────────────────────────────────────────
 
 
-def get_shipment_documents(project_name: str) -> list[dict]:
-	"""Vetted documents on a shipment that a customer may download.
+def _portal_document_fields() -> list[str]:
+	fields = [
+		"name",
+		"document_type",
+		"attachment",
+		"verified_on",
+		"uploaded_on",
+		"remarks",
+		"status",
+	]
+	meta = frappe.get_meta("Shipment Document")
+	for fieldname in ("initial_attachment", "final_attachment"):
+		if meta.has_field(fieldname):
+			fields.append(fieldname)
+	return fields
 
-	Only rows that (a) have an attachment and (b) have been verified by
-	staff (`verified_on` set) are surfaced - the customer never sees
-	draft, missing, or unverified paperwork. Each row is enriched with a
-	friendly document name and a guarded download URL.
+
+def _is_portal_visible_document(row: dict) -> bool:
+	"""Shared documents with a file; hide missing/rejected rows."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
+	)
+
+	if not primary_attachment(row):
+		return False
+	status = (row.get("status") or "").strip()
+	return status not in ("Missing", "Rejected")
+
+
+_PORTAL_INTERNAL_REMARKS = frozenset(
+	{"Carried from Project (approved on Lead/Opportunity/Customer)"}
+)
+_PORTAL_INTERNAL_REMARK_PREFIXES = (
+	"From submitted Bill of Lading",
+)
+
+
+def _portal_document_remarks(remarks: str | None) -> str:
+	"""Drop internal sync notes before rendering on the customer portal."""
+	if not remarks:
+		return ""
+	trimmed = remarks.strip()
+	if trimmed in _PORTAL_INTERNAL_REMARKS:
+		return ""
+	if any(trimmed.startswith(prefix) for prefix in _PORTAL_INTERNAL_REMARK_PREFIXES):
+		return ""
+	return trimmed
+
+
+def _enrich_portal_document(row: dict, project_name: str) -> dict:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
+	)
+
+	row["attachment"] = primary_attachment(row)
+	row["remarks"] = _portal_document_remarks(row.get("remarks"))
+	row["doc_label"] = _document_label(row.get("document_type"))
+	row["download_url"] = (
+		"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_shipment_document"
+		+ f"?project={quote(project_name, safe='')}"
+		+ f"&row={quote(row['name'], safe='')}"
+	)
+	return row
+
+
+def get_shipment_documents(project_name: str) -> list[dict]:
+	"""Documents on a shipment that a customer may download.
+
+	Surfaces rows with a primary file (initial, final, or legacy attachment)
+	that staff have uploaded or verified. Missing and rejected rows stay
+	hidden. Each row is enriched with a friendly document name and a guarded
+	download URL.
 	"""
 	if not project_name:
 		return []
@@ -551,67 +616,67 @@ def get_shipment_documents(project_name: str) -> list[dict]:
 		filters={
 			"parent": project_name,
 			"parenttype": "Project",
-			"attachment": ["is", "set"],
-			"verified_on": ["is", "set"],
+			"status": ["not in", ["Missing", "Rejected"]],
 		},
-		fields=[
-			"name",
-			"document_type",
-			"attachment",
-			"verified_on",
-			"uploaded_on",
-			"remarks",
-		],
-		order_by="verified_on desc",
+		fields=_portal_document_fields(),
+		order_by="verified_on desc, uploaded_on desc, modified desc",
 	)
+	visible = []
 	for row in rows:
-		row["doc_label"] = _document_label(row.get("document_type"))
-		row["download_url"] = (
-			"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_shipment_document"
-			+ f"?project={quote(project_name, safe='')}"
-			+ f"&row={quote(row['name'], safe='')}"
-		)
-	return rows
+		if not _is_portal_visible_document(row):
+			continue
+		visible.append(_enrich_portal_document(row, project_name))
+	return visible
 
 
 def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
-	"""Every vetted, downloadable document across a customer's shipments.
+	"""Every downloadable document across a customer's shipments.
 
 	One join over Shipment Document → Project keeps this to a single query
-	instead of one per shipment. Same vetting rule as
-	`get_shipment_documents`: attachment present and verified by staff.
-	Each row carries its owning shipment's ref + a guarded download URL.
+	instead of one per shipment. Same visibility rule as
+	`get_shipment_documents`. Each row carries its owning shipment's ref +
+	a guarded download URL.
 	"""
 	if not customer:
 		return []
 	ref_sql = _project_ref_sql_coalesce("p")
+	has_versioning = frappe.get_meta("Shipment Document").has_field("initial_attachment")
+	attachment_clause = (
+		"""(
+		  IFNULL(sd.attachment, '') != ''
+		  OR IFNULL(sd.initial_attachment, '') != ''
+		  OR IFNULL(sd.final_attachment, '') != ''
+		)"""
+		if has_versioning
+		else "IFNULL(sd.attachment, '') != ''"
+	)
 	rows = frappe.db.sql(
 		f"""
 		SELECT sd.name, sd.document_type, sd.attachment, sd.verified_on,
-		       sd.remarks, p.name AS project,
+		       sd.uploaded_on, sd.status, sd.remarks, p.name AS project,
 		       {ref_sql} AS ref
+		       {", sd.initial_attachment, sd.final_attachment" if has_versioning else ""}
 		FROM `tabShipment Document` sd
 		JOIN `tabProject` p ON p.name = sd.parent
 		WHERE sd.parenttype = 'Project'
 		  AND p.customer = %s
-		  AND IFNULL(sd.attachment, '') != ''
-		  AND sd.verified_on IS NOT NULL
-		ORDER BY sd.verified_on DESC
+		  AND IFNULL(sd.status, 'Missing') NOT IN ('Missing', 'Rejected')
+		  AND {attachment_clause}
+		ORDER BY sd.verified_on DESC, sd.uploaded_on DESC, sd.modified DESC
 		LIMIT %s
 		""",
 		(customer, limit),
 		as_dict=True,
 	)
+	out = []
 	for row in rows:
-		row["doc_label"] = _document_label(row.get("document_type"))
+		if not _is_portal_visible_document(row):
+			continue
+		_enrich_portal_document(row, row["project"])
 		row["ref"] = row.get("ref") or row.get("project")
 		row["shipment_url"] = "/shipment?name=" + quote(row["project"], safe="")
-		row["download_url"] = (
-			"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_shipment_document"
-			+ f"?project={quote(row['project'], safe='')}"
-			+ f"&row={quote(row['name'], safe='')}"
-		)
-	return rows
+		out.append(row)
+	return out
 
 
 def _document_label(document_type: str | None) -> str:
@@ -640,11 +705,21 @@ def download_shipment_document(project: str, row: str):
 	if not owner or owner != customer:
 		raise frappe.PermissionError(_("You can only download your own shipment documents."))
 
-	file_url = frappe.db.get_value(
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
+	)
+
+	fields = _portal_document_fields()
+	doc_row = frappe.db.get_value(
 		"Shipment Document",
 		{"name": row, "parent": project, "parenttype": "Project"},
-		"attachment",
+		fields,
+		as_dict=True,
 	)
+	if not doc_row or not _is_portal_visible_document(doc_row):
+		raise frappe.PermissionError(_("Document not found on this shipment."))
+
+	file_url = primary_attachment(doc_row)
 	if not file_url:
 		raise frappe.PermissionError(_("Document not found on this shipment."))
 

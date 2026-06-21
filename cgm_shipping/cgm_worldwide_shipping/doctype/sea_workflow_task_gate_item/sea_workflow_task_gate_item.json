@@ -32,7 +32,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Gate rule",
-   "options": "Standard\nPermit Invoices Submitted\nUCR Finance Complete\nEntry Finance Complete\nAll Sea Tasks Complete",
+   "options": "Standard\nPermit Invoices Submitted\nUCR Finance Complete\nEntry Finance Complete\nKPA Finance Complete\nAll Sea Tasks Complete",
    "reqd": 1
   }
  ],
