@@ -12,8 +12,10 @@ from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
+	POST_CLEARANCE_STAGE,
 	SEA_TASK_FLOW_KEY,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_permit_stage_for_sequence
 from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
 	sea_import_task_sequence_no,
 )
@@ -108,10 +110,9 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 			completed.add(seq)
 		elif (
 			is_permit_application_task(seq)
-			and get_permit_stage_for_sequence(seq) == PRE_CLEARANCE_STAGE
 			and row.get("custom_permit_invoices_submitted")
 		):
-			# Pre-clearance permit application stays Open until finance completes - still unlocks finance step.
+			# Permit application stays Open until finance completes - still unlocks finance step.
 			completed.add(seq)
 	return completed
 
@@ -316,13 +317,21 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 	enforce_sea_tasks_exist(project)
 
 	if gate_rule == "Permit Invoices Submitted":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			is_permit_application_task,
+		)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			permit_invoices_ready_for_project,
 		)
 
-		if not permit_invoices_ready_for_project(project, "Pre-clearance"):
+		stage = (
+			get_permit_stage_for_sequence(required_seq)
+			if is_permit_application_task(required_seq)
+			else PRE_CLEARANCE_STAGE
+		)
+		if not permit_invoices_ready_for_project(project, stage):
 			frappe.throw(
-				"Attach all permit invoices on <b>Apply for Pre-Clearance Permits</b> and save — "
+				f"Attach all permit invoices on the <b>{stage}</b> permit application task and save — "
 				"Finance is notified automatically — before advancing workflow."
 			)
 		return

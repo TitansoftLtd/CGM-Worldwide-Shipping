@@ -105,15 +105,25 @@ frappe.ui.form.on("Task", {
 			if (ui.show_permits) {
 				const seq = sea_task_sequence(frm);
 				if (is_permit_finance_step(frm, seq)) {
+					const appLabel = permit_application_task_label(
+						frm,
+						get_paired_permit_application_seq(frm, seq)
+					);
 					intro = __(
 						"<b>1 Finance:</b> <b>Make Payment</b> (records a Journal Entry) · " +
-							"<b>2 Declarant:</b> Upload receipts on <b>Apply for Pre-Clearance Permits</b> · " +
-							"<b>3 Finance:</b> Use <b>Actions → Verify Receipt</b> — both tasks complete automatically."
+							"<b>2 Declarant:</b> Upload receipts on <b>{0}</b> · " +
+							"<b>3 Finance:</b> Use <b>Actions → Verify Receipt</b> — both tasks complete automatically.",
+						[appLabel]
 					);
 				} else if (frm.doc.custom_permit_invoices_submitted) {
+					const finLabel = permit_finance_task_label(
+						frm,
+						get_paired_permit_finance_seq(frm, seq)
+					);
 					intro = __(
 						"<b>After Finance pays:</b> Upload <b>Payment Receipt</b> and <b>Permit Certificate</b> on each row. " +
-							"Finance verifies receipts on <b>Finance pays Pre-Clearance Permits</b>, then complete this task."
+							"Finance verifies receipts on <b>{0}</b>, then this task completes automatically.",
+						[finLabel]
 					);
 				} else {
 					intro = __(
@@ -298,6 +308,20 @@ frappe.ui.form.on("Task", {
 			user_can_upload_receipt(frm)
 		) {
 			frm.add_custom_button(__("Complete Pre-Clearance Permits Task"), async () => {
+				await frm.set_value("completed_by", frappe.session.user);
+				await frm.set_value("completed_on", frappe.datetime.now_datetime());
+				await frm.set_value("status", "Completed");
+				await frm.save();
+			}).addClass("btn-primary");
+		}
+
+		if (
+			is_post_clearance_permit_application_step(frm) &&
+			frm.doc.status !== "Completed" &&
+			frm.doc.custom_permit_invoices_submitted &&
+			user_can_upload_receipt(frm)
+		) {
+			frm.add_custom_button(__("Complete Post-Clearance Permits Task"), async () => {
 				await frm.set_value("completed_by", frappe.session.user);
 				await frm.set_value("completed_on", frappe.datetime.now_datetime());
 				await frm.set_value("status", "Completed");
@@ -556,6 +580,59 @@ function is_pre_clearance_permit_application_step(frm, seq) {
 	);
 }
 
+function is_post_clearance_permit_application_step(frm, seq) {
+	const s = seq !== undefined ? seq : sea_task_sequence(frm);
+	return (
+		is_permit_application_step(frm, s) &&
+		get_permit_stage_for_seq(frm, s) === "Post-clearance"
+	);
+}
+
+function is_permit_application_step_for_stage(frm, seq) {
+	return (
+		is_pre_clearance_permit_application_step(frm, seq) ||
+		is_post_clearance_permit_application_step(frm, seq)
+	);
+}
+
+function get_paired_permit_application_seq(frm, financeSeq) {
+	const stage = get_permit_stage_for_seq(frm, financeSeq);
+	if (!stage) {
+		return null;
+	}
+	const cfg = get_cgm_sea_seq_config(frm);
+	return (cfg.permit_application_seqs || []).find(
+		(seq) => get_permit_stage_for_seq(frm, seq) === stage
+	);
+}
+
+function get_paired_permit_finance_seq(frm, applicationSeq) {
+	const stage = get_permit_stage_for_seq(frm, applicationSeq);
+	if (!stage) {
+		return null;
+	}
+	const cfg = get_cgm_sea_seq_config(frm);
+	return (cfg.permit_finance_seqs || []).find(
+		(seq) => get_permit_stage_for_seq(frm, seq) === stage
+	);
+}
+
+function permit_application_task_label(frm, seq) {
+	const stage = get_permit_stage_for_seq(frm, seq);
+	if (stage === "Post-clearance") {
+		return __("Prepare Post-Clearance Permits");
+	}
+	return __("Apply for Pre-Clearance Permits");
+}
+
+function permit_finance_task_label(frm, financeSeq) {
+	const stage = get_permit_stage_for_seq(frm, financeSeq);
+	if (stage === "Post-clearance") {
+		return __("Finance pays for Post-Clearance Permits");
+	}
+	return __("Finance pays Pre-Clearance Permits");
+}
+
 const SEA_TASK_HIDDEN_FIELDS = [
 	"is_template",
 	"issue",
@@ -809,7 +886,7 @@ function apply_sea_task_form_layout(frm, ui) {
 
 function apply_field_officer_task_fields(frm) {
 	const seq = sea_task_sequence(frm);
-	const show = is_sea_clearance_task(frm) && seq === 17;
+	const show = is_sea_clearance_task(frm) && seq === 18;
 	const fields = [
 		"custom_section_field_clearance",
 		"custom_verification_type",
@@ -1502,7 +1579,7 @@ frappe.ui.form.on("Permit Register", {
 		if (row.payment_invoice) {
 			frappe.model.set_value(cdt, cdn, "status", "Invoice Submitted");
 		}
-		if (is_pre_clearance_permit_application_step(frm) && row.payment_invoice) {
+		if (is_permit_application_step_for_stage(frm) && row.payment_invoice) {
 			frappe.show_alert({
 				message: __(
 					"Permit invoice saved - Finance will be notified when all invoices are attached and you save."
@@ -1520,7 +1597,7 @@ frappe.ui.form.on("Permit Register", {
 			return;
 		}
 		const seq = sea_task_sequence(frm);
-		if (!is_permit_finance_step(frm, seq) && !is_pre_clearance_permit_application_step(frm, seq)) {
+		if (!is_permit_finance_step(frm, seq) && !is_permit_application_step_for_stage(frm, seq)) {
 			return;
 		}
 		const row = locals[cdt][cdn];
@@ -1537,7 +1614,7 @@ frappe.ui.form.on("Permit Register", {
 	},
 
 	permit_document(frm, cdt, cdn) {
-		if (frm.doctype !== "Task" || !is_pre_clearance_permit_application_step(frm)) {
+		if (frm.doctype !== "Task" || !is_permit_application_step_for_stage(frm)) {
 			return;
 		}
 		const row = locals[cdt][cdn];
