@@ -2591,6 +2591,13 @@ def on_task_onload(doc, _method=None):
 
 	on_task_onload_container_updates(doc)
 
+	if _is_sea_task(doc) and doc.meta.has_field(TASK_DOCUMENTS_FIELD):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+			prepare_shipment_documents_for_form,
+		)
+
+		prepare_shipment_documents_for_form(doc, TASK_DOCUMENTS_FIELD)
+
 
 def before_task_save(doc, _method=None):
 	"""Pre-fill required document rows while the task is still open."""
@@ -2635,9 +2642,19 @@ def before_task_save(doc, _method=None):
 	if _is_sea_task(doc) and is_document_checkpoint_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 			normalize_shipment_documents_table,
+			promote_checkpoint_task_final_uploads,
+			sync_checkpoint_finals_to_project,
 		)
 
+		promote_checkpoint_task_final_uploads(doc)
 		normalize_shipment_documents_table(doc.get(TASK_DOCUMENTS_FIELD))
+		sync_checkpoint_finals_to_project(doc)
+	elif _is_sea_task(doc) and doc.get(TASK_DOCUMENTS_FIELD):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+			sync_single_task_documents_to_project,
+		)
+
+		sync_single_task_documents_to_project(doc)
 
 
 def on_task_update(doc, _method=None):
@@ -2716,12 +2733,6 @@ def on_task_update(doc, _method=None):
 	if frappe.flags.get("cgm_skip_task_project_sync"):
 		return
 	if doc.get("project"):
-		if _is_sea_task(doc) and is_document_checkpoint_task(seq):
-			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-				sync_checkpoint_finals_to_project,
-			)
-
-			sync_checkpoint_finals_to_project(doc)
 		refresh_project_documents(doc.project)
 		sync_task_permits_to_project(doc)
 		if _is_sea_task(doc):
@@ -2764,6 +2775,12 @@ def on_task_update(doc, _method=None):
 			close_application_when_finance_done(
 				doc, APPLICATION_FINANCE_PROFILES["Entry Application"]
 			)
+		if _is_sea_task(doc) and is_entry_application_task(seq) and doc.get("project"):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+				ensure_container_trackers_on_entry_task_complete,
+			)
+
+			ensure_container_trackers_on_entry_task_complete(doc)
 
 
 def validate_task_completion_requirements(doc, _method=None):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
@@ -183,57 +184,134 @@ def normalize_shipment_document_row(row, *, prefer_initial_for_legacy: bool = Tr
 			row.status = "Uploaded"
 
 
+	if row.attachment and row.meta.has_field("status"):
+		if row.get("status") in (None, "", "Missing"):
+			row.status = "Uploaded"
+
+
+def resolve_document_row_slots(row) -> tuple[str, str]:
+	"""Return (initial_url, final_url) from a Shipment Document row."""
+	if not row:
+		return "", ""
+	normalize_shipment_document_row(row)
+	initial = (row.get("initial_attachment") or "").strip()
+	final = (row.get("final_attachment") or "").strip()
+	legacy = (row.get("attachment") or "").strip()
+	version = (row.get("version_status") or "").strip()
+
+	if not final and legacy:
+		if initial and legacy != initial:
+			final = legacy
+		elif version == "Final Received":
+			final = legacy or initial
+		elif not initial:
+			initial = legacy
+
+	if version == "Final Received" and initial and not final:
+		final = initial
+
+	return initial, final
+
+
+def promote_checkpoint_task_final_uploads(task) -> None:
+	"""When ops attach via Primary, move the file into Final Document on checkpoint tasks."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_document_checkpoint_task,
+	)
+
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not is_document_checkpoint_task(seq):
+		return
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return
+
+	for row in task.get(TASK_DOCUMENTS_FIELD) or []:
+		initial = (row.get("initial_attachment") or "").strip()
+		final = (row.get("final_attachment") or "").strip()
+		legacy = (row.get("attachment") or "").strip()
+		version = (row.get("version_status") or "").strip()
+
+		if not final and legacy and initial and legacy != initial:
+			row.final_attachment = legacy
+		elif not final and version == "Final Received" and legacy:
+			row.final_attachment = legacy
+		elif not final and version == "Final Received" and initial:
+			row.final_attachment = initial
+		elif not final and legacy and not initial:
+			row.initial_attachment = legacy
+
+		normalize_shipment_document_row(row)
+
+
+def hide_computed_shipment_document_columns() -> None:
+	"""Keep Primary Attachment / Version Status off editable grids."""
+	if not frappe.db.exists("DocType", "Shipment Document"):
+		return
+	for fieldname in ("attachment", "version_status"):
+		frappe.db.set_value(
+			"DocField",
+			{"parent": "Shipment Document", "fieldname": fieldname},
+			{"hidden": 1, "in_list_view": 0},
+			update_modified=False,
+		)
+	frappe.clear_cache(doctype="Shipment Document")
+
+
 def ensure_shipment_document_version_fields() -> None:
 	"""Idempotent Custom Field installer when JSON migrate has not run yet."""
 	meta = _shipment_document_meta()
-	if meta.has_field("initial_attachment"):
-		return
+	if not meta.has_field("initial_attachment"):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _create_cf
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _create_cf
+		_create_cf(
+			"Shipment Document",
+			{
+				"fieldname": "initial_attachment",
+				"label": "Initial Document",
+				"fieldtype": "Attach",
+				"insert_after": "required",
+				"in_list_view": 1,
+			},
+		)
+		_create_cf(
+			"Shipment Document",
+			{
+				"fieldname": "final_attachment",
+				"label": "Final Document",
+				"fieldtype": "Attach",
+				"insert_after": "initial_attachment",
+				"in_list_view": 1,
+			},
+		)
+		_create_cf(
+			"Shipment Document",
+			{
+				"fieldname": "version_status",
+				"label": "Version Status",
+				"fieldtype": "Select",
+				"options": "Proforma\nAwaiting Final\nFinal Received\nOnly Version",
+				"insert_after": "attachment",
+				"read_only": 1,
+			},
+		)
 
-	_create_cf(
-		"Shipment Document",
-		{
-			"fieldname": "initial_attachment",
-			"label": "Initial Document",
-			"fieldtype": "Attach",
-			"insert_after": "required",
-			"in_list_view": 1,
-		},
-	)
-	_create_cf(
-		"Shipment Document",
-		{
-			"fieldname": "final_attachment",
-			"label": "Final Document",
-			"fieldtype": "Attach",
-			"insert_after": "initial_attachment",
-			"in_list_view": 1,
-		},
-	)
-	if meta.has_field("attachment"):
+	if meta.has_field("attachment") or frappe.db.exists(
+		"DocField", {"parent": "Shipment Document", "fieldname": "attachment"}
+	):
 		frappe.db.set_value(
 			"DocField",
 			{"parent": "Shipment Document", "fieldname": "attachment"},
 			{
 				"label": "Primary Attachment",
 				"read_only": 1,
+				"hidden": 1,
+				"in_list_view": 0,
 				"description": "Synced from Final Document when present, otherwise Initial Document.",
 			},
 			update_modified=False,
 		)
-	_create_cf(
-		"Shipment Document",
-		{
-			"fieldname": "version_status",
-			"label": "Version Status",
-			"fieldtype": "Select",
-			"options": "Proforma\nAwaiting Final\nFinal Received\nOnly Version",
-			"insert_after": "attachment",
-			"in_list_view": 1,
-			"read_only": 1,
-		},
-	)
+
+	hide_computed_shipment_document_columns()
 	frappe.clear_cache(doctype="Shipment Document")
 
 
@@ -285,6 +363,38 @@ def migrate_legacy_shipment_document_attachments() -> None:
 def normalize_shipment_documents_table(rows) -> None:
 	for row in rows or []:
 		normalize_shipment_document_row(row)
+
+
+def prepare_shipment_documents_for_form(doc, table_field: str) -> None:
+	"""Hydrate legacy attachment into initial/final slots for form display (in-memory)."""
+	if not doc.meta.has_field(table_field):
+		return
+	normalize_shipment_documents_table(doc.get(table_field))
+
+
+def _copy_version_slots_to_row(target_row, source_row) -> bool:
+	"""Copy normalized initial/final slots from source → target. Returns True if changed."""
+	if not target_row or not source_row:
+		return False
+	normalize_shipment_document_row(source_row)
+	normalize_shipment_document_row(target_row)
+	changed = False
+	initial_url = (source_row.get("initial_attachment") or "").strip() or primary_attachment(source_row)
+	final_url = (source_row.get("final_attachment") or "").strip()
+	if initial_url and target_row.get("initial_attachment") != initial_url:
+		target_row.initial_attachment = initial_url
+		changed = True
+	if final_url and target_row.get("final_attachment") != final_url:
+		target_row.final_attachment = final_url
+		changed = True
+	for field in ("remarks",):
+		val = source_row.get(field)
+		if val and target_row.get(field) != val:
+			target_row.set(field, val)
+			changed = True
+	if changed:
+		normalize_shipment_document_row(target_row)
+	return changed
 
 
 def _find_matching_document_row(rows, document_type):
@@ -394,16 +504,48 @@ def seed_checkpoint_task_documents_from_project(task) -> bool:
 			task_rows.append(trow)
 			changed = True
 
-		for field in ("initial_attachment", "final_attachment", "remarks"):
-			val = prow.get(field)
-			if val and trow.get(field) != val:
-				trow.set(field, val)
-				changed = True
-		normalize_shipment_document_row(trow)
+		if _copy_version_slots_to_row(trow, prow):
+			changed = True
 		if trow.get("status") == "Missing" and primary_attachment(trow):
 			trow.status = prow.get("status") or "Uploaded"
 			changed = True
 
+	return changed
+
+
+def backfill_checkpoint_task_documents_from_project(task) -> bool:
+	"""Fill missing initial/final slots on existing checkpoint rows from Project."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_document_checkpoint_task,
+	)
+
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not is_document_checkpoint_task(seq) or not task.project:
+		return False
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	if not frappe.db.exists("Project", task.project):
+		return False
+
+	project = frappe.get_doc("Project", task.project)
+	if not project.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return False
+
+	changed = False
+	project_rows = list(project.get(SHIPMENT_DOCUMENTS_FIELD) or [])
+	for trow in task.get(TASK_DOCUMENTS_FIELD) or []:
+		if not trow.document_type:
+			continue
+		normalize_shipment_document_row(trow)
+		prow = _find_matching_document_row(project_rows, trow.document_type)
+		if not prow:
+			continue
+		needs_initial = not (trow.get("initial_attachment") or "").strip()
+		needs_final = not (trow.get("final_attachment") or "").strip()
+		if not needs_initial and not needs_final:
+			continue
+		if _copy_version_slots_to_row(trow, prow):
+			changed = True
 	return changed
 
 
@@ -421,6 +563,13 @@ def ensure_checkpoint_task_documents(task_name: str) -> dict:
 		return {"seeded": False}
 
 	if task.get(TASK_DOCUMENTS_FIELD):
+		if backfill_checkpoint_task_documents_from_project(task):
+			frappe.flags.cgm_syncing_checkpoint_documents = True
+			try:
+				task.save(ignore_permissions=True)
+			finally:
+				frappe.flags.cgm_syncing_checkpoint_documents = False
+			return {"seeded": False, "backfilled": True}
 		return {"seeded": False}
 
 	if not seed_checkpoint_task_documents_from_project(task):
@@ -432,6 +581,80 @@ def ensure_checkpoint_task_documents(task_name: str) -> dict:
 	finally:
 		frappe.flags.cgm_syncing_checkpoint_documents = False
 	return {"seeded": True}
+
+
+def apply_checkpoint_task_documents_to_project(project_doc, task) -> bool:
+	"""Merge document-checkpoint task rows onto Project (in-memory only)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_document_checkpoint_task,
+	)
+
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not is_document_checkpoint_task(seq):
+		return False
+	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return False
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+
+	changed = False
+	for trow in task.get(TASK_DOCUMENTS_FIELD) or []:
+		if not trow.document_type:
+			continue
+		initial_url, final_url = resolve_document_row_slots(trow)
+		if not final_url and not initial_url:
+			continue
+
+		prow = _find_matching_document_row(
+			project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or [], trow.document_type
+		)
+		if not prow:
+			prow = project_doc.append(
+				SHIPMENT_DOCUMENTS_FIELD,
+				{"document_type": trow.document_type, "status": "Missing"},
+			)
+			changed = True
+
+		if initial_url and prow.get("initial_attachment") != initial_url:
+			prow.initial_attachment = initial_url
+			changed = True
+		if final_url and prow.get("final_attachment") != final_url:
+			prow.final_attachment = final_url
+			changed = True
+		if initial_url or final_url:
+			normalize_shipment_document_row(prow)
+			changed = True
+
+	return changed
+
+
+def merge_checkpoint_task_documents_into_project(project_doc) -> bool:
+	"""Pull initial/final slots from all document-checkpoint tasks on this Project."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		document_checkpoint_sequences,
+	)
+
+	if not project_doc.name:
+		return False
+
+	changed = False
+	for seq in document_checkpoint_sequences():
+		task_name = frappe.db.get_value(
+			"Task",
+			{
+				"project": project_doc.name,
+				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+				"custom_sequence_no": seq,
+			},
+			"name",
+		)
+		if not task_name:
+			continue
+		task = frappe.get_doc("Task", task_name)
+		if apply_checkpoint_task_documents_to_project(project_doc, task):
+			changed = True
+	return changed
 
 
 def sync_checkpoint_finals_to_project(task) -> bool:
@@ -447,44 +670,15 @@ def sync_checkpoint_finals_to_project(task) -> bool:
 		return False
 
 	project = frappe.get_doc("Project", task.project)
-	if not project.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+	if not apply_checkpoint_task_documents_to_project(project, task):
 		return False
 
-	changed = False
-	for trow in task.get(TASK_DOCUMENTS_FIELD) or []:
-		if not trow.document_type:
-			continue
-		normalize_shipment_document_row(trow)
-		if not (trow.get("final_attachment") or trow.get("initial_attachment")):
-			continue
-
-		prow = _find_matching_document_row(
-			project.get(SHIPMENT_DOCUMENTS_FIELD) or [], trow.document_type
-		)
-		if not prow:
-			prow = project.append(
-				SHIPMENT_DOCUMENTS_FIELD,
-				{"document_type": trow.document_type, "status": "Missing"},
-			)
-			changed = True
-
-		for field in ("initial_attachment", "final_attachment"):
-			val = trow.get(field)
-			if val and prow.get(field) != val:
-				prow.set(field, val)
-				changed = True
-		normalize_shipment_document_row(prow)
-		if primary_attachment(prow) and prow.get("status") in (None, "", "Missing"):
-			prow.status = "Uploaded"
-			changed = True
-
-	if changed:
-		frappe.flags.cgm_syncing_shipment_documents = True
-		try:
-			project.save(ignore_permissions=True)
-		finally:
-			frappe.flags.cgm_syncing_shipment_documents = False
-	return changed
+	frappe.flags.cgm_syncing_shipment_documents = True
+	try:
+		project.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_shipment_documents = False
+	return True
 
 
 def document_types_match(existing_type, incoming_type):
@@ -802,31 +996,96 @@ def carry_task_documents_to_project(project_doc, project_name=None):
 	"""Copy Task Documents child rows from all tasks on this project."""
 	project_name = project_name or project_doc.name
 	if not project_name:
-		return
+		return False
 
 	task_fields = frappe.get_meta("Task")
 	if not task_fields.has_field("custom_task_documents"):
-		return
+		return False
 
+	changed = False
 	for task_name in frappe.get_all("Task", filters={"project": project_name}, pluck="name"):
 		task_doc = frappe.get_doc("Task", task_name)
 		for row in task_doc.get("custom_task_documents") or []:
 			if not row.document_type:
 				continue
-			if not (primary_attachment(row) or row.get("final_attachment") or row.get("initial_attachment")):
+			initial_url, final_url = resolve_document_row_slots(row)
+			if not initial_url and not final_url:
 				continue
 			if has_document_versioning():
+				before = _find_matching_document_row(
+					project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or [], row.document_type
+				)
 				upsert_shipment_document_row(
 					project_doc,
 					SHIPMENT_DOCUMENTS_FIELD,
 					row.document_type,
-					initial_url=row.get("initial_attachment"),
-					final_url=row.get("final_attachment"),
+					initial_url=initial_url,
+					final_url=final_url or None,
 					status=row.get("status"),
 					remarks=row.get("remarks"),
 				)
+				after = _find_matching_document_row(
+					project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or [], row.document_type
+				)
+				if not before and after:
+					changed = True
+				elif before and after and (
+					before.get("initial_attachment") != after.get("initial_attachment")
+					or before.get("final_attachment") != after.get("final_attachment")
+				):
+					changed = True
 			elif row.attachment:
 				append_verified_doc_row(project_doc, row.document_type, row.attachment)
+				changed = True
+	return changed
+
+
+def sync_single_task_documents_to_project(task) -> bool:
+	"""Push this task's document rows onto the Project (manifest, DO, etc.)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_document_checkpoint_task,
+	)
+
+	seq = int(task.get("custom_sequence_no") or 0)
+	if is_document_checkpoint_task(seq):
+		return False
+	if not task.project or not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	if frappe.flags.get("cgm_syncing_shipment_documents"):
+		return False
+
+	project = frappe.get_doc("Project", task.project)
+	if not project.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return False
+
+	changed = False
+	for row in task.get(TASK_DOCUMENTS_FIELD) or []:
+		if not row.document_type:
+			continue
+		initial_url, final_url = resolve_document_row_slots(row)
+		if not initial_url and not final_url:
+			continue
+		prow = _find_matching_document_row(
+			project.get(SHIPMENT_DOCUMENTS_FIELD) or [], row.document_type
+		)
+		upsert_shipment_document_row(
+			project,
+			SHIPMENT_DOCUMENTS_FIELD,
+			row.document_type,
+			initial_url=initial_url,
+			final_url=final_url or None,
+			status=row.get("status"),
+			remarks=row.get("remarks"),
+		)
+		changed = True
+
+	if changed:
+		frappe.flags.cgm_syncing_shipment_documents = True
+		try:
+			project.save(ignore_permissions=True)
+		finally:
+			frappe.flags.cgm_syncing_shipment_documents = False
+	return changed
 
 
 def sync_project_documents_from_opportunity(
@@ -907,6 +1166,8 @@ def refresh_project_documents(project_name):
 			sync_project_documents_from_opportunity(project, opp_doc, replace=True)
 		else:
 			sync_linked_attachments_to_project(project)
+		merge_checkpoint_task_documents_into_project(project)
+		carry_task_documents_to_project(project)
 		project.save(ignore_permissions=True)
 	finally:
 		frappe.flags.cgm_syncing_shipment_documents = False
@@ -918,6 +1179,42 @@ def refresh_projects_for_customer(customer):
 		return
 	for project_name in frappe.get_all("Project", filters={"customer": customer}, pluck="name"):
 		refresh_project_documents(project_name)
+
+
+@frappe.whitelist()
+def sync_project_documents_from_tasks(project_name: str) -> dict:
+	"""Backfill Project shipment documents from all linked Task document rows."""
+	frappe.has_permission("Project", ptype="write", throw=True)
+	if not project_name or not frappe.db.exists("Project", project_name):
+		frappe.throw(_("Project not found"))
+
+	project = frappe.get_doc("Project", project_name)
+	merge_checkpoint_task_documents_into_project(project)
+	carry_task_documents_to_project(project)
+	frappe.flags.cgm_syncing_shipment_documents = True
+	try:
+		project.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_shipment_documents = False
+	return {"updated": True, "project": project_name}
+
+
+@frappe.whitelist()
+def sync_project_finals_from_checkpoint(project_name: str) -> dict:
+	"""Backfill Project Final Document from Task 9 checkpoint rows."""
+	frappe.has_permission("Project", ptype="write", throw=True)
+	if not project_name or not frappe.db.exists("Project", project_name):
+		frappe.throw(_("Project not found"))
+
+	project = frappe.get_doc("Project", project_name)
+	changed = merge_checkpoint_task_documents_into_project(project)
+	if changed:
+		frappe.flags.cgm_syncing_shipment_documents = True
+		try:
+			project.save(ignore_permissions=True)
+		finally:
+			frappe.flags.cgm_syncing_shipment_documents = False
+	return {"updated": changed, "project": project_name}
 
 
 @frappe.whitelist()
