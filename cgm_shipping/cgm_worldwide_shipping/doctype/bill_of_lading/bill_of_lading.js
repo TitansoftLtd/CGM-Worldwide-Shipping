@@ -129,54 +129,122 @@ function add_back_to_opportunity_button(frm) {
 	frm.page.set_inner_btn_group_as_primary(__("CGM"));
 }
 
+function get_bl_linked_opportunity_name(frm) {
+	if (is_saved_opportunity_name(frm.doc.linked_opportunity)) {
+		return frm.doc.linked_opportunity;
+	}
+	if (is_saved_opportunity_name(frm.doc.custom_linked_opportunity)) {
+		return frm.doc.custom_linked_opportunity;
+	}
+	const from_return = get_cgm_return_opportunity(frm);
+	if (is_saved_opportunity_name(from_return)) {
+		return from_return;
+	}
+	return null;
+}
+
+function clear_bl_opportunity_menu_buttons(frm) {
+	frm.remove_custom_button(__("Opportunity"), __("Create"));
+	frm.remove_custom_button(__("Opportunity"), __("View"));
+}
+
 function add_create_opportunity_button(frm) {
-	if (frm.doc.linked_opportunity) {
-		frm.add_custom_button(
-			__("Opportunity"),
-			() => frappe.set_route("Form", "Opportunity", frm.doc.linked_opportunity),
-			__("View")
-		);
-		frm.page.set_inner_btn_group_as_primary(__("View"));
+	if (frm.is_new()) {
 		return;
 	}
 
-	const create_opportunity = () => {
-		frappe.call({
-			method: "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.create_opportunity_from_bill_of_lading",
-			args: { bill_of_lading: frm.doc.name },
-			freeze: true,
-			callback(r) {
-				if (!r.exc && r.message) {
-					frappe.show_alert({
-						message: __("Opportunity {0} created", [r.message]),
-						indicator: "green",
-					});
-					frappe.set_route("Form", "Opportunity", r.message);
-				}
-			},
-		});
-	};
+	clearTimeout(frm._cgm_bl_opp_btn_timer);
+	// ERPNext form refresh can run after client scripts; defer like crm_lead.js.
+	frm._cgm_bl_opp_btn_timer = setTimeout(() => {
+		render_bl_opportunity_button(frm);
+	}, 0);
+}
 
-	if (frm.doc.docstatus === 0) {
-		frm.add_custom_button(
-			__("Opportunity"),
-			() => {
-				frappe.confirm(
-					__(
-						"Submit this Bill of Lading first, then create the linked Opportunity?"
-					),
-					() => {
-						frm.save("Submit").then(() => create_opportunity());
-					}
-				);
-			},
-			__("Create")
-		);
-	} else if (frm.doc.docstatus === 1) {
-		frm.add_custom_button(__("Opportunity"), create_opportunity, __("Create"));
+function render_bl_opportunity_button(frm) {
+	if (cur_frm !== frm || frm.is_new()) {
+		return;
 	}
 
-	frm.page.set_inner_btn_group_as_primary(__("Create"));
+	clear_bl_opportunity_menu_buttons(frm);
+
+	const show_view = (opportunity) => {
+		clear_bl_opportunity_menu_buttons(frm);
+		frm.add_custom_button(
+			__("Opportunity"),
+			() => frappe.set_route("Form", "Opportunity", opportunity),
+			__("View")
+		);
+		frm.page.set_inner_btn_group_as_primary(__("View"));
+	};
+
+	const show_create = () => {
+		clear_bl_opportunity_menu_buttons(frm);
+
+		const create_opportunity = () => {
+			frappe.call({
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.create_opportunity_from_bill_of_lading",
+				args: { bill_of_lading: frm.doc.name },
+				freeze: true,
+				callback(r) {
+					if (!r.exc && r.message) {
+						frm.doc.linked_opportunity = r.message;
+						frappe.show_alert({
+							message: __("Opportunity {0} created", [r.message]),
+							indicator: "green",
+						});
+						frappe.set_route("Form", "Opportunity", r.message);
+					}
+				},
+			});
+		};
+
+		if (frm.doc.docstatus === 0) {
+			frm.add_custom_button(
+				__("Opportunity"),
+				() => {
+					frappe.confirm(
+						__(
+							"Submit this Bill of Lading first, then create the linked Opportunity?"
+						),
+						() => {
+							frm.save("Submit").then(() => create_opportunity());
+						}
+					);
+				},
+				__("Create")
+			);
+		} else if (frm.doc.docstatus === 1) {
+			frm.add_custom_button(__("Opportunity"), create_opportunity, __("Create"));
+		}
+
+		frm.page.set_inner_btn_group_as_primary(__("Create"));
+	};
+
+	const linked = get_bl_linked_opportunity_name(frm);
+	if (linked) {
+		show_view(linked);
+		return;
+	}
+
+	// Back-link may exist in DB but not be on the loaded form doc yet.
+	frappe.db
+		.get_value("Opportunity", { custom_bill_of_lading: frm.doc.name }, "name")
+		.then((r) => {
+			if (cur_frm !== frm) {
+				return;
+			}
+			const opportunity = r?.message?.name;
+			if (opportunity) {
+				if (frm.fields_dict.linked_opportunity) {
+					frm.doc.linked_opportunity = opportunity;
+				}
+				show_view(opportunity);
+				return;
+			}
+			show_create();
+		})
+		.catch(() => show_create());
 }
 
 function return_to_opportunity_after_submit(frm) {

@@ -87,6 +87,7 @@ TASK_TYPE_OF_CONTAINER_FIELD = "custom_type_of_container"
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
 CONTAINER_UPDATE_TASK_SEQS = frozenset({11, 16, 18, 19, 20, 21, 22, 23, 24})
 CONTAINER_UPDATE_SEED_SEQS = frozenset({11, 16, 18, 19, 20, 21, 22, 23, 24})
+TRANSPORT_TASK_SEQS = frozenset({19, 20, 21, 22, 23, 24})
 
 # Settings fieldnames — bulk events update every tracker on the project.
 BULK_CONTAINER_TASK_SEQ_FIELDS = (
@@ -121,6 +122,9 @@ PERMIT_RECEIPTS_VERIFY_FINANCE = "CGM Task - Permit Receipts Verify Finance"
 UCR_INVOICE_TO_FINANCE = "CGM Task - UCR Invoice to Finance"
 UCR_RECEIPT_FOR_DECLARANT = "CGM Task - UCR Receipt for Declarant"
 UCR_RECEIPT_VERIFY_FINANCE = "CGM Task - UCR Receipt Verify Finance"
+ENTRY_INVOICE_TO_FINANCE = "CGM Task - Entry Invoice to Finance"
+ENTRY_RECEIPT_FOR_DECLARANT = "CGM Task - Entry Receipt for Declarant"
+ENTRY_RECEIPT_VERIFY_FINANCE = "CGM Task - Entry Receipt Verify Finance"
 DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 
 # Standard Task fields to hide on all sea clearance tasks (reduce noise).
