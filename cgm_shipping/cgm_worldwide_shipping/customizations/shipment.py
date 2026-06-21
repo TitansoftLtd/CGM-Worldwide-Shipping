@@ -611,6 +611,7 @@ def resolve_bl_name_from_preshipment(source_doc) -> str | None:
 		document_types_match,
 		get_document_type_link_name,
 		get_opportunity_documents_field,
+		primary_attachment,
 	)
 
 	clients_field = get_opportunity_documents_field()
@@ -618,9 +619,12 @@ def resolve_bl_name_from_preshipment(source_doc) -> str | None:
 		bl_type = get_document_type_link_name("BL")
 		if bl_type:
 			for row in source_doc.get(clients_field) or []:
-				if not row.attachment or not document_types_match(row.document_type, bl_type):
+				if not document_types_match(row.document_type, bl_type):
 					continue
-				bl_name = resolve_bill_of_lading_name(row.attachment)
+				file_ref = primary_attachment(row)
+				if not file_ref:
+					continue
+				bl_name = resolve_bill_of_lading_name(file_ref)
 				if bl_name:
 					return bl_name
 

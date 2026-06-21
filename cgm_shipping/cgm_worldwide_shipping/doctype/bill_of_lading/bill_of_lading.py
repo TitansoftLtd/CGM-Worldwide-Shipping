@@ -12,10 +12,10 @@ from frappe.model.document import Document
 from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-	document_types_match,
 	ensure_document_types,
 	get_document_type_link_name,
 	get_opportunity_documents_field,
+	prepend_clients_document_row,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bl_fields_to_doc,
@@ -284,38 +284,14 @@ def prepend_opportunity_bl_document(opp_doc, attachment_url, bl_name=None) -> bo
 	if not document_type:
 		return False
 
-	existing = list(opp_doc.get(field) or [])
-	other_rows = [
-		row for row in existing if not document_types_match(row.document_type, document_type)
-	]
-
-	opp_doc.set(field, [])
-	opp_doc.append(
+	return prepend_clients_document_row(
+		opp_doc,
 		field,
-		{
-			"document_type": document_type,
-			"attachment": attachment_url,
-			"status": "Uploaded",
-			"uploaded_by": frappe.session.user,
-			"uploaded_on": now_datetime(),
-			"remarks": frappe._("From submitted Bill of Lading {0}").format(bl_name or ""),
-		},
+		document_type,
+		attachment_url,
+		status="Uploaded",
+		remarks=frappe._("From submitted Bill of Lading {0}").format(bl_name or ""),
 	)
-	for row in other_rows:
-		opp_doc.append(
-			field,
-			{
-				"document_type": row.document_type,
-				"attachment": row.attachment,
-				"status": row.status,
-				"uploaded_by": row.uploaded_by,
-				"uploaded_on": row.uploaded_on,
-				"verified_by": row.verified_by,
-				"verified_on": row.verified_on,
-				"remarks": row.remarks,
-			},
-		)
-	return True
 
 
 # ─── Whitelisted API ──────────────────────────────────────────────────────────
