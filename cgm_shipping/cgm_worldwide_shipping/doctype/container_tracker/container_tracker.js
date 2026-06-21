@@ -328,6 +328,35 @@ function render_container_tracker_alerts(frm) {
 	}
 }
 
+function container_tracker_status_color(status) {
+	if (!status) {
+		return "gray";
+	}
+	if (status.includes("Overdue")) {
+		return "red";
+	}
+	if (status === "Interchange Received" || status === "Empty Returned") {
+		return "green";
+	}
+	if (["At Warehouse", "Cargo Offloaded"].includes(status)) {
+		return "blue";
+	}
+	if (status === "Released / In Transit") {
+		return "orange";
+	}
+	if (["Vessel Berthed", "Discharged / At Port"].includes(status)) {
+		return "yellow";
+	}
+	return "gray";
+}
+
+function apply_container_tracker_status_indicator(frm) {
+	if (!frm.doc.status) {
+		return;
+	}
+	frm.page.set_indicator(frm.doc.status, container_tracker_status_color(frm.doc.status));
+}
+
 frappe.ui.form.on("Container Tracker", {
 	onload(frm) {
 		apply_container_tracker_route_defaults(frm);
@@ -347,6 +376,7 @@ frappe.ui.form.on("Container Tracker", {
 	refresh(frm) {
 		apply_container_mode_layout(frm);
 		render_container_tracker_alerts(frm);
+		apply_container_tracker_status_indicator(frm);
 		if (frm.doc.custom_bill_of_lading) {
 			sync_bl_container_pick_list(frm);
 		}

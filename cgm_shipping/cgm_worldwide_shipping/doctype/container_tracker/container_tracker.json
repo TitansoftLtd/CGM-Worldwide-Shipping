@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{container_number}-{#####}",
+ "autoname": "field:container_number",
  "creation": "2026-05-19 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -13,10 +13,11 @@
   "container_mode",
   "type_of_container",
   "seal_no",
+  "new_serial_number",
   "column_break_identity",
   "shipping_line",
-  "delivery_destination",
   "status",
+  "delivery_destination",
   "current_location",
   "delivery_location",
   "section_dates",
@@ -40,7 +41,7 @@
   "transit_gate_in_date",
   "column_break_mtin",
   "transit_gate_out_date",
-  "free_days_and_charges_tab",
+  "free_days_tab",
   "section_charges",
   "free_days_start_date",
   "free_days_end_date",
@@ -48,19 +49,12 @@
   "detention_free_end_date",
   "free_days",
   "detention_free_days",
-  "demurrage_daily_rate",
-  "detention_daily_rate",
   "kpa_free_days",
-  "kpa_daily_rate",
-  "rate_source",
   "port_days_used",
   "column_break_charges",
   "demurrage_days",
-  "demurrage_amount",
   "kpa_days",
-  "kpa_amount",
   "detention_days",
-  "detention_amount",
   "transport_and_delivery_tab",
   "section_transport",
   "transporter",
@@ -107,7 +101,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Container Number",
-   "reqd": 1
+   "reqd": 1,
+   "unique": 1
   },
   {
    "fieldname": "bl_number",
@@ -145,12 +140,6 @@
    "options": "Supplier"
   },
   {
-   "fieldname": "delivery_destination",
-   "fieldtype": "Select",
-   "label": "Delivery Destination",
-   "options": "\nKenya\nUganda\nTanzania\nRwanda\nDRC"
-  },
-  {
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -161,13 +150,14 @@
   {
    "fieldname": "current_location",
    "fieldtype": "Data",
-   "label": "Current Location",
+   "label": "Container Status",
    "read_only": 1
   },
   {
    "fieldname": "delivery_location",
-   "fieldtype": "Data",
-   "label": "Delivery Location"
+   "fieldtype": "Link",
+   "label": "Delivery Location (Clearance Station)",
+   "options": "Clearance Station"
   },
   {
    "fieldname": "section_dates",
@@ -282,7 +272,7 @@
   {
    "fieldname": "gate_in_date_warehouse",
    "fieldtype": "Date",
-   "label": "Gate In Date Warehouse"
+   "label": "Gate In Date (Clearance Station / Warehouse)"
   },
   {
    "fieldname": "offloading_date",
@@ -350,32 +340,9 @@
    "label": "Detention Free End Date"
   },
   {
-   "description": "From shipping line guarantee / waiver",
-   "fieldname": "demurrage_daily_rate",
-   "fieldtype": "Currency",
-   "label": "Demurrage Daily Rate"
-  },
-  {
-   "description": "From shipping line guarantee / waiver",
-   "fieldname": "detention_daily_rate",
-   "fieldtype": "Currency",
-   "label": "Detention Daily Rate"
-  },
-  {
    "fieldname": "kpa_free_days",
    "fieldtype": "Int",
    "label": "KPA Free Days"
-  },
-  {
-   "fieldname": "kpa_daily_rate",
-   "fieldtype": "Currency",
-   "label": "KPA Daily Rate"
-  },
-  {
-   "fieldname": "rate_source",
-   "fieldtype": "Data",
-   "label": "Rate Source",
-   "read_only": 1
   },
   {
    "fieldname": "port_days_used",
@@ -394,33 +361,15 @@
    "read_only": 1
   },
   {
-   "fieldname": "demurrage_amount",
-   "fieldtype": "Currency",
-   "label": "Demurrage Amount",
-   "read_only": 1
-  },
-  {
    "fieldname": "kpa_days",
    "fieldtype": "Int",
    "label": "KPA Chargeable Days",
    "read_only": 1
   },
   {
-   "fieldname": "kpa_amount",
-   "fieldtype": "Currency",
-   "label": "KPA Amount",
-   "read_only": 1
-  },
-  {
    "fieldname": "detention_days",
    "fieldtype": "Int",
    "label": "Detention Days",
-   "read_only": 1
-  },
-  {
-   "fieldname": "detention_amount",
-   "fieldtype": "Currency",
-   "label": "Detention Amount",
    "read_only": 1
   },
   {
@@ -505,11 +454,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "free_days_and_charges_tab",
-   "fieldtype": "Tab Break",
-   "label": "Free Days and Charges"
-  },
-  {
    "fieldname": "transport_and_delivery_tab",
    "fieldtype": "Tab Break",
    "label": "Transport and Delivery"
@@ -523,15 +467,30 @@
    "fieldname": "empty_return_and_interchange_tab",
    "fieldtype": "Tab Break",
    "label": "Empty Return and Interchange"
+  },
+  {
+   "fieldname": "new_serial_number",
+   "fieldtype": "Data",
+   "label": "New Serial number"
+  },
+  {
+   "fieldname": "delivery_destination",
+   "fieldtype": "Data",
+   "label": "Delivery Destination "
+  },
+  {
+   "fieldname": "free_days_tab",
+   "fieldtype": "Tab Break",
+   "label": "Free Days"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-17 11:12:40.478798",
+ "modified": "2026-06-20 17:36:28.887117",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",
- "naming_rule": "Expression (old style)",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
