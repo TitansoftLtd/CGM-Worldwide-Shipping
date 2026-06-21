@@ -9,6 +9,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	get_project_shipment_documents_field,
 	is_shipment_document_verified,
+	primary_attachment,
 	sync_documents,
 	sync_project_documents_from_opportunity,
 )
@@ -162,6 +163,11 @@ def _required_document_types(mode, stages=None):
 	]
 
 def normalize_document_rows(doc):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		normalize_shipment_document_row,
+		primary_attachment,
+	)
+
 	rows = list(get_documents(doc))
 	# Batch the Document Type 'default_required' lookups (was one query per row).
 	doc_types = {r.document_type for r in rows if r.document_type}
@@ -176,6 +182,7 @@ def normalize_document_rows(doc):
 			)
 		}
 	for row in rows:
+		normalize_shipment_document_row(row)
 		# 1. Sync the required flag from the Document Type master.
 		if row.document_type:
 			default_required = required_map.get(row.document_type)
@@ -183,13 +190,22 @@ def normalize_document_rows(doc):
 				row.required = int(default_required)
 
 		# 2. Auto-manage upload state and uploader metadata.
-		if row.attachment:
+		if primary_attachment(row):
 			if row.status in (None, "", "Missing"):
 				row.status = "Uploaded"
 			if not row.uploaded_by:
 				row.uploaded_by = frappe.session.user
 			if not row.uploaded_on:
 				row.uploaded_on = now_datetime()
+		elif row.get("initial_attachment") or row.get("final_attachment"):
+			normalize_shipment_document_row(row)
+			if primary_attachment(row):
+				if row.status in (None, "", "Missing"):
+					row.status = "Uploaded"
+				if not row.uploaded_by:
+					row.uploaded_by = frappe.session.user
+				if not row.uploaded_on:
+					row.uploaded_on = now_datetime()
 		else:
 			row.status = "Missing"
 			row.uploaded_by = None
@@ -199,7 +215,7 @@ def normalize_document_rows(doc):
 
 		# 3. Sync verification metadata from status.
 		if row.status in ("Verified", "Rejected"):
-			if not row.attachment:
+			if not primary_attachment(row):
 				label = row.document_type or "a document"
 				frappe.throw(f"Attach a file before marking {label} as {row.status}.")
 			if not row.verified_by:
@@ -429,7 +445,7 @@ def project_has_verified_client_documents(project_doc) -> bool:
 	docs = [
 		row
 		for row in get_documents(project_doc)
-		if row.document_type and row.attachment
+		if row.document_type and primary_attachment(row)
 	]
 	if not docs:
 		return False

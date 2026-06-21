@@ -119,16 +119,372 @@ def resolve_document_row_status(row) -> str:
 		return status
 	if row.get("verified_on"):
 		return "Verified"
-	if row.get("attachment"):
+	if primary_attachment(row):
 		return "Uploaded"
 	return "Missing"
 
 
-def is_shipment_document_verified(row) -> bool:
-	"""True when a Shipment Document row is verified."""
-	if row.meta.has_field("status") and row.get("status") == "Verified":
-		return True
-	return bool(row.get("verified_on"))
+def _shipment_document_meta():
+	return frappe.get_meta("Shipment Document")
+
+
+def has_document_versioning() -> bool:
+	return _shipment_document_meta().has_field("initial_attachment")
+
+
+def primary_attachment(row) -> str:
+	"""Best file for portal downloads and legacy consumers."""
+	if not row:
+		return ""
+	if has_document_versioning():
+		return (
+			(row.get("final_attachment") or "").strip()
+			or (row.get("initial_attachment") or "").strip()
+			or (row.get("attachment") or "").strip()
+		)
+	return (row.get("attachment") or "").strip()
+
+
+def derive_version_status(row) -> str:
+	if not has_document_versioning():
+		return (row.get("version_status") or "").strip()
+	initial = (row.get("initial_attachment") or "").strip()
+	final = (row.get("final_attachment") or "").strip()
+	legacy = (row.get("attachment") or "").strip()
+	if final:
+		return "Final Received"
+	if initial:
+		return "Awaiting Final"
+	if legacy:
+		return "Only Version"
+	return ""
+
+
+def normalize_shipment_document_row(row, *, prefer_initial_for_legacy: bool = True) -> None:
+	"""Keep version_status and primary attachment in sync with initial/final slots."""
+	if not row or not has_document_versioning():
+		return
+
+	legacy = (row.get("attachment") or "").strip()
+	initial = (row.get("initial_attachment") or "").strip()
+	final = (row.get("final_attachment") or "").strip()
+
+	if legacy and not initial and not final and prefer_initial_for_legacy:
+		row.initial_attachment = legacy
+		initial = legacy
+
+	if row.meta.has_field("version_status"):
+		row.version_status = derive_version_status(row)
+
+	row.attachment = primary_attachment(row)
+
+	if row.attachment and row.meta.has_field("status"):
+		if row.get("status") in (None, "", "Missing"):
+			row.status = "Uploaded"
+
+
+def ensure_shipment_document_version_fields() -> None:
+	"""Idempotent Custom Field installer when JSON migrate has not run yet."""
+	meta = _shipment_document_meta()
+	if meta.has_field("initial_attachment"):
+		return
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _create_cf
+
+	_create_cf(
+		"Shipment Document",
+		{
+			"fieldname": "initial_attachment",
+			"label": "Initial Document",
+			"fieldtype": "Attach",
+			"insert_after": "required",
+			"in_list_view": 1,
+		},
+	)
+	_create_cf(
+		"Shipment Document",
+		{
+			"fieldname": "final_attachment",
+			"label": "Final Document",
+			"fieldtype": "Attach",
+			"insert_after": "initial_attachment",
+			"in_list_view": 1,
+		},
+	)
+	if meta.has_field("attachment"):
+		frappe.db.set_value(
+			"DocField",
+			{"parent": "Shipment Document", "fieldname": "attachment"},
+			{
+				"label": "Primary Attachment",
+				"read_only": 1,
+				"description": "Synced from Final Document when present, otherwise Initial Document.",
+			},
+			update_modified=False,
+		)
+	_create_cf(
+		"Shipment Document",
+		{
+			"fieldname": "version_status",
+			"label": "Version Status",
+			"fieldtype": "Select",
+			"options": "Proforma\nAwaiting Final\nFinal Received\nOnly Version",
+			"insert_after": "attachment",
+			"in_list_view": 1,
+			"read_only": 1,
+		},
+	)
+	frappe.clear_cache(doctype="Shipment Document")
+
+
+def migrate_legacy_shipment_document_attachments() -> None:
+	"""One-time: move lone attachment values into initial_attachment."""
+	if not has_document_versioning():
+		return
+	for parenttype in ("Project", "Task", "Opportunity"):
+		parentfield_map = {
+			"Project": SHIPMENT_DOCUMENTS_FIELD,
+			"Task": TASK_DOCUMENTS_FIELD,
+			"Opportunity": OPPORTUNITY_DOCUMENTS_FIELD,
+		}
+		parentfield = parentfield_map.get(parenttype)
+		if not parentfield:
+			continue
+		if parenttype == "Project" and not frappe.get_meta("Project").has_field(parentfield):
+			continue
+		if parenttype == "Task" and not frappe.get_meta("Task").has_field(parentfield):
+			continue
+		if parenttype == "Opportunity" and not frappe.get_meta("Opportunity").has_field(
+			parentfield
+		):
+			continue
+
+		rows = frappe.get_all(
+			"Shipment Document",
+			filters={
+				"parenttype": parenttype,
+				"parentfield": parentfield,
+				"attachment": ["is", "set"],
+				"initial_attachment": ["is", "not set"],
+				"final_attachment": ["is", "not set"],
+			},
+			fields=["name", "attachment"],
+		)
+		for row in rows:
+			frappe.db.set_value(
+				"Shipment Document",
+				row.name,
+				{
+					"initial_attachment": row.attachment,
+					"version_status": "Only Version",
+				},
+				update_modified=False,
+			)
+
+
+def normalize_shipment_documents_table(rows) -> None:
+	for row in rows or []:
+		normalize_shipment_document_row(row)
+
+
+def _find_matching_document_row(rows, document_type):
+	for row in rows or []:
+		if document_types_match(row.document_type, document_type):
+			return row
+	return None
+
+
+def upsert_shipment_document_row(
+	parent_doc,
+	table_field: str,
+	document_type: str,
+	*,
+	initial_url: str | None = None,
+	final_url: str | None = None,
+	status: str | None = None,
+	remarks: str | None = None,
+	verify: bool = False,
+) -> None:
+	"""Append or update one Shipment Document row on any parent (Project / Task)."""
+	if not document_type or not parent_doc.meta.has_field(table_field):
+		return
+	if not frappe.db.exists("Document Type", document_type):
+		return
+
+	rows = parent_doc.get(table_field) or []
+	row = _find_matching_document_row(rows, document_type)
+	if not row:
+		row = parent_doc.append(
+			table_field,
+			{"document_type": document_type, "status": "Missing", "required": 1 if verify else 0},
+		)
+
+	file_url = (final_url or initial_url or "").strip()
+	if has_document_versioning():
+		if initial_url:
+			row.initial_attachment = initial_url
+		if final_url:
+			row.final_attachment = final_url
+		normalize_shipment_document_row(row)
+	elif file_url:
+		row.attachment = file_url
+
+	# Mirror primary file into attachment for legacy consumers / DB persistence.
+	if file_url and row.meta.has_field("attachment") and not (row.get("attachment") or "").strip():
+		row.attachment = file_url
+	if remarks:
+		row.remarks = remarks
+	if has_document_versioning():
+		normalize_shipment_document_row(row)
+
+	if verify:
+		row.required = 1
+	if status:
+		row.status = status
+	elif verify:
+		row.status = "Verified"
+	elif primary_attachment(row) and row.get("status") == "Missing":
+		row.status = "Uploaded"
+
+	if verify and primary_attachment(row):
+		row.verified_by = row.verified_by or frappe.session.user
+		row.verified_on = row.verified_on or now_datetime()
+		row.uploaded_by = row.uploaded_by or frappe.session.user
+		row.uploaded_on = row.uploaded_on or now_datetime()
+
+
+def seed_checkpoint_task_documents_from_project(task) -> bool:
+	"""Document-checkpoint tasks mirror Project rows (initial + any existing final)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_document_checkpoint_task,
+	)
+
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not is_document_checkpoint_task(seq) or not task.project:
+		return False
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	if not frappe.db.exists("Project", task.project):
+		return False
+
+	project = frappe.get_doc("Project", task.project)
+	if not project.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return False
+
+	source_rows = [
+		r
+		for r in project.get(SHIPMENT_DOCUMENTS_FIELD) or []
+		if r.document_type and (primary_attachment(r) or r.get("initial_attachment") or r.get("final_attachment"))
+	]
+	if not source_rows:
+		return False
+
+	changed = False
+	task_rows = list(task.get(TASK_DOCUMENTS_FIELD) or [])
+	if task_rows:
+		return False
+	for prow in source_rows:
+		normalize_shipment_document_row(prow)
+		trow = _find_matching_document_row(task_rows, prow.document_type)
+		if not trow:
+			trow = task.append(
+				TASK_DOCUMENTS_FIELD,
+				{"document_type": prow.document_type, "status": "Missing"},
+			)
+			task_rows.append(trow)
+			changed = True
+
+		for field in ("initial_attachment", "final_attachment", "remarks"):
+			val = prow.get(field)
+			if val and trow.get(field) != val:
+				trow.set(field, val)
+				changed = True
+		normalize_shipment_document_row(trow)
+		if trow.get("status") == "Missing" and primary_attachment(trow):
+			trow.status = prow.get("status") or "Uploaded"
+			changed = True
+
+	return changed
+
+
+@frappe.whitelist()
+def ensure_checkpoint_task_documents(task_name: str) -> dict:
+	"""Seed document-checkpoint task rows from Project (client reloads after)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_document_checkpoint_task,
+	)
+
+	task = frappe.get_doc("Task", task_name)
+	frappe.has_permission("Task", ptype="write", doc=task, throw=True)
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not is_document_checkpoint_task(seq):
+		return {"seeded": False}
+
+	if task.get(TASK_DOCUMENTS_FIELD):
+		return {"seeded": False}
+
+	if not seed_checkpoint_task_documents_from_project(task):
+		return {"seeded": False}
+
+	frappe.flags.cgm_syncing_checkpoint_documents = True
+	try:
+		task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_checkpoint_documents = False
+	return {"seeded": True}
+
+
+def sync_checkpoint_finals_to_project(task) -> bool:
+	"""Push final (and new initial) document slots from checkpoint task → Project."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_document_checkpoint_task,
+	)
+
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not is_document_checkpoint_task(seq) or not task.project:
+		return False
+	if frappe.flags.get("cgm_syncing_shipment_documents"):
+		return False
+
+	project = frappe.get_doc("Project", task.project)
+	if not project.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return False
+
+	changed = False
+	for trow in task.get(TASK_DOCUMENTS_FIELD) or []:
+		if not trow.document_type:
+			continue
+		normalize_shipment_document_row(trow)
+		if not (trow.get("final_attachment") or trow.get("initial_attachment")):
+			continue
+
+		prow = _find_matching_document_row(
+			project.get(SHIPMENT_DOCUMENTS_FIELD) or [], trow.document_type
+		)
+		if not prow:
+			prow = project.append(
+				SHIPMENT_DOCUMENTS_FIELD,
+				{"document_type": trow.document_type, "status": "Missing"},
+			)
+			changed = True
+
+		for field in ("initial_attachment", "final_attachment"):
+			val = trow.get(field)
+			if val and prow.get(field) != val:
+				prow.set(field, val)
+				changed = True
+		normalize_shipment_document_row(prow)
+		if primary_attachment(prow) and prow.get("status") in (None, "", "Missing"):
+			prow.status = "Uploaded"
+			changed = True
+
+	if changed:
+		frappe.flags.cgm_syncing_shipment_documents = True
+		try:
+			project.save(ignore_permissions=True)
+		finally:
+			frappe.flags.cgm_syncing_shipment_documents = False
+	return changed
 
 
 def document_types_match(existing_type, incoming_type):
@@ -142,8 +498,15 @@ def document_types_match(existing_type, incoming_type):
 	return bool(existing_code and incoming_code and existing_code == incoming_code)
 
 
-def append_verified_doc_row(project_doc, document_type, attachment_url):
-	# 1. Skip when any required value is absent.
+def is_shipment_document_verified(row) -> bool:
+	"""True when a Shipment Document row is verified."""
+	if row.meta.has_field("status") and row.get("status") == "Verified":
+		return True
+	return bool(row.get("verified_on"))
+
+
+def append_verified_doc_row(project_doc, document_type, attachment_url, *, slot: str = "initial"):
+	"""Add or update a verified Project shipment document (defaults to initial/pre-shipment slot)."""
 	if not attachment_url or not document_type:
 		return
 	if not frappe.db.exists("Document Type", document_type):
@@ -151,37 +514,16 @@ def append_verified_doc_row(project_doc, document_type, attachment_url):
 	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
 		return
 
-	rows = project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
-
-	# 2. Update the existing row when the document type is already present.
-	for row in rows:
-		if document_types_match(row.document_type, document_type):
-			if not row.attachment:
-				row.attachment = attachment_url
-			row.status = "Verified"
-			if not row.uploaded_by:
-				row.uploaded_by = frappe.session.user
-			if not row.uploaded_on:
-				row.uploaded_on = now_datetime()
-			if not row.verified_by:
-				row.verified_by = frappe.session.user
-			if not row.verified_on:
-				row.verified_on = now_datetime()
-			return
-
-	# 3. Append a new verified row when no existing row matched.
-	project_doc.append(
+	kwargs = {"verify": True}
+	if slot == "final":
+		kwargs["final_url"] = attachment_url
+	else:
+		kwargs["initial_url"] = attachment_url
+	upsert_shipment_document_row(
+		project_doc,
 		SHIPMENT_DOCUMENTS_FIELD,
-		{
-			"document_type": document_type,
-			"attachment": attachment_url,
-			"required": 1,
-			"status": "Verified",
-			"uploaded_by": frappe.session.user,
-			"uploaded_on": now_datetime(),
-			"verified_by": frappe.session.user,
-			"verified_on": now_datetime(),
-		},
+		document_type,
+		**kwargs,
 	)
 
 
@@ -212,12 +554,6 @@ DOCUMENT_TYPE_DEFAULTS = {
 		"required_stage": "Arrival & manifest",
 	},
 }
-
-# Customer Attach field → Document Type code.
-CUSTOMER_ATTACH_TO_DOCUMENT_CODE = {
-	"custom_kra_pin_attachment": "KRA_PIN",
-}
-
 
 def ensure_document_types():
 	"""Ensure Document Type master rows exist for synced shipment files."""
@@ -257,7 +593,9 @@ def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 
 	ensure_document_types()
 	for row in source_doc.get(OPPORTUNITY_DOCUMENTS_FIELD) or []:
-		if not row.document_type or not row.attachment:
+		if not row.document_type:
+			continue
+		if not (primary_attachment(row) or row.get("attachment")):
 			continue
 		if not frappe.db.exists("Document Type", row.document_type):
 			continue
@@ -265,12 +603,28 @@ def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 
 
 def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
+	initial = source_row.get("initial_attachment")
+	final = source_row.get("final_attachment")
+	legacy = source_row.get("attachment")
+	if has_document_versioning():
+		upsert_shipment_document_row(
+			project_doc,
+			SHIPMENT_DOCUMENTS_FIELD,
+			source_row.document_type,
+			initial_url=initial or legacy,
+			final_url=final,
+			status=resolve_document_row_status(source_row),
+			remarks=source_row.get("remarks"),
+			verify=resolve_document_row_status(source_row) == "Verified",
+		)
+		return
+
 	rows = project_doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
 	for existing in rows:
 		if not document_types_match(existing.document_type, source_row.document_type):
 			continue
 		if not existing.attachment:
-			existing.attachment = source_row.attachment
+			existing.attachment = legacy
 		status = resolve_document_row_status(source_row)
 		if existing.meta.has_field("status") and status != "Missing":
 			existing.status = status
@@ -288,7 +642,7 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 
 	row_data = {
 		"document_type": source_row.document_type,
-		"attachment": source_row.attachment,
+		"attachment": legacy,
 		"uploaded_by": source_row.uploaded_by,
 		"uploaded_on": source_row.uploaded_on,
 		"verified_by": source_row.verified_by,
@@ -374,35 +728,15 @@ def append_task_document_row(task_doc, document_type, attachment_url, status=Non
 		return
 	if not task_doc.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
-	if not frappe.db.exists("Document Type", document_type):
-		return
 
-	status = status or "Verified"
-	for row in task_doc.get(TASK_DOCUMENTS_FIELD) or []:
-		if document_types_match(row.document_type, document_type):
-			row.attachment = attachment_url
-			row.status = status
-			if remarks:
-				row.remarks = remarks
-			if status == "Verified":
-				row.verified_by = row.verified_by or frappe.session.user
-				row.verified_on = row.verified_on or now_datetime()
-			row.uploaded_by = row.uploaded_by or frappe.session.user
-			row.uploaded_on = row.uploaded_on or now_datetime()
-			return
-
-	task_doc.append(
+	upsert_shipment_document_row(
+		task_doc,
 		TASK_DOCUMENTS_FIELD,
-		{
-			"document_type": document_type,
-			"attachment": attachment_url,
-			"status": status,
-			"remarks": remarks or "Carried from Project (approved on Lead/Opportunity/Customer)",
-			"uploaded_by": frappe.session.user,
-			"uploaded_on": now_datetime(),
-			"verified_by": frappe.session.user if status == "Verified" else None,
-			"verified_on": now_datetime() if status == "Verified" else None,
-		},
+		document_type,
+		initial_url=attachment_url,
+		status=status or "Verified",
+		remarks=remarks or "Carried from Project (approved on Lead/Opportunity/Customer)",
+		verify=(status or "Verified") == "Verified",
 	)
 
 
@@ -427,7 +761,7 @@ def carry_project_documents_to_sea_tasks(project_name, task_sequences=None):
 	source_rows = [
 		r
 		for r in project.get(SHIPMENT_DOCUMENTS_FIELD) or []
-		if r.document_type and r.attachment
+		if r.document_type and primary_attachment(r)
 	]
 	if not source_rows:
 		return []
@@ -450,7 +784,7 @@ def carry_project_documents_to_sea_tasks(project_name, task_sequences=None):
 			append_task_document_row(
 				task,
 				row.document_type,
-				row.attachment,
+				primary_attachment(row),
 				status=row.status or "Verified",
 				remarks=row.remarks
 				or "Carried from Project (approved on Lead/Opportunity/Customer)",
@@ -477,7 +811,21 @@ def carry_task_documents_to_project(project_doc, project_name=None):
 	for task_name in frappe.get_all("Task", filters={"project": project_name}, pluck="name"):
 		task_doc = frappe.get_doc("Task", task_name)
 		for row in task_doc.get("custom_task_documents") or []:
-			if row.document_type and row.attachment:
+			if not row.document_type:
+				continue
+			if not (primary_attachment(row) or row.get("final_attachment") or row.get("initial_attachment")):
+				continue
+			if has_document_versioning():
+				upsert_shipment_document_row(
+					project_doc,
+					SHIPMENT_DOCUMENTS_FIELD,
+					row.document_type,
+					initial_url=row.get("initial_attachment"),
+					final_url=row.get("final_attachment"),
+					status=row.get("status"),
+					remarks=row.get("remarks"),
+				)
+			elif row.attachment:
 				append_verified_doc_row(project_doc, row.document_type, row.attachment)
 
 
