@@ -652,3 +652,88 @@ def download_shipment_document(project: str, row: str):
 	frappe.local.response.filename = file_doc.file_name or "document"
 	frappe.local.response.filecontent = file_doc.get_content()
 	frappe.local.response.type = "download"
+
+
+# ─── Permits ─────────────────────────────────────────────────────────────────
+
+
+def get_shipment_permits(project_name: str) -> list[dict]:
+	"""Regulatory permit certificates on a shipment that a customer may download.
+
+	Only rows with a `permit_document` attachment are surfaced - payment
+	invoices and receipts stay internal. Each row is enriched with a friendly
+	permit label and a guarded download URL.
+	"""
+	if not project_name:
+		return []
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import PERMIT_REGISTER_FIELD
+
+	if not frappe.get_meta("Project").has_field(PERMIT_REGISTER_FIELD):
+		return []
+
+	rows = frappe.get_all(
+		"Permit Register",
+		filters={
+			"parent": project_name,
+			"parenttype": "Project",
+			"parentfield": PERMIT_REGISTER_FIELD,
+			"permit_document": ["is", "set"],
+		},
+		fields=[
+			"name",
+			"permit_type",
+			"permit_document",
+			"status",
+			"stage",
+			"approval_date",
+			"issuing_body",
+		],
+		order_by="approval_date desc, modified desc",
+	)
+	for row in rows:
+		row["permit_label"] = _permit_label(row.get("permit_type"))
+		row["download_url"] = (
+			"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_shipment_permit"
+			+ f"?project={quote(project_name, safe='')}"
+			+ f"&row={quote(row['name'], safe='')}"
+		)
+	return rows
+
+
+def _permit_label(permit_type: str | None) -> str:
+	"""Friendly label for a Permit Type (permit_name, else id)."""
+	if not permit_type:
+		return _("Permit")
+	return frappe.db.get_value("Permit Type", permit_type, "permit_name") or permit_type
+
+
+@frappe.whitelist()
+def download_shipment_permit(project: str, row: str):
+	"""Stream a permit certificate attachment to its owning customer."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import PERMIT_REGISTER_FIELD
+
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+
+	owner = frappe.db.get_value("Project", project, "customer")
+	if not owner or owner != customer:
+		raise frappe.PermissionError(_("You can only download your own shipment permits."))
+
+	file_url = frappe.db.get_value(
+		"Permit Register",
+		{
+			"name": row,
+			"parent": project,
+			"parenttype": "Project",
+			"parentfield": PERMIT_REGISTER_FIELD,
+		},
+		"permit_document",
+	)
+	if not file_url:
+		raise frappe.PermissionError(_("Permit not found on this shipment."))
+
+	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	frappe.local.response.filename = file_doc.file_name or "permit"
+	frappe.local.response.filecontent = file_doc.get_content()
+	frappe.local.response.type = "download"
