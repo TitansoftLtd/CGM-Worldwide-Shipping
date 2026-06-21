@@ -8,6 +8,9 @@ import frappe
 from frappe import _
 from frappe.utils import getdate
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+	display_ref_from_values,
+)
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
 	enrich_container_row,
 )
@@ -137,6 +140,16 @@ def _contact_info(row: dict) -> str:
 	return " ".join(p for p in parts if p).strip()
 
 
+def _project_group_header_fields() -> list[str]:
+	"""Project columns for B/L group headers — skip fields missing on this site."""
+	meta = frappe.get_meta("Project")
+	fields = ["name", "project_name"]
+	for fieldname in ("custom_project_reference", "custom_cgm_ref_no", "custom_batch_no"):
+		if meta.has_field(fieldname):
+			fields.append(fieldname)
+	return fields
+
+
 def get_data(filters, station_label: str | None = None):
 	list_filters = {}
 	if filters.get("project"):
@@ -196,15 +209,10 @@ def get_data(filters, station_label: str | None = None):
 			project_doc = frappe.db.get_value(
 				"Project",
 				project,
-				["custom_project_reference", "custom_cgm_ref_no", "project_name", "custom_batch_no", "name"],
+				_project_group_header_fields(),
 				as_dict=True,
 			) or {}
-			project_ref = (
-				project_doc.get("custom_project_reference")
-				or project_doc.get("custom_cgm_ref_no")
-				or project_doc.get("project_name")
-				or project_doc.get("name")
-			)
+			project_ref = display_ref_from_values(project_doc)
 			data.append(
 				{
 					"container_number": _(

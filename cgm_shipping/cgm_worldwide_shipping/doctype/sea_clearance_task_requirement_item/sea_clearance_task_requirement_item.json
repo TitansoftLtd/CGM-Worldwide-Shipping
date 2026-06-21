@@ -24,7 +24,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Requirement type",
-   "options": "Document\nDocument Checkpoint\nPermit Application\nPermit Stage\nLight Proof\nFinance Payment\nUCR Application\nEntry Application\nShipping Line Application\nAuto Complete",
+   "options": "Document\nDocument Checkpoint\nPermit Application\nPermit Stage\nLight Proof\nFinance Payment\nUCR Application\nEntry Application\nShipping Line Application\nKPA Application\nAuto Complete",
    "reqd": 1
   },
   {
