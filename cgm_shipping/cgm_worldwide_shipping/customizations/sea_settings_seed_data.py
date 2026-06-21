@@ -15,16 +15,15 @@ DEFAULT_SEA_IMPORT_TASK_TEMPLATE: list[dict[str, str]] = [
 	},
 	{"task_subject": "Finance pays Pre-Clearance Permits", "department": "Finance"},
 	{"task_subject": "Client conducts inspection", "department": "Operations"},
-	{"task_subject": "Track shipment and monitor ETA", "department": "Operations"},
 	{
 		"task_subject": "Receive Final Clearance Documents (B/L, Invoice, PKL, COC)",
 		"department": "Documentation",
 	},
 	{"task_subject": "Request Manifest and Local Import Charges", "department": "Documentation"},
 	{"task_subject": "Create Entry (after vessel arrival confirmation)", "department": "Declaration"},
+	{"task_subject": "Finance Pays Entry Slip", "department": "Finance"},
 	{"task_subject": "Finance pays Shipping Line Charges", "department": "Finance"},
 	{"task_subject": "Lodge Delivery Order", "department": "Operations"},
-	{"task_subject": "Confirm Entry Payment (Client/CGM)", "department": "Finance"},
 	{"task_subject": "Prepare and pay Post-Clearance Permits", "department": "Declaration"},
 	{"task_subject": "Field Officers conduct clearance", "department": "Field Operations"},
 	{"task_subject": "Supervisor obtains KPA Invoice", "department": "Operations"},
@@ -44,26 +43,27 @@ DEFAULT_DOC_CODES: dict[int, list[str]] = {
 	4: [],
 	7: ["INSPECT"],
 	10: ["MANIFEST"],
-	11: ["ENTRY"],
-	12: [SUPPLIER_INVOICE_CODE],
-	13: ["DO"],
-	14: [SUPPLIER_INVOICE_CODE],
-	16: ["FIELD"],
+	11: [],
+	12: [],
+	13: [SUPPLIER_INVOICE_CODE],
+	14: ["DO"],
+	16: ["FIELD", "DELIVERY_NOTE"],
 	17: [SUPPLIER_INVOICE_CODE],
 	18: [SUPPLIER_INVOICE_CODE],
 }
 
 DEFAULT_PERMIT_APPLICATION_SEQS: frozenset[int] = frozenset({5, 15})
-DEFAULT_LIGHT_PROOF_SEQS: frozenset[int] = frozenset({8, 19, 20, 21, 22, 23, 24})
+DEFAULT_LIGHT_PROOF_SEQS: frozenset[int] = frozenset({19, 20, 21, 22, 23, 24})
 DEFAULT_PERMIT_STAGES: dict[int, str] = {5: "Pre-clearance", 15: "Post-clearance"}
 DEFAULT_AUTO_COMPLETE_SEQS: frozenset[int] = frozenset({1, 2})
 DEFAULT_UCR_APPLICATION_SEQS: frozenset[int] = frozenset({3})
-DEFAULT_FINANCE_PAYMENT_SEQS: frozenset[int] = frozenset({4, 6, 12, 14, 18})
+DEFAULT_ENTRY_APPLICATION_SEQS: frozenset[int] = frozenset({11})
+DEFAULT_FINANCE_PAYMENT_SEQS: frozenset[int] = frozenset({4, 6, 12, 13, 18})
 DEFAULT_FINANCE_KIND_BY_SEQ: dict[int, str] = {
 	4: "UCR",
 	6: "Permit",
-	12: "Standard",
-	14: "Standard",
+	12: "Entry Slip",
+	13: "Standard",
 	18: "Standard",
 }
 
@@ -77,8 +77,8 @@ DEFAULT_SEA_WORKFLOW_TASK_GATES: list[dict] = [
 	{"shipment_workflow_state": "Final Docs Received", "min_completed_task_seq": 9, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "Manifest Requested", "min_completed_task_seq": 10, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "Entry Lodged", "min_completed_task_seq": 11, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Line Paid & DO Lodged", "min_completed_task_seq": 13, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Entry Paid", "min_completed_task_seq": 14, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "Entry Paid", "min_completed_task_seq": 12, "gate_rule": "Entry Finance Complete"},
+	{"shipment_workflow_state": "Line Paid & DO Lodged", "min_completed_task_seq": 14, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "Post-clearance", "min_completed_task_seq": 15, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "Field Clearance", "min_completed_task_seq": 16, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "KPA Paid", "min_completed_task_seq": 18, "gate_rule": "Standard"},
@@ -94,6 +94,8 @@ def build_requirement_seed_rows() -> list[dict]:
 		rows.append({"sequence_no": seq, "requirement_type": "Auto Complete", "value": ""})
 	for seq in sorted(DEFAULT_UCR_APPLICATION_SEQS):
 		rows.append({"sequence_no": seq, "requirement_type": "UCR Application", "value": ""})
+	for seq in sorted(DEFAULT_ENTRY_APPLICATION_SEQS):
+		rows.append({"sequence_no": seq, "requirement_type": "Entry Application", "value": ""})
 	for seq in sorted(DEFAULT_PERMIT_APPLICATION_SEQS):
 		rows.append({"sequence_no": seq, "requirement_type": "Permit Application", "value": ""})
 		rows.append(
