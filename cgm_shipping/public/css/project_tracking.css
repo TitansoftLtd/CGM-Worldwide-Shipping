@@ -42,6 +42,32 @@
 	font-weight: 600;
 }
 
+/* Attach controls in child-table grids — always look like buttons, not plain text. */
+.form-grid .grid-static-col[data-fieldtype="Attach"],
+.form-grid .grid-static-col[data-fieldtype="Attach Image"] {
+	min-width: 110px;
+}
+
+.form-grid .grid-static-col[data-fieldtype="Attach"] .field-area,
+.form-grid .grid-static-col[data-fieldtype="Attach Image"] .field-area {
+	display: block !important;
+}
+
+.form-grid .grid-static-col[data-fieldtype="Attach"] .btn-attach,
+.form-grid .grid-static-col[data-fieldtype="Attach Image"] .btn-attach {
+	display: inline-flex !important;
+	align-items: center;
+	visibility: visible !important;
+	opacity: 1 !important;
+	padding: 2px 8px;
+	min-height: 26px;
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: var(--border-radius-sm, 4px);
+	background: var(--btn-default-bg, #f3f3f3);
+	color: var(--text-color, #333);
+	cursor: pointer;
+}
+
 .cgm-progress-meta {
 	margin-top: 10px;
 	color: #6c7680;

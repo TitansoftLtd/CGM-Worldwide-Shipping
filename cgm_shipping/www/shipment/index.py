@@ -16,12 +16,16 @@ from urllib.parse import quote
 import frappe
 from frappe import _
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
+	get_project_inspection_portal_context,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	container_timeline,
 	customer_for_user,
 	get_containers_for_shipment,
 	get_shipment_documents,
 	get_shipment_for_customer,
+	get_shipment_permits,
 	shipment_display_ref,
 	shipment_progress,
 	status_tone,
@@ -111,3 +115,5 @@ def _build_context(context, project):
 	context.containers = containers
 
 	context.documents = get_shipment_documents(project)
+	context.permits = get_shipment_permits(project)
+	context.inspection = get_project_inspection_portal_context(project, customer)
