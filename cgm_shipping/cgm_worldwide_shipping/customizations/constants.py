@@ -26,6 +26,20 @@ SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
 # Opportunity pre-shipment workflow approved state.
 APPROVED_WORKFLOW_STATE = "Approved"
 
+# Quotation finance approval workflow.
+QUOTATION_WORKFLOW_NAME = "CGM Quotation Approval"
+QUOTATION_WORKFLOW_STATE_DRAFT = "Draft"
+QUOTATION_WORKFLOW_STATE_PENDING_FINANCE = "Pending Finance Approval"
+QUOTATION_WORKFLOW_STATE_APPROVED = "Approved"
+QUOTATION_WORKFLOW_STATE_REJECTED = "Rejected"
+QUOTATION_WORKFLOW_STATE_SHARED = "Shared with Client"
+QUOTATION_SI_READY_STATES = frozenset(
+	{
+		QUOTATION_WORKFLOW_STATE_APPROVED,
+		QUOTATION_WORKFLOW_STATE_SHARED,
+	}
+)
+
 # Customer attach field → Document Type code (until Settings child table exists).
 CUSTOMER_ATTACH_TO_DOCUMENT_CODE = {
 	"custom_kra_pin_attachment": "KRA_PIN",
