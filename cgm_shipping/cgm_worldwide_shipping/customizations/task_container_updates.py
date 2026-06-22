@@ -373,6 +373,9 @@ def _auto_complete_container_task(task_name: str, project: str) -> bool:
 	finally:
 		frappe.flags.cgm_auto_completing_container_task = False
 
+	if frappe.flags.get("cgm_skip_task_project_sync"):
+		return True
+
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 		sync_project_shipment_status_from_tasks,
 	)
@@ -391,6 +394,12 @@ def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
 	"""Complete an open container step task when every tracker has the step field filled."""
 	check_field = _completion_field_by_seq().get(seq)
 	if not check_field or not project:
+		return False
+
+	if not frappe.db.exists(
+		"Container Tracker",
+		{"project": project},
+	):
 		return False
 
 	if _trackers_missing_field(project, check_field):
@@ -427,6 +436,8 @@ def check_all_container_tasks_for_project(project: str) -> None:
 
 def check_task_container_completion(doc) -> None:
 	"""Auto-complete transport tasks when every project container satisfies the step."""
+	if frappe.flags.get("cgm_skip_task_project_sync"):
+		return
 	if doc.status == "Completed":
 		return
 	if not doc.get("project"):
@@ -454,6 +465,11 @@ def validate_container_step_task_completion(doc) -> None:
 	check_field = _completion_field_by_seq().get(seq)
 	if not check_field or not doc.get("project"):
 		return
+
+	if not frappe.db.exists("Container Tracker", {"project": doc.project}):
+		frappe.throw(
+			_("Add container trackers on this project before completing transport step tasks.")
+		)
 
 	missing = _trackers_missing_field(doc.project, check_field)
 	if missing:

@@ -37,6 +37,23 @@ frappe.ui.form.on("Opportunity", {
 		frm._cgm_skip_readonly_sync = false;
 		invalidate_opportunity_bl_sync(frm);
 		restore_opportunity_clean_state(frm);
+		// Re-render the Create menu immediately after the workflow state changes
+		// (e.g. Opp Intake → Approved) so the Shipment Project button appears
+		// without needing a manual page refresh.
+		// We also schedule a late pass (900 ms) because the form refresh triggered
+		// by the workflow action will re-run hide_procurement_create_buttons up to
+		// 600 ms later, which can wipe the whole Create group.
+		schedule_shipment_project_create_menu(frm);
+		hide_procurement_create_buttons(frm);
+		setTimeout(() => {
+			schedule_shipment_project_create_menu(frm);
+			hide_procurement_create_buttons(frm);
+		}, 900);
+	},
+
+	workflow_state(frm) {
+		schedule_shipment_project_create_menu(frm);
+		hide_procurement_create_buttons(frm);
 	},
 
 	custom_shipment_type(frm) {
@@ -623,25 +640,105 @@ function clear_bl_derived_opportunity_fields(frm) {
 
 const CGM_OPPORTUNITY_CREATE_GROUP = __("Create");
 
+// ─── Shipment Project create menu ─────────────────────────────────────────────
+// Opportunity is NOT a submittable document, so docstatus always stays 0.
+// Gate creation on workflow_state === "Approved" at click time (not docstatus).
+
+function shipment_project_cache_key(opp_name) {
+	return `cgm_shipment_project:${opp_name}`;
+}
+
+function cache_shipment_project_for_opportunity(frm, project_name) {
+	if (!frm?.doc?.name || !project_name) {
+		return;
+	}
+	frm._cgm_shipment_project_name = project_name;
+	try {
+		localStorage.setItem(shipment_project_cache_key(frm.doc.name), project_name);
+	} catch {
+		// ignore quota / private mode
+	}
+}
+
+function read_cached_shipment_project_for_opportunity(opp_name) {
+	if (!opp_name) {
+		return null;
+	}
+	try {
+		return localStorage.getItem(shipment_project_cache_key(opp_name)) || null;
+	} catch {
+		return null;
+	}
+}
+
+function project_name_from_get_value(message) {
+	if (!message) {
+		return null;
+	}
+	if (typeof message === "string") {
+		return message;
+	}
+	return message.name || null;
+}
+
+function finalize_opportunity_create_menu(frm) {
+	frm.page.set_inner_btn_group_as_primary(CGM_OPPORTUNITY_CREATE_GROUP);
+	hide_procurement_create_buttons(frm);
+}
+
+function force_remove_opportunity_create_menu_item(frm, label) {
+	const translated = __(label);
+	frm.remove_custom_button(translated, CGM_OPPORTUNITY_CREATE_GROUP);
+	const $group = frm.page.get_inner_group_button?.(CGM_OPPORTUNITY_CREATE_GROUP);
+	if ($group?.length) {
+		$group
+			.find(`.dropdown-item[data-label="${encodeURIComponent(translated)}"]`)
+			.remove();
+	}
+	delete frm.custom_buttons?.[translated];
+}
+
+function force_add_opportunity_create_menu_item(frm, label, fn) {
+	const translated = __(label);
+	force_remove_opportunity_create_menu_item(frm, label);
+	frm.add_custom_button(translated, fn, CGM_OPPORTUNITY_CREATE_GROUP);
+}
+
 function schedule_shipment_project_create_menu(frm) {
 	if (frm.is_new() || !frm.doc.name || frm.doc.opportunity_from !== "Customer") {
 		return;
 	}
 
 	clearTimeout(frm._cgm_project_btn_timer);
-	// ERPNext Opportunity.refresh() adds standard Create items first; defer like bill_of_lading.js.
+	clearTimeout(frm._cgm_project_btn_timer_late);
+	clearTimeout(frm._cgm_project_btn_timer_latest);
+	clearTimeout(frm._cgm_project_btn_timer_final);
+
+	// First pass: before ERPNext adds its standard Create items.
 	frm._cgm_project_btn_timer = setTimeout(() => {
 		add_shipment_project_create_menu_item(frm);
 	}, 0);
-	clearTimeout(frm._cgm_project_btn_timer_late);
+
+	// Second pass: after ERPNext's standard items land (~300 ms).
 	frm._cgm_project_btn_timer_late = setTimeout(() => {
 		add_shipment_project_create_menu_item(frm);
 	}, 500);
+
+	// Third pass: after hide_procurement_create_buttons' last interval (600 ms)
+	// to ensure our button survives any group cleanup Frappe does.
+	frm._cgm_project_btn_timer_latest = setTimeout(() => {
+		add_shipment_project_create_menu_item(frm);
+	}, 800);
+
+	// Fourth pass: after workflow-action form reload (~900 ms).
+	frm._cgm_project_btn_timer_final = setTimeout(() => {
+		add_shipment_project_create_menu_item(frm);
+	}, 1200);
 }
 
 function clear_shipment_project_create_menu_items(frm) {
-	frm.remove_custom_button(__("Create Shipment Project"), CGM_OPPORTUNITY_CREATE_GROUP);
-	frm.remove_custom_button(__("View Project"), CGM_OPPORTUNITY_CREATE_GROUP);
+	force_remove_opportunity_create_menu_item(frm, "Create Shipment Project");
+	force_remove_opportunity_create_menu_item(frm, "View Project");
 }
 
 function prompt_shipment_project_approval_required(frm) {
@@ -656,6 +753,7 @@ function prompt_shipment_project_approval_required(frm) {
 }
 
 function on_create_shipment_project_click(frm) {
+	// Gate on workflow_state (string), not docstatus — Opportunity is not submittable.
 	if (frm.doc.workflow_state !== "Approved") {
 		prompt_shipment_project_approval_required(frm);
 		return;
@@ -669,30 +767,30 @@ function add_shipment_project_create_menu_item(frm) {
 	}
 
 	const opp_name = frm.doc.name;
-	clear_shipment_project_create_menu_items(frm);
 
 	const add_create_item = () => {
 		if (frm.doc.name !== opp_name) {
 			return;
 		}
-		clear_shipment_project_create_menu_items(frm);
-		frm.add_custom_button(
-			__("Create Shipment Project"),
-			() => on_create_shipment_project_click(frm),
-			CGM_OPPORTUNITY_CREATE_GROUP
+		force_remove_opportunity_create_menu_item(frm, "View Project");
+		force_add_opportunity_create_menu_item(
+			frm,
+			"Create Shipment Project",
+			() => on_create_shipment_project_click(frm)
 		);
+		finalize_opportunity_create_menu(frm);
 	};
 
 	const add_view_item = (project_name) => {
-		if (frm.doc.name !== opp_name) {
+		if (frm.doc.name !== opp_name || !project_name) {
 			return;
 		}
-		clear_shipment_project_create_menu_items(frm);
-		frm.add_custom_button(
-			__("View Project"),
-			() => frappe.set_route("Form", "Project", project_name),
-			CGM_OPPORTUNITY_CREATE_GROUP
+		cache_shipment_project_for_opportunity(frm, project_name);
+		force_remove_opportunity_create_menu_item(frm, "Create Shipment Project");
+		force_add_opportunity_create_menu_item(frm, "View Project", () =>
+			frappe.set_route("Form", "Project", project_name)
 		);
+		finalize_opportunity_create_menu(frm);
 	};
 
 	const project_meta = frappe.get_meta("Project");
@@ -701,22 +799,44 @@ function add_shipment_project_create_menu_item(frm) {
 			(project_meta.fields || []).some((df) => df.fieldname === "custom_source_opportunity")
 	);
 
+	const cached =
+		frm._cgm_shipment_project_name || read_cached_shipment_project_for_opportunity(opp_name);
+
 	if (!has_source_link) {
 		add_create_item();
 		return;
 	}
 
+	if (cached) {
+		add_view_item(cached);
+		return;
+	}
+
+	// Paint immediately for Approved opps — do not wait on the DB lookup.
+	if (frm.doc.workflow_state === "Approved") {
+		add_create_item();
+	}
+
 	frappe.db
 		.get_value("Project", { custom_source_opportunity: opp_name }, "name")
 		.then((r) => {
-			const existing = r?.message?.name;
+			if (cur_frm !== frm || frm.doc.name !== opp_name) {
+				return;
+			}
+			const existing = project_name_from_get_value(r?.message);
 			if (existing) {
 				add_view_item(existing);
 				return;
 			}
-			add_create_item();
+			if (frm.doc.workflow_state === "Approved") {
+				add_create_item();
+			}
 		})
-		.catch(() => add_create_item());
+		.catch(() => {
+			if (frm.doc.workflow_state === "Approved") {
+				add_create_item();
+			}
+		});
 }
 
 function create_shipment_project_from_opportunity(frm) {
@@ -727,6 +847,7 @@ function create_shipment_project_from_opportunity(frm) {
 		freeze: true,
 		callback(r) {
 			if (!r.exc && r.message) {
+				cache_shipment_project_for_opportunity(frm, r.message);
 				frappe.show_alert({
 					message: __("Shipment Project created"),
 					indicator: "green",
@@ -741,7 +862,16 @@ function hide_procurement_create_buttons(frm) {
 	const remove = () => {
 		frm.remove_custom_button(__("Supplier Quotation"), __("Create"));
 		frm.remove_custom_button(__("Request For Quotation"), __("Create"));
+		// NOTE: Do NOT remove "Create Shipment Project" or "View Project" here.
 	};
 	remove();
-	[50, 200, 600].forEach((delay) => setTimeout(remove, delay));
+	[50, 200, 600, 1000, 1500].forEach((delay) => setTimeout(remove, delay));
 }
+
+frappe.provide("cgm_shipping.opportunity_menu");
+
+cgm_shipping.opportunity_menu = {
+	paint: add_shipment_project_create_menu_item,
+	schedule: schedule_shipment_project_create_menu,
+	hide_procurement: hide_procurement_create_buttons,
+};
