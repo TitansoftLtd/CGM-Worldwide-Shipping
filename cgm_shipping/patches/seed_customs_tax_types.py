@@ -10,7 +10,7 @@ CUSTOMS_TAX_TYPES: list[dict[str, str]] = [
 	{"tax_name": "IDF", "calculation_type": "Percentage"},
 	{"tax_name": "RDL", "calculation_type": "Percentage"},
 	{"tax_name": "Excise Duty", "calculation_type": "Percentage"},
-	{"tax_name": "MSS Levy", "calculation_type": "Fixed Amount"},
+	{"tax_name": "MSS Levy", "calculation_type": "Per Weight"},
 ]
 
 DEFAULT_CUSTOMS_TAX_RATES: dict[str, float] = {
