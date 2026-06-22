@@ -18,6 +18,7 @@ INTAKE_DOCUMENT_CODES = ("CI", "PKL")
 
 # Sea task completion requirement labels (Settings-driven; defaults for throws).
 PRE_CLEARANCE_STAGE = "Pre-clearance"
+POST_CLEARANCE_STAGE = "Post-clearance"
 SUPPLIER_INVOICE_CODE = "SUP_INV"
 
 # CGM Sea Import Workflow on Project (fallback when Settings has no override).
@@ -78,14 +79,14 @@ CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
 	"custom_track_eta_task_seq": 8,
 	"custom_vessel_arrival_task_seq": 11,
-	"custom_field_clearance_task_seq": 16,
-	"custom_kpa_paid_task_seq": 18,
-	"custom_book_trucks_task_seq": 19,
-	"custom_gate_out_task_seq": 20,
-	"custom_monitor_delivery_task_seq": 21,
-	"custom_offload_task_seq": 22,
-	"custom_empty_return_task_seq": 23,
-	"custom_interchange_task_seq": 24,
+	"custom_field_clearance_task_seq": 18,
+	"custom_kpa_paid_task_seq": 20,
+	"custom_book_trucks_task_seq": 21,
+	"custom_gate_out_task_seq": 22,
+	"custom_monitor_delivery_task_seq": 23,
+	"custom_offload_task_seq": 24,
+	"custom_empty_return_task_seq": 25,
+	"custom_interchange_task_seq": 26,
 }
 
 # Backward-compatible aliases.
@@ -99,8 +100,9 @@ TASK_TYPE_OF_CONTAINER_FIELD = "custom_type_of_container"
 
 # Task child table for per-container data entry (tasks 11, 16, 18–24).
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
-CONTAINER_UPDATE_TASK_SEQS = frozenset({11, 16, 18, 19, 20, 21, 22, 23, 24})
-CONTAINER_UPDATE_SEED_SEQS = frozenset({11, 16, 18, 19, 20, 21, 22, 23, 24})
+CONTAINER_UPDATE_TASK_SEQS = frozenset({11, 18, 20, 21, 22, 23, 24, 25, 26})
+CONTAINER_UPDATE_SEED_SEQS = frozenset({11, 18, 20, 21, 22, 23, 24, 25, 26})
+TRANSPORT_TASK_SEQS = frozenset({21, 22, 23, 24, 25, 26})
 
 # Settings fieldnames — bulk events update every tracker on the project.
 BULK_CONTAINER_TASK_SEQ_FIELDS = (
@@ -135,6 +137,15 @@ PERMIT_RECEIPTS_VERIFY_FINANCE = "CGM Task - Permit Receipts Verify Finance"
 UCR_INVOICE_TO_FINANCE = "CGM Task - UCR Invoice to Finance"
 UCR_RECEIPT_FOR_DECLARANT = "CGM Task - UCR Receipt for Declarant"
 UCR_RECEIPT_VERIFY_FINANCE = "CGM Task - UCR Receipt Verify Finance"
+ENTRY_INVOICE_TO_FINANCE = "CGM Task - Entry Invoice to Finance"
+ENTRY_RECEIPT_FOR_DECLARANT = "CGM Task - Entry Receipt for Declarant"
+ENTRY_RECEIPT_VERIFY_FINANCE = "CGM Task - Entry Receipt Verify Finance"
+SHIPPING_LINE_INVOICE_TO_FINANCE = "CGM Task - Shipping Line Invoice to Finance"
+SHIPPING_LINE_RECEIPT_FOR_DECLARANT = "CGM Task - Shipping Line Receipt for Declarant"
+SHIPPING_LINE_RECEIPT_VERIFY_FINANCE = "CGM Task - Shipping Line Receipt Verify Finance"
+KPA_INVOICE_TO_FINANCE = "CGM Task - KPA Invoice to Finance"
+KPA_RECEIPT_FOR_SUPERVISOR = "CGM Task - KPA Receipt for Supervisor"
+KPA_RECEIPT_VERIFY_FINANCE = "CGM Task - KPA Receipt Verify Finance"
 DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 
 # Standard Task fields to hide on all sea clearance tasks (reduce noise).

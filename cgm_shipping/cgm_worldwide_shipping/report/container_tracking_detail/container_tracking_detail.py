@@ -28,7 +28,6 @@ def get_columns():
 		{"fieldname": "project", "label": _("Project"), "fieldtype": "Link", "options": "Project", "width": 130},
 		{"fieldname": "container_number", "label": _("Container No"), "fieldtype": "Data", "width": 120},
 		{"fieldname": "bl_number", "label": _("B/L No"), "fieldtype": "Data", "width": 110},
-		{"fieldname": "batch_bl_no", "label": _("Batch No"), "fieldtype": "Data", "width": 100},
 		{"fieldname": "status", "label": _("Status"), "fieldtype": "Data", "width": 110},
 		{"fieldname": "current_location", "label": _("Current Location"), "fieldtype": "Data", "width": 180},
 		{"fieldname": "container_mode", "label": _("Mode"), "fieldtype": "Data", "width": 120},
@@ -41,9 +40,7 @@ def get_columns():
 		{"fieldname": "actual_empty_return", "label": _("Actual Return"), "fieldtype": "Date", "width": 105},
 		{"fieldname": "port_days_used", "label": _("Port Days"), "fieldtype": "Int", "width": 80},
 		{"fieldname": "demurrage_days", "label": _("Demurrage Days"), "fieldtype": "Int", "width": 100},
-		{"fieldname": "demurrage_amount", "label": _("Demurrage Amount"), "fieldtype": "Currency", "width": 120},
 		{"fieldname": "detention_days", "label": _("Detention Days"), "fieldtype": "Int", "width": 100},
-		{"fieldname": "detention_amount", "label": _("Detention Amount"), "fieldtype": "Currency", "width": 120},
 		{"fieldname": "days_outstanding", "label": _("Days Overdue"), "fieldtype": "Int", "width": 100},
 	]
 
@@ -53,9 +50,13 @@ CONTAINER_FIELDS = [
 	"project",
 	"container_number",
 	"bl_number",
-	"batch_bl_no",
 	"container_mode",
 	"delivery_location",
+	"shipping_line",
+	"free_days_start_date",
+	"free_days_end_date",
+	"detention_free_start_date",
+	"detention_free_end_date",
 	"eta",
 	"ata",
 	"discharging_date",
@@ -69,16 +70,14 @@ CONTAINER_FIELDS = [
 	"icd_gate_in_date",
 	"icd_gate_out_date",
 	"free_days",
+	"detention_free_days",
 	"port_days_used",
-	"daily_demurrage_rate",
-	"daily_detention_rate",
 	"demurrage_days",
 	"detention_days",
-	"demurrage_amount",
-	"detention_amount",
-	"demurrage_date",
 	"days_outstanding",
 	"status",
+	"current_location",
+	"type_of_container",
 ]
 
 
@@ -87,8 +86,6 @@ def get_data(filters):
 	if filters.get("project"):
 		list_filters["project"] = filters.project
 
-	# Use get_list (not raw SQL / get_all) so the doctype's role and user
-	# permissions are applied - a user only sees Container Trackers they may read.
 	rows = frappe.get_list(
 		"Container Tracker",
 		filters=list_filters,
@@ -106,9 +103,6 @@ def get_data(filters):
 
 	if filters.get("status"):
 		data = [r for r in data if r.get("status") == filters.status]
-
-	if filters.get("overdue_only"):
-		data = [r for r in data if r.get("status") == "Overdue"]
 
 	if filters.get("min_demurrage_days"):
 		min_days = int(filters.min_demurrage_days)

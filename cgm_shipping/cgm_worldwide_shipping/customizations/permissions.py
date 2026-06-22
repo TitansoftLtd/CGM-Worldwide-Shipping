@@ -170,12 +170,21 @@ def configured_declaration_roles() -> frozenset[str]:
 def declarant_application_department_stems() -> frozenset[str]:
 	"""Template department stems for UCR / permit application tasks."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		entry_application_sequences,
+		kpa_application_sequences,
 		permit_application_sequences,
+		shipping_line_application_sequences,
 		ucr_application_sequences,
 	)
 
 	stems: set[str] = set()
-	for seq in permit_application_sequences() | ucr_application_sequences():
+	for seq in (
+		permit_application_sequences()
+		| ucr_application_sequences()
+		| entry_application_sequences()
+		| shipping_line_application_sequences()
+		| kpa_application_sequences()
+	):
 		stem = department_stem_for_sequence(seq)
 		if stem:
 			stems.add(stem)
@@ -195,11 +204,18 @@ def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool
 	if stem and stem in user_roles(user):
 		return True
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_entry_application_task,
 		is_permit_application_task,
+		is_shipping_line_application_task,
 		is_ucr_application_task,
 	)
 
-	if is_permit_application_task(sequence_no) or is_ucr_application_task(sequence_no):
+	if (
+		is_permit_application_task(sequence_no)
+		or is_ucr_application_task(sequence_no)
+		or is_entry_application_task(sequence_no)
+		or is_shipping_line_application_task(sequence_no)
+	):
 		return user_has_declarant_department_access(user)
 	return False
 

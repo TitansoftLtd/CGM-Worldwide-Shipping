@@ -66,10 +66,15 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	TASK_PERMITS_FIELD,
 	sync_task_permits_to_project,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.constants import PRE_CLEARANCE_STAGE
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	PRE_CLEARANCE_STAGE,
+	POST_CLEARANCE_STAGE,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+	get_application_sequence_for_finance_task,
 	get_permit_finance_sequence_for_application,
 	get_permit_stage_for_sequence,
+	get_post_clearance_permit_application_sequence,
 	get_pre_clearance_permit_application_sequence,
 	is_permit_application_task,
 	is_permit_finance_payment_task,
@@ -137,7 +142,35 @@ def is_pre_clearance_permit_application_task(task) -> bool:
 
 
 def is_pre_clearance_finance_permit_task(task) -> bool:
+	return is_permit_finance_task_doc(task)
+
+
+def is_permit_finance_task_doc(task) -> bool:
 	return is_permit_finance_payment_task(task_sequence(task))
+
+
+def get_permit_application_task_for_finance(finance_task) -> str | None:
+	if not finance_task.project:
+		return None
+	app_seq = get_application_sequence_for_finance_task(finance_task)
+	if not app_seq:
+		return None
+	return get_task_name_by_sequence(finance_task.project, app_seq)
+
+
+def permit_stage_for_finance_task(finance_task) -> str:
+	app_seq = get_application_sequence_for_finance_task(finance_task)
+	if app_seq:
+		return get_permit_stage_for_sequence(app_seq)
+	return PRE_CLEARANCE_STAGE
+
+
+def finance_permit_task_label(finance_task) -> str:
+	subject = (finance_task.get("subject") or "").strip()
+	if subject:
+		return subject
+	stage = permit_stage_for_finance_task(finance_task)
+	return f"Finance pays {stage} Permits"
 
 
 def is_permit_application_task_doc(task) -> bool:
@@ -261,9 +294,10 @@ def seed_finance_permit_rows_from_project(finance_task, *, save: bool = True) ->
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import PERMIT_REGISTER_FIELD
 
 	project = frappe.get_doc("Project", finance_task.project)
+	stage = permit_stage_for_finance_task(finance_task)
 	added = False
 	for row in project.get(PERMIT_REGISTER_FIELD) or []:
-		if row.stage != PRE_CLEARANCE_STAGE or not row.permit_type or not row.get("payment_invoice"):
+		if row.stage != stage or not row.permit_type or not row.get("payment_invoice"):
 			continue
 		finance_task.append(
 			TASK_PERMITS_FIELD,
@@ -294,14 +328,15 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 	"""Copy submitted permit invoices from application task → finance permit task."""
 	if frappe.flags.get("cgm_permit_finance_completing"):
 		return False
-	if not is_pre_clearance_finance_permit_task(finance_task):
+	if not is_permit_finance_task_doc(finance_task):
 		return False
 	if not finance_task.meta.has_field(TASK_PERMITS_FIELD) or not finance_task.project:
 		return False
 
-	app_name = get_permit_application_task_name(
-		finance_task.project, get_pre_clearance_permit_application_sequence()
-	)
+	app_seq = get_application_sequence_for_finance_task(finance_task)
+	if not app_seq:
+		return False
+	app_name = get_permit_application_task_name(finance_task.project, app_seq)
 	if not app_name:
 		return False
 
@@ -336,13 +371,13 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 
 
 def ensure_finance_permit_rows_saved(finance_task) -> bool:
-	if not is_pre_clearance_finance_permit_task(finance_task):
+	if not is_permit_finance_task_doc(finance_task):
 		return False
 	return sync_permit_invoices_to_finance_task(finance_task, save=True)
 
 
 def seed_finance_task_permits_from_project(task) -> None:
-	if not is_pre_clearance_finance_permit_task(task):
+	if not is_permit_finance_task_doc(task):
 		return
 	if not task.meta.has_field(TASK_PERMITS_FIELD) or not task.project:
 		return
@@ -428,8 +463,9 @@ def _notify_finance_for_permit_invoices(task) -> dict:
 
 	finance_name = prepare_finance_permit_task(task)
 	if not finance_name:
+		stage = get_permit_stage_for_sequence(task_sequence(task))
 		frappe.throw(
-			"Could not find <b>Finance pays Pre-Clearance Permits</b> on this project. "
+			f"Could not find the <b>Finance pays {stage} Permits</b> task on this project. "
 			"Generate the sea task plan on the Project first."
 		)
 	finance_task = frappe.get_doc("Task", finance_name)
@@ -447,7 +483,7 @@ def _notify_finance_for_permit_invoices(task) -> dict:
 		"finance_task_url": get_url(f"/app/task/{finance_name}"),
 		**notify_result,
 		"message": workflow_notify_message(
-			"Finance notified on Finance pays Pre-Clearance Permits.",
+			f"Finance notified on {finance_task.subject or 'permit finance task'}.",
 			notify_result,
 			audience=FINANCE_AUDIENCE,
 		),
@@ -512,12 +548,12 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 
 
 def notify_declarant_upload_permit_receipts(task) -> dict:
-	if not is_pre_clearance_finance_permit_task(task):
+	if not is_permit_finance_task_doc(task):
 		return {"notified": 0}
 	if not task_has_recorded_payment(task) or not task.project:
 		return {"notified": 0}
 
-	app_name = get_pre_clearance_permit_application_task_name(task.project)
+	app_name = get_permit_application_task_for_finance(task)
 	if not app_name:
 		return {"notified": 0}
 	app_task = frappe.get_doc("Task", app_name)
@@ -579,8 +615,8 @@ def notify_finance_verify_receipts(task_name: str) -> dict:
 def ensure_finance_permit_rows(task_name: str) -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
-	if not is_pre_clearance_finance_permit_task(task):
-		frappe.throw("This action is only for <b>Finance pays Pre-Clearance Permits</b>.")
+	if not is_permit_finance_task_doc(task):
+		frappe.throw("This action is only for permit finance payment tasks.")
 	added = ensure_finance_permit_rows_saved(task)
 	task.reload()
 	return {
@@ -596,14 +632,15 @@ def ensure_finance_permit_rows(task_name: str) -> dict:
 
 
 def validate_finance_permit_payment_task(task) -> None:
-	if not is_pre_clearance_finance_permit_task(task):
+	if not is_permit_finance_task_doc(task):
 		return
 
-	app_name = get_pre_clearance_permit_application_task_name(task.project)
+	app_name = get_permit_application_task_for_finance(task)
 	if app_name and not permit_invoices_submitted(app_name):
+		stage = permit_stage_for_finance_task(task)
 		frappe.throw(
-			"Permit invoices must be submitted to Finance from the "
-			"<b>Apply for Pre-Clearance Permits</b> task first."
+			f"Permit invoices must be submitted to Finance from the "
+			f"<b>{stage}</b> permit application task first."
 		)
 
 	rows = task.get(TASK_PERMITS_FIELD) or []
@@ -628,9 +665,13 @@ def validate_permit_application_can_complete(task) -> None:
 		)
 
 	if not finance_payment_completed(task.project, seq):
+		fin_seq = get_permit_finance_sequence_for_application(seq)
+		fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq else None
+		fin_label = (
+			frappe.db.get_value("Task", fin_name, "subject") if fin_name else "Finance permit payment"
+		)
 		frappe.throw(
-			"Finance must record payment on <b>Finance pays Pre-Clearance Permits</b> "
-			"before this task can be completed."
+			f"Finance must record payment on <b>{fin_label}</b> before this task can be completed."
 		)
 
 	merge_project_permits_into_application_task(task)
@@ -654,9 +695,14 @@ def validate_permit_application_can_complete(task) -> None:
 
 	unverified = [r.permit_type for r in rows if r.permit_type and not r.get("receipt_verified")]
 	if unverified:
+		fin_seq = get_permit_finance_sequence_for_application(seq)
+		fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq else None
+		fin_label = (
+			frappe.db.get_value("Task", fin_name, "subject") if fin_name else "Finance permit payment"
+		)
 		frappe.throw(
-			"Finance must tick <b>Receipt Verified</b> on each permit (on "
-			"<b>Finance pays Pre-Clearance Permits</b>) before completing. Pending: "
+			f"Finance must tick <b>Receipt Verified</b> on each permit (on "
+			f"<b>{fin_label}</b>) before completing. Pending: "
 			f"<b>{', '.join(unverified)}</b>."
 		)
 
@@ -669,10 +715,10 @@ def enforce_receipt_verified_permission(task) -> None:
 			if row.get("receipt_verified"):
 				frappe.throw(
 					"Only <b>Finance</b> can mark <b>Receipt Verified</b>. "
-					"Use <b>Finance pays Pre-Clearance Permits</b>."
+					"Use the paired finance permit payment task."
 				)
 		return
-	if not is_pre_clearance_finance_permit_task(task):
+	if not is_permit_finance_task_doc(task):
 		return
 	if user_has_finance_department_access():
 		return
@@ -687,7 +733,7 @@ def enforce_receipt_verified_permission(task) -> None:
 
 
 def can_complete_finance_permit_task(task) -> bool:
-	if not is_pre_clearance_finance_permit_task(task):
+	if not is_permit_finance_task_doc(task):
 		return False
 	if task.status in ("Completed", "Cancelled"):
 		return False
@@ -769,7 +815,7 @@ def mark_all_permit_receipts_verified(finance_task_name: str) -> None:
 	finance_task = frappe.get_doc("Task", finance_task_name)
 	if not finance_task.project:
 		return
-	app_name = get_pre_clearance_permit_application_task_name(finance_task.project)
+	app_name = get_permit_application_task_for_finance(finance_task)
 	if app_name:
 		_set_permit_register_receipts_verified(app_name)
 
@@ -798,9 +844,9 @@ def auto_complete_finance_permit_task(task) -> bool:
 
 
 def close_permit_application_when_finance_done(task) -> None:
-	if not is_pre_clearance_finance_permit_task(task) or task.status != "Completed":
+	if not is_permit_finance_task_doc(task) or task.status != "Completed":
 		return
-	app_name = get_pre_clearance_permit_application_task_name(task.project)
+	app_name = get_permit_application_task_for_finance(task)
 	if not app_name:
 		return
 	if frappe.db.get_value("Task", app_name, "status") == "Completed":
@@ -831,15 +877,11 @@ def verify_all_permit_receipts(task_name: str) -> dict:
 		frappe.throw("Task not found.")
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
-	if not is_pre_clearance_finance_permit_task(task):
-		frappe.throw("This action is only for <b>Finance pays Pre-Clearance Permits</b>.")
+	if not is_permit_finance_task_doc(task):
+		frappe.throw("This action is only for permit finance payment tasks.")
 
 	if task.status == "Completed":
-		app_name = (
-			get_pre_clearance_permit_application_task_name(task.project)
-			if task.project
-			else None
-		)
+		app_name = get_permit_application_task_for_finance(task) if task.project else None
 		return {
 			"task": task.name,
 			"status": task.status,
@@ -865,20 +907,17 @@ def verify_all_permit_receipts(task_name: str) -> dict:
 
 	missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
 	if missing_receipts:
+		app_name = get_permit_application_task_for_finance(task)
+		app_label = frappe.db.get_value("Task", app_name, "subject") if app_name else "permit application"
 		frappe.throw(
-			"Declarant must upload <b>Payment Receipt</b> on "
-			"<b>Apply for Pre-Clearance Permits</b> first. Missing: "
+			f"Declarant must upload <b>Payment Receipt</b> on <b>{app_label}</b> first. Missing: "
 			f"<b>{', '.join(missing_receipts)}</b>."
 		)
 
 	mark_all_permit_receipts_verified(task.name)
 	task.reload()
 	completed = complete_finance_permit_workflow(task)
-	app_name = (
-		get_pre_clearance_permit_application_task_name(task.project)
-		if task.project
-		else None
-	)
+	app_name = get_permit_application_task_for_finance(task) if task.project else None
 	app_status = frappe.db.get_value("Task", app_name, "status") if app_name else None
 
 	return {
@@ -904,11 +943,7 @@ def ensure_permit_finance_task_completed(task_name: str) -> dict:
 	sync_permit_invoices_to_finance_task(task, save=True)
 	task.reload()
 	completed = auto_complete_finance_permit_task(task)
-	app_name = (
-		get_pre_clearance_permit_application_task_name(task.project)
-		if task.project
-		else None
-	)
+	app_name = get_permit_application_task_for_finance(task) if task.project else None
 	return {
 		"task": task.name,
 		"status": frappe.db.get_value("Task", task.name, "status"),

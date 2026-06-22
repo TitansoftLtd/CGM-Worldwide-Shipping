@@ -24,11 +24,11 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Requirement type",
-   "options": "Document\nDocument Checkpoint\nPermit Application\nPermit Stage\nLight Proof\nFinance Payment\nUCR Application\nAuto Complete",
+   "options": "Document\nDocument Checkpoint\nPermit Application\nPermit Stage\nLight Proof\nFinance Payment\nUCR Application\nEntry Application\nShipping Line Application\nKPA Application\nAuto Complete",
    "reqd": 1
   },
   {
-   "description": "Document code (BL, CI), permit stage (Pre-clearance), or Finance Payment subflow: UCR, Permit, Standard.",
+   "description": "Document code (BL, CI), permit stage (Pre-clearance), or Finance Payment subflow: UCR, Entry Slip, Shipping Line, Permit, Standard.",
    "fieldname": "value",
    "fieldtype": "Data",
    "in_list_view": 1,

@@ -58,12 +58,31 @@ frappe.ui.form.on("Shipment Document", {
 
 function run_opportunity_form_syncs(frm, opts = {}) {
 	register_clients_documents_remove_handler(frm);
+	configure_opportunity_clients_documents_grid(frm);
 	sync_opportunity_transport_and_containers(frm);
 	setup_opportunity_bill_of_lading_create(frm);
 	if (opts.apply_pending_bl) {
 		apply_pending_bl_from_submit(frm);
 	}
 	sync_bl_from_clients_documents(frm, { silent: true });
+}
+
+function row_has_shipment_document_file(row) {
+	if (!row) {
+		return false;
+	}
+	return Boolean(row.final_attachment || row.initial_attachment || row.attachment);
+}
+
+function configure_opportunity_clients_documents_grid(frm) {
+	const docs_field = get_clients_documents_field(frm);
+	if (!docs_field || !frm.fields_dict[docs_field]?.grid) {
+		return;
+	}
+	if (cgm_hydrate_legacy_document_rows(frm, docs_field)) {
+		frm.refresh_field(docs_field);
+	}
+	cgm_configure_shipment_document_grid(frm.fields_dict[docs_field].grid);
 }
 
 function invalidate_opportunity_bl_sync(frm) {
@@ -106,8 +125,8 @@ function find_bl_clients_document_row(frm) {
 	}
 	const rows = frm.doc[docs_field] || [];
 	return (
-		rows.find((row) => row.attachment && is_bl_document_type(row.document_type)) ||
-		rows.find((row) => row.attachment) ||
+		rows.find((row) => row_has_shipment_document_file(row) && is_bl_document_type(row.document_type)) ||
+		rows.find((row) => row_has_shipment_document_file(row)) ||
 		null
 	);
 }
@@ -418,22 +437,34 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
 	const already_exists = rows.some(
 		(row) =>
 			row.document_type === pending.document_type ||
+			row.initial_attachment === pending.attachment ||
 			row.attachment === pending.attachment
 	);
 	if (already_exists) {
 		return;
 	}
 
-	frm.clear_table(docs_field);
-	frm.add_child(docs_field, {
+	const bl_row = {
 		document_type: pending.document_type,
-		attachment: pending.attachment,
 		status: "Uploaded",
-	});
+	};
+	if (cgm_has_shipment_document_versioning()) {
+		bl_row.initial_attachment = pending.attachment;
+		bl_row.attachment = pending.attachment;
+		bl_row.version_status = "Awaiting Final";
+	} else {
+		bl_row.attachment = pending.attachment;
+	}
+
+	frm.clear_table(docs_field);
+	frm.add_child(docs_field, bl_row);
 	rows.forEach((row) => {
 		frm.add_child(docs_field, {
 			document_type: row.document_type,
 			attachment: row.attachment,
+			initial_attachment: row.initial_attachment,
+			final_attachment: row.final_attachment,
+			version_status: row.version_status,
 			status: row.status,
 			uploaded_by: row.uploaded_by,
 			uploaded_on: row.uploaded_on,
@@ -475,7 +506,8 @@ function sync_bl_from_clients_documents(frm, opts = {}) {
 }
 
 function fetch_and_apply_bl_data(frm, row, cdt, cdn, opts = {}) {
-	if (!row.attachment) {
+	const file_ref = row.final_attachment || row.initial_attachment || row.attachment;
+	if (!file_ref) {
 		return;
 	}
 
@@ -484,7 +516,7 @@ function fetch_and_apply_bl_data(frm, row, cdt, cdn, opts = {}) {
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_containers_for_bl_attachment",
-		args: { attachment: row.attachment },
+		args: { attachment: file_ref },
 		callback(r) {
 			if (sync_id !== frm._cgm_bl_sync_id || cur_frm !== frm) {
 				return;
@@ -527,11 +559,17 @@ function apply_bl_data_from_response(frm, row, cdt, cdn, data, opts = {}) {
 	if (cdt && cdn) {
 		const child = locals[cdt]?.[cdn];
 		if (child && child.attachment !== attachment) {
+			if (cgm_has_shipment_document_versioning()) {
+				frappe.model.set_value(cdt, cdn, "initial_attachment", attachment);
+			}
 			frappe.model.set_value(cdt, cdn, "attachment", attachment);
 		}
 	} else if (row.name) {
 		const child = locals[row.doctype]?.[row.name];
 		if (child && child.attachment !== attachment) {
+			if (cgm_has_shipment_document_versioning()) {
+				frappe.model.set_value(row.doctype, row.name, "initial_attachment", attachment);
+			}
 			frappe.model.set_value(row.doctype, row.name, "attachment", attachment);
 		}
 	}

@@ -24,6 +24,7 @@
   "section_roles",
   "custom_finance_roles",
   "custom_finance_department",
+  "custom_default_purchase_item",
   "custom_operations_roles",
   "custom_declaration_roles",
   "section_email_templates",
@@ -144,6 +145,13 @@
    "label": "Finance Department",
    "options": "Department",
    "description": "Tasks in this Department show the Make Payment (Journal Entry) action."
+  },
+  {
+   "description": "Default Item for auto-filled permit and finance Purchase Invoice lines when no type-specific item is set.",
+   "fieldname": "custom_default_purchase_item",
+   "fieldtype": "Link",
+   "label": "Default Purchase Item",
+   "options": "Item"
   },
   {
    "fieldname": "custom_operations_roles",

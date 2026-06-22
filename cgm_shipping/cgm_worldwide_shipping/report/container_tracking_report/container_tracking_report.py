@@ -8,17 +8,17 @@ import frappe
 from frappe import _
 from frappe.utils import getdate
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+	display_ref_from_values,
+)
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
 	enrich_container_row,
 )
 
 EXPANDED_COLUMNS = [
 	{"fieldname": "demurrage_days", "label": _("Demurrage Days"), "fieldtype": "Int", "width": 100},
-	{"fieldname": "demurrage_amount", "label": _("Demurrage Amount"), "fieldtype": "Currency", "width": 110},
 	{"fieldname": "detention_days", "label": _("Detention Days"), "fieldtype": "Int", "width": 100},
-	{"fieldname": "detention_amount", "label": _("Detention Amount"), "fieldtype": "Currency", "width": 110},
 	{"fieldname": "kpa_days", "label": _("KPA Days"), "fieldtype": "Int", "width": 80},
-	{"fieldname": "kpa_amount", "label": _("KPA Amount"), "fieldtype": "Currency", "width": 100},
 	{"fieldname": "days_outstanding", "label": _("Days Outstanding"), "fieldtype": "Int", "width": 110},
 	{"fieldname": "seal_no", "label": _("Seal Number"), "fieldtype": "Data", "width": 90},
 	{"fieldname": "type_of_container", "label": _("Type of Container"), "fieldtype": "Data", "width": 100},
@@ -137,6 +137,16 @@ def _contact_info(row: dict) -> str:
 	return " ".join(p for p in parts if p).strip()
 
 
+def _project_group_header_fields() -> list[str]:
+	"""Project columns for B/L group headers — skip fields missing on this site."""
+	meta = frappe.get_meta("Project")
+	fields = ["name", "project_name"]
+	for fieldname in ("custom_project_reference", "custom_cgm_ref_no", "custom_batch_no"):
+		if meta.has_field(fieldname):
+			fields.append(fieldname)
+	return fields
+
+
 def get_data(filters, station_label: str | None = None):
 	list_filters = {}
 	if filters.get("project"):
@@ -196,15 +206,10 @@ def get_data(filters, station_label: str | None = None):
 			project_doc = frappe.db.get_value(
 				"Project",
 				project,
-				["custom_project_reference", "custom_cgm_ref_no", "project_name", "custom_batch_no", "name"],
+				_project_group_header_fields(),
 				as_dict=True,
 			) or {}
-			project_ref = (
-				project_doc.get("custom_project_reference")
-				or project_doc.get("custom_cgm_ref_no")
-				or project_doc.get("project_name")
-				or project_doc.get("name")
-			)
+			project_ref = display_ref_from_values(project_doc)
 			data.append(
 				{
 					"container_number": _(
@@ -230,8 +235,8 @@ def get_data(filters, station_label: str | None = None):
 			enriched.get("detention_days") or 0,
 			enriched.get("days_outstanding") or 0,
 		)
-		group_demurrage += enriched.get("demurrage_amount") or 0
-		group_detention += enriched.get("detention_amount") or 0
+		group_demurrage += enriched.get("demurrage_days") or 0
+		group_detention += enriched.get("detention_days") or 0
 		data.append(enriched)
 
 	if current_key is not None:
@@ -243,8 +248,8 @@ def get_data(filters, station_label: str | None = None):
 def _subtotal_row(demurrage: float, detention: float) -> dict:
 	return {
 		"container_number": _("Subtotal"),
-		"demurrage_amount": demurrage,
-		"detention_amount": detention,
+		"demurrage_days": demurrage,
+		"detention_days": detention,
 		"is_subtotal": 1,
 		"row_style": "font-weight:bold;background-color:#f8f9fa;",
 	}

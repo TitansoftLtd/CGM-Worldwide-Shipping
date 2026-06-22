@@ -73,6 +73,26 @@
 	color: #6c7680;
 }
 
+.cgm-inspection-notified,
+.cgm-inspection-confirmed,
+.cgm-port-arrival-confirmed {
+	margin-top: 8px;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.cgm-inspection-notified {
+	color: #1976d2;
+}
+
+.cgm-inspection-confirmed {
+	color: #2e7d32;
+}
+
+.cgm-port-arrival-confirmed {
+	color: #1565c0;
+}
+
 .cgm-sea-task-table-wrap {
 	margin-top: 12px;
 }

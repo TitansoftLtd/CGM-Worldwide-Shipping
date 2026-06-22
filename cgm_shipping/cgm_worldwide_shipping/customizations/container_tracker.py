@@ -27,13 +27,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	TASK_TYPE_OF_CONTAINER_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates import (
-	COUNT_FROM_BERTHING,
-	COUNT_FROM_DISCHARGE,
-	build_rate_source_label,
 	default_destination_name,
-	get_free_days_rule,
 	get_valid_destinations,
-	resolve_container_category,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+	build_project_ata_updates,
+	get_project_ata,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
@@ -110,8 +109,23 @@ def _optional_date(value):
 	return getdate(value)
 
 
+def _effective_return_date(actual_return, interchange):
+	"""When the line return obligation is satisfied (interchange confirms closure)."""
+	if interchange and actual_return:
+		return max(interchange, actual_return)
+	return interchange or actual_return
+
+
+def _inclusive_days_between(start, end) -> int | None:
+	start_date = _optional_date(start)
+	end_date = _optional_date(end)
+	if not start_date or not end_date:
+		return None
+	return max(0, (end_date - start_date).days + 1)
+
+
 def _derived_free_days(data: dict[str, Any]) -> int:
-	from_dates = _days_between(
+	from_dates = _inclusive_days_between(
 		data.get("free_days_start_date"), data.get("free_days_end_date")
 	)
 	if from_dates is not None:
@@ -120,7 +134,7 @@ def _derived_free_days(data: dict[str, Any]) -> int:
 
 
 def _derived_detention_free_days(data: dict[str, Any]) -> int:
-	from_dates = _days_between(
+	from_dates = _inclusive_days_between(
 		data.get("detention_free_start_date"), data.get("detention_free_end_date")
 	)
 	if from_dates is not None:
@@ -128,83 +142,72 @@ def _derived_detention_free_days(data: dict[str, Any]) -> int:
 	return int(data.get("detention_free_days") or 0)
 
 
-def _anchor_date(doc: dict[str, Any] | object) -> Any:
-	data = doc if isinstance(doc, dict) else doc.as_dict()
-	return (
-		data.get("free_days_start_date")
-		or data.get("discharging_date")
-		or data.get("ata")
-		or data.get("icd_mombasa_discharge_date")
+def _free_period_configured(data: dict[str, Any]) -> bool:
+	return bool(data.get("free_days_start_date") and data.get("free_days_end_date"))
+
+
+def _detention_period_configured(data: dict[str, Any]) -> bool:
+	return bool(
+		data.get("detention_free_start_date") and data.get("detention_free_end_date")
 	)
 
 
 def populate_rates_from_shipping_line(doc, *, force: bool = False) -> None:
-	"""Apply Supplier rule defaults at tracker creation only — not used at calculation time."""
-	if not doc.get("shipping_line") or doc.get("__islocal"):
-		return
-
-	destination = doc.get("delivery_destination") or _project_delivery_destination(
-		doc.get("project")
-	)
-	category = resolve_container_category(
-		doc.get("type_of_container"), doc.get("container_number")
-	)
-	rule = get_free_days_rule(doc.shipping_line, destination, category)
-
-	if force:
-		if rule:
-			doc.free_days = int(rule.get("free_days") or 0)
-			doc.detention_free_days = int(
-				rule.get("detention_free_days") or rule.get("free_days") or 0
-			)
-			doc.free_days_count_from = rule.get("count_from") or COUNT_FROM_DISCHARGE
-			doc.rate_source = build_rate_source_label(
-				doc.shipping_line, destination, category, rule
-			)
-		else:
-			doc.free_days = 0
-			if doc.get("detention_free_days") is None:
-				doc.detention_free_days = 0
+	"""Keep destination + KPA defaults only — free/detention days come from tracker date ranges."""
+	if doc.get("project") and not doc.get("delivery_destination"):
+		doc.delivery_destination = _project_delivery_destination(doc.project)
+	if doc.get("kpa_free_days") is None:
 		doc.kpa_free_days = get_default_kpa_free_days()
-	elif rule:
-		if doc.get("free_days") is None:
-			doc.free_days = int(rule.get("free_days") or 0)
-		if doc.get("detention_free_days") is None:
-			doc.detention_free_days = int(
-				rule.get("detention_free_days") or rule.get("free_days") or 0
-			)
-		doc.free_days_count_from = rule.get("count_from") or COUNT_FROM_DISCHARGE
-		doc.rate_source = build_rate_source_label(
-			doc.shipping_line, destination, category, rule
-		)
 
 
 def _project_delivery_destination(project_name: str | None) -> str:
 	if not project_name:
 		return default_destination_name()
-	if frappe.get_meta("Project").has_field("custom_delivery_destination"):
-		val = frappe.db.get_value("Project", project_name, "custom_delivery_destination")
-		if val:
-			return _normalize_destination(val)
+	meta = frappe.get_meta("Project")
+	for fieldname in ("custom_final_destination", "custom_delivery_destination"):
+		if meta.has_field(fieldname):
+			val = frappe.db.get_value("Project", project_name, fieldname)
+			if val:
+				return _normalize_destination(val)
 	return default_destination_name()
+
+
+_DESTINATION_ALIASES = {
+	"ug": "Uganda",
+	"ke": "Kenya",
+	"tz": "Tanzania",
+	"rw": "Rwanda",
+	"kenya": "Kenya",
+	"uganda": "Uganda",
+	"tanzania": "Tanzania",
+	"rwanda": "Rwanda",
+}
 
 
 def _normalize_destination(value: str) -> str:
 	label = (value or "").strip()
-	if label:
+	if not label:
+		return default_destination_name()
+	for dest in get_valid_destinations():
+		if dest.lower() == label.lower():
+			return dest
+	mapped = _DESTINATION_ALIASES.get(label.lower())
+	if mapped:
 		for dest in get_valid_destinations():
-			if dest.lower() == label.lower():
+			if dest.lower() == mapped.lower():
 				return dest
 	return default_destination_name()
 
 
 def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	ref_date = getdate(today())
-	anchor = _optional_date(_anchor_date(data))
+	free_start = _optional_date(data.get("free_days_start_date"))
+	free_end = _optional_date(data.get("free_days_end_date"))
+	det_start = _optional_date(data.get("detention_free_start_date"))
+	det_end = _optional_date(data.get("detention_free_end_date"))
 	gate_out = _optional_date(data.get("gate_out_date_port"))
 	actual_return = _optional_date(data.get("actual_empty_return"))
 	offloading = _optional_date(data.get("offloading_date"))
-	delivery = _optional_date(data.get("delivery_date"))
 	gate_in_wh = _optional_date(data.get("gate_in_date_warehouse"))
 	interchange = _optional_date(data.get("interchange_date"))
 	discharging = _optional_date(data.get("discharging_date"))
@@ -212,10 +215,8 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 
 	free_days = _derived_free_days(data)
 	detention_free = _derived_detention_free_days(data)
-	demurrage_rate = flt(data.get("demurrage_daily_rate"))
-	detention_rate = flt(data.get("detention_daily_rate"))
 	kpa_free = int(data.get("kpa_free_days") or get_default_kpa_free_days())
-	kpa_rate = flt(data.get("kpa_daily_rate"))
+	free_configured = _free_period_configured(data)
 
 	out: dict[str, Any] = {
 		"free_days": free_days,
@@ -234,32 +235,37 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		"alert_status": "",
 	}
 
-	if anchor and free_days:
-		out["demurrage_start_date"] = anchor + timedelta(days=free_days)
+	if free_end:
+		dem_start = free_end + timedelta(days=1)
+		out["demurrage_start_date"] = dem_start
+		charge_end = gate_out or ref_date
+		if charge_end >= dem_start:
+			out["demurrage_days"] = (charge_end - dem_start).days + 1
 
-	if anchor:
+	if free_start:
 		end_port = gate_out or ref_date
-		port_days = max(0, (end_port - anchor).days)
-		out["port_days_used"] = port_days
-		dem_days = max(0, port_days - free_days) if free_days else 0
-		out["demurrage_days"] = dem_days
-		out["demurrage_amount"] = flt(dem_days * demurrage_rate)
-		kpa_days = max(0, port_days - kpa_free)
-		out["kpa_days"] = kpa_days
-		out["kpa_amount"] = flt(kpa_days * kpa_rate)
+		out["port_days_used"] = max(0, (end_port - free_start).days + 1)
 
-	if gate_out and detention_free:
-		out["expected_empty_return"] = gate_out + timedelta(days=detention_free)
+	if free_configured and discharging:
+		kpa_anchor = discharging or ata or free_start
+		if kpa_anchor:
+			kpa_end = gate_out or ref_date
+			kpa_port_days = max(0, (kpa_end - kpa_anchor).days)
+			out["kpa_days"] = max(0, kpa_port_days - kpa_free)
 
-	if gate_out:
-		end_det = actual_return or ref_date
-		days_out = max(0, (end_det - gate_out).days)
-		det_days = max(0, days_out - detention_free) if detention_free else 0
-		out["detention_days"] = det_days
-		out["detention_amount"] = flt(det_days * detention_rate)
+	if det_end:
+		out["expected_empty_return"] = det_end
+		det_charge_start = det_end + timedelta(days=1)
+		effective_return = _effective_return_date(actual_return, interchange)
+		charge_end = effective_return or ref_date
+		if charge_end >= det_charge_start:
+			out["detention_days"] = (charge_end - det_charge_start).days + 1
+	elif det_start and detention_free:
+		out["expected_empty_return"] = det_start + timedelta(days=max(detention_free - 1, 0))
 
 	expected = _optional_date(out.get("expected_empty_return"))
-	if expected and not actual_return and ref_date > expected:
+	effective_return = _effective_return_date(actual_return, interchange)
+	if expected and not effective_return and ref_date > expected:
 		out["days_outstanding"] = (ref_date - expected).days
 
 	out["status"] = _derive_status(
@@ -274,12 +280,14 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		ref_date=ref_date,
 	)
 	out["alert_status"] = _derive_alert_status(
-		discharging=discharging,
+		free_end=free_end,
+		free_start=free_start,
 		gate_out=gate_out,
-		free_days=free_days,
 		actual_return=actual_return,
+		interchange=interchange,
 		expected_return=expected,
 		ref_date=ref_date,
+		free_configured=free_configured,
 	)
 	return out
 
@@ -328,37 +336,39 @@ def _derive_status(
 
 def _derive_alert_status(
 	*,
-	discharging,
+	free_end,
+	free_start,
 	gate_out,
-	free_days,
 	actual_return,
+	interchange,
 	expected_return,
 	ref_date,
+	free_configured=True,
 ) -> str:
 	"""Urgency overlay on operational status. Not stored in DB."""
-	if not discharging:
-		return ""
+	if free_configured and free_end and not gate_out:
+		if ref_date > free_end:
+			overdue = (ref_date - free_end).days
+			return f"🔴 Demurrage Accruing ({overdue} day(s) past free period)"
+		days_remaining = (free_end - ref_date).days
+		if 0 <= days_remaining <= 2:
+			return "⚠️ Free Days Expiring Soon"
 
-	if not gate_out:
-		if free_days:
-			days_in_port = max(0, (ref_date - discharging).days)
-			days_remaining = free_days - days_in_port
-			if days_remaining <= 0:
-				return "🔴 Demurrage Accruing"
-			if days_remaining <= 3:
-				return "⚠️ Free Days Expiring Soon"
-		return ""
+	effective_return = _effective_return_date(actual_return, interchange)
 
-	if not actual_return and expected_return:
+	if not effective_return and expected_return:
 		if ref_date > expected_return:
 			overdue_days = (ref_date - expected_return).days
 			return f"🚨 Return Overdue ({overdue_days} days)"
 		days_to_return = (expected_return - ref_date).days
-		if days_to_return <= 3:
+		if 0 <= days_to_return <= 2:
 			return f"⚠️ Return Due in {days_to_return} days"
 
-	if actual_return and expected_return and actual_return <= expected_return:
-		return "✅ Returned On Time"
+	if effective_return and expected_return:
+		if effective_return <= expected_return:
+			return "✅ Returned On Time"
+		late_days = (effective_return - expected_return).days
+		return f"⚠️ Returned Late ({late_days} day(s) past free period)"
 
 	return ""
 
@@ -558,7 +568,7 @@ def _populate_tracker_from_project_and_row(ct, project, row, *, at_creation: boo
 	ct.delivery_destination = _project_delivery_destination(project.name)
 	if at_creation or not ct.get("eta"):
 		ct.eta = project.get("custom_eta")
-	project_ata = project.get("custom_ata")
+	project_ata = get_project_ata(project)
 	if project_ata and (at_creation or not ct.get("ata")):
 		ct.ata = project_ata
 	ct.container_mode = _derive_container_mode(project)
@@ -666,7 +676,7 @@ def _apply_bulk_vessel_arrival(project, trackers: list, today_date, task_doc=Non
 	"""Task 11 — create trackers (vessel arrived); discharge dates come from task grid."""
 	create_container_trackers_for_project(project.name)
 	trackers = _trackers_for_project(project.name)
-	ata = project.get("custom_ata")
+	ata = get_project_ata(project)
 	for ct in trackers:
 		if ata:
 			ct.ata = ata
@@ -695,14 +705,22 @@ def _notify_free_days_awareness(project_name: str) -> None:
 	if not trackers:
 		return
 
-	missing_free_days = [t.container_number for t in trackers if not t.free_days]
+	missing_free_days = [
+		t.container_number
+		for t in trackers
+		if not frappe.db.get_value(
+			"Container Tracker",
+			t.name,
+			"free_days_end_date",
+		)
+	]
 	message = (
 		f"Container Trackers created for {len(trackers)} container(s) on {project_name}."
 	)
 	if missing_free_days:
 		message += (
-			f" FREE DAYS NOT SET for: {', '.join(missing_free_days)}. "
-			"Enter free days from the shipping line guarantee form to track demurrage."
+			f" Free days not recorded yet for: {', '.join(missing_free_days)}. "
+			"Enter Free Days Start/End on each tracker after release from the port."
 		)
 
 	frappe.publish_realtime(
@@ -874,7 +892,7 @@ def handle_sea_task_container_event(
 	if not is_bulk_container_event(seq):
 		return
 
-	project = frappe.get_cached_doc("Project", project_name)
+	project = frappe.get_doc("Project", project_name)
 	today_date = getdate(today())
 	trackers = _trackers_for_project(project_name)
 
@@ -899,6 +917,152 @@ def on_gate_out(project_name: str, *, task_doc=None) -> None:
 def on_empty_return(project_name: str, *, task_doc=None) -> None:
 	handle_sea_task_container_event(
 		project_name, get_empty_return_task_sequence(), task_doc=task_doc
+	)
+
+
+def _project_container_rows(project) -> list:
+	container_field = get_container_table_field_for_doctype("Project")
+	if not container_field:
+		return []
+	return [
+		row
+		for row in project.get(container_field) or []
+		if (row.get("container_number") or "").strip()
+	]
+
+
+def ensure_container_trackers_at_port_arrival(
+	project_name: str,
+	*,
+	task_doc=None,
+	mark_confirmed: bool = False,
+	user: str | None = None,
+	ata=None,
+) -> dict:
+	"""Create/sync container trackers when shipment arrives at port (early or on Entry task)."""
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	if not frappe.db.exists("Project", project_name):
+		frappe.throw(_("Project not found"))
+
+	project = frappe.get_doc("Project", project_name)
+	if project.get("custom_mode_of_transport") != "Sea":
+		frappe.throw(_("Container tracking at port arrival applies to Sea shipments only."))
+
+	if not _project_container_rows(project):
+		frappe.throw(_("Add containers on the project before creating container trackers."))
+
+	updates: dict[str, Any] = {}
+	if ata:
+		updates.update(build_project_ata_updates(project, ata))
+	elif not get_project_ata(project):
+		updates.update(build_project_ata_updates(project, getdate(today())))
+
+	if mark_confirmed and project.meta.has_field("custom_port_arrival_confirmed"):
+		if not project.get("custom_port_arrival_confirmed"):
+			updates["custom_port_arrival_confirmed"] = 1
+			updates["custom_port_arrival_confirmed_on"] = frappe.utils.now_datetime()
+			updates["custom_port_arrival_confirmed_by"] = user or frappe.session.user
+
+	if project.meta.has_field("custom_berth_phase"):
+		updates["custom_berth_phase"] = "After Vessel Berthed"
+
+	if updates:
+		frappe.db.set_value("Project", project_name, updates, update_modified=True)
+		frappe.clear_document_cache("Project", project_name)
+		project = frappe.get_doc("Project", project_name)
+
+	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
+	handle_sea_task_container_event(project_name, seq, task_doc=task_doc)
+
+	trackers = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project_name},
+		pluck="name",
+	)
+	frappe.publish_realtime("cgm_project_tracking_refresh", {"project": project_name})
+
+	return {
+		"ok": True,
+		"trackers": trackers,
+		"tracker_count": len(trackers),
+		"port_arrival_confirmed": bool(
+			project.get("custom_port_arrival_confirmed") or mark_confirmed
+		),
+		"ata": str(get_project_ata(project) or ""),
+	}
+
+
+def ensure_container_trackers_on_entry_task_complete(task_doc) -> dict | None:
+	"""Fallback when Create Entry completes without an early port-arrival confirmation."""
+	project_name = task_doc.get("project")
+	if not project_name:
+		return None
+
+	project = frappe.get_cached_doc("Project", project_name)
+	if project.get("custom_port_arrival_confirmed"):
+		return None
+	if _trackers_for_project(project_name):
+		return None
+
+	return ensure_container_trackers_at_port_arrival(
+		project_name,
+		task_doc=task_doc,
+		mark_confirmed=False,
+	)
+
+
+CLOSED_CONTAINER_STATUSES = (
+	CONTAINER_STATUS_EMPTY_RETURNED,
+	CONTAINER_STATUS_INTERCHANGE,
+)
+
+
+def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
+	"""Return traffic-light label + CSS class for dashboard/report rows."""
+	metrics = {**dict(row), **compute_container_metrics(dict(row))}
+	status = metrics.get("status") or ""
+	dem = int(metrics.get("demurrage_days") or 0)
+	overdue = int(metrics.get("days_outstanding") or 0)
+	ref_date = getdate(today())
+	free_end = _optional_date(metrics.get("free_days_end_date"))
+	expected = _optional_date(metrics.get("expected_empty_return"))
+
+	if status in CLOSED_CONTAINER_STATUSES:
+		return {"level": "green", "label": _("CLEARED"), "css": "cgm-tl-green"}
+
+	if dem > 0 or overdue > 0:
+		return {
+			"level": "red",
+			"label": _("NOT RELEASED / ACTION NEEDED"),
+			"css": "cgm-tl-red",
+		}
+
+	if free_end and not metrics.get("gate_out_date_port"):
+		days_remaining = (free_end - ref_date).days
+		if 0 < days_remaining <= 2:
+			return {"level": "amber", "label": _("ALMOST DUE"), "css": "cgm-tl-amber"}
+
+	if expected and not metrics.get("actual_empty_return"):
+		days_to_return = (expected - ref_date).days
+		if 0 <= days_to_return <= 2:
+			return {"level": "amber", "label": _("ALMOST DUE"), "css": "cgm-tl-amber"}
+
+	if status in (CONTAINER_STATUS_PENDING_ARRIVAL, CONTAINER_STATUS_VESSEL_BERTHED):
+		return {"level": "grey", "label": _("AWAITING"), "css": "cgm-tl-grey"}
+
+	return {"level": "grey", "label": _("AWAITING"), "css": "cgm-tl-grey"}
+
+
+@frappe.whitelist()
+def confirm_shipment_arrival_at_port(project_name: str, ata: str | None = None) -> dict:
+	"""Confirm shipment arrival at port and create container trackers before Entry is paid."""
+	project = frappe.get_doc("Project", project_name)
+	if project.get("custom_port_arrival_confirmed"):
+		frappe.throw(_("Port arrival has already been confirmed for this project."))
+	return ensure_container_trackers_at_port_arrival(
+		project_name,
+		mark_confirmed=True,
+		ata=ata,
 	)
 
 

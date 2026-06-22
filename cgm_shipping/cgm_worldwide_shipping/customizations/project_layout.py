@@ -466,7 +466,7 @@ def ensure_task_container_fields() -> None:
 			"collapsible": 1,
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -480,7 +480,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_section_container_event",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -493,7 +493,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_container_tracker",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -507,7 +507,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_container_number",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[20,21,22,23,24].includes(doc.custom_sequence_no)"
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -516,7 +516,7 @@ def ensure_task_container_fields() -> None:
 
 def ensure_task_container_update_fields() -> None:
 	"""Task child table for per-container data entry (tasks 11, 16, 18–24)."""
-	container_seqs = "11,16,18,19,20,21,22,23,24"
+	container_seqs = "11,18,20,21,22,23,24,25,26"
 	depends = (
 		f"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
 		f"[{container_seqs}].includes(doc.custom_sequence_no)"
@@ -552,7 +552,7 @@ def ensure_task_container_update_fields() -> None:
 			"insert_after": "custom_container_updates",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"doc.custom_sequence_no == 19"
+				"doc.custom_sequence_no == 21"
 			),
 			"description": (
 				"Required when task is completed but no truck details are filled "
@@ -566,7 +566,7 @@ def ensure_task_container_update_fields() -> None:
 def ensure_field_officer_task_fields() -> None:
 	"""Task 16 field-officer clearance tracking fields."""
 	depends = (
-		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 16"
+		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 18"
 	)
 	_create_cf(
 		"Task",
@@ -649,6 +649,157 @@ def ensure_field_officer_task_fields() -> None:
 		},
 	)
 	frappe.clear_cache(doctype="Task")
+
+
+def ensure_client_inspection_task_fields() -> None:
+	"""Task 7 client inspection notification / confirmation fields."""
+	depends = (
+		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 7"
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_section_client_inspection",
+			"label": "Client Inspection",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_task_documents",
+			"collapsible": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_client_notified_on",
+			"label": "Client Notified On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_section_client_inspection",
+			"read_only": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_client_notified_by",
+			"label": "Client Notified By",
+			"fieldtype": "Link",
+			"options": "User",
+			"insert_after": "custom_client_notified_on",
+			"read_only": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_inspection_confirmed_on",
+			"label": "Inspection Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_client_notified_by",
+			"read_only": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_inspection_confirmed_by",
+			"label": "Inspection Confirmed By",
+			"fieldtype": "Data",
+			"insert_after": "custom_inspection_confirmed_on",
+			"read_only": 1,
+			"depends_on": depends,
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
+def ensure_project_inspection_notification_fields() -> None:
+	"""Project-level inspection notification status for portal + desk indicator."""
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_inspection_notification_status",
+			"label": "Inspection Notification Status",
+			"fieldtype": "Select",
+			"options": "Not Notified\nNotified\nConfirmed",
+			"default": "Not Notified",
+			"insert_after": "custom_shipment_status",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_inspection_notified_on",
+			"label": "Inspection Notified On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_inspection_notification_status",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_inspection_confirmed_on",
+			"label": "Inspection Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_inspection_notified_on",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_inspection_confirmed_by",
+			"label": "Inspection Confirmed By",
+			"fieldtype": "Data",
+			"insert_after": "custom_inspection_confirmed_on",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	frappe.clear_cache(doctype="Project")
+
+
+def ensure_project_port_arrival_fields() -> None:
+	"""Early port-arrival confirmation (creates container trackers before Entry is paid)."""
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_port_arrival_confirmed",
+			"label": "Port Arrival Confirmed",
+			"fieldtype": "Check",
+			"insert_after": "custom_berth_phase",
+			"read_only": 1,
+			"default": "0",
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_port_arrival_confirmed_on",
+			"label": "Port Arrival Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_port_arrival_confirmed",
+			"read_only": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_port_arrival_confirmed_by",
+			"label": "Port Arrival Confirmed By",
+			"fieldtype": "Data",
+			"insert_after": "custom_port_arrival_confirmed_on",
+			"read_only": 1,
+		},
+	)
+	frappe.clear_cache(doctype="Project")
 
 
 def ensure_project_container_tracking_fields() -> None:
@@ -1025,7 +1176,9 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	containers = get_containers_for_project(project)
 
 	berth_phase = doc.get("custom_berth_phase") or "Before Vessel Berth"
-	if doc.get("custom_ata") or any(
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project import get_project_ata
+
+	if get_project_ata(doc) or any(
 		c.get("discharging_date") or c.get("discharge_date") for c in containers
 	):
 		berth_phase = "After Vessel Berthed"
@@ -1045,7 +1198,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	at_warehouse = _count_status("At Warehouse", "Cargo Offloaded")
 	returned = _count_status("Empty Returned", "Interchange Received")
 
-	return {
+	payload = {
 		"current_status": progress_status,
 		"current_index": progress_index,
 		"workflow_status": workflow_status,
@@ -1086,3 +1239,15 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"total_demurrage_amount": sum(c.get("demurrage_amount") or 0 for c in containers),
 		"total_detention_amount": sum(c.get("detention_amount") or 0 for c in containers),
 	}
+	if doc.meta.has_field("custom_inspection_notification_status"):
+		payload["inspection_notification_status"] = (
+			doc.get("custom_inspection_notification_status") or "Not Notified"
+		).strip()
+		payload["inspection_notified_on"] = doc.get("custom_inspection_notified_on")
+		payload["inspection_confirmed_on"] = doc.get("custom_inspection_confirmed_on")
+		payload["inspection_confirmed_by"] = doc.get("custom_inspection_confirmed_by")
+	if doc.meta.has_field("custom_port_arrival_confirmed"):
+		payload["port_arrival_confirmed"] = bool(doc.get("custom_port_arrival_confirmed"))
+		payload["port_arrival_confirmed_on"] = doc.get("custom_port_arrival_confirmed_on")
+		payload["port_arrival_confirmed_by"] = doc.get("custom_port_arrival_confirmed_by")
+	return payload

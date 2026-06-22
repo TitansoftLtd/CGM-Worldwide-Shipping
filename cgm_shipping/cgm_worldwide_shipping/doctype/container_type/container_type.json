@@ -8,6 +8,7 @@
  "field_order": [
   "section_break_gppx",
   "container_type",
+  "cgm_ref_prefix",
   "description"
  ],
  "fields": [
@@ -22,6 +23,13 @@
    "label": "Container Type",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "description": "Optional short code retained for future use; Project naming uses LP {qty}X{size}-{batch}/{seq}.",
+   "fieldname": "cgm_ref_prefix",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "CGM Ref Prefix"
   },
   {
    "fieldname": "description",

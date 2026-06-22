@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import now_datetime, today
+from frappe.utils import getdate, now_datetime, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	INTAKE_DOCUMENT_CODES,
@@ -9,6 +9,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	get_project_shipment_documents_field,
 	is_shipment_document_verified,
+	primary_attachment,
 	sync_documents,
 	sync_project_documents_from_opportunity,
 )
@@ -38,6 +39,60 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_link_field_for_doctype,
 )
 
+# Visible on Project form (custom/project.json) and legacy column from layout patch.
+PROJECT_ATA_FIELDS = ("custom_actual_time_of_arrival_ata", "custom_ata")
+
+
+def _project_ata_columns() -> tuple[str, ...]:
+	columns = set(frappe.db.get_table_columns("Project") or [])
+	return tuple(field for field in PROJECT_ATA_FIELDS if field in columns)
+
+
+def get_project_ata(doc):
+	"""Return ATA from the Project, checking form field then legacy field."""
+	for fieldname in PROJECT_ATA_FIELDS:
+		if doc.get(fieldname):
+			return getdate(doc.get(fieldname))
+	return None
+
+
+def build_project_ata_updates(doc, ata) -> dict:
+	"""Write ATA to every Project column that stores it (form + legacy)."""
+	if not ata:
+		return {}
+	ata_date = getdate(ata)
+	return {fieldname: ata_date for fieldname in _project_ata_columns()}
+
+
+def sync_project_ata_fields(doc, _method=None) -> None:
+	"""Keep both ATA columns aligned whenever either one is set."""
+	ata = get_project_ata(doc)
+	if not ata:
+		return
+	for fieldname in _project_ata_columns():
+		if doc.get(fieldname) != ata:
+			doc.set(fieldname, ata)
+
+
+def hydrate_project_ata_on_load(doc, _method=None) -> None:
+	"""Backfill the visible ATA field from legacy data already on the project."""
+	visible_field, legacy_field = PROJECT_ATA_FIELDS
+	if visible_field not in _project_ata_columns():
+		return
+	if doc.get(visible_field):
+		return
+	legacy = doc.get(legacy_field) if legacy_field in _project_ata_columns() else None
+	if not legacy:
+		return
+	ata = getdate(legacy)
+	doc.set(visible_field, ata)
+	frappe.db.set_value(
+		"Project",
+		doc.name,
+		{visible_field: ata},
+		update_modified=False,
+	)
+
 
 # ─── Shipment Document Table ──────────────────────────────────────────────────
 def get_documents(doc):
@@ -65,6 +120,18 @@ def get_stage_requirements():
 def assign_project_reference_on_insert(doc, _method=None):
 	"""Allocate LP {qty}X{size}-{batch}/{seq} on project_name and custom_project_reference."""
 	assign_lp_project_reference(doc)
+
+
+def on_project_onload(doc, _method=None):
+	"""Hydrate legacy shipment document attachments for versioned grid columns."""
+	hydrate_project_ata_on_load(doc)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		prepare_shipment_documents_for_form,
+	)
+
+	if doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		prepare_shipment_documents_for_form(doc, SHIPMENT_DOCUMENTS_FIELD)
+
 
 def sync_consignee_from_customer(doc, _method=None):
 	"""Keep consignee aligned with the linked customer."""
@@ -162,6 +229,11 @@ def _required_document_types(mode, stages=None):
 	]
 
 def normalize_document_rows(doc):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		normalize_shipment_document_row,
+		primary_attachment,
+	)
+
 	rows = list(get_documents(doc))
 	# Batch the Document Type 'default_required' lookups (was one query per row).
 	doc_types = {r.document_type for r in rows if r.document_type}
@@ -176,6 +248,7 @@ def normalize_document_rows(doc):
 			)
 		}
 	for row in rows:
+		normalize_shipment_document_row(row)
 		# 1. Sync the required flag from the Document Type master.
 		if row.document_type:
 			default_required = required_map.get(row.document_type)
@@ -183,13 +256,22 @@ def normalize_document_rows(doc):
 				row.required = int(default_required)
 
 		# 2. Auto-manage upload state and uploader metadata.
-		if row.attachment:
+		if primary_attachment(row):
 			if row.status in (None, "", "Missing"):
 				row.status = "Uploaded"
 			if not row.uploaded_by:
 				row.uploaded_by = frappe.session.user
 			if not row.uploaded_on:
 				row.uploaded_on = now_datetime()
+		elif row.get("initial_attachment") or row.get("final_attachment"):
+			normalize_shipment_document_row(row)
+			if primary_attachment(row):
+				if row.status in (None, "", "Missing"):
+					row.status = "Uploaded"
+				if not row.uploaded_by:
+					row.uploaded_by = frappe.session.user
+				if not row.uploaded_on:
+					row.uploaded_on = now_datetime()
 		else:
 			row.status = "Missing"
 			row.uploaded_by = None
@@ -199,7 +281,7 @@ def normalize_document_rows(doc):
 
 		# 3. Sync verification metadata from status.
 		if row.status in ("Verified", "Rejected"):
-			if not row.attachment:
+			if not primary_attachment(row):
 				label = row.document_type or "a document"
 				frappe.throw(f"Attach a file before marking {label} as {row.status}.")
 			if not row.verified_by:
@@ -429,7 +511,7 @@ def project_has_verified_client_documents(project_doc) -> bool:
 	docs = [
 		row
 		for row in get_documents(project_doc)
-		if row.document_type and row.attachment
+		if row.document_type and primary_attachment(row)
 	]
 	if not docs:
 		return False
