@@ -20,6 +20,9 @@
   .sh-doc-body { flex:1; min-width:0; }
   .sh-doc-title { font-weight:600; font-size:.9rem; }
   .sh-doc-sub { font-size:.76rem; color:var(--cp-text-muted); margin-top:.1rem; }
+  .cp-banner-info { padding: 1.1rem 1.35rem; border-radius: var(--cp-radius); background: var(--cp-brand-soft); color: var(--cp-text); border: 1px solid var(--cp-border); margin-bottom: 1.25rem; }
+  .cp-banner-info h4 { margin: 0 0 .35rem; font-weight: 600; font-size: .98rem; color: var(--cp-text); }
+  .cp-banner-info p { margin: 0 0 .85rem; color: var(--cp-text-muted); font-size: .9rem; line-height: 1.45; }
 </style>
 {% endblock %}
 
@@ -43,6 +46,18 @@
       <span class="cp-status {{ status_tone }}" style="font-size:.8rem;padding:.35rem .8rem;"><span class="dot"></span>{{ shipment.custom_shipment_status }}</span>
     </div>
   </div>
+
+  {% if inspection and inspection.show_banner %}
+  <div class="cp-banner-info" id="cgm-inspection-banner">
+    <h4>{{ inspection.title }}</h4>
+    <p>{{ inspection.message }}</p>
+    {% if inspection.can_confirm %}
+    <button type="button" class="cp-btn cp-btn-primary" id="cgm-confirm-inspection-btn" style="font-size:.85rem;padding:.45rem 1rem;">
+      {{ _("Confirm Inspection Complete") }}
+    </button>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <!-- PROGRESS -->
   <div class="cp-card">
@@ -162,7 +177,52 @@
     {% endif %}
   </div>
 
+  <!-- PERMITS -->
+  <div class="sh-section-title">{{ _("Permits") }}</div>
+  <div class="cp-card">
+    {% if permits %}
+      {% for p in permits %}
+        <div class="sh-doc-row">
+          <span class="sh-doc-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg></span>
+          <div class="sh-doc-body">
+            <div class="sh-doc-title">{{ p.permit_label }}</div>
+            <div class="sh-doc-sub">{% if p.approval_date %}{{ _("Approved") }} {{ local_date(p.approval_date) }}{% elif p.status %}{{ p.status }}{% endif %}{% if p.stage %} · {{ p.stage }}{% endif %}{% if p.issuing_body %} · {{ p.issuing_body }}{% endif %}</div>
+          </div>
+          <a class="cp-btn cp-btn-ghost" style="padding:.35rem .9rem;font-size:.8rem;" href="{{ p.download_url }}">{{ _("Download") }}</a>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="cp-empty" style="border:none;padding:1.75rem;"><p>{{ _("No permits have been shared for this shipment yet.") }}</p></div>
+    {% endif %}
+  </div>
+
 {% endif %}
 
 </div>
+{% if inspection and inspection.show_banner %}
+<script>
+frappe.ready(function () {
+	const btn = document.getElementById("cgm-confirm-inspection-btn");
+	if (!btn) return;
+	btn.addEventListener("click", function () {
+		btn.disabled = true;
+		frappe.call({
+			method: "cgm_shipping.cgm_worldwide_shipping.customizations.inspection.confirm_inspection_via_portal",
+			args: { project: {{ (shipment.name or "") | tojson }} },
+			freeze: true,
+			callback(r) {
+				if (r.exc) {
+					btn.disabled = false;
+					return;
+				}
+				const banner = document.getElementById("cgm-inspection-banner");
+				if (banner) banner.remove();
+				frappe.show_alert({ message: r.message?.message || __("Inspection confirmed."), indicator: "green" });
+			},
+			error() { btn.disabled = false; },
+		});
+	});
+});
+</script>
+{% endif %}
 {% endblock %}

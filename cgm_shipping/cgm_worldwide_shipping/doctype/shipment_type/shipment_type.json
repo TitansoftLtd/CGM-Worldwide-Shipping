@@ -13,6 +13,10 @@
   "use_sea_import_workflow",
   "uses_unit_tracking",
   "amended_from",
+  "section_break_integration",
+  "cgm_ref_prefix",
+  "container_tracking_mode",
+  "legacy_crm_labels",
   "section_break_newf",
   "description"
  ],
@@ -79,6 +83,30 @@
   {
    "fieldname": "section_break_newf",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_integration",
+   "fieldtype": "Section Break",
+   "label": "Integration"
+  },
+  {
+   "description": "Optional prefix for CGM tracking references on air/road shipments (e.g. AIR, ROD). Sea shipments can use Container Type CGM Ref Prefix instead.",
+   "fieldname": "cgm_ref_prefix",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "CGM Ref Prefix"
+  },
+  {
+   "description": "Optional mode label for Container Tracker when delivery type does not imply one (e.g. Export, Mombasa Port).",
+   "fieldname": "container_tracking_mode",
+   "fieldtype": "Data",
+   "label": "Container Tracking Mode"
+  },
+  {
+   "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",
+   "fieldname": "legacy_crm_labels",
+   "fieldtype": "Small Text",
+   "label": "Legacy CRM Labels"
   }
  ],
  "grid_page_length": 50,

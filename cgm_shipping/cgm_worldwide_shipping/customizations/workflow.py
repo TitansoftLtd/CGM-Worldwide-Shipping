@@ -184,6 +184,17 @@ def project_has_submitted_permit_invoices(
 	return False
 
 
+def task_has_recorded_payment(task) -> bool:
+	"""Finance recorded payment via Journal Entry or a submitted Payment Entry."""
+	if task.get("custom_journal_entry"):
+		if frappe.db.exists("Journal Entry", task.custom_journal_entry):
+			return True
+	pe = task.get("custom_payment_entry")
+	if pe and frappe.db.exists("Payment Entry", pe):
+		return int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1
+	return False
+
+
 def finance_payment_completed(project: str, application_seq: int | None = None) -> bool:
 	if application_seq is None:
 		application_seq = get_pre_clearance_permit_application_sequence()
@@ -192,10 +203,7 @@ def finance_payment_completed(project: str, application_seq: int | None = None) 
 	fin_name = get_finance_permit_task_name(project, application_seq)
 	if not fin_name:
 		return False
-	pe = frappe.db.get_value("Task", fin_name, "custom_payment_entry")
-	if not pe or not frappe.db.exists("Payment Entry", pe):
-		return False
-	return int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1
+	return task_has_recorded_payment(frappe.get_doc("Task", fin_name))
 
 
 # ------------------------------------------------------------------
@@ -506,7 +514,7 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 def notify_declarant_upload_permit_receipts(task) -> dict:
 	if not is_pre_clearance_finance_permit_task(task):
 		return {"notified": 0}
-	if not task.get("custom_payment_entry") or not task.project:
+	if not task_has_recorded_payment(task) or not task.project:
 		return {"notified": 0}
 
 	app_name = get_pre_clearance_permit_application_task_name(task.project)
@@ -683,9 +691,7 @@ def can_complete_finance_permit_task(task) -> bool:
 		return False
 	if task.status in ("Completed", "Cancelled"):
 		return False
-	if not task.get("custom_purchase_invoice") or not task.get("custom_payment_entry"):
-		return False
-	if int(frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus") or 0) != 1:
+	if not task_has_recorded_payment(task):
 		return False
 	rows = [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.permit_type]
 	if not rows:
@@ -739,7 +745,7 @@ def run_finance_permit_completion_hooks(task) -> None:
 	frappe.publish_realtime("cgm_project_tracking_refresh", {"project": task.project})
 
 
-def mark_all_permit_receipts_verified(task_name: str) -> None:
+def _set_permit_register_receipts_verified(task_name: str) -> None:
 	for row in frappe.get_all(
 		"Permit Register",
 		filters={
@@ -751,8 +757,21 @@ def mark_all_permit_receipts_verified(task_name: str) -> None:
 	):
 		if row.payment_receipt:
 			frappe.db.set_value(
-				"Permit Register", row.name, "receipt_verified", 1, update_modified=False
+				"Permit Register",
+				row.name,
+				{"receipt_verified": 1, "status": "Receipt Verified"},
+				update_modified=False,
 			)
+
+
+def mark_all_permit_receipts_verified(finance_task_name: str) -> None:
+	_set_permit_register_receipts_verified(finance_task_name)
+	finance_task = frappe.get_doc("Task", finance_task_name)
+	if not finance_task.project:
+		return
+	app_name = get_pre_clearance_permit_application_task_name(finance_task.project)
+	if app_name:
+		_set_permit_register_receipts_verified(app_name)
 
 
 def complete_finance_permit_workflow(task) -> bool:
@@ -832,8 +851,13 @@ def verify_all_permit_receipts(task_name: str) -> dict:
 			"message": "Permit payment tasks are already completed.",
 		}
 
-	if not task.get("custom_payment_entry"):
-		frappe.throw("Record payment on this task before verifying receipts.")
+	if not task_has_recorded_payment(task):
+		frappe.throw(
+			"Record payment via <b>Make Payment</b> (Journal Entry) before verifying receipts."
+		)
+
+	sync_permit_invoices_to_finance_task(task, save=True)
+	task.reload()
 
 	rows = [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.permit_type]
 	if not rows:
@@ -877,6 +901,8 @@ def ensure_permit_finance_task_completed(task_name: str) -> dict:
 		frappe.throw("Task not found.")
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
+	sync_permit_invoices_to_finance_task(task, save=True)
+	task.reload()
 	completed = auto_complete_finance_permit_task(task)
 	app_name = (
 		get_pre_clearance_permit_application_task_name(task.project)
@@ -905,7 +931,7 @@ def get_permit_finance_workflow_status(task_name: str) -> dict:
 	missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
 	return {
 		"task_status": task.status,
-		"has_payment": bool(task.get("custom_payment_entry")),
+		"has_payment": task_has_recorded_payment(task),
 		"pending_verify": pending_verify,
 		"missing_receipts": missing_receipts,
 		"ready_to_complete": can_complete_finance_permit_task(task),

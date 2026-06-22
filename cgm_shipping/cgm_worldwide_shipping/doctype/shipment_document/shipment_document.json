@@ -8,11 +8,14 @@
  "engine": "InnoDB",
  "field_order": [
   "document_type",
+  "required",
   "attachment",
+  "status",
   "uploaded_by",
   "uploaded_on",
   "verified_by",
-  "verified_on"
+  "verified_on",
+  "remarks"
  ],
  "fields": [
   {
@@ -23,10 +26,24 @@
    "options": "Document Type"
   },
   {
+   "default": "0",
+   "fieldname": "required",
+   "fieldtype": "Check",
+   "label": "Required"
+  },
+  {
    "fieldname": "attachment",
    "fieldtype": "Attach",
    "in_list_view": 1,
    "label": "Attachment"
+  },
+  {
+   "default": "Missing",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Missing\nUploaded\nVerified\nRejected"
   },
   {
    "fieldname": "verified_by",
@@ -57,6 +74,11 @@
    "in_list_view": 1,
    "label": "Uploaded On",
    "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
   }
  ],
  "grid_page_length": 50,

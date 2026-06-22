@@ -191,12 +191,17 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 		return []
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_permit_stage_for_sequence,
+		is_entry_application_task,
 		is_permit_application_task,
 		is_ucr_application_task,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		permit_invoices_ready,
 		ucr_invoice_ready,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		invoice_submitted as application_invoice_submitted,
 	)
 
 	rows = frappe.db.sql(
@@ -214,7 +219,7 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 		as_dict=True,
 	)
 	# UCR / pre-clearance permit application tasks stay Open while Finance pays; invoice submitted unlocks finance.
-	return [
+	filtered = [
 		r
 		for r in rows
 		if not (
@@ -223,7 +228,19 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 			and permit_invoices_ready(r.name)
 		)
 		and not (is_ucr_application_task(r.seq) and ucr_invoice_ready(r.name))
+		and not (
+			is_entry_application_task(r.seq)
+			and application_invoice_submitted(
+				r.name, APPLICATION_FINANCE_PROFILES["Entry Application"]
+			)
+		)
 	]
+	# Transport tasks (19–24) run in parallel — do not block each other.
+	if 19 <= before_sequence <= 24:
+		filtered = [
+			r for r in filtered if not (19 <= r.seq < before_sequence)
+		]
+	return filtered
 
 
 def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
@@ -324,6 +341,14 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 			)
 		return
 
+	if gate_rule == "Entry Finance Complete":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+			enforce_entry_finance_gate,
+		)
+
+		enforce_entry_finance_gate(project)
+		return
+
 	if gate_rule == "All Sea Tasks Complete":
 		enforce_all_sea_tasks_complete(project)
 		return
@@ -407,7 +432,7 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 	For Sea projects with CRM-approved CI/PKL: create the 24-task plan and auto-complete tasks 1–2.
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
-		project_has_intake_documents,
+		project_ready_for_documents_received,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 		sea_import_enabled_for_project,
@@ -417,7 +442,7 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 
 	if not sea_import_enabled_for_project(project_doc):
 		return None
-	if not project_has_intake_documents(project_doc):
+	if not project_ready_for_documents_received(project_doc):
 		return None
 
 	if frappe.db.exists("Task", {"project": project_name, "custom_task_flow_key": SEA_TASK_FLOW_KEY}):
@@ -432,7 +457,7 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 def create_sea_import_task_plan_internal(project, reset=False):
 	"""Generate ordered sea-import tasks (internal; no duplicate check unless reset)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
-		project_has_intake_documents,
+		project_ready_for_documents_received,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 		sea_import_enabled_for_project,
@@ -468,6 +493,9 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	created = []
 	prev_task = None
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		TRANSPORT_TASK_SEQS,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		resolve_department_name,
 	)
@@ -487,14 +515,18 @@ def create_sea_import_task_plan_internal(project, reset=False):
 		task.insert(ignore_permissions=True)
 
 		if prev_task:
-			task.append("depends_on", {"task": prev_task.name})
-			task.save(ignore_permissions=True)
+			# Transport tasks (19–24) are independent; only task 19 chains from task 18.
+			if idx in TRANSPORT_TASK_SEQS and idx != 19:
+				pass
+			else:
+				task.append("depends_on", {"task": prev_task.name})
+				task.save(ignore_permissions=True)
 
 		prev_task = task
 		created.append(task.name)
 
 	out = {"created": created, "count": len(created)}
-	if project_has_intake_documents(project_doc):
+	if project_ready_for_documents_received(project_doc):
 		out["auto_completed"] = auto_complete_initial_sea_tasks(project)
 	return out
 

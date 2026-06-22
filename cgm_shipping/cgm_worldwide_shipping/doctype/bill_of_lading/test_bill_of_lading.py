@@ -1,22 +1,26 @@
 # Copyright (c) 2026, Titansoft Limited and Contributors
 # See license.txt
 
-# import frappe
+import frappe
 from frappe.tests import IntegrationTestCase
 
-
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
+from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+	build_bill_of_lading_name,
+	parse_batch_number_from_bl_name,
+)
 
 
+class TestBillOfLadingNaming(IntegrationTestCase):
+	def test_build_bill_of_lading_name_with_quantity(self):
+		self.assertEqual(
+			build_bill_of_lading_name("MB-0ONUJ", "2 x 20FT", 10),
+			"MB-0ONUJ 2 x 20FT-10",
+		)
 
-class IntegrationTestBillofLading(IntegrationTestCase):
-	"""
-	Integration tests for BillofLading.
-	Use this class for testing interactions between multiple components.
-	"""
+	def test_build_bill_of_lading_name_without_quantity(self):
+		self.assertEqual(build_bill_of_lading_name("MB-0ONUJ", "", 3), "MB-0ONUJ-3")
 
-	pass
+	def test_parse_batch_number_from_bl_name(self):
+		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ 2 x 20FT-10"), 10)
+		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ"), None)
+		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ-7"), 7)
