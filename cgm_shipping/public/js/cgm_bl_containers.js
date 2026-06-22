@@ -47,7 +47,12 @@ function restore_clean_form_state(frm) {
 		frm.dirty(false);
 		frm.doc.__unsaved = 0;
 		frm.toolbar?.set_indicator?.();
-		frm.states?.refresh?.();
+		// Workflow refresh calls frm.set_value(workflow_state); skip if the field
+		// is not on the form yet (stale meta) or after a partial re-render.
+		const wf_field = frappe.workflow.get_state_fieldname(frm.doctype);
+		if (wf_field && frm.get_field(wf_field)) {
+			frm.states?.refresh?.();
+		}
 	});
 }
 

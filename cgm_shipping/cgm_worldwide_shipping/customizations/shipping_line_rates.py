@@ -37,10 +37,14 @@ def get_supplier_child_rows(supplier_name: str, fieldname: str) -> list:
 
 @frappe.request_cache
 def get_valid_destinations() -> list[str]:
-	"""Read destination names from Delivery Destination doctype."""
-	if not frappe.db.exists("DocType", "Delivery Destination"):
-		return []
-	return frappe.get_all("Delivery Destination", pluck="name", order_by="name asc")
+	"""Read destination names from Delivery Destination master."""
+	if frappe.db.exists("DocType", "Delivery Destination"):
+		return frappe.get_all("Delivery Destination", pluck="name", order_by="name asc")
+	if frappe.db.table_exists("Delivery Destination"):
+		return frappe.db.sql_list(
+			"SELECT name FROM `tabDelivery Destination` ORDER BY name asc"
+		)
+	return []
 
 
 @frappe.request_cache

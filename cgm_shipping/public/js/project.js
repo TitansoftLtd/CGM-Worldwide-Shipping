@@ -1,26 +1,60 @@
-frappe.ui.form.on("Shipment Document", {
-	attachment: function (frm, cdt, cdn) {
-		const row = locals[cdt][cdn];
-		if (row.attachment) {
-			if (!row.status || row.status === "Missing") {
-				frappe.model.set_value(cdt, cdn, "status", "Uploaded");
-			}
-			if (!row.uploaded_by) {
-				frappe.model.set_value(cdt, cdn, "uploaded_by", frappe.session.user);
-			}
-		} else {
-			frappe.model.set_value(cdt, cdn, "status", "Missing");
-			frappe.model.set_value(cdt, cdn, "uploaded_by", "");
-			frappe.model.set_value(cdt, cdn, "uploaded_on", "");
-			frappe.model.set_value(cdt, cdn, "verified_by", "");
-			frappe.model.set_value(cdt, cdn, "verified_on", "");
+function cgm_on_shipment_document_slot_change(frm, cdt, cdn) {
+	const row = locals[cdt][cdn];
+	const has_file = row.final_attachment || row.initial_attachment || row.attachment;
+	if (has_file) {
+		if (!row.status || row.status === "Missing") {
+			frappe.model.set_value(cdt, cdn, "status", "Uploaded");
 		}
+		if (!row.uploaded_by) {
+			frappe.model.set_value(cdt, cdn, "uploaded_by", frappe.session.user);
+		}
+		if (row.final_attachment) {
+			frappe.model.set_value(cdt, cdn, "version_status", "Final Received");
+		} else if (row.initial_attachment) {
+			frappe.model.set_value(cdt, cdn, "version_status", "Awaiting Final");
+		}
+		frappe.model.set_value(
+			cdt,
+			cdn,
+			"attachment",
+			row.final_attachment || row.initial_attachment || row.attachment
+		);
+	} else if (!row.initial_attachment && !row.final_attachment && !row.attachment) {
+		frappe.model.set_value(cdt, cdn, "status", "Missing");
+		frappe.model.set_value(cdt, cdn, "uploaded_by", "");
+		frappe.model.set_value(cdt, cdn, "uploaded_on", "");
+		frappe.model.set_value(cdt, cdn, "verified_by", "");
+		frappe.model.set_value(cdt, cdn, "verified_on", "");
+		frappe.model.set_value(cdt, cdn, "version_status", "");
+	}
+}
+
+frappe.ui.form.on("Shipment Document", {
+	initial_attachment(frm, cdt, cdn) {
+		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
+	},
+	final_attachment(frm, cdt, cdn) {
+		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
+	},
+	attachment(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (
+			frm.doctype === "Task" &&
+			row.initial_attachment &&
+			row.attachment &&
+			row.attachment !== row.initial_attachment &&
+			!row.final_attachment
+		) {
+			frappe.model.set_value(cdt, cdn, "final_attachment", row.attachment);
+		}
+		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
 	},
 
-	status: function (frm, cdt, cdn) {
+	status(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
+		const file = row.final_attachment || row.initial_attachment || row.attachment;
 		if (["Verified", "Rejected"].includes(row.status)) {
-			if (!row.attachment) {
+			if (!file) {
 				frappe.msgprint(__("Attach a file before verification."));
 				frappe.model.set_value(cdt, cdn, "status", "Missing");
 				return;
@@ -31,8 +65,33 @@ frappe.ui.form.on("Shipment Document", {
 			frappe.model.set_value(cdt, cdn, "verified_by", "");
 			frappe.model.set_value(cdt, cdn, "verified_on", "");
 		}
-	},
+	}
 });
+
+function configure_project_document_grid(frm) {
+	const grid = frm.fields_dict.custom_shipment_documents?.grid;
+	if (!grid) {
+		return;
+	}
+
+	if (cgm_has_shipment_document_versioning()) {
+		let changed = false;
+		for (const row of frm.doc.custom_shipment_documents || []) {
+			if (!row.initial_attachment && row.attachment) {
+				row.initial_attachment = row.attachment;
+				changed = true;
+			}
+			if (row.initial_attachment || row.final_attachment) {
+				row.attachment = row.final_attachment || row.initial_attachment || row.attachment;
+			}
+		}
+		if (changed) {
+			frm.refresh_field("custom_shipment_documents");
+		}
+	}
+
+	cgm_configure_shipment_document_grid(grid);
+}
 
 const WORKFLOW_COLOURS = {
 	Success: "green",
@@ -42,6 +101,136 @@ const WORKFLOW_COLOURS = {
 	Inverse: "black",
 	Info: "light-blue",
 };
+
+function configure_project_container_grid(frm) {
+	const grid = frm.fields_dict.custom_container_information?.grid;
+	if (!grid) {
+		return;
+	}
+	if (!frm.doc.name || frm.is_new()) {
+		return;
+	}
+	if (frm._cgm_container_modes_loaded === frm.doc.name) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.get_containers_for_project",
+		args: { project: frm.doc.name },
+		callback(r) {
+			if (r.exc || frm.doc.name !== frm._cgm_container_modes_loading) {
+				return;
+			}
+			frm._cgm_container_modes_loaded = frm.doc.name;
+			const modes = new Set((r.message || []).map((row) => row.container_mode).filter(Boolean));
+			const hideCharges =
+				modes.size === 1 && modes.has("Export");
+			["demurrage_days", "detention_days"].forEach((fieldname) => {
+				grid.update_docfield_property(fieldname, "hidden", hideCharges ? 1 : 0);
+			});
+		},
+	});
+	frm._cgm_container_modes_loading = frm.doc.name;
+}
+
+function project_has_containers(frm) {
+	return (frm.doc.custom_container_information || []).some(
+		(row) => (row.container_number || "").trim()
+	);
+}
+
+function project_ata_value(frm) {
+	return frm.doc.custom_actual_time_of_arrival_ata || frm.doc.custom_ata || null;
+}
+
+function setup_port_arrival_confirmation_button(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	if (frm.doc.custom_mode_of_transport !== "Sea") {
+		return;
+	}
+	if (frm.doc.custom_port_arrival_confirmed) {
+		return;
+	}
+	if (!project_has_containers(frm)) {
+		return;
+	}
+
+	const on_confirm = () => {
+		const confirmMessage = __(
+			"Confirm that the shipment has arrived at the port? Container trackers will be created for all containers on this project."
+		);
+		const submit = (ata) => {
+			frappe.call({
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.confirm_shipment_arrival_at_port",
+				args: { project_name: frm.doc.name, ata: ata || null },
+				freeze: true,
+				freeze_message: __("Creating container trackers..."),
+				callback(r) {
+					if (r.exc) {
+						return;
+					}
+					if (r.message?.ata) {
+						frm.set_value("custom_actual_time_of_arrival_ata", r.message.ata);
+						frm.set_value("custom_ata", r.message.ata);
+					}
+					frm.reload_doc();
+					const count = r.message?.tracker_count || 0;
+					frappe.show_alert({
+						message: __(
+							"Port arrival confirmed — {0} container tracker(s) created.",
+							[count]
+						),
+						indicator: "green",
+					});
+				},
+			});
+		};
+
+		if (!project_ata_value(frm)) {
+			frappe.prompt(
+				[
+					{
+						fieldname: "ata",
+						fieldtype: "Date",
+						label: __("Actual Time of Arrival (ATA)"),
+						default: frappe.datetime.get_today(),
+						reqd: 1,
+					},
+				],
+				(values) => {
+					frappe.confirm(confirmMessage, () => submit(values.ata));
+				},
+				__("Confirm Port Arrival")
+			);
+			return;
+		}
+
+		frappe.confirm(confirmMessage, () => submit(project_ata_value(frm)));
+	};
+
+	const register_action = () => {
+		frm.page.add_action_item(__("Confirm Shipment Arrival at the Port"), on_confirm);
+		frm.page.show_actions_menu();
+	};
+
+	// Workflow rebuilds the Actions menu on render_complete; register after it finishes.
+	const schedule_register = () => {
+		const state_field = frappe.workflow.get_state_fieldname(frm.doctype);
+		if (state_field && !frm.doc.__islocal) {
+			frappe.workflow.get_transitions(frm.doc).finally(() => {
+				setTimeout(register_action, 0);
+			});
+			return;
+		}
+		register_action();
+	};
+
+	schedule_register();
+	$(frm.wrapper).off("render_complete.cgm_port_arrival").on("render_complete.cgm_port_arrival", schedule_register);
+}
 
 function is_clearance_project(frm) {
 	return ["Sea", "Air", "Road"].includes(frm.doc.custom_mode_of_transport);
@@ -57,18 +246,6 @@ function open_project_clearance_tasks(frm) {
 		status: ["in", ["Open", "Working", "Pending Review", "Overdue", "Completed"]],
 	};
 	frappe.set_route("List", "Task");
-}
-
-function setup_clearance_tasks_toolbar_button(frm) {
-	if (frm.is_new() || !frm.doc.name) {
-		return;
-	}
-	if (frm._cgm_clearance_tasks_btn) {
-		return;
-	}
-	frm._cgm_clearance_tasks_btn = frm.page.add_inner_button(__("Clearance Tasks"), () =>
-		open_project_clearance_tasks(frm)
-	);
 }
 
 function sync_consignee_from_customer(frm) {
@@ -136,11 +313,35 @@ function render_shipment_progress_chart(frm) {
 				d.workflow_behind && d.workflow_status
 					? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
 					: "";
+			let inspectionLine = "";
+			if (d.inspection_notification_status === "Notified" && d.inspection_notified_on) {
+				inspectionLine = `<div class="cgm-inspection-notified">${__(
+					"Client notified for inspection"
+				)} · ${frappe.datetime.str_to_user(d.inspection_notified_on)}</div>`;
+			} else if (d.inspection_notification_status === "Confirmed" && d.inspection_confirmed_on) {
+				const by = d.inspection_confirmed_by
+					? ` · ${frappe.utils.escape_html(d.inspection_confirmed_by)}`
+					: "";
+				inspectionLine = `<div class="cgm-inspection-confirmed">${__(
+					"Inspection confirmed"
+				)} · ${frappe.datetime.str_to_user(d.inspection_confirmed_on)}${by}</div>`;
+			}
+			let portArrivalLine = "";
+			if (d.port_arrival_confirmed && d.port_arrival_confirmed_on) {
+				const by = d.port_arrival_confirmed_by
+					? ` · ${frappe.utils.escape_html(d.port_arrival_confirmed_by)}`
+					: "";
+				portArrivalLine = `<div class="cgm-port-arrival-confirmed">${__(
+					"Port arrival confirmed"
+				)} · ${frappe.datetime.str_to_user(d.port_arrival_confirmed_on)}${by}</div>`;
+			}
 			field.$wrapper.html(`
 				<div class="cgm-shipment-progress">
 					<h4>${__("Shipment clearance workflow")}</h4>
 					<div class="cgm-progress-steps">${steps}</div>
 					${taskLine}
+					${inspectionLine}
+					${portArrivalLine}
 					<div class="cgm-tracking-legend">
 						${__("Berth phase")}: <b>${berth}</b> ·
 						${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
@@ -288,7 +489,7 @@ function render_container_tracking_table(frm, dashboard) {
 	let cards = "";
 	if (!rows.length) {
 		cards = `<div class="text-muted cgm-container-empty">${__(
-			"No containers yet. Complete Task 11 (Create Entry) to create Container Trackers."
+			"No containers yet. Use Actions → Confirm Shipment Arrival at the Port, or complete Task 11 (Create Entry), to create Container Trackers."
 		)}</div>`;
 	} else {
 		cards = rows
@@ -409,8 +610,10 @@ frappe.ui.form.on("Project", {
 		}
 
 		render_shipment_progress_chart(frm);
+		configure_project_document_grid(frm);
+		configure_project_container_grid(frm);
 
-		setup_clearance_tasks_toolbar_button(frm);
+		setup_port_arrival_confirmation_button(frm);
 
 		if (frm.doc.name && !frm.is_new()) {
 			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass("btn-primary");
@@ -421,6 +624,10 @@ frappe.ui.form.on("Project", {
 				frappe.set_route("query-report", "Container Tracking Detail", {
 					project: frm.doc.name,
 				});
+			}, __("View"));
+			frm.add_custom_button(__("Container Ops Board"), () => {
+				frappe.route_options = { project: frm.doc.name };
+				frappe.set_route("container-ops-board");
 			}, __("View"));
 			frm.add_custom_button(__("Daily Status"), () => {
 				frappe.new_doc("Daily Status Update");

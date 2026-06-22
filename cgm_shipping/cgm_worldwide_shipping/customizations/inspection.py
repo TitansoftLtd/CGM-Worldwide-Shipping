@@ -128,13 +128,30 @@ def _shipment_portal_url(project_name: str) -> str:
 	return get_url(f"/shipment?name={quote(project_name, safe='')}")
 
 
-def _mark_inspection_confirmed(project_name: str, task_name: str, confirmed_by: str) -> None:
+def _mark_inspection_confirmed(
+	project_name: str,
+	task_name: str,
+	confirmed_by: str,
+	*,
+	completed_by_user: str | None = None,
+) -> bool:
+	"""Record inspection confirmation, complete the seq-7 task, and update the Project."""
 	now = now_datetime()
-	task_updates = {
-		"custom_inspection_confirmed_on": now,
-		"custom_inspection_confirmed_by": confirmed_by,
-	}
-	frappe.db.set_value("Task", task_name, task_updates, update_modified=True)
+	task = frappe.get_doc("Task", task_name)
+	task.custom_inspection_confirmed_on = now
+	task.custom_inspection_confirmed_by = confirmed_by
+
+	task_was_open = task.status not in ("Completed", "Cancelled")
+	if task_was_open:
+		task.status = "Completed"
+		task.completed_by = completed_by_user or frappe.session.user
+		task.completed_on = now
+
+	frappe.flags.cgm_auto_completing_sea_task = True
+	try:
+		task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_auto_completing_sea_task = False
 
 	project_updates = {
 		"custom_inspection_notification_status": "Confirmed",
@@ -142,11 +159,13 @@ def _mark_inspection_confirmed(project_name: str, task_name: str, confirmed_by: 
 		"custom_inspection_confirmed_by": confirmed_by,
 	}
 	meta = frappe.get_meta("Project")
-	for field in project_updates:
+	for field in list(project_updates):
 		if not meta.has_field(field):
 			project_updates.pop(field, None)
 	if project_updates:
 		frappe.db.set_value("Project", project_name, project_updates, update_modified=True)
+
+	return task_was_open
 
 
 @frappe.whitelist()
@@ -165,6 +184,34 @@ def notify_client_for_inspection(task_name: str) -> dict:
 			_(
 				"No email address found for this customer. Add a primary contact, customer email, or portal user."
 			)
+		)
+
+	ref = display_ref_from_values(project.as_dict()) or project_name
+	portal_url = _shipment_portal_url(project_name)
+	subject = _("Your shipment is ready for inspection")
+	message = frappe.render_template(
+		"""
+<p>{{ _("Hello") }},</p>
+<p>{{ _("Your shipment") }} <strong>{{ ref }}</strong> {{ _("is ready for inspection.") }}</p>
+<p>{{ _("Please sign in to the customer portal to review your documents and permits:") }}</p>
+<p><a href="{{ portal_url }}">{{ portal_url }}</a></p>
+<p>{{ _("Thank you,") }}<br>{{ _("CGM Worldwide Shipping") }}</p>
+""",
+		{"ref": ref, "portal_url": portal_url},
+	)
+
+	try:
+		frappe.sendmail(recipients=emails, subject=subject, message=message, delayed=False)
+	except Exception as exc:
+		frappe.log_error(title="Client inspection notification email failed", message=str(exc))
+		hint = _(
+			"Check **Email Account** settings (outgoing server password). "
+			"If this site was restored from a backup, the encryption key in "
+			"`site_config.json` must match the backup, or re-enter the email account password."
+		)
+		frappe.throw(
+			_("Could not send inspection email: {0}<br><br>{1}").format(exc, hint),
+			title=_("Email not sent"),
 		)
 
 	now = now_datetime()
@@ -190,28 +237,13 @@ def notify_client_for_inspection(task_name: str) -> dict:
 	if project_updates:
 		frappe.db.set_value("Project", project_name, project_updates, update_modified=True)
 
-	ref = display_ref_from_values(project.as_dict()) or project_name
-	portal_url = _shipment_portal_url(project_name)
-	subject = _("Your shipment is ready for inspection")
-	message = frappe.render_template(
-		"""
-<p>{{ _("Hello") }},</p>
-<p>{{ _("Your shipment") }} <strong>{{ ref }}</strong> {{ _("is ready for inspection.") }}</p>
-<p>{{ _("Please sign in to the customer portal to review your documents and permits:") }}</p>
-<p><a href="{{ portal_url }}">{{ portal_url }}</a></p>
-<p>{{ _("Thank you,") }}<br>{{ _("CGM Worldwide Shipping") }}</p>
-""",
-		{"ref": ref, "portal_url": portal_url},
-	)
-
-	frappe.sendmail(recipients=emails, subject=subject, message=message, delayed=False)
-
 	notified_by = frappe.db.get_value("User", user, "full_name") or user
 	return {
 		"ok": True,
 		"notified_on": now,
 		"notified_by": notified_by,
 		"emails": emails,
+		"emails_sent": len(emails),
 		"message": _("Client notified for inspection."),
 	}
 
@@ -226,13 +258,14 @@ def confirm_client_inspection_from_task(task_name: str) -> dict:
 	user = frappe.session.user
 	full_name = frappe.db.get_value("User", user, "full_name") or user
 	confirmed_by = f"{full_name} ({user})"
-	_mark_inspection_confirmed(task.project, task.name, confirmed_by)
+	task_completed = _mark_inspection_confirmed(task.project, task.name, confirmed_by, completed_by_user=user)
 
 	return {
 		"ok": True,
 		"confirmed_on": now_datetime(),
 		"confirmed_by": confirmed_by,
-		"message": _("Inspection marked as complete."),
+		"task_completed": task_completed,
+		"message": _("Inspection marked as complete and the task has been completed."),
 	}
 
 
@@ -264,9 +297,17 @@ def confirm_inspection_via_portal(project: str) -> dict:
 
 	user = frappe.get_cached_doc("User", frappe.session.user)
 	confirmed_by = user.full_name or user.first_name or frappe.session.user
-	_mark_inspection_confirmed(project, inspection_task.name, confirmed_by)
+	task_completed = _mark_inspection_confirmed(
+		project,
+		inspection_task.name,
+		confirmed_by,
+		completed_by_user=frappe.session.user,
+	)
 
 	return {
 		"ok": True,
-		"message": _("Thank you — your inspection confirmation has been recorded."),
+		"task_completed": task_completed,
+		"message": _(
+			"Thank you — your inspection confirmation has been recorded and the inspection task is complete."
+		),
 	}
