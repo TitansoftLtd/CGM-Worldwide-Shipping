@@ -1,0 +1,182 @@
+{% set company_currency = frappe.db.get_value("Company", doc.company, "default_currency") %}
+{% set company_addr = frappe.db.get_value("Dynamic Link", {"link_doctype": "Company", "link_name": doc.company, "parenttype": "Address"}, "parent") %}
+{% set company_address = frappe.get_doc("Address", company_addr) if company_addr else None %}
+
+<style>
+.cgm-doc { font-family: Inter, Arial, sans-serif; color: #171717; font-size: 12px; }
+.cgm-doc h2 { margin: 0; font-size: 22px; letter-spacing: 1px; }
+.cgm-doc h3 { margin: 0 0 8px; font-size: 14px; color: #8b1a1a; text-transform: uppercase; }
+.cgm-brand { text-align: center; margin-bottom: 18px; }
+.cgm-brand .name { color: #c41e3a; font-size: 34px; font-weight: 800; line-height: 1; }
+.cgm-brand .tag { color: #c41e3a; font-size: 11px; letter-spacing: 1px; }
+.cgm-meta, .cgm-addresses { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+.cgm-meta td, .cgm-addresses td { vertical-align: top; padding: 4px 8px 4px 0; }
+.cgm-label { color: #666; width: 140px; }
+.cgm-grid { width: 100%; border-collapse: collapse; margin: 12px 0; }
+.cgm-grid th { background: #8b1a1a; color: #fff; padding: 8px; text-align: left; font-size: 11px; }
+.cgm-grid td { border: 1px solid #e5e5e5; padding: 7px 8px; }
+.cgm-grid .num { text-align: right; white-space: nowrap; }
+.cgm-highlight { background: #fff8d6; font-weight: 600; }
+.cgm-blue-head th { background: #2f5f9e; }
+.cgm-orange { background: #f4a640; color: #fff; }
+.cgm-green { background: #3d8b5f; color: #fff; }
+.cgm-totals { width: 100%; margin-top: 12px; }
+.cgm-totals td { padding: 5px 8px; }
+.cgm-totals .label { text-align: right; color: #666; }
+.cgm-totals .value { text-align: right; font-weight: 600; }
+.cgm-terms { margin-top: 18px; padding: 12px; background: #eef4fb; border: 1px solid #d5e3f4; }
+.cgm-section { margin-top: 16px; }
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+</style>
+
+<div class="cgm-doc">
+	<div class="cgm-brand">
+		<div class="name">CGM</div>
+		<div><strong>WORLDWIDE SHIPPING COMPANY</strong></div>
+		<div class="tag">CONNECTING YOU TO THE WORLD</div>
+	</div>
+
+	<table class="cgm-meta">
+		<tr>
+			<td style="width:55%">
+				<strong>FROM</strong><br>
+				{{ doc.company }}<br>
+				{% if company_address %}
+					{% if company_address.address_line1 %}{{ company_address.address_line1 }}<br>{% endif %}
+					{{ company_address.city or "" }} {{ company_address.country or "" }}
+				{% endif %}
+			</td>
+			<td class="text-right">
+				<strong>Date:</strong> {{ frappe.utils.format_date(doc.transaction_date) }}<br>
+				<strong>Quotation No:</strong> {{ doc.name }}
+			</td>
+		</tr>
+	</table>
+
+	<table class="cgm-addresses">
+		<tr>
+			<td style="width:55%">
+				<strong>TO</strong><br>
+				{{ doc.customer_name or doc.party_name }}<br>
+				{{ doc.address_display or "" }}
+			</td>
+			<td>
+				<table>
+					<tr><td class="cgm-label">HS Code</td><td>{{ doc.custom_hs_code or "" }}</td></tr>
+					<tr><td class="cgm-label">Commodity</td><td>{{ doc.custom_commodity or "" }}</td></tr>
+					<tr><td class="cgm-label">Total Weight (Tons)</td><td>{{ doc.custom_weight or "" }}</td></tr>
+					<tr><td class="cgm-label">FCL</td><td>{{ doc.custom_container_size or "" }} {{ doc.custom_container_type or "" }}</td></tr>
+					<tr><td class="cgm-label">Port of Loading</td><td>{{ doc.custom_port_of_loading or "" }}</td></tr>
+					<tr><td class="cgm-label">Port of Discharge</td><td>{{ doc.custom_port_of_discharge or "" }}</td></tr>
+				</table>
+			</td>
+		</tr>
+	</table>
+
+	<div class="cgm-section">
+		<h3>Valuation</h3>
+		<table class="cgm-grid">
+			<thead>
+				<tr>
+					<th>Description</th>
+					<th class="num">{{ doc.currency }}</th>
+					<th class="num">{{ company_currency }}</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for row in doc.custom_import_cost_component or [] %}
+				<tr>
+					<td>{{ row.charge_item }}</td>
+					<td class="num">{{ frappe.utils.fmt_money(row.amount, currency=doc.currency) }}</td>
+					<td class="num">{{ frappe.utils.fmt_money(row.amount_kes, currency=company_currency) }}</td>
+				</tr>
+				{% endfor %}
+				<tr class="cgm-highlight">
+					<td><strong>Custom Value</strong></td>
+					<td class="num">{{ doc.get_formatted("custom_custom_value") }}</td>
+					<td class="num">{{ doc.get_formatted("custom_base_customs_value") }}</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+
+	{% if doc.custom_customs_taxes %}
+	<div class="cgm-section">
+		<h3>Taxes (Estimate)</h3>
+		<table class="cgm-grid cgm-blue-head">
+			<thead>
+				<tr>
+					<th>Tax Type</th>
+					<th class="num">Tax Base ({{ company_currency }})</th>
+					<th class="num">Rate</th>
+					<th class="num">Amount ({{ company_currency }})</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for tax in doc.custom_customs_taxes %}
+				<tr>
+					<td>{{ tax.tax_type }}</td>
+					<td class="num">{{ doc.get_formatted("custom_base_customs_value") }}</td>
+					<td class="num">{{ tax.rate or 0 }}%</td>
+					<td class="num">{{ frappe.utils.fmt_money(tax.amount_kes, currency=company_currency) }}</td>
+				</tr>
+				{% endfor %}
+				<tr>
+					<td colspan="3" class="text-right"><strong>Total Taxes (Estimate)</strong></td>
+					<td class="num"><strong>{{ doc.get_formatted("custom_total_tax") }}</strong></td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+	{% endif %}
+
+	<div class="cgm-section">
+		<h3>Local Charges</h3>
+		<table class="cgm-grid">
+			<thead>
+				<tr>
+					<th>Local Charge Description</th>
+					<th class="num">Qty</th>
+					<th class="num">Rate</th>
+					<th class="num">Amount</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for item in doc.items %}
+				<tr>
+					<td>{{ item.description or item.item_name }}</td>
+					<td class="num">{{ item.get_formatted("qty", doc) }} {{ item.uom }}</td>
+					<td class="num">{{ item.get_formatted("rate", doc) }}</td>
+					<td class="num">{{ item.get_formatted("amount", doc) }}</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+
+	<table class="cgm-totals">
+		<tr><td class="label">Sub Total Local Charges:</td><td class="value">{{ doc.get_formatted("total") }}</td></tr>
+		{% if doc.custom_total_tax %}
+		<tr><td class="label">Total Customs Taxes ({{ company_currency }}):</td><td class="value">{{ doc.get_formatted("custom_total_tax") }}</td></tr>
+		{% endif %}
+		{% for tax in doc.taxes or [] %}
+			{% if tax.tax_amount %}
+			<tr><td class="label">{{ tax.description }}:</td><td class="value">{{ tax.get_formatted("tax_amount") }}</td></tr>
+			{% endif %}
+		{% endfor %}
+		<tr><td class="label"><strong>Grand Total:</strong></td><td class="value"><strong>{{ doc.get_formatted("grand_total") }}</strong></td></tr>
+	</table>
+
+	{% if doc.in_words %}
+	<p><strong>In Words:</strong> {{ doc.in_words }}</p>
+	{% endif %}
+
+	{% if doc.custom_quote_clause or doc.terms %}
+	<div class="cgm-terms">
+		<strong>Remarks / Terms</strong><br>
+		{{ doc.custom_quote_clause or "" }}
+		{{ doc.terms or "" }}
+	</div>
+	{% endif %}
+</div>

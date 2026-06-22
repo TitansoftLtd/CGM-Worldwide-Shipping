@@ -1005,6 +1005,16 @@ def _ensure_tracking_fields() -> None:
 	_create_cf(
 		"Project",
 		{
+			"fieldname": "custom_client_ref_no",
+			"label": "Client Ref No",
+			"fieldtype": "Data",
+			"insert_after": "custom_mode_of_transport",
+			"in_list_view": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
 			"fieldname": "custom_weight_notes",
 			"label": "Weight (as per docs)",
 			"fieldtype": "Data",
