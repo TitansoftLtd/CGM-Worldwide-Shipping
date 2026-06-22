@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	APPROVED_WORKFLOW_STATE,
 	CUSTOMER_ATTACH_TO_DOCUMENT_CODE,
 	OPPORTUNITY_DOCUMENTS_FIELD,
 	SHIPMENT_DOCUMENTS_FIELD,
@@ -859,6 +860,10 @@ def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 		return
 
 	ensure_document_types()
+	source_is_approved_opp = (
+		source_doc.doctype == "Opportunity"
+		and source_doc.get("workflow_state") == APPROVED_WORKFLOW_STATE
+	)
 	for row in source_doc.get(OPPORTUNITY_DOCUMENTS_FIELD) or []:
 		if not row.document_type:
 			continue
@@ -866,13 +871,21 @@ def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 			continue
 		if not frappe.db.exists("Document Type", row.document_type):
 			continue
-		_append_or_update_shipment_document_row(project_doc, row)
+		_append_or_update_shipment_document_row(
+			project_doc,
+			row,
+			verify_from_approved_opportunity=source_is_approved_opp,
+		)
 
 
-def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
+def _append_or_update_shipment_document_row(
+	project_doc, source_row, *, verify_from_approved_opportunity: bool = False
+) -> None:
 	initial = source_row.get("initial_attachment")
 	final = source_row.get("final_attachment")
 	legacy = source_row.get("attachment")
+	status = resolve_document_row_status(source_row)
+	verify = status == "Verified" or verify_from_approved_opportunity
 	if has_document_versioning():
 		upsert_shipment_document_row(
 			project_doc,
@@ -880,9 +893,9 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 			source_row.document_type,
 			initial_url=initial or legacy,
 			final_url=final,
-			status=resolve_document_row_status(source_row),
+			status="Verified" if verify else status,
 			remarks=source_row.get("remarks"),
-			verify=resolve_document_row_status(source_row) == "Verified",
+			verify=verify,
 		)
 		return
 
@@ -892,8 +905,12 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 			continue
 		if not existing.attachment:
 			existing.attachment = legacy
-		status = resolve_document_row_status(source_row)
-		if existing.meta.has_field("status") and status != "Missing":
+		if verify:
+			if existing.meta.has_field("status"):
+				existing.status = "Verified"
+			existing.verified_by = existing.verified_by or source_row.verified_by or frappe.session.user
+			existing.verified_on = existing.verified_on or source_row.verified_on or now_datetime()
+		elif existing.meta.has_field("status") and status != "Missing":
 			existing.status = status
 		for field in (
 			"uploaded_by",
@@ -917,7 +934,10 @@ def _append_or_update_shipment_document_row(project_doc, source_row) -> None:
 		"remarks": source_row.remarks,
 	}
 	if frappe.get_meta("Shipment Document").has_field("status"):
-		row_data["status"] = resolve_document_row_status(source_row)
+		row_data["status"] = "Verified" if verify else status
+	if verify:
+		row_data["verified_by"] = row_data["verified_by"] or frappe.session.user
+		row_data["verified_on"] = row_data["verified_on"] or now_datetime()
 	project_doc.append(SHIPMENT_DOCUMENTS_FIELD, row_data)
 
 
