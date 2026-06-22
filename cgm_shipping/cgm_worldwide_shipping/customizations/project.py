@@ -2,6 +2,7 @@ import frappe
 from frappe.utils import getdate, now_datetime, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	APPROVED_WORKFLOW_STATE,
 	INTAKE_DOCUMENT_CODES,
 	PERMIT_REGISTER_FIELD,
 	SHIPMENT_DOCUMENTS_FIELD,
@@ -10,6 +11,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	get_project_shipment_documents_field,
 	is_shipment_document_verified,
 	primary_attachment,
+	refresh_project_documents,
 	sync_documents,
 	sync_project_documents_from_opportunity,
 )
@@ -518,9 +520,49 @@ def project_has_verified_client_documents(project_doc) -> bool:
 	return all(is_shipment_document_verified(row) for row in docs)
 
 
+def project_has_client_document_files(project_doc) -> bool:
+	"""True when the project shipment document table has at least one attached file."""
+	return any(
+		row.document_type and primary_attachment(row) for row in get_documents(project_doc)
+	)
+
+
+def opportunity_is_approved(opp_name: str) -> bool:
+	return (
+		opp_name
+		and frappe.db.get_value("Opportunity", opp_name, "workflow_state")
+		== APPROVED_WORKFLOW_STATE
+	)
+
+
+def opportunity_has_client_document_files(opp_name: str) -> bool:
+	"""True when the linked Opportunity has uploaded client documents."""
+	if not opp_name or not frappe.db.exists("Opportunity", opp_name):
+		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		get_opportunity_documents_field,
+	)
+
+	opp = frappe.get_doc("Opportunity", opp_name)
+	field = get_opportunity_documents_field() or "custom_clients_documents"
+	if not opp.meta.has_field(field):
+		return False
+	return any(
+		row.document_type and primary_attachment(row)
+		for row in (opp.get(field) or [])
+	)
+
+
 def project_ready_for_documents_received(project_doc) -> bool:
 	"""True when CRM pre-shipment evidence allows the Documents Received state."""
-	if project_doc.get("custom_source_opportunity"):
+	opp_name = project_doc.get("custom_source_opportunity")
+	if opp_name:
+		# Approved Opportunity = ops accepted the client file pack; branch at Documents Received.
+		if opportunity_is_approved(opp_name):
+			return (
+				project_has_client_document_files(project_doc)
+				or opportunity_has_client_document_files(opp_name)
+			)
 		return project_has_verified_client_documents(project_doc)
 	return project_has_intake_documents(project_doc)
 
@@ -548,11 +590,53 @@ def bootstrap_project_workflow_status(project_name: str) -> None:
 		update_modified=False,
 	)
 
+
+def _seed_project_workflow_state(project_name: str) -> None:
+	"""Align Frappe workflow_state with custom_shipment_status after bootstrap."""
+	if not project_name or not frappe.db.exists("Project", project_name):
+		return
+	meta = frappe.get_meta("Project")
+	if not meta.has_field("workflow_state"):
+		return
+
+	shipment_status = (
+		frappe.db.get_value("Project", project_name, "custom_shipment_status") or ""
+	).strip()
+	if not shipment_status:
+		return
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		get_sea_import_workflow_states,
+	)
+
+	valid_states = get_sea_import_workflow_states()
+	if not valid_states or shipment_status not in valid_states:
+		return
+
+	current = (frappe.db.get_value("Project", project_name, "workflow_state") or "").strip()
+	if current == shipment_status:
+		return
+
+	frappe.db.set_value(
+		"Project",
+		project_name,
+		"workflow_state",
+		shipment_status,
+		update_modified=False,
+	)
+
+
 def insert_shipment_project(project) -> str:
 	"""Insert a new shipment project and apply post-insert workflow status."""
-	project.insert(ignore_permissions=True)
+	frappe.flags.cgm_skip_task_project_sync = True
+	try:
+		project.insert(ignore_permissions=True)
+		bootstrap_sea_task_plan_for_project(project.name)
+	finally:
+		frappe.flags.cgm_skip_task_project_sync = False
+	refresh_project_documents(project.name)
 	bootstrap_project_workflow_status(project.name)
-	bootstrap_sea_task_plan_for_project(project.name)
+	_seed_project_workflow_state(project.name)
 	return project.name
 
 
@@ -622,6 +706,19 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 def sync_predocuments_from_source(project, source_doc) -> None:
 	"""Copy Opportunity Clients Documents and Customer KRA PIN onto Project shipment documents."""
 	sync_project_documents_from_opportunity(project, source_doc)
+
+@frappe.whitelist()
+def get_shipment_project_for_opportunity(opportunity: str) -> str | None:
+	"""Return the shipment Project linked to an Opportunity, if any."""
+	frappe.has_permission("Opportunity", ptype="read", doc=opportunity, throw=True)
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+	return frappe.db.get_value(
+		"Project",
+		{"custom_source_opportunity": opportunity},
+		"name",
+	)
+
 
 @frappe.whitelist()
 def create_project_from_opportunity(opportunity, project_name=None):

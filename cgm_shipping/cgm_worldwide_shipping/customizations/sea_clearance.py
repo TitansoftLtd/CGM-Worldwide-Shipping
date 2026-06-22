@@ -154,6 +154,8 @@ def _sea_task_progress_fields() -> list[str]:
 
 def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	"""Advance Project workflow field when sea tasks have passed the current state."""
+	if frappe.flags.get("cgm_skip_task_project_sync"):
+		return None
 	if frappe.db.get_value("Project", project, "custom_mode_of_transport") != "Sea":
 		return None
 	tasks = frappe.get_all(
@@ -534,36 +536,42 @@ def create_sea_import_task_plan_internal(project, reset=False):
 		resolve_department_name,
 	)
 
-	for idx, item in enumerate(task_template, start=1):
-		subject = item.get("subject")
-		if not subject:
-			frappe.throw(f"Task template item at position {idx} has no subject.")
+	frappe.flags.cgm_skip_task_project_sync = True
+	try:
+		for idx, item in enumerate(task_template, start=1):
+			subject = item.get("subject")
+			if not subject:
+				frappe.throw(f"Task template item at position {idx} has no subject.")
 
-		seq = sea_import_task_sequence_no(idx)
-		task = frappe.new_doc("Task")
-		task.subject = subject
-		task.project = project
-		task.custom_task_flow_key = SEA_TASK_FLOW_KEY
-		task.custom_sequence_no = seq
-		task.department = resolve_department_name(item.get("department"), company=project_doc.company)
-		task.status = "Open"
-		task.insert(ignore_permissions=True)
+			seq = sea_import_task_sequence_no(idx)
+			task = frappe.new_doc("Task")
+			task.subject = subject
+			task.project = project
+			task.custom_task_flow_key = SEA_TASK_FLOW_KEY
+			task.custom_sequence_no = seq
+			task.department = resolve_department_name(item.get("department"), company=project_doc.company)
+			task.status = "Open"
 
-		if prev_task:
-			# Transport tasks (20–25) are independent; only the first transport step chains from KPA paid.
-			book_trucks_seq = min(TRANSPORT_TASK_SEQS)
-			if seq in TRANSPORT_TASK_SEQS and seq != book_trucks_seq:
-				pass
-			else:
-				task.append("depends_on", {"task": prev_task.name})
-				task.save(ignore_permissions=True)
+			if prev_task:
+				# Transport tasks (20–25) are independent; only the first transport step chains from KPA paid.
+				book_trucks_seq = min(TRANSPORT_TASK_SEQS)
+				if seq not in TRANSPORT_TASK_SEQS or seq == book_trucks_seq:
+					task.append("depends_on", {"task": prev_task.name})
 
-		prev_task = task
-		created.append(task.name)
+			task.insert(ignore_permissions=True)
+
+			prev_task = task
+			created.append(task.name)
+	finally:
+		frappe.flags.cgm_skip_task_project_sync = False
 
 	out = {"created": created, "count": len(created)}
 	if project_ready_for_documents_received(project_doc):
-		out["auto_completed"] = auto_complete_initial_sea_tasks(project)
+		frappe.flags.cgm_skip_task_project_sync = True
+		try:
+			out["auto_completed"] = auto_complete_initial_sea_tasks(project)
+		finally:
+			frappe.flags.cgm_skip_task_project_sync = False
 	return out
 
 
