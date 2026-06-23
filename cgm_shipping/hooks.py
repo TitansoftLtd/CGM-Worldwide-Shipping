@@ -32,10 +32,10 @@ app_include_js = "/assets/cgm_shipping/js/cgm_container_tracking.js"
 # Customer portal: shared design-system CSS + browser-side timezone
 # localization for the /portal, /my-shipments, /shipment and /documents pages.
 web_include_css = [
-	"/assets/cgm_shipping/css/customer_portal.css",
+    "/assets/cgm_shipping/css/customer_portal.css",
 ]
 web_include_js = [
-	"/assets/cgm_shipping/js/portal_localize_time.js",
+    "/assets/cgm_shipping/js/portal_localize_time.js",
 ]
 
 # include custom scss in every website theme (without file extension ".scss")
@@ -47,7 +47,6 @@ web_include_js = [
 
 # include js in page
 # page_js = {"page" : "public/js/file.js"}
-
 
 # include js in doctype views
 doctype_js = {
@@ -95,11 +94,11 @@ doctype_js = {
 # website user home page (by Role)
 # Customers (Website Users) land on the branded shipment portal.
 role_home_page = {
-	"Customer": "portal",
+    "Customer": "portal",
 }
 
 on_session_creation = [
-	"cgm_shipping.cgm_worldwide_shipping.customizations.website.route_customer_to_portal",
+    "cgm_shipping.cgm_worldwide_shipping.customizations.website.route_customer_to_portal",
 ]
 
 # Generators
@@ -118,9 +117,10 @@ on_session_creation = [
 # `local_datetime_iso` powers the timezone-aware <time> macros used across
 # the customer portal templates.
 jinja = {
-	"methods": [
-		"cgm_shipping.cgm_worldwide_shipping.customizations.portal_localize.local_datetime_iso",
-	],
+    "methods": [
+        "cgm_shipping.cgm_worldwide_shipping.customizations.portal_localize.local_datetime_iso",
+ 	    "cgm_shipping.cgm_worldwide_shipping.customizations.doc_qr.get_doc_qr_code",
+   ],
 }
 
 # Installation
@@ -163,24 +163,26 @@ after_migrate = ["cgm_shipping.install.after_migrate"]
 # Permissions evaluated in scripted ways
 
 permission_query_conditions = {
-	"Task": (
-		"cgm_shipping.cgm_worldwide_shipping.customizations.permissions"
-		".get_permission_query_conditions"
-	),
+    "Task": ("cgm_shipping.cgm_worldwide_shipping.customizations.permissions"
+            ".get_permission_query_conditions"),
 }
 
 has_permission = {
-	"Task": (
-		"cgm_shipping.cgm_worldwide_shipping.customizations.permissions.has_permission"
-	),
+    "Task":
+    ("cgm_shipping.cgm_worldwide_shipping.customizations.permissions.has_permission"
+    ),
 }
 
 # Document class overrides
 # ------------------------
 
 override_doctype_class = {
-	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
-	"Quotation": "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
+    "Task":
+    ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
+    "Quotation":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
+    "Sales Order":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMSalesOrder",
 }
 
 # Document Events
@@ -224,7 +226,9 @@ doc_events = {
 		"on_trash": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.clear_back_links_on_trash",
 	},
 	"Lead": {
-		"before_save": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
+		"before_save": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl"
+		),
 	},
 	"Task": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_onload",
@@ -240,9 +244,9 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
-	"daily": [
-		"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
-	],
+    "daily": [
+        "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
+    ],
 }
 
 # scheduler_events = {
@@ -279,9 +283,14 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "cgm_shipping.event.get_events"
-# }
+override_whitelisted_methods = {
+    "erpnext.selling.doctype.quotation.quotation.make_sales_order":
+    ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_order"
+     ),
+    "erpnext.selling.doctype.quotation.quotation.make_sales_invoice":
+    ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_invoice"
+     ),
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -290,7 +299,8 @@ scheduler_events = {
 # 	"Task": "cgm_shipping.task.get_dashboard_data"
 # }
 override_doctype_dashboards = {
-	"Opportunity": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_dashboard_data",
+    "Opportunity":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_dashboard_data",
 }
 
 # exempt linked doctypes from being automatically cancelled

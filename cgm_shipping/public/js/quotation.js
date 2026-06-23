@@ -1,420 +1,554 @@
-// ============================================================
-// CGM QUOTATION CLIENT SCRIPT
-// ============================================================
+// =============================================================================
+// CGM QUOTATION & SALES ORDER — CLIENT SCRIPT
+// =============================================================================
+//
+// Tax-type classification mirrors the Python constants.
+// Add new type names here; no other JS changes are required.
+//
+// STACKING  — VAT, etc.   (stacks on the running cumulative base)
+// EXCISE    — Excise Duty (stacks on customs_value + import_duty only)
+// WEIGHT    — MSS Levy    (rate is KES-per-ton, not a percentage)
+// Everything else: flat % applied directly to raw customs_value_kes.
 
-// Tax types whose base accumulates (VAT stacks on top of prior duties).
-// Populated dynamically from server metadata; seeded with known defaults.
-const _STACKING_TYPES  = new Set(["VAT"]);
-const _WEIGHT_TYPES    = new Set(["MSS Levy"]);
-// Excise stacks on customs_value + import_duty only.
-const _EXCISE_TYPES    = new Set(["Excise Duty"]);
+const CGM = (() => {
 
-// Cache of tax-type metadata fetched from server { [tax_type]: info }
-const _TAX_TYPE_META   = {};
+    // ── Tax-type classification sets ─────────────────────────────────────────
+    const STACKING_TYPES = new Set(["VAT"]);
+    const EXCISE_TYPES   = new Set(["Excise Duty"]);
+    const WEIGHT_TYPES   = new Set(["MSS Levy"]);
 
-// ============================================================
-// EXCHANGE RATE HELPERS
-// ============================================================
+    // Server-fetched metadata cache  { [tax_type]: info }
+    const TAX_TYPE_META = {};
 
-function get_bank_rate(frm) {
-    return flt(frm.doc.conversion_rate) || 1;
-}
+    // ── Exchange-rate helpers ─────────────────────────────────────────────────
 
-function get_customs_rate(frm, row) {
-    return flt(row.exchange_rate) || get_bank_rate(frm);
-}
+    function bankRate(frm) {
+        return flt(frm.doc.conversion_rate) || 1;
+    }
 
-// ============================================================
-// IMPORT COST COMPONENT HELPERS
-// ============================================================
+    function customsRate(frm, row) {
+        return flt(row.exchange_rate) || bankRate(frm);
+    }
 
-function enforce_company_currency_exchange_rate(frm, cdt, cdn) {
-    if (!frm.doc.company) return;
-    frappe.model.with_doc("Company", frm.doc.company, () => {
-        const company_currency = frappe.model.get_value(
-            "Company", frm.doc.company, "default_currency"
-        );
-        const is_company_currency = frm.doc.currency === company_currency;
+    function companyCurrency(frm) {
+        if (frm.cscript?.get_company_currency) return frm.cscript.get_company_currency();
+        return frappe.defaults.get_default("currency");
+    }
 
-        if (is_company_currency) {
-            frappe.model.set_value(cdt, cdn, "exchange_rate", 1);
+    // ── Import Cost Component helpers ─────────────────────────────────────────
+
+    /**
+     * Sum import-cost rows and return
+     * { customs_value_foreign, customs_value_kes }.
+     * Also updates each row's amount_kes in place.
+     */
+    function computeCustomsValue(frm) {
+        let foreign = 0, kes = 0;
+        for (const row of frm.doc.custom_import_cost_component || []) {
+            const rate    = customsRate(frm, row);
+            row.amount_kes = flt(row.amount) * rate;
+            foreign       += flt(row.amount);
+            kes           += row.amount_kes;
+        }
+        return { customs_value_foreign: foreign, customs_value_kes: kes };
+    }
+
+    /** Force exchange_rate = 1 when quoting in company currency. */
+    function enforceExchangeRate(frm, cdt, cdn) {
+        if (!frm.doc.company) return;
+        frappe.model.with_doc("Company", frm.doc.company, () => {
+            const co_cur       = frappe.model.get_value("Company", frm.doc.company, "default_currency");
+            const is_co_cur    = frm.doc.currency === co_cur;
+            const row          = locals[cdt][cdn];
+            const grid         = frm.fields_dict.custom_import_cost_component?.grid;
+
+            if (is_co_cur && flt(row?.exchange_rate) !== 1) {
+                frappe.model.set_value(cdt, cdn, "exchange_rate", 1, "Float", true);
+            }
+            grid?.update_docfield_property("exchange_rate", "read_only", is_co_cur ? 1 : 0);
+        });
+    }
+
+    /** Show / hide the exchange_rate column based on document currency. */
+    function toggleImportCostExchangeRate(frm, cdt, cdn) {
+        if (!frm.doc.company) return;
+        frappe.model.with_doc("Company", frm.doc.company, () => {
+            const co_cur  = frappe.model.get_value("Company", frm.doc.company, "default_currency");
+            const needs   = frm.doc.currency && frm.doc.currency !== co_cur ? 1 : 0;
+            const row     = locals[cdt][cdn];
+            if (row && flt(row.show_exchange_rate) !== needs) {
+                frappe.model.set_value(cdt, cdn, "show_exchange_rate", needs, "Check", true);
+            }
+        });
+    }
+
+    // ── Grand-total helpers ───────────────────────────────────────────────────
+
+    function customsTaxInDocCurrency(frm) {
+        const kes  = flt(frm.doc.custom_total_tax);
+        const co_c = companyCurrency(frm);
+        if (frm.doc.currency === co_c) return kes;
+        const rate = bankRate(frm);
+        return rate ? flt(kes / rate) : 0;
+    }
+
+    function updateGrandTotals(frm, opts = {}) {
+        const customs_kes = flt(frm.doc.custom_total_tax);
+        const customs_doc = customsTaxInDocCurrency(frm);
+
+        frm.doc.base_grand_total = flt(frm.doc.base_total) + customs_kes;
+        frm.doc.grand_total      = flt(frm.doc.total)      + customs_doc;
+
+        if (frm.doc.disable_rounded_total) {
+            frm.doc.rounded_total           = 0;
+            frm.doc.base_rounded_total      = 0;
+            frm.doc.rounding_adjustment     = 0;
+            frm.doc.base_rounding_adjustment = 0;
+        } else {
+            const rp  = frappe.meta.get_field_precision(
+                frappe.meta.get_docfield(frm.doc.doctype, "rounded_total"), frm.doc);
+            const brp = frappe.meta.get_field_precision(
+                frappe.meta.get_docfield(frm.doc.doctype, "base_rounded_total"), frm.doc);
+
+            frm.doc.rounded_total = round_based_on_smallest_currency_fraction(
+                frm.doc.grand_total, frm.doc.currency, rp);
+            frm.doc.rounding_adjustment = flt(frm.doc.rounded_total - frm.doc.grand_total);
+
+            frm.doc.base_rounded_total = round_based_on_smallest_currency_fraction(
+                frm.doc.base_grand_total, companyCurrency(frm), brp);
+            frm.doc.base_rounding_adjustment = flt(
+                frm.doc.base_rounded_total - frm.doc.base_grand_total);
         }
 
-        frm.fields_dict.custom_import_cost_component?.grid
-            .update_docfield_property("exchange_rate", "read_only",
-                is_company_currency ? 1 : 0);
-    });
-}
+        frm.refresh_fields([
+            "grand_total", "base_grand_total",
+            "rounded_total", "base_rounded_total",
+            "rounding_adjustment", "base_rounding_adjustment",
+        ]);
 
-function toggle_import_cost_exchange_rate(frm, cdt, cdn) {
-    if (!frm.doc.company) return;
-    frappe.model.with_doc("Company", frm.doc.company, () => {
-        const company_currency = frappe.model.get_value(
-            "Company", frm.doc.company, "default_currency"
-        );
-        const needs = frm.doc.currency && frm.doc.currency !== company_currency;
-        frappe.model.set_value(cdt, cdn, "show_exchange_rate", needs ? 1 : 0);
-    });
-}
-
-// ============================================================
-// CUSTOMS VALUE CALCULATION
-// ============================================================
-
-function _compute_customs_value(frm) {
-    let customs_value_foreign = 0;
-    let customs_value_kes     = 0;
-
-    (frm.doc.custom_import_cost_component || []).forEach(row => {
-        const rate = get_customs_rate(frm, row);
-        const kes  = flt(row.amount) * rate;
-
-        row.amount_kes = kes;
-
-        customs_value_foreign += flt(row.amount);
-        customs_value_kes     += kes;
-    });
-
-    return { customs_value_foreign, customs_value_kes };
-}
-
-function _get_company_currency(frm) {
-    if (frm.cscript && frm.cscript.get_company_currency) {
-        return frm.cscript.get_company_currency();
-    }
-    return frappe.defaults.get_default("currency");
-}
-
-function _customs_tax_in_doc_currency(frm) {
-    const company_currency = _get_company_currency(frm);
-    const customs_kes = flt(frm.doc.custom_total_tax);
-    if (frm.doc.currency === company_currency) {
-        return customs_kes;
-    }
-    const rate = get_bank_rate(frm);
-    return rate ? flt(customs_kes / rate) : 0;
-}
-
-function _update_grand_totals(frm) {
-    const customs_kes = flt(frm.doc.custom_total_tax);
-    const customs_doc = _customs_tax_in_doc_currency(frm);
-
-    frm.doc.base_grand_total = flt(frm.doc.base_total) + customs_kes;
-    frm.doc.grand_total = flt(frm.doc.total) + customs_doc;
-
-    if (frm.doc.disable_rounded_total) {
-        frm.doc.rounded_total = 0;
-        frm.doc.base_rounded_total = 0;
-        frm.doc.rounding_adjustment = 0;
-        frm.doc.base_rounding_adjustment = 0;
-    } else {
-        const rounded_df = frappe.meta.get_docfield(frm.doc.doctype, "rounded_total");
-        const base_rounded_df = frappe.meta.get_docfield(frm.doc.doctype, "base_rounded_total");
-        const rounded_precision = frappe.meta.get_field_precision(rounded_df, frm.doc);
-        const base_rounded_precision = frappe.meta.get_field_precision(base_rounded_df, frm.doc);
-
-        frm.doc.rounded_total = round_based_on_smallest_currency_fraction(
-            frm.doc.grand_total,
-            frm.doc.currency,
-            rounded_precision
-        );
-        frm.doc.rounding_adjustment = flt(frm.doc.rounded_total - frm.doc.grand_total);
-
-        frm.doc.base_rounded_total = round_based_on_smallest_currency_fraction(
-            frm.doc.base_grand_total,
-            _get_company_currency(frm),
-            base_rounded_precision
-        );
-        frm.doc.base_rounding_adjustment = flt(
-            frm.doc.base_rounded_total - frm.doc.base_grand_total
-        );
+        updateTotalInWords(frm, opts);
     }
 
-    frm.refresh_fields([
-        "grand_total",
-        "base_grand_total",
-        "rounded_total",
-        "base_rounded_total",
-        "rounding_adjustment",
-        "base_rounding_adjustment",
-    ]);
-
-    _update_total_in_words(frm);
-}
-
-function _update_total_in_words(frm) {
-    if (!frm.doc.company || !frm.doc.currency) {
-        return;
-    }
-
-    frappe.call({
-        method: "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.get_total_in_words",
-        args: {
-            grand_total: frm.doc.grand_total,
-            rounded_total: frm.doc.rounded_total,
-            base_grand_total: frm.doc.base_grand_total,
-            base_rounded_total: frm.doc.base_rounded_total,
-            currency: frm.doc.currency,
-            company: frm.doc.company,
-            disable_rounded_total: frm.doc.disable_rounded_total,
-        },
-        callback(r) {
-            if (!r.message) {
-                return;
-            }
-            frm.doc.in_words = r.message.in_words;
-            frm.doc.base_in_words = r.message.base_in_words;
-            frm.refresh_fields(["in_words", "base_in_words"]);
-        },
-    });
-}
-
-function _sync_grand_totals_after_erpnext(frm) {
-    if (frm.cscript && frm.cscript.calculate_taxes_and_totals) {
-        const result = frm.cscript.calculate_taxes_and_totals();
-        if (result && typeof result.then === "function") {
-            result.then(() => _update_grand_totals(frm));
+    function updateTotalInWords(frm, opts = {}) {
+        if (!frm.doc.company || !frm.doc.currency) {
+            if (opts.quiet) scheduleCleanRestore(frm);
             return;
         }
+        frappe.call({
+            method: "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.get_total_in_words",
+            args: {
+                grand_total          : frm.doc.grand_total,
+                rounded_total        : frm.doc.rounded_total,
+                base_grand_total     : frm.doc.base_grand_total,
+                base_rounded_total   : frm.doc.base_rounded_total,
+                currency             : frm.doc.currency,
+                company              : frm.doc.company,
+                disable_rounded_total: frm.doc.disable_rounded_total,
+            },
+            callback(r) {
+                if (r.message) {
+                    frm.doc.in_words      = r.message.in_words;
+                    frm.doc.base_in_words = r.message.base_in_words;
+                    frm.refresh_fields(["in_words", "base_in_words"]);
+                }
+                if (opts.quiet) scheduleCleanRestore(frm);
+            },
+        });
     }
-    _update_grand_totals(frm);
-}
 
-// ============================================================
-// CUSTOMS TAX CALCULATION (live preview on custom_total_tax only)
-// ============================================================
-
-function calculate_customs_taxes(frm) {
-    const weight_tons = flt(frm.doc.custom_weight) || 0;
-    const { customs_value_kes } = _compute_customs_value(frm);
-
-    let running_base_kes = customs_value_kes;
-    let import_duty_kes  = 0;
-    let total_taxes_kes  = 0;
-
-    const tax_rows = [...(frm.doc.custom_customs_taxes || [])]
-        .sort((a, b) => a.idx - b.idx);
-
-    tax_rows.forEach(row => {
-        if (!row.tax_type) return;
-
-        const meta = _TAX_TYPE_META[row.tax_type] || {};
-        let amount_kes = 0;
-
-        if (flt(row.fixed_amount_kes) > 0 || meta.is_fixed) {
-            amount_kes = flt(row.fixed_amount_kes);
-        } else if (_WEIGHT_TYPES.has(row.tax_type) || meta.is_weight_based) {
-            amount_kes = weight_tons * flt(row.rate);
-        } else if (_EXCISE_TYPES.has(row.tax_type)) {
-            const excise_base = customs_value_kes + import_duty_kes;
-            amount_kes = excise_base * (flt(row.rate) / 100);
-            running_base_kes += amount_kes;
-        } else if (_STACKING_TYPES.has(row.tax_type) || meta.is_stacking) {
-            amount_kes = running_base_kes * (flt(row.rate) / 100);
-            running_base_kes += amount_kes;
+    /** Re-run ERPNext's own totals first, then apply customs on top. */
+    function syncGrandTotalsAfterERPNext(frm) {
+        const result = frm.cscript?.calculate_taxes_and_totals?.();
+        if (result?.then) {
+            result.then(() => updateGrandTotals(frm));
         } else {
-            amount_kes = customs_value_kes * (flt(row.rate) / 100);
-            running_base_kes += amount_kes;
+            updateGrandTotals(frm);
+        }
+    }
 
-            if ((row.tax_type || "").toLowerCase().includes("import duty") ||
-                (row.tax_type || "").toLowerCase().includes("duty") &&
-                !(row.tax_type || "").toLowerCase().includes("excise")) {
-                import_duty_kes += amount_kes;
+    // ── "Quiet" (no-dirty-flag) helpers ──────────────────────────────────────
+
+    function scheduleCleanRestore(frm) {
+        if (!frm._cgm_keep_clean_after_sync) return;
+        clearTimeout(frm._cgm_clean_restore_timer);
+        frm._cgm_clean_restore_timer = setTimeout(
+            () => frappe.after_ajax(() => restoreCleanState(frm)),
+            250
+        );
+    }
+
+    function restoreCleanState(frm) {
+        if (!frm._cgm_keep_clean_after_sync) return;
+        frm.doc.__unsaved = 0;
+        delete frm._cgm_keep_clean_after_sync;
+        frm.toolbar?.show_title_as_dirty();
+        frm.toolbar?.set_primary_action(true);
+    }
+
+    // ── Customs Tax calculation ───────────────────────────────────────────────
+
+    function isWeightBasedTax(row, meta = {}) {
+        return WEIGHT_TYPES.has(row.tax_type) || Boolean(meta.is_weight_based);
+    }
+
+    /** MSS Levy and other per-weight taxes: Amount = Rate × custom_weight */
+    function calculateWeightBasedTaxAmount(frm, row) {
+        return flt(frm.doc.custom_weight) * flt(row.rate);
+    }
+
+    function calculateRowTaxAmount(frm, row, meta, ctx) {
+        if (!row.tax_type) return 0;
+
+        if (isWeightBasedTax(row, meta)) {
+            return calculateWeightBasedTaxAmount(frm, row);
+        }
+
+        const is_fixed = flt(row.fixed_amount_kes) > 0 || Boolean(meta.is_fixed);
+        if (is_fixed) {
+            return flt(row.fixed_amount_kes);
+        }
+
+        const { customs_value_kes, running_base, import_duty_kes } = ctx;
+
+        if (EXCISE_TYPES.has(row.tax_type) || meta.is_excise) {
+            return (customs_value_kes + import_duty_kes) * (flt(row.rate) / 100);
+        }
+
+        if (STACKING_TYPES.has(row.tax_type) || meta.is_stacking) {
+            return running_base * (flt(row.rate) / 100);
+        }
+
+        return customs_value_kes * (flt(row.rate) / 100);
+    }
+
+    /**
+     * Main recalculation entry point.
+     * Replicates the Python logic so the form shows live previews.
+     */
+    function calculateCustomsTaxes(frm, opts = {}) {
+        if (opts.quiet) frm._cgm_keep_clean_after_sync = true;
+
+        const { customs_value_foreign, customs_value_kes } = computeCustomsValue(frm);
+
+        frm.doc.custom_custom_value = customs_value_foreign;
+        frm.doc.custom_base_customs_value = customs_value_kes;
+
+        let running_base    = customs_value_kes;
+        let import_duty_kes = 0;
+        let total_taxes_kes = 0;
+
+        const rows = [...(frm.doc.custom_customs_taxes || [])].sort((a, b) => a.idx - b.idx);
+
+        for (const row of rows) {
+            if (!row.tax_type) continue;
+
+            const meta = TAX_TYPE_META[row.tax_type] || {};
+            const ctx  = { customs_value_kes, running_base, import_duty_kes };
+            const amount = calculateRowTaxAmount(frm, row, meta, ctx);
+
+            row.amount_kes     = amount;
+            row.tax_amount_kes = amount;
+            total_taxes_kes   += amount;
+
+            if (!isWeightBasedTax(row, meta)) {
+                running_base    += amount;
+                if (!EXCISE_TYPES.has(row.tax_type) && !meta.is_excise
+                    && !STACKING_TYPES.has(row.tax_type) && !meta.is_stacking) {
+                    import_duty_kes += amount;
+                }
             }
         }
 
-        row.amount_kes = amount_kes;
-        row.tax_amount_kes = amount_kes;
-        total_taxes_kes += amount_kes;
-    });
+        frm.doc.custom_total_tax = total_taxes_kes;
+        updateGrandTotals(frm, opts);
 
-    frm.doc.custom_total_tax = total_taxes_kes;
-    _update_grand_totals(frm);
+        frm.refresh_fields([
+            "custom_import_cost_component",
+            "custom_custom_value",
+            "custom_base_customs_value",
+            "custom_customs_taxes",
+            "custom_total_tax",
+        ]);
 
-    frm.refresh_fields([
-        "custom_import_cost_component",
-        "custom_customs_taxes",
-        "custom_total_tax",
-    ]);
-}
-
-// ============================================================
-// CUSTOMS TAX ROW UI HELPERS
-// ============================================================
-
-function apply_customs_tax_defaults(frm, cdt, cdn) {
-    const row = locals[cdt][cdn];
-    if (!row.tax_type) return;
-
-    if (_TAX_TYPE_META[row.tax_type]) {
-        _apply_meta_to_row(frm, cdt, cdn, _TAX_TYPE_META[row.tax_type]);
-        return;
+        if (opts.quiet) scheduleCleanRestore(frm);
     }
 
-    frappe.call({
-        method: "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.get_customs_tax_type_info",
-        args: { tax_type: row.tax_type },
-        callback(r) {
-            if (!r.message) return;
-            _TAX_TYPE_META[row.tax_type] = r.message;
-            _apply_meta_to_row(frm, cdt, cdn, r.message);
-        },
-    });
-}
+    // ── Customs Tax row UI helpers ────────────────────────────────────────────
 
-function _apply_meta_to_row(frm, cdt, cdn, info) {
-    if (info.default_rate != null) {
-        frappe.model.set_value(cdt, cdn, "rate", info.default_rate);
+    function applyCustomsTaxDefaults(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!row.tax_type) return;
+
+        if (TAX_TYPE_META[row.tax_type]) {
+            applyMetaToRow(frm, cdt, cdn, TAX_TYPE_META[row.tax_type]);
+            return;
+        }
+
+        frappe.call({
+            method: "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.get_customs_tax_type_info",
+            args: { tax_type: row.tax_type },
+            callback(r) {
+                if (!r.message) return;
+                TAX_TYPE_META[row.tax_type] = r.message;
+                applyMetaToRow(frm, cdt, cdn, r.message);
+            },
+        });
     }
 
-    frappe.model.set_value(cdt, cdn, "is_fixed_amount", info.is_fixed ? 1 : 0);
+    function applyMetaToRow(frm, cdt, cdn, info) {
+        if (info.default_rate != null) {
+            frappe.model.set_value(cdt, cdn, "rate", info.default_rate);
+        }
+        if (!info.is_weight_based) {
+            frappe.model.set_value(cdt, cdn, "is_fixed_amount", info.is_fixed ? 1 : 0);
+        }
 
-    const grid = frm.fields_dict.custom_customs_taxes?.grid;
-    if (grid) {
-        grid.update_docfield_property("rate", "label",
-            info.is_weight_based ? "Rate per Ton (KES)" : "Rate (%)");
-        grid.update_docfield_property("rate", "hidden",
-            info.show_rate ? 0 : 1);
-        grid.update_docfield_property("fixed_amount_kes", "hidden",
-            info.show_fixed_amount ? 0 : 1);
-        grid.refresh();
+        const grid = frm.fields_dict.custom_customs_taxes?.grid;
+        if (grid) {
+            grid.update_docfield_property("rate",             "label",     info.rate_label || "Rate (%)");
+            grid.update_docfield_property("rate",             "hidden",    info.show_rate ? 0 : 1);
+            grid.update_docfield_property("fixed_amount_kes", "hidden",    info.show_fixed_amount ? 0 : 1);
+            grid.update_docfield_property("rate",             "read_only", info.is_fixed ? 1 : 0);
+            grid.update_docfield_property("fixed_amount_kes", "read_only", info.is_fixed ? 0 : 1);
+            grid.refresh();
+        }
+
+        calculateCustomsTaxes(frm);
     }
 
-    _toggle_row_read_only(frm, cdt, cdn, info.is_fixed);
-    calculate_customs_taxes(frm);
-}
+    function toggleCustomsTaxFields(frm, cdt, cdn) {
+        const row      = locals[cdt][cdn];
+        const is_fixed = flt(row?.is_fixed_amount) === 1;
+        const grid     = frm.fields_dict.custom_customs_taxes?.grid;
+        if (!grid) return;
 
-function _toggle_row_read_only(frm, cdt, cdn, is_fixed) {
-    const grid = frm.fields_dict.custom_customs_taxes?.grid;
-    if (!grid) return;
+        grid.update_docfield_property("rate",             "hidden",    is_fixed ? 1 : 0);
+        grid.update_docfield_property("fixed_amount_kes", "hidden",    is_fixed ? 0 : 1);
+        grid.update_docfield_property("rate",             "read_only", is_fixed ? 1 : 0);
+        grid.update_docfield_property("fixed_amount_kes", "read_only", is_fixed ? 0 : 1);
+    }
 
-    grid.update_docfield_property("rate",            "read_only", is_fixed ? 1 : 0);
-    grid.update_docfield_property("fixed_amount_kes","read_only", is_fixed ? 0 : 1);
-    grid.refresh();
-}
+    // ── Grid setup on load ────────────────────────────────────────────────────
 
-function toggle_customs_tax_fields(frm, cdt, cdn) {
-    const row     = locals[cdt][cdn];
-    const is_fixed = flt(row.is_fixed_amount) === 1;
-    const grid    = frm.fields_dict.custom_customs_taxes?.grid;
-    if (!grid) return;
+    function setupCustomsTaxGridUI(frm) {
+        for (const row of frm.doc.custom_customs_taxes || []) {
+            toggleCustomsTaxFields(frm, row.doctype, row.name);
+        }
+        frm.fields_dict.custom_customs_taxes?.grid?.refresh();
+    }
 
-    grid.update_docfield_property("rate",            "hidden",    is_fixed ? 1 : 0);
-    grid.update_docfield_property("fixed_amount_kes","hidden",    is_fixed ? 0 : 1);
-    grid.update_docfield_property("rate",            "read_only", is_fixed ? 1 : 0);
-    grid.update_docfield_property("fixed_amount_kes","read_only", is_fixed ? 0 : 1);
-    grid.refresh();
-}
+    function setupImportCostGridUI(frm) {
+        for (const row of frm.doc.custom_import_cost_component || []) {
+            toggleImportCostExchangeRate(frm, row.doctype, row.name);
+        }
+    }
 
-// ============================================================
+    function seedImportCostExchangeRate(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!row || flt(row.exchange_rate)) return;
+        if (!frm.doc.currency || frm.doc.currency === companyCurrency(frm)) return;
+        frappe.model.set_value(cdt, cdn, "exchange_rate", bankRate(frm), "Float", true);
+    }
+
+    // ── Public API ────────────────────────────────────────────────────────────
+    return {
+        calculateCustomsTaxes,
+        syncGrandTotalsAfterERPNext,
+        setupCustomsTaxGridUI,
+        setupImportCostGridUI,
+        applyCustomsTaxDefaults,
+        toggleCustomsTaxFields,
+        enforceExchangeRate,
+        toggleImportCostExchangeRate,
+        seedImportCostExchangeRate,
+    };
+})();
+
+
+// =============================================================================
 // QUOTATION FORM EVENTS
-// ============================================================
+// =============================================================================
+
+const CGM_QUOTATION_BILLING_STATES = new Set(["Approved", "Shared with Client"]);
 
 frappe.ui.form.on("Quotation", {
     refresh(frm) {
-        (frm.doc.custom_import_cost_component || []).forEach(row => {
-            toggle_import_cost_exchange_rate(frm, row.doctype, row.name);
-        });
-        (frm.doc.custom_customs_taxes || []).forEach(row => {
-            toggle_customs_tax_fields(frm, row.doctype, row.name);
-        });
+        CGM.setupImportCostGridUI(frm);
+        CGM.setupCustomsTaxGridUI(frm);
+        CGM.add_sales_invoice_button(frm);
 
-        calculate_customs_taxes(frm);
+        // Submitted quotations already have server-calculated totals.
+        // Re-running client math only rewrites frm.doc and falsely marks the form dirty.
+        if (frm.doc.docstatus === 1 && !frm.is_dirty()) return;
+
+        CGM.calculateCustomsTaxes(frm, { quiet: !frm.is_dirty() });
     },
 
-    company(frm) {
-        calculate_customs_taxes(frm);
+    after_save(frm) {
+        frm.doc.__unsaved = 0;
+        frm.toolbar?.show_title_as_dirty();
+        frm.toolbar?.set_primary_action(true);
     },
 
-    currency(frm) {
-        calculate_customs_taxes(frm);
-    },
+    company(frm)         { CGM.calculateCustomsTaxes(frm); },
+    currency(frm)        { CGM.calculateCustomsTaxes(frm); },
+    conversion_rate(frm) { CGM.calculateCustomsTaxes(frm); },
+    custom_weight(frm)   { CGM.calculateCustomsTaxes(frm); },
+    opportunity(frm)     { CGM.fetch_shipment_references(frm); },
+    custom_shipment(frm) { CGM.fetch_shipment_references(frm); },
 
-    conversion_rate(frm) {
-        calculate_customs_taxes(frm);
+    custom_import_cost_component_add(frm) {
+        CGM.calculateCustomsTaxes(frm);
     },
-
-    custom_weight(frm) {
-        calculate_customs_taxes(frm);
+    custom_import_cost_component_remove(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+    custom_customs_taxes_add(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+    custom_customs_taxes_remove(frm) {
+        CGM.calculateCustomsTaxes(frm);
     },
 });
+
+CGM.add_sales_invoice_button = function (frm) {
+    if (frm.doc.docstatus !== 1) return;
+    if (!CGM_QUOTATION_BILLING_STATES.has(frm.doc.workflow_state)) return;
+    if (!frappe.model.can_create("Sales Invoice")) return;
+    if (["Lost", "Ordered"].includes(frm.doc.status)) return;
+
+    frm.add_custom_button(__("Sales Invoice"), () => {
+        const has_alternative_item = (frm.doc.items || []).some((item) => item.is_alternative);
+        if (has_alternative_item) {
+            frappe.msgprint(__("Please create a Sales Invoice from a Sales Order when alternative items are used."));
+            return;
+        }
+        frappe.model.open_mapped_doc({
+            method: "erpnext.selling.doctype.quotation.quotation.make_sales_invoice",
+            frm,
+        });
+    }, __("Create"));
+};
+
+CGM.fetch_shipment_references = function (frm) {
+    const fields = [
+        ["custom_coo", "custom_country_of_origin"],
+        ["custom_idfno", "custom_idf_number"],
+        ["custom_client_ref_no", "custom_client_ref_no"],
+        ["custom_our_ref_no", "custom_cgm_ref_no"],
+    ];
+
+    const apply_project = (project) => {
+        if (!project) return;
+        for (const [target, source] of fields) {
+            if (!frm.doc[target] && project[source]) {
+                frm.set_value(target, project[source]);
+            }
+        }
+    };
+
+    if (frm.doc.custom_shipment) {
+        frappe.db.get_doc("Project", frm.doc.custom_shipment).then(apply_project);
+        return;
+    }
+
+    if (!frm.doc.opportunity) return;
+
+    frappe.db.get_value("Opportunity", frm.doc.opportunity, "custom_country_of_origin").then((r) => {
+        if (!frm.doc.custom_coo && r.message?.custom_country_of_origin) {
+            frm.set_value("custom_coo", r.message.custom_country_of_origin);
+        }
+    });
+};
 
 frappe.ui.form.on("Quotation Item", {
-    rate(frm) {
-        _sync_grand_totals_after_erpnext(frm);
+    rate(frm)         { CGM.syncGrandTotalsAfterERPNext(frm); },
+    qty(frm)          { CGM.syncGrandTotalsAfterERPNext(frm); },
+    amount(frm)       { CGM.syncGrandTotalsAfterERPNext(frm); },
+    items_remove(frm) { CGM.syncGrandTotalsAfterERPNext(frm); },
+});
+
+
+// =============================================================================
+// SALES ORDER FORM EVENTS
+// (same logic — customs tables copied from Quotation by make_sales_order)
+// =============================================================================
+
+frappe.ui.form.on("Sales Order", {
+    refresh(frm) {
+        CGM.setupImportCostGridUI(frm);
+        CGM.setupCustomsTaxGridUI(frm);
+
+        if (frm.doc.docstatus === 1 && !frm.is_dirty()) return;
+
+        CGM.calculateCustomsTaxes(frm, { quiet: !frm.is_dirty() });
     },
 
-    qty(frm) {
-        _sync_grand_totals_after_erpnext(frm);
-    },
+    company(frm)         { CGM.calculateCustomsTaxes(frm); },
+    currency(frm)        { CGM.calculateCustomsTaxes(frm); },
+    conversion_rate(frm) { CGM.calculateCustomsTaxes(frm); },
+    custom_weight(frm)   { CGM.calculateCustomsTaxes(frm); },
 
-    amount(frm) {
-        _sync_grand_totals_after_erpnext(frm);
+    custom_import_cost_component_add(frm) {
+        CGM.calculateCustomsTaxes(frm);
     },
-
-    items_remove(frm) {
-        _sync_grand_totals_after_erpnext(frm);
+    custom_import_cost_component_remove(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+    custom_customs_taxes_add(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+    custom_customs_taxes_remove(frm) {
+        CGM.calculateCustomsTaxes(frm);
     },
 });
 
-// ============================================================
-// IMPORT COST COMPONENT CHILD TABLE EVENTS
-// ============================================================
+frappe.ui.form.on("Sales Order Item", {
+    rate(frm)         { CGM.syncGrandTotalsAfterERPNext(frm); },
+    qty(frm)          { CGM.syncGrandTotalsAfterERPNext(frm); },
+    amount(frm)       { CGM.syncGrandTotalsAfterERPNext(frm); },
+    items_remove(frm) { CGM.syncGrandTotalsAfterERPNext(frm); },
+});
+
 
 frappe.ui.form.on("Import Cost Component", {
-    custom_import_cost_component_add(frm) {
-        calculate_customs_taxes(frm);
-    },
-
-    custom_import_cost_component_remove(frm) {
-        calculate_customs_taxes(frm);
-    },
-
-    exchange_rate(frm) {
-        calculate_customs_taxes(frm);
-    },
-
     amount(frm) {
-        calculate_customs_taxes(frm);
+        CGM.calculateCustomsTaxes(frm);
+    },
+    exchange_rate(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+    charge_item(frm) {
+        CGM.calculateCustomsTaxes(frm);
     },
 
     form_render(frm, cdt, cdn) {
-        enforce_company_currency_exchange_rate(frm, cdt, cdn);
-        toggle_import_cost_exchange_rate(frm, cdt, cdn);
+        CGM.enforceExchangeRate(frm, cdt, cdn);
+        CGM.toggleImportCostExchangeRate(frm, cdt, cdn);
+        CGM.seedImportCostExchangeRate(frm, cdt, cdn);
+        CGM.calculateCustomsTaxes(frm);
     },
 });
 
-// ============================================================
-// CUSTOMS TAX COMPONENT CHILD TABLE EVENTS
-// ============================================================
-
+// Customs Tax Component
 frappe.ui.form.on("Customs Tax Component", {
-    custom_customs_taxes_add(frm) {
-        calculate_customs_taxes(frm);
-    },
-
-    custom_customs_taxes_remove(frm) {
-        calculate_customs_taxes(frm);
-    },
-
     tax_type(frm, cdt, cdn) {
-        apply_customs_tax_defaults(frm, cdt, cdn);
+        CGM.applyCustomsTaxDefaults(frm, cdt, cdn);
     },
 
-    rate(frm) {
-        calculate_customs_taxes(frm);
+    rate(frm, cdt, cdn) {
+        CGM.calculateCustomsTaxes(frm);
     },
-
-    fixed_amount_kes(frm) {
-        calculate_customs_taxes(frm);
-    },
+    fixed_amount_kes(frm) { CGM.calculateCustomsTaxes(frm); },
 
     is_fixed_amount(frm, cdt, cdn) {
-        toggle_customs_tax_fields(frm, cdt, cdn);
-        calculate_customs_taxes(frm);
+        CGM.toggleCustomsTaxFields(frm, cdt, cdn);
+        frm.fields_dict.custom_customs_taxes?.grid?.refresh();
+        CGM.calculateCustomsTaxes(frm);
     },
 
     form_render(frm, cdt, cdn) {
-        toggle_customs_tax_fields(frm, cdt, cdn);
+        CGM.toggleCustomsTaxFields(frm, cdt, cdn);
+        CGM.calculateCustomsTaxes(frm);
     },
 });
