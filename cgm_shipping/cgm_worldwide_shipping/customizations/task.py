@@ -810,20 +810,18 @@ def copy_ucr_invoice_to_finance_task(finance_task) -> None:
 
 
 def ucr_payment_made_for_project(project: str) -> bool:
-	"""True when Finance pays UCR has a submitted Payment Entry."""
+	"""True when Finance pays UCR has recorded payment (Journal Entry or submitted PE)."""
 	if not project:
 		return False
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		get_ucr_finance_task,
+		task_has_recorded_payment,
 	)
 
 	finance_name = get_ucr_finance_task(project)
 	if not finance_name:
 		return False
-	pe_name = frappe.db.get_value("Task", finance_name, "custom_payment_entry")
-	if not pe_name:
-		return False
-	return int(frappe.db.get_value("Payment Entry", pe_name, "docstatus") or 0) == 1
+	return task_has_recorded_payment(frappe.get_doc("Task", finance_name))
 
 
 def copy_ucr_receipt_to_finance_task(application_task) -> str | None:
@@ -1883,6 +1881,30 @@ def create_journal_payment_from_task(
 			"Task", task.name, "custom_journal_entry", je.name, update_modified=False
 		)
 
+	seq = int(task.get("custom_sequence_no") or 0)
+	if is_ucr_finance_payment_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			notify_operations_upload_ucr_receipt,
+			sync_ucr_payment_to_idf_record,
+		)
+
+		task.reload()
+		sync_ucr_payment_to_idf_record(task)
+		notify_operations_upload_ucr_receipt(task)
+	elif is_entry_finance_payment_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			APPLICATION_FINANCE_PROFILES,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+			notify_declarant_upload_application_receipt,
+			sync_application_payment_hooks,
+		)
+
+		task.reload()
+		entry_profile = APPLICATION_FINANCE_PROFILES["Entry Application"]
+		sync_application_payment_hooks(task, entry_profile)
+		notify_declarant_upload_application_receipt(task, entry_profile)
+
 	return je.name
 
 
@@ -2358,6 +2380,15 @@ def journal_entry_on_submit(doc, method=None):
 		return
 	task = frappe.get_doc("Task", task_name)
 	seq = int(task.get("custom_sequence_no") or 0)
+	if is_ucr_finance_payment_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			notify_operations_upload_ucr_receipt,
+			sync_ucr_payment_to_idf_record,
+		)
+
+		sync_ucr_payment_to_idf_record(task)
+		notify_operations_upload_ucr_receipt(task)
+		return
 	if not is_entry_finance_payment_task(seq):
 		return
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
