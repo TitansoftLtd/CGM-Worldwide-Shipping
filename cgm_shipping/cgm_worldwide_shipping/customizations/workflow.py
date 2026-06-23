@@ -1306,7 +1306,7 @@ def submit_ucr_invoice_to_finance(task_name: str) -> dict:
 def notify_declarant_upload_ucr_receipt(task) -> dict:
 	if not is_ucr_payment_task_doc(task):
 		return {"notified": 0}
-	if not task.get("custom_payment_entry") or not task.project:
+	if not task_has_recorded_payment(task) or not task.project:
 		return {"notified": 0}
 
 	app_name = get_ucr_create_task(task.project)
@@ -1435,9 +1435,9 @@ def validate_finance_ucr_payment_task(task) -> None:
 	task_fields = frappe.get_meta("Task")
 	if task_fields.has_field("custom_purchase_invoice") and not task.get("custom_purchase_invoice"):
 		frappe.throw("Create and submit a <b>Purchase Invoice</b> from this task before completion.")
-	if task_fields.has_field("custom_payment_entry") and not task.get("custom_payment_entry"):
+	if not task_has_recorded_payment(task):
 		frappe.throw(
-			"Record payment via <b>Make Payment</b> and submit the <b>Payment Entry</b> before completion."
+			"Record payment via <b>Make Payment</b> (Journal Entry) before completion."
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
@@ -1614,17 +1614,7 @@ def get_ucr_declarant_workflow_status(task_name: str) -> dict:
 	fin_inv = get_ucr_invoice_line(finance_task) if finance_task else None
 	fin_rec = get_ucr_receipt_line(finance_task) if finance_task else None
 
-	payment_made = bool(
-		finance_task
-		and finance_task.get("custom_payment_entry")
-		and int(
-			frappe.db.get_value(
-				"Payment Entry", finance_task.custom_payment_entry, "docstatus"
-			)
-			or 0
-		)
-		== 1
-	)
+	payment_made = bool(finance_task and task_has_recorded_payment(finance_task))
 
 	return {
 		"finance_task": finance_name,
