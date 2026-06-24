@@ -205,10 +205,19 @@ def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool
 		return True
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		is_entry_application_task,
+		is_kpa_application_task,
 		is_permit_application_task,
 		is_shipping_line_application_task,
 		is_ucr_application_task,
 	)
+
+	if is_kpa_application_task(sequence_no):
+		# KPA receipt is on the Operations supervisor task; Declarant roles are also allowed
+		# (error message: "Only Declarant or Operations can attach KPA Receipt").
+		return (
+			user_has_operations_department_access(user)
+			or user_has_declarant_department_access(user)
+		)
 
 	if (
 		is_permit_application_task(sequence_no)
@@ -217,7 +226,27 @@ def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool
 		or is_shipping_line_application_task(sequence_no)
 	):
 		return user_has_declarant_department_access(user)
+
+	ops_stems = operations_department_stems()
+	if stem and ops_stems and stem in ops_stems:
+		return user_has_operations_department_access(user)
+
 	return False
+
+
+@frappe.request_cache
+def operations_department_stems() -> frozenset[str]:
+	"""Department stems for KPA / supervisor application steps (from sea task template)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		kpa_application_sequences,
+	)
+
+	stems: set[str] = set()
+	for seq in kpa_application_sequences():
+		stem = department_stem_for_sequence(seq)
+		if stem:
+			stems.add(stem)
+	return frozenset(stems)
 
 
 @frappe.request_cache
@@ -246,12 +275,32 @@ def configured_finance_roles() -> frozenset[str]:
 	return frozenset(row.role for row in rows if row.role)
 
 
+@frappe.request_cache
+def configured_operations_roles() -> frozenset[str]:
+	"""Operations roles from CGM Shipping Settings → Roles tab."""
+	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+		return frozenset()
+	meta = frappe.get_meta("CGM Shipping Settings")
+	if not meta.has_field("custom_operations_roles"):
+		return frozenset()
+	rows = frappe.get_single("CGM Shipping Settings").get("custom_operations_roles") or []
+	return frozenset(row.role for row in rows if row.role)
+
+
 def user_has_finance_department_access(user: str | None = None) -> bool:
 	"""True when the user has a sea-template Finance department role or a Settings finance role."""
 	roles = user_roles(user)
 	if roles & finance_payment_department_stems():
 		return True
 	return bool(roles & configured_finance_roles())
+
+
+def user_has_operations_department_access(user: str | None = None) -> bool:
+	"""True when the user has a KPA/supervisor template department role or a Settings operations role."""
+	roles = user_roles(user)
+	if roles & operations_department_stems():
+		return True
+	return bool(roles & configured_operations_roles())
 
 
 def application_department_stems_for_linked_pairs(
