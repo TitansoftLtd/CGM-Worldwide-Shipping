@@ -50,6 +50,16 @@ const MODE_SECTIONS = {
 	],
 };
 
+function lock_transport_assignment_fields(frm) {
+	const can_override =
+		frappe.user.has_role("System Manager") || frappe.user.has_role("Operations Manager");
+	["transporter", "truck_number", "driver_name", "driver_contact"].forEach((fieldname) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.set_df_property(fieldname, "read_only", can_override ? 0 : 1);
+		}
+	});
+}
+
 function apply_container_mode_layout(frm) {
 	const mode = frm.doc.container_mode || "Mombasa Port";
 	const show = new Set(MODE_SECTIONS[mode] || MODE_SECTIONS["Mombasa Port"]);
@@ -386,6 +396,7 @@ frappe.ui.form.on("Container Tracker", {
 
 	refresh(frm) {
 		apply_container_mode_layout(frm);
+		lock_transport_assignment_fields(frm);
 		render_container_tracker_alerts(frm);
 		apply_container_tracker_status_indicator(frm);
 		if (frm.doc.custom_bill_of_lading) {

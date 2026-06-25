@@ -1,0 +1,136 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("Allocation Detail") }}{% endblock %}
+
+{% block page_content %}
+<div class="cp-page" id="tp-allocation-page" data-allocation="{{ allocation_name|e }}">
+  <p><a class="cp-back" href="/transporter">&larr; {{ _("Back to allocations") }}</a></p>
+
+  {% if error_message %}
+  <div class="cp-banner-error">
+    <h4>{{ error_title or _("Something went wrong") }}</h4>
+    <p>{{ error_message }}</p>
+  </div>
+  {% elif allocation %}
+  <section class="cp-hero" style="margin-bottom:1.5rem;">
+    <h1>{{ allocation.bill_of_lading or _("Allocation") }}</h1>
+    <p class="cp-sub">{{ _("Project") }}: {{ allocation.project_ref }} · {{ _("Date") }}: {{ frappe.format(allocation.allocation_date, {"fieldtype": "Date"}) }}</p>
+  </section>
+
+  <div class="cp-banner-info" style="margin-bottom:1.25rem;">
+    <h4>{{ _("How it works") }}</h4>
+    <p>{{ _("For each container: save your truck and driver details as a draft, submit when ready, then upload the interchange receipt.") }}</p>
+  </div>
+
+  {% for row in allocation.containers %}
+  <div class="cp-card tp-container-row" style="margin-bottom:1rem; padding:1rem;" data-item="{{ row.name|e }}">
+    <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap; align-items:flex-start;">
+      <div>
+        <h4 style="margin:0;">{{ row.container_number }}</h4>
+        <span class="text-muted">{{ row.type_of_container or "" }}</span>
+      </div>
+      {% if row.assignment_status == 'Pending' and row.has_draft %}
+      <span class="indicator-pill blue tp-status-pill">{{ _("Draft saved") }}</span>
+      {% elif row.assignment_status == 'Interchange Uploaded' %}
+      <span class="indicator-pill green tp-status-pill">{{ row.assignment_status }}</span>
+      {% elif row.assignment_status == 'Truck Assigned' %}
+      <span class="indicator-pill green tp-status-pill">{{ row.assignment_status }}</span>
+      {% else %}
+      <span class="indicator-pill gray tp-status-pill">{{ _("Awaiting details") }}</span>
+      {% endif %}
+    </div>
+    <p class="text-muted" style="margin:.75rem 0 0;">
+      {{ _("Container status") }}: {{ row.tracker_status or "—" }}
+      {% if row.tracker_alert %} · {{ row.tracker_alert }}{% endif %}
+    </p>
+
+    {% if row.assignment_status == 'Pending' %}
+    <form class="tp-assign-form" style="margin-top:1rem;" data-has-draft="{{ 1 if row.has_draft else 0 }}" novalidate>
+      <div class="tp-assign-steps">
+        <span class="tp-step tp-step-active">1. {{ _("Enter details") }}</span>
+        <span class="tp-step {{ 'tp-step-active' if row.has_draft else '' }}">2. {{ _("Save draft") }}</span>
+        <span class="tp-step {{ 'tp-step-active' if row.has_draft else '' }}">3. {{ _("Submit assignment") }}</span>
+      </div>
+
+      <div class="tp-draft-banner cp-banner-info {{ '' if row.has_draft else 'd-none' }}" style="margin-top:1rem; margin-bottom:0;">
+        <h4>{{ _("Draft saved") }}</h4>
+        <p>{{ _("You can keep editing below or submit when you are ready to confirm.") }}</p>
+      </div>
+
+      <div class="row" style="margin-top:1rem;">
+        <div class="col-sm-4 form-group">
+          <label>{{ _("Truck Number") }} <span class="text-danger">*</span></label>
+          <input type="text" class="form-control tp-truck" value="{{ row.truck_number|e }}" placeholder="{{ _('e.g. KCA 123A') }}">
+        </div>
+        <div class="col-sm-4 form-group">
+          <label>{{ _("Driver Name") }} <span class="text-danger">*</span></label>
+          <input type="text" class="form-control tp-driver" value="{{ row.driver_name|e }}" placeholder="{{ _('Full name') }}">
+        </div>
+        <div class="col-sm-4 form-group">
+          <label>{{ _("Driver Contact") }}</label>
+          <input type="text" class="form-control tp-contact" value="{{ row.driver_contact|e }}" placeholder="{{ _('Phone number') }}">
+        </div>
+      </div>
+
+      <p class="text-muted tp-submit-hint {{ 'd-none' if row.has_draft else '' }}" style="margin:.75rem 0 0; font-size:.88rem;">
+        {{ _("Click Save to store your details. The Submit button appears after your first save.") }}
+      </p>
+
+      <div class="tp-form-actions" style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:1rem;">
+        <button type="button" class="btn btn-default btn-sm tp-save-draft">
+          <span class="tp-btn-label">{{ _("Save") }}</span>
+        </button>
+        <button type="button" class="btn btn-primary btn-sm tp-submit-assignment {{ '' if row.has_draft else 'd-none' }}">
+          <span class="tp-btn-label">{{ _("Submit Assignment") }}</span>
+        </button>
+      </div>
+    </form>
+    {% elif row.assignment_status == 'Truck Assigned' %}
+    <div style="margin-top:1rem;">
+      <div class="cp-banner-info" style="margin-bottom:1rem;">
+        <h4>{{ _("Assignment confirmed") }}</h4>
+        <p>{{ _("Upload the interchange when the container has been returned.") }}</p>
+      </div>
+      <p><b>{{ _("Truck") }}:</b> {{ row.truck_number }} · <b>{{ _("Driver") }}:</b> {{ row.driver_name }} ({{ row.driver_contact or "—" }})</p>
+      <div class="tp-interchange-upload" style="margin-top:.75rem;">
+        <label class="btn btn-primary btn-sm">
+          {{ _("Upload Interchange") }}
+          <input type="file" class="tp-interchange-file" hidden accept=".pdf,.jpg,.jpeg,.png">
+        </label>
+      </div>
+    </div>
+    {% else %}
+    <div style="margin-top:1rem;">
+      <p><b>{{ _("Truck") }}:</b> {{ row.truck_number }} · <b>{{ _("Driver") }}:</b> {{ row.driver_name }}</p>
+      {% if row.interchange_document %}
+      <p><a href="{{ row.interchange_document }}" target="_blank" rel="noopener">{{ _("View interchange receipt") }}</a>
+        {% if row.interchange_date %} · {{ frappe.format(row.interchange_date, {"fieldtype": "Date"}) }}{% endif %}
+      </p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <script>
+  (function () {
+    function bootAllocationPage() {
+      if (!document.getElementById("tp-allocation-page")) {
+        return;
+      }
+      if (typeof frappe === "undefined" || typeof frappe.call !== "function") {
+        setTimeout(bootAllocationPage, 50);
+        return;
+      }
+      if (window.initTransporterAllocationPage) {
+        window.initTransporterAllocationPage();
+        return;
+      }
+      setTimeout(bootAllocationPage, 50);
+    }
+    bootAllocationPage();
+  })();
+  </script>
+  {% endif %}
+</div>
+{% endblock %}
