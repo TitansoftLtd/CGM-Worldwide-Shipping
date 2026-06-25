@@ -95,10 +95,15 @@ doctype_js = {
 # Customers (Website Users) land on the branded shipment portal.
 role_home_page = {
     "Customer": "portal",
+    "Transporter": "transporter",
 }
 
+get_website_user_home_page = (
+    "cgm_shipping.cgm_worldwide_shipping.customizations.website.get_cgm_website_user_home_page"
+)
+
 on_session_creation = [
-    "cgm_shipping.cgm_worldwide_shipping.customizations.website.route_customer_to_portal",
+    "cgm_shipping.cgm_worldwide_shipping.customizations.website.route_cgm_portal_after_login",
 ]
 
 # Generators
@@ -198,6 +203,7 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_ata_fields",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.protect_finance_cost_ledger_from_manual_edit",
 		],
 	},
 	"Purchase Invoice": {
@@ -208,11 +214,23 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
 	},
 	"Journal Entry": {
-		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
-		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_cancel",
+		"on_submit": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+		],
+		"on_cancel": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_cancel",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+		],
+		"on_update_after_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
+		),
 	},
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.on_customer_update",
+	},
+	"Supplier": {
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_supplier.sync_transporter_supplier_portal_users",
 	},
 	"Opportunity": {
 		"before_save": [
@@ -315,6 +333,9 @@ override_doctype_dashboards = {
 # Request Events
 # ----------------
 # before_request = ["cgm_shipping.utils.before_request"]
+before_request = [
+	"cgm_shipping.cgm_worldwide_shipping.customizations.website.redirect_transporter_portal_users_from_desk",
+]
 # after_request = ["cgm_shipping.utils.after_request"]
 
 # Job Events

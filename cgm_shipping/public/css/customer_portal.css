@@ -256,3 +256,31 @@ a.cp-kpi:hover, a.cp-kpi:focus-visible {
 .cp-alert .icon { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; background: var(--cp-amber); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 .cp-alert h4 { margin: 0; font-size: .95rem; font-weight: 700; color: #92400e; }
 .cp-alert p { margin: .1rem 0 0; font-size: .84rem; color: #92400e; }
+
+/* ───── Transporter portal assignment form ───── */
+.tp-assign-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-bottom: .25rem;
+}
+.tp-step {
+  display: inline-flex;
+  align-items: center;
+  padding: .3rem .7rem;
+  border-radius: 999px;
+  background: var(--cp-surface-alt);
+  border: 1px solid var(--cp-border);
+  color: var(--cp-text-muted);
+  font-size: .78rem;
+  font-weight: 600;
+}
+.tp-step-active {
+  background: var(--cp-brand-soft);
+  border-color: #7dd3fc;
+  color: var(--cp-brand-dark);
+}
+.tp-form-actions .btn[disabled] {
+  opacity: .7;
+  cursor: wait;
+}
