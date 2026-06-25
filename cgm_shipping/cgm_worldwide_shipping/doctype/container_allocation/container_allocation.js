@@ -77,10 +77,10 @@ frappe.ui.form.on("Container Allocation", {
 			return;
 		}
 
-		const has_rows = (frm.doc.containers || []).length > 0;
+		const has_populated_rows = (frm.doc.containers || []).some((row) => row.container_tracker);
 		const populate = (replace) => populate_containers_from_project(frm, replace);
 
-		if (has_rows) {
+		if (has_populated_rows) {
 			frappe.confirm(
 				__("Replace container rows with unallocated Container Trackers from this project?"),
 				() => populate(true)

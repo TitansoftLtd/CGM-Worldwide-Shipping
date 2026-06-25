@@ -101,10 +101,34 @@ def _trackers_missing_field(project: str, field: str) -> list[str]:
 		fields=["name", "container_number", field],
 	)
 	return [
-		t.container_number
+		t.container_number or t.name
 		for t in trackers
 		if not t.get(field)
 	]
+
+
+def _trackers_missing_interchange(project: str) -> list[str]:
+	"""Containers on the project still missing interchange date or receipt."""
+	trackers = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project},
+		fields=["name", "container_number", "interchange_date", "interchange_document"],
+	)
+	return [
+		t.container_number or t.name
+		for t in trackers
+		if not t.get("interchange_date") or not (t.get("interchange_document") or "").strip()
+	]
+
+
+def _containers_missing_step(project: str, seq: int) -> list[str]:
+	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
+	if seq == interchange_seq:
+		return _trackers_missing_interchange(project)
+	check_field = _completion_field_by_seq().get(seq)
+	if not check_field:
+		return []
+	return _trackers_missing_field(project, check_field)
 
 
 TRACKER_SEED_FIELDS = [
@@ -392,8 +416,7 @@ def _auto_complete_container_task(task_name: str, project: str) -> bool:
 
 def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
 	"""Complete an open container step task when every tracker has the step field filled."""
-	check_field = _completion_field_by_seq().get(seq)
-	if not check_field or not project:
+	if not project:
 		return False
 
 	if not frappe.db.exists(
@@ -402,7 +425,7 @@ def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
 	):
 		return False
 
-	if _trackers_missing_field(project, check_field):
+	if _containers_missing_step(project, seq):
 		return False
 
 	task_name = frappe.db.get_value(
@@ -434,6 +457,17 @@ def check_all_container_tasks_for_project(project: str) -> None:
 		frappe.flags.cgm_checking_container_task_completion = False
 
 
+def after_tracker_interchange_updated(tracker) -> bool:
+	"""Push interchange to open task rows and complete Receive interchange when all containers are done."""
+	if not tracker or not tracker.project:
+		return False
+	sync_tracker_fields_to_open_task_rows(tracker)
+	return try_auto_complete_container_task_for_seq(
+		tracker.project,
+		get_container_task_sequence("custom_interchange_task_seq"),
+	)
+
+
 def check_task_container_completion(doc) -> None:
 	"""Auto-complete transport tasks when every project container satisfies the step."""
 	if frappe.flags.get("cgm_skip_task_project_sync"):
@@ -462,8 +496,11 @@ def validate_container_step_task_completion(doc) -> None:
 		return
 
 	seq = _sea_task_seq(doc)
-	check_field = _completion_field_by_seq().get(seq)
-	if not check_field or not doc.get("project"):
+	if not doc.get("project"):
+		return
+	if not _completion_field_by_seq().get(seq) and seq != get_container_task_sequence(
+		"custom_interchange_task_seq"
+	):
 		return
 
 	if not frappe.db.exists("Container Tracker", {"project": doc.project}):
@@ -471,9 +508,13 @@ def validate_container_step_task_completion(doc) -> None:
 			_("Add container trackers on this project before completing transport step tasks.")
 		)
 
-	missing = _trackers_missing_field(doc.project, check_field)
+	missing = _containers_missing_step(doc.project, seq)
 	if missing:
-		label = frappe.unscrub(check_field.replace("_", " "))
+		if seq == get_container_task_sequence("custom_interchange_task_seq"):
+			label = _("interchange date and receipt")
+		else:
+			check_field = _completion_field_by_seq().get(seq) or ""
+			label = frappe.unscrub(check_field.replace("_", " "))
 		frappe.throw(
 			_(
 				"Every container must have <b>{0}</b> before completing this task. "

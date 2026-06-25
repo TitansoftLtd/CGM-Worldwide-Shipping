@@ -176,7 +176,6 @@
    "label": "ATA / Berthing Date"
   },
   {
-   "collapsible": 1,
    "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
    "fieldname": "section_mombasa",
    "fieldtype": "Section Break",
@@ -232,7 +231,6 @@
    "read_only": 1
   },
   {
-   "collapsible": 1,
    "depends_on": "eval:['ICD Nairobi'].includes(doc.container_mode)",
    "fieldname": "section_icd",
    "fieldtype": "Section Break",
@@ -302,7 +300,6 @@
    "label": "Warehouse Loading Date"
   },
   {
-   "collapsible": 1,
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "section_transit",
    "fieldtype": "Section Break",
@@ -504,7 +501,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-21 20:03:40.849494",
+ "modified": "2026-06-25 06:20:30.892776",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

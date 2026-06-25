@@ -349,25 +349,103 @@ def sync_interchange_from_item(
 	interchange_document: str,
 	interchange_date: str | None = None,
 ) -> dict:
+	"""Confirm interchange: sync to Container Tracker and mark row complete."""
 	allocation = frappe.get_doc("Container Allocation", allocation_name, ignore_permissions=True)
 	item = _get_allocation_item(allocation, item_name)
+
+	if item.assignment_status not in (ASSIGNMENT_TRUCK, ASSIGNMENT_INTERCHANGE):
+		frappe.throw(_("Interchange can only be submitted after truck assignment is confirmed."))
 
 	if not interchange_document:
 		frappe.throw(_("Interchange document is required."))
 
+	interchange_date = getdate(interchange_date or today())
+
 	_update_allocation_item_row(
 		item_name,
-		{"assignment_status": ASSIGNMENT_INTERCHANGE},
+		{
+			"assignment_status": ASSIGNMENT_INTERCHANGE,
+			"interchange_document": interchange_document,
+			"interchange_date": interchange_date,
+		},
 	)
 
 	tracker = frappe.get_doc("Container Tracker", item.container_tracker, ignore_permissions=True)
 	tracker.interchange_document = interchange_document
-	tracker.interchange_date = getdate(interchange_date or today())
+	tracker.interchange_date = interchange_date
 	tracker.save(ignore_permissions=True)
 
-	_maybe_complete_allocation(allocation_name)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+		after_tracker_interchange_updated,
+	)
 
-	return {"ok": True, "assignment_status": item.assignment_status}
+	interchange_task_completed = after_tracker_interchange_updated(tracker)
+	allocation_completed = _maybe_complete_allocation(allocation_name)
+
+	return {
+		"ok": True,
+		"assignment_status": ASSIGNMENT_INTERCHANGE,
+		"interchange_task_completed": interchange_task_completed,
+		"allocation_completed": allocation_completed,
+		"message": _("Interchange submitted to CGM."),
+	}
+
+
+def save_interchange_draft(
+	allocation_name: str,
+	item_name: str,
+	interchange_document: str,
+	interchange_date: str | None = None,
+) -> dict:
+	"""Save interchange on the allocation row only — status stays Truck Assigned."""
+	item = _get_allocation_item_row(allocation_name, item_name)
+
+	if item.assignment_status != ASSIGNMENT_TRUCK:
+		frappe.throw(_("Interchange can only be uploaded after truck assignment is confirmed."))
+
+	if not (interchange_document or "").strip():
+		frappe.throw(_("Interchange document is required."))
+
+	values: dict[str, Any] = {"interchange_document": interchange_document.strip()}
+	if interchange_date:
+		values["interchange_date"] = getdate(interchange_date)
+	else:
+		values["interchange_date"] = today()
+
+	_update_allocation_item_row(item_name, values)
+
+	return {
+		"ok": True,
+		"assignment_status": ASSIGNMENT_TRUCK,
+		"message": _("Interchange saved. Submit when ready to send to CGM."),
+	}
+
+
+def submit_interchange_from_item(
+	allocation_name: str,
+	item_name: str,
+) -> dict:
+	"""Submit saved interchange draft to CGM (Container Tracker)."""
+	item = _get_allocation_item_row(allocation_name, item_name)
+
+	if item.assignment_status != ASSIGNMENT_TRUCK:
+		frappe.throw(_("Interchange has already been submitted or truck assignment is not confirmed."))
+
+	draft = frappe.db.get_value(
+		"Container Allocation Item",
+		item_name,
+		["interchange_document", "interchange_date"],
+		as_dict=True,
+	)
+	if not draft or not (draft.interchange_document or "").strip():
+		frappe.throw(_("Upload an interchange receipt before submitting."))
+
+	return sync_interchange_from_item(
+		allocation_name,
+		item_name,
+		draft.interchange_document,
+		draft.interchange_date,
+	)
 
 
 def _get_allocation_item_row(allocation_name: str, item_name: str):
@@ -388,9 +466,11 @@ def _get_allocation_item(allocation, item_name: str):
 	frappe.throw(_("Container allocation row not found."), frappe.DoesNotExistError)
 
 
-def _maybe_complete_allocation(allocation_name: str) -> None:
+def _maybe_complete_allocation(allocation_name: str) -> bool:
 	allocation = frappe.get_doc("Container Allocation", allocation_name)
 	if not allocation.containers:
-		return
+		return False
 	if all(row.assignment_status == ASSIGNMENT_INTERCHANGE for row in allocation.containers):
 		allocation.db_set("status", ALLOCATION_STATUS_COMPLETED, update_modified=True)
+		return True
+	return False

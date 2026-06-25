@@ -196,12 +196,24 @@ def get_allocation_detail(allocation_name: str) -> dict:
 			tracker_data = compute_container_metrics(tracker)
 
 		interchange_url = ""
-		if tracker_data.get("interchange_document"):
+		interchange_date_val = None
+		row_interchange = (getattr(row, "interchange_document", None) or "").strip()
+		if row_interchange:
+			interchange_url = row_interchange
+			interchange_date_val = row.interchange_date
+		elif tracker_data.get("interchange_document"):
 			interchange_url = tracker_data["interchange_document"]
+			interchange_date_val = tracker_data.get("interchange_date")
 
 		truck_number = (row.truck_number or "").strip()
 		driver_name = (row.driver_name or "").strip()
 		driver_contact = (row.driver_contact or "").strip()
+		if not truck_number and tracker_data.get("truck_number"):
+			truck_number = (tracker_data.get("truck_number") or "").strip()
+		if not driver_name and tracker_data.get("driver_name"):
+			driver_name = (tracker_data.get("driver_name") or "").strip()
+		if not driver_contact and tracker_data.get("driver_contact"):
+			driver_contact = (tracker_data.get("driver_contact") or "").strip()
 		assignment_status = row.assignment_status or ASSIGNMENT_PENDING
 
 		containers.append(
@@ -216,10 +228,11 @@ def get_allocation_detail(allocation_name: str) -> dict:
 				"assignment_status": assignment_status,
 				"has_draft": assignment_status == ASSIGNMENT_PENDING
 				and bool(truck_number or driver_name or driver_contact),
+				"has_interchange_draft": assignment_status == ASSIGNMENT_TRUCK and bool(row_interchange),
 				"tracker_status": tracker_data.get("status") or "",
 				"tracker_alert": tracker_data.get("alert_status") or "",
 				"interchange_document": interchange_url,
-				"interchange_date": tracker_data.get("interchange_date"),
+				"interchange_date": interchange_date_val,
 			}
 		)
 
@@ -275,15 +288,57 @@ def submit_truck_assignment_portal(
 
 
 @frappe.whitelist()
+def save_interchange_draft_portal(
+	allocation_name: str,
+	item_name: str,
+	interchange_document: str,
+	interchange_date: str | None = None,
+) -> dict:
+	"""Save interchange draft on the allocation row (not sent to CGM until submit)."""
+	transporter = require_transporter_portal_access()
+	_assert_allocation_for_transporter(allocation_name, transporter)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
+		save_interchange_draft,
+	)
+
+	return save_interchange_draft(
+		allocation_name,
+		item_name,
+		interchange_document,
+		interchange_date,
+	)
+
+
+@frappe.whitelist()
+def submit_interchange_portal(
+	allocation_name: str,
+	item_name: str,
+) -> dict:
+	"""Submit saved interchange to CGM (Container Tracker)."""
+	transporter = require_transporter_portal_access()
+	_assert_allocation_for_transporter(allocation_name, transporter)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
+		submit_interchange_from_item,
+	)
+
+	return submit_interchange_from_item(allocation_name, item_name)
+
+
+@frappe.whitelist()
 def upload_interchange(
 	allocation_name: str,
 	item_name: str,
 	interchange_document: str,
 	interchange_date: str | None = None,
 ) -> dict:
+	"""Backward-compatible alias — saves interchange as draft."""
 	transporter = require_transporter_portal_access()
 	_assert_allocation_for_transporter(allocation_name, transporter)
-	return sync_interchange_from_item(
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
+		save_interchange_draft,
+	)
+
+	return save_interchange_draft(
 		allocation_name,
 		item_name,
 		interchange_document,

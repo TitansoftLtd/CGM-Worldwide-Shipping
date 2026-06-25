@@ -12,7 +12,10 @@
   "truck_number",
   "driver_name",
   "driver_contact",
-  "assignment_status"
+  "assignment_status",
+  "column_break_interchange",
+  "interchange_document",
+  "interchange_date"
  ],
  "fields": [
   {
@@ -72,6 +75,22 @@
    "label": "Assignment Status",
    "options": "Pending\nTruck Assigned\nInterchange Uploaded",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_interchange",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "interchange_document",
+   "fieldtype": "Attach",
+   "label": "Interchange Document"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "interchange_date",
+   "fieldtype": "Date",
+   "label": "Interchange Date"
   }
  ],
  "index_web_pages_for_search": 1,

@@ -36,7 +36,6 @@ web_include_css = [
 ]
 web_include_js = [
     "/assets/cgm_shipping/js/portal_localize_time.js",
-    "/assets/cgm_shipping/js/transporter_portal.js",
 ]
 
 # include custom scss in every website theme (without file extension ".scss")
