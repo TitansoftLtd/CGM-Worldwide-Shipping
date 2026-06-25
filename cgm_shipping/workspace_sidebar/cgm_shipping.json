@@ -20,9 +20,11 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "list",
    "indent": 0,
    "keep_closed": 0,
    "label": "Shipments",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
   },
@@ -101,9 +103,11 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "list",
    "indent": 0,
    "keep_closed": 0,
    "label": "Clearance & Customs",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
   },
@@ -170,9 +174,11 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "list",
    "indent": 0,
    "keep_closed": 0,
    "label": "Transport & Containers",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
   },
@@ -237,11 +243,25 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "expand-alt",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
+   "icon": "list",
    "indent": 0,
    "keep_closed": 1,
    "label": "Masters & Setup",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
   },
@@ -328,9 +348,97 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-06-21 22:02:07.292095",
+ "modified": "2026-06-25 03:06:12.522373",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",
