@@ -49,6 +49,51 @@ def _create_cf(dt: str, values: dict) -> None:
 	doc.insert(ignore_permissions=True)
 
 
+def _remove_cf(dt: str, fieldname: str) -> None:
+	name = f"{dt}-{fieldname}"
+	if frappe.db.exists("Custom Field", name):
+		frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
+
+
+NON_LAYOUT_CF_KEYS = frozenset(
+	{
+		"fieldname",
+		"insert_after",
+		"label",
+		"fieldtype",
+		"options",
+		"collapsible",
+		"bold",
+		"columns",
+		"width",
+	}
+)
+
+
+def _ensure_cf(dt: str, values: dict) -> None:
+	"""Create a custom field if missing; never overwrite layout on existing fields.
+
+	Desk exports (custom/*.json) and Customize Form are the source of truth for
+	field order, labels, and insert_after. Migrate only creates missing fields and
+	applies non-layout behaviour (read_only, cannot_add_rows, etc.).
+	"""
+	name = f"{dt}-{values['fieldname']}"
+	if not frappe.db.exists("Custom Field", name):
+		_create_cf(dt, values)
+		return
+
+	doc = frappe.get_doc("Custom Field", name)
+	changed = False
+	for key, value in values.items():
+		if key in NON_LAYOUT_CF_KEYS:
+			continue
+		if doc.get(key) != value:
+			doc.set(key, value)
+			changed = True
+	if changed:
+		doc.save(ignore_permissions=True)
+
+
 def _upsert_cf(dt: str, values: dict) -> None:
 	"""Create or update a Custom Field (keeps Supplier child tables in sync on migrate)."""
 	name = f"{dt}-{values['fieldname']}"
@@ -1259,10 +1304,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	return payload
 
 
-FINANCE_COST_PROJECT_FIELDS = (
-	"custom_section_finance_cost_summary",
-	"custom_finance_cost_total",
-	"custom_column_break_finance_cost_summary",
+OBSOLETE_FINANCE_COST_PROJECT_FIELDS = (
 	"custom_finance_cost_ucr",
 	"custom_finance_cost_kebs",
 	"custom_finance_cost_dvs",
@@ -1270,34 +1312,36 @@ FINANCE_COST_PROJECT_FIELDS = (
 	"custom_finance_cost_port",
 	"custom_finance_cost_transport",
 	"custom_finance_cost_other",
-	"custom_finance_cost_ledger",
 )
 
 
 def ensure_project_finance_cost_fields() -> None:
-	"""Finance Cost Summary + ledger child table on Project costing tab."""
-	_upsert_cf(
+	"""Shipment cost fields on Project — create if missing; layout left to desk export."""
+	for fieldname in OBSOLETE_FINANCE_COST_PROJECT_FIELDS:
+		_remove_cf("Project", fieldname)
+
+	_ensure_cf(
 		"Project",
 		{
 			"fieldname": "custom_section_finance_cost_summary",
-			"label": "Finance Cost Summary",
+			"label": "Shipment Costs",
 			"fieldtype": "Section Break",
 			"insert_after": "total_purchase_cost",
 			"collapsible": 0,
 		},
 	)
-	_upsert_cf(
+	_ensure_cf(
 		"Project",
 		{
 			"fieldname": "custom_finance_cost_total",
-			"label": "Total Finance Cost",
+			"label": "Total Shipment Cost",
 			"fieldtype": "Currency",
 			"insert_after": "custom_section_finance_cost_summary",
 			"read_only": 1,
 			"bold": 1,
 		},
 	)
-	_upsert_cf(
+	_ensure_cf(
 		"Project",
 		{
 			"fieldname": "custom_column_break_finance_cost_summary",
@@ -1305,67 +1349,38 @@ def ensure_project_finance_cost_fields() -> None:
 			"insert_after": "custom_finance_cost_total",
 		},
 	)
-	category_fields = (
-		("custom_finance_cost_ucr", "UCR Charges"),
-		("custom_finance_cost_kebs", "KEBS Charges"),
-		("custom_finance_cost_dvs", "DVS Charges"),
-		("custom_finance_cost_idf", "IDF Charges"),
-		("custom_finance_cost_port", "Port Charges"),
-		("custom_finance_cost_transport", "Transport Charges"),
-		("custom_finance_cost_other", "Other Charges"),
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_finance_cost_payment_count",
+			"label": "Number of Payments",
+			"fieldtype": "Int",
+			"insert_after": "custom_column_break_finance_cost_summary",
+			"read_only": 1,
+		},
 	)
-	prev = "custom_column_break_finance_cost_summary"
-	for fieldname, label in category_fields:
-		_upsert_cf(
-			"Project",
-			{
-				"fieldname": fieldname,
-				"label": label,
-				"fieldtype": "Currency",
-				"insert_after": prev,
-				"read_only": 1,
-			},
-		)
-		prev = fieldname
-	_upsert_cf(
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_finance_cost_last_payment_date",
+			"label": "Last Payment Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_finance_cost_payment_count",
+			"read_only": 1,
+		},
+	)
+	_ensure_cf(
 		"Project",
 		{
 			"fieldname": "custom_finance_cost_ledger",
-			"label": "Finance Cost Ledger",
+			"label": "Shipment Cost Ledger",
 			"fieldtype": "Table",
 			"options": "Finance Cost Ledger",
-			"insert_after": "custom_finance_cost_other",
+			"insert_after": "custom_finance_cost_last_payment_date",
 			"read_only": 1,
+			"in_place_edit": 1,
 			"cannot_add_rows": 1,
 			"cannot_delete_rows": 1,
 		},
 	)
-	ensure_project_finance_cost_field_order()
 	frappe.clear_cache(doctype="Project")
-
-
-def ensure_project_finance_cost_field_order() -> None:
-	ps_name = "Project-main-field_order"
-	if not frappe.db.exists("Property Setter", ps_name):
-		return
-	raw = frappe.db.get_value("Property Setter", ps_name, "value") or "[]"
-	try:
-		order = json.loads(raw)
-	except json.JSONDecodeError:
-		return
-	if not isinstance(order, list):
-		return
-
-	order = [field for field in order if field not in FINANCE_COST_PROJECT_FIELDS]
-	anchor = "total_purchase_cost"
-	if anchor not in order:
-		anchor = "total_costing_amount"
-	if anchor not in order:
-		return
-	idx = order.index(anchor) + 1
-	for offset, fieldname in enumerate(FINANCE_COST_PROJECT_FIELDS):
-		order.insert(idx + offset, fieldname)
-
-	frappe.db.set_value(
-		"Property Setter", ps_name, "value", json.dumps(order), update_modified=False
-	)

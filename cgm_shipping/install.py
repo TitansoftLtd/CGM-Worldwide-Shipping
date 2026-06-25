@@ -29,16 +29,12 @@ def ensure_transporter_role() -> None:
 
 
 def ensure_finance_cost_ledger_schema() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_seed_data import (
-		seed_finance_cost_category_map,
-	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		ensure_project_finance_cost_fields,
 	)
 
 	if not frappe.db.exists("DocType", "Finance Cost Ledger"):
 		return
-	seed_finance_cost_category_map()
 	if frappe.db.exists("DocType", "Project"):
 		ensure_project_finance_cost_fields()
 	frappe.db.commit()
