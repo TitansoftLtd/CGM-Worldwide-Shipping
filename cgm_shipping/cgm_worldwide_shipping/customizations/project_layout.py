@@ -1312,11 +1312,15 @@ OBSOLETE_FINANCE_COST_PROJECT_FIELDS = (
 	"custom_finance_cost_port",
 	"custom_finance_cost_transport",
 	"custom_finance_cost_other",
+	"custom_finance_cost_ledger",
+	"custom_finance_cost_payment_count",
+	"custom_finance_cost_last_payment_date",
+	"custom_column_break_finance_cost_summary",
 )
 
 
 def ensure_project_finance_cost_fields() -> None:
-	"""Shipment cost fields on Project — create if missing; layout left to desk export."""
+	"""Single billed-total field on Project — create if missing; layout from desk export."""
 	for fieldname in OBSOLETE_FINANCE_COST_PROJECT_FIELDS:
 		_remove_cf("Project", fieldname)
 
@@ -1324,7 +1328,7 @@ def ensure_project_finance_cost_fields() -> None:
 		"Project",
 		{
 			"fieldname": "custom_section_finance_cost_summary",
-			"label": "Shipment Costs",
+			"label": "Journal Entry Billing",
 			"fieldtype": "Section Break",
 			"insert_after": "total_purchase_cost",
 			"collapsible": 0,
@@ -1334,53 +1338,11 @@ def ensure_project_finance_cost_fields() -> None:
 		"Project",
 		{
 			"fieldname": "custom_finance_cost_total",
-			"label": "Total Shipment Cost",
+			"label": "Total Billed Amount (via Journal Entry)",
 			"fieldtype": "Currency",
 			"insert_after": "custom_section_finance_cost_summary",
 			"read_only": 1,
 			"bold": 1,
-		},
-	)
-	_ensure_cf(
-		"Project",
-		{
-			"fieldname": "custom_column_break_finance_cost_summary",
-			"fieldtype": "Column Break",
-			"insert_after": "custom_finance_cost_total",
-		},
-	)
-	_ensure_cf(
-		"Project",
-		{
-			"fieldname": "custom_finance_cost_payment_count",
-			"label": "Number of Payments",
-			"fieldtype": "Int",
-			"insert_after": "custom_column_break_finance_cost_summary",
-			"read_only": 1,
-		},
-	)
-	_ensure_cf(
-		"Project",
-		{
-			"fieldname": "custom_finance_cost_last_payment_date",
-			"label": "Last Payment Date",
-			"fieldtype": "Date",
-			"insert_after": "custom_finance_cost_payment_count",
-			"read_only": 1,
-		},
-	)
-	_ensure_cf(
-		"Project",
-		{
-			"fieldname": "custom_finance_cost_ledger",
-			"label": "Shipment Cost Ledger",
-			"fieldtype": "Table",
-			"options": "Finance Cost Ledger",
-			"insert_after": "custom_finance_cost_last_payment_date",
-			"read_only": 1,
-			"in_place_edit": 1,
-			"cannot_add_rows": 1,
-			"cannot_delete_rows": 1,
 		},
 	)
 	frappe.clear_cache(doctype="Project")

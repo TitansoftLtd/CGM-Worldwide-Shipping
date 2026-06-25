@@ -135,6 +135,19 @@ def on_project_onload(doc, _method=None):
 		prepare_shipment_documents_for_form(doc, SHIPMENT_DOCUMENTS_FIELD)
 
 
+def protect_finance_cost_ledger_from_manual_edit(doc, _method=None):
+	"""Billed total from journal entries is system-maintained."""
+	if frappe.flags.get("cgm_syncing_finance_cost_ledger"):
+		return
+	if not doc.meta.has_field("custom_finance_cost_total"):
+		return
+	prev = doc.get_doc_before_save()
+	if not prev:
+		return
+	if doc.get("custom_finance_cost_total") != prev.get("custom_finance_cost_total"):
+		doc.set("custom_finance_cost_total", prev.get("custom_finance_cost_total"))
+
+
 def sync_consignee_from_customer(doc, _method=None):
 	"""Keep consignee aligned with the linked customer."""
 	if not doc.get("customer") or not doc.meta.has_field("custom_consignee"):

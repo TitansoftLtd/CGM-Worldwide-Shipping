@@ -620,66 +620,41 @@ function render_container_tracking_table(frm, dashboard) {
 	});
 }
 
-function configure_finance_cost_ledger_grid(frm) {
-	const grid = frm.fields_dict.custom_finance_cost_ledger?.grid;
-	if (!grid) {
+function manual_refresh_finance_costs(frm) {
+	if (!frm.fields_dict.custom_finance_cost_total || frm.is_new()) {
 		return;
 	}
-	grid.cannot_add_rows = true;
-	grid.wrapper.find(".grid-add-row").hide();
-	grid.wrapper.find(".grid-remove-rows").hide();
-	for (const fieldname of [
-		"posting_date",
-		"cost_type",
-		"task",
-		"journal_entry",
-		"account",
-		"amount",
-		"status",
-	]) {
-		grid.update_docfield_property(fieldname, "read_only", 1);
-	}
-}
-
-function refresh_finance_cost_summary(frm) {
-	if (
-		!frm.fields_dict.custom_finance_cost_ledger ||
-		frm.is_new() ||
-		frm._cgm_finance_cost_refreshing ||
-		frm._cgm_finance_cost_synced
-	) {
-		return;
-	}
-	frm._cgm_finance_cost_refreshing = true;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.refresh_finance_cost_for_project",
 		args: { project: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Refreshing billed amount..."),
 		callback() {
-			frm._cgm_finance_cost_refreshing = false;
-			frm._cgm_finance_cost_synced = true;
+			frappe.show_alert({
+				message: __("Billed amount refreshed from journal entries."),
+				indicator: "green",
+			});
 			frm.reload_doc();
-		},
-		error() {
-			frm._cgm_finance_cost_refreshing = false;
 		},
 	});
 }
 
 function open_project_finance_journal_entries(frm) {
-	const names = [
-		...new Set(
-			(frm.doc.custom_finance_cost_ledger || [])
-				.filter((row) => row.journal_entry && row.status === "Submitted")
-				.map((row) => row.journal_entry)
-		),
-	];
-	if (!names.length) {
-		frappe.msgprint(__("No submitted finance journal entries are linked to this shipment yet."));
-		return;
-	}
-	frappe.route_options = { name: ["in", names] };
-	frappe.set_route("List", "Journal Entry");
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.get_project_finance_journal_entry_names",
+		args: { project: frm.doc.name },
+		callback(r) {
+			const names = r.message || [];
+			if (!names.length) {
+				frappe.msgprint(__("No submitted journal entries are linked to this project yet."));
+				return;
+			}
+			frappe.route_options = { name: ["in", names], docstatus: 1 };
+			frappe.set_route("List", "Journal Entry");
+		},
+	});
 }
 
 frappe.realtime.on("cgm_project_tracking_refresh", (data) => {
@@ -721,8 +696,6 @@ frappe.ui.form.on("Project", {
 		render_shipment_progress_chart(frm);
 		configure_project_document_grid(frm);
 		configure_project_container_grid(frm);
-		configure_finance_cost_ledger_grid(frm);
-		refresh_finance_cost_summary(frm);
 
 		setup_port_arrival_confirmation_button(frm);
 		setup_create_container_allocation_button(frm);
@@ -743,7 +716,10 @@ frappe.ui.form.on("Project", {
 			}, __("View"));
 			frm.add_custom_button(__("View Journal Entries"), () => {
 				open_project_finance_journal_entries(frm);
-			}, __("View"));
+			}, __("Shipment"));
+			frm.add_custom_button(__("Refresh Billed Amount"), () => {
+				manual_refresh_finance_costs(frm);
+			}, __("Shipment"));
 			frm.add_custom_button(__("Daily Status"), () => {
 				frappe.new_doc("Daily Status Update");
 			}, __("View"));

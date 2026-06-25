@@ -33,8 +33,6 @@ def ensure_finance_cost_ledger_schema() -> None:
 		ensure_project_finance_cost_fields,
 	)
 
-	if not frappe.db.exists("DocType", "Finance Cost Ledger"):
-		return
 	if frappe.db.exists("DocType", "Project"):
 		ensure_project_finance_cost_fields()
 	frappe.db.commit()
