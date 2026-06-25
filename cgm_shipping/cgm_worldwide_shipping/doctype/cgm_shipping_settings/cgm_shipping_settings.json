@@ -31,15 +31,9 @@
   "custom_default_email_template",
   "custom_permit_finance_email_template",
   "custom_ucr_finance_email_template",
-  "roles_tab",
-  "section_roles",
-  "custom_finance_roles",
-  "custom_operations_roles",
-  "custom_declaration_roles",
-  "section_email_templates",
-  "custom_default_email_template",
-  "custom_permit_finance_email_template",
-  "custom_ucr_finance_email_template"
+  "tab_finance_cost_ledger",
+  "section_finance_cost_category_map",
+  "custom_finance_cost_category_map"
  ],
  "fields": [
   {
@@ -185,6 +179,23 @@
    "fieldname": "custom_ucr_finance_email_template",
    "fieldtype": "Code",
    "label": "UCR finance notification template"
+  },
+  {
+   "fieldname": "tab_finance_cost_ledger",
+   "fieldtype": "Tab Break",
+   "label": "Finance cost ledger"
+  },
+  {
+   "description": "Maps Task payment items, permit types, or subject text to ledger cost types and Project summary buckets.",
+   "fieldname": "section_finance_cost_category_map",
+   "fieldtype": "Section Break",
+   "label": "Finance cost category map"
+  },
+  {
+   "fieldname": "custom_finance_cost_category_map",
+   "fieldtype": "Table",
+   "label": "Category map",
+   "options": "Finance Cost Category Map"
   }
  ],
  "grid_page_length": 50,
