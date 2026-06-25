@@ -15,12 +15,22 @@
   <section class="cp-hero" style="margin-bottom:1.5rem;">
     <h1>{{ allocation.bill_of_lading or _("Allocation") }}</h1>
     <p class="cp-sub">{{ _("Project") }}: {{ allocation.project_ref }} · {{ _("Date") }}: {{ frappe.format(allocation.allocation_date, {"fieldtype": "Date"}) }}</p>
+    {% if allocation.is_completed %}
+    <p style="margin:.75rem 0 0;"><span class="indicator-pill green">{{ _("Completed") }}</span></p>
+    {% endif %}
   </section>
 
+  {% if allocation.is_completed %}
+  <div class="cp-banner-info" style="margin-bottom:1.25rem;">
+    <h4>{{ _("Allocation complete") }}</h4>
+    <p>{{ _("All containers have been submitted. Details below are read-only for your records.") }}</p>
+  </div>
+  {% else %}
   <div class="cp-banner-info" style="margin-bottom:1.25rem;">
     <h4>{{ _("How it works") }}</h4>
     <p>{{ _("For each container: save truck and driver details, submit the assignment, then upload the interchange and submit it to CGM when ready.") }}</p>
   </div>
+  {% endif %}
 
   {% for row in allocation.containers %}
   <div class="cp-card tp-container-row" style="margin-bottom:1rem; padding:1rem;" data-item="{{ row.name|e }}">
@@ -46,7 +56,7 @@
       {% if row.tracker_alert %} · {{ row.tracker_alert }}{% endif %}
     </p>
 
-    {% if row.assignment_status == 'Pending' %}
+    {% if not allocation.is_completed and row.assignment_status == 'Pending' %}
     <form class="tp-assign-form" style="margin-top:1rem;" data-item="{{ row.name|e }}" data-has-draft="{{ 1 if row.has_draft else 0 }}" novalidate>
       <div class="tp-assign-steps">
         <span class="tp-step tp-step-active">1. {{ _("Enter details") }}</span>
@@ -87,13 +97,8 @@
         </button>
       </div>
     </form>
-    {% elif row.assignment_status == 'Truck Assigned' %}
+    {% elif not allocation.is_completed and row.assignment_status == 'Truck Assigned' %}
     <div class="tp-interchange-form" style="margin-top:1rem;" data-item="{{ row.name|e }}" data-has-draft="{{ 1 if row.has_interchange_draft else 0 }}">
-      <div class="cp-banner-info" style="margin-bottom:1rem;">
-        <h4>{{ _("Assignment confirmed") }}</h4>
-        <p>{{ _("Upload the interchange when the container has been returned. Save your file first, then submit to CGM when you are ready.") }}</p>
-      </div>
-
       <div class="tp-assignment-summary" style="margin-bottom:1rem; padding:.75rem 0; border-top:1px solid var(--cp-border, #e5e7eb); border-bottom:1px solid var(--cp-border, #e5e7eb);">
         <p style="margin:0;"><b>{{ _("Truck") }}:</b> {{ row.truck_number or "—" }}</p>
         <p style="margin:.35rem 0 0;"><b>{{ _("Driver") }}:</b> {{ row.driver_name or "—" }}{% if row.driver_contact %} · {{ row.driver_contact }}{% endif %}</p>
@@ -107,18 +112,22 @@
         {% endif %}
       </div>
 
-      <div class="tp-interchange-upload-actions" style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:center;">
-        <label class="btn btn-default btn-sm tp-interchange-pick">
-          <span class="tp-btn-label">{{ _("Replace file") if row.has_interchange_draft else _("Choose file") }}</span>
-          <input type="file" class="tp-interchange-file" hidden accept=".pdf,.jpg,.jpeg,.png">
-        </label>
-        <button type="button" class="btn btn-primary btn-sm tp-submit-interchange {{ '' if row.has_interchange_draft else 'd-none' }}">
-          <span class="tp-btn-label">{{ _("Submit to CGM") }}</span>
-        </button>
+      <div class="tp-interchange-upload">
+        <div class="tp-interchange-upload-head">
+          <div class="tp-interchange-upload-title">{{ _("Attach interchange") }}</div>
+        </div>
+
+        <div class="tp-interchange-upload-actions">
+          <input type="file" id="tp-interchange-file-{{ row.name|e }}" class="tp-interchange-file" accept=".pdf,.jpg,.jpeg,.png" hidden>
+          <label for="tp-interchange-file-{{ row.name|e }}" class="cp-btn cp-btn-ghost tp-interchange-pick">
+            <span class="tp-btn-label">{{ _("Replace file") if row.has_interchange_draft else _("Choose file") }}</span>
+          </label>
+          <button type="button" class="cp-btn tp-submit-interchange {{ '' if row.has_interchange_draft else 'd-none' }}">
+            <span class="tp-btn-label">{{ _("Submit to CGM") }}</span>
+          </button>
+        </div>
+        <div class="tp-interchange-file-name" aria-live="polite">{% if row.has_interchange_draft and row.interchange_document %}{{ row.interchange_document.split('/')[-1] }}{% endif %}</div>
       </div>
-      <p class="text-muted tp-interchange-hint {{ 'd-none' if row.has_interchange_draft else '' }}" style="margin:.75rem 0 0; font-size:.88rem;">
-        {{ _("Choose a file to save it as a draft. The Submit button appears after the file is saved.") }}
-      </p>
     </div>
     {% else %}
     <div style="margin-top:1rem;">
@@ -142,7 +151,7 @@
   {% endif %}
 </div>
 
-{% if allocation and not error_message %}
+{% if allocation and not error_message and not allocation.is_completed %}
 <script>
 frappe.ready(function () {
 	const page = document.getElementById("tp-allocation-page");
@@ -223,7 +232,7 @@ frappe.ready(function () {
 		});
 	}
 
-	function showInterchangeDraftSaved(form, fileUrl) {
+	function showInterchangeDraftSaved(form, fileUrl, fileName) {
 		form.dataset.hasDraft = "1";
 		const banner = form.querySelector(".tp-interchange-draft-banner");
 		if (banner) {
@@ -246,6 +255,10 @@ frappe.ready(function () {
 				}
 			}
 		}
+		const fileNameEl = form.querySelector(".tp-interchange-file-name");
+		if (fileNameEl && fileName) {
+			fileNameEl.textContent = fileName;
+		}
 		const hint = form.querySelector(".tp-interchange-hint");
 		if (hint) hint.classList.add("d-none");
 		const submitBtn = form.querySelector(".tp-submit-interchange");
@@ -265,6 +278,9 @@ frappe.ready(function () {
 		const form = input.closest(".tp-interchange-form");
 		const itemName = form && form.dataset.item;
 		if (!form || !itemName) return;
+
+		const fileNameEl = form.querySelector(".tp-interchange-file-name");
+		if (fileNameEl) fileNameEl.textContent = file.name;
 
 		const formData = new FormData();
 		formData.append("file", file);
@@ -298,7 +314,7 @@ frappe.ready(function () {
 			.then(function (r) {
 				if (r.exc) return;
 				const result = r.message || {};
-				showInterchangeDraftSaved(form, uploadedUrl);
+				showInterchangeDraftSaved(form, uploadedUrl, file.name);
 				frappe.show_alert({
 					message: result.message || __("Interchange saved. Submit when ready to send to CGM."),
 					indicator: "green",
