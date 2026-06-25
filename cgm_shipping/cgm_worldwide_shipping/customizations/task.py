@@ -1461,14 +1461,16 @@ def validate_sea_task_can_complete(task) -> None:
 			validate_finance_application_payment_task(
 				task, APPLICATION_FINANCE_PROFILES["KPA Application"]
 			)
+		elif is_permit_finance_payment_task(seq):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+				validate_finance_permit_payment_task,
+				validate_permit_finance_task_completion,
+			)
+
+			validate_finance_permit_payment_task(task)
+			validate_permit_finance_task_completion(task)
 		else:
 			validate_finance_task(task)
-			if is_permit_finance_payment_task(seq):
-				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-					validate_finance_permit_payment_task,
-				)
-
-				validate_finance_permit_payment_task(task)
 
 
 def validate_required_documents(task, seq: int) -> None:
@@ -1662,7 +1664,13 @@ def sync_task_permits_to_project(task) -> None:
 			prow.purchase_invoice = task.custom_purchase_invoice
 			prow.invoice_verified = 1
 			prow.status = "Invoice Verified"
-		if is_finance_permit_payment and task.get("custom_payment_entry"):
+		if is_finance_permit_payment and trow.get("journal_entry"):
+			prow.journal_entry = trow.journal_entry
+			prow.payment_date = frappe.db.get_value(
+				"Journal Entry", trow.journal_entry, "posting_date"
+			)
+			prow.status = "Paid"
+		elif is_finance_permit_payment and task.get("custom_payment_entry"):
 			prow.payment_entry = task.custom_payment_entry
 			prow.payment_date = frappe.db.get_value(
 				"Payment Entry", task.custom_payment_entry, "posting_date"
@@ -1787,6 +1795,7 @@ def create_journal_payment_from_task(
 	cheque_no: str | None = None,
 	cheque_date: str | None = None,
 	user_remark: str | None = None,
+	permit_row_name: str | None = None,
 ) -> str:
 	"""Create a *draft* Journal Entry to pay a finance Task.
 
@@ -1835,7 +1844,22 @@ def create_journal_payment_from_task(
 			"A selected account is a <b>Party</b> account — choose a Party Type and Party."
 		)
 
+	permit_row = None
+	if permit_row_name:
+		for row in task.get(TASK_PERMITS_FIELD) or []:
+			if row.name == permit_row_name:
+				permit_row = row
+				break
+		if not permit_row:
+			frappe.throw("Permit row not found on this task.")
+		if permit_row.get("journal_entry"):
+			frappe.throw(
+				f"A Journal Entry is already linked for <b>{permit_row.permit_type}</b>."
+			)
+
 	remark = user_remark or f"{task.subject} ({task.name})"
+	if permit_row and permit_row.get("permit_type"):
+		remark = user_remark or f"{task.subject} - {permit_row.permit_type} ({task.name})"
 
 	company_currency = frappe.get_cached_value("Company", company, "default_currency")
 	from_currency = frappe.db.get_value("Account", pay_from_account, "account_currency") or company_currency
@@ -1876,7 +1900,23 @@ def create_journal_payment_from_task(
 	je.append("accounts", credit_row)
 	je.insert()
 
-	if task.meta.has_field("custom_journal_entry"):
+	if permit_row:
+		frappe.db.set_value(
+			"Permit Register",
+			permit_row.name,
+			"journal_entry",
+			je.name,
+			update_modified=False,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			notify_declarant_upload_permit_receipts,
+			task_has_recorded_payment,
+		)
+
+		task.reload()
+		if task_has_recorded_payment(task):
+			notify_declarant_upload_permit_receipts(task)
+	elif task.meta.has_field("custom_journal_entry"):
 		frappe.db.set_value(
 			"Task", task.name, "custom_journal_entry", je.name, update_modified=False
 		)

@@ -219,6 +219,25 @@ def project_has_submitted_permit_invoices(
 
 def task_has_recorded_payment(task) -> bool:
 	"""Finance recorded payment via Journal Entry or a submitted Payment Entry."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		PERMIT_JOURNAL_ENTRY_FIELD,
+		TASK_PERMITS_FIELD,
+	)
+
+	if is_permit_finance_task_doc(task):
+		rows = [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.get("permit_type")]
+		if rows:
+			for row in rows:
+				je = row.get(PERMIT_JOURNAL_ENTRY_FIELD)
+				if je and frappe.db.exists("Journal Entry", je):
+					continue
+				pe = row.get("payment_entry")
+				if pe and frappe.db.exists("Payment Entry", pe):
+					if int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1:
+						continue
+				return False
+			return True
+
 	if task.get("custom_journal_entry"):
 		if frappe.db.exists("Journal Entry", task.custom_journal_entry):
 			return True
@@ -226,6 +245,39 @@ def task_has_recorded_payment(task) -> bool:
 	if pe and frappe.db.exists("Payment Entry", pe):
 		return int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1
 	return False
+
+
+def permit_finance_rows(task) -> list:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import TASK_PERMITS_FIELD
+
+	return [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.get("permit_type")]
+
+
+def task_uses_permit_payment_pattern(task) -> bool:
+	return is_permit_finance_task_doc(task) and bool(permit_finance_rows(task))
+
+
+def validate_permit_finance_task_completion(task) -> None:
+	"""Each permit row needs its own journal entry and verified receipt before completion."""
+	if not is_permit_finance_task_doc(task):
+		return
+	rows = permit_finance_rows(task)
+	if not rows:
+		return
+	missing_je = [r.permit_type for r in rows if not r.get("journal_entry")]
+	if missing_je:
+		frappe.throw(
+			"Record a <b>Journal Entry</b> for each permit before completing. Missing: "
+			f"<b>{', '.join(missing_je)}</b>."
+		)
+	unverified = [
+		r.permit_type for r in rows if not r.get("receipt_verified") or not r.get("payment_receipt")
+	]
+	if unverified:
+		frappe.throw(
+			"Each permit needs a <b>Payment Receipt</b> and <b>Receipt Verified</b> before completing. "
+			f"Pending: <b>{', '.join(unverified)}</b>."
+		)
 
 
 def finance_payment_completed(project: str, application_seq: int | None = None) -> bool:
@@ -250,6 +302,7 @@ def build_permit_row_payload(row) -> dict:
 		"stage": row.get("stage") or PRE_CLEARANCE_STAGE,
 		"payment_invoice": row.get("payment_invoice"),
 		"invoice_amount": row.get("invoice_amount"),
+		"journal_entry": row.get("journal_entry"),
 		"payment_receipt": row.get("payment_receipt"),
 		"permit_document": row.get("permit_document"),
 		"receipt_verified": row.get("receipt_verified"),
@@ -271,6 +324,7 @@ def get_application_permit_rows(application_task_name: str) -> list[dict]:
 			"stage",
 			"payment_invoice",
 			"invoice_amount",
+			"journal_entry",
 			"payment_receipt",
 			"permit_document",
 			"receipt_verified",
@@ -308,6 +362,7 @@ def seed_finance_permit_rows_from_project(finance_task, *, save: bool = True) ->
 				"invoice_amount": row.get("invoice_amount"),
 				"purchase_invoice": row.get("purchase_invoice"),
 				"payment_entry": row.get("payment_entry"),
+				"journal_entry": row.get("journal_entry"),
 				"payment_receipt": row.get("payment_receipt"),
 				"receipt_verified": row.get("receipt_verified"),
 				"status": row.get("status") or "Invoice Submitted",
@@ -737,12 +792,19 @@ def can_complete_finance_permit_task(task) -> bool:
 		return False
 	if task.status in ("Completed", "Cancelled"):
 		return False
-	if not task_has_recorded_payment(task):
-		return False
-	rows = [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.permit_type]
+	rows = permit_finance_rows(task)
 	if not rows:
 		return False
-	return all(r.get("payment_receipt") and r.get("receipt_verified") for r in rows)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		PERMIT_JOURNAL_ENTRY_FIELD,
+	)
+
+	return all(
+		r.get(PERMIT_JOURNAL_ENTRY_FIELD)
+		and r.get("payment_receipt")
+		and r.get("receipt_verified")
+		for r in rows
+	)
 
 
 def mark_permit_task_completed(task) -> None:
@@ -964,11 +1026,13 @@ def get_permit_finance_workflow_status(task_name: str) -> dict:
 		r.permit_type for r in rows if r.get("payment_receipt") and not r.get("receipt_verified")
 	]
 	missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
+	missing_payments = [r.permit_type for r in rows if not r.get("journal_entry")]
 	return {
 		"task_status": task.status,
 		"has_payment": task_has_recorded_payment(task),
 		"pending_verify": pending_verify,
 		"missing_receipts": missing_receipts,
+		"missing_payments": missing_payments,
 		"ready_to_complete": can_complete_finance_permit_task(task),
 	}
 

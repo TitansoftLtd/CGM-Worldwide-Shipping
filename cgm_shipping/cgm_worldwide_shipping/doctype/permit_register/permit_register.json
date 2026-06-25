@@ -20,6 +20,7 @@
   "status",
   "approval_date",
   "payment_entry",
+  "journal_entry",
   "purchase_invoice",
   "payment_date",
   "receipt_verified"
@@ -102,6 +103,14 @@
    "fieldtype": "Link",
    "label": "Payment Entry",
    "options": "Payment Entry"
+  },
+  {
+   "fieldname": "journal_entry",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Journal Entry",
+   "options": "Journal Entry",
+   "read_only": 1
   },
   {
    "fieldname": "payment_receipt",

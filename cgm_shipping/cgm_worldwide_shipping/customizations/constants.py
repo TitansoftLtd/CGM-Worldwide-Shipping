@@ -12,6 +12,7 @@ TASK_DOCUMENTS_FIELD = "custom_task_documents"
 PERMIT_REGISTER_FIELD = "custom_permit_register"
 TASK_PERMITS_FIELD = "custom_task_permits"
 TASK_FINANCE_FIELD = "custom_task_finance_lines"
+PERMIT_JOURNAL_ENTRY_FIELD = "journal_entry"
 
 # Intake documents required before Documents Received workflow state.
 INTAKE_DOCUMENT_CODES = ("CI", "PKL")

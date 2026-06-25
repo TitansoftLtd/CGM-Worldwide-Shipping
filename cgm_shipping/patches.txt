@@ -30,3 +30,4 @@ cgm_shipping.patches.remove_opportunity_entry_no
 cgm_shipping.patches.ensure_quotation_si_fields
 cgm_shipping.patches.ensure_quotation_workflow
 cgm_shipping.patches.update_mss_levy_calculation_type
+cgm_shipping.patches.dedupe_cgm_shipping_settings_fields
