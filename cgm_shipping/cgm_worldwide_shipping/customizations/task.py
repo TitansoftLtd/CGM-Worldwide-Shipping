@@ -2405,7 +2405,7 @@ def journal_entry_on_submit(doc, method=None):
 
 
 def journal_entry_on_cancel(doc, method=None):
-	"""No-op placeholder for Journal Entry cancel hook."""
+	"""Journal Entry cancel — finance cost ledger refresh handled in finance_cost_ledger hook."""
 	return
 
 

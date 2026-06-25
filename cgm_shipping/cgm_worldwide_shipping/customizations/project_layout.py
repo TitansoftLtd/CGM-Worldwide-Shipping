@@ -1175,6 +1175,12 @@ def get_project_tracking_dashboard(project: str) -> dict:
 
 	containers = get_containers_for_project(project)
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
+		enrich_containers_with_allocation,
+	)
+
+	containers = enrich_containers_with_allocation(containers)
+
 	berth_phase = doc.get("custom_berth_phase") or "Before Vessel Berth"
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import get_project_ata
 
@@ -1251,3 +1257,115 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		payload["port_arrival_confirmed_on"] = doc.get("custom_port_arrival_confirmed_on")
 		payload["port_arrival_confirmed_by"] = doc.get("custom_port_arrival_confirmed_by")
 	return payload
+
+
+FINANCE_COST_PROJECT_FIELDS = (
+	"custom_section_finance_cost_summary",
+	"custom_finance_cost_total",
+	"custom_column_break_finance_cost_summary",
+	"custom_finance_cost_ucr",
+	"custom_finance_cost_kebs",
+	"custom_finance_cost_dvs",
+	"custom_finance_cost_idf",
+	"custom_finance_cost_port",
+	"custom_finance_cost_transport",
+	"custom_finance_cost_other",
+	"custom_finance_cost_ledger",
+)
+
+
+def ensure_project_finance_cost_fields() -> None:
+	"""Finance Cost Summary + ledger child table on Project costing tab."""
+	_upsert_cf(
+		"Project",
+		{
+			"fieldname": "custom_section_finance_cost_summary",
+			"label": "Finance Cost Summary",
+			"fieldtype": "Section Break",
+			"insert_after": "total_purchase_cost",
+			"collapsible": 0,
+		},
+	)
+	_upsert_cf(
+		"Project",
+		{
+			"fieldname": "custom_finance_cost_total",
+			"label": "Total Finance Cost",
+			"fieldtype": "Currency",
+			"insert_after": "custom_section_finance_cost_summary",
+			"read_only": 1,
+			"bold": 1,
+		},
+	)
+	_upsert_cf(
+		"Project",
+		{
+			"fieldname": "custom_column_break_finance_cost_summary",
+			"fieldtype": "Column Break",
+			"insert_after": "custom_finance_cost_total",
+		},
+	)
+	category_fields = (
+		("custom_finance_cost_ucr", "UCR Charges"),
+		("custom_finance_cost_kebs", "KEBS Charges"),
+		("custom_finance_cost_dvs", "DVS Charges"),
+		("custom_finance_cost_idf", "IDF Charges"),
+		("custom_finance_cost_port", "Port Charges"),
+		("custom_finance_cost_transport", "Transport Charges"),
+		("custom_finance_cost_other", "Other Charges"),
+	)
+	prev = "custom_column_break_finance_cost_summary"
+	for fieldname, label in category_fields:
+		_upsert_cf(
+			"Project",
+			{
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": "Currency",
+				"insert_after": prev,
+				"read_only": 1,
+			},
+		)
+		prev = fieldname
+	_upsert_cf(
+		"Project",
+		{
+			"fieldname": "custom_finance_cost_ledger",
+			"label": "Finance Cost Ledger",
+			"fieldtype": "Table",
+			"options": "Finance Cost Ledger",
+			"insert_after": "custom_finance_cost_other",
+			"read_only": 1,
+			"cannot_add_rows": 1,
+			"cannot_delete_rows": 1,
+		},
+	)
+	ensure_project_finance_cost_field_order()
+	frappe.clear_cache(doctype="Project")
+
+
+def ensure_project_finance_cost_field_order() -> None:
+	ps_name = "Project-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+	raw = frappe.db.get_value("Property Setter", ps_name, "value") or "[]"
+	try:
+		order = json.loads(raw)
+	except json.JSONDecodeError:
+		return
+	if not isinstance(order, list):
+		return
+
+	order = [field for field in order if field not in FINANCE_COST_PROJECT_FIELDS]
+	anchor = "total_purchase_cost"
+	if anchor not in order:
+		anchor = "total_costing_amount"
+	if anchor not in order:
+		return
+	idx = order.index(anchor) + 1
+	for offset, fieldname in enumerate(FINANCE_COST_PROJECT_FIELDS):
+		order.insert(idx + offset, fieldname)
+
+	frappe.db.set_value(
+		"Property Setter", ps_name, "value", json.dumps(order), update_modified=False
+	)
