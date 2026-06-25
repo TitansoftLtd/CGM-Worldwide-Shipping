@@ -78,6 +78,13 @@ frappe.ui.form.on("Task", {
 		if (ui.show_permits) {
 			configure_permit_grid(frm);
 		}
+		if (ui.show_payments && frm.fields_dict.custom_journal_entry) {
+			frm.set_df_property(
+				"custom_journal_entry",
+				"hidden",
+				is_permit_finance_step(frm) ? 1 : 0
+			);
+		}
 		if (ui.show_documents) {
 			configure_task_document_version_grid(frm, ui);
 		}
@@ -110,7 +117,7 @@ frappe.ui.form.on("Task", {
 						get_paired_permit_application_seq(frm, seq)
 					);
 					intro = __(
-						"<b>1 Finance:</b> <b>Make Payment</b> (records a Journal Entry) · " +
+						"<b>1 Finance:</b> Use <b>Make Payment</b> on each permit row (one Journal Entry per permit) · " +
 							"<b>2 Declarant:</b> Upload receipts on <b>{0}</b> · " +
 							"<b>3 Finance:</b> Use <b>Actions → Verify Receipt</b> — both tasks complete automatically.",
 						[appLabel]
@@ -390,6 +397,15 @@ frappe.ui.form.on("Task", {
 			});
 		}
 
+		// Linked journal entries — always available for navigation.
+		if (is_permit_payment_pattern(frm)) {
+			show_permit_finance_journal_entry_view_buttons(frm);
+		} else if (frm.doc.custom_journal_entry) {
+			add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
+				frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
+			});
+		}
+
 		// Finance department: Make Payment via draft Journal Entry. Department-driven
 		// (configured in CGM Shipping Settings), independent of the sea-flow sequence.
 		if (
@@ -398,11 +414,9 @@ frappe.ui.form.on("Task", {
 			frm.doc.status !== "Completed" &&
 			frm.doc.status !== "Cancelled"
 		) {
-			if (frm.doc.custom_journal_entry) {
-				add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
-					frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
-				});
-			} else {
+			if (is_permit_payment_pattern(frm)) {
+				setup_permit_finance_make_payment_buttons(frm);
+			} else if (!frm.doc.custom_journal_entry) {
 				add_cgm_toolbar_button(
 					frm,
 					__("Make Payment"),
@@ -648,6 +662,22 @@ function is_permit_application_step(frm, seq) {
 function is_permit_finance_step(frm, seq) {
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).permit_finance_seqs);
+}
+
+function is_permit_payment_pattern(frm) {
+	return (
+		is_permit_finance_step(frm) &&
+		(frm.doc.custom_task_permits || []).some((r) => r.permit_type)
+	);
+}
+
+function permit_finance_rows_on_form(frm) {
+	return (frm.doc.custom_task_permits || []).filter((r) => r.permit_type);
+}
+
+function permit_rows_all_have_journal_entry(frm) {
+	const rows = permit_finance_rows_on_form(frm);
+	return rows.length > 0 && rows.every((r) => r.journal_entry);
 }
 
 function get_permit_stage_for_seq(frm, seq) {
@@ -985,6 +1015,10 @@ function apply_sea_task_form_layout(frm, ui) {
 	}
 	toggle("custom_payment_entry", ui.show_payments);
 	toggle("custom_purchase_invoice", ui.show_payments);
+	toggle(
+		"custom_journal_entry",
+		ui.show_payments && !is_permit_finance_step(frm, sea_task_sequence(frm))
+	);
 	configure_ucr_finance_fields(frm, ui);
 	toggle("custom_external_ref_no", ui.show_external_ref);
 	toggle("description", ui.show_description);
@@ -1133,6 +1167,9 @@ function permit_rows_pending_receipt_verification(frm) {
 }
 
 function task_has_recorded_payment_on_form(frm) {
+	if (is_permit_payment_pattern(frm)) {
+		return permit_rows_all_have_journal_entry(frm);
+	}
 	return Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
 }
 
@@ -1186,8 +1223,11 @@ function ensure_finance_permit_task_completed_on_form(frm) {
 	if (!task_has_recorded_payment_on_form(frm)) {
 		return;
 	}
-	const rows = (frm.doc.custom_task_permits || []).filter((r) => r.permit_type);
-	if (!rows.length || rows.some((r) => !r.payment_receipt || !r.receipt_verified)) {
+	const rows = permit_finance_rows_on_form(frm);
+	if (
+		!rows.length ||
+		rows.some((r) => !r.journal_entry || !r.payment_receipt || !r.receipt_verified)
+	) {
 		return;
 	}
 	frm._cgm_permit_finance_complete_checking = true;
@@ -1550,6 +1590,9 @@ function configure_permit_grid(frm) {
 		["payment_invoice", "purchase_invoice", "payment_entry", "permit_document"].forEach((fn) => {
 			grid.update_docfield_property(fn, "read_only", 1);
 		});
+		grid.update_docfield_property("journal_entry", "hidden", 0);
+		grid.update_docfield_property("journal_entry", "read_only", 1);
+		grid.update_docfield_property("journal_entry", "in_list_view", 1);
 		grid.update_docfield_property("payment_receipt", "hidden", 0);
 		grid.update_docfield_property("payment_receipt", "read_only", 1);
 		grid.update_docfield_property("receipt_verified", "hidden", 0);
@@ -2277,17 +2320,54 @@ function journal_account_filters(frm, bank_or_cash) {
 	return filters;
 }
 
-function open_journal_entry_payment_dialog(frm) {
+function show_permit_finance_journal_entry_view_buttons(frm) {
+	permit_finance_rows_on_form(frm).forEach((row) => {
+		if (!row.journal_entry) {
+			return;
+		}
+		add_cgm_toolbar_button(frm, __("View Journal Entry — {0}", [row.permit_type]), () => {
+			frappe.set_route("Form", "Journal Entry", row.journal_entry);
+		});
+	});
+}
+
+function setup_permit_finance_make_payment_buttons(frm) {
+	permit_finance_rows_on_form(frm).forEach((row) => {
+		if (row.journal_entry) {
+			return;
+		}
+		add_cgm_toolbar_button(
+			frm,
+			__("Make Payment — {0}", [row.permit_type]),
+			() =>
+				open_journal_entry_payment_dialog(frm, {
+					permit_row_name: row.name,
+					default_amount: row.invoice_amount,
+					title_suffix: row.permit_type,
+				}),
+			{ primary: true }
+		);
+	});
+}
+
+function setup_permit_finance_payment_buttons(frm) {
+	show_permit_finance_journal_entry_view_buttons(frm);
+	setup_permit_finance_make_payment_buttons(frm);
+}
+
+function open_journal_entry_payment_dialog(frm, opts = {}) {
+	const permit_row_name = opts.permit_row_name || null;
+	const title_suffix = opts.title_suffix ? ` — ${opts.title_suffix}` : "";
 	if (!frm.doc.name || frm.is_new()) {
 		frappe.msgprint(__("Save the task before making a payment."));
 		return;
 	}
 	const dialog = new frappe.ui.Dialog({
-		title: __("Make Payment - Journal Entry"),
+		title: __("Make Payment - Journal Entry{0}", [title_suffix]),
 		size: "large",
 		fields: [
 			{ fieldname: "posting_date", label: __("Posting Date"), fieldtype: "Date", default: frappe.datetime.get_today(), reqd: 1 },
-			{ fieldname: "amount", label: __("Amount"), fieldtype: "Currency", reqd: 1 },
+			{ fieldname: "amount", label: __("Amount"), fieldtype: "Currency", reqd: 1, default: opts.default_amount || undefined },
 			{ fieldname: "cb1", fieldtype: "Column Break" },
 			{ fieldname: "cheque_no", label: __("Reference No"), fieldtype: "Data" },
 			{ fieldname: "cheque_date", label: __("Reference Date"), fieldtype: "Date" },
@@ -2330,6 +2410,7 @@ function open_journal_entry_payment_dialog(frm) {
 					cheque_no: values.cheque_no,
 					cheque_date: values.cheque_date,
 					user_remark: values.user_remark,
+					permit_row_name,
 				},
 				freeze: true,
 				freeze_message: __("Creating Journal Entry…"),

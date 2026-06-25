@@ -12,6 +12,7 @@ from frappe import _
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
 	ALLOCATION_STATUS_ACKNOWLEDGED,
 	ALLOCATION_STATUS_ALLOCATED,
+	ALLOCATION_STATUS_COMPLETED,
 	ASSIGNMENT_INTERCHANGE,
 	ASSIGNMENT_PENDING,
 	ASSIGNMENT_TRUCK,
@@ -114,9 +115,41 @@ def _project_display_ref(project_name: str | None) -> str:
 	return get_project_reference(doc) or doc.get("project_name") or project_name
 
 
-def list_my_allocations(transporter: str) -> list[dict]:
-	"""Allocations for a transporter — scoped server-side, ignores desk permissions."""
-	if not transporter:
+def _summarize_allocation_row(row: dict) -> dict:
+	items = frappe.get_all(
+		"Container Allocation Item",
+		filters={"parent": row.name},
+		fields=["assignment_status"],
+		ignore_permissions=True,
+	)
+	counts = {
+		"total": len(items),
+		ASSIGNMENT_PENDING: 0,
+		ASSIGNMENT_TRUCK: 0,
+		ASSIGNMENT_INTERCHANGE: 0,
+	}
+	for item in items:
+		status = item.assignment_status or ASSIGNMENT_PENDING
+		counts[status] = counts.get(status, 0) + 1
+
+	is_completed = row.status == ALLOCATION_STATUS_COMPLETED
+	return {
+		"name": row.name,
+		"project": row.project,
+		"project_ref": _project_display_ref(row.project),
+		"bill_of_lading": row.bill_of_lading or "",
+		"allocation_date": row.allocation_date,
+		"status": row.status,
+		"is_completed": is_completed,
+		"container_total": counts["total"],
+		"pending_count": counts.get(ASSIGNMENT_PENDING, 0),
+		"truck_assigned_count": counts.get(ASSIGNMENT_TRUCK, 0),
+		"interchange_count": counts.get(ASSIGNMENT_INTERCHANGE, 0),
+	}
+
+
+def _list_allocations_for_statuses(transporter: str, statuses: tuple[str, ...]) -> list[dict]:
+	if not transporter or not statuses:
 		return []
 
 	rows = frappe.get_all(
@@ -124,7 +157,7 @@ def list_my_allocations(transporter: str) -> list[dict]:
 		filters={
 			"transporter": transporter,
 			"docstatus": 1,
-			"status": ("in", (ALLOCATION_STATUS_ALLOCATED, ALLOCATION_STATUS_ACKNOWLEDGED)),
+			"status": ("in", statuses),
 		},
 		fields=[
 			"name",
@@ -136,53 +169,70 @@ def list_my_allocations(transporter: str) -> list[dict]:
 		order_by="allocation_date desc, modified desc",
 		ignore_permissions=True,
 	)
+	return [_summarize_allocation_row(row) for row in rows]
 
-	out: list[dict] = []
-	for row in rows:
-		items = frappe.get_all(
-			"Container Allocation Item",
-			filters={"parent": row.name},
-			fields=["assignment_status"],
-			ignore_permissions=True,
-		)
-		counts = {
-			"total": len(items),
-			ASSIGNMENT_PENDING: 0,
-			ASSIGNMENT_TRUCK: 0,
-			ASSIGNMENT_INTERCHANGE: 0,
-		}
-		for item in items:
-			status = item.assignment_status or ASSIGNMENT_PENDING
-			counts[status] = counts.get(status, 0) + 1
 
-		out.append(
-			{
-				"name": row.name,
-				"project": row.project,
-				"project_ref": _project_display_ref(row.project),
-				"bill_of_lading": row.bill_of_lading or "",
-				"allocation_date": row.allocation_date,
-				"status": row.status,
-				"container_total": counts["total"],
-				"pending_count": counts.get(ASSIGNMENT_PENDING, 0),
-				"truck_assigned_count": counts.get(ASSIGNMENT_TRUCK, 0),
-				"interchange_count": counts.get(ASSIGNMENT_INTERCHANGE, 0),
-			}
-		)
-	return out
+def list_my_allocations(transporter: str) -> dict[str, list[dict]]:
+	"""Active and completed allocations for the transporter portal home page."""
+	return {
+		"active": _list_allocations_for_statuses(
+			transporter, (ALLOCATION_STATUS_ALLOCATED, ALLOCATION_STATUS_ACKNOWLEDGED)
+		),
+		"completed": _list_allocations_for_statuses(transporter, (ALLOCATION_STATUS_COMPLETED,)),
+	}
+
+
+def list_my_allocations_flat(transporter: str) -> list[dict]:
+	"""All portal allocations (active first, then completed)."""
+	grouped = list_my_allocations(transporter)
+	return grouped["active"] + grouped["completed"]
+
+
+def get_transporter_portal_dashboard(transporter: str) -> dict:
+	"""Summary stats + allocation lists for the transporter portal home page."""
+	grouped = list_my_allocations(transporter)
+	active = grouped["active"]
+	completed = grouped["completed"]
+
+	pending = sum(int(r.get("pending_count") or 0) for r in active)
+	assigned = sum(int(r.get("truck_assigned_count") or 0) for r in active)
+	interchange_on_active = sum(int(r.get("interchange_count") or 0) for r in active)
+	completed_containers = sum(int(r.get("container_total") or 0) for r in completed)
+
+	for row in active:
+		total = int(row.get("container_total") or 0)
+		done = int(row.get("interchange_count") or 0)
+		row["progress_label"] = f"{done}/{total}" if total else "0/0"
+
+	for row in completed:
+		total = int(row.get("container_total") or 0)
+		row["progress_label"] = f"{total}/{total}" if total else "0/0"
+
+	return {
+		"active_allocations": active,
+		"completed_allocations": completed,
+		"stat_active_allocations": len(active),
+		"stat_completed_allocations": len(completed),
+		"stat_pending_containers": pending,
+		"stat_assigned_containers": assigned,
+		"stat_complete_containers": interchange_on_active + completed_containers,
+		"stat_total_containers": sum(int(r.get("container_total") or 0) for r in active)
+		+ completed_containers,
+	}
 
 
 @frappe.whitelist()
 def get_my_allocations() -> list[dict]:
 	transporter = require_transporter_portal_access()
-	return list_my_allocations(transporter)
+	return list_my_allocations_flat(transporter)
 
 
 @frappe.whitelist()
 def get_allocation_detail(allocation_name: str) -> dict:
 	transporter = require_transporter_portal_access()
 	allocation = _get_allocation_for_transporter(allocation_name, transporter)
-	acknowledge_allocation(allocation_name)
+	if allocation.status != ALLOCATION_STATUS_COMPLETED:
+		acknowledge_allocation(allocation_name)
 
 	project_ref = _project_display_ref(allocation.project)
 
@@ -243,6 +293,7 @@ def get_allocation_detail(allocation_name: str) -> dict:
 		"bill_of_lading": allocation.bill_of_lading or "",
 		"allocation_date": allocation.allocation_date,
 		"status": allocation.status,
+		"is_completed": allocation.status == ALLOCATION_STATUS_COMPLETED,
 		"containers": containers,
 	}
 
