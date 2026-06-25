@@ -214,6 +214,12 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
 	},
 	"Journal Entry": {
+		"after_insert": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
+		),
+		"on_update": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
+		),
 		"on_submit": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
