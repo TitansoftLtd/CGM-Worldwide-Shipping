@@ -1,32 +1,79 @@
 # Copyright (c) 2026, Titansoft Limited and contributors
 # License: see license.txt
-"""Website / portal routing for the CGM customer portal.
+"""Website / portal routing for CGM customer and transporter portals.
 
-Customers are Website Users with the "Customer" role. We want them to
-land on the branded `/portal` shipment dashboard after login - not the
-desk (where they'd hit "Not Permitted") and not ERPNext's bare default
-portal home.
+Transporter portal access is driven by the Supplier **Portal Users** table
+(`get_transporter_for_user`) — not by User Type alone. Anyone listed on a
+transporter Supplier's portal users is sent to `/transporter` after login and
+away from `/desk`, unless they hold an internal override role.
 
-`role_home_page` alone isn't enough: Frappe's auth flow sets the response
-home page to `get_default_path() or get_home_page()`, and
-`get_default_path()` resolves to `/app` whenever the site has desk apps
-installed - bypassing the role hook. `route_customer_to_portal`
-(registered as `on_session_creation`) runs after auth has set the
-response, so the override wins.
+Customers remain **Website User** accounts landing on `/portal`.
 """
 
 import frappe
 
+# Internal staff who may stay on Desk even when also linked on a transporter Supplier.
+_DESK_OVERRIDE_ROLES = frozenset({"Administrator", "System Manager"})
 
-def route_customer_to_portal(login_manager=None, **kwargs):
-	"""Override post-login redirect so Customers land on `/portal`.
 
-	Only applies to Website Users holding the Customer role, and never
-	clobbers an explicit `redirect-to` deep link from the login form.
+def _user_may_use_desk_instead(user: str) -> bool:
+	return bool(set(frappe.get_roles(user)) & _DESK_OVERRIDE_ROLES)
 
-	Frappe invokes session-creation hooks with `login_manager=self`, so we
-	accept it (and any future kwargs) even though we don't read it.
+
+def _transporter_portal_path(user: str) -> str | None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal import (
+		get_transporter_for_user,
+	)
+
+	if get_transporter_for_user(user):
+		return "/transporter"
+	return None
+
+
+def _customer_portal_path(user: str) -> str | None:
+	if frappe.db.get_value("User", user, "user_type") != "Website User":
+		return None
+	if "Customer" in frappe.get_roles(user):
+		return "/portal"
+	return None
+
+
+def get_cgm_website_user_home_page(user: str) -> str | None:
+	"""Frappe hook: home page slug for website users (no leading slash)."""
+	if not user or user == "Guest":
+		return None
+
+	transporter = _transporter_portal_path(user)
+	if transporter:
+		return transporter.strip("/")
+
+	if frappe.db.get_value("User", user, "user_type") != "Website User":
+		return None
+
+	customer = _customer_portal_path(user)
+	return customer.strip("/") if customer else None
+
+
+def route_cgm_portal_after_login(login_manager=None, **kwargs):
+	"""Override post-login redirect for CGM portal users.
+
+	Transporter portal users are redirected regardless of User Type (System or
+	Website) as long as they are on a transporter Supplier's Portal Users list.
 	"""
+	if frappe.session.user == "Guest":
+		return
+
+	if frappe.local.response.get("redirect_to"):
+		return
+
+	if _user_may_use_desk_instead(frappe.session.user):
+		return
+
+	transporter_home = _transporter_portal_path(frappe.session.user)
+	if transporter_home:
+		frappe.local.response["home_page"] = transporter_home
+		return
+
 	try:
 		user_type = frappe.db.get_value("User", frappe.session.user, "user_type")
 	except Exception:
@@ -35,12 +82,37 @@ def route_customer_to_portal(login_manager=None, **kwargs):
 	if user_type != "Website User":
 		return
 
-	if "Customer" not in frappe.get_roles():
+	customer_home = _customer_portal_path(frappe.session.user)
+	if customer_home:
+		frappe.local.response["home_page"] = customer_home
+
+
+def redirect_transporter_portal_users_from_desk():
+	"""Send transporter portal users to `/transporter` when they hit Desk/App."""
+	if frappe.session.user == "Guest":
 		return
 
-	# Respect an explicit redirect-to from the login form (e.g. deep link
-	# to a specific shipment).
-	if frappe.local.response.get("redirect_to"):
+	if _user_may_use_desk_instead(frappe.session.user):
 		return
 
-	frappe.local.response["home_page"] = "/portal"
+	request = getattr(frappe.local, "request", None)
+	if not request:
+		return
+
+	path = (request.path or "").lower()
+	if not (path.startswith("/desk") or path.startswith("/app")):
+		return
+
+	if _transporter_portal_path(frappe.session.user):
+		frappe.local.flags.redirect_location = "/transporter"
+		raise frappe.Redirect
+
+
+def route_customer_to_portal(login_manager=None, **kwargs):
+	"""Backward-compatible alias."""
+	route_cgm_portal_after_login(login_manager=login_manager, **kwargs)
+
+
+def route_transporter_to_portal(login_manager=None, **kwargs):
+	"""Backward-compatible alias."""
+	route_cgm_portal_after_login(login_manager=login_manager, **kwargs)

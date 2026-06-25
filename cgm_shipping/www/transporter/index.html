@@ -1,0 +1,67 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("Transporter Portal") }}{% endblock %}
+
+{% block page_content %}
+<div class="cp-page">
+  <section class="cp-hero">
+    <div class="cp-hero-row">
+      <div class="cp-avatar" aria-hidden="true">{{ (first_name or "?")[0]|upper }}</div>
+      <div style="flex:1; min-width:0;">
+        <h1>{{ _("Transporter Portal") }}</h1>
+        <p class="cp-sub">{{ _("Manage container allocations, truck assignments, and interchange receipts.") }}</p>
+        {% if is_transporter %}
+        <span class="cp-chip"><span class="dot"></span>{{ transporter_name }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% if error_message %}
+  <div class="alert alert-warning">{{ error_message }}</div>
+  {% elif is_transporter %}
+  <div class="cp-section-h"><h2>{{ _("My Allocations") }}</h2></div>
+  <nav class="cp-actions" style="margin-bottom:1rem;">
+    <a class="cp-action" href="/transporter/profile">
+      <span class="cp-action-icon" aria-hidden="true">🏢</span>
+      <div><h3>{{ _("Company Profile") }}</h3><p>{{ _("View your transporter company details.") }}</p></div>
+    </a>
+  </nav>
+
+  {% if allocations %}
+  <div class="cp-table-wrap">
+    <table class="table table-bordered cp-table">
+      <thead>
+        <tr>
+          <th>{{ _("B/L") }}</th>
+          <th>{{ _("Project") }}</th>
+          <th>{{ _("Date") }}</th>
+          <th>{{ _("Containers") }}</th>
+          <th>{{ _("Pending") }}</th>
+          <th>{{ _("Assigned") }}</th>
+          <th>{{ _("Complete") }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in allocations %}
+        <tr>
+          <td>{{ row.bill_of_lading or "—" }}</td>
+          <td>{{ row.project_ref }}</td>
+          <td>{{ frappe.format(row.allocation_date, {"fieldtype": "Date"}) }}</td>
+          <td>{{ row.container_total }}</td>
+          <td>{{ row.pending_count }}</td>
+          <td>{{ row.truck_assigned_count }}</td>
+          <td>{{ row.interchange_count }}</td>
+          <td><a class="btn btn-primary btn-sm" href="/transporter/allocation?name={{ row.name|e }}">{{ _("Open") }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">{{ _("No active allocations right now.") }}</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

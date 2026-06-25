@@ -172,10 +172,6 @@ function setup_port_arrival_confirmation_button(frm) {
 					if (r.exc) {
 						return;
 					}
-					if (r.message?.ata) {
-						frm.set_value("custom_actual_time_of_arrival_ata", r.message.ata);
-						frm.set_value("custom_ata", r.message.ata);
-					}
 					frm.reload_doc();
 					const count = r.message?.tracker_count || 0;
 					frappe.show_alert({
@@ -230,6 +226,24 @@ function setup_port_arrival_confirmation_button(frm) {
 
 	schedule_register();
 	$(frm.wrapper).off("render_complete.cgm_port_arrival").on("render_complete.cgm_port_arrival", schedule_register);
+}
+
+function setup_create_container_allocation_button(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	if (frm.doc.custom_mode_of_transport !== "Sea") {
+		return;
+	}
+
+	frm.add_custom_button(
+		__("Create Container Allocation"),
+		() => {
+			frappe.route_options = { project: frm.doc.name };
+			frappe.new_doc("Container Allocation");
+		},
+		__("Actions")
+	);
 }
 
 function is_clearance_project(frm) {
@@ -454,6 +468,19 @@ function container_card_detail(c) {
 	return __("No movement dates recorded yet");
 }
 
+function container_allocation_detail(c) {
+	if (!c.allocation) {
+		return "";
+	}
+	const transporter = c.allocation_transporter || "";
+	const status = c.assignment_status || __("Pending");
+	let text = `${__("Allocated to")} ${transporter} (${status})`;
+	if (c.allocation_pending_alert) {
+		text += ` — ${__("Truck not assigned yet")}`;
+	}
+	return text;
+}
+
 function container_status_badge_class(status) {
 	if (!status) {
 		return "gray";
@@ -498,6 +525,18 @@ function render_container_tracking_table(frm, dashboard) {
 				const alert = c.alert_status
 					? `<div class="cgm-container-card-alert">${frappe.utils.escape_html(c.alert_status)}</div>`
 					: "";
+				const allocationLine = container_allocation_detail(c);
+				const allocationHtml = allocationLine
+					? `<div class="cgm-container-card-alert${
+							c.allocation_pending_alert ? " cgm-rag-red" : ""
+						}">${frappe.utils.escape_html(allocationLine)}${
+							c.allocation
+								? ` <button type="button" class="btn btn-xs btn-link cgm-open-allocation" data-allocation="${frappe.utils.escape_html(
+										c.allocation
+									)}">${__("View Allocation")}</button>`
+								: ""
+						}</div>`
+					: "";
 				return `<div class="cgm-container-card">
 					<div class="cgm-container-card-head">
 						<span>${dot} <b>${frappe.utils.escape_html(c.container_number || c.name)}</b>
@@ -510,6 +549,7 @@ function render_container_tracking_table(frm, dashboard) {
 						container_card_detail(c)
 					)}</div>
 					${alert}
+					${allocationHtml}
 					<div class="cgm-container-card-actions">
 						<button type="button" class="btn btn-xs btn-default cgm-view-tracker" data-tracker="${frappe.utils.escape_html(
 							c.name
@@ -556,6 +596,13 @@ function render_container_tracking_table(frm, dashboard) {
 		}
 	});
 
+	field.$wrapper.find(".cgm-open-allocation").on("click", function () {
+		const allocation = $(this).data("allocation");
+		if (allocation) {
+			frappe.set_route("Form", "Container Allocation", allocation);
+		}
+	});
+
 	field.$wrapper.find(".cgm-resync-containers").on("click", () => {
 		frappe.call({
 			method:
@@ -571,6 +618,68 @@ function render_container_tracking_table(frm, dashboard) {
 	field.$wrapper.find(".cgm-open-tracking-report").on("click", () => {
 		frappe.set_route("query-report", "Container Tracking Report", { project: frm.doc.name });
 	});
+}
+
+function configure_finance_cost_ledger_grid(frm) {
+	const grid = frm.fields_dict.custom_finance_cost_ledger?.grid;
+	if (!grid) {
+		return;
+	}
+	grid.cannot_add_rows = true;
+	grid.wrapper.find(".grid-add-row").hide();
+	grid.wrapper.find(".grid-remove-rows").hide();
+	for (const fieldname of [
+		"posting_date",
+		"cost_type",
+		"task",
+		"journal_entry",
+		"account",
+		"amount",
+		"status",
+	]) {
+		grid.update_docfield_property(fieldname, "read_only", 1);
+	}
+}
+
+function refresh_finance_cost_summary(frm) {
+	if (
+		!frm.fields_dict.custom_finance_cost_ledger ||
+		frm.is_new() ||
+		frm._cgm_finance_cost_refreshing ||
+		frm._cgm_finance_cost_synced
+	) {
+		return;
+	}
+	frm._cgm_finance_cost_refreshing = true;
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.refresh_finance_cost_for_project",
+		args: { project: frm.doc.name },
+		callback() {
+			frm._cgm_finance_cost_refreshing = false;
+			frm._cgm_finance_cost_synced = true;
+			frm.reload_doc();
+		},
+		error() {
+			frm._cgm_finance_cost_refreshing = false;
+		},
+	});
+}
+
+function open_project_finance_journal_entries(frm) {
+	const names = [
+		...new Set(
+			(frm.doc.custom_finance_cost_ledger || [])
+				.filter((row) => row.journal_entry && row.status === "Submitted")
+				.map((row) => row.journal_entry)
+		),
+	];
+	if (!names.length) {
+		frappe.msgprint(__("No submitted finance journal entries are linked to this shipment yet."));
+		return;
+	}
+	frappe.route_options = { name: ["in", names] };
+	frappe.set_route("List", "Journal Entry");
 }
 
 frappe.realtime.on("cgm_project_tracking_refresh", (data) => {
@@ -612,8 +721,11 @@ frappe.ui.form.on("Project", {
 		render_shipment_progress_chart(frm);
 		configure_project_document_grid(frm);
 		configure_project_container_grid(frm);
+		configure_finance_cost_ledger_grid(frm);
+		refresh_finance_cost_summary(frm);
 
 		setup_port_arrival_confirmation_button(frm);
+		setup_create_container_allocation_button(frm);
 
 		if (frm.doc.name && !frm.is_new()) {
 			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass("btn-primary");
@@ -628,6 +740,9 @@ frappe.ui.form.on("Project", {
 			frm.add_custom_button(__("Container Ops Board"), () => {
 				frappe.route_options = { project: frm.doc.name };
 				frappe.set_route("container-ops-board");
+			}, __("View"));
+			frm.add_custom_button(__("View Journal Entries"), () => {
+				open_project_finance_journal_entries(frm);
 			}, __("View"));
 			frm.add_custom_button(__("Daily Status"), () => {
 				frappe.new_doc("Daily Status Update");
