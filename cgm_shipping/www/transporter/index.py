@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal import (
-	list_my_allocations,
+	get_transporter_portal_dashboard,
 	portal_context_base,
 )
 
@@ -17,7 +17,7 @@ def get_context(context):
 		if not transporter:
 			return
 		context.title = _("My Allocations")
-		context.allocations = list_my_allocations(transporter)
+		context.update(get_transporter_portal_dashboard(transporter))
 	except frappe.Redirect:
 		raise
 	except Exception:
