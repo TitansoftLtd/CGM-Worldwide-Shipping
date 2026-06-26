@@ -229,8 +229,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("Expected Return")}</th>
 				<th>${__("Actual Return")}</th>
 				<th>${__("Transporter")}</th>
-				<th>${__("Dem.")}</th>
-				<th>${__("Det.")}</th>
+				<th>${__("Dem./Det.")}</th>
 			`;
 		}
 
@@ -255,7 +254,6 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<td>${fmtDate(ret)}</td>
 				<td>${frappe.utils.escape_html(row.transporter_name || "—")}</td>
 				<td>${row.demurrage_days || 0}</td>
-				<td>${row.detention_days || 0}</td>
 				${extraCol}
 			</tr>`;
 		}

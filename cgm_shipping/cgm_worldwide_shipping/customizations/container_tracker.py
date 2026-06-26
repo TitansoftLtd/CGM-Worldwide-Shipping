@@ -133,31 +133,41 @@ def _derived_free_days(data: dict[str, Any]) -> int:
 	return int(data.get("free_days") or 0)
 
 
-def _derived_detention_free_days(data: dict[str, Any]) -> int:
+def _derived_kpa_free_days(data: dict[str, Any]) -> int:
 	from_dates = _inclusive_days_between(
-		data.get("detention_free_start_date"), data.get("detention_free_end_date")
+		data.get("kpa_free_days_start_date"), data.get("kpa_free_days_end_date")
 	)
 	if from_dates is not None:
 		return from_dates
-	return int(data.get("detention_free_days") or 0)
+	return int(data.get("kpa_free_days") or 0)
+
+
+def _kpa_period_configured(data: dict[str, Any]) -> bool:
+	return bool(
+		data.get("kpa_free_days_start_date") and data.get("kpa_free_days_end_date")
+	)
+
+
+def sync_free_day_start_dates(doc) -> None:
+	"""Default shipping-line and KPA free-day starts from discharge date when empty."""
+	discharge = _optional_date(doc.get("discharging_date"))
+	if not discharge:
+		return
+	if not doc.get("free_days_start_date"):
+		doc.free_days_start_date = discharge
+	if not doc.get("kpa_free_days_start_date"):
+		doc.kpa_free_days_start_date = discharge
 
 
 def _free_period_configured(data: dict[str, Any]) -> bool:
 	return bool(data.get("free_days_start_date") and data.get("free_days_end_date"))
 
 
-def _detention_period_configured(data: dict[str, Any]) -> bool:
-	return bool(
-		data.get("detention_free_start_date") and data.get("detention_free_end_date")
-	)
-
-
 def populate_rates_from_shipping_line(doc, *, force: bool = False) -> None:
-	"""Keep destination + KPA defaults only — free/detention days come from tracker date ranges."""
+	"""Keep destination defaults only — free-day allowances come from tracker date ranges."""
 	if doc.get("project") and not doc.get("delivery_destination"):
 		doc.delivery_destination = _project_delivery_destination(doc.project)
-	if doc.get("kpa_free_days") is None:
-		doc.kpa_free_days = get_default_kpa_free_days()
+	sync_free_day_start_dates(doc)
 
 
 def _project_delivery_destination(project_name: str | None) -> str:
@@ -203,8 +213,7 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	ref_date = getdate(today())
 	free_start = _optional_date(data.get("free_days_start_date"))
 	free_end = _optional_date(data.get("free_days_end_date"))
-	det_start = _optional_date(data.get("detention_free_start_date"))
-	det_end = _optional_date(data.get("detention_free_end_date"))
+	kpa_free_end = _optional_date(data.get("kpa_free_days_end_date"))
 	gate_out = _optional_date(data.get("gate_out_date_port"))
 	actual_return = _optional_date(data.get("actual_empty_return"))
 	offloading = _optional_date(data.get("offloading_date"))
@@ -214,22 +223,18 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	ata = _optional_date(data.get("ata"))
 
 	free_days = _derived_free_days(data)
-	detention_free = _derived_detention_free_days(data)
-	kpa_free = int(data.get("kpa_free_days") or get_default_kpa_free_days())
+	kpa_free_days = _derived_kpa_free_days(data)
 	free_configured = _free_period_configured(data)
 
 	out: dict[str, Any] = {
 		"free_days": free_days,
-		"detention_free_days": detention_free,
+		"kpa_free_days": kpa_free_days,
 		"port_days_used": 0,
-		"demurrage_start_date": None,
 		"demurrage_days": 0,
 		"demurrage_amount": 0.0,
 		"kpa_days": 0,
 		"kpa_amount": 0.0,
-		"detention_days": 0,
-		"detention_amount": 0.0,
-		"expected_empty_return": None,
+		"expected_empty_return": free_end,
 		"days_outstanding": 0,
 		"status": CONTAINER_STATUS_PENDING_ARRIVAL,
 		"alert_status": "",
@@ -237,8 +242,8 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 
 	if free_end:
 		dem_start = free_end + timedelta(days=1)
-		out["demurrage_start_date"] = dem_start
-		charge_end = gate_out or ref_date
+		effective_return = _effective_return_date(actual_return, interchange)
+		charge_end = effective_return or ref_date
 		if charge_end >= dem_start:
 			out["demurrage_days"] = (charge_end - dem_start).days + 1
 
@@ -246,22 +251,11 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		end_port = gate_out or ref_date
 		out["port_days_used"] = max(0, (end_port - free_start).days + 1)
 
-	if free_configured and discharging:
-		kpa_anchor = discharging or ata or free_start
-		if kpa_anchor:
-			kpa_end = gate_out or ref_date
-			kpa_port_days = max(0, (kpa_end - kpa_anchor).days)
-			out["kpa_days"] = max(0, kpa_port_days - kpa_free)
-
-	if det_end:
-		out["expected_empty_return"] = det_end
-		det_charge_start = det_end + timedelta(days=1)
-		effective_return = _effective_return_date(actual_return, interchange)
-		charge_end = effective_return or ref_date
-		if charge_end >= det_charge_start:
-			out["detention_days"] = (charge_end - det_charge_start).days + 1
-	elif det_start and detention_free:
-		out["expected_empty_return"] = det_start + timedelta(days=max(detention_free - 1, 0))
+	if kpa_free_end:
+		kpa_charge_start = kpa_free_end + timedelta(days=1)
+		kpa_charge_end = gate_out or ref_date
+		if kpa_charge_end >= kpa_charge_start:
+			out["kpa_days"] = (kpa_charge_end - kpa_charge_start).days + 1
 
 	expected = _optional_date(out.get("expected_empty_return"))
 	effective_return = _effective_return_date(actual_return, interchange)
@@ -574,9 +568,19 @@ def _populate_tracker_from_project_and_row(ct, project, row, *, at_creation: boo
 	ct.container_mode = _derive_container_mode(project)
 	if at_creation:
 		populate_rates_from_shipping_line(ct, force=True)
-		if ct.get("kpa_free_days") is None:
-			ct.kpa_free_days = get_default_kpa_free_days()
+		_default_kpa_free_end_from_settings(ct)
 	apply_metrics_to_doc(ct)
+
+
+def _default_kpa_free_end_from_settings(doc) -> None:
+	"""Seed KPA free end from CGM Shipping Settings when only the start date is known."""
+	if doc.get("kpa_free_days_end_date") or not doc.get("kpa_free_days_start_date"):
+		return
+	allowance = get_default_kpa_free_days()
+	if allowance <= 0:
+		return
+	start = getdate(doc.kpa_free_days_start_date)
+	doc.kpa_free_days_end_date = start + timedelta(days=allowance - 1)
 
 
 def create_or_sync_tracker_for_row(project, row) -> str:
@@ -720,7 +724,7 @@ def _notify_free_days_awareness(project_name: str) -> None:
 	if missing_free_days:
 		message += (
 			f" Free days not recorded yet for: {', '.join(missing_free_days)}. "
-			"Enter Free Days Start/End on each tracker after release from the port."
+			"Enter Shipping Line and KPA free-day end dates on each tracker after discharge."
 		)
 
 	frappe.publish_realtime(

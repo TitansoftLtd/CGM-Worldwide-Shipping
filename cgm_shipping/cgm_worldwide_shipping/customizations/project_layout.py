@@ -457,45 +457,28 @@ def ensure_supplier_container_charge_fields() -> None:
 
 
 def ensure_container_tracking_settings_fields() -> None:
+	"""Container tracking settings live on CGM Shipping Settings doctype JSON.
+
+	Remove legacy Custom Field duplicates from older installs.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		CONTAINER_TASK_SEQ_DEFAULTS,
 	)
 
-	_create_cf(
-		"CGM Shipping Settings",
-		{
-			"fieldname": "section_container_task_sequences",
-			"label": "Container tracking tasks",
-			"fieldtype": "Section Break",
-			"insert_after": "custom_ucr_finance_email_template",
-			"description": "Sea task sequence numbers that update Container Tracker records.",
-		},
-	)
-	insert_after = "section_container_task_sequences"
-	for fieldname, default in CONTAINER_TASK_SEQ_DEFAULTS.items():
-		label = fieldname.replace("custom_", "").replace("_task_seq", "").replace("_", " ").title()
-		_create_cf(
-			"CGM Shipping Settings",
-			{
-				"fieldname": fieldname,
-				"label": label,
-				"fieldtype": "Int",
-				"default": str(default),
-				"insert_after": insert_after,
-			},
-		)
-		insert_after = fieldname
-	_create_cf(
-		"CGM Shipping Settings",
-		{
-			"fieldname": "custom_kpa_free_days",
-			"label": "Default KPA Free Days",
-			"fieldtype": "Int",
-			"default": "5",
-			"insert_after": insert_after,
-			"description": "Default KPA free days applied to new Container Tracker records.",
-		},
-	)
+	for fieldname in (
+		"section_container_task_sequences",
+		*CONTAINER_TASK_SEQ_DEFAULTS.keys(),
+		"custom_kpa_free_days",
+	):
+		_remove_cf("CGM Shipping Settings", fieldname)
+
+	if frappe.db.exists("DocType", "CGM Shipping Settings"):
+		kpa = frappe.db.get_single_value("CGM Shipping Settings", "custom_kpa_free_days")
+		if kpa in (None, 0):
+			frappe.db.set_single_value(
+				"CGM Shipping Settings", "custom_kpa_free_days", 5, update_modified=False
+			)
+
 	frappe.clear_cache(doctype="CGM Shipping Settings")
 
 
@@ -1242,7 +1225,6 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		for c in containers
 		if c.get("alert_status")
 		or (c.get("demurrage_days") or 0) > 0
-		or (c.get("detention_days") or 0) > 0
 		or (c.get("days_outstanding") or 0) > 0
 	)
 	released = _count_status("Released / In Transit")
