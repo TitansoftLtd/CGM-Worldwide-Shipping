@@ -404,3 +404,149 @@
 .cgm-ops-table tr.cgm-tl-red {
 	animation: none;
 }
+
+.cgm-ops-table tr.cgm-ops-clickable {
+	cursor: pointer;
+}
+
+.cgm-ops-table tr.cgm-ops-clickable.is-selected td {
+	background: #fff5f7;
+	box-shadow: inset 3px 0 0 var(--cgm-red);
+}
+
+.cgm-ops-shipment-detail {
+	display: none;
+}
+
+.cgm-ops-body.is-detail-view .cgm-ops-shipment-detail {
+	display: block;
+	margin-bottom: 1rem;
+}
+
+.cgm-ops-shipment-detail-card {
+	padding: 1.25rem 1.5rem 1.35rem;
+	background:
+		radial-gradient(700px 120px at 100% 0%, rgba(227, 24, 55, 0.08), transparent 60%),
+		var(--cgm-surface);
+	border: 1px solid rgba(227, 24, 55, 0.12);
+	border-radius: var(--cgm-radius);
+	box-shadow: var(--cgm-shadow);
+}
+
+.cgm-ops-shipment-detail-toolbar {
+	margin-bottom: 0.85rem;
+}
+
+.cgm-ops-shipment-detail-heading {
+	margin: 0 0 1.1rem;
+	font-size: 1.25rem;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	color: var(--cgm-red-dark);
+}
+
+.cgm-ops-shipment-detail-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 0.85rem 1.25rem;
+}
+
+.cgm-ops-detail-field {
+	padding: 0.65rem 0.75rem;
+	background: var(--cgm-surface-alt);
+	border: 1px solid var(--cgm-border);
+	border-radius: 10px;
+	min-width: 0;
+}
+
+.cgm-ops-detail-label {
+	font-size: 0.7rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--cgm-muted);
+	margin-bottom: 0.3rem;
+}
+
+.cgm-ops-detail-value {
+	font-size: 0.92rem;
+	font-weight: 600;
+	color: var(--cgm-text);
+	line-height: 1.35;
+	word-break: break-word;
+}
+
+.cgm-ops-detail-value .cgm-ops-pill {
+	margin-top: 0.1rem;
+}
+
+.cgm-ops-body.is-detail-view .cgm-ops-table-wrap {
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	overflow: visible;
+}
+
+.cgm-ops-containers-panel {
+	background: var(--cgm-surface);
+	border: 1px solid var(--cgm-border);
+	border-radius: var(--cgm-radius);
+	box-shadow: var(--cgm-shadow);
+	overflow: hidden;
+}
+
+.cgm-ops-containers-heading {
+	margin: 0;
+	padding: 0.85rem 1.25rem;
+	font-size: 0.8rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--cgm-muted);
+	border-bottom: 1px solid var(--cgm-border);
+	background: var(--cgm-surface-alt);
+}
+
+.cgm-ops-containers-body {
+	overflow-x: auto;
+}
+
+.cgm-ops-containers-body .cgm-ops-table {
+	border-radius: 0;
+	box-shadow: none;
+	border: none;
+}
+
+.cgm-ops-back {
+	font-weight: 600;
+	border-color: rgba(227, 24, 55, 0.25);
+	color: var(--cgm-red-dark);
+}
+
+.cgm-ops-back:hover {
+	background: var(--cgm-red-soft);
+	border-color: rgba(227, 24, 55, 0.35);
+	color: var(--cgm-red-dark);
+}
+
+.cgm-ops-body.is-detail-view .cgm-ops-hero {
+	display: none;
+}
+
+@media (max-width: 1200px) {
+	.cgm-ops-shipment-detail-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 900px) {
+	.cgm-ops-shipment-detail-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 560px) {
+	.cgm-ops-shipment-detail-grid {
+		grid-template-columns: 1fr;
+	}
+}
