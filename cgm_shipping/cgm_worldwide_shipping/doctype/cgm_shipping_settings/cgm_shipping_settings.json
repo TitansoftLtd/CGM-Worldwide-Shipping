@@ -31,9 +31,19 @@
   "custom_default_email_template",
   "custom_permit_finance_email_template",
   "custom_ucr_finance_email_template",
-  "tab_finance_cost_ledger",
-  "section_finance_cost_category_map",
-  "custom_finance_cost_category_map"
+  "tab_container_tracking",
+  "section_container_task_sequences",
+  "custom_track_eta_task_seq",
+  "custom_vessel_arrival_task_seq",
+  "custom_field_clearance_task_seq",
+  "custom_kpa_paid_task_seq",
+  "custom_book_trucks_task_seq",
+  "custom_gate_out_task_seq",
+  "custom_monitor_delivery_task_seq",
+  "custom_offload_task_seq",
+  "custom_empty_return_task_seq",
+  "custom_interchange_task_seq",
+  "custom_kpa_free_days"
  ],
  "fields": [
   {
@@ -181,21 +191,82 @@
    "label": "UCR finance notification template"
   },
   {
-   "fieldname": "tab_finance_cost_ledger",
+   "fieldname": "tab_container_tracking",
    "fieldtype": "Tab Break",
-   "label": "Finance cost ledger"
+   "label": "Container tracking"
   },
   {
-   "description": "Maps Task payment items, permit types, or subject text to ledger cost types and Project summary buckets.",
-   "fieldname": "section_finance_cost_category_map",
+   "description": "Sea task sequence numbers that update Container Tracker records. Leave at 0 to use the built-in default for that step.",
+   "fieldname": "section_container_task_sequences",
    "fieldtype": "Section Break",
-   "label": "Finance cost category map"
+   "label": "Container tracking tasks"
   },
   {
-   "fieldname": "custom_finance_cost_category_map",
-   "fieldtype": "Table",
-   "label": "Category map",
-   "options": "Finance Cost Category Map"
+   "default": "8",
+   "fieldname": "custom_track_eta_task_seq",
+   "fieldtype": "Int",
+   "label": "Track Eta"
+  },
+  {
+   "default": "11",
+   "fieldname": "custom_vessel_arrival_task_seq",
+   "fieldtype": "Int",
+   "label": "Vessel Arrival"
+  },
+  {
+   "default": "18",
+   "fieldname": "custom_field_clearance_task_seq",
+   "fieldtype": "Int",
+   "label": "Field Clearance"
+  },
+  {
+   "default": "20",
+   "fieldname": "custom_kpa_paid_task_seq",
+   "fieldtype": "Int",
+   "label": "Kpa Paid"
+  },
+  {
+   "default": "21",
+   "fieldname": "custom_book_trucks_task_seq",
+   "fieldtype": "Int",
+   "label": "Book Trucks"
+  },
+  {
+   "default": "22",
+   "fieldname": "custom_gate_out_task_seq",
+   "fieldtype": "Int",
+   "label": "Gate Out"
+  },
+  {
+   "default": "23",
+   "fieldname": "custom_monitor_delivery_task_seq",
+   "fieldtype": "Int",
+   "label": "Monitor Delivery"
+  },
+  {
+   "default": "24",
+   "fieldname": "custom_offload_task_seq",
+   "fieldtype": "Int",
+   "label": "Offload"
+  },
+  {
+   "default": "25",
+   "fieldname": "custom_empty_return_task_seq",
+   "fieldtype": "Int",
+   "label": "Empty Return"
+  },
+  {
+   "default": "26",
+   "fieldname": "custom_interchange_task_seq",
+   "fieldtype": "Int",
+   "label": "Interchange"
+  },
+  {
+   "default": "5",
+   "description": "Default KPA free days applied to new Container Tracker records.",
+   "fieldname": "custom_kpa_free_days",
+   "fieldtype": "Int",
+   "label": "Default KPA Free Days"
   }
  ],
  "grid_page_length": 50,

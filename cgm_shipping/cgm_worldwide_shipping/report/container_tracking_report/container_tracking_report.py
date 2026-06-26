@@ -16,8 +16,7 @@ from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tra
 )
 
 EXPANDED_COLUMNS = [
-	{"fieldname": "demurrage_days", "label": _("Demurrage Days"), "fieldtype": "Int", "width": 100},
-	{"fieldname": "detention_days", "label": _("Detention Days"), "fieldtype": "Int", "width": 100},
+	{"fieldname": "demurrage_days", "label": _("Demurrage/Detention Days"), "fieldtype": "Int", "width": 130},
 	{"fieldname": "kpa_days", "label": _("KPA Days"), "fieldtype": "Int", "width": 80},
 	{"fieldname": "days_outstanding", "label": _("Days Outstanding"), "fieldtype": "Int", "width": 110},
 	{"fieldname": "seal_no", "label": _("Seal Number"), "fieldtype": "Data", "width": 90},
@@ -45,8 +44,6 @@ CONTAINER_FIELDS = [
 	"actual_empty_return",
 	"demurrage_days",
 	"demurrage_amount",
-	"detention_days",
-	"detention_amount",
 	"kpa_days",
 	"kpa_amount",
 	"days_outstanding",
@@ -121,11 +118,11 @@ def _build_columns(station_label: str, filters) -> list[dict]:
 	return columns
 
 
-def _row_style(status: str, demurrage_days: int, detention_days: int, days_outstanding: int) -> str:
+def _row_style(status: str, demurrage_days: int, days_outstanding: int) -> str:
 	status = status or ""
 	if "Overdue" in status or (demurrage_days or 0) > 0:
 		return "background-color:#fde2e2;"
-	if (detention_days or 0) > 0 or (days_outstanding or 0) > 0:
+	if (days_outstanding or 0) > 0:
 		return "background-color:#fff3cd;"
 	if status == "Interchange Received":
 		return "background-color:#d4edda;"
@@ -190,7 +187,6 @@ def get_data(filters, station_label: str | None = None):
 	data: list[dict] = []
 	current_key = None
 	group_demurrage = 0.0
-	group_detention = 0.0
 
 	for enriched in enriched_rows:
 		project = enriched.get("project")
@@ -199,10 +195,9 @@ def get_data(filters, station_label: str | None = None):
 
 		if group_key != current_key:
 			if current_key is not None:
-				data.append(_subtotal_row(group_demurrage, group_detention))
+				data.append(_subtotal_row(group_demurrage))
 			current_key = group_key
 			group_demurrage = 0.0
-			group_detention = 0.0
 			project_doc = frappe.db.get_value(
 				"Project",
 				project,
@@ -232,24 +227,21 @@ def get_data(filters, station_label: str | None = None):
 		enriched["row_style"] = _row_style(
 			enriched.get("status") or "",
 			enriched.get("demurrage_days") or 0,
-			enriched.get("detention_days") or 0,
 			enriched.get("days_outstanding") or 0,
 		)
 		group_demurrage += enriched.get("demurrage_days") or 0
-		group_detention += enriched.get("detention_days") or 0
 		data.append(enriched)
 
 	if current_key is not None:
-		data.append(_subtotal_row(group_demurrage, group_detention))
+		data.append(_subtotal_row(group_demurrage))
 
 	return data
 
 
-def _subtotal_row(demurrage: float, detention: float) -> dict:
+def _subtotal_row(demurrage: float) -> dict:
 	return {
 		"container_number": _("Subtotal"),
 		"demurrage_days": demurrage,
-		"detention_days": detention,
 		"is_subtotal": 1,
 		"row_style": "font-weight:bold;background-color:#f8f9fa;",
 	}

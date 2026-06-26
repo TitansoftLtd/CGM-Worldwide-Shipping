@@ -131,9 +131,10 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 		"port_days_used": enriched.get("port_days_used") or 0,
 		"days_outstanding": enriched.get("days_outstanding") or 0,
 		"demurrage_days": enriched.get("demurrage_days") or 0,
-		"detention_days": enriched.get("detention_days") or 0,
 		"free_days": enriched.get("free_days") or 0,
 		"free_days_end_date": enriched.get("free_days_end_date"),
+		"kpa_free_days": enriched.get("kpa_free_days") or 0,
+		"kpa_free_days_end_date": enriched.get("kpa_free_days_end_date"),
 		"expected_empty_return": enriched.get("expected_empty_return"),
 		"actual_empty_return": actual_return,
 		"interchange_date": interchange,
@@ -223,7 +224,7 @@ def _is_overdue_return(row: dict) -> bool:
 	alert = row.get("alert_status") or ""
 	if "Late" in alert or "Overdue" in alert:
 		return True
-	if (row.get("detention_days") or 0) > 0 and row.get("status") not in CLOSED_CONTAINER_STATUSES:
+	if (row.get("demurrage_days") or 0) > 0 and row.get("status") not in CLOSED_CONTAINER_STATUSES:
 		return True
 	return False
 
@@ -268,7 +269,7 @@ def _is_return_tracker_row(row: dict, ref, month_start) -> bool:
 		return True
 	if _returned_this_month(row, month_start):
 		return True
-	if (row.get("detention_days") or 0) > 0:
+	if (row.get("demurrage_days") or 0) > 0:
 		return True
 	return False
 
@@ -315,7 +316,7 @@ def get_container_return_tracker(filters=None) -> dict:
 	rows.sort(
 		key=lambda r: (
 			-(r.get("days_outstanding") or 0),
-			-(r.get("detention_days") or 0),
+			-(r.get("demurrage_days") or 0),
 			r.get("container_number") or "",
 		)
 	)
