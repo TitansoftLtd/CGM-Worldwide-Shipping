@@ -1,6 +1,8 @@
 """Container Ops Board — shared data for dashboard page and return tracker."""
 from __future__ import annotations
 
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import getdate, today
@@ -63,6 +65,14 @@ def _project_header_fields() -> list[str]:
 		"custom_cgm_ref_no",
 		"custom_batch_no",
 		"custom_bill_of_lading",
+		"custom_shipping_line",
+		"custom_vessel",
+		"custom_country_of_origin",
+		"custom_clearance_station",
+		"custom_eta",
+		"custom_actual_time_of_arrival_ata",
+		"custom_quantity",
+		"custom_shipment_status",
 	):
 		if meta.has_field(fieldname):
 			fields.append(fieldname)
@@ -90,7 +100,7 @@ def _customer_name(customer: str | None) -> str:
 
 
 def _station_label(row: dict) -> str:
-	station = row.get("delivery_location")
+	station = row.get("delivery_location") or row.get("custom_clearance_station")
 	if not station:
 		return ""
 	if frappe.db.exists("Clearance Station", station):
@@ -117,6 +127,7 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 	alert_status = compute_container_metrics(dict(row)).get("alert_status") or ""
 
 	status = enriched.get("status") or ""
+	container_status = enriched.get("current_location") or ""
 	out = {
 		"name": enriched.get("name"),
 		"container_number": enriched.get("container_number"),
@@ -125,6 +136,8 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 		"batch_no": project_doc.get("custom_batch_no") or "",
 		"customer": _customer_name(project_doc.get("customer")),
 		"bl_number": enriched.get("bl_number") or project_doc.get("custom_bill_of_lading"),
+		"operational_status": status,
+		"container_status": container_status,
 		"status": status,
 		"status_pill": _STATUS_PILL.get(status, "muted"),
 		"container_mode": enriched.get("container_mode"),
@@ -189,6 +202,249 @@ def _fetch_tracker_rows(filters) -> list[dict]:
 		order_by="modified desc",
 		limit_page_length=0,
 	)
+
+
+def _project_filters(filters) -> dict:
+	project_filters: dict = {}
+	if filters.get("customer"):
+		project_filters["customer"] = filters.customer
+	if filters.get("shipping_line"):
+		project_filters["custom_shipping_line"] = filters.shipping_line
+	if filters.get("status"):
+		project_filters["custom_shipment_status"] = filters.status
+	station = filters.get("clearance_station")
+	if station:
+		project_filters["custom_clearance_station"] = station
+	if filters.get("date_field") in ("eta", "ata"):
+		field = (
+			"custom_eta"
+			if filters.date_field == "eta"
+			else "custom_actual_time_of_arrival_ata"
+		)
+		if filters.get("date_from") and filters.get("date_to"):
+			project_filters[field] = ["between", [filters.date_from, filters.date_to]]
+		elif filters.get("date_from"):
+			project_filters[field] = [">=", filters.date_from]
+		elif filters.get("date_to"):
+			project_filters[field] = ["<=", filters.date_to]
+	return project_filters
+
+
+def _container_qty_size_from_trackers(rows: list[dict]) -> str | None:
+	counts: dict[str, int] = {}
+	for row in rows:
+		container_type = (row.get("type_of_container") or "").strip()
+		if not container_type:
+			continue
+		counts[container_type] = counts.get(container_type, 0) + 1
+	if not counts:
+		return None
+	dominant_type = max(counts, key=lambda key: (counts[key], key))
+	qty = counts[dominant_type]
+	size = re.sub(r"[^0-9]", "", dominant_type.upper()) or dominant_type.upper().replace("FT", "")
+	return f"{qty}X{size}"
+
+
+def _shipment_traffic_light(rows: list[dict]) -> dict[str, str]:
+	if not rows:
+		return {"level": "grey", "label": _("No Containers"), "css": "cgm-tl-grey"}
+	levels = [r.get("traffic_light") for r in rows if r.get("traffic_light")]
+	if "red" in levels:
+		return {"level": "red", "label": _("ACTION NEEDED"), "css": "cgm-tl-red"}
+	if "amber" in levels:
+		return {"level": "amber", "label": _("AT RISK"), "css": "cgm-tl-amber"}
+	if levels and all(level == "green" for level in levels):
+		return {"level": "green", "label": _("CLEARED"), "css": "cgm-tl-green"}
+	return {"level": "grey", "label": _("IN PROGRESS"), "css": "cgm-tl-grey"}
+
+
+def _shipment_status_summary(rows: list[dict]) -> str:
+	if not rows:
+		return "No containers"
+	returned = sum(1 for r in rows if r.get("status") in CLOSED_CONTAINER_STATUSES)
+	overdue = sum(
+		1
+		for r in rows
+		if r.get("status") == "Return Overdue"
+		or (r.get("days_outstanding") or 0) > 0
+	)
+	demurrage = sum(
+		1
+		for r in rows
+		if (r.get("demurrage_days") or 0) > 0 and r.get("status") not in CLOSED_CONTAINER_STATUSES
+	)
+	if returned == len(rows):
+		return _("All {0} returned").format(returned)
+	parts: list[str] = []
+	if returned:
+		parts.append(_("{0} returned").format(returned))
+	if overdue:
+		parts.append(_("{0} overdue").format(overdue))
+	if demurrage:
+		parts.append(_("{0} in demurrage").format(demurrage))
+	if not parts:
+		return _("{0} active").format(len(rows))
+	return ", ".join(parts)
+
+
+def _fetch_shipment_rows(filters) -> list[dict]:
+	return frappe.get_all(
+		"Project",
+		filters=_project_filters(filters),
+		fields=_project_header_fields(),
+		order_by="modified desc",
+		limit_page_length=0,
+	)
+
+
+def _container_location_summary(rows: list[dict]) -> str:
+	locations = [
+		(r.get("container_status") or r.get("current_location") or "").strip()
+		for r in rows
+		if (r.get("container_status") or r.get("current_location") or "").strip()
+	]
+	if not locations:
+		return _("No container location")
+	unique = sorted(set(locations))
+	if len(unique) == 1:
+		return unique[0]
+	if len(unique) <= 3:
+		return ", ".join(unique)
+	return _("{0} locations").format(len(unique))
+
+
+COMPLETED_SHIPMENT_STATUSES = frozenset({"Completed", "Settled"})
+
+
+def _shipment_kpis(projects: list[dict], container_rows: list[dict]) -> dict:
+	total = len(projects)
+	completed = sum(
+		1
+		for project in projects
+		if (project.get("custom_shipment_status") or "") in COMPLETED_SHIPMENT_STATUSES
+	)
+	active_shipments = total - completed
+	return {
+		"total_shipments": total,
+		"active_shipments": active_shipments,
+		"completed_shipments": completed,
+		"overdue_returns": sum(1 for r in container_rows if _is_overdue_return(r)),
+		"in_demurrage": sum(
+			1 for r in container_rows if (r.get("demurrage_days") or 0) > 0
+		),
+	}
+
+
+def _build_shipment_row(project: dict, projects: dict[str, dict], container_rows: list[dict]) -> dict:
+	supplier_label = _transporter_names().get(project.get("custom_shipping_line") or "") or (
+		project.get("custom_shipping_line") or ""
+	)
+	containers = [
+		row
+		for row in container_rows
+		if row.get("project") == project.get("name")
+	]
+	quantity = _container_qty_size_from_trackers(containers) or (project.get("custom_quantity") or "—")
+	traffic = _shipment_traffic_light(containers)
+	return {
+		"name": project.get("name"),
+		"project_ref": display_ref_from_values(project),
+		"customer": _customer_name(project.get("customer")),
+		"bl_number": project.get("custom_bill_of_lading") or "",
+		"batch_no": project.get("custom_batch_no") or "",
+		"quantity": quantity,
+		"shipping_line": supplier_label,
+		"country_of_origin": project.get("custom_country_of_origin") or "",
+		"eta": project.get("custom_eta"),
+		"ata": project.get("custom_actual_time_of_arrival_ata"),
+		"clearance_station": _station_label(project),
+		"remarks": _shipment_status_summary(containers),
+		"operational_status": project.get("custom_shipment_status") or "",
+		"container_status_summary": _container_location_summary(containers),
+		"shipment_status": project.get("custom_shipment_status") or "",
+		"deposit_amount": float(
+			frappe.db.sql(
+				"SELECT SUM(deposit_amount) FROM `tabContainer Tracker` WHERE project=%s",
+				(project.get("name"),),
+				as_list=True,
+			)[0][0] or 0
+		),
+		"vessel_name": project.get("custom_vessel") or "",
+		"traffic_light": traffic.get("level"),
+		"traffic_label": traffic.get("label"),
+		"traffic_css": traffic.get("css"),
+		"sort_key": _TRAFFIC_SORT.get(traffic.get("level"), 9),
+		"has_overdue": any(_is_overdue_return(c) for c in containers),
+		"has_demurrage": any(
+			(c.get("demurrage_days") or 0) > 0 and c.get("status") not in CLOSED_CONTAINER_STATUSES
+			for c in containers
+		),
+	}
+
+
+def _apply_shipment_kpi_filter(rows: list[dict], kpi_filter: str | None) -> list[dict]:
+	if not kpi_filter:
+		return rows
+	if kpi_filter == "active_shipments":
+		return [
+			r
+			for r in rows
+			if (r.get("operational_status") or "") not in COMPLETED_SHIPMENT_STATUSES
+		]
+	if kpi_filter == "completed_shipments":
+		return [
+			r
+			for r in rows
+			if (r.get("operational_status") or "") in COMPLETED_SHIPMENT_STATUSES
+		]
+	if kpi_filter == "total_shipments":
+		return rows
+	if kpi_filter == "overdue_returns":
+		return [r for r in rows if r.get("has_overdue")]
+	if kpi_filter == "in_demurrage":
+		return [r for r in rows if r.get("has_demurrage")]
+	return rows
+
+
+@frappe.whitelist()
+def get_shipment_tracker(filters=None) -> dict:
+	frappe.has_permission("Container Tracker", ptype="read", throw=True)
+	filters = _parse_filters(filters)
+	projects = _fetch_shipment_rows(filters)
+	project_map = {project["name"]: project for project in projects}
+	tracker_rows = []
+	if projects:
+		tracker_rows = frappe.get_all(
+			"Container Tracker",
+			filters={"project": ["in", list(project_map)]},
+			fields=_CONTAINER_TRACKER_FIELDS,
+			order_by="modified desc",
+			limit_page_length=0,
+		)
+	all_tracker_rows = [_build_row(row, project_map) for row in tracker_rows]
+	kpis = _shipment_kpis(projects, all_tracker_rows)
+	rows: list[dict] = []
+	for project in projects:
+		rows.append(_build_shipment_row(project, project_map, all_tracker_rows))
+	rows = _apply_shipment_kpi_filter(rows, filters.get("kpi_filter"))
+	rows.sort(key=lambda r: (r.get("sort_key", 9), -(r.get("deposit_amount") or 0)))
+	return {"kpis": kpis, "rows": rows, "kpi_filter": filters.get("kpi_filter")}
+
+
+@frappe.whitelist()
+def get_project_containers_for_board(project: str) -> list[dict]:
+	"""Container rows for one shipment — same shape as All Containers tab."""
+	frappe.has_permission("Container Tracker", ptype="read", throw=True)
+	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
+	projects = _project_cache()
+	raw = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project},
+		fields=_CONTAINER_TRACKER_FIELDS,
+		order_by="container_number asc",
+		limit_page_length=0,
+	)
+	return [_build_row(row, projects) for row in raw]
 
 
 def _filter_by_customer(rows: list[dict], customer: str | None, projects: dict) -> list[dict]:
