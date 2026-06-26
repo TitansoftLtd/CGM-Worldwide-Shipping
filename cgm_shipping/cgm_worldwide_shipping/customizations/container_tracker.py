@@ -1087,6 +1087,15 @@ def get_containers_for_project(project_name: str) -> list[dict]:
 	return out
 
 
+@frappe.whitelist()
+def get_containers_for_project_whitelisted(project: str | None = None, project_name: str | None = None) -> list[dict]:
+	"""Whitelisted API for desk pages (accepts project or project_name)."""
+	target = project or project_name
+	if not target:
+		frappe.throw(_("Project is required."))
+	return get_containers_for_project(target)
+
+
 def get_overdue_containers(project_name: str) -> list[dict]:
 	return [
 		c
