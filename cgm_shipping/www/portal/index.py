@@ -113,7 +113,7 @@ def _populate(context, customer):
 		1 for s in shipments if s.custom_shipment_status == "Completed"
 	)
 
-	# Demurrage exposure: containers accruing demurrage or detention on any
+	# Demurrage exposure: containers accruing demurrage/detention on any
 	# of this customer's shipments. One join beats N per-shipment queries.
 	demurrage = frappe.db.sql(
 		"""
@@ -121,7 +121,7 @@ def _populate(context, customer):
 		FROM `tabContainer Tracker` ct
 		JOIN `tabProject` p ON p.name = ct.project
 		WHERE p.customer = %s
-		  AND (IFNULL(ct.demurrage_days, 0) > 0 OR IFNULL(ct.detention_days, 0) > 0)
+		  AND IFNULL(ct.demurrage_days, 0) > 0
 		""",
 		(customer,),
 	)

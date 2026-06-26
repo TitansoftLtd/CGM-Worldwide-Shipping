@@ -110,7 +110,7 @@ def _build_context(context, project):
 	for c in containers:
 		c["timeline"] = container_timeline(c)
 		c["has_charges"] = bool(
-			(c.get("demurrage_days") or 0) or (c.get("detention_days") or 0)
+			(c.get("demurrage_days") or 0)
 		)
 	context.containers = containers
 
