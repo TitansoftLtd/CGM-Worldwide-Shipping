@@ -1,11 +1,10 @@
 # Copyright (c) 2026, Titansoft Limited and contributors
 # License: see license.txt
-"""Customer portal: every downloadable document across the customer's shipments.
+"""Customer portal: shipment documents across the customer's projects.
 
-Visible at `/documents`. Aggregates the vetted Shipment Document rows from
-all of the customer's Projects into one list, each with a guarded download
-link and a link back to its shipment. Downloads stream through the
-ownership-checked `download_shipment_document` endpoint.
+Visible at `/documents`. Aggregates Shipment Document rows from all of the
+customer's Projects into one list with status badges matching the Project
+child table.
 """
 
 from urllib.parse import quote
