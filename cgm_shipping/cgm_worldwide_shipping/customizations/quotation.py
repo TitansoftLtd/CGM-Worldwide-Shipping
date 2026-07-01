@@ -17,6 +17,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	QUOTATION_SI_READY_STATES,
 	QUOTATION_WORKFLOW_STATE_APPROVED,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing import (
+	PRICING_ROW_FIELDS,
+	QUOTATION_ITEM_PRICING_TABLE,
+	apply_item_pricing_to_document,
+	calculate_quotation_item_pricing,
+)
 
 # ── Child-table fieldnames ────────────────────────────────────────────────────
 IMPORT_COST_TABLE = "custom_import_cost_component"
@@ -72,11 +78,6 @@ CGM_QUOTATION_SI_EXTRA_FIELDS = (
 	"custom_shipment",
 )
 
-# ── KEBS constants ────────────────────────────────────────────────────────────
-KEBS_ITEM_CODE   = "Kebs Inspection Fee"
-KEBS_MIN_FOREIGN = 300.0   # minimum fee in transaction / foreign currency
-KEBS_PERCENT     = 0.006   # 0.6 %
-
 # ── Tax-type classification sets ──────────────────────────────────────────────
 # Add new tax-type *names* here; no other code changes are required.
 STACKING_TAX_TYPES = frozenset({"VAT"})          # stacks on the running cumulative base
@@ -101,24 +102,29 @@ class _CGMCustomsTaxMixin:
     # ── Master entry point ────────────────────────────────────────────────────
 
     def _calculate_import_customs_taxes(self) -> None:
-        """Recalculate import-cost components, KEBS, customs taxes, and grand totals."""
-        if not self.meta.has_field(IMPORT_COST_TABLE):
-            self._set_custom_total_tax(0.0)
+        """Recalculate import costs, item pricing, customs taxes, and grand totals."""
+        has_import = self.meta.has_field(IMPORT_COST_TABLE)
+        has_taxes = self.meta.has_field(CUSTOMS_TAX_TABLE)
+        has_pricing = self.meta.has_field(QUOTATION_ITEM_PRICING_TABLE)
+
+        if not has_import and not has_taxes and not has_pricing:
             return
 
         company_currency = get_company_currency(self.company)
 
-        # Step 1 — Import Cost Component rows → customs_value
-        customs_value_foreign, customs_value_kes = self._sum_import_costs(company_currency)
+        if has_import:
+            customs_value_foreign, customs_value_kes = self._sum_import_costs(company_currency)
+            self.custom_custom_value = customs_value_foreign
+            self.custom_base_customs_value = customs_value_kes
+        else:
+            customs_value_kes = flt(getattr(self, "custom_base_customs_value", 0))
 
-        self.custom_custom_value       = customs_value_foreign
-        self.custom_base_customs_value = customs_value_kes
+        self._recalculate_item_pricing()
 
-        # Step 2 — KEBS auto-calculation (item-level charge)
-        self._recalculate_kebs_item(customs_value_foreign)
+        if has_pricing:
+            self.calculate_taxes_and_totals()
 
-        # Step 3 — Customs Tax rows
-        if not self.meta.has_field(CUSTOMS_TAX_TABLE):
+        if not has_taxes:
             self._set_custom_total_tax(0.0)
             return
 
@@ -218,26 +224,15 @@ class _CGMCustomsTaxMixin:
         amount_kes = customs_value_kes * (rate / 100)
         return amount_kes, amount_kes
 
-    # ── KEBS auto-calculation ─────────────────────────────────────────────────
+    # ── Item pricing (data-driven from Item.custom_item_pricing_rules) ──────────
 
-    def _recalculate_kebs_item(self, customs_value_foreign: float) -> None:
-        """
-        KEBS Inspection Fee = MAX(0.6 % of customs_value_foreign, 300 in transaction currency).
-        Updates the matching Quotation / Sales Order item row in place.
-        """
-        kebs_rate = max(flt(customs_value_foreign) * KEBS_PERCENT, KEBS_MIN_FOREIGN)
+    def _recalculate_item_pricing(self) -> None:
+        """Populate pricing table and item rates from all active Item pricing rules."""
+        if not self.meta.has_field(QUOTATION_ITEM_PRICING_TABLE):
+            return
 
-        for item in self.get("items") or []:
-            if item.item_code != KEBS_ITEM_CODE:
-                continue
-            item.rate = item.net_rate = flt(kebs_rate, item.precision("rate"))
-            item.amount = item.net_amount = item.rate * flt(item.qty)
-            item.base_rate = item.base_net_rate = self._money(
-                item.rate * flt(self.conversion_rate), "base_rate", item
-            )
-            item.base_amount = item.base_net_amount = self._money(
-                item.amount * flt(self.conversion_rate), "base_amount", item
-            )
+        result = calculate_quotation_item_pricing(self)
+        apply_item_pricing_to_document(self, result)
 
     # ── Grand-total propagation ───────────────────────────────────────────────
 
@@ -340,8 +335,11 @@ class CGMSalesOrder(_CGMCustomsTaxMixin, SalesOrder):
 
     def validate(self):
         super().validate()
-        # Only recalculate when custom tables are present; harmless otherwise.
-        if self.meta.has_field(IMPORT_COST_TABLE) or self.meta.has_field(CUSTOMS_TAX_TABLE):
+        if (
+            self.meta.has_field(IMPORT_COST_TABLE)
+            or self.meta.has_field(CUSTOMS_TAX_TABLE)
+            or self.meta.has_field(QUOTATION_ITEM_PRICING_TABLE)
+        ):
             self._calculate_import_customs_taxes()
 
 
@@ -368,6 +366,7 @@ def copy_cgm_quotation_fields(source_doc, target_doc) -> None:
 	"""Copy full CGM customs/import fields from Quotation to Sales Order."""
 	_copy_child_table(source_doc, target_doc, IMPORT_COST_TABLE, IMPORT_COST_ROW_FIELDS)
 	_copy_child_table(source_doc, target_doc, CUSTOMS_TAX_TABLE, CUSTOMS_TAX_ROW_FIELDS)
+	_copy_child_table(source_doc, target_doc, QUOTATION_ITEM_PRICING_TABLE, PRICING_ROW_FIELDS)
 	_copy_scalar_fields(source_doc, target_doc, CGM_QUOTATION_SO_SCALAR_FIELDS)
 
 	if target_doc.meta.has_field("project") and source_doc.get("custom_shipment"):
