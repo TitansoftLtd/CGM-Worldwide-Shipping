@@ -3,31 +3,9 @@
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
 
 [post_model_sync]
-# Patches added in this section will be executed after doctypes are migrated
-cgm_shipping.patches.seed_sea_import_task_template
-cgm_shipping.patches.seed_task_requirements
-cgm_shipping.patches.seed_sea_workflow_task_gates
-cgm_shipping.patches.seed_clearance_stations
-cgm_shipping.patches.seed_cfs_locations
-cgm_shipping.patches.drop_opportunity_preshipment_status_column
-cgm_shipping.patches.update_task9_document_checkpoint
-cgm_shipping.patches.seed_customs_tax_types
-cgm_shipping.patches.ensure_supplier_shipping_line_schema
-cgm_shipping.patches.migrate_free_days_rule_destinations
-cgm_shipping.patches.reinstall_supplier_shipping_line_schema
-cgm_shipping.patches.rename_free_days_rule_destination_field
-cgm_shipping.patches.ensure_task_container_updates_schema
-cgm_shipping.patches.drop_quotation_legacy_total_tax_columns
-cgm_shipping.patches.upgrade_entry_slip_workflow
-cgm_shipping.patches.upgrade_shipping_line_workflow
-cgm_shipping.patches.upgrade_post_clearance_permit_workflow
-cgm_shipping.patches.upgrade_kpa_invoice_workflow
-cgm_shipping.patches.upgrade_container_tracker_integration
-cgm_shipping.patches.remove_track_eta_task_from_template
-cgm_shipping.patches.ensure_shipment_document_versioning
-cgm_shipping.patches.add_container_ops_board_workspace
-cgm_shipping.patches.remove_opportunity_entry_no
-cgm_shipping.patches.ensure_quotation_si_fields
+# Idempotent patches — re-apply config from source on every migrate.
+# One-time migrations already applied on existing sites live in git history only.
 cgm_shipping.patches.ensure_quotation_workflow
-cgm_shipping.patches.update_mss_levy_calculation_type
-cgm_shipping.patches.dedupe_cgm_shipping_settings_fields
+cgm_shipping.patches.ensure_sales_invoice_workflow_fields
+cgm_shipping.patches.ensure_sales_invoice_workflow
+cgm_shipping.patches.ensure_cgm_frappe_wiki
