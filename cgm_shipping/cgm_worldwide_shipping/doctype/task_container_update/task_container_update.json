@@ -14,9 +14,8 @@
   "verification_location",
   "free_days_start_date",
   "free_days_end_date",
-  "demurrage_daily_rate",
-  "kpa_daily_rate",
-  "kpa_free_days_override",
+  "kpa_free_days_start_date",
+  "kpa_free_days_end_date",
   "transporter",
   "truck_number",
   "driver_name",
@@ -30,8 +29,6 @@
   "offloading_exception_reason",
   "actual_empty_return",
   "gate_in_date_depot",
-  "detention_free_start_date",
-  "detention_free_end_date",
   "transporter_at_return",
   "interchange_date",
   "interchange_document"
@@ -92,33 +89,25 @@
    "depends_on": "eval:parent.custom_sequence_no == 22",
    "fieldname": "free_days_start_date",
    "fieldtype": "Date",
-   "label": "Free Days Start Date"
+   "label": "Shipping Line Free Day Start Date"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 22",
    "fieldname": "free_days_end_date",
    "fieldtype": "Date",
-   "label": "Free Days End Date"
+   "label": "Shipping Line Free Day End Date"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 22",
-   "fieldname": "demurrage_daily_rate",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Demurrage Daily Rate"
+   "fieldname": "kpa_free_days_start_date",
+   "fieldtype": "Date",
+   "label": "KPA Free Day Start Date"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 22",
-   "fieldname": "kpa_daily_rate",
-   "fieldtype": "Currency",
-   "label": "KPA Daily Rate"
-  },
-  {
-   "depends_on": "eval:parent.custom_sequence_no == 19",
-   "description": "Leave blank to use CGM Shipping Settings default",
-   "fieldname": "kpa_free_days_override",
-   "fieldtype": "Int",
-   "label": "KPA Free Days"
+   "fieldname": "kpa_free_days_end_date",
+   "fieldtype": "Date",
+   "label": "KPA Free Day End Date"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 21",
@@ -210,18 +199,6 @@
    "fieldname": "gate_in_date_depot",
    "fieldtype": "Date",
    "label": "Gate In at Depot"
-  },
-  {
-   "depends_on": "eval:parent.custom_sequence_no == 25",
-   "fieldname": "detention_free_start_date",
-   "fieldtype": "Date",
-   "label": "Detention Free Start Date"
-  },
-  {
-   "depends_on": "eval:parent.custom_sequence_no == 25",
-   "fieldname": "detention_free_end_date",
-   "fieldtype": "Date",
-   "label": "Detention Free End Date"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 25",

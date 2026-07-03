@@ -2,7 +2,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 	frappe.require("/assets/cgm_shipping/css/container_ops_board.css", () => {
 		const page = frappe.ui.make_app_page({
 			parent: wrapper,
-			title: __("Container Ops Board"),
+			title: __("Shipment Tracker"),
 			single_column: true,
 		});
 
@@ -12,21 +12,25 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		page.main.addClass("cgm-ops-board");
 		page.main.append(`
 			<div class="cgm-ops-hero">
-				<h1>${__("Container Operations Board")}</h1>
-				<p>${__("Live transport view — gate movements, warehouse, returns & demurrage")}</p>
+				<h1>${__("Shipment Tracker")}</h1>
+				<p>${__("Shipment-level tracking with drill-down to container status and the existing container operations board")}</p>
 			</div>
 			<div class="cgm-ops-body">
 				<div class="cgm-ops-filters"></div>
 				<div class="cgm-ops-kpis"></div>
 				<div class="cgm-ops-filter-hint" style="display:none"></div>
 				<div class="cgm-ops-tabs">
-					<button type="button" class="btn btn-sm btn-default active" data-tab="board">${__(
+					<button type="button" class="btn btn-sm btn-default active" data-tab="shipments">${__(
+						"Shipments"
+					)}</button>
+					<button type="button" class="btn btn-sm btn-default" data-tab="board">${__(
 						"All Containers"
 					)}</button>
 					<button type="button" class="btn btn-sm btn-default" data-tab="returns">${__(
 						"Empty Return Tracker"
 					)}</button>
 				</div>
+				<div class="cgm-ops-shipment-detail"></div>
 				<div class="cgm-ops-table-wrap"><div class="cgm-ops-empty">${__("Loading…")}</div></div>
 			</div>
 		`);
@@ -36,9 +40,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		const filters = {};
 		const filter_controls = {};
 		let kpiFilter = null;
-		let activeTab = "board";
+		let activeTab = "shipments";
+		let shipmentRows = [];
+		let selectedProject = null;
 
-		const KPI_META = {
+		const CONTAINER_KPI_META = {
 			total_active: { label: __("Total Active"), icon: "📦", tone: "slate", alert: false },
 			overdue_returns: { label: __("Overdue Returns"), icon: "🚨", tone: "red", alert: true },
 			in_demurrage: { label: __("In Demurrage"), icon: "⏱", tone: "red", alert: true },
@@ -56,6 +62,42 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			},
 		};
 
+		const SHIPMENT_KPI_META = {
+			active_shipments: { label: __("Active Shipments"), icon: "📦", tone: "slate", alert: false },
+			completed_shipments: {
+				label: __("Completed Shipments"),
+				icon: "✅",
+				tone: "green",
+				alert: false,
+			},
+			total_shipments: { label: __("All Shipments"), icon: "📋", tone: "slate", alert: false },
+			overdue_returns: { label: __("Overdue Returns"), icon: "🚨", tone: "red", alert: true },
+			in_demurrage: { label: __("In Demurrage"), icon: "⏱", tone: "red", alert: true },
+		};
+
+		const CONTAINER_KPI_CARDS = [
+			"total_active",
+			"overdue_returns",
+			"in_demurrage",
+			"free_days_expiring",
+			"returned_this_month",
+		];
+		const SHIPMENT_KPI_CARDS = [
+			"active_shipments",
+			"completed_shipments",
+			"total_shipments",
+			"overdue_returns",
+			"in_demurrage",
+		];
+
+		const CONTAINER_STATUS_OPTIONS =
+			"\nPending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received";
+
+		function shipmentStatusOptions() {
+			const df = frappe.meta.get_docfield("Project", "custom_shipment_status");
+			return df && df.options ? `\n${df.options}` : "\nCompleted\nDraft";
+		}
+
 		const filter_fields = [
 			{
 				fieldname: "customer",
@@ -64,10 +106,10 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				options: "Customer",
 			},
 			{
-				fieldname: "project",
-				label: __("Project"),
+				fieldname: "shipping_line",
+				label: __("Shipping Line"),
 				fieldtype: "Link",
-				options: "Project",
+				options: "Supplier",
 			},
 			{
 				fieldname: "bill_of_lading",
@@ -82,20 +124,42 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				options: "Clearance Station",
 			},
 			{
-				fieldname: "container_mode",
-				label: __("Container Mode"),
+				fieldname: "date_field",
+				label: __("Date Field"),
 				fieldtype: "Select",
-				options:
-					"\nMombasa Port\nICD Nairobi\nTransit Kenya→Border\nTransit Border→Kenya\nExport",
+				options: "\nETA\nATA",
+			},
+			{
+				fieldname: "date_from",
+				label: __("Date From"),
+				fieldtype: "Date",
+			},
+			{
+				fieldname: "date_to",
+				label: __("Date To"),
+				fieldtype: "Date",
 			},
 			{
 				fieldname: "status",
 				label: __("Status"),
 				fieldtype: "Select",
-				options:
-					"\nPending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received",
+				options: shipmentStatusOptions(),
 			},
 		];
+
+		function syncStatusFilterForTab() {
+			const control = filter_controls.status;
+			if (!control) {
+				return;
+			}
+			const options =
+				activeTab === "shipments" ? shipmentStatusOptions() : CONTAINER_STATUS_OPTIONS;
+			control.df.options = options;
+			control.refresh();
+			if (control.$input) {
+				control.$input.attr("placeholder", __("Status"));
+			}
+		}
 
 		const $filter_parent = page.main.find(".cgm-ops-filters");
 		filter_fields.forEach((df) => {
@@ -126,8 +190,24 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		function statusPill(row) {
 			const pill = row.status_pill || "muted";
-			const label = row.status || "";
+			const label = row.operational_status || row.status || "";
 			return `<span class="cgm-ops-pill ${frappe.utils.escape_html(pill)}"><span class="dot"></span>${frappe.utils.escape_html(label)}</span>`;
+		}
+
+		function containerStatusCell(value) {
+			return frappe.utils.escape_html(value || "—");
+		}
+
+		function shipmentOperationalStatusCell(row) {
+			const label = row.operational_status || row.shipment_status || "";
+			if (!label) {
+				return "—";
+			}
+			return `<span class="cgm-ops-pill muted"><span class="dot"></span>${frappe.utils.escape_html(label)}</span>`;
+		}
+
+		function currentKpiMeta() {
+			return activeTab === "shipments" ? SHIPMENT_KPI_META : CONTAINER_KPI_META;
 		}
 
 		function trackerLink(row) {
@@ -158,24 +238,27 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		function updateFilterHint() {
 			const $hint = page.main.find(".cgm-ops-filter-hint");
-			if (!kpiFilter || !KPI_META[kpiFilter]) {
+			const meta = currentKpiMeta()[kpiFilter];
+			if (!kpiFilter || !meta) {
 				$hint.hide();
 				return;
 			}
 			$hint
 				.show()
 				.html(
-					`<span class="badge">${frappe.utils.escape_html(KPI_META[kpiFilter].label)}</span>
+					`<span class="badge">${frappe.utils.escape_html(meta.label)}</span>
 					<span>${__("Filtered view")}</span>
 					<span class="clear-filter">${__("Clear filter")}</span>`
 				);
 		}
 
 		function refresh() {
-			const method =
-				activeTab === "returns"
-					? "cgm_shipping.cgm_worldwide_shipping.customizations.container_ops_board.get_container_return_tracker"
-					: "cgm_shipping.cgm_worldwide_shipping.customizations.container_ops_board.get_container_ops_board";
+			let method = "cgm_shipping.cgm_worldwide_shipping.customizations.container_ops_board.get_container_ops_board";
+			if (activeTab === "returns") {
+				method = "cgm_shipping.cgm_worldwide_shipping.customizations.container_ops_board.get_container_return_tracker";
+			} else if (activeTab === "shipments") {
+				method = "cgm_shipping.cgm_worldwide_shipping.customizations.container_ops_board.get_shipment_tracker";
+			}
 
 			const args = { ...filters };
 			if (kpiFilter) {
@@ -188,11 +271,16 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				freeze: true,
 				callback(r) {
 					if (r.exc) {
-					 return;
+					return;
 					}
 					updateFilterHint();
+					if (activeTab !== "shipments") {
+						exitShipmentDetailMode();
+					}
 					if (activeTab === "returns") {
 						renderReturns(r.message || {});
+					} else if (activeTab === "shipments") {
+						renderShipments(r.message || {});
 					} else {
 						renderBoard(r.message || {});
 					}
@@ -202,17 +290,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		function renderKpis(kpis) {
 			kpis = kpis || {};
-			const cards = [
-				"total_active",
-				"overdue_returns",
-				"in_demurrage",
-				"free_days_expiring",
-				"returned_this_month",
-			];
+			const cards = activeTab === "shipments" ? SHIPMENT_KPI_CARDS : CONTAINER_KPI_CARDS;
+			const metaSource = currentKpiMeta();
 			page.main.find(".cgm-ops-kpis").html(
 				cards
 					.map((key) => {
-						const meta = KPI_META[key];
+						const meta = metaSource[key];
 						const active = kpiFilter === key ? " is-active" : "";
 						const alertCls = meta.alert ? " is-alert" : "";
 						return `<button type="button" class="cgm-ops-kpi${alertCls}${active}" data-kpi="${key}">
@@ -240,12 +323,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("Contact")}</th>
 				<th>${__("Gate In Warehouse")}</th>
 				<th>${__("Offloaded")}</th>
-				<th>${__("Status")}</th>
+				<th>${__("Operational Status")}</th>
+				<th>${__("Container Status")}</th>
 				<th>${__("Expected Return")}</th>
 				<th>${__("Actual Return")}</th>
 				<th>${__("Transporter")}</th>
-				<th>${__("Dem.")}</th>
-				<th>${__("Det.")}</th>
+				<th>${__("Dem./Det.")}</th>
 			`;
 		}
 
@@ -267,13 +350,176 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<td>${fmtDate(row.gate_in_date_warehouse)}<div class="text-muted small">${frappe.utils.escape_html(row.clearance_station || "")}</div></td>
 				<td>${fmtDate(row.offloading_date)}</td>
 				<td>${statusPill(row)}</td>
+				<td>${containerStatusCell(row.container_status)}</td>
 				<td>${fmtDate(row.expected_empty_return)}</td>
 				<td>${fmtDate(ret)}</td>
 				<td>${frappe.utils.escape_html(row.transporter_name || "—")}</td>
 				<td>${row.demurrage_days || 0}</td>
-				<td>${row.detention_days || 0}</td>
 				${extraCol}
 			</tr>`;
+		}
+
+		const $opsBody = page.main.find(".cgm-ops-body");
+		const $tableWrap = page.main.find(".cgm-ops-table-wrap");
+		const $shipmentDetail = page.main.find(".cgm-ops-shipment-detail");
+		const $listChrome = $opsBody.find(
+			".cgm-ops-filters, .cgm-ops-kpis, .cgm-ops-filter-hint, .cgm-ops-tabs"
+		);
+
+		function enterShipmentDetailMode() {
+			$opsBody.addClass("is-detail-view");
+			$listChrome.hide();
+		}
+
+		function exitShipmentDetailMode() {
+			$opsBody.removeClass("is-detail-view");
+			$listChrome.show();
+			selectedProject = null;
+			$shipmentDetail.empty();
+			setup_cgm_ops_breadcrumbs();
+		}
+
+		function renderShipmentListTable() {
+			$tableWrap.html(`
+				<table class="cgm-ops-table">
+					<thead><tr>${shipmentTableHeaders()}</tr></thead>
+					<tbody>${shipmentRows.map((row) => shipmentTableRow(row)).join("")}</tbody>
+				</table>`);
+		}
+
+		function shipmentTableHeaders() {
+			return `
+				<th>${__("Shipment")}</th>
+				<th>${__("Client")}</th>
+				<th>${__("B/L")}</th>
+				<th>${__("Batch")}</th>
+				<th>${__("Containers")}</th>
+				<th>${__("Shipping Line")}</th>
+				<th>${__("Country of Origin")}</th>
+				<th>${__("ETA")}</th>
+				<th>${__("ATA")}</th>
+				<th>${__("Clearing Station")}</th>
+				<th>${__("Operational Status")}</th>
+				<th>${__("Container Status")}</th>
+				<th>${__("Remarks")}</th>
+				<th>${__("Container Deposit")}</th>
+				<th>${__("Vessel")}</th>
+			`;
+		}
+
+		function shipmentTableRow(row) {
+			return `<tr class="cgm-ops-clickable" data-project="${frappe.utils.escape_html(row.name)}">
+				<td>${projectLink(row)}</td>
+				<td>${frappe.utils.escape_html(row.customer || "—")}</td>
+				<td>${frappe.utils.escape_html(row.bl_number || "—")}</td>
+				<td>${frappe.utils.escape_html(row.batch_no || "—")}</td>
+				<td>${frappe.utils.escape_html(row.quantity || "—")}</td>
+				<td>${frappe.utils.escape_html(row.shipping_line || "—")}</td>
+				<td>${frappe.utils.escape_html(row.country_of_origin || "—")}</td>
+				<td>${fmtDate(row.eta)}</td>
+				<td>${fmtDate(row.ata)}</td>
+				<td>${frappe.utils.escape_html(row.clearance_station || "—")}</td>
+				<td>${shipmentOperationalStatusCell(row)}</td>
+				<td>${containerStatusCell(row.container_status_summary)}</td>
+				<td>${frappe.utils.escape_html(row.remarks || "—")}</td>
+				<td>${frappe.utils.escape_html(row.deposit_amount || 0)}</td>
+				<td>${frappe.utils.escape_html(row.vessel_name || "—")}</td>
+			</tr>`;
+		}
+
+		function renderShipments(data) {
+			renderKpis(data.kpis);
+			const rows = data.rows || [];
+			shipmentRows = rows;
+			if (!rows.length) {
+				exitShipmentDetailMode();
+				$tableWrap.html(`
+					<div class="cgm-ops-empty">
+						<div class="cgm-ops-empty-icon">📭</div>
+						${__("No shipments match these filters.")}
+					</div>`);
+				return;
+			}
+			if (selectedProject) {
+				const project = rows.find((row) => row.name === selectedProject);
+				if (project) {
+					renderShipmentDetail(project);
+					return;
+				}
+				exitShipmentDetailMode();
+			}
+			renderShipmentListTable();
+		}
+
+		function shipmentDetailField(label, value, options = {}) {
+			const display =
+				value === null || value === undefined || value === "" ? "—" : String(value);
+			const valueHtml = options.pill
+				? `<span class="cgm-ops-pill muted"><span class="dot"></span>${frappe.utils.escape_html(display)}</span>`
+				: frappe.utils.escape_html(display);
+			return `<div class="cgm-ops-detail-field${options.wide ? " is-wide" : ""}">
+				<div class="cgm-ops-detail-label">${frappe.utils.escape_html(label)}</div>
+				<div class="cgm-ops-detail-value">${valueHtml}</div>
+			</div>`;
+		}
+
+		function renderShipmentDetail(project) {
+			selectedProject = project.name;
+			enterShipmentDetailMode();
+			const shipmentLabel = project.project_ref || project.name;
+			setup_cgm_ops_breadcrumbs(shipmentLabel);
+			const summary = `
+				<div class="cgm-ops-shipment-detail-card">
+					<div class="cgm-ops-shipment-detail-toolbar">
+						<button type="button" class="btn btn-sm btn-default cgm-ops-back">
+							&larr; ${__("Back to Shipments")}
+						</button>
+					</div>
+					<h2 class="cgm-ops-shipment-detail-heading">${__("Shipment")}: ${frappe.utils.escape_html(shipmentLabel)}</h2>
+					<div class="cgm-ops-shipment-detail-grid">
+						${shipmentDetailField(__("Client"), project.customer)}
+						${shipmentDetailField(__("B/L"), project.bl_number)}
+						${shipmentDetailField(__("Batch"), project.batch_no)}
+						${shipmentDetailField(__("Containers"), project.quantity)}
+						${shipmentDetailField(__("Operational Status"), project.operational_status, { pill: true })}
+						${shipmentDetailField(__("Country of Origin"), project.country_of_origin)}
+						${shipmentDetailField(__("ETA"), project.eta ? fmtDate(project.eta) : "")}
+						${shipmentDetailField(__("ATA"), project.ata ? fmtDate(project.ata) : "")}
+						${shipmentDetailField(__("Shipping Line"), project.shipping_line)}
+						${shipmentDetailField(__("Clearance Station"), project.clearance_station)}
+						${shipmentDetailField(__("Container Deposit"), project.deposit_amount)}
+						${shipmentDetailField(__("Vessel"), project.vessel_name)}
+					</div>
+				</div>`;
+			$shipmentDetail.html(summary);
+			$tableWrap.html(`
+				<div class="cgm-ops-containers-panel">
+					<h3 class="cgm-ops-containers-heading">${__("Containers on this shipment")}</h3>
+					<div class="cgm-ops-containers-body"><div class="cgm-ops-empty">${__("Loading containers…")}</div></div>
+				</div>`);
+			frappe.call({
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.customizations.container_ops_board.get_project_containers_for_board",
+				args: { project: project.name },
+				freeze: true,
+				callback(r) {
+					const $body = $tableWrap.find(".cgm-ops-containers-body");
+					if (r.exc) {
+						$body.html(`<div class="cgm-ops-empty">${__("Could not load containers.")}</div>`);
+						return;
+					}
+					const containerRows = r.message || [];
+					if (!containerRows.length) {
+						$body.html(`<div class="cgm-ops-empty">${__("No containers linked to this shipment.")}</div>`);
+						return;
+					}
+					$body.html(`
+						<table class="cgm-ops-table">
+							<thead><tr>${transportTableHeaders()}</tr></thead>
+							<tbody>${containerRows.map((row) => transportTableRow(row)).join("")}</tbody>
+						</table>`);
+				},
+			});
 		}
 
 		function renderBoard(data) {
@@ -332,7 +578,32 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			activeTab = $(this).data("tab");
 			page.main.find(".cgm-ops-tabs button").removeClass("active");
 			$(this).addClass("active");
+			kpiFilter = null;
+			exitShipmentDetailMode();
+			syncStatusFilterForTab();
 			refresh();
+		});
+
+		page.main.on("click", ".cgm-ops-back", () => {
+			exitShipmentDetailMode();
+			if (activeTab === "shipments" && shipmentRows.length) {
+				renderShipmentListTable();
+			}
+		});
+
+		page.main.on("click", ".cgm-ops-table a", (e) => {
+			e.stopPropagation();
+		});
+
+		page.main.on("click", ".cgm-ops-clickable", function () {
+			if (activeTab !== "shipments" || selectedProject) {
+				return;
+			}
+			const project = $(this).data("project");
+			const rows = shipmentRows.filter((r) => r.name === project);
+			if (rows.length) {
+				renderShipmentDetail(rows[0]);
+			}
 		});
 
 		wrapper.on_page_show = function () {
@@ -342,11 +613,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		};
 
 		setTimeout(setup_cgm_ops_breadcrumbs, 0);
+		syncStatusFilterForTab();
 		refresh();
 	});
 };
 
-function setup_cgm_ops_breadcrumbs() {
+function setup_cgm_ops_breadcrumbs(shipmentLabel) {
 	frappe.breadcrumbs.clear();
 	const workspace_label = frappe.app.sidebar?.sidebar_title || __("CGM Shipping");
 	let workspace_route = "/desk/cgm-shipping";
@@ -366,8 +638,15 @@ function setup_cgm_ops_breadcrumbs() {
 	);
 	frappe.breadcrumbs.append_breadcrumb_element(
 		"/desk/container-ops-board",
-		__("Container Ops Board"),
-		"title-text"
+		__("Shipment Tracker"),
+		shipmentLabel ? "shipment-list-breadcrumb" : "title-text"
 	);
+	if (shipmentLabel) {
+		frappe.breadcrumbs.append_breadcrumb_element(
+			"#",
+			shipmentLabel,
+			"title-text"
+		);
+	}
 	frappe.breadcrumbs.toggle(true);
 }

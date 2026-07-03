@@ -11,7 +11,8 @@ const MODE_SECTIONS = {
 		"section_mombasa",
 		"section_warehouse",
 		"section_transport",
-		"section_charges",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
 		"section_empty_return",
 	],
 	"ICD Nairobi": [
@@ -20,7 +21,8 @@ const MODE_SECTIONS = {
 		"section_icd",
 		"section_warehouse",
 		"section_transport",
-		"section_charges",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
 		"section_empty_return",
 	],
 	"Transit Kenya→Border": [
@@ -29,7 +31,8 @@ const MODE_SECTIONS = {
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
-		"section_charges",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
 		"section_empty_return",
 	],
 	"Transit Border→Kenya": [
@@ -38,14 +41,16 @@ const MODE_SECTIONS = {
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
-		"section_charges",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
 		"section_empty_return",
 	],
 	Export: [
 		"section_identity",
 		"section_dates",
 		"section_transport",
-		"section_charges",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
 		"section_empty_return",
 	],
 };
@@ -294,7 +299,7 @@ function render_container_tracker_alerts(frm) {
 		} else {
 			alert = {
 				msg: __(
-					"Enter <b>Free Days End Date</b> after release so demurrage can be tracked."
+					"Enter <b>Shipping Line Free Day End Date</b> after discharge so demurrage/detention can be tracked."
 				),
 				color: "orange",
 			};
@@ -310,7 +315,7 @@ function render_container_tracker_alerts(frm) {
 		if (diff > 0) {
 			alert = {
 				msg: __(
-					"Return overdue by {0} day(s) — contact transporter immediately. Detention charges may be accruing.",
+					"Return overdue by {0} day(s) — contact transporter immediately. Demurrage/detention charges may be accruing.",
 					[diff]
 				),
 				color: "red",
@@ -336,7 +341,7 @@ function render_container_tracker_alerts(frm) {
 		if (late > 0) {
 			alert = {
 				msg: __(
-					"Returned late — {0} day(s) past the detention free period end date",
+					"Returned late — {0} day(s) past the shipping-line free period end date",
 					[late]
 				),
 				color: "orange",
@@ -446,6 +451,19 @@ frappe.ui.form.on("Container Tracker", {
 
 	container_mode(frm) {
 		apply_container_mode_layout(frm);
+	},
+
+	discharging_date(frm) {
+		const discharge = frm.doc.discharging_date;
+		if (!discharge) {
+			return;
+		}
+		if (!frm.doc.free_days_start_date) {
+			frm.set_value("free_days_start_date", discharge);
+		}
+		if (!frm.doc.kpa_free_days_start_date) {
+			frm.set_value("kpa_free_days_start_date", discharge);
+		}
 	},
 
 	before_save(frm) {

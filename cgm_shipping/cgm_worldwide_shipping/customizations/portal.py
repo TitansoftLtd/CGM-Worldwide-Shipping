@@ -355,8 +355,6 @@ def get_containers_for_shipment(project_name: str) -> list[dict]:
 			"actual_empty_return",
 			"demurrage_days",
 			"demurrage_amount",
-			"detention_days",
-			"detention_amount",
 			"days_outstanding",
 		],
 		order_by="container_number asc",

@@ -163,10 +163,7 @@
           {% if c.has_charges %}
             <div class="sh-charge">
               {% if c.demurrage_days %}
-                <div><div class="lab">{{ _("Demurrage") }}</div><div class="val">{{ c.demurrage_days }} {{ _("days") }}{% if c.demurrage_amount %} · {{ frappe.utils.fmt_money(c.demurrage_amount) }}{% endif %}</div></div>
-              {% endif %}
-              {% if c.detention_days %}
-                <div><div class="lab">{{ _("Detention") }}</div><div class="val">{{ c.detention_days }} {{ _("days") }}{% if c.detention_amount %} · {{ frappe.utils.fmt_money(c.detention_amount) }}{% endif %}</div></div>
+                <div><div class="lab">{{ _("Demurrage/Detention") }}</div><div class="val">{{ c.demurrage_days }} {{ _("days") }}{% if c.demurrage_amount %} · {{ frappe.utils.fmt_money(c.demurrage_amount) }}{% endif %}</div></div>
               {% endif %}
             </div>
           {% endif %}

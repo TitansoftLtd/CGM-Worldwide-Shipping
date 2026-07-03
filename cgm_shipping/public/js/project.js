@@ -131,7 +131,7 @@ function configure_project_container_grid(frm) {
 			const modes = new Set((r.message || []).map((row) => row.container_mode).filter(Boolean));
 			const hideCharges =
 				modes.size === 1 && modes.has("Export");
-			["demurrage_days", "detention_days"].forEach((fieldname) => {
+			["demurrage_days"].forEach((fieldname) => {
 				grid.update_docfield_property(fieldname, "hidden", hideCharges ? 1 : 0);
 			});
 		},

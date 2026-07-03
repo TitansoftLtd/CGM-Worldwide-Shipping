@@ -24,8 +24,8 @@ TRACKER_TO_TASK_FIELDS = (
 	"driver_contact",
 	"free_days_start_date",
 	"free_days_end_date",
-	"detention_free_start_date",
-	"detention_free_end_date",
+	"kpa_free_days_start_date",
+	"kpa_free_days_end_date",
 	"gate_out_date_port",
 	"gate_in_date_warehouse",
 	"delivery_location",
@@ -61,6 +61,8 @@ def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 			("gate_out_date_port", "gate_out_date_port"),
 			("free_days_start_date", "free_days_start_date"),
 			("free_days_end_date", "free_days_end_date"),
+			("kpa_free_days_start_date", "kpa_free_days_start_date"),
+			("kpa_free_days_end_date", "kpa_free_days_end_date"),
 		],
 		get_container_task_sequence("custom_monitor_delivery_task_seq"): [
 			("gate_in_date_warehouse", "gate_in_date_warehouse"),
@@ -73,8 +75,6 @@ def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 		get_container_task_sequence("custom_empty_return_task_seq"): [
 			("actual_empty_return", "actual_empty_return"),
 			("gate_in_date_depot", "gate_in_date_depot"),
-			("detention_free_start_date", "detention_free_start_date"),
-			("detention_free_end_date", "detention_free_end_date"),
 		],
 		get_container_task_sequence("custom_interchange_task_seq"): [
 			("interchange_date", "interchange_date"),
@@ -143,14 +143,14 @@ TRACKER_SEED_FIELDS = [
 	"gate_out_date_port",
 	"free_days_start_date",
 	"free_days_end_date",
+	"kpa_free_days_start_date",
+	"kpa_free_days_end_date",
 	"offloading_date",
 	"actual_empty_return",
 	"interchange_date",
 	"interchange_document",
 	"gate_in_date_warehouse",
 	"delivery_location",
-	"detention_free_start_date",
-	"detention_free_end_date",
 ]
 
 
@@ -184,7 +184,13 @@ def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
 				row.set(field, tracker.get(field))
 				changed = True
 	elif seq == gate_out_seq:
-		for field in ("gate_out_date_port", "free_days_start_date", "free_days_end_date"):
+		for field in (
+			"gate_out_date_port",
+			"free_days_start_date",
+			"free_days_end_date",
+			"kpa_free_days_start_date",
+			"kpa_free_days_end_date",
+		):
 			if not row.get(field) and tracker.get(field):
 				row.set(field, tracker.get(field))
 				changed = True
@@ -199,8 +205,7 @@ def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
 	elif seq == empty_seq:
 		for field in (
 			"actual_empty_return",
-			"detention_free_start_date",
-			"detention_free_end_date",
+			"gate_in_date_depot",
 		):
 			if not row.get(field) and tracker.get(field):
 				row.set(field, tracker.get(field))
@@ -322,6 +327,8 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 			"gate_out_date_port",
 			"free_days_start_date",
 			"free_days_end_date",
+			"kpa_free_days_start_date",
+			"kpa_free_days_end_date",
 		),
 		get_container_task_sequence("custom_monitor_delivery_task_seq"): (
 			"gate_in_date_warehouse",
@@ -331,8 +338,6 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 		get_container_task_sequence("custom_empty_return_task_seq"): (
 			"actual_empty_return",
 			"gate_in_date_depot",
-			"detention_free_start_date",
-			"detention_free_end_date",
 		),
 		get_container_task_sequence("custom_interchange_task_seq"): (
 			"interchange_date",

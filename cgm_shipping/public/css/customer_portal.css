@@ -132,6 +132,111 @@ a.cp-kpi:hover, a.cp-kpi:focus-visible {
 .cp-link { font-size: .85rem; color: var(--cp-brand); font-weight: 600; text-decoration: none; }
 .cp-link:hover { text-decoration: underline; }
 
+/* ───── Tabs (transporter portal, shared) ───── */
+.cp-page .cp-card-tabbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .35rem;
+  padding: .4rem;
+  background: var(--cp-surface-alt);
+  border-bottom: 1px solid var(--cp-border);
+}
+.cp-page .cp-card-tabbar button.cp-card-tab {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  margin: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  background-image: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 600;
+  color: var(--cp-text-muted);
+  padding: .65rem 1rem;
+  border-radius: var(--cp-radius-sm);
+  transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 2.65rem;
+  line-height: 1.2;
+  text-align: center;
+  text-shadow: none;
+  box-shadow: none;
+  outline: none;
+  width: 100%;
+}
+.cp-page .cp-card-tabbar button.cp-card-tab:hover,
+.cp-page .cp-card-tabbar .cp-card-tab:hover {
+  color: var(--cp-text);
+  background: rgba(255, 255, 255, .55);
+}
+.cp-page .cp-card-tabbar button.cp-card-tab.active,
+.cp-page .cp-card-tabbar .cp-card-tab.active {
+  background: var(--cp-surface);
+  color: var(--cp-brand-dark);
+  border-color: rgba(3, 105, 161, .22);
+  box-shadow: var(--cp-shadow);
+}
+.cp-page .cp-card-tabbar .cp-card-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 .4rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 700;
+  background: var(--cp-border);
+  color: var(--cp-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cp-page .cp-card-tabbar button.cp-card-tab.active .cp-card-tab-badge,
+.cp-page .cp-card-tabbar .cp-card-tab.active .cp-card-tab-badge {
+  background: var(--cp-brand);
+  color: #fff;
+}
+.cp-tab-panel { display: none; }
+.cp-tab-panel.active { display: block; }
+button.cp-kpi {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  margin: 0;
+  border: none;
+}
+
+/* Legacy pill tabs (kept for compatibility) */
+.cp-tabs {
+  display: flex; gap: .5rem; margin-bottom: 1rem; flex-wrap: wrap;
+  padding: .35rem; background: var(--cp-surface-alt); border: 1px solid var(--cp-border);
+  border-radius: 999px; width: fit-content; max-width: 100%;
+}
+.cp-tab {
+  appearance: none; border: none; background: transparent; cursor: pointer;
+  padding: .45rem 1.1rem; border-radius: 999px; font-size: .85rem; font-weight: 600;
+  color: var(--cp-text-muted); transition: background .12s ease, color .12s ease, box-shadow .12s ease;
+  display: inline-flex; align-items: center; gap: .45rem;
+}
+.cp-tab:hover { color: var(--cp-text); }
+.cp-tab.active {
+  background: var(--cp-surface); color: var(--cp-brand-dark);
+  box-shadow: var(--cp-shadow); border: 1px solid rgba(3,105,161,.2);
+}
+.cp-tab-count {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 1.35rem;
+  padding: .1rem .4rem; border-radius: 999px; font-size: .72rem; font-weight: 700;
+  background: var(--cp-brand-soft); color: var(--cp-brand);
+}
+.cp-tab.active .cp-tab-count { background: var(--cp-brand); color: #fff; }
+.cp-tab-panel { display: none; }
+.cp-tab-panel.active { display: block; }
+button.cp-kpi { width: 100%; text-align: left; font: inherit; }
+
 /* ───── Quick actions ───── */
 .cp-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
 .cp-action {
@@ -283,4 +388,64 @@ a.cp-kpi:hover, a.cp-kpi:focus-visible {
 .tp-form-actions .btn[disabled] {
   opacity: .7;
   cursor: wait;
+}
+
+/* ───── Transporter interchange upload ───── */
+.tp-interchange-upload {
+  margin-top: .25rem;
+  padding: 1.1rem 1.15rem;
+  border: 1.5px dashed #93c5fd;
+  border-radius: var(--cp-radius);
+  background: linear-gradient(180deg, #f8fbff 0%, #f0f9ff 100%);
+}
+.tp-interchange-upload-head {
+  display: flex;
+  align-items: flex-start;
+  gap: .85rem;
+  margin-bottom: 1rem;
+}
+.tp-interchange-upload-title {
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--cp-text);
+  letter-spacing: -0.01em;
+}
+.tp-interchange-upload-sub {
+  margin-top: .2rem;
+  font-size: .82rem;
+  color: var(--cp-text-muted);
+  line-height: 1.4;
+}
+.tp-interchange-upload-actions {
+  display: flex;
+  gap: .65rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.tp-interchange-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  margin: 0;
+  cursor: pointer;
+}
+.cp-page .tp-interchange-file,
+.tp-interchange-pick .tp-interchange-file {
+  display: none !important;
+  visibility: hidden;
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.tp-interchange-file-name {
+  font-size: .82rem;
+  color: var(--cp-brand-dark);
+  font-weight: 600;
+  margin-top: .55rem;
+  word-break: break-all;
+}
+.tp-interchange-file-name:empty {
+  display: none;
 }
