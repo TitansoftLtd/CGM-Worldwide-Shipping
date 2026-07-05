@@ -78,6 +78,9 @@ frappe.ui.form.on("Task", {
 		if (ui.show_permits) {
 			configure_permit_grid(frm);
 		}
+		cgm_configure_task_status_fields(frm);
+		cgm_configure_document_status_grids(frm);
+		cgm_configure_permit_status_grids(frm);
 		if (ui.show_payments && frm.fields_dict.custom_journal_entry) {
 			frm.set_df_property(
 				"custom_journal_entry",

@@ -270,7 +270,278 @@ const CGM = (() => {
             "custom_total_tax",
         ]);
 
-        if (opts.quiet) scheduleCleanRestore(frm);
+        calculateItemPricing(frm, opts);
+    }
+
+    // ── Item pricing engine (Item.custom_item_pricing_rules) ─────────────────
+
+    const CALCULATION_PERCENTAGE = "Percentage";
+    const CALCULATION_FIXED = "Fixed";
+    const ITEM_PRICING_RULES = {};
+
+    function invalidateItemPricingRule(item_code) {
+        if (item_code) delete ITEM_PRICING_RULES[item_code];
+    }
+
+    function toCompanyCurrency(amount, from_currency, frm) {
+        amount = flt(amount);
+        if (!amount || !from_currency) return amount;
+
+        const company_currency = companyCurrency(frm);
+        if (from_currency === company_currency) return amount;
+
+        const rate = bankRate(frm);
+        if (from_currency === frm.doc.currency && rate) return flt(amount * rate);
+
+        return null;
+    }
+
+    function toQuotationCurrency(amount, from_currency, frm) {
+        amount = flt(amount);
+        if (!amount || !from_currency || from_currency === frm.doc.currency) return amount;
+
+        const company_currency = companyCurrency(frm);
+        const rate = bankRate(frm);
+        if (from_currency === company_currency && rate) return rate ? flt(amount / rate) : 0;
+
+        return null;
+    }
+
+    function convertCurrencyClient(amount, from_currency, to_currency, frm) {
+        amount = flt(amount);
+        if (!amount || !from_currency || !to_currency || from_currency === to_currency) {
+            return amount;
+        }
+
+        const company_currency = companyCurrency(frm);
+        const rate = bankRate(frm);
+
+        if (from_currency === frm.doc.currency && to_currency === company_currency) {
+            return flt(amount * rate);
+        }
+        if (from_currency === company_currency && to_currency === frm.doc.currency) {
+            return rate ? flt(amount / rate) : 0;
+        }
+
+        return null;
+    }
+
+    function calculateItemPricingRow(custom_value, rule, frm) {
+        const rule_currency = rule.currency;
+        const calculation_type = rule.calculation_type || CALCULATION_PERCENTAGE;
+        const percentage_rate = flt(rule.percentage_rate);
+        const fixed_rate = flt(rule.fixed_rate);
+        const floor_rate = flt(rule.floor_rate);
+
+        let computed_amount = 0;
+        let candidate_amount = 0;
+
+        if (calculation_type === CALCULATION_FIXED) {
+            candidate_amount = fixed_rate;
+        } else {
+            const computed_in_doc = (percentage_rate / 100) * flt(custom_value);
+            computed_amount = convertCurrencyClient(
+                computed_in_doc, frm.doc.currency, rule_currency, frm
+            );
+            if (computed_amount === null) return null;
+            candidate_amount = Math.max(computed_amount, floor_rate);
+        }
+
+        let company_amount = toCompanyCurrency(candidate_amount, rule_currency, frm);
+        if (company_amount === null) {
+            company_amount = convertCurrencyClient(
+                candidate_amount, rule_currency, companyCurrency(frm), frm
+            );
+            if (company_amount === null) return null;
+        }
+
+        return {
+            rule_currency,
+            calculation_type,
+            percentage_rate,
+            fixed_rate,
+            floor_rate,
+            computed_amount,
+            candidate_amount,
+            company_amount,
+        };
+    }
+
+    function candidateInQuotationCurrency(calc, frm) {
+        let rate = toQuotationCurrency(calc.candidate_amount, calc.rule_currency, frm);
+        if (rate === null) {
+            rate = convertCurrencyClient(
+                calc.candidate_amount, calc.rule_currency, frm.doc.currency, frm
+            );
+        }
+        return rate;
+    }
+
+    function calculateItemPricingForItem(custom_value, rules, frm) {
+        if (!rules?.length) return null;
+
+        const evaluated = [];
+        for (const rule of rules) {
+            const calc = calculateItemPricingRow(custom_value, rule, frm);
+            if (!calc) return null;
+
+            const quotation_candidate = candidateInQuotationCurrency(calc, frm);
+            if (quotation_candidate === null) return null;
+
+            evaluated.push({ calc, quotation_candidate });
+        }
+
+        const winning_rate = Math.max(...evaluated.map((row) => row.quotation_candidate));
+        const pricing_rows = evaluated.map(({ calc, quotation_candidate }) => ({
+            ...calc,
+            winning_rule: quotation_candidate === winning_rate ? 1 : 0,
+        }));
+
+        return { pricing_rows, item_rate: winning_rate };
+    }
+
+    function needsServerItemPricing(rules, frm) {
+        const company_currency = companyCurrency(frm);
+        return Object.values(rules).some((rule_list) => {
+            if (!rule_list) return false;
+            const rows = Array.isArray(rule_list) ? rule_list : [rule_list];
+            return rows.some((rule) => {
+                const cur = rule.currency;
+                return cur !== frm.doc.currency && cur !== company_currency;
+            });
+        });
+    }
+
+    function calculateItemPricingLocal(frm, rules, opts = {}) {
+        const custom_value = flt(frm.doc.custom_custom_value);
+        const pricing_rows = [];
+        const item_updates = [];
+
+        for (const item of frm.doc.items || []) {
+            if (!item.item_code) continue;
+
+            const item_rules = rules[item.item_code];
+            if (!item_rules?.length) continue;
+
+            const result = calculateItemPricingForItem(custom_value, item_rules, frm);
+            if (!result) {
+                calculateItemPricingFromServer(frm, opts);
+                return;
+            }
+
+            for (const row of result.pricing_rows) {
+                pricing_rows.push({ item: item.item_code, ...row });
+            }
+
+            item_updates.push({
+                name: item.name,
+                item_code: item.item_code,
+                rate: result.item_rate,
+                qty: flt(item.qty) || 1,
+            });
+        }
+
+        applyItemPricingResult(frm, { pricing_rows, item_updates }, opts);
+    }
+
+    function applyItemPricingResult(frm, result, opts = {}) {
+        if (!frm.fields_dict.custom_item_pricing) return;
+
+        frm.clear_table("custom_item_pricing");
+        for (const row of result.pricing_rows || []) {
+            frm.add_child("custom_item_pricing", row);
+        }
+        frm.refresh_field("custom_item_pricing");
+
+        const updates = result.item_updates || [];
+        if (!updates.length) {
+            if (opts.quiet) scheduleCleanRestore(frm);
+            return;
+        }
+
+        const pending = updates.map((upd) => {
+            const item = (frm.doc.items || []).find((row) => row.name === upd.name);
+            if (!item) return Promise.resolve();
+            return frappe.model.set_value(item.doctype, item.name, "rate", upd.rate);
+        });
+
+        Promise.all(pending).then(() => {
+            CGM.syncGrandTotalsAfterERPNext(frm);
+            if (opts.quiet) scheduleCleanRestore(frm);
+        });
+    }
+
+    function calculateItemPricingFromServer(frm, opts = {}) {
+        if (opts.quiet) frm._cgm_keep_clean_after_sync = true;
+
+        frappe.call({
+            method: "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.preview_quotation_item_pricing",
+            args: {
+                quotation: {
+                    custom_custom_value: frm.doc.custom_custom_value,
+                    currency: frm.doc.currency,
+                    company: frm.doc.company,
+                    conversion_rate: frm.doc.conversion_rate,
+                    transaction_date: frm.doc.transaction_date,
+                    items: (frm.doc.items || []).map((row) => ({
+                        name: row.name,
+                        item_code: row.item_code,
+                        qty: row.qty,
+                    })),
+                },
+            },
+            callback(r) {
+                if (r.message) applyItemPricingResult(frm, r.message, opts);
+                else if (opts.quiet) scheduleCleanRestore(frm);
+            },
+        });
+    }
+
+    function calculateItemPricing(frm, opts = {}) {
+        if (!frm.fields_dict.custom_item_pricing) {
+            if (opts.quiet) scheduleCleanRestore(frm);
+            return;
+        }
+        if (!frm.doc.company || !frm.doc.currency) {
+            if (opts.quiet) scheduleCleanRestore(frm);
+            return;
+        }
+
+        if (opts.quiet) frm._cgm_keep_clean_after_sync = true;
+
+        const item_codes = [
+            ...new Set((frm.doc.items || []).map((row) => row.item_code).filter(Boolean)),
+        ];
+        if (!item_codes.length) {
+            applyItemPricingResult(frm, { pricing_rows: [], item_updates: [] }, opts);
+            return;
+        }
+
+        const missing = item_codes.filter((code) => !(code in ITEM_PRICING_RULES));
+        if (missing.length) {
+            frappe.call({
+                method: "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.get_item_pricing_rules",
+                args: { item_codes },
+                callback(r) {
+                    Object.assign(ITEM_PRICING_RULES, r.message || {});
+                    for (const code of item_codes) {
+                        if (!ITEM_PRICING_RULES[code]) ITEM_PRICING_RULES[code] = [];
+                    }
+                    if (needsServerItemPricing(ITEM_PRICING_RULES, frm)) {
+                        calculateItemPricingFromServer(frm, opts);
+                    } else {
+                        calculateItemPricingLocal(frm, ITEM_PRICING_RULES, opts);
+                    }
+                },
+            });
+            return;
+        }
+
+        if (needsServerItemPricing(ITEM_PRICING_RULES, frm)) {
+            calculateItemPricingFromServer(frm, opts);
+        } else {
+            calculateItemPricingLocal(frm, ITEM_PRICING_RULES, opts);
+        }
     }
 
     // ── Customs Tax row UI helpers ────────────────────────────────────────────
@@ -343,6 +614,20 @@ const CGM = (() => {
         }
     }
 
+    function setupItemPricingGridUI(frm) {
+        if (!frm.fields_dict.custom_item_pricing) return;
+
+        frm.set_df_property("custom_item_pricing", "read_only", 0);
+        frm.set_df_property("custom_item_pricing", "cannot_add_rows", 1);
+        frm.fields_dict.custom_item_pricing.grid?.refresh();
+
+        const items_grid = frm.fields_dict.items?.grid;
+        if (items_grid) {
+            items_grid.update_docfield_property("rate", "read_only", 1);
+            items_grid.refresh();
+        }
+    }
+
     function seedImportCostExchangeRate(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
         if (!row || flt(row.exchange_rate)) return;
@@ -353,9 +638,12 @@ const CGM = (() => {
     // ── Public API ────────────────────────────────────────────────────────────
     return {
         calculateCustomsTaxes,
+        calculateItemPricing,
+        invalidateItemPricingRule,
         syncGrandTotalsAfterERPNext,
         setupCustomsTaxGridUI,
         setupImportCostGridUI,
+        setupItemPricingGridUI,
         applyCustomsTaxDefaults,
         toggleCustomsTaxFields,
         enforceExchangeRate,
@@ -375,6 +663,7 @@ frappe.ui.form.on("Quotation", {
     refresh(frm) {
         CGM.setupImportCostGridUI(frm);
         CGM.setupCustomsTaxGridUI(frm);
+        CGM.setupItemPricingGridUI(frm);
         CGM.add_sales_invoice_button(frm);
 
         // Submitted quotations already have server-calculated totals.
@@ -407,6 +696,13 @@ frappe.ui.form.on("Quotation", {
         CGM.calculateCustomsTaxes(frm);
     },
     custom_customs_taxes_remove(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+
+    items_add(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+    items_remove(frm) {
         CGM.calculateCustomsTaxes(frm);
     },
 });
@@ -462,10 +758,14 @@ CGM.fetch_shipment_references = function (frm) {
 };
 
 frappe.ui.form.on("Quotation Item", {
-    rate(frm)         { CGM.syncGrandTotalsAfterERPNext(frm); },
-    qty(frm)          { CGM.syncGrandTotalsAfterERPNext(frm); },
-    amount(frm)       { CGM.syncGrandTotalsAfterERPNext(frm); },
-    items_remove(frm) { CGM.syncGrandTotalsAfterERPNext(frm); },
+    item_code(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        CGM.invalidateItemPricingRule(row?.item_code);
+        CGM.calculateCustomsTaxes(frm);
+    },
+    rate(frm)         { CGM.calculateCustomsTaxes(frm); },
+    qty(frm)          { CGM.calculateCustomsTaxes(frm); },
+    amount(frm)       { CGM.calculateCustomsTaxes(frm); },
 });
 
 
@@ -478,6 +778,7 @@ frappe.ui.form.on("Sales Order", {
     refresh(frm) {
         CGM.setupImportCostGridUI(frm);
         CGM.setupCustomsTaxGridUI(frm);
+        CGM.setupItemPricingGridUI(frm);
 
         if (frm.doc.docstatus === 1 && !frm.is_dirty()) return;
 
@@ -501,13 +802,24 @@ frappe.ui.form.on("Sales Order", {
     custom_customs_taxes_remove(frm) {
         CGM.calculateCustomsTaxes(frm);
     },
+
+    items_add(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+    items_remove(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
 });
 
 frappe.ui.form.on("Sales Order Item", {
-    rate(frm)         { CGM.syncGrandTotalsAfterERPNext(frm); },
-    qty(frm)          { CGM.syncGrandTotalsAfterERPNext(frm); },
-    amount(frm)       { CGM.syncGrandTotalsAfterERPNext(frm); },
-    items_remove(frm) { CGM.syncGrandTotalsAfterERPNext(frm); },
+    item_code(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        CGM.invalidateItemPricingRule(row?.item_code);
+        CGM.calculateCustomsTaxes(frm);
+    },
+    rate(frm)         { CGM.calculateCustomsTaxes(frm); },
+    qty(frm)          { CGM.calculateCustomsTaxes(frm); },
+    amount(frm)       { CGM.calculateCustomsTaxes(frm); },
 });
 
 
