@@ -5,6 +5,13 @@ from __future__ import annotations
 import frappe
 
 
+def after_install() -> None:
+	"""Seed default masters and CGM Shipping Settings on a fresh site."""
+	from cgm_shipping.default_seed_data import seed_all_defaults
+
+	seed_all_defaults()
+
+
 def after_migrate() -> None:
 	"""Re-apply idempotent schema installers after every bench migrate."""
 	reinstall_supplier_shipping_line_schema()
@@ -62,6 +69,7 @@ def ensure_task_container_schema() -> None:
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		ensure_client_inspection_task_fields,
+		ensure_container_tracking_settings_fields,
 		ensure_field_officer_task_fields,
 		ensure_project_inspection_notification_fields,
 		ensure_project_port_arrival_fields,
@@ -71,6 +79,7 @@ def ensure_task_container_schema() -> None:
 	ensure_shipment_document_version_fields()
 
 	if frappe.db.exists("DocType", "Task Container Update"):
+		ensure_container_tracking_settings_fields()
 		ensure_task_container_update_fields()
 	if frappe.db.exists("DocType", "Task"):
 		ensure_field_officer_task_fields()

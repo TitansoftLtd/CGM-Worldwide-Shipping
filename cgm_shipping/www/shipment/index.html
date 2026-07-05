@@ -185,7 +185,7 @@
             <div class="sh-doc-title">{{ d.doc_label }}</div>
             <div class="sh-doc-sub">{% if d.verified_on %}{{ _("Verified") }} {{ local_date(d.verified_on) }}{% elif d.uploaded_on %}{{ _("Shared") }} {{ local_date(d.uploaded_on) }}{% endif %}{% if d.remarks %} · {{ d.remarks }}{% endif %}</div>
           </div>
-          <a class="cp-btn cp-btn-ghost" style="padding:.35rem .9rem;font-size:.8rem;" href="{{ d.download_url }}">{{ _("Download") }}</a>
+          <span class="cp-status {{ d.tone }}" style="text-transform:none;font-size:.75rem;padding:.35rem .75rem;"><span class="dot"></span>{{ d.status }}</span>
         </div>
       {% endfor %}
     {% else %}

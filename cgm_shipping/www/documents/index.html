@@ -37,7 +37,7 @@
             <th>{{ _("Document") }}</th>
             <th>{{ _("Shipment") }}</th>
             <th>{{ _("Shared") }}</th>
-            <th>{{ _("Actions") }}</th>
+            <th>{{ _("Status") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -46,7 +46,7 @@
               <td data-label="{{ _('Document') }}"><strong>{{ d.doc_label }}</strong></td>
               <td data-label="{{ _('Shipment') }}"><a class="ref-link" href="{{ d.shipment_url }}">{{ d.ref }}</a></td>
               <td data-label="{{ _('Shared') }}">{% if d.verified_on %}{{ local_date(d.verified_on) }}{% else %}-{% endif %}</td>
-              <td data-label="{{ _('Actions') }}"><a class="cp-btn cp-btn-ghost" style="padding:.3rem .8rem;font-size:.78rem;" href="{{ d.download_url }}">{{ _("Download") }}</a></td>
+              <td data-label="{{ _('Status') }}"><span class="cp-status {{ d.tone }}"><span class="dot"></span>{{ d.status }}</span></td>
             </tr>
           {% endfor %}
         </tbody>

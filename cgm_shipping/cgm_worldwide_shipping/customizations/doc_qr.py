@@ -15,7 +15,7 @@ def get_doc_qr_code(doctype, docname):
 	Usage in any Jinja print format:
 		{% set qr = get_doc_qr_code(doc.doctype, doc.name) %}
 		{% if qr %}
-		<img src="data:image/png;base64,{{ qr }}" width="80" height="80">
+		<img src="data:image/png;base64,{{ qr }}" width="100" height="100">
 		{% endif %}
 	"""
 	doc = frappe.get_doc(doctype, docname)
@@ -23,7 +23,8 @@ def get_doc_qr_code(doctype, docname):
 
 	qr = qrcreate(payload, error="M")
 	buf = io.BytesIO()
-	qr.png(buf, scale=4, module_color=(139, 26, 26), background=[255, 255, 255])
+	# Higher scale keeps modules sharp when the print view scales the image down.
+	qr.png(buf, scale=10, module_color=(139, 26, 26), background=[255, 255, 255])
 	return base64.b64encode(buf.getvalue()).decode()
 
 
