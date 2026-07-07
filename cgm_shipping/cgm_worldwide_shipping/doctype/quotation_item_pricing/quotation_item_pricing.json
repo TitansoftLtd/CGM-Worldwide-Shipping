@@ -2,21 +2,19 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "allow_rename": 1,
- "creation": "2026-06-26 12:00:00.000000",
+ "creation": "2026-06-26 12:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "item",
-  "rule_currency",
-  "calculation_type",
+  "rule_type",
   "percentage_rate",
   "fixed_rate",
-  "floor_rate",
-  "computed_amount",
-  "candidate_amount",
-  "winning_rule",
-  "company_amount"
+  "rule_currency",
+  "exchange_rate_used",
+  "calculated_amount",
+  "final_applied_rate"
  ],
  "fields": [
   {
@@ -36,14 +34,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "calculation_type",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Calculation Type",
-   "options": "Percentage\nFixed",
-   "read_only": 1
-  },
-  {
    "fieldname": "percentage_rate",
    "fieldtype": "Percent",
    "in_list_view": 1,
@@ -59,43 +49,32 @@
    "read_only": 1
   },
   {
-   "fieldname": "floor_rate",
-   "fieldtype": "Currency",
+   "fieldname": "rule_type",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Floor Rate",
-   "options": "rule_currency",
+   "label": "Rule Type",
+   "options": "Percentage\nFixed Rate",
    "read_only": 1
   },
   {
-   "fieldname": "computed_amount",
-   "fieldtype": "Currency",
+   "fieldname": "exchange_rate_used",
+   "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Computed Amount",
-   "options": "rule_currency",
+   "label": "Exchange Rate Used",
    "read_only": 1
   },
   {
-   "fieldname": "candidate_amount",
+   "fieldname": "calculated_amount",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Candidate Amount",
-   "options": "rule_currency",
+   "label": "Calculated Amount",
    "read_only": 1
   },
   {
-   "default": "0",
-   "fieldname": "winning_rule",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Winning Rule",
-   "read_only": 1
-  },
-  {
-   "fieldname": "company_amount",
+   "fieldname": "final_applied_rate",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Company Amount",
-   "options": "Company:company:default_currency",
+   "label": "Final Applied Rate",
    "read_only": 1
   }
  ],
@@ -103,7 +82,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-26 18:00:00.000000",
+ "modified": "2026-07-06 22:42:49.838324",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Quotation Item Pricing",
