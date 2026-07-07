@@ -277,139 +277,65 @@ const CGM = (() => {
 
     const CALCULATION_PERCENTAGE = "Percentage";
     const CALCULATION_FIXED = "Fixed";
+    const RULE_TYPE_FIXED = "Fixed Rate";
     const ITEM_PRICING_RULES = {};
 
     function invalidateItemPricingRule(item_code) {
         if (item_code) delete ITEM_PRICING_RULES[item_code];
     }
 
-    function toCompanyCurrency(amount, from_currency, frm) {
-        amount = flt(amount);
-        if (!amount || !from_currency) return amount;
-
-        const company_currency = companyCurrency(frm);
-        if (from_currency === company_currency) return amount;
-
-        const rate = bankRate(frm);
-        if (from_currency === frm.doc.currency && rate) return flt(amount * rate);
-
-        return null;
-    }
-
-    function toQuotationCurrency(amount, from_currency, frm) {
-        amount = flt(amount);
-        if (!amount || !from_currency || from_currency === frm.doc.currency) return amount;
-
-        const company_currency = companyCurrency(frm);
-        const rate = bankRate(frm);
-        if (from_currency === company_currency && rate) return rate ? flt(amount / rate) : 0;
-
-        return null;
-    }
-
-    function convertCurrencyClient(amount, from_currency, to_currency, frm) {
-        amount = flt(amount);
-        if (!amount || !from_currency || !to_currency || from_currency === to_currency) {
-            return amount;
-        }
-
-        const company_currency = companyCurrency(frm);
-        const rate = bankRate(frm);
-
-        if (from_currency === frm.doc.currency && to_currency === company_currency) {
-            return flt(amount * rate);
-        }
-        if (from_currency === company_currency && to_currency === frm.doc.currency) {
-            return rate ? flt(amount / rate) : 0;
-        }
-
-        return null;
-    }
-
-    function calculateItemPricingRow(custom_value, rule, frm) {
-        const rule_currency = rule.currency;
+    function calculateRuleAmount(custom_value, rule, frm) {
         const calculation_type = rule.calculation_type || CALCULATION_PERCENTAGE;
-        const percentage_rate = flt(rule.percentage_rate);
-        const fixed_rate = flt(rule.fixed_rate);
-        const floor_rate = flt(rule.floor_rate);
-
-        let computed_amount = 0;
-        let candidate_amount = 0;
+        const quotation_currency = frm.doc.currency;
+        const company_currency = companyCurrency(frm);
+        const exchange_rate = bankRate(frm);
 
         if (calculation_type === CALCULATION_FIXED) {
-            candidate_amount = fixed_rate;
-        } else {
-            const computed_in_doc = (percentage_rate / 100) * flt(custom_value);
-            computed_amount = convertCurrencyClient(
-                computed_in_doc, frm.doc.currency, rule_currency, frm
-            );
-            if (computed_amount === null) return null;
-            candidate_amount = Math.max(computed_amount, floor_rate);
+            const fixed_rate = flt(rule.fixed_rate);
+            const rule_currency = rule.currency;
+
+            if (rule_currency === quotation_currency) return fixed_rate;
+            if (rule_currency === company_currency) {
+                return exchange_rate ? flt(fixed_rate / exchange_rate) : 0;
+            }
+            return 0;
         }
 
-        let company_amount = toCompanyCurrency(candidate_amount, rule_currency, frm);
-        if (company_amount === null) {
-            company_amount = convertCurrencyClient(
-                candidate_amount, rule_currency, companyCurrency(frm), frm
-            );
-            if (company_amount === null) return null;
-        }
-
-        return {
-            rule_currency,
-            calculation_type,
-            percentage_rate,
-            fixed_rate,
-            floor_rate,
-            computed_amount,
-            candidate_amount,
-            company_amount,
-        };
+        return (flt(rule.percentage_rate) / 100) * flt(custom_value);
     }
 
-    function candidateInQuotationCurrency(calc, frm) {
-        let rate = toQuotationCurrency(calc.candidate_amount, calc.rule_currency, frm);
-        if (rate === null) {
-            rate = convertCurrencyClient(
-                calc.candidate_amount, calc.rule_currency, frm.doc.currency, frm
-            );
-        }
-        return rate;
+    function ruleTypeLabel(calculation_type) {
+        return calculation_type === CALCULATION_FIXED ? RULE_TYPE_FIXED : CALCULATION_PERCENTAGE;
     }
 
     function calculateItemPricingForItem(custom_value, rules, frm) {
         if (!rules?.length) return null;
 
-        const evaluated = [];
+        let winning_rule = null;
+        let winning_amount = 0;
+
         for (const rule of rules) {
-            const calc = calculateItemPricingRow(custom_value, rule, frm);
-            if (!calc) return null;
-
-            const quotation_candidate = candidateInQuotationCurrency(calc, frm);
-            if (quotation_candidate === null) return null;
-
-            evaluated.push({ calc, quotation_candidate });
+            const amount = calculateRuleAmount(custom_value, rule, frm);
+            if (amount > winning_amount) {
+                winning_amount = amount;
+                winning_rule = rule;
+            }
         }
 
-        const winning_rate = Math.max(...evaluated.map((row) => row.quotation_candidate));
-        const pricing_rows = evaluated.map(({ calc, quotation_candidate }) => ({
-            ...calc,
-            winning_rule: quotation_candidate === winning_rate ? 1 : 0,
-        }));
+        if (!winning_rule) return null;
 
-        return { pricing_rows, item_rate: winning_rate };
-    }
-
-    function needsServerItemPricing(rules, frm) {
-        const company_currency = companyCurrency(frm);
-        return Object.values(rules).some((rule_list) => {
-            if (!rule_list) return false;
-            const rows = Array.isArray(rule_list) ? rule_list : [rule_list];
-            return rows.some((rule) => {
-                const cur = rule.currency;
-                return cur !== frm.doc.currency && cur !== company_currency;
-            });
-        });
+        return {
+            audit_row: {
+                rule_type: ruleTypeLabel(winning_rule.calculation_type),
+                percentage_rate: flt(winning_rule.percentage_rate),
+                fixed_rate: flt(winning_rule.fixed_rate),
+                rule_currency: winning_rule.currency,
+                exchange_rate_used: bankRate(frm),
+                calculated_amount: winning_amount,
+                final_applied_rate: winning_amount,
+            },
+            item_rate: winning_amount,
+        };
     }
 
     function calculateItemPricingLocal(frm, rules, opts = {}) {
@@ -424,20 +350,13 @@ const CGM = (() => {
             if (!item_rules?.length) continue;
 
             const result = calculateItemPricingForItem(custom_value, item_rules, frm);
-            if (!result) {
-                calculateItemPricingFromServer(frm, opts);
-                return;
-            }
+            if (!result) continue;
 
-            for (const row of result.pricing_rows) {
-                pricing_rows.push({ item: item.item_code, ...row });
-            }
-
+            pricing_rows.push({ item: item.item_code, ...result.audit_row });
             item_updates.push({
                 name: item.name,
                 item_code: item.item_code,
                 rate: result.item_rate,
-                qty: flt(item.qty) || 1,
             });
         }
 
@@ -471,32 +390,6 @@ const CGM = (() => {
         });
     }
 
-    function calculateItemPricingFromServer(frm, opts = {}) {
-        if (opts.quiet) frm._cgm_keep_clean_after_sync = true;
-
-        frappe.call({
-            method: "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.preview_quotation_item_pricing",
-            args: {
-                quotation: {
-                    custom_custom_value: frm.doc.custom_custom_value,
-                    currency: frm.doc.currency,
-                    company: frm.doc.company,
-                    conversion_rate: frm.doc.conversion_rate,
-                    transaction_date: frm.doc.transaction_date,
-                    items: (frm.doc.items || []).map((row) => ({
-                        name: row.name,
-                        item_code: row.item_code,
-                        qty: row.qty,
-                    })),
-                },
-            },
-            callback(r) {
-                if (r.message) applyItemPricingResult(frm, r.message, opts);
-                else if (opts.quiet) scheduleCleanRestore(frm);
-            },
-        });
-    }
-
     function calculateItemPricing(frm, opts = {}) {
         if (!frm.fields_dict.custom_item_pricing) {
             if (opts.quiet) scheduleCleanRestore(frm);
@@ -527,21 +420,13 @@ const CGM = (() => {
                     for (const code of item_codes) {
                         if (!ITEM_PRICING_RULES[code]) ITEM_PRICING_RULES[code] = [];
                     }
-                    if (needsServerItemPricing(ITEM_PRICING_RULES, frm)) {
-                        calculateItemPricingFromServer(frm, opts);
-                    } else {
-                        calculateItemPricingLocal(frm, ITEM_PRICING_RULES, opts);
-                    }
+                    calculateItemPricingLocal(frm, ITEM_PRICING_RULES, opts);
                 },
             });
             return;
         }
 
-        if (needsServerItemPricing(ITEM_PRICING_RULES, frm)) {
-            calculateItemPricingFromServer(frm, opts);
-        } else {
-            calculateItemPricingLocal(frm, ITEM_PRICING_RULES, opts);
-        }
+        calculateItemPricingLocal(frm, ITEM_PRICING_RULES, opts);
     }
 
     // ── Customs Tax row UI helpers ────────────────────────────────────────────
@@ -640,6 +525,7 @@ const CGM = (() => {
         calculateCustomsTaxes,
         calculateItemPricing,
         invalidateItemPricingRule,
+        updateTotalInWords,
         syncGrandTotalsAfterERPNext,
         setupCustomsTaxGridUI,
         setupImportCostGridUI,
@@ -660,6 +546,10 @@ const CGM = (() => {
 const CGM_QUOTATION_BILLING_STATES = new Set(["Approved", "Shared with Client"]);
 
 frappe.ui.form.on("Quotation", {
+    recalculate_import_costs(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+
     refresh(frm) {
         CGM.setupImportCostGridUI(frm);
         CGM.setupCustomsTaxGridUI(frm);
@@ -687,16 +577,16 @@ frappe.ui.form.on("Quotation", {
     custom_shipment(frm) { CGM.fetch_shipment_references(frm); },
 
     custom_import_cost_component_add(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
     custom_import_cost_component_remove(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
     custom_customs_taxes_add(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
     custom_customs_taxes_remove(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
 
     items_add(frm) {
@@ -704,6 +594,22 @@ frappe.ui.form.on("Quotation", {
     },
     items_remove(frm) {
         CGM.calculateCustomsTaxes(frm);
+    },
+
+    grand_total(frm) {
+        CGM.updateTotalInWords(frm);
+    },
+    rounded_total(frm) {
+        CGM.updateTotalInWords(frm);
+    },
+    base_grand_total(frm) {
+        CGM.updateTotalInWords(frm);
+    },
+    base_rounded_total(frm) {
+        CGM.updateTotalInWords(frm);
+    },
+    disable_rounded_total(frm) {
+        CGM.updateTotalInWords(frm);
     },
 });
 
@@ -775,6 +681,10 @@ frappe.ui.form.on("Quotation Item", {
 // =============================================================================
 
 frappe.ui.form.on("Sales Order", {
+    recalculate_import_costs(frm) {
+        CGM.calculateCustomsTaxes(frm);
+    },
+
     refresh(frm) {
         CGM.setupImportCostGridUI(frm);
         CGM.setupCustomsTaxGridUI(frm);
@@ -791,16 +701,16 @@ frappe.ui.form.on("Sales Order", {
     custom_weight(frm)   { CGM.calculateCustomsTaxes(frm); },
 
     custom_import_cost_component_add(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
     custom_import_cost_component_remove(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
     custom_customs_taxes_add(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
     custom_customs_taxes_remove(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
 
     items_add(frm) {
@@ -824,21 +734,28 @@ frappe.ui.form.on("Sales Order Item", {
 
 
 frappe.ui.form.on("Import Cost Component", {
+    custom_import_cost_component_add(frm) {
+        frm.trigger("recalculate_import_costs");
+    },
+    custom_import_cost_component_remove(frm) {
+        frm.trigger("recalculate_import_costs");
+    },
+
     amount(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
     exchange_rate(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
     charge_item(frm) {
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
 
     form_render(frm, cdt, cdn) {
         CGM.enforceExchangeRate(frm, cdt, cdn);
         CGM.toggleImportCostExchangeRate(frm, cdt, cdn);
         CGM.seedImportCostExchangeRate(frm, cdt, cdn);
-        CGM.calculateCustomsTaxes(frm);
+        frm.trigger("recalculate_import_costs");
     },
 });
 
