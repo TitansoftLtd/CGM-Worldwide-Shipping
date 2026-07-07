@@ -8,7 +8,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing import (
 	CALCULATION_FIXED,
 	CALCULATION_PERCENTAGE,
 	calculate_item_pricing_for_item,
-	calculate_item_pricing_row,
+	calculate_rule_amount,
 )
 
 
@@ -17,162 +17,112 @@ class TestItemPricing(IntegrationTestCase):
 		self.company = frappe.defaults.get_global_default("company") or frappe.db.get_single_value(
 			"Global Defaults", "default_company"
 		)
+		self.company_currency = frappe.db.get_value("Company", self.company, "default_currency")
 
-	def _row(self, rule: dict, custom_value: float, **kwargs):
+	def _amount(self, rule: dict, custom_value: float, **kwargs):
 		defaults = {
-			"company": self.company,
 			"quotation_currency": "USD",
+			"company_currency": self.company_currency,
 			"conversion_rate": 130.0,
-			"transaction_date": "2026-06-26",
 		}
 		defaults.update(kwargs)
-		return calculate_item_pricing_row(custom_value, rule, **defaults)
+		return calculate_rule_amount(custom_value, rule, **defaults)
 
 	def _item(self, rules: list[dict], custom_value: float, **kwargs):
 		defaults = {
-			"company": self.company,
 			"quotation_currency": "USD",
+			"company_currency": self.company_currency,
 			"conversion_rate": 130.0,
-			"transaction_date": "2026-06-26",
 		}
 		defaults.update(kwargs)
 		return calculate_item_pricing_for_item(custom_value, rules, **defaults)
 
-	def test_percentage_above_floor(self):
-		"""Computed amount exceeds floor — candidate equals computed."""
-		result = self._row(
+	def test_percentage_rule(self):
+		amount = self._amount(
 			{
 				"currency": "USD",
 				"calculation_type": CALCULATION_PERCENTAGE,
 				"percentage_rate": 5,
 				"fixed_rate": 0,
-				"floor_rate": 300,
 			},
 			409_909.70,
 		)
+		self.assertEqual(amount, 20_495.485)
 
-		self.assertEqual(result["computed_amount"], 20_495.485)
-		self.assertEqual(result["candidate_amount"], 20_495.485)
-		self.assertEqual(result["company_amount"], 20_495.485 * 130.0)
-
-	def test_percentage_below_floor(self):
-		"""Floor rate is used when computed amount is lower."""
-		result = self._row(
+	def test_fixed_rate_in_quotation_currency(self):
+		amount = self._amount(
 			{
 				"currency": "USD",
-				"calculation_type": CALCULATION_PERCENTAGE,
-				"percentage_rate": 5,
-				"fixed_rate": 0,
-				"floor_rate": 300,
-			},
-			2_000,
-		)
-
-		self.assertEqual(result["computed_amount"], 100)
-		self.assertEqual(result["candidate_amount"], 300)
-		self.assertEqual(result["company_amount"], 300 * 130.0)
-
-	def test_fixed_rate(self):
-		"""Fixed rate ignores percentage."""
-		result = self._row(
-			{
-				"currency": "EUR",
-				"calculation_type": CALCULATION_FIXED,
-				"percentage_rate": 99,
-				"fixed_rate": 20,
-				"floor_rate": 0,
-			},
-			50_000,
-			quotation_currency="EUR",
-			conversion_rate=145.0,
-		)
-
-		self.assertEqual(result["computed_amount"], 0)
-		self.assertEqual(result["candidate_amount"], 20)
-		self.assertEqual(result["company_amount"], 20 * 145.0)
-
-	def test_fixed_rate_cross_currency_quotation(self):
-		"""Fixed EUR rule with KES quotation uses ERPNext exchange lookup."""
-		result = calculate_item_pricing_row(
-			50_000,
-			{
-				"currency": "EUR",
 				"calculation_type": CALCULATION_FIXED,
 				"percentage_rate": 0,
-				"fixed_rate": 20,
-				"floor_rate": 0,
+				"fixed_rate": 300,
 			},
-			company=self.company,
-			quotation_currency="KES",
-			conversion_rate=1,
-			transaction_date="2026-06-26",
+			50_000,
 		)
+		self.assertEqual(amount, 300)
 
-		self.assertEqual(result["candidate_amount"], 20)
-		self.assertGreaterEqual(result["company_amount"], 0)
+	def test_fixed_rate_in_company_currency(self):
+		amount = self._amount(
+			{
+				"currency": self.company_currency,
+				"calculation_type": CALCULATION_FIXED,
+				"percentage_rate": 0,
+				"fixed_rate": 39_000,
+			},
+			50_000,
+			quotation_currency="USD",
+			conversion_rate=130.0,
+		)
+		self.assertEqual(amount, 300)
 
-	def test_multi_rule_selects_highest_candidate(self):
-		"""All active rules are evaluated; highest candidate wins."""
+	def test_multi_rule_selects_highest_amount(self):
 		rules = [
 			{
 				"currency": "USD",
 				"calculation_type": CALCULATION_PERCENTAGE,
 				"percentage_rate": 5,
 				"fixed_rate": 0,
-				"floor_rate": 300,
 			},
 			{
 				"currency": "USD",
 				"calculation_type": CALCULATION_PERCENTAGE,
 				"percentage_rate": 0.6,
 				"fixed_rate": 0,
-				"floor_rate": 300,
 			},
 			{
 				"currency": "USD",
 				"calculation_type": CALCULATION_FIXED,
 				"percentage_rate": 0,
 				"fixed_rate": 300,
-				"floor_rate": 0,
 			},
 		]
 
-		pricing_rows, winning_rate = self._item(rules, 90_000)
+		audit_row, winning_rate = self._item(rules, 90_000)
 
 		self.assertEqual(winning_rate, 4_500)
-		self.assertEqual(len(pricing_rows), 3)
-		self.assertEqual(sum(row["winning_rule"] for row in pricing_rows), 1)
-		self.assertEqual(pricing_rows[0]["candidate_amount"], 4_500)
-		self.assertEqual(pricing_rows[0]["winning_rule"], 1)
+		self.assertIsNotNone(audit_row)
+		self.assertEqual(audit_row["rule_type"], CALCULATION_PERCENTAGE)
+		self.assertEqual(audit_row["calculated_amount"], 4_500)
+		self.assertEqual(audit_row["final_applied_rate"], 4_500)
+		self.assertEqual(audit_row["exchange_rate_used"], 130.0)
 
-	def test_multi_rule_all_floor_bound(self):
-		"""When every candidate hits the floor, the floor amount wins."""
+	def test_fixed_rule_wins_over_percentage(self):
 		rules = [
 			{
 				"currency": "USD",
 				"calculation_type": CALCULATION_PERCENTAGE,
-				"percentage_rate": 5,
+				"percentage_rate": 1,
 				"fixed_rate": 0,
-				"floor_rate": 300,
-			},
-			{
-				"currency": "USD",
-				"calculation_type": CALCULATION_PERCENTAGE,
-				"percentage_rate": 0.6,
-				"fixed_rate": 0,
-				"floor_rate": 300,
 			},
 			{
 				"currency": "USD",
 				"calculation_type": CALCULATION_FIXED,
 				"percentage_rate": 0,
-				"fixed_rate": 300,
-				"floor_rate": 0,
+				"fixed_rate": 500,
 			},
 		]
 
-		pricing_rows, winning_rate = self._item(rules, 2_000)
+		audit_row, winning_rate = self._item(rules, 10_000)
 
-		self.assertEqual(winning_rate, 300)
-		self.assertTrue(all(row["candidate_amount"] == 300 for row in pricing_rows))
-		self.assertEqual(sum(row["winning_rule"] for row in pricing_rows), 3)
+		self.assertEqual(winning_rate, 500)
+		self.assertEqual(audit_row["rule_type"], "Fixed Rate")
