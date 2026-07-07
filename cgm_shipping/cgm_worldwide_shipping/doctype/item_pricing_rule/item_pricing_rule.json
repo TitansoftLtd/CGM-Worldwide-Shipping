@@ -7,12 +7,10 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "currency",
   "calculation_type",
   "percentage_rate",
-  "fixed_rate",
-  "floor_rate",
-  "is_active"
+  "currency",
+  "fixed_rate"
  ],
  "fields": [
   {
@@ -20,8 +18,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Currency",
-   "options": "Currency",
-   "reqd": 1
+   "options": "Currency"
   },
   {
    "default": "Percentage",
@@ -46,28 +43,13 @@
    "in_list_view": 1,
    "label": "Fixed Rate",
    "options": "currency"
-  },
-  {
-   "depends_on": "eval:doc.calculation_type == 'Percentage'",
-   "fieldname": "floor_rate",
-   "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Floor Rate",
-   "options": "currency"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_active",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Is Active"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-26 14:00:00.000000",
+ "modified": "2026-07-06 21:26:43.029498",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Item Pricing Rule",
