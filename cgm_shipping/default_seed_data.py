@@ -9,6 +9,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data i
 	DEFAULT_SEA_WORKFLOW_TASK_GATES,
 	build_requirement_seed_rows,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_type_seed_data import (
+	CUSTOMS_TAX_TYPES,
+	DEFAULT_CUSTOMS_TAX_RATES,
+)
 
 def seed_customs_tax_types() -> None:
 	if not frappe.db.exists("DocType", "Customs Tax Type"):
@@ -17,13 +21,7 @@ def seed_customs_tax_types() -> None:
 	for row in CUSTOMS_TAX_TYPES:
 		name = row["tax_name"]
 		if frappe.db.exists("Customs Tax Type", name):
-			frappe.db.set_value(
-				"Customs Tax Type",
-				name,
-				"calculation_type",
-				row["calculation_type"],
-				update_modified=False,
-			)
+			# Do not overwrite live master data on re-seed.
 			continue
 		frappe.get_doc({"doctype": "Customs Tax Type", **row}).insert(ignore_permissions=True)
 

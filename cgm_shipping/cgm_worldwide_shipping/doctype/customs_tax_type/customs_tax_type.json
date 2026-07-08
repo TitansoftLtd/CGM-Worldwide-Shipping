@@ -7,7 +7,16 @@
  "engine": "InnoDB",
  "field_order": [
   "tax_name",
-  "calculation_type"
+  "calculation_type",
+  "section_calculation_config",
+  "allowed_calculation_modes",
+  "default_calculation_mode",
+  "column_break_behavior",
+  "is_stacking",
+  "is_excise",
+  "affects_import_duty",
+  "feeds_running_base",
+  "per_unit_skips_running_base"
  ],
  "fields": [
   {
@@ -25,6 +34,62 @@
    "label": "Calculation Type",
    "options": "Percentage\nFixed Amount\nPer Weight",
    "reqd": 1
+  },
+  {
+   "fieldname": "section_calculation_config",
+   "fieldtype": "Section Break",
+   "label": "Calculation Configuration"
+  },
+  {
+   "description": "One mode per line: Percentage, Per Unit, Fixed Amount",
+   "fieldname": "allowed_calculation_modes",
+   "fieldtype": "Small Text",
+   "label": "Allowed Calculation Modes"
+  },
+  {
+   "fieldname": "default_calculation_mode",
+   "fieldtype": "Select",
+   "label": "Default Calculation Mode",
+   "options": "Percentage\nPer Unit\nFixed Amount"
+  },
+  {
+   "fieldname": "column_break_behavior",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Tax amount stacks on the running cumulative base (e.g. VAT).",
+   "fieldname": "is_stacking",
+   "fieldtype": "Check",
+   "label": "Is Stacking"
+  },
+  {
+   "default": "0",
+   "description": "Tax is calculated on customs value plus import duty (e.g. Excise).",
+   "fieldname": "is_excise",
+   "fieldtype": "Check",
+   "label": "Is Excise"
+  },
+  {
+   "default": "1",
+   "description": "Percentage-mode amounts count toward the import-duty pool used by Excise.",
+   "fieldname": "affects_import_duty",
+   "fieldtype": "Check",
+   "label": "Affects Import Duty"
+  },
+  {
+   "default": "1",
+   "description": "Tax amount is added to the running base for subsequent stacking taxes.",
+   "fieldname": "feeds_running_base",
+   "fieldtype": "Check",
+   "label": "Feeds Running Base"
+  },
+  {
+   "default": "0",
+   "description": "Per Unit mode does not feed running base or import duty (e.g. MSS Levy per weight).",
+   "fieldname": "per_unit_skips_running_base",
+   "fieldtype": "Check",
+   "label": "Per Unit Skips Running Base"
   }
  ],
  "grid_page_length": 50,

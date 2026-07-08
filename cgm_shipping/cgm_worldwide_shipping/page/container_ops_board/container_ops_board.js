@@ -407,6 +407,14 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			`;
 		}
 
+		function projectLink(row) {
+			const ref = row.project_ref || row.name || "—";
+			if (!row.name) {
+				return frappe.utils.escape_html(ref);
+			}
+			return `<a href="/app/project/${encodeURIComponent(row.name)}">${frappe.utils.escape_html(ref)}</a>`;
+		}
+
 		function shipmentTableRow(row) {
 			return `<tr class="cgm-ops-clickable" data-project="${frappe.utils.escape_html(row.name)}">
 				<td>${projectLink(row)}</td>
