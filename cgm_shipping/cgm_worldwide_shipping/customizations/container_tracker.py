@@ -262,17 +262,7 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	if expected and not effective_return and ref_date > expected:
 		out["days_outstanding"] = (ref_date - expected).days
 
-	out["status"] = _derive_status(
-		interchange=interchange,
-		actual_return=actual_return,
-		expected_return=expected,
-		offloading=offloading,
-		gate_in_wh=gate_in_wh,
-		gate_out=gate_out,
-		discharging=discharging,
-		ata=ata,
-		ref_date=ref_date,
-	)
+	out["status"] = _derive_tracker_status(data, ref_date=ref_date)
 	out["alert_status"] = _derive_alert_status(
 		free_end=free_end,
 		free_start=free_start,
@@ -295,6 +285,62 @@ def apply_metrics_to_doc(doc) -> None:
 		if field in _COMPUTED_ONLY_METRIC_FIELDS:
 			continue
 		setattr(doc, field, value)
+
+
+def _derive_tracker_status(data: dict[str, Any], *, ref_date) -> str:
+	mode = (data.get("container_mode") or "").strip()
+	if mode and "Transit" in mode:
+		return _derive_transit_status(data)
+	return _derive_status(
+		interchange=_optional_date(data.get("interchange_date")),
+		actual_return=_optional_date(data.get("actual_empty_return")),
+		expected_return=_optional_date(data.get("expected_empty_return")),
+		offloading=_optional_date(data.get("offloading_date")),
+		gate_in_wh=_optional_date(data.get("gate_in_date_warehouse")),
+		gate_out=_optional_date(data.get("gate_out_date_port")),
+		discharging=_optional_date(data.get("discharging_date")),
+		ata=_optional_date(data.get("ata")),
+		ref_date=ref_date,
+	)
+
+
+def _derive_transit_status(data: dict[str, Any]) -> str:
+	mode = data.get("container_mode") or ""
+	is_outbound = "Outbound" in mode
+
+	if data.get("offloading_date"):
+		return "Offloaded at Destination"
+	if data.get("gate_in_date_warehouse"):
+		return "Arrived at Destination"
+	if data.get("border_clearance_date"):
+		return "Border Cleared"
+	if data.get("transit_departure_date"):
+		return "In Transit"
+	if data.get("ecmd_fitted_date"):
+		return "Departed / ECMD Active"
+	if data.get("c2_number"):
+		return "C2 Obtained"
+	if data.get("delivery_note_number"):
+		return "Delivery Note Ready"
+	if data.get("loading_slip_number"):
+		return "Loading Slip Received"
+	if data.get("release_order_number"):
+		return "Release Order Obtained"
+
+	if is_outbound:
+		if data.get("warehouse_loading_date"):
+			return "Loading at Warehouse"
+		return "Pending Loading"
+
+	if data.get("gate_out_date_port"):
+		return "Released from Port"
+	if data.get("custom_release_date"):
+		return "KRA Released"
+	if data.get("discharging_date"):
+		return "Discharged / At Port"
+	if data.get("ata"):
+		return "Vessel Berthed"
+	return "Pending Arrival"
 
 
 def _derive_status(
@@ -368,23 +414,11 @@ def _derive_alert_status(
 
 
 def _derive_container_mode(project) -> str:
-	delivery_type = (project.get("custom_delivery_type") or "").lower()
-	if "icd" in delivery_type:
-		return "ICD Nairobi"
-	if "transit" in delivery_type or "border" in delivery_type:
-		return "Transit Kenya→Border"
+	project_type = (project.get("project_type") or "").strip()
+	if project_type:
+		return project_type
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-		container_tracking_mode_for_shipment_type,
-	)
-
-	tracked = container_tracking_mode_for_shipment_type(
-		project.get("custom_shipment_type"),
-		project.get("custom_mode_of_transport"),
-	)
-	if tracked:
-		return tracked
-	return "Mombasa Port"
+	return frappe.db.get_value("Project", project.name, "project_type") or "Mombasa Port"
 
 
 def find_tracker_by_identity(

@@ -25,33 +25,34 @@ const MODE_SECTIONS = {
 		"section_kpa_free_days",
 		"section_empty_return",
 	],
-	"Transit Kenya→Border": [
+	"Transit Outbound": [
 		"section_identity",
 		"section_dates",
+		"section_mombasa",
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
 		"section_shipping_line_free_days",
 		"section_kpa_free_days",
-		"section_empty_return",
 	],
-	"Transit Border→Kenya": [
+	"Transit Inbound": [
 		"section_identity",
 		"section_dates",
+		"section_mombasa",
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
 		"section_shipping_line_free_days",
 		"section_kpa_free_days",
-		"section_empty_return",
 	],
 	Export: [
 		"section_identity",
 		"section_dates",
+		"section_export",
+		"section_transit",
 		"section_transport",
 		"section_shipping_line_free_days",
 		"section_kpa_free_days",
-		"section_empty_return",
 	],
 };
 

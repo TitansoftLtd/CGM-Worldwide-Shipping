@@ -20,6 +20,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	enforce_workflow_task_gate,
 	get_sea_closure_blockers,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.transit_clearance import (
+	bootstrap_transit_task_plan_for_project,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	assign_lp_project_reference,
 	is_lp_project_reference,
@@ -645,6 +648,7 @@ def insert_shipment_project(project) -> str:
 	try:
 		project.insert(ignore_permissions=True)
 		bootstrap_sea_task_plan_for_project(project.name)
+		bootstrap_transit_task_plan_for_project(project.name)
 	finally:
 		frappe.flags.cgm_skip_task_project_sync = False
 	refresh_project_documents(project.name)

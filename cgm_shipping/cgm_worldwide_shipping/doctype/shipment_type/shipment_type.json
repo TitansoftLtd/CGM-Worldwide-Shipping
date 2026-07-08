@@ -14,8 +14,15 @@
   "uses_unit_tracking",
   "amended_from",
   "section_break_integration",
+  "task_flow_key",
+  "container_tracker_mode",
   "cgm_ref_prefix",
   "container_tracking_mode",
+  "column_break_st_flags",
+  "uses_container_tracking",
+  "uses_transit_documents",
+  "uses_destination_entry",
+  "is_outbound",
   "legacy_crm_labels",
   "section_break_newf",
   "description"
@@ -90,6 +97,19 @@
    "label": "Integration"
   },
   {
+   "description": "Matches a task plan in CGM Shipping Settings (e.g. SEA_IMPORT_E2E, SEA_TRANSIT_IMPORT_E2E). Create a new Shipment Type row and point this at your Settings template — no code change needed.",
+   "fieldname": "task_flow_key",
+   "fieldtype": "Data",
+   "label": "Task Flow Key"
+  },
+  {
+   "description": "Default Project Type for new projects using this shipment type. Container Tracker sections match Project.project_type. Add new types in the Project Type list (Setup) — names containing Mombasa, ICD, Transit, or Export control which tracker sections appear.",
+   "fieldname": "container_tracker_mode",
+   "fieldtype": "Link",
+   "label": "Container Tracker Mode",
+   "options": "Project Type"
+  },
+  {
    "description": "Optional prefix for CGM tracking references on air/road shipments (e.g. AIR, ROD). Sea shipments can use Container Type CGM Ref Prefix instead.",
    "fieldname": "cgm_ref_prefix",
    "fieldtype": "Data",
@@ -97,10 +117,39 @@
    "label": "CGM Ref Prefix"
   },
   {
-   "description": "Optional mode label for Container Tracker when delivery type does not imply one (e.g. Export, Mombasa Port).",
+   "description": "Deprecated — use Container Tracker Mode. Kept for legacy records.",
    "fieldname": "container_tracking_mode",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Container Tracking Mode"
+  },
+  {
+   "fieldname": "column_break_st_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "uses_container_tracking",
+   "fieldtype": "Check",
+   "label": "Uses Container Tracking"
+  },
+  {
+   "default": "0",
+   "fieldname": "uses_transit_documents",
+   "fieldtype": "Check",
+   "label": "Uses Transit Documents"
+  },
+  {
+   "default": "0",
+   "fieldname": "uses_destination_entry",
+   "fieldtype": "Check",
+   "label": "Uses Destination Entry"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_outbound",
+   "fieldtype": "Check",
+   "label": "Is Outbound"
   },
   {
    "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",

@@ -1328,3 +1328,94 @@ def ensure_project_finance_cost_fields() -> None:
 		},
 	)
 	frappe.clear_cache(doctype="Project")
+
+
+def ensure_transit_project_fields() -> None:
+	"""Project fields for transit export destination entry and UBS permit tracking."""
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_uses_destination_entry",
+			"label": "Uses Destination Entry",
+			"fieldtype": "Check",
+			"insert_after": "custom_shipment_type",
+			"fetch_from": "custom_shipment_type.uses_destination_entry",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_destination_entry_number",
+			"label": "Destination Entry Number",
+			"fieldtype": "Data",
+			"insert_after": "project_type",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_ubs_permit_number",
+			"label": "UBS Permit Number",
+			"fieldtype": "Data",
+			"insert_after": "custom_destination_entry_number",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_ubs_permit_date",
+			"label": "UBS Permit Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_ubs_permit_number",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_destination_entry_confirmed",
+			"label": "Destination Entry Confirmed",
+			"fieldtype": "Check",
+			"insert_after": "custom_ubs_permit_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_uganda_release_date",
+			"label": "Destination Country Release Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_destination_entry_confirmed",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_coc_application_date",
+			"label": "COC Application Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_uganda_release_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_eac_application_date",
+			"label": "EAC Application Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_coc_application_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+
+	if frappe.db.exists("Property Setter", "Project-project_type-hidden"):
+		frappe.db.set_value("Property Setter", "Project-project_type-hidden", "value", "0")
+
+	frappe.clear_cache(doctype="Project")

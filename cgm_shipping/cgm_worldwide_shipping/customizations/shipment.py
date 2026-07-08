@@ -27,6 +27,12 @@ _OPTIONAL_SHIPMENT_TYPE_FIELDS = (
 	"requires_bill_of_lading",
 	"requires_air_waybill",
 	"uses_unit_tracking",
+	"uses_container_tracking",
+	"uses_transit_documents",
+	"uses_destination_entry",
+	"is_outbound",
+	"task_flow_key",
+	"container_tracker_mode",
 	"default_mode_of_transport",
 	"cgm_ref_prefix",
 	"legacy_crm_labels",
@@ -210,13 +216,36 @@ def cgm_ref_prefix_from_container_type(container_type: str | None) -> str | None
 def container_tracking_mode_for_shipment_type(
 	shipment_type: str | None, mode: str | None = None
 ) -> str | None:
-	"""Container Tracker mode from Shipment Type master (container_tracking_mode field)."""
+	"""Container Tracker mode from Shipment Type master (container_tracker_mode or legacy field)."""
 	row = get_shipment_type_record(shipment_type, mode=mode)
-	if row and _shipment_type_field_queryable("container_tracking_mode"):
+	if not row:
+		return None
+	if _shipment_type_field_queryable("container_tracker_mode") and row.get("container_tracker_mode"):
+		return str(row.container_tracker_mode).strip()
+	if _shipment_type_field_queryable("container_tracking_mode"):
 		value = (row.get("container_tracking_mode") or "").strip()
 		if value:
 			return value
 	return None
+
+
+def get_task_flow_key_for_shipment_type(shipment_type: str | None) -> str | None:
+	"""Task flow key from Shipment Type master (e.g. SEA_TRANSIT_IMPORT_E2E)."""
+	row = get_shipment_type_record(shipment_type)
+	if row and _shipment_type_field_queryable("task_flow_key"):
+		value = (row.get("task_flow_key") or "").strip()
+		if value:
+			return value
+	return None
+
+
+def uses_container_tracking_for_shipment_type(shipment_type: str | None) -> bool:
+	row = get_shipment_type_record(shipment_type)
+	if not row:
+		return False
+	if _shipment_type_field_queryable("uses_container_tracking"):
+		return bool(row.get("uses_container_tracking"))
+	return bool(row.get("use_sea_import_workflow"))
 
 
 def mode_from_master(shipment_type: str | None) -> str | None:
@@ -264,8 +293,20 @@ def shipment_type_profile(shipment_type: str | None) -> dict | None:
 		"use_sea_import_workflow": bool(row.get("use_sea_import_workflow")),
 		"uses_unit_tracking": bool(row.get("uses_unit_tracking")),
 	}
-	if _shipment_type_field_queryable("container_tracking_mode") and row.get("container_tracking_mode"):
+	if _shipment_type_field_queryable("container_tracker_mode") and row.get("container_tracker_mode"):
+		profile["container_tracker_mode"] = row.get("container_tracker_mode")
+	elif row.get("container_tracking_mode"):
 		profile["container_tracking_mode"] = row.get("container_tracking_mode")
+	if _shipment_type_field_queryable("task_flow_key") and row.get("task_flow_key"):
+		profile["task_flow_key"] = row.get("task_flow_key")
+	if _shipment_type_field_queryable("uses_container_tracking"):
+		profile["uses_container_tracking"] = bool(row.get("uses_container_tracking"))
+	if _shipment_type_field_queryable("uses_transit_documents"):
+		profile["uses_transit_documents"] = bool(row.get("uses_transit_documents"))
+	if _shipment_type_field_queryable("uses_destination_entry"):
+		profile["uses_destination_entry"] = bool(row.get("uses_destination_entry"))
+	if _shipment_type_field_queryable("is_outbound"):
+		profile["is_outbound"] = bool(row.get("is_outbound"))
 	return profile
 
 
@@ -776,6 +817,12 @@ def get_shipment_type_profiles() -> dict:
 	for optional in (
 		"use_sea_import_workflow",
 		"uses_unit_tracking",
+		"uses_container_tracking",
+		"uses_transit_documents",
+		"uses_destination_entry",
+		"is_outbound",
+		"task_flow_key",
+		"container_tracker_mode",
 		"requires_bill_of_lading",
 		"requires_air_waybill",
 		"container_tracking_mode",
@@ -802,8 +849,20 @@ def get_shipment_type_profiles() -> dict:
 			"requires_bill_of_lading": bool(row.get("requires_bill_of_lading")),
 			"requires_air_waybill": bool(row.get("requires_air_waybill")),
 		}
-		if row.get("container_tracking_mode"):
+		if row.get("container_tracker_mode"):
+			profile["container_tracker_mode"] = row.get("container_tracker_mode")
+		elif row.get("container_tracking_mode"):
 			profile["container_tracking_mode"] = row.get("container_tracking_mode")
+		if row.get("task_flow_key"):
+			profile["task_flow_key"] = row.get("task_flow_key")
+		if _shipment_type_field_queryable("uses_container_tracking"):
+			profile["uses_container_tracking"] = bool(row.get("uses_container_tracking"))
+		if _shipment_type_field_queryable("uses_transit_documents"):
+			profile["uses_transit_documents"] = bool(row.get("uses_transit_documents"))
+		if _shipment_type_field_queryable("uses_destination_entry"):
+			profile["uses_destination_entry"] = bool(row.get("uses_destination_entry"))
+		if _shipment_type_field_queryable("is_outbound"):
+			profile["is_outbound"] = bool(row.get("is_outbound"))
 		profiles[name] = profile
 		if _shipment_type_field_queryable("legacy_crm_labels"):
 			for label in _parse_label_lines(row.get("legacy_crm_labels")):

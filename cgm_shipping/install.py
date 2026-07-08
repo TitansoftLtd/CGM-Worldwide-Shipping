@@ -79,6 +79,11 @@ def ensure_task_container_schema() -> None:
 	if frappe.db.exists("DocType", "Project"):
 		ensure_project_inspection_notification_fields()
 		ensure_project_port_arrival_fields()
+		from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
+			ensure_transit_project_fields,
+		)
+
+		ensure_transit_project_fields()
 		frappe.db.commit()
 
 
