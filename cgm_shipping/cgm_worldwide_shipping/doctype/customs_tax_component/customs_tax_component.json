@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "tax_type",
+  "calculation_mode",
   "rate",
   "fixed_amount_kes",
   "amount_kes"
@@ -21,16 +22,23 @@
    "reqd": 1
   },
   {
-   "fieldname": "rate",
-   "fieldtype": "Percent",
+   "fieldname": "calculation_mode",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Rate"
+   "label": "Calculation Mode",
+   "options": "Percentage\nPer Unit\nFixed Amount"
   },
   {
+   "fieldname": "rate",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Rate / Amount"
+  },
+  {
+   "depends_on": "eval:doc.calculation_mode=='Fixed Amount'",
    "fieldname": "fixed_amount_kes",
    "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Fixed Amount",
+   "label": "Rate / Amount",
    "options": "Company:company:default_currency"
   },
   {
@@ -46,7 +54,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-16 15:31:56.829241",
+ "modified": "2026-07-07 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Customs Tax Component",
