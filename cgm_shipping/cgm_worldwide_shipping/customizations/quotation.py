@@ -18,16 +18,16 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	QUOTATION_WORKFLOW_STATE_APPROVED,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_calculation import (
-	CALC_MODE_PER_UNIT,
 	calculate_tax_amount,
 	get_tax_type_config,
+	get_uom_category,
 	import_duty_contribution,
 	is_volume_uom,
 	rate_label_for_mode,
-	resolve_calculation_mode,
 	resolve_company_currency,
 	should_feed_running_base,
 	shipment_quantity,
+	validate_calculation_mode,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing import (
 	PRICING_ROW_FIELDS,
@@ -176,9 +176,7 @@ class _CGMCustomsTaxMixin:
                 )
             seen.add(tax_type)
 
-            mode = resolve_calculation_mode(row, tax_type)
-            if row.calculation_mode != mode:
-                row.calculation_mode = mode
+            mode = validate_calculation_mode(row, tax_type)
 
             amount_kes = calculate_tax_amount(
                 row,
@@ -444,8 +442,6 @@ def get_customs_tax_type_info(
         "show_calculation_mode": show_mode,
         "is_stacking": config.is_stacking,
         "is_excise": config.is_excise,
-        "is_mss_levy": CALC_MODE_PER_UNIT in config.allowed_modes
-        and config.per_unit_skips_running_base,
         "affects_import_duty": config.affects_import_duty,
         "feeds_running_base": config.feeds_running_base,
         "per_unit_skips_running_base": config.per_unit_skips_running_base,
@@ -461,6 +457,23 @@ def get_customs_tax_type_info(
 def is_quotation_volume_uom(uom: str | None = None) -> bool:
 	"""Return whether the given UOM should use shipment volume for per-unit taxes."""
 	return is_volume_uom(uom)
+
+
+@frappe.whitelist()
+def get_uom_quantity_fields(uom: str | None = None) -> dict:
+	"""Return which quotation quantity field to show for the selected UOM."""
+	uom = (uom or "").strip()
+	if not uom:
+		return {"show_weight": False, "show_volume": False, "is_volume": False, "category": None}
+
+	category = get_uom_category(uom)
+	is_volume = category == "Volume"
+	return {
+		"show_weight": not is_volume,
+		"show_volume": is_volume,
+		"is_volume": is_volume,
+		"category": category,
+	}
 
 
 @frappe.whitelist()

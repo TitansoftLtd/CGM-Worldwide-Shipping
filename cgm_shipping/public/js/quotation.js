@@ -14,8 +14,7 @@ const CGM = (() => {
 
     // Server-fetched metadata cache  { [tax_type]: info }
     const TAX_TYPE_META = {};
-    const VOLUME_UOM_CACHE = {};
-    const LEGACY_VOLUME_UOM_ABBREVS = new Set(["liter", "litre", "l", "ltr"]);
+    const UOM_CATEGORY_CACHE = {};
 
     // ── Exchange-rate helpers ─────────────────────────────────────────────────
 
@@ -184,47 +183,51 @@ const CGM = (() => {
 
     // ── Customs Tax calculation ───────────────────────────────────────────────
 
-    function isVolumeUom(uom) {
-        const normalized = (uom || "").trim();
-        if (!normalized) return false;
-        if (Object.prototype.hasOwnProperty.call(VOLUME_UOM_CACHE, normalized)) {
-            return VOLUME_UOM_CACHE[normalized];
+    function applyUomQuantityVisibility(frm, info) {
+        const show_weight = !!info?.show_weight;
+        const show_volume = !!info?.show_volume;
+        if (frm.fields_dict.custom_weight) {
+            frm.set_df_property("custom_weight", "hidden", show_weight ? 0 : 1);
         }
-        if (LEGACY_VOLUME_UOM_ABBREVS.has(normalized.toLowerCase())) {
-            console.warn(
-                `CGM: volume UOM fallback for '${normalized}'; configure UOM master.`
-            );
-            return true;
+        if (frm.fields_dict.custom_volume) {
+            frm.set_df_property("custom_volume", "hidden", show_volume ? 0 : 1);
         }
-        return false;
+        frm._cgm_is_volume_uom = !!info?.is_volume;
     }
 
-    function refreshVolumeUomCache(frm) {
+    function syncUomQuantityFields(frm) {
         const uom = (frm.doc.custom_uom || "").trim();
         if (!uom) {
-            frm._cgm_is_volume_uom = false;
+            applyUomQuantityVisibility(frm, {
+                show_weight: false,
+                show_volume: false,
+                is_volume: false,
+            });
             return Promise.resolve(false);
         }
-        if (Object.prototype.hasOwnProperty.call(VOLUME_UOM_CACHE, uom)) {
-            frm._cgm_is_volume_uom = VOLUME_UOM_CACHE[uom];
-            return Promise.resolve(VOLUME_UOM_CACHE[uom]);
+
+        if (Object.prototype.hasOwnProperty.call(UOM_CATEGORY_CACHE, uom)) {
+            applyUomQuantityVisibility(frm, UOM_CATEGORY_CACHE[uom]);
+            return Promise.resolve(!!UOM_CATEGORY_CACHE[uom].is_volume);
         }
 
         return frappe.call({
-            method: "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.is_quotation_volume_uom",
+            method: "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.get_uom_quantity_fields",
             args: { uom },
         }).then((r) => {
-            const is_volume = !!r.message;
-            VOLUME_UOM_CACHE[uom] = is_volume;
-            frm._cgm_is_volume_uom = is_volume;
-            return is_volume;
+            const info = r.message || {
+                show_weight: false,
+                show_volume: false,
+                is_volume: false,
+            };
+            UOM_CATEGORY_CACHE[uom] = info;
+            applyUomQuantityVisibility(frm, info);
+            return !!info.is_volume;
         });
     }
 
     function shipmentQuantity(frm) {
-        const uom = (frm.doc.custom_uom || "").trim();
-        const use_volume = frm._cgm_is_volume_uom ?? isVolumeUom(uom);
-        if (use_volume) {
+        if (frm._cgm_is_volume_uom) {
             return flt(frm.doc.custom_volume);
         }
         return flt(frm.doc.custom_weight);
@@ -288,7 +291,7 @@ const CGM = (() => {
 
     function syncCustomsTaxContext(frm, opts = {}) {
         return Promise.all([
-            refreshVolumeUomCache(frm),
+            syncUomQuantityFields(frm),
             prefetchTaxTypeMeta(frm),
         ]).then(() => {
             refreshCustomsTaxGridUI(frm);
@@ -298,8 +301,7 @@ const CGM = (() => {
 
     function resolveCalculationMode(row, meta = {}) {
         const mode = (row.calculation_mode || "").trim();
-        const allowed = meta.allowed_modes || [CALC_MODE_PERCENTAGE];
-        if (allowed.includes(mode)) {
+        if (mode) {
             return mode;
         }
         return meta.default_calculation_mode || CALC_MODE_PERCENTAGE;
@@ -324,10 +326,8 @@ const CGM = (() => {
         if (meta.feeds_running_base === 0 || meta.feeds_running_base === false) {
             return false;
         }
-        if (mode === CALC_MODE_PER_UNIT) {
-            if (meta.per_unit_skips_running_base || meta.is_mss_levy) {
-                return false;
-            }
+        if (mode === CALC_MODE_PER_UNIT && meta.per_unit_skips_running_base) {
+            return false;
         }
         return true;
     }
@@ -348,25 +348,31 @@ const CGM = (() => {
         return amount;
     }
 
-    function fixedAmountForRow(row, mode) {
-        if (mode !== CALC_MODE_FIXED_AMOUNT) {
-            return 0;
-        }
-        const amount = flt(row.fixed_amount_kes) || flt(row.rate);
-        if (amount) {
-            row.fixed_amount_kes = amount;
-            row.rate = amount;
-        }
+    function setFixedAmountValue(row, amount) {
+        amount = flt(amount);
+        row.rate = amount;
+        row.fixed_amount_kes = amount;
         return amount;
     }
 
-    function syncCustomsTaxFixedAmountRow(frm, cdt, cdn) {
+    function getFixedAmountValue(row) {
+        // Grid "Rate / Amount" edits `rate`; keep that as the primary input.
+        return flt(row.rate) || flt(row.fixed_amount_kes);
+    }
+
+    function syncCustomsTaxFixedAmountRow(frm, cdt, cdn, sourceField = "rate") {
         const row = locals[cdt]?.[cdn];
         if (!row?.tax_type) return;
 
         const meta = TAX_TYPE_META[row.tax_type] || {};
         const mode = resolveCalculationMode(row, meta);
-        fixedAmountForRow(row, mode);
+        if (mode !== CALC_MODE_FIXED_AMOUNT) return;
+
+        const amount =
+            sourceField === "fixed_amount_kes"
+                ? flt(row.fixed_amount_kes)
+                : flt(row.rate);
+        setFixedAmountValue(row, amount);
     }
 
     function calculateRowTaxAmount(frm, row, meta, ctx) {
@@ -377,7 +383,7 @@ const CGM = (() => {
         const { customs_value_kes, running_base, import_duty_kes } = ctx;
 
         if (mode === CALC_MODE_FIXED_AMOUNT) {
-            return fixedAmountForRow(row, mode);
+            return getFixedAmountValue(row);
         }
 
         if (mode === CALC_MODE_PER_UNIT) {
@@ -417,12 +423,6 @@ const CGM = (() => {
 
             const meta = TAX_TYPE_META[row.tax_type] || {};
             const mode = resolveCalculationMode(row, meta);
-            if (row.calculation_mode !== mode) {
-                row.calculation_mode = mode;
-            }
-            if (mode === CALC_MODE_FIXED_AMOUNT) {
-                fixedAmountForRow(row, mode);
-            }
 
             const ctx  = { customs_value_kes, running_base, import_duty_kes };
             const amount = calculateRowTaxAmount(frm, row, meta, ctx);
@@ -693,7 +693,8 @@ const CGM = (() => {
         const row = locals[cdt][cdn];
         if (!row) return;
 
-        if (info.default_calculation_mode) {
+        // Only fill empty mode from master default — never overwrite user selection.
+        if (!cstr(row.calculation_mode).trim() && info.default_calculation_mode) {
             frappe.model.set_value(
                 cdt,
                 cdn,
@@ -732,12 +733,26 @@ const CGM = (() => {
         const mode = resolveCalculationMode(row, meta);
         const hint = rateLabelForMode(mode, frm, meta);
         const grid = frm.fields_dict.custom_customs_taxes?.grid;
+        const allowed = meta.allowed_modes || [CALC_MODE_PERCENTAGE];
+        const options = allowed.join("\n");
+
+        grid?.update_docfield_property("calculation_mode", "options", options);
+        grid?.update_docfield_property(
+            "calculation_mode",
+            "hidden",
+            meta.show_calculation_mode === false || allowed.length <= 1 ? 1 : 0
+        );
+
         const grid_row = grid?.grid_rows_by_docname?.[cdn];
         const row_form = grid_row?.grid_form;
-
         if (!row_form) return;
 
-        // Contextual hint inside the row editor only — not the grid column header.
+        row_form.set_df_property("calculation_mode", "options", options);
+        row_form.set_df_property(
+            "calculation_mode",
+            "hidden",
+            meta.show_calculation_mode === false || allowed.length <= 1 ? 1 : 0
+        );
         row_form.set_df_property(
             "rate",
             "description",
@@ -766,7 +781,7 @@ const CGM = (() => {
             try {
                 if (doc.calculation_mode === CALC_MODE_FIXED_AMOUNT) {
                     const currency = companyCurrency(frm);
-                    const fixed = flt(doc.fixed_amount_kes) || flt(doc.rate);
+                    const fixed = flt(doc.rate) || flt(doc.fixed_amount_kes);
                     return fixed && currency ? format_currency(fixed, currency) : fixed || "";
                 }
             } catch (e) {
@@ -836,6 +851,7 @@ const CGM = (() => {
         scheduleCustomsTaxRecalc,
         scheduleItemPricingRecalc,
         clearTaxTypeMetaCache,
+        syncUomQuantityFields,
         enforceExchangeRate,
         toggleImportCostExchangeRate,
         seedImportCostExchangeRate,
@@ -858,6 +874,7 @@ frappe.ui.form.on("Quotation", {
         CGM.setupImportCostGridUI(frm);
         CGM.setupCustomsTaxGridUI(frm);
         CGM.setupItemPricingGridUI(frm);
+        CGM.syncUomQuantityFields(frm);
         CGM.add_sales_invoice_button(frm);
 
         // Submitted quotations already have server-calculated totals.
@@ -883,7 +900,7 @@ frappe.ui.form.on("Quotation", {
     custom_volume(frm)   { CGM.calculateCustomsTaxes(frm); },
     custom_uom(frm) {
         CGM.clearTaxTypeMetaCache();
-        CGM.syncCustomsTaxContext(frm);
+        CGM.syncUomQuantityFields(frm).then(() => CGM.syncCustomsTaxContext(frm));
     },
     opportunity(frm)     { CGM.fetch_shipment_references(frm); },
     custom_shipment(frm) { CGM.fetch_shipment_references(frm); },
@@ -1011,6 +1028,7 @@ frappe.ui.form.on("Sales Order", {
         CGM.setupImportCostGridUI(frm);
         CGM.setupCustomsTaxGridUI(frm);
         CGM.setupItemPricingGridUI(frm);
+        CGM.syncUomQuantityFields(frm);
 
         if (frm.doc.docstatus === 1 && !frm.is_dirty()) return;
 
@@ -1027,7 +1045,7 @@ frappe.ui.form.on("Sales Order", {
     custom_volume(frm)   { CGM.calculateCustomsTaxes(frm); },
     custom_uom(frm) {
         CGM.clearTaxTypeMetaCache();
-        CGM.syncCustomsTaxContext(frm);
+        CGM.syncUomQuantityFields(frm).then(() => CGM.syncCustomsTaxContext(frm));
     },
 
     custom_import_cost_component_add(frm) {
@@ -1106,17 +1124,23 @@ frappe.ui.form.on("Customs Tax Component", {
     },
 
     calculation_mode(frm, cdt, cdn) {
-        CGM.syncCustomsTaxFixedAmountRow(frm, cdt, cdn);
+        const row = locals[cdt][cdn];
+        const meta = TAX_TYPE_META[row?.tax_type] || {};
+        const mode = resolveCalculationMode(row, meta);
+        // When switching to Fixed Amount, seed fixed_amount from current rate input.
+        if (mode === CALC_MODE_FIXED_AMOUNT) {
+            CGM.syncCustomsTaxFixedAmountRow(frm, cdt, cdn, "rate");
+        }
         CGM.updateCustomsTaxRowUI(frm, cdt, cdn);
         CGM.calculateCustomsTaxes(frm);
     },
 
     rate(frm, cdt, cdn) {
-        CGM.syncCustomsTaxFixedAmountRow(frm, cdt, cdn);
+        CGM.syncCustomsTaxFixedAmountRow(frm, cdt, cdn, "rate");
         CGM.calculateCustomsTaxes(frm);
     },
     fixed_amount_kes(frm, cdt, cdn) {
-        CGM.syncCustomsTaxFixedAmountRow(frm, cdt, cdn);
+        CGM.syncCustomsTaxFixedAmountRow(frm, cdt, cdn, "fixed_amount_kes");
         CGM.calculateCustomsTaxes(frm);
     },
 
