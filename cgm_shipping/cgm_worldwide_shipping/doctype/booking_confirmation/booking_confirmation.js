@@ -1,9 +1,8 @@
-# Copyright (c) 2026, Titansoft Limited and contributors
-# For license information, please see license.txt
+// Copyright (c) 2026, Titansoft Limited and contributors
+// For license information, please see license.txt
 
-frappe.ui.form.on("Air Waybill", {
+frappe.ui.form.on("Booking Confirmation", {
 	onload(frm) {
-		set_default_air_shipment_type(frm);
 		if (frm.is_new()) {
 			if (frappe.route_options?.linked_opportunity) {
 				remember_return_opportunity(frm, frappe.route_options.linked_opportunity);
@@ -30,7 +29,7 @@ frappe.ui.form.on("Air Waybill", {
 });
 
 const CGM_RETURN_OPPORTUNITY_KEY = "cgm_return_opportunity";
-const CGM_PENDING_AWB_LINK_KEY = "cgm_pending_awb_link";
+const CGM_PENDING_BOOKING_LINK_KEY = "cgm_pending_booking_link";
 
 function is_saved_opportunity_name(name) {
 	return Boolean(name && !String(name).startsWith("new-"));
@@ -67,22 +66,6 @@ function add_back_to_opportunity_button(frm) {
 	});
 }
 
-function set_default_air_shipment_type(frm) {
-	if (!frm.is_new() || frm.doc.shipment_type) {
-		return;
-	}
-	frappe.db.get_value(
-		"Shipment Type",
-		{ default_mode_of_transport: "Air", is_active: 1 },
-		"name",
-		(r) => {
-			if (r && r.name && frm.is_new() && !frm.doc.shipment_type) {
-				frm.set_value("shipment_type", r.name);
-			}
-		}
-	);
-}
-
 function add_create_opportunity_button(frm) {
 	if (frm.doc.linked_opportunity) {
 		frm.add_custom_button(
@@ -98,8 +81,9 @@ function add_create_opportunity_button(frm) {
 		__("Opportunity"),
 		() => {
 			frappe.call({
-				method: "cgm_shipping.cgm_worldwide_shipping.doctype.air_waybill.air_waybill.create_opportunity_from_air_waybill",
-				args: { air_waybill: frm.doc.name },
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.doctype.booking_confirmation.booking_confirmation.create_opportunity_from_booking_confirmation",
+				args: { booking_confirmation: frm.doc.name },
 				freeze: true,
 				callback(r) {
 					if (!r.exc && r.message) {
@@ -134,7 +118,7 @@ function return_to_opportunity_after_submit(frm) {
 		}
 		localStorage.removeItem(CGM_RETURN_OPPORTUNITY_KEY);
 		frappe.show_alert({
-			message: __("Air Waybill submitted — returning to Opportunity to continue."),
+			message: __("Booking Confirmation submitted — returning to Opportunity to continue."),
 			indicator: "green",
 		});
 		frappe.set_route("Form", "Opportunity", target_opportunity);
@@ -142,16 +126,16 @@ function return_to_opportunity_after_submit(frm) {
 
 	frappe.call({
 		method:
-			"cgm_shipping.cgm_worldwide_shipping.doctype.air_waybill.air_waybill.get_awb_submit_payload",
+			"cgm_shipping.cgm_worldwide_shipping.doctype.booking_confirmation.booking_confirmation.get_booking_submit_payload",
 		args: {
-			awb_name: frm.doc.name,
+			booking_name: frm.doc.name,
 			opportunity,
 		},
 		callback(r) {
 			const target = (!r.exc && r.message && r.message.opportunity) || opportunity;
 			if (!r.exc && r.message) {
 				localStorage.setItem(
-					CGM_PENDING_AWB_LINK_KEY,
+					CGM_PENDING_BOOKING_LINK_KEY,
 					JSON.stringify({
 						opportunity: target,
 						...r.message,

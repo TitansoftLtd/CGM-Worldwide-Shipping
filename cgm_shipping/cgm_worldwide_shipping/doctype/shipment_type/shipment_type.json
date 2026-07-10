@@ -22,8 +22,12 @@
   "uses_container_tracking",
   "uses_transit_documents",
   "uses_destination_entry",
+  "uses_export_documents",
   "is_outbound",
+  "primary_transport_document",
   "legacy_crm_labels",
+  "section_required_documents",
+  "required_documents",
   "section_break_newf",
   "description"
  ],
@@ -44,11 +48,6 @@
    "label": "Mode of Transport",
    "options": "Mode of Transport",
    "reqd": 1
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description"
   },
   {
    "fieldname": "column_break_st_cfg",
@@ -147,18 +146,52 @@
   },
   {
    "default": "0",
+   "fieldname": "uses_export_documents",
+   "fieldtype": "Check",
+   "label": "Uses Export Documents"
+  },
+  {
+   "default": "0",
    "fieldname": "is_outbound",
    "fieldtype": "Check",
    "label": "Is Outbound"
+  },
+  {
+   "default": "None",
+   "description": "Primary transport document for this shipment type. Opportunity routes create/link to this doctype after Shipment Type is selected.",
+   "fieldname": "primary_transport_document",
+   "fieldtype": "Select",
+   "label": "Primary Transport Document",
+   "options": "None\nBill of Lading\nAir Waybill\nBooking Confirmation"
   },
   {
    "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",
    "fieldname": "legacy_crm_labels",
    "fieldtype": "Small Text",
    "label": "Legacy CRM Labels"
+  },
+  {
+   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type — no code change needed.",
+   "fieldname": "section_required_documents",
+   "fieldtype": "Section Break",
+   "label": "Required Intake Documents"
+  },
+  {
+   "fieldname": "required_documents",
+   "fieldtype": "Table",
+   "label": "Required Documents",
+   "options": "Shipment Type Required Document"
+  },
+  {
+   "fieldname": "section_break_newf",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
   }
  ],
- "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
  "modified": "2026-06-16 19:25:26.856538",

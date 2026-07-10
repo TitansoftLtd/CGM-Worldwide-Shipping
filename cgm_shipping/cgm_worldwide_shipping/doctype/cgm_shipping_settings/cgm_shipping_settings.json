@@ -49,7 +49,9 @@
   "custom_offload_task_seq",
   "custom_empty_return_task_seq",
   "custom_interchange_task_seq",
-  "custom_kpa_free_days"
+  "custom_kpa_free_days",
+  "section_batch_counter",
+  "last_batch_no"
  ],
  "fields": [
   {
@@ -310,6 +312,19 @@
    "fieldname": "custom_kpa_free_days",
    "fieldtype": "Int",
    "label": "Default KPA Free Days"
+  },
+  {
+   "description": "Auto-incremented when a new Opportunity is created. Reset only when re-seeding the batch sequence.",
+   "fieldname": "section_batch_counter",
+   "fieldtype": "Section Break",
+   "label": "Opportunity batch counter"
+  },
+  {
+   "default": "0",
+   "description": "Last batch number assigned on Opportunity. The next Opportunity receives this value + 1.",
+   "fieldname": "last_batch_no",
+   "fieldtype": "Int",
+   "label": "Last Batch Number"
   }
  ],
  "grid_page_length": 50,

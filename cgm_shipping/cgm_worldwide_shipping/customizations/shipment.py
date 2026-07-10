@@ -30,7 +30,9 @@ _OPTIONAL_SHIPMENT_TYPE_FIELDS = (
 	"uses_container_tracking",
 	"uses_transit_documents",
 	"uses_destination_entry",
+	"uses_export_documents",
 	"is_outbound",
+	"primary_transport_document",
 	"task_flow_key",
 	"container_tracker_mode",
 	"default_mode_of_transport",
@@ -305,6 +307,10 @@ def shipment_type_profile(shipment_type: str | None) -> dict | None:
 		profile["uses_transit_documents"] = bool(row.get("uses_transit_documents"))
 	if _shipment_type_field_queryable("uses_destination_entry"):
 		profile["uses_destination_entry"] = bool(row.get("uses_destination_entry"))
+	if _shipment_type_field_queryable("uses_export_documents"):
+		profile["uses_export_documents"] = bool(row.get("uses_export_documents"))
+	if _shipment_type_field_queryable("primary_transport_document"):
+		profile["primary_transport_document"] = row.get("primary_transport_document") or "None"
 	if _shipment_type_field_queryable("is_outbound"):
 		profile["is_outbound"] = bool(row.get("is_outbound"))
 	return profile
@@ -820,6 +826,8 @@ def get_shipment_type_profiles() -> dict:
 		"uses_container_tracking",
 		"uses_transit_documents",
 		"uses_destination_entry",
+		"uses_export_documents",
+		"primary_transport_document",
 		"is_outbound",
 		"task_flow_key",
 		"container_tracker_mode",
@@ -861,6 +869,10 @@ def get_shipment_type_profiles() -> dict:
 			profile["uses_transit_documents"] = bool(row.get("uses_transit_documents"))
 		if _shipment_type_field_queryable("uses_destination_entry"):
 			profile["uses_destination_entry"] = bool(row.get("uses_destination_entry"))
+		if _shipment_type_field_queryable("uses_export_documents"):
+			profile["uses_export_documents"] = bool(row.get("uses_export_documents"))
+		if _shipment_type_field_queryable("primary_transport_document"):
+			profile["primary_transport_document"] = row.get("primary_transport_document") or "None"
 		if _shipment_type_field_queryable("is_outbound"):
 			profile["is_outbound"] = bool(row.get("is_outbound"))
 		profiles[name] = profile
@@ -961,12 +973,13 @@ def get_dashboard_data(data):
 	"""
 	data["transactions"] = [
 		{"label": "Quotation", "items": ["Quotation"]},
-		{"label": "Shipment", "items": ["Bill of Lading", "Air Waybill"]},
+		{"label": "Shipment", "items": ["Bill of Lading", "Air Waybill", "Booking Confirmation"]},
 		{"label": "Project", "items": ["Project"]},
 	]
 	non_standard = data.setdefault("non_standard_fieldnames", {})
 	non_standard["Bill of Lading"] = "linked_opportunity"
 	non_standard["Air Waybill"] = "linked_opportunity"
+	non_standard["Booking Confirmation"] = "linked_opportunity"
 	non_standard["Project"] = "custom_source_opportunity"
 
 	return data

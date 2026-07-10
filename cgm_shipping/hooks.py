@@ -25,7 +25,10 @@ app_license = "mit"
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
+app_include_css = [
+	"/assets/cgm_shipping/css/project_tracking.css",
+	"/assets/cgm_shipping/css/opportunity_intake_wizard.css",
+]
 app_include_js = "/assets/cgm_shipping/js/cgm_container_tracking.js"
 
 # include js, css files in header of web template
@@ -68,6 +71,7 @@ doctype_js = {
 	],
 	"Customer": "public/js/crm_customer.js",
 	"Opportunity": [
+		"public/js/opportunity_shipment.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_opportunity.js",
@@ -239,8 +243,17 @@ doc_events = {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_supplier.sync_transporter_supplier_portal_users",
 	},
 	"Opportunity": {
+		"before_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.prepare_opportunity_intake",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.assign_opportunity_batch_on_insert",
+		],
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.validate_opportunity_intake",
+		],
 		"before_save": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.sync_opportunity_intake_on_save",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.documents.normalize_opportunity_clients_documents",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.seed_required_documents_on_opportunity",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_bl_from_clients_documents",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",

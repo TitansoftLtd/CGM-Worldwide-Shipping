@@ -306,7 +306,7 @@ def _derive_tracker_status(data: dict[str, Any], *, ref_date) -> str:
 
 def _derive_transit_status(data: dict[str, Any]) -> str:
 	mode = data.get("container_mode") or ""
-	is_outbound = "Outbound" in mode
+	is_outbound = "Export" in mode
 
 	if data.get("offloading_date"):
 		return "Offloaded at Destination"

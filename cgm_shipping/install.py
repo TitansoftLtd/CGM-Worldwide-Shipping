@@ -80,9 +80,15 @@ def ensure_task_container_schema() -> None:
 		ensure_project_inspection_notification_fields()
 		ensure_project_port_arrival_fields()
 		from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
+			ensure_opportunity_universal_fields,
 			ensure_transit_project_fields,
 		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard import (
+			ensure_opportunity_intake_wizard_layout,
+		)
 
+		ensure_opportunity_universal_fields()
+		ensure_opportunity_intake_wizard_layout()
 		ensure_transit_project_fields()
 		frappe.db.commit()
 

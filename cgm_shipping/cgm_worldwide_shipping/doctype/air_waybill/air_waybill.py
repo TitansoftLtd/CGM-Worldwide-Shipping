@@ -108,6 +108,27 @@ def prepend_opportunity_awb_document(opp_doc, attachment_url, awb_name=None) -> 
 
 # ─── Whitelisted API ──────────────────────────────────────────────────────────
 @frappe.whitelist()
+def get_awb_submit_payload(awb_name: str, opportunity: str | None = None) -> dict:
+	"""Return AWB link metadata for applying on the Opportunity form after submit."""
+	if not awb_name or not frappe.db.exists("Air Waybill", awb_name):
+		frappe.throw("Air Waybill not found", frappe.DoesNotExistError)
+
+	frappe.has_permission("Air Waybill", ptype="read", doc=awb_name, throw=True)
+	doc = frappe.get_doc("Air Waybill", awb_name)
+	if doc.docstatus != 1:
+		frappe.throw("Air Waybill must be submitted first.")
+
+	linked_opportunity = sync_opportunity_from_submitted_awb(doc, opportunity)
+	return {
+		"awb_name": doc.name,
+		"attachment": doc.get("attach_airwaybill") or "",
+		"document_type": get_document_type_link_name(DOCUMENT_TYPE_CODE),
+		"opportunity": linked_opportunity,
+		"shipment_type": doc.get("shipment_type"),
+	}
+
+
+@frappe.whitelist()
 def create_opportunity_from_air_waybill(air_waybill: str) -> str:
 	"""Create a CRM Opportunity from a submitted Air Waybill.
 

@@ -25,7 +25,7 @@ const MODE_SECTIONS = {
 		"section_kpa_free_days",
 		"section_empty_return",
 	],
-	"Transit Outbound": [
+	"Transit Export": [
 		"section_identity",
 		"section_dates",
 		"section_mombasa",
@@ -35,7 +35,7 @@ const MODE_SECTIONS = {
 		"section_shipping_line_free_days",
 		"section_kpa_free_days",
 	],
-	"Transit Inbound": [
+	"Transit Import": [
 		"section_identity",
 		"section_dates",
 		"section_mombasa",

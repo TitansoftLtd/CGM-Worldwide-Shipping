@@ -61,7 +61,7 @@ CUSTOMER_ATTACH_TO_DOCUMENT_CODE = {
 }
 
 # Doctypes with soft back-link to Opportunity via linked_opportunity.
-BACK_LINKED_DOCTYPES = ("Air Waybill", "Bill of Lading")
+BACK_LINKED_DOCTYPES = ("Air Waybill", "Bill of Lading", "Booking Confirmation")
 
 # Map template labels or old department names → ERPNext department_name stem.
 DEPARTMENT_NAME_ALIASES = {

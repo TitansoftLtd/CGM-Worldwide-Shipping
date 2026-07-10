@@ -167,11 +167,20 @@ def next_batch_number_for_customer(customer: str) -> int:
 
 
 def resolve_batch_number_for_bl(doc) -> int:
-	"""Batch for a new/amended Bill of Lading without hardcoding."""
+	"""Batch for a new/amended Bill of Lading — prefer linked Opportunity batch."""
 	if doc.get("amended_from"):
 		reused = parse_batch_number_from_bl_name(doc.amended_from)
 		if reused:
 			return reused
+
+	config = get_bl_config()
+	source_field = config.get("opportunity_source_field") or "linked_opportunity"
+	opportunity = doc.get(source_field) or doc.get("custom_linked_opportunity")
+	if opportunity and frappe.db.exists("Opportunity", opportunity):
+		opp_batch = frappe.db.get_value("Opportunity", opportunity, "custom_batch_no")
+		if opp_batch and str(opp_batch).strip().isdigit():
+			return int(str(opp_batch).strip())
+
 	return next_batch_number_for_customer(doc.customer)
 
 

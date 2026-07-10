@@ -1,0 +1,229 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:booking_number",
+ "creation": "2026-07-08 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "booking_number",
+  "customer",
+  "client_ref",
+  "column_break_bc_1",
+  "shipment_type",
+  "shipping_line",
+  "attach_booking",
+  "section_vessel",
+  "vessel",
+  "voyage",
+  "column_break_bc_2",
+  "port_of_loading",
+  "port_of_discharge",
+  "section_cargo",
+  "commodity",
+  "requested_container_quantity",
+  "column_break_bc_3",
+  "requested_container_type",
+  "section_dates",
+  "cargo_cut_off",
+  "etd",
+  "column_break_bc_4",
+  "eta",
+  "section_links",
+  "linked_opportunity",
+  "description",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "booking_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Booking Number",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1
+  },
+  {
+   "fieldname": "client_ref",
+   "fieldtype": "Data",
+   "label": "Client Reference"
+  },
+  {
+   "fieldname": "column_break_bc_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "shipment_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Shipment Type",
+   "options": "Shipment Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "shipping_line",
+   "fieldtype": "Link",
+   "label": "Shipping Line",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "attach_booking",
+   "fieldtype": "Attach",
+   "label": "Booking Attachment"
+  },
+  {
+   "fieldname": "section_vessel",
+   "fieldtype": "Section Break",
+   "label": "Vessel & Ports"
+  },
+  {
+   "fieldname": "vessel",
+   "fieldtype": "Data",
+   "label": "Vessel"
+  },
+  {
+   "fieldname": "voyage",
+   "fieldtype": "Data",
+   "label": "Voyage"
+  },
+  {
+   "fieldname": "column_break_bc_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "port_of_loading",
+   "fieldtype": "Data",
+   "label": "Port of Loading"
+  },
+  {
+   "fieldname": "port_of_discharge",
+   "fieldtype": "Data",
+   "label": "Port of Discharge"
+  },
+  {
+   "fieldname": "section_cargo",
+   "fieldtype": "Section Break",
+   "label": "Cargo Request"
+  },
+  {
+   "fieldname": "commodity",
+   "fieldtype": "Small Text",
+   "label": "Commodity"
+  },
+  {
+   "fieldname": "requested_container_quantity",
+   "fieldtype": "Int",
+   "label": "Requested Container Quantity"
+  },
+  {
+   "fieldname": "column_break_bc_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "requested_container_type",
+   "fieldtype": "Link",
+   "label": "Requested Container Type",
+   "options": "Container Type"
+  },
+  {
+   "fieldname": "section_dates",
+   "fieldtype": "Section Break",
+   "label": "Schedule"
+  },
+  {
+   "fieldname": "cargo_cut_off",
+   "fieldtype": "Datetime",
+   "label": "Cargo Cut-off"
+  },
+  {
+   "fieldname": "etd",
+   "fieldtype": "Date",
+   "label": "ETD"
+  },
+  {
+   "fieldname": "column_break_bc_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "eta",
+   "fieldtype": "Date",
+   "label": "ETA"
+  },
+  {
+   "fieldname": "section_links",
+   "fieldtype": "Section Break",
+   "label": "Links"
+  },
+  {
+   "fieldname": "linked_opportunity",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Linked Opportunity",
+   "options": "Opportunity"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Booking Confirmation",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Booking Confirmation",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Sales User",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Operations Manager",
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
