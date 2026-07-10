@@ -5,31 +5,66 @@ const CGM_CONTAINER_TRACKING_TASK_KEY = "cgm_container_tracking_task";
 const CGM_CONTAINER_TRACKING_PROJECT_KEY = "cgm_container_tracking_project";
 
 const MODE_SECTIONS = {
-	"Mombasa Port": ["section_mombasa", "section_warehouse", "section_transport", "section_empty_return", "section_calculations"],
-	"ICD Nairobi": [
+	"Mombasa Port": [
+		"section_identity",
+		"section_dates",
 		"section_mombasa",
+		"section_warehouse",
+		"section_transport",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
+		"section_empty_return",
+	],
+	"ICD Nairobi": [
+		"section_identity",
+		"section_dates",
 		"section_icd",
 		"section_warehouse",
 		"section_transport",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
 		"section_empty_return",
-		"section_calculations",
 	],
-	"Transit Kenya→Border": [
+	"Transit Export": [
+		"section_identity",
+		"section_dates",
+		"section_mombasa",
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
-		"section_empty_return",
-		"section_calculations",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
 	],
-	"Transit Border→Kenya": [
+	"Transit Import": [
+		"section_identity",
+		"section_dates",
+		"section_mombasa",
 		"section_transit",
 		"section_warehouse",
 		"section_transport",
-		"section_empty_return",
-		"section_calculations",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
 	],
-	Export: ["section_mombasa", "section_transport", "section_empty_return", "section_calculations"],
+	Export: [
+		"section_identity",
+		"section_dates",
+		"section_export",
+		"section_transit",
+		"section_transport",
+		"section_shipping_line_free_days",
+		"section_kpa_free_days",
+	],
 };
+
+function lock_transport_assignment_fields(frm) {
+	const can_override =
+		frappe.user.has_role("System Manager") || frappe.user.has_role("Operations Manager");
+	["transporter", "truck_number", "driver_name", "driver_contact"].forEach((fieldname) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.set_df_property(fieldname, "read_only", can_override ? 0 : 1);
+		}
+	});
+}
 
 function apply_container_mode_layout(frm) {
 	const mode = frm.doc.container_mode || "Mombasa Port";
@@ -53,7 +88,7 @@ function fetch_bl_container_options(bill_of_lading) {
 		}
 		frappe.call({
 			method:
-				"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.get_bl_container_select_options",
+				"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_bl_container_select_options",
 			args: { bill_of_lading },
 			callback(r) {
 				if (r.exc) {
@@ -194,9 +229,6 @@ function apply_container_tracker_route_defaults(frm) {
 	if (opts.eta && !frm.doc.eta) {
 		frm.set_value("eta", opts.eta);
 	}
-	if (opts.batch_bl_no && !frm.doc.batch_bl_no) {
-		frm.set_value("batch_bl_no", opts.batch_bl_no);
-	}
 	frappe.route_options = null;
 }
 
@@ -212,7 +244,6 @@ function prompt_track_next_container(frm) {
 			doc.custom_bill_of_lading = bl;
 			doc.bl_number = bl;
 			doc.eta = frm.doc.eta;
-			doc.batch_bl_no = frm.doc.batch_bl_no;
 			frappe.set_route("Form", "Container Tracker", doc.name);
 		});
 	};
@@ -239,6 +270,120 @@ function prompt_track_next_container(frm) {
 	);
 }
 
+function render_container_tracker_alerts(frm) {
+	frm.dashboard.clear_comment();
+	const d = frm.doc;
+	let alert = null;
+
+	if ((d.free_days_end_date || d.free_days_start_date) && !d.gate_out_date_port) {
+		const today = frappe.datetime.get_today();
+		if (d.free_days_end_date) {
+			const remaining = frappe.datetime.get_diff(d.free_days_end_date, today);
+			if (remaining < 0) {
+				const overdue = Math.abs(remaining);
+				alert = {
+					msg: __(
+						"Demurrage accruing — {0} day(s) past the free period end date",
+						[overdue]
+					),
+					color: "red",
+				};
+			} else if (remaining <= 2) {
+				alert = {
+					msg: __(
+						"Free days expiring — only {0} day(s) remaining before demurrage starts",
+						[remaining]
+					),
+					color: "orange",
+				};
+			}
+		} else {
+			alert = {
+				msg: __(
+					"Enter <b>Shipping Line Free Day End Date</b> after discharge so demurrage/detention can be tracked."
+				),
+				color: "orange",
+			};
+		}
+	}
+
+	const return_done = d.interchange_date || d.actual_empty_return;
+	if (d.expected_empty_return && !return_done) {
+		const diff = frappe.datetime.get_diff(
+			frappe.datetime.get_today(),
+			d.expected_empty_return
+		);
+		if (diff > 0) {
+			alert = {
+				msg: __(
+					"Return overdue by {0} day(s) — contact transporter immediately. Demurrage/detention charges may be accruing.",
+					[diff]
+				),
+				color: "red",
+			};
+		} else if (diff >= -3) {
+			alert = {
+				msg: __(
+					"Container return due in {0} day(s) — arrange empty return now",
+					[Math.abs(diff)]
+				),
+				color: "orange",
+			};
+		}
+	} else if (d.expected_empty_return && return_done) {
+		let effective_return = d.interchange_date || d.actual_empty_return;
+		if (d.interchange_date && d.actual_empty_return) {
+			effective_return =
+				frappe.datetime.get_diff(d.interchange_date, d.actual_empty_return) >= 0
+					? d.interchange_date
+					: d.actual_empty_return;
+		}
+		const late = frappe.datetime.get_diff(effective_return, d.expected_empty_return);
+		if (late > 0) {
+			alert = {
+				msg: __(
+					"Returned late — {0} day(s) past the shipping-line free period end date",
+					[late]
+				),
+				color: "orange",
+			};
+		}
+	}
+
+	if (alert) {
+		frm.dashboard.add_comment(alert.msg, alert.color, true);
+	}
+}
+
+function container_tracker_status_color(status) {
+	if (!status) {
+		return "gray";
+	}
+	if (status.includes("Overdue")) {
+		return "red";
+	}
+	if (status === "Interchange Received" || status === "Empty Returned") {
+		return "green";
+	}
+	if (["At Warehouse", "Cargo Offloaded"].includes(status)) {
+		return "blue";
+	}
+	if (status === "Released / In Transit") {
+		return "orange";
+	}
+	if (["Vessel Berthed", "Discharged / At Port"].includes(status)) {
+		return "yellow";
+	}
+	return "gray";
+}
+
+function apply_container_tracker_status_indicator(frm) {
+	if (!frm.doc.status) {
+		return;
+	}
+	frm.page.set_indicator(frm.doc.status, container_tracker_status_color(frm.doc.status));
+}
+
 frappe.ui.form.on("Container Tracker", {
 	onload(frm) {
 		apply_container_tracker_route_defaults(frm);
@@ -257,6 +402,9 @@ frappe.ui.form.on("Container Tracker", {
 
 	refresh(frm) {
 		apply_container_mode_layout(frm);
+		lock_transport_assignment_fields(frm);
+		render_container_tracker_alerts(frm);
+		apply_container_tracker_status_indicator(frm);
 		if (frm.doc.custom_bill_of_lading) {
 			sync_bl_container_pick_list(frm);
 		}
@@ -304,6 +452,19 @@ frappe.ui.form.on("Container Tracker", {
 
 	container_mode(frm) {
 		apply_container_mode_layout(frm);
+	},
+
+	discharging_date(frm) {
+		const discharge = frm.doc.discharging_date;
+		if (!discharge) {
+			return;
+		}
+		if (!frm.doc.free_days_start_date) {
+			frm.set_value("free_days_start_date", discharge);
+		}
+		if (!frm.doc.kpa_free_days_start_date) {
+			frm.set_value("kpa_free_days_start_date", discharge);
+		}
 	},
 
 	before_save(frm) {

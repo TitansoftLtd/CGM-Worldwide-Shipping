@@ -7,11 +7,13 @@
  "field_order": [
   "bl_number",
   "customer",
+  "client_refrence_no",
   "column_break_sqbc",
-  "client_ref",
+  "shipment_type",
+  "cargo_type",
   "attach_bill_of_lading",
   "column_break_chhk",
-  "shipment_type",
+  "batch_no",
   "quantity",
   "linked_opportunity",
   "section_break_abdt",
@@ -38,11 +40,6 @@
    "label": "Bill of Lading Number",
    "reqd": 1,
    "unique": 1
-  },
-  {
-   "fieldname": "client_ref",
-   "fieldtype": "Data",
-   "label": "Client Ref"
   },
   {
    "fieldname": "customer",
@@ -107,18 +104,34 @@
    "fieldtype": "Small Text",
    "label": "Description",
    "reqd": 1
+  },
+  {
+   "fieldname": "client_refrence_no",
+   "fieldtype": "Data",
+   "label": "Client Refrence No"
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cargo_type",
+   "fieldtype": "Link",
+   "label": "Cargo Type",
+   "options": "Cargo Type",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "make_attachments_public": 1,
- "modified": "2026-06-10 12:35:23.525557",
+ "modified": "2026-07-10 07:11:53.920871",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",
- "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
@@ -132,12 +145,24 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "CGM Documentation",
+   "share": 1,
+   "submit": 1,
+   "write": 1
   }
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": [],
- "title_field": "bl_number"
+ "states": []
 }

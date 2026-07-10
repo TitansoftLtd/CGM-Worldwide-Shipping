@@ -1,0 +1,255 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("Transporter Portal") }}{% endblock %}
+
+{% block head_include %}
+<style>
+  .cp-page .cp-card-tabbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .4rem;
+    padding: .45rem;
+    background: #eef4f8;
+    border-bottom: 1px solid var(--cp-border, #e5e7eb);
+  }
+  .cp-page .cp-card-tabbar button.cp-card-tab {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: .7rem 1rem;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #64748b;
+    font-size: .9rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .cp-page .cp-card-tabbar button.cp-card-tab:hover {
+    background: rgba(255, 255, 255, .65);
+    color: #0f172a;
+  }
+  .cp-page .cp-card-tabbar button.cp-card-tab.active {
+    background: #fff;
+    color: #075985;
+    border-color: rgba(3, 105, 161, .25);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  .cp-page .cp-card-tabbar .cp-card-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.45rem;
+    height: 1.45rem;
+    padding: 0 .45rem;
+    border-radius: 999px;
+    font-size: .74rem;
+    font-weight: 700;
+    background: #dbeafe;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+  }
+  .cp-page .cp-card-tabbar button.cp-card-tab.active .cp-card-tab-badge {
+    background: #0369a1;
+    color: #fff;
+  }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="cp-page">
+  <section class="cp-hero">
+    <div class="cp-hero-row">
+      <div class="cp-avatar" aria-hidden="true">{{ (first_name or "?")[0]|upper }}</div>
+      <div style="flex:1; min-width:0;">
+        <h1>{{ _("Transporter Portal") }}</h1>
+        <p class="cp-sub">{{ _("Manage container allocations, truck assignments, and interchange receipts.") }}</p>
+        {% if is_transporter %}
+        <span class="cp-chip"><span class="dot"></span>{{ transporter_name }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% if error_message %}
+  <div class="alert alert-warning">{{ error_message }}</div>
+  {% elif is_transporter %}
+
+  <section class="cp-kpis" aria-label="{{ _('Container summary') }}">
+    <button type="button" class="cp-kpi blue" data-cp-tab="active" aria-label="{{ _('View active allocations') }}">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_active_allocations|default(0) }}</div>
+        <div class="cp-kpi-label">{{ _("Active Jobs") }}</div>
+      </div>
+    </button>
+    <button type="button" class="cp-kpi amber" data-cp-tab="active" aria-label="{{ _('View pending containers') }}">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_pending_containers|default(0) }}</div>
+        <div class="cp-kpi-label">{{ _("Pending Containers") }}</div>
+      </div>
+    </button>
+    <button type="button" class="cp-kpi purple" data-cp-tab="active" aria-label="{{ _('View containers awaiting interchange') }}">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7M5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_assigned_containers|default(0) }}</div>
+        <div class="cp-kpi-label">{{ _("Awaiting Interchange") }}</div>
+      </div>
+    </button>
+    <button type="button" class="cp-kpi green" data-cp-tab="completed" aria-label="{{ _('View completed containers') }}">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_complete_containers|default(0) }}</div>
+        <div class="cp-kpi-label">{{ _("Completed Containers") }}</div>
+      </div>
+    </button>
+    <button type="button" class="cp-kpi brand" data-cp-tab="completed" aria-label="{{ _('View completed jobs') }}">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_completed_allocations|default(0) }}</div>
+        <div class="cp-kpi-label">{{ _("Completed Jobs") }}</div>
+      </div>
+    </button>
+  </section>
+
+  <nav class="cp-actions" style="margin-bottom:1.5rem;">
+    <a class="cp-action" href="/transporter/profile">
+      <span class="cp-action-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>
+      </span>
+      <div><h3>{{ _("Company Profile") }}</h3><p>{{ _("View your transporter company details.") }}</p></div>
+    </a>
+  </nav>
+
+  <div class="cp-section-h"><h2>{{ _("My Allocations") }}</h2></div>
+
+  <div class="cp-card">
+    <div class="cp-card-tabbar" role="tablist" aria-label="{{ _('Allocation status') }}">
+      <button type="button" class="cp-card-tab active" role="tab" id="tp-tab-active" aria-selected="true" aria-controls="tp-panel-active" data-cp-tab="active">
+        <span>{{ _("Active") }}</span>
+        <span class="cp-card-tab-badge">{{ stat_active_allocations|default(0) }}</span>
+      </button>
+      <button type="button" class="cp-card-tab" role="tab" id="tp-tab-completed" aria-selected="false" aria-controls="tp-panel-completed" data-cp-tab="completed">
+        <span>{{ _("Completed") }}</span>
+        <span class="cp-card-tab-badge">{{ stat_completed_allocations|default(0) }}</span>
+      </button>
+    </div>
+
+    <div class="cp-tab-panel active" role="tabpanel" id="tp-panel-active" aria-labelledby="tp-tab-active">
+      {% if active_allocations %}
+      <ul class="cp-list">
+        {% for row in active_allocations %}
+        <a class="cp-list-item" href="/transporter/allocation?name={{ row.name|e }}">
+          <span class="cp-kind">{{ row.container_total }}</span>
+          <div class="cp-list-body">
+            <div class="cp-list-title">{{ row.project_ref or row.name }}</div>
+            <div class="cp-list-sub">
+              {% if row.bill_of_lading %}{{ _("B/L") }} {{ row.bill_of_lading }} · {% endif %}
+              {{ frappe.format(row.allocation_date, {"fieldtype": "Date"}) }}
+              · {{ _("Pending") }} {{ row.pending_count }}
+              · {{ _("Assigned") }} {{ row.truck_assigned_count }}
+            </div>
+          </div>
+          {% if row.pending_count %}
+          <span class="cp-status active"><span class="dot"></span>{{ _("Pending") }}</span>
+          {% elif row.truck_assigned_count %}
+          <span class="cp-status info"><span class="dot"></span>{{ _("Awaiting interchange") }}</span>
+          {% else %}
+          <span class="cp-status primary"><span class="dot"></span>{{ row.progress_label }}</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="cp-empty" style="border:none;">
+        <div class="cp-empty-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+        </div>
+        <p>{{ _("No active allocations right now.") }}</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="cp-tab-panel" role="tabpanel" id="tp-panel-completed" aria-labelledby="tp-tab-completed" hidden>
+      {% if completed_allocations %}
+      <ul class="cp-list">
+        {% for row in completed_allocations %}
+        <a class="cp-list-item" href="/transporter/allocation?name={{ row.name|e }}">
+          <span class="cp-kind">{{ row.container_total }}</span>
+          <div class="cp-list-body">
+            <div class="cp-list-title">{{ row.project_ref or row.name }}</div>
+            <div class="cp-list-sub">
+              {% if row.bill_of_lading %}{{ _("B/L") }} {{ row.bill_of_lading }} · {% endif %}
+              {{ frappe.format(row.allocation_date, {"fieldtype": "Date"}) }}
+              · {{ row.container_total }} {{ _("containers") }}
+            </div>
+          </div>
+          <span class="cp-status success"><span class="dot"></span>{{ _("Completed") }}</span>
+        </a>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="cp-empty" style="border:none;">
+        <div class="cp-empty-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </div>
+        <p>{{ _("No completed allocations yet.") }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var tabs = document.querySelectorAll("[data-cp-tab]");
+    var panels = {
+      active: document.getElementById("tp-panel-active"),
+      completed: document.getElementById("tp-panel-completed"),
+    };
+    function showTab(name) {
+      if (!panels[name]) return;
+      document.querySelectorAll(".cp-card-tab").forEach(function (el) {
+        var on = el.getAttribute("data-cp-tab") === name;
+        el.classList.toggle("active", on);
+        el.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      Object.keys(panels).forEach(function (key) {
+        var on = key === name;
+        panels[key].classList.toggle("active", on);
+        panels[key].hidden = !on;
+      });
+      if (history.replaceState) {
+        history.replaceState(null, "", name === "completed" ? "?tab=completed" : window.location.pathname);
+      }
+    }
+    tabs.forEach(function (el) {
+      el.addEventListener("click", function () {
+        showTab(el.getAttribute("data-cp-tab"));
+      });
+    });
+    var initial = new URLSearchParams(window.location.search).get("tab");
+    if (initial === "completed") showTab("completed");
+    else if (!{{ stat_active_allocations|default(0) }} && {{ stat_completed_allocations|default(0) }}) showTab("completed");
+  })();
+  </script>
+  {% endif %}
+</div>
+{% endblock %}

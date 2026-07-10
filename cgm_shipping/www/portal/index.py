@@ -23,6 +23,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	get_customer_invoices,
 	get_customer_quotations,
 	get_customer_shipments,
+	shipment_display_ref,
 	status_tone,
 )
 
@@ -112,7 +113,7 @@ def _populate(context, customer):
 		1 for s in shipments if s.custom_shipment_status == "Completed"
 	)
 
-	# Demurrage exposure: containers accruing demurrage or detention on any
+	# Demurrage exposure: containers accruing demurrage/detention on any
 	# of this customer's shipments. One join beats N per-shipment queries.
 	demurrage = frappe.db.sql(
 		"""
@@ -120,7 +121,7 @@ def _populate(context, customer):
 		FROM `tabContainer Tracker` ct
 		JOIN `tabProject` p ON p.name = ct.project
 		WHERE p.customer = %s
-		  AND (IFNULL(ct.demurrage_days, 0) > 0 OR IFNULL(ct.detention_days, 0) > 0)
+		  AND IFNULL(ct.demurrage_days, 0) > 0
 		""",
 		(customer,),
 	)
@@ -142,7 +143,7 @@ def _populate(context, customer):
 		arriving.append(
 			{
 				"name": s.name,
-				"ref": s.custom_cgm_ref_no or s.name,
+				"ref": shipment_display_ref(s),
 				"status": s.custom_shipment_status,
 				"mode": s.custom_mode_of_transport,
 				"eta": s.custom_eta,
@@ -172,7 +173,7 @@ def _populate(context, customer):
 		recent.append(
 			{
 				"name": s.name,
-				"ref": s.custom_cgm_ref_no or s.name,
+				"ref": shipment_display_ref(s),
 				"status": s.custom_shipment_status,
 				"tone": status_tone(s.custom_shipment_status),
 				"bl": s.custom_bl_number,

@@ -19,6 +19,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	get_customer_shipments,
 	status_tone,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+	display_ref_from_values,
+)
 
 no_cache = 1
 
@@ -61,5 +64,6 @@ def _build_context(context):
 	for s in shipments:
 		s["tone"] = status_tone(s.custom_shipment_status)
 		s["url"] = "/shipment?name=" + quote(s.name, safe="")
+		s["ref"] = display_ref_from_values(s)
 
 	context.shipments = shipments

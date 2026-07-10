@@ -1,0 +1,153 @@
+# Finance Guide
+
+For the **Finance** team: task payments, quotation approval, sales invoice approval, and project cost tracking.
+
+---
+
+## Where to work
+
+| Item | Path in Desk |
+|------|----------------|
+| Tasks awaiting payment | **Task** (department = Finance, or filter by project) |
+| Quotations to approve | **Quotation** → workflow **Pending Finance Approval** |
+| Sales invoices to approve | **Sales Invoice** → workflow **Pending Finance Approval** |
+| Project cost summary | **Project** → Finance cost total field |
+| Journal / payment entries | **Journal Entry**, **Payment Entry** |
+
+---
+
+## Finance tasks in the sea-import plan
+
+| Seq | Task | Payment kind |
+|-----|------|--------------|
+| 4 | Finance pays UCR | UCR |
+| 6 | Finance pays Pre-Clearance Permits | Permit |
+| 11 | Finance Pays Entry Slip | Entry |
+| 13 | Finance pays Shipping Line Charges | Shipping Line |
+| 16 | Finance pays for Post-Clearance Permits | Permit |
+| 19 | Finance pays KPA Invoice | KPA |
+
+### Standard payment subflow
+
+Each finance task follows the same pattern:
+
+```
+1. Ops/Declaration attaches invoice on the Task (finance lines / documents)
+2. Finance creates Journal Entry or Payment Entry
+3. Declarant uploads payment receipt
+4. Finance verifies receipt on Task
+5. Task can be marked complete → Project status may advance
+```
+
+**Task Finance Line** child table holds line items (UCR, permits, entry slip, shipping line, KPA).
+
+### Notifications you receive
+
+ERPNext Notifications alert Finance when invoices are ready, e.g.:
+
+- UCR Invoice to Finance
+- Entry Invoice to Finance
+- Shipping Line Invoice to Finance
+- Permit Invoices to Finance
+- KPA Invoice to Finance
+
+---
+
+## Quotation approval
+
+**Workflow:** `CGM Quotation Approval`
+
+| State | Your action |
+|-------|-------------|
+| **Pending Finance Approval** | Review valuation, customs taxes, local charges → **Approve** or **Reject** |
+| **Approved** | Sales can create Sales Order / Sales Invoice |
+| **Rejected** | Returns to Draft for correction |
+| **Shared with Client** | Client-facing; still billable |
+
+### Billing rule
+
+Sales Order and Sales Invoice can only be created from quotations in:
+
+- **Approved**, or
+- **Shared with Client**
+
+Attempting to bill from Draft or Pending Finance Approval is blocked.
+
+### Quotation contents
+
+| Section | Purpose |
+|---------|---------|
+| Import Cost Component | Foreign-currency valuation (CIF, freight, etc.) |
+| Customs Tax Component | Estimated IDF, VAT, RDL, etc. |
+| Quotation Item Pricing / Items | Local charges (agency, transport, etc.) |
+
+Print formats: **CGM Quotation Full**, **CGM Quotation Local Charges**.
+
+---
+
+## Sales Invoice approval
+
+**Workflow:** `CGM Sales Invoice Approval`
+
+| State | Meaning |
+|-------|---------|
+| Draft | Being prepared |
+| Pending Finance Approval | Awaiting your review |
+| Approved | **Submit** is now allowed |
+| Rejected | Returned to Draft |
+
+!!! warning "Submit guard"
+    You cannot **Submit** a Sales Invoice until `workflow_state = Approved`.
+
+After approval, use normal ERPNext payment entry against the invoice.
+
+---
+
+## Finance cost ledger
+
+Journal Entries linked to a sea task (`custom_cgm_source_task`) automatically update the **Project** finance cost summary (`custom_finance_cost_total`).
+
+| Event | Effect |
+|-------|--------|
+| JE insert / update / submit | Costs added to project summary |
+| JE cancel | Costs reversed |
+
+**Do not** manually edit the finance cost total on Project — the field is protected.
+
+Cost categories are mapped in **CGM Shipping Settings → Finance Cost Category Map**.
+
+---
+
+## Payment Entry rules
+
+- When linking a payment to a shipment, a **Project** reference is required (`validate_shipment_link`).
+- Submitting a Payment Entry can auto-complete the linked finance Task when criteria are met.
+
+---
+
+## Journal Entry from tasks
+
+Tasks may expose **Create Journal Entry** actions when finance lines are ready. The JE inherits the source task for ledger sync.
+
+---
+
+## Checklist: finance on a new shipment
+
+- [ ] UCR paid (task 4) after Declaration creates UCR (task 3)
+- [ ] Pre-clearance permits paid (task 6)
+- [ ] Entry slip paid (task 11) after entry lodged (task 10)
+- [ ] Shipping line charges paid (task 13)
+- [ ] Post-clearance permits paid (task 16)
+- [ ] KPA invoice paid (task 19)
+- [ ] Review quotation before client billing
+- [ ] Approve sales invoice before submit
+- [ ] Monitor project cost total vs budget
+
+---
+
+## Related guides
+
+- [Operations](operations.md)
+- [Declaration & Customs](declaration-customs.md)
+- [Commercial](commercial.md)
+- [Admin & Setup](admin-setup.md)

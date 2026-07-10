@@ -6,9 +6,15 @@ project_container_tracking / project_tracking_layout modules.
 """
 from __future__ import annotations
 
+import json
+
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+	display_ref_from_values,
+	get_project_reference,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	derive_workflow_progress_from_tasks,
 	get_all_sea_tasks_for_project,
 	get_open_sea_tasks,
@@ -18,6 +24,17 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow impor
 
 
 MODULE = "CGM Worldwide Shipping"
+
+SUPPLIER_CONTAINER_CHARGE_FIELDS = (
+	"custom_demurrage_free_days",
+	"custom_demurrage_daily_rate",
+	"custom_detention_free_days",
+	"custom_detention_daily_rate",
+	"custom_section_shipping_line_rules",
+	"custom_shipping_line_free_days_rules",
+	"custom_shipping_line_demurrage_tiers",
+	"custom_shipping_line_detention_tiers",
+)
 
 
 def _create_cf(dt: str, values: dict) -> None:
@@ -30,6 +47,63 @@ def _create_cf(dt: str, values: dict) -> None:
 	for key, value in values.items():
 		setattr(doc, key, value)
 	doc.insert(ignore_permissions=True)
+
+
+def _remove_cf(dt: str, fieldname: str) -> None:
+	name = f"{dt}-{fieldname}"
+	if frappe.db.exists("Custom Field", name):
+		frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
+
+
+NON_LAYOUT_CF_KEYS = frozenset(
+	{
+		"fieldname",
+		"insert_after",
+		"label",
+		"fieldtype",
+		"options",
+		"collapsible",
+		"bold",
+		"columns",
+		"width",
+	}
+)
+
+
+def _ensure_cf(dt: str, values: dict) -> None:
+	"""Create a custom field if missing; never overwrite layout on existing fields.
+
+	Desk exports (custom/*.json) and Customize Form are the source of truth for
+	field order, labels, and insert_after. Migrate only creates missing fields and
+	applies non-layout behaviour (read_only, cannot_add_rows, etc.).
+	"""
+	name = f"{dt}-{values['fieldname']}"
+	if not frappe.db.exists("Custom Field", name):
+		_create_cf(dt, values)
+		return
+
+	doc = frappe.get_doc("Custom Field", name)
+	changed = False
+	for key, value in values.items():
+		if key in NON_LAYOUT_CF_KEYS:
+			continue
+		if doc.get(key) != value:
+			doc.set(key, value)
+			changed = True
+	if changed:
+		doc.save(ignore_permissions=True)
+
+
+def _upsert_cf(dt: str, values: dict) -> None:
+	"""Create or update a Custom Field (keeps Supplier child tables in sync on migrate)."""
+	name = f"{dt}-{values['fieldname']}"
+	if frappe.db.exists("Custom Field", name):
+		doc = frappe.get_doc("Custom Field", name)
+		for key, value in values.items():
+			setattr(doc, key, value)
+		doc.save(ignore_permissions=True)
+		return
+	_create_cf(dt, values)
 
 
 def ensure_project_shipment_core_fields() -> None:
@@ -235,8 +309,8 @@ def ensure_project_shipment_core_fields() -> None:
 			"description": "CI, PKL, BL, COC, KRA PIN - synced from Lead/Opportunity/Customer/Tasks.",
 		},
 	)
-	# Shipment documents table (may already exist from ensure_project_shipment_documents_field).
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+	# Shipment documents table (may already exist from ensure_project_documents_field).
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		ensure_project_shipment_documents_field,
 	)
 
@@ -293,7 +367,472 @@ def _set_cf_property(fieldname: str, **kwargs) -> None:
 		frappe.db.set_value("Custom Field", name, key, value, update_modified=False)
 
 
+def ensure_supplier_field_order() -> None:
+	"""Ensure CGM Supplier fields are listed in field_order (otherwise they stay hidden)."""
+	ps_name = "Supplier-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+	raw = frappe.db.get_value("Property Setter", ps_name, "value") or "[]"
+	try:
+		order = json.loads(raw)
+	except json.JSONDecodeError:
+		return
+	if not isinstance(order, list):
+		return
+
+	order = [f for f in order if f not in SUPPLIER_CONTAINER_CHARGE_FIELDS]
+	anchor = "image" if "image" in order else "supplier_group"
+	if anchor in order:
+		idx = order.index(anchor) + 1
+		for offset, fieldname in enumerate(SUPPLIER_CONTAINER_CHARGE_FIELDS):
+			order.insert(idx + offset, fieldname)
+	else:
+		order.extend(SUPPLIER_CONTAINER_CHARGE_FIELDS)
+
+	frappe.db.set_value(
+		"Property Setter", ps_name, "value", json.dumps(order), update_modified=False
+	)
+
+
+def ensure_supplier_container_charge_fields() -> None:
+	"""Per shipping line: legacy flat fields (fallback) and tiered rule child tables."""
+	insert_after = "image"
+	for fieldname, label in (
+		("custom_demurrage_free_days", "Demurrage Free Days (legacy)"),
+		("custom_demurrage_daily_rate", "Demurrage Daily Rate (legacy USD)"),
+		("custom_detention_free_days", "Detention Free Days (legacy)"),
+		("custom_detention_daily_rate", "Detention Daily Rate (legacy USD)"),
+	):
+		_upsert_cf(
+			"Supplier",
+			{
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": "Int" if "days" in fieldname else "Currency",
+				"insert_after": insert_after,
+			},
+		)
+		insert_after = fieldname
+	_upsert_cf(
+		"Supplier",
+		{
+			"fieldname": "custom_section_shipping_line_rules",
+			"label": "Container charge rules",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_detention_daily_rate",
+			"collapsible": 1,
+		},
+	)
+	insert_after = "custom_section_shipping_line_rules"
+	for fieldname, label, options in (
+		(
+			"custom_shipping_line_free_days_rules",
+			"Shipping Line Free Days Rules",
+			"Shipping Line Free Days Rule",
+		),
+		(
+			"custom_shipping_line_demurrage_tiers",
+			"Shipping Line Demurrage Tiers",
+			"Shipping Line Demurrage Tier",
+		),
+		(
+			"custom_shipping_line_detention_tiers",
+			"Shipping Line Detention Tiers",
+			"Shipping Line Detention Tier",
+		),
+	):
+		_upsert_cf(
+			"Supplier",
+			{
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": "Table",
+				"options": options,
+				"insert_after": insert_after,
+			},
+		)
+		insert_after = fieldname
+	ensure_supplier_field_order()
+	frappe.clear_cache(doctype="Supplier")
+
+
+def ensure_container_tracking_settings_fields() -> None:
+	"""Container tracking settings live on CGM Shipping Settings doctype JSON.
+
+	Remove legacy Custom Field duplicates from older installs.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_TASK_SEQ_DEFAULTS,
+	)
+
+	for fieldname in (
+		"section_container_task_sequences",
+		*CONTAINER_TASK_SEQ_DEFAULTS.keys(),
+		"custom_kpa_free_days",
+	):
+		_remove_cf("CGM Shipping Settings", fieldname)
+
+	if frappe.db.exists("DocType", "CGM Shipping Settings"):
+		kpa = frappe.db.get_single_value("CGM Shipping Settings", "custom_kpa_free_days")
+		if kpa in (None, 0):
+			frappe.db.set_single_value(
+				"CGM Shipping Settings", "custom_kpa_free_days", 5, update_modified=False
+			)
+
+	frappe.clear_cache(doctype="CGM Shipping Settings")
+
+
+def ensure_task_container_fields() -> None:
+	"""Task fields to identify one container for container-specific lifecycle events."""
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_section_container_event",
+			"label": "Container Event",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_sequence_no",
+			"collapsible": 1,
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
+			),
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_tracker",
+			"label": "Container Tracker",
+			"fieldtype": "Link",
+			"options": "Container Tracker",
+			"insert_after": "custom_section_container_event",
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
+			),
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_number",
+			"label": "Container Number",
+			"fieldtype": "Data",
+			"insert_after": "custom_container_tracker",
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
+			),
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_cargo_type",
+			"label": "Cargo Type",
+			"fieldtype": "Link",
+			"options": "Cargo Type",
+			"insert_after": "custom_container_number",
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
+			),
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
+def ensure_task_container_update_fields() -> None:
+	"""Task child table for per-container data entry (tasks 11, 16, 18–24)."""
+	container_seqs = "11,18,20,21,22,23,24,25,26"
+	depends = (
+		f"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+		f"[{container_seqs}].includes(doc.custom_sequence_no)"
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_section_container_updates",
+			"label": "Container Updates",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_sequence_no",
+			"collapsible": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_updates",
+			"label": "Container Updates",
+			"fieldtype": "Table",
+			"options": "Task Container Update",
+			"insert_after": "custom_section_container_updates",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_not_emptied_reason",
+			"label": "If containers not exiting port — reason",
+			"fieldtype": "Small Text",
+			"insert_after": "custom_container_updates",
+			"depends_on": (
+				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"doc.custom_sequence_no == 21"
+			),
+			"description": (
+				"Required when task is completed but no truck details are filled "
+				"for any container."
+			),
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
+def ensure_field_officer_task_fields() -> None:
+	"""Task 16 field-officer clearance tracking fields."""
+	depends = (
+		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 18"
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_section_field_clearance",
+			"label": "Field Clearance",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_task_documents",
+			"collapsible": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_verification_type",
+			"label": "Verification Type",
+			"fieldtype": "Select",
+			"options": (
+				"\nPartial Verification\n100% Verification\nDirect Release\nScanning"
+			),
+			"insert_after": "custom_section_field_clearance",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_verification_status",
+			"label": "Verification Status",
+			"fieldtype": "Select",
+			"options": (
+				"\nNot Started\nIn Progress\nVerification Done\nReleased by CRO"
+			),
+			"insert_after": "custom_verification_type",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_customs_issue",
+			"label": "Customs Issues / Holds",
+			"fieldtype": "Small Text",
+			"description": "Any holds, queries, or issues from KRA/KEBS",
+			"insert_after": "custom_verification_status",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_delivery_note_status",
+			"label": "Delivery Note Status",
+			"fieldtype": "Select",
+			"options": "\nNot Required\nAwaiting\nIssued",
+			"insert_after": "custom_customs_issue",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_coc_status",
+			"label": "COC Approval Status",
+			"fieldtype": "Select",
+			"options": "\nNot Required\nAwaiting COC\nCOC Received\nApproved",
+			"insert_after": "custom_delivery_note_status",
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_verification_report_attached",
+			"label": "Verification Report Attached",
+			"fieldtype": "Check",
+			"insert_after": "custom_coc_status",
+			"depends_on": depends,
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
+def ensure_client_inspection_task_fields() -> None:
+	"""Task 7 client inspection notification / confirmation fields."""
+	depends = (
+		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 7"
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_section_client_inspection",
+			"label": "Client Inspection",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_task_documents",
+			"collapsible": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_client_notified_on",
+			"label": "Client Notified On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_section_client_inspection",
+			"read_only": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_client_notified_by",
+			"label": "Client Notified By",
+			"fieldtype": "Link",
+			"options": "User",
+			"insert_after": "custom_client_notified_on",
+			"read_only": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_inspection_confirmed_on",
+			"label": "Inspection Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_client_notified_by",
+			"read_only": 1,
+			"depends_on": depends,
+		},
+	)
+	_create_cf(
+		"Task",
+		{
+			"fieldname": "custom_inspection_confirmed_by",
+			"label": "Inspection Confirmed By",
+			"fieldtype": "Data",
+			"insert_after": "custom_inspection_confirmed_on",
+			"read_only": 1,
+			"depends_on": depends,
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
+def ensure_project_inspection_notification_fields() -> None:
+	"""Project-level inspection notification status for portal + desk indicator."""
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_inspection_notification_status",
+			"label": "Inspection Notification Status",
+			"fieldtype": "Select",
+			"options": "Not Notified\nNotified\nConfirmed",
+			"default": "Not Notified",
+			"insert_after": "custom_shipment_status",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_inspection_notified_on",
+			"label": "Inspection Notified On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_inspection_notification_status",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_inspection_confirmed_on",
+			"label": "Inspection Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_inspection_notified_on",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_inspection_confirmed_by",
+			"label": "Inspection Confirmed By",
+			"fieldtype": "Data",
+			"insert_after": "custom_inspection_confirmed_on",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	frappe.clear_cache(doctype="Project")
+
+
+def ensure_project_port_arrival_fields() -> None:
+	"""Early port-arrival confirmation (creates container trackers before Entry is paid)."""
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_port_arrival_confirmed",
+			"label": "Port Arrival Confirmed",
+			"fieldtype": "Check",
+			"insert_after": "custom_berth_phase",
+			"read_only": 1,
+			"default": "0",
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_port_arrival_confirmed_on",
+			"label": "Port Arrival Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_port_arrival_confirmed",
+			"read_only": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_port_arrival_confirmed_by",
+			"label": "Port Arrival Confirmed By",
+			"fieldtype": "Data",
+			"insert_after": "custom_port_arrival_confirmed_on",
+			"read_only": 1,
+		},
+	)
+	frappe.clear_cache(doctype="Project")
+
+
 def ensure_project_container_tracking_fields() -> None:
+	ensure_supplier_container_charge_fields()
+	ensure_container_tracking_settings_fields()
 	_create_cf(
 		"Project",
 		{
@@ -414,7 +953,7 @@ def ensure_project_container_tracking_fields() -> None:
 
 
 def _ensure_tracking_fields() -> None:
-	"""Fields matching the LCL Shipment Tracking Sheet columns."""
+	"""Fields matching the shipment tracking sheet columns."""
 	_create_cf(
 		"Project",
 		{
@@ -450,12 +989,27 @@ def _ensure_tracking_fields() -> None:
 	_create_cf(
 		"Project",
 		{
+			"fieldname": "custom_project_reference",
+			"label": "Project Reference",
+			"fieldtype": "Data",
+			"insert_after": "project_name",
+			"in_list_view": 1,
+			"in_standard_filter": 1,
+			"in_global_search": 1,
+			"read_only": 1,
+			"description": "Business project reference (e.g. LP 4X40-8/0082).",
+		},
+	)
+	_create_cf(
+		"Project",
+		{
 			"fieldname": "custom_cgm_ref_no",
 			"label": "CGM Ref No",
 			"fieldtype": "Data",
-			"insert_after": "custom_opened_date",
-			"in_list_view": 1,
-			"description": "e.g. CGM/LCL001/1022 - can match Project Name",
+			"hidden": 1,
+			"insert_after": "custom_project_reference",
+			"read_only": 1,
+			"description": "Legacy CGM reference (superseded by Project Reference).",
 		},
 	)
 	_create_cf(
@@ -463,7 +1017,7 @@ def _ensure_tracking_fields() -> None:
 		{
 			"fieldname": "custom_column_break_tracking_1",
 			"fieldtype": "Column Break",
-			"insert_after": "custom_cgm_ref_no",
+			"insert_after": "custom_project_reference",
 		},
 	)
 	_create_cf(
@@ -473,6 +1027,16 @@ def _ensure_tracking_fields() -> None:
 			"label": "IDF No",
 			"fieldtype": "Data",
 			"insert_after": "custom_column_break_tracking_1",
+			"in_list_view": 1,
+		},
+	)
+	_create_cf(
+		"Project",
+		{
+			"fieldname": "custom_client_ref_no",
+			"label": "Client Ref No",
+			"fieldtype": "Data",
+			"insert_after": "custom_mode_of_transport",
 			"in_list_view": 1,
 		},
 	)
@@ -527,8 +1091,8 @@ def _reorder_tracking_field_chain() -> None:
 		("custom_shipment_progress_html", "custom_section_tracking_sheet"),
 		("custom_opened_date", "custom_shipment_progress_html"),
 		("custom_consignee", "custom_opened_date"),
-		("custom_cgm_ref_no", "custom_consignee"),
-		("custom_column_break_tracking_1", "custom_cgm_ref_no"),
+		("custom_project_reference", "custom_consignee"),
+		("custom_column_break_tracking_1", "custom_project_reference"),
 		("custom_shipment_type", "custom_column_break_tracking_1"),
 		("custom_mode_of_transport", "custom_shipment_type"),
 		("custom_client_ref_no", "custom_mode_of_transport"),
@@ -620,7 +1184,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	first_open = open_tasks[0] if open_tasks else None
 	workflow_behind = workflow_index < progress_index
 	if workflow_behind and doc.get("custom_mode_of_transport") == "Sea":
-		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance_flow import (
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 			sync_project_shipment_status_from_tasks,
 		)
 
@@ -633,19 +1197,41 @@ def get_project_tracking_dashboard(project: str) -> dict:
 				workflow_index = progress_index
 			workflow_behind = False
 
-	containers = []
-	if frappe.db.exists("DocType", "Container Tracker"):
-		from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
-			get_containers_for_project,
-		)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+		get_containers_for_project,
+	)
 
-		containers = get_containers_for_project(project)
+	containers = get_containers_for_project(project)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
+		enrich_containers_with_allocation,
+	)
+
+	containers = enrich_containers_with_allocation(containers)
 
 	berth_phase = doc.get("custom_berth_phase") or "Before Vessel Berth"
-	if doc.get("custom_ata") or any(c.get("discharging_date") for c in containers):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project import get_project_ata
+
+	if get_project_ata(doc) or any(
+		c.get("discharging_date") or c.get("discharge_date") for c in containers
+	):
 		berth_phase = "After Vessel Berthed"
 
-	return {
+	def _count_status(*statuses):
+		return sum(1 for c in containers if c.get("status") in statuses)
+
+	alert_count = sum(
+		1
+		for c in containers
+		if c.get("alert_status")
+		or (c.get("demurrage_days") or 0) > 0
+		or (c.get("days_outstanding") or 0) > 0
+	)
+	released = _count_status("Released / In Transit")
+	at_warehouse = _count_status("At Warehouse", "Cargo Offloaded")
+	returned = _count_status("Empty Returned", "Interchange Received")
+
+	payload = {
 		"current_status": progress_status,
 		"current_index": progress_index,
 		"workflow_status": workflow_status,
@@ -658,11 +1244,314 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"first_open_task": first_open,
 		"mode": doc.get("custom_mode_of_transport"),
 		"berth_phase": berth_phase,
+		"project_reference": get_project_reference(doc) or doc.name,
+		"cgm_ref_no": get_project_reference(doc) or doc.name,
 		"containers": containers,
-		"containers_overdue": sum(1 for c in containers if c.get("status") == "Overdue"),
+		"container_total": len(containers),
+		"containers_released": released,
+		"containers_at_warehouse": at_warehouse,
+		"containers_returned": returned,
+		"containers_alerts": alert_count,
+		"containers_overdue": sum(
+			1
+			for c in containers
+			if c.get("status") == "Return Overdue"
+			or (c.get("alert_status") or "").startswith("🚨")
+		),
 		"containers_pending_empty": sum(
-			1 for c in containers if c.get("status") in ("Empty Pending", "Overdue", "Dispatched")
+			1
+			for c in containers
+			if c.get("status")
+			in (
+				"Released / In Transit",
+				"At Warehouse",
+				"Cargo Offloaded",
+				"Return Overdue",
+			)
 		),
 		"total_demurrage_amount": sum(c.get("demurrage_amount") or 0 for c in containers),
 		"total_detention_amount": sum(c.get("detention_amount") or 0 for c in containers),
 	}
+	if doc.meta.has_field("custom_inspection_notification_status"):
+		payload["inspection_notification_status"] = (
+			doc.get("custom_inspection_notification_status") or "Not Notified"
+		).strip()
+		payload["inspection_notified_on"] = doc.get("custom_inspection_notified_on")
+		payload["inspection_confirmed_on"] = doc.get("custom_inspection_confirmed_on")
+		payload["inspection_confirmed_by"] = doc.get("custom_inspection_confirmed_by")
+	if doc.meta.has_field("custom_port_arrival_confirmed"):
+		payload["port_arrival_confirmed"] = bool(doc.get("custom_port_arrival_confirmed"))
+		payload["port_arrival_confirmed_on"] = doc.get("custom_port_arrival_confirmed_on")
+		payload["port_arrival_confirmed_by"] = doc.get("custom_port_arrival_confirmed_by")
+	return payload
+
+
+OBSOLETE_FINANCE_COST_PROJECT_FIELDS = (
+	"custom_finance_cost_ucr",
+	"custom_finance_cost_kebs",
+	"custom_finance_cost_dvs",
+	"custom_finance_cost_idf",
+	"custom_finance_cost_port",
+	"custom_finance_cost_transport",
+	"custom_finance_cost_other",
+	"custom_finance_cost_ledger",
+	"custom_finance_cost_payment_count",
+	"custom_finance_cost_last_payment_date",
+	"custom_column_break_finance_cost_summary",
+)
+
+
+def ensure_project_finance_cost_fields() -> None:
+	"""Single billed-total field on Project — create if missing; layout from desk export."""
+	for fieldname in OBSOLETE_FINANCE_COST_PROJECT_FIELDS:
+		_remove_cf("Project", fieldname)
+
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_section_finance_cost_summary",
+			"label": "Journal Entry Billing",
+			"fieldtype": "Section Break",
+			"insert_after": "total_purchase_cost",
+			"collapsible": 0,
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_finance_cost_total",
+			"label": "Total Billed Amount (via Journal Entry)",
+			"fieldtype": "Currency",
+			"insert_after": "custom_section_finance_cost_summary",
+			"read_only": 1,
+			"bold": 1,
+		},
+	)
+	frappe.clear_cache(doctype="Project")
+
+
+def ensure_transit_project_fields() -> None:
+	"""Project fields for transit export destination entry and UBS permit tracking."""
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_uses_destination_entry",
+			"label": "Uses Destination Entry",
+			"fieldtype": "Check",
+			"insert_after": "custom_shipment_type",
+			"fetch_from": "custom_shipment_type.uses_destination_entry",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_destination_entry_number",
+			"label": "Destination Entry Number",
+			"fieldtype": "Data",
+			"insert_after": "project_type",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_ubs_permit_number",
+			"label": "UBS Permit Number",
+			"fieldtype": "Data",
+			"insert_after": "custom_destination_entry_number",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_ubs_permit_date",
+			"label": "UBS Permit Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_ubs_permit_number",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_destination_entry_confirmed",
+			"label": "Destination Entry Confirmed",
+			"fieldtype": "Check",
+			"insert_after": "custom_ubs_permit_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_uganda_release_date",
+			"label": "Destination Country Release Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_destination_entry_confirmed",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_coc_application_date",
+			"label": "COC Application Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_uganda_release_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_eac_application_date",
+			"label": "EAC Application Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_coc_application_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+
+	if frappe.db.exists("Property Setter", "Project-project_type-hidden"):
+		frappe.db.set_value("Property Setter", "Project-project_type-hidden", "value", "0")
+
+	frappe.clear_cache(doctype="Project")
+
+
+def ensure_opportunity_universal_fields() -> None:
+	"""Opportunity intake fields driven by Shipment Type flags (universal starting point)."""
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_section_shipment_intake",
+			"label": "Shipment Intake",
+			"fieldtype": "Section Break",
+			"insert_after": "party_name",
+			"collapsible": 0,
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_eta",
+			"label": "ETA",
+			"fieldtype": "Date",
+			"insert_after": "custom_shipment_type",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_etd",
+			"label": "ETD — Estimated Departure",
+			"fieldtype": "Date",
+			"insert_after": "custom_eta",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_shipping_line",
+			"label": "Shipping Line",
+			"fieldtype": "Link",
+			"options": "Supplier",
+			"insert_after": "custom_etd",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_shipping_order_ref",
+			"label": "Shipping Order Reference",
+			"fieldtype": "Data",
+			"insert_after": "custom_shipping_line",
+			"description": "First document received for export. BL number is added when available.",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_booking_ref",
+			"label": "Booking Reference",
+			"fieldtype": "Data",
+			"insert_after": "custom_shipping_order_ref",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_delivery_destination",
+			"label": "Destination Country",
+			"fieldtype": "Link",
+			"options": "Delivery Destination",
+			"insert_after": "custom_booking_ref",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_handling_agent",
+			"label": "Handling Agent",
+			"fieldtype": "Data",
+			"insert_after": "custom_delivery_destination",
+			"description": "FedEx, Transglobal, Swissport, etc.",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_draft_bl_number",
+			"label": "B/L Number (if known)",
+			"fieldtype": "Data",
+			"insert_after": "custom_handling_agent",
+			"description": "Enter when the client provides a BL number before the Bill of Lading record is created.",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_section_transport_document",
+			"label": "Transport Document",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_draft_bl_number",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_booking_confirmation",
+			"label": "Booking Confirmation",
+			"fieldtype": "Link",
+			"options": "Booking Confirmation",
+			"insert_after": "custom_section_transport_document",
+		},
+	)
+
+	for dt, fields in (
+		(
+			"Project",
+			(
+				("custom_shipping_order_ref", "Data", "Shipping Order Reference"),
+				("custom_booking_ref", "Data", "Booking Reference"),
+				("custom_handling_agent", "Data", "Handling Agent"),
+				("custom_booking_confirmation", "Link", "Booking Confirmation", "Booking Confirmation"),
+			),
+		),
+	):
+		for item in fields:
+			fieldname, fieldtype, label = item[0], item[1], item[2]
+			values = {
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": fieldtype,
+				"insert_after": "custom_shipping_line",
+			}
+			if len(item) > 3:
+				values["options"] = item[3]
+			_ensure_cf(dt, values)
+
+	frappe.clear_cache(doctype="Opportunity")
+	frappe.clear_cache(doctype="Project")

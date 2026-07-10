@@ -25,17 +25,23 @@ app_license = "mit"
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
-app_include_js = "/assets/cgm_shipping/js/cgm_container_tracking.js"
+app_include_css = [
+	"/assets/cgm_shipping/css/project_tracking.css",
+	"/assets/cgm_shipping/css/opportunity_intake_wizard.css",
+]
+app_include_js = [
+	"/assets/cgm_shipping/js/cgm_status_field.js",
+	"/assets/cgm_shipping/js/cgm_container_tracking.js",
+]
 
 # include js, css files in header of web template
 # Customer portal: shared design-system CSS + browser-side timezone
 # localization for the /portal, /my-shipments, /shipment and /documents pages.
 web_include_css = [
-	"/assets/cgm_shipping/css/customer_portal.css",
+    "/assets/cgm_shipping/css/customer_portal.css",
 ]
 web_include_js = [
-	"/assets/cgm_shipping/js/portal_localize_time.js",
+    "/assets/cgm_shipping/js/portal_localize_time.js",
 ]
 
 # include custom scss in every website theme (without file extension ".scss")
@@ -48,26 +54,40 @@ web_include_js = [
 # include js in page
 # page_js = {"page" : "public/js/file.js"}
 
-
 # include js in doctype views
 doctype_js = {
-	"Task": "public/js/task.js",
+	"Task": [
+		"public/js/cgm_status_field.js",
+		"public/js/shipment_document_grid.js",
+		"public/js/task.js",
+	],
 	"Purchase Invoice": "public/js/purchase_invoice.js",
-	"Payment Entry": "public/js/payment_entry.js",
 	"Project": [
+		"public/js/cgm_status_field.js",
+		"public/js/shipment_document_grid.js",
+		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/project.js",
 	],
 	"Lead": [
+		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_lead.js",
 	],
 	"Customer": "public/js/crm_customer.js",
+	"Item": "public/js/item_pricing_rule.js",
 	"Opportunity": [
+		"public/js/opportunity_shipment.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_opportunity.js",
-	]
+		"public/js/opportunity.js",
+	],
+	"Quotation": "public/js/quotation.js",
+	"Sales Order": "public/js/quotation.js",
+	"Sales Invoice": "public/js/sales_invoice.js",
+	# Doctype folder *.js is auto-inlined; only list extra scripts here (not the doctype file itself).
+	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -87,11 +107,16 @@ doctype_js = {
 # website user home page (by Role)
 # Customers (Website Users) land on the branded shipment portal.
 role_home_page = {
-	"Customer": "portal",
+    "Customer": "portal",
+    "Transporter": "transporter",
 }
 
+get_website_user_home_page = (
+    "cgm_shipping.cgm_worldwide_shipping.customizations.website.get_cgm_website_user_home_page"
+)
+
 on_session_creation = [
-	"cgm_shipping.cgm_worldwide_shipping.customizations.website.route_customer_to_portal",
+    "cgm_shipping.cgm_worldwide_shipping.customizations.website.route_cgm_portal_after_login",
 ]
 
 # Generators
@@ -110,16 +135,19 @@ on_session_creation = [
 # `local_datetime_iso` powers the timezone-aware <time> macros used across
 # the customer portal templates.
 jinja = {
-	"methods": [
-		"cgm_shipping.cgm_worldwide_shipping.customizations.portal_localize.local_datetime_iso",
-	],
+    "methods": [
+        "cgm_shipping.cgm_worldwide_shipping.customizations.portal_localize.local_datetime_iso",
+ 	    "cgm_shipping.cgm_worldwide_shipping.customizations.doc_qr.get_doc_qr_code",
+   ],
 }
 
 # Installation
 # ------------
 
 # before_install = "cgm_shipping.install.before_install"
-# after_install = "cgm_shipping.install.after_install"
+after_install = "cgm_shipping.install.after_install"
+before_migrate = ["cgm_shipping.install.before_migrate"]
+after_migrate = ["cgm_shipping.install.after_migrate"]
 
 # Uninstallation
 # ------------
@@ -154,23 +182,26 @@ jinja = {
 # Permissions evaluated in scripted ways
 
 permission_query_conditions = {
-	"Task": (
-		"cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions"
-		".get_permission_query_conditions"
-	),
+    "Task": ("cgm_shipping.cgm_worldwide_shipping.customizations.permissions"
+            ".get_permission_query_conditions"),
 }
 
 has_permission = {
-	"Task": (
-		"cgm_shipping.cgm_worldwide_shipping.customizations.task_permissions.has_permission"
-	),
+    "Task":
+    ("cgm_shipping.cgm_worldwide_shipping.customizations.permissions.has_permission"
+    ),
 }
 
 # Document class overrides
 # ------------------------
 
 override_doctype_class = {
-	"Task": ["cgm_shipping.cgm_worldwide_shipping.customizations.task_overrides.CGMTask"],
+    "Task":
+    ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
+    "Quotation":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
+    "Sales Order":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMSalesOrder",
 }
 
 # Document Events
@@ -179,48 +210,79 @@ override_doctype_class = {
 
 doc_events = {
 	"Project": {
-		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_cgm_reference_on_insert",
+		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
+		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.project.on_project_onload",
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_ata_fields",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.protect_finance_cost_ledger_from_manual_edit",
 		],
 	},
 	"Purchase Invoice": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_validate_from_task",
-		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.purchase_invoice_on_submit",
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_validate_from_task",
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_on_submit",
 	},
 	"Payment Entry": {
-		"validate": [
-			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.payment_entry_validate_from_task",
+		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
+	},
+	"Sales Invoice": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice_workflow",
+		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
+	},
+	"Journal Entry": {
+		"after_insert": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
+		),
+		"on_update": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
+		),
+		"on_submit": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
 		],
-		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.finance_task_link.payment_entry_on_submit",
+		"on_cancel": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_cancel",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+		],
+		"on_update_after_submit": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
+		),
 	},
 	"Customer": {
-		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.customer.on_customer_update",
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.on_customer_update",
+	},
+	"Supplier": {
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_supplier.sync_transporter_supplier_portal_users",
+	},
+	"Item": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
 	},
 	"Opportunity": {
-		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers"
-			".sync_preshipment_containers_from_bl"
-		),
-		"before_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
-			".stamp_verified_documents_on_approval"
-		),
-		"before_update_after_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
-			".stamp_verified_documents_on_approval"
-		),
-		"on_trash": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity"
-			".clear_back_links_on_trash"
-		),
+		"before_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.prepare_opportunity_intake",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.assign_opportunity_batch_on_insert",
+		],
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.validate_opportunity_intake",
+		],
+		"before_save": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.sync_opportunity_intake_on_save",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.documents.normalize_opportunity_clients_documents",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.seed_required_documents_on_opportunity",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_bl_from_clients_documents",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
+		],
+		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
+		"before_update_after_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
+		"on_trash": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.clear_back_links_on_trash",
 	},
 	"Lead": {
 		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.sync_preshipment_containers_from_bl"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl"
 		),
 	},
 	"Task": {
@@ -237,9 +299,9 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
-	"daily": [
-		"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
-	],
+    "daily": [
+        "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
+    ],
 }
 
 # scheduler_events = {
@@ -276,9 +338,14 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "cgm_shipping.event.get_events"
-# }
+override_whitelisted_methods = {
+    "erpnext.selling.doctype.quotation.quotation.make_sales_order":
+    ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_order"
+     ),
+    "erpnext.selling.doctype.quotation.quotation.make_sales_invoice":
+    ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_invoice"
+     ),
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -287,7 +354,8 @@ scheduler_events = {
 # 	"Task": "cgm_shipping.task.get_dashboard_data"
 # }
 override_doctype_dashboards = {
-	"Opportunity": "cgm_shipping.cgm_worldwide_shipping.customizations.opportunity.get_dashboard_data",
+    "Opportunity":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_dashboard_data",
 }
 
 # exempt linked doctypes from being automatically cancelled
@@ -302,6 +370,9 @@ override_doctype_dashboards = {
 # Request Events
 # ----------------
 # before_request = ["cgm_shipping.utils.before_request"]
+before_request = [
+	"cgm_shipping.cgm_worldwide_shipping.customizations.website.redirect_transporter_portal_users_from_desk",
+]
 # after_request = ["cgm_shipping.utils.after_request"]
 
 # Job Events

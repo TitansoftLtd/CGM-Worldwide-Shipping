@@ -5,7 +5,7 @@ const BL_LINK_FIELD = "custom_bill_of_lading";
 const BL_CONTAINER_DOCTYPES = ["Lead", "Project", "Opportunity"];
 const BL_CONTAINER_SYNC_FIELDS = [
 	"container_number",
-	"type_of_container",
+	"cargo_size",
 	"no_container",
 	"seal_no",
 ];
@@ -45,10 +45,18 @@ function apply_bl_containers(frm, bl_rows) {
 function restore_clean_form_state(frm) {
 	frappe.after_ajax(() => {
 		frm.dirty(false);
+		frm.doc.__unsaved = 0;
 		frm.toolbar?.set_indicator?.();
-		frm.states?.refresh?.();
+		// Workflow refresh calls frm.set_value(workflow_state); skip if the field
+		// is not on the form yet (stale meta) or after a partial re-render.
+		const wf_field = frappe.workflow.get_state_fieldname(frm.doctype);
+		if (wf_field && frm.get_field(wf_field)) {
+			frm.states?.refresh?.();
+		}
 	});
 }
+
+cgm_shipping.bl_containers.restore_clean_form_state = restore_clean_form_state;
 
 function is_readonly_bl_container_form(frm) {
 	return frm.doctype === "Opportunity" || frm.doctype === "Lead";
@@ -66,7 +74,7 @@ function show_container_field(frm) {
 function fetch_bl_container_rows(bill_of_lading) {
 	return new Promise((resolve, reject) => {
 		frappe.call({
-			method: "cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers.get_container_rows_for_bill_of_lading",
+			method: "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_container_rows_for_bill_of_lading",
 			args: { bill_of_lading },
 			callback(r) {
 				if (r.exc) {
@@ -86,7 +94,9 @@ function fetch_bl_container_rows(bill_of_lading) {
  * Wait until depends_on has rendered the container grid (often one tick after link change).
  */
 cgm_shipping.bl_containers.schedule_sync = function (frm, opts = {}) {
-	const run = () => cgm_shipping.bl_containers.sync_from_bl(frm, opts);
+	const sync_id = (frm._cgm_bl_sync_id = (frm._cgm_bl_sync_id || 0) + 1);
+	const run_opts = { ...opts, sync_id };
+	const run = () => cgm_shipping.bl_containers.sync_from_bl(frm, run_opts);
 
 	if (frm.fields_dict[BL_CONTAINER_FIELD]) {
 		return run();
@@ -129,6 +139,7 @@ cgm_shipping.bl_containers.schedule_sync = function (frm, opts = {}) {
  */
 cgm_shipping.bl_containers.sync_from_bl = function (frm, opts = {}) {
 	const silent = Boolean(opts.silent);
+	const sync_id = opts.sync_id;
 
 	if (!frm.fields_dict[BL_CONTAINER_FIELD]) {
 		return Promise.resolve();
@@ -151,7 +162,16 @@ cgm_shipping.bl_containers.sync_from_bl = function (frm, opts = {}) {
 
 	return fetch_bl_container_rows(frm.doc[BL_LINK_FIELD])
 		.then((bl_rows) => {
+			if (sync_id != null && sync_id !== frm._cgm_bl_sync_id) {
+				return;
+			}
+			if (cur_frm !== frm) {
+				return;
+			}
 			if (container_rows_match(existing, bl_rows)) {
+				if (silent) {
+					restore_clean_form_state(frm);
+				}
 				return;
 			}
 			apply_bl_containers(frm, bl_rows);
@@ -191,8 +211,11 @@ BL_CONTAINER_DOCTYPES.forEach((doctype) => {
 		},
 	};
 
-	if (doctype === "Project") {
+	if (doctype === "Project" || doctype === "Opportunity") {
 		handlers.refresh = function (frm) {
+			if (frm._cgm_skip_readonly_sync || frm.doc.docstatus !== 0) {
+				return;
+			}
 			cgm_shipping.bl_containers.schedule_sync(frm, { silent: true });
 		};
 	}

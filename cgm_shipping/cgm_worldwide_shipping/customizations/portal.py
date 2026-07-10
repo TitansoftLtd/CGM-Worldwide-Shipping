@@ -5,7 +5,7 @@
 The portal lets a customer (consignee) track their own shipments. A
 shipment is a `Project`; granular tracking lives on `Container Tracker`
 rows linked to the project, and the customer-vetted paperwork lives on
-the project's `custom_shipment_documents` child table (Shipment Document).
+the project's `custom_documents` child table (Shipment Document).
 
 Everything customer-facing is resolved through `customer_for_user`, which
 maps the logged-in Website User to a single Customer via the standard
@@ -190,9 +190,13 @@ def status_tone(status: str | None) -> str:
 # ─── Shipment queries ────────────────────────────────────────────────────────
 
 # Fields pulled for the list / dashboard. Kept in one place so the list
-# page, dashboard and detail header stay consistent.
-SHIPMENT_LIST_FIELDS = [
+# page, dashboard and detail header stay consistent. Some sites still have
+# the legacy custom_cgm_ref_no column but not custom_project_reference yet;
+# filter through Project meta so get_all never selects a missing column.
+_SHIPMENT_LIST_FIELD_CANDIDATES = [
 	"name",
+	"project_name",
+	"custom_project_reference",
 	"custom_cgm_ref_no",
 	"custom_consignee",
 	"custom_shipment_status",
@@ -206,6 +210,26 @@ SHIPMENT_LIST_FIELDS = [
 	"custom_delivery_type",
 	"modified",
 ]
+
+
+def shipment_list_fields() -> list[str]:
+	meta = frappe.get_meta("Project")
+	return [
+		field
+		for field in _SHIPMENT_LIST_FIELD_CANDIDATES
+		if field == "name" or meta.has_field(field)
+	]
+
+
+def _project_ref_sql_coalesce(alias: str = "p") -> str:
+	meta = frappe.get_meta("Project")
+	parts = []
+	if meta.has_field("custom_project_reference"):
+		parts.append(f"NULLIF({alias}.custom_project_reference, '')")
+	if meta.has_field("custom_cgm_ref_no"):
+		parts.append(f"NULLIF({alias}.custom_cgm_ref_no, '')")
+	parts.extend([f"NULLIF({alias}.project_name, '')", f"{alias}.name"])
+	return "COALESCE(" + ", ".join(parts) + ")"
 
 
 def get_customer_shipments(customer: str, limit: int = 200) -> list[dict]:
@@ -223,10 +247,18 @@ def get_customer_shipments(customer: str, limit: int = 200) -> list[dict]:
 			"customer": customer,
 			"custom_shipment_status": ["!=", "Draft"],
 		},
-		fields=SHIPMENT_LIST_FIELDS,
+		fields=shipment_list_fields(),
 		order_by="modified desc",
 		limit=limit,
 	)
+
+
+def shipment_display_ref(row: dict) -> str:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+		display_ref_from_values,
+	)
+
+	return display_ref_from_values(row)
 
 
 def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
@@ -238,40 +270,60 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 	"""
 	if not project_name or not customer:
 		return None
+	detail_fields = [
+		"name",
+		"project_name",
+		"custom_project_reference",
+		"custom_cgm_ref_no",
+		"customer",
+		"custom_consignee",
+		"custom_shipment_status",
+		"custom_mode_of_transport",
+		"custom_current_location",
+		"custom_berth_phase",
+		"custom_bl_number",
+		"custom_batch_no",
+		"custom_awb_number",
+		"custom_do_reference",
+		"custom_entry_no",
+		"custom_vessel_flight",
+		"custom_eta",
+		"custom_ata",
+		"custom_cfs",
+		"custom_clearance_station_code",
+		"custom_delivery_type",
+		"custom_shipment_type",
+		"custom_shipment_description",
+		"custom_shipment_quantity",
+		"custom_gross_weightkg",
+		"custom_net_weightkg",
+		# Route / carrier / document fields added to Project.
+		"custom_etd",
+		"custom_country_of_origin",
+		"custom_final_destination",
+		"custom_vessel",
+		"custom_airline",
+		"custom_shipping_line",
+		"custom_bill_of_lading",
+		"custom_air_waybill",
+		"custom_description_of_goods",
+		# Pass-through charges billed on the shipment.
+		"custom_breakbulk_charges",
+		"custom_handling_charges",
+		"custom_kebs_charges",
+		"modified",
+	]
+	meta = frappe.get_meta("Project")
+	fields = [f for f in detail_fields if f == "name" or meta.has_field(f)]
 	row = frappe.db.get_value(
 		"Project",
 		project_name,
-		[
-			"name",
-			"customer",
-			"custom_cgm_ref_no",
-			"custom_consignee",
-			"custom_shipment_status",
-			"custom_mode_of_transport",
-			"custom_current_location",
-			"custom_berth_phase",
-			"custom_bl_number",
-			"custom_batch_no",
-			"custom_awb_number",
-			"custom_do_reference",
-			"custom_entry_no",
-			"custom_vessel_flight",
-			"custom_eta",
-			"custom_ata",
-			"custom_cfs",
-			"custom_clearance_station_code",
-			"custom_delivery_type",
-			"custom_shipment_type",
-			"custom_shipment_description",
-			"custom_shipment_quantity",
-			"custom_gross_weightkg",
-			"custom_net_weightkg",
-			"modified",
-		],
+		fields,
 		as_dict=True,
 	)
 	if not row or row.customer != customer:
 		return None
+	row["ref"] = shipment_display_ref(row)
 	return row
 
 
@@ -303,8 +355,6 @@ def get_containers_for_shipment(project_name: str) -> list[dict]:
 			"actual_empty_return",
 			"demurrage_days",
 			"demurrage_amount",
-			"detention_days",
-			"detention_amount",
 			"days_outstanding",
 		],
 		order_by="container_number asc",
@@ -412,6 +462,19 @@ def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
 	return rows
 
 
+def document_status_tone(status: str | None) -> str:
+	"""CSS tone class for a Shipment Document status pill (matches Desk grid)."""
+	if not status or status == "Missing":
+		return "muted"
+	if status == "Uploaded":
+		return "info"
+	if status == "Verified":
+		return "success"
+	if status == "Rejected":
+		return "danger"
+	return "muted"
+
+
 def quotation_status_tone(status: str | None) -> str:
 	"""CSS tone class for a Quotation status pill."""
 	if status in ("Ordered", "Partially Ordered"):
@@ -484,13 +547,69 @@ def download_transaction_pdf(doctype: str, name: str, disposition: str = "attach
 # ─── Documents ───────────────────────────────────────────────────────────────
 
 
-def get_shipment_documents(project_name: str) -> list[dict]:
-	"""Vetted documents on a shipment that a customer may download.
+def _portal_document_fields() -> list[str]:
+	fields = [
+		"name",
+		"document_type",
+		"attachment",
+		"verified_on",
+		"uploaded_on",
+		"remarks",
+		"status",
+	]
+	meta = frappe.get_meta("Shipment Document")
+	for fieldname in ("initial_attachment", "final_attachment"):
+		if meta.has_field(fieldname):
+			fields.append(fieldname)
+	return fields
 
-	Only rows that (a) have an attachment and (b) have been verified by
-	staff (`verified_on` set) are surfaced - the customer never sees
-	draft, missing, or unverified paperwork. Each row is enriched with a
-	friendly document name and a guarded download URL.
+
+def _is_portal_visible_document(row: dict) -> bool:
+	"""Portal document rows; hide rejected rows only."""
+	status = (row.get("status") or "Missing").strip()
+	return status != "Rejected"
+
+
+_PORTAL_INTERNAL_REMARKS = frozenset(
+	{"Carried from Project (approved on Lead/Opportunity/Customer)"}
+)
+_PORTAL_INTERNAL_REMARK_PREFIXES = (
+	"From submitted Bill of Lading",
+)
+
+
+def _portal_document_remarks(remarks: str | None) -> str:
+	"""Drop internal sync notes before rendering on the customer portal."""
+	if not remarks:
+		return ""
+	trimmed = remarks.strip()
+	if trimmed in _PORTAL_INTERNAL_REMARKS:
+		return ""
+	if any(trimmed.startswith(prefix) for prefix in _PORTAL_INTERNAL_REMARK_PREFIXES):
+		return ""
+	return trimmed
+
+
+def _enrich_portal_document(row: dict, project_name: str) -> dict:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
+	)
+
+	row["attachment"] = primary_attachment(row)
+	row["remarks"] = _portal_document_remarks(row.get("remarks"))
+	row["doc_label"] = _document_label(row.get("document_type"))
+	status = (row.get("status") or "Missing").strip()
+	row["status"] = status
+	row["tone"] = document_status_tone(status)
+	return row
+
+
+def get_shipment_documents(project_name: str) -> list[dict]:
+	"""Documents on a shipment with status for the customer portal.
+
+	Surfaces every Shipment Document row except Rejected, matching the
+	Project child table. Each row carries a friendly document name and
+	status badge tone.
 	"""
 	if not project_name:
 		return []
@@ -499,65 +618,56 @@ def get_shipment_documents(project_name: str) -> list[dict]:
 		filters={
 			"parent": project_name,
 			"parenttype": "Project",
-			"attachment": ["is", "set"],
-			"verified_on": ["is", "set"],
+			"status": ["!=", "Rejected"],
 		},
-		fields=[
-			"name",
-			"document_type",
-			"attachment",
-			"verified_on",
-			"uploaded_on",
-			"remarks",
-		],
-		order_by="verified_on desc",
+		fields=_portal_document_fields(),
+		order_by="document_type asc, modified desc",
 	)
+	visible = []
 	for row in rows:
-		row["doc_label"] = _document_label(row.get("document_type"))
-		row["download_url"] = (
-			"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_shipment_document"
-			+ f"?project={quote(project_name, safe='')}"
-			+ f"&row={quote(row['name'], safe='')}"
-		)
-	return rows
+		if not _is_portal_visible_document(row):
+			continue
+		visible.append(_enrich_portal_document(row, project_name))
+	return visible
 
 
 def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
-	"""Every vetted, downloadable document across a customer's shipments.
+	"""Every Shipment Document across a customer's shipments (portal list).
 
-	One join over Shipment Document → Project keeps this to a single query
-	instead of one per shipment. Same vetting rule as
-	`get_shipment_documents`: attachment present and verified by staff.
-	Each row carries its owning shipment's ref + a guarded download URL.
+	One join over Shipment Document → Project keeps this to a single query.
+	Same visibility rule as `get_shipment_documents`. Each row carries its
+	owning shipment ref and document status.
 	"""
 	if not customer:
 		return []
+	ref_sql = _project_ref_sql_coalesce("p")
+	has_versioning = frappe.get_meta("Shipment Document").has_field("initial_attachment")
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT sd.name, sd.document_type, sd.attachment, sd.verified_on,
-		       sd.remarks, p.name AS project, p.custom_cgm_ref_no AS ref
+		       sd.uploaded_on, sd.status, sd.remarks, p.name AS project,
+		       {ref_sql} AS ref
+		       {", sd.initial_attachment, sd.final_attachment" if has_versioning else ""}
 		FROM `tabShipment Document` sd
 		JOIN `tabProject` p ON p.name = sd.parent
 		WHERE sd.parenttype = 'Project'
 		  AND p.customer = %s
-		  AND IFNULL(sd.attachment, '') != ''
-		  AND sd.verified_on IS NOT NULL
-		ORDER BY sd.verified_on DESC
+		  AND IFNULL(sd.status, 'Missing') != 'Rejected'
+		ORDER BY p.modified DESC, sd.document_type ASC, sd.modified DESC
 		LIMIT %s
 		""",
 		(customer, limit),
 		as_dict=True,
 	)
+	out = []
 	for row in rows:
-		row["doc_label"] = _document_label(row.get("document_type"))
+		if not _is_portal_visible_document(row):
+			continue
+		_enrich_portal_document(row, row["project"])
 		row["ref"] = row.get("ref") or row.get("project")
 		row["shipment_url"] = "/shipment?name=" + quote(row["project"], safe="")
-		row["download_url"] = (
-			"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_shipment_document"
-			+ f"?project={quote(row['project'], safe='')}"
-			+ f"&row={quote(row['name'], safe='')}"
-		)
-	return rows
+		out.append(row)
+	return out
 
 
 def _document_label(document_type: str | None) -> str:
@@ -586,15 +696,110 @@ def download_shipment_document(project: str, row: str):
 	if not owner or owner != customer:
 		raise frappe.PermissionError(_("You can only download your own shipment documents."))
 
-	file_url = frappe.db.get_value(
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
+	)
+
+	fields = _portal_document_fields()
+	doc_row = frappe.db.get_value(
 		"Shipment Document",
 		{"name": row, "parent": project, "parenttype": "Project"},
-		"attachment",
+		fields,
+		as_dict=True,
 	)
+	if not doc_row or not _is_portal_visible_document(doc_row):
+		raise frappe.PermissionError(_("Document not found on this shipment."))
+
+	file_url = primary_attachment(doc_row)
 	if not file_url:
 		raise frappe.PermissionError(_("Document not found on this shipment."))
 
 	file_doc = frappe.get_doc("File", {"file_url": file_url})
 	frappe.local.response.filename = file_doc.file_name or "document"
+	frappe.local.response.filecontent = file_doc.get_content()
+	frappe.local.response.type = "download"
+
+
+# ─── Permits ─────────────────────────────────────────────────────────────────
+
+
+def get_shipment_permits(project_name: str) -> list[dict]:
+	"""Regulatory permit certificates on a shipment that a customer may download.
+
+	Only rows with a `permit_document` attachment are surfaced - payment
+	invoices and receipts stay internal. Each row is enriched with a friendly
+	permit label and a guarded download URL.
+	"""
+	if not project_name:
+		return []
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import PERMIT_REGISTER_FIELD
+
+	if not frappe.get_meta("Project").has_field(PERMIT_REGISTER_FIELD):
+		return []
+
+	rows = frappe.get_all(
+		"Permit Register",
+		filters={
+			"parent": project_name,
+			"parenttype": "Project",
+			"parentfield": PERMIT_REGISTER_FIELD,
+			"permit_document": ["is", "set"],
+		},
+		fields=[
+			"name",
+			"permit_type",
+			"permit_document",
+			"status",
+			"stage",
+			"approval_date",
+			"issuing_body",
+		],
+		order_by="approval_date desc, modified desc",
+	)
+	for row in rows:
+		row["permit_label"] = _permit_label(row.get("permit_type"))
+		row["download_url"] = (
+			"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_shipment_permit"
+			+ f"?project={quote(project_name, safe='')}"
+			+ f"&row={quote(row['name'], safe='')}"
+		)
+	return rows
+
+
+def _permit_label(permit_type: str | None) -> str:
+	"""Friendly label for a Permit Type (permit_name, else id)."""
+	if not permit_type:
+		return _("Permit")
+	return frappe.db.get_value("Permit Type", permit_type, "permit_name") or permit_type
+
+
+@frappe.whitelist()
+def download_shipment_permit(project: str, row: str):
+	"""Stream a permit certificate attachment to its owning customer."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import PERMIT_REGISTER_FIELD
+
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+
+	owner = frappe.db.get_value("Project", project, "customer")
+	if not owner or owner != customer:
+		raise frappe.PermissionError(_("You can only download your own shipment permits."))
+
+	file_url = frappe.db.get_value(
+		"Permit Register",
+		{
+			"name": row,
+			"parent": project,
+			"parenttype": "Project",
+			"parentfield": PERMIT_REGISTER_FIELD,
+		},
+		"permit_document",
+	)
+	if not file_url:
+		raise frappe.PermissionError(_("Permit not found on this shipment."))
+
+	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	frappe.local.response.filename = file_doc.file_name or "permit"
 	frappe.local.response.filecontent = file_doc.get_content()
 	frappe.local.response.type = "download"

@@ -1,0 +1,30 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("Company Profile") }}{% endblock %}
+
+{% block page_content %}
+<div class="cp-page">
+  <p><a href="/transporter">&larr; {{ _("Back to allocations") }}</a></p>
+
+  {% if error_message %}
+  <div class="alert alert-warning">{{ error_message }}</div>
+  {% elif profile %}
+  <section class="cp-hero">
+    <h1>{{ profile.supplier_name }}</h1>
+    <p class="cp-sub">{{ _("Transporter company profile") }}</p>
+  </section>
+  <div class="cp-card" style="padding:1.25rem; margin-top:1rem;">
+    <dl class="row" style="margin:0;">
+      <dt class="col-sm-3">{{ _("Country") }}</dt>
+      <dd class="col-sm-9">{{ profile.country or "—" }}</dd>
+      <dt class="col-sm-3">{{ _("Group") }}</dt>
+      <dd class="col-sm-9">{{ profile.supplier_group or "—" }}</dd>
+      <dt class="col-sm-3">{{ _("Email") }}</dt>
+      <dd class="col-sm-9">{{ profile.email_id or "—" }}</dd>
+      <dt class="col-sm-3">{{ _("Mobile") }}</dt>
+      <dd class="col-sm-9">{{ profile.mobile_no or profile.phone or "—" }}</dd>
+    </dl>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

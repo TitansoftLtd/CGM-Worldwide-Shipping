@@ -1,0 +1,150 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-06-22 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project",
+  "bill_of_lading",
+  "transporter",
+  "column_break_header",
+  "allocation_date",
+  "allocated_by",
+  "status",
+  "section_containers",
+  "containers",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project",
+   "options": "Project",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "project.custom_bill_of_lading",
+   "fieldname": "bill_of_lading",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Bill of Lading",
+   "read_only": 1
+  },
+  {
+   "fieldname": "transporter",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Transporter",
+   "options": "Supplier",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_header",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "allocation_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Allocation Date",
+   "reqd": 1
+  },
+  {
+   "default": "__user",
+   "fieldname": "allocated_by",
+   "fieldtype": "Link",
+   "label": "Allocated By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nAllocated\nAcknowledged\nCompleted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_containers",
+   "fieldtype": "Section Break",
+   "label": "Containers"
+  },
+  {
+   "fieldname": "containers",
+   "fieldtype": "Table",
+   "label": "Containers",
+   "options": "Container Allocation Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Container Allocation",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-06-25 06:29:44.072163",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Container Allocation",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Operations Manager",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Transport Officer",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Transporter",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

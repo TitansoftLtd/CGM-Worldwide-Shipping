@@ -1,16 +1,38 @@
 .cgm-shipment-progress {
+	--cgm-red-dark: #b8122c;
+	--cgm-muted: #64748b;
 	margin: 0 0 1rem 0;
 	padding: 12px 14px;
-	background: var(--bg-light-gray, #f4f5f6);
-	border: 1px solid var(--border-color, #d1d8dd);
+	background:
+		radial-gradient(900px 200px at 100% 0%, rgba(227, 24, 55, 0.11), transparent 60%),
+		linear-gradient(135deg, #fff8f9 0%, #ffebef 55%, #fff4f6 100%);
+	border: 1px solid rgba(227, 24, 55, 0.1);
 	border-radius: 8px;
 	font-size: 12px;
+}
+
+.cgm-shipment-progress-field > .form-group,
+.cgm-shipment-progress-field .control-value,
+.frappe-control[data-fieldname="custom_shipment_progress_html"] > .form-group,
+.frappe-control[data-fieldname="custom_shipment_progress_html"] .control-value {
+	background: transparent !important;
+	border: 0 !important;
+	padding: 0 !important;
+	margin-bottom: 0 !important;
 }
 
 .cgm-shipment-progress h4 {
 	margin: 0 0 10px 0;
 	font-size: 13px;
-	font-weight: 600;
+	font-weight: 700;
+	color: var(--cgm-red-dark);
+	letter-spacing: -0.01em;
+}
+
+.cgm-si-workflow-alert {
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.45;
 }
 
 .cgm-progress-steps {
@@ -42,9 +64,55 @@
 	font-weight: 600;
 }
 
+/* Attach controls in child-table grids — always look like buttons, not plain text. */
+.form-grid .grid-static-col[data-fieldtype="Attach"],
+.form-grid .grid-static-col[data-fieldtype="Attach Image"] {
+	min-width: 110px;
+}
+
+.form-grid .grid-static-col[data-fieldtype="Attach"] .field-area,
+.form-grid .grid-static-col[data-fieldtype="Attach Image"] .field-area {
+	display: block !important;
+}
+
+.form-grid .grid-static-col[data-fieldtype="Attach"] .btn-attach,
+.form-grid .grid-static-col[data-fieldtype="Attach Image"] .btn-attach {
+	display: inline-flex !important;
+	align-items: center;
+	visibility: visible !important;
+	opacity: 1 !important;
+	padding: 2px 8px;
+	min-height: 26px;
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: var(--border-radius-sm, 4px);
+	background: var(--btn-default-bg, #f3f3f3);
+	color: var(--text-color, #333);
+	cursor: pointer;
+}
+
 .cgm-progress-meta {
 	margin-top: 10px;
-	color: #6c7680;
+	color: var(--cgm-muted, #64748b);
+}
+
+.cgm-inspection-notified,
+.cgm-inspection-confirmed,
+.cgm-port-arrival-confirmed {
+	margin-top: 8px;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.cgm-inspection-notified {
+	color: #1976d2;
+}
+
+.cgm-inspection-confirmed {
+	color: #2e7d32;
+}
+
+.cgm-port-arrival-confirmed {
+	color: #1565c0;
 }
 
 .cgm-sea-task-table-wrap {
@@ -78,10 +146,113 @@
 	font-weight: 600;
 }
 
+/* Desk status fields — compact pill badges in static cells only */
+.cgm-status-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.35;
+	white-space: nowrap;
+	border: 1px solid transparent;
+	max-width: 100%;
+	vertical-align: middle;
+}
+
+.form-grid .grid-static-col.cgm-status-col,
+.form-grid .grid-static-col.cgm-status-col .static-area,
+.form-grid .grid-static-col.cgm-status-col .field-area,
+.form-grid .grid-static-col.cgm-status-col .grid-field,
+.form-grid .grid-static-col.cgm-status-col .control-input {
+	background: transparent !important;
+}
+
+.form-grid .grid-static-col.cgm-status-col .static-area {
+	display: inline-flex;
+	align-items: center;
+	padding: 0;
+	min-height: 0;
+	overflow: visible;
+}
+
+.form-grid .grid-static-col.cgm-status-col .field-area {
+	display: flex;
+	align-items: center;
+	padding: 0;
+	min-height: 0;
+}
+
+/* Native ERPNext select while the cell is being edited */
+.form-grid .grid-static-col.cgm-status-col select.input-sm {
+	width: 100%;
+	background: var(--control-bg, #fff) !important;
+	color: var(--text-color, #333) !important;
+	border: 1px solid var(--border-color, #d1d8dd) !important;
+	border-radius: var(--border-radius-sm, 4px) !important;
+	font-weight: normal;
+	padding: 2px 6px;
+	min-height: 0;
+}
+
+.cgm-status-badge.cgm-status-muted {
+	background: #f1f5f9;
+	border-color: #e2e8f0;
+	color: #475569;
+}
+
+.cgm-status-badge.cgm-status-info {
+	background: #dbeafe;
+	border-color: #bfdbfe;
+	color: #1d4ed8;
+}
+
+.cgm-status-badge.cgm-status-primary {
+	background: #ffe8ec;
+	border-color: #fecdd3;
+	color: #b8122c;
+}
+
+.cgm-status-badge.cgm-status-active {
+	background: #fef3c7;
+	border-color: #fde68a;
+	color: #b45309;
+}
+
+.cgm-status-badge.cgm-status-warning {
+	background: #ffedd5;
+	border-color: #fed7aa;
+	color: #c2410c;
+}
+
+.cgm-status-badge.cgm-status-success {
+	background: #dcfce7;
+	border-color: #bbf7d0;
+	color: #15803d;
+}
+
+.cgm-status-badge.cgm-status-danger {
+	background: #ffe8ec;
+	border-color: #fecaca;
+	color: #b91c1c;
+}
+
+.form-grid .grid-static-col .cgm-status-badge {
+	max-width: 100%;
+}
+
+.frappe-control.cgm-status-col .control-value {
+	background: transparent !important;
+	border: 0 !important;
+	padding-left: 0 !important;
+}
+
 .cgm-tracking-legend {
 	margin-top: 8px;
 	font-size: 11px;
-	color: #6c7680;
+	color: var(--cgm-muted, #64748b);
 }
 
 .cgm-container-summary {
@@ -133,4 +304,87 @@
 .cgm-rag-red {
 	color: #c62828;
 	font-weight: 600;
+}
+
+.cgm-container-dashboard {
+	margin-top: 8px;
+	border: 1px solid #d1d8dd;
+	border-radius: 6px;
+	padding: 12px;
+	background: #fff;
+}
+
+.cgm-container-dashboard-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+
+.cgm-container-dashboard-title {
+	margin: 0 0 4px;
+	font-size: 14px;
+}
+
+.cgm-container-dashboard-actions {
+	display: flex;
+	gap: 6px;
+}
+
+.cgm-container-kpis {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px;
+	font-size: 12px;
+	margin-bottom: 12px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid #eef0f3;
+}
+
+.cgm-container-cards {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.cgm-container-card {
+	border: 1px solid #e8eaed;
+	border-radius: 6px;
+	padding: 10px 12px;
+	background: #fafbfc;
+}
+
+.cgm-container-card-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 6px;
+	font-size: 13px;
+}
+
+.cgm-container-card-status {
+	font-weight: 600;
+	font-size: 12px;
+}
+
+.cgm-container-card-body {
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.cgm-container-card-alert {
+	margin-top: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #c62828;
+}
+
+.cgm-container-card-actions {
+	margin-top: 8px;
+}
+
+.cgm-container-empty {
+	padding: 12px 0;
+	font-size: 12px;
 }

@@ -1,0 +1,96 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-06-26 12:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item",
+  "rule_type",
+  "percentage_rate",
+  "fixed_rate",
+  "rule_currency",
+  "exchange_rate_used",
+  "calculated_amount",
+  "final_applied_rate"
+ ],
+ "fields": [
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rule_currency",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Rule Currency",
+   "options": "Currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "percentage_rate",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Percentage Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fixed_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Fixed Rate",
+   "options": "rule_currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rule_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Rule Type",
+   "options": "Percentage\nFixed Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "exchange_rate_used",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Exchange Rate Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "calculated_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Calculated Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_applied_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Final Applied Rate",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-06 22:42:49.838324",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Quotation Item Pricing",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

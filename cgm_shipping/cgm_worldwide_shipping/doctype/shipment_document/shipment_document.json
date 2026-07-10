@@ -8,11 +8,17 @@
  "engine": "InnoDB",
  "field_order": [
   "document_type",
+  "required",
+  "initial_attachment",
+  "final_attachment",
   "attachment",
+  "version_status",
+  "status",
   "uploaded_by",
   "uploaded_on",
   "verified_by",
-  "verified_on"
+  "verified_on",
+  "remarks"
  ],
  "fields": [
   {
@@ -23,10 +29,46 @@
    "options": "Document Type"
   },
   {
-   "fieldname": "attachment",
+   "default": "0",
+   "fieldname": "required",
+   "fieldtype": "Check",
+   "label": "Required"
+  },
+  {
+   "fieldname": "initial_attachment",
    "fieldtype": "Attach",
    "in_list_view": 1,
-   "label": "Attachment"
+   "label": "Initial Document"
+  },
+  {
+   "fieldname": "final_attachment",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Final Document"
+  },
+  {
+   "fieldname": "attachment",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Primary Attachment",
+   "read_only": 1,
+   "description": "Synced from Final Document when present, otherwise Initial Document (for portal and legacy integrations)."
+  },
+  {
+   "fieldname": "version_status",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Version Status",
+   "options": "Proforma\nAwaiting Final\nFinal Received\nOnly Version",
+   "read_only": 1
+  },
+  {
+   "default": "Missing",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Missing\nUploaded\nVerified\nRejected"
   },
   {
    "fieldname": "verified_by",
@@ -57,6 +99,11 @@
    "in_list_view": 1,
    "label": "Uploaded On",
    "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
   }
  ],
  "grid_page_length": 50,

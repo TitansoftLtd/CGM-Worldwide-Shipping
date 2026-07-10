@@ -3,7 +3,7 @@
 """Bill of Lading controller and its Opportunity-sync logic.
 
 Container helpers shared with Opportunity/Lead/Project live in
-``customizations.bl_containers``; the Bill of Lading–specific logic lives here,
+``customizations.shipment``; the Bill of Lading–specific logic lives here,
 on the custom doctype it belongs to.
 """
 
@@ -11,27 +11,40 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.bl_containers import (
-	get_bl_quantity_summary,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
-	document_types_match,
+from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	ensure_document_types,
-	get_bl_config,
 	get_document_type_link_name,
 	get_opportunity_documents_field,
+	prepend_clients_document_row,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	apply_bl_fields_to_doc,
+	bl_propagation_payload,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config, get_link_field_for_doctype
 
 
 class BillofLading(Document):
 	def autoname(self):
-		# Name by the Bill of Lading number (naming_rule: "By script").
 		if not self.bl_number:
 			frappe.throw(frappe._("Bill of Lading Number is required"))
-		self.name = self.bl_number
+		if not self.customer:
+			frappe.throw(frappe._("Customer is required"))
+		quantity = self._quantity_for_naming()
+		batch_number = resolve_batch_number_for_bl(self)
+		self.name = build_bill_of_lading_name(self.bl_number, quantity, batch_number)
+
+	def _quantity_for_naming(self) -> str:
+		"""Quantity segment for the document name (from field or container rows)."""
+		if self.get("quantity"):
+			return (self.quantity or "").strip()
+		return self._summarize_container_quantities()
 
 	def validate(self):
 		sanitize_bill_of_lading_linked_opportunity(self)
+		batch_number = resolve_batch_number_for_bl(self)
+		if not self.get("batch_no"):
+			self.batch_no = str(batch_number)
 		summary = self._summarize_container_quantities()
 		if self.meta.has_field("container_summary"):
 			self.container_summary = summary
@@ -47,20 +60,20 @@ class BillofLading(Document):
 		if not self.container_information:
 			return ""
 
-		# Fetch order directly from Container Type DocType
+		# Fetch order directly from Cargo Size DocType
 		display_order = frappe.get_all(
-			"Container Type",
-			fields=["container_type"],
+			"Cargo Size",
+			fields=["cargo_size"],
 			order_by="idx asc",
-			pluck="container_type",
+			pluck="cargo_size",
 		)
 
 		counts: dict[str, int] = {}
 		for row in self.container_information:
-			container_type = (row.type_of_container or "").strip()
-			if not container_type:
+			cargo_size = (row.cargo_size or "").strip()
+			if not cargo_size:
 				continue
-			counts[container_type] = counts.get(container_type, 0) + 1
+			counts[cargo_size] = counts.get(cargo_size, 0) + 1
 
 		if not counts:
 			return ""
@@ -71,6 +84,104 @@ class BillofLading(Document):
 				ordered.append(t)
 
 		return ", ".join(f"{counts[t]} x {t}" for t in ordered)
+
+
+def build_bill_of_lading_name(
+	bl_number: str, quantity: str | None, batch_number: int
+) -> str:
+	"""BL_NUMBER + ' ' + QUANTITY + '-' + BATCH_NUMBER (e.g. MB-0ONUJ 2 x 20FT-10)."""
+	bl_number = (bl_number or "").strip()
+	quantity = (quantity or "").strip()
+	suffix = f"-{int(batch_number)}"
+	if quantity:
+		return f"{bl_number} {quantity}{suffix}"
+	return f"{bl_number}{suffix}"
+
+
+def parse_batch_number_from_bl_name(name: str | None) -> int | None:
+	"""Extract trailing batch integer from a Bill of Lading name, if present."""
+	if not name:
+		return None
+	suffix = str(name).rsplit("-", 1)[-1].strip()
+	return int(suffix) if suffix.isdigit() else None
+
+
+def lock_customer_for_batch_allocation(customer: str) -> None:
+	"""Serialize batch allocation for one customer under concurrent creation."""
+	if not customer:
+		return
+	frappe.db.sql(
+		"SELECT name FROM `tabCustomer` WHERE name = %s FOR UPDATE",
+		(customer,),
+	)
+
+
+def count_customer_batch_allocations(customer: str) -> int:
+	"""Count shipment batches already allocated for a customer (dynamic, no counter table).
+
+	Includes:
+	- distinct Projects for the customer that already reference a Bill of Lading
+	- Bill of Lading records not yet linked to a Project (draft or submitted)
+
+	Cancelled Bill of Lading records (docstatus = 2) are excluded.
+	"""
+	if not customer:
+		return 0
+
+	project_bl_field = get_link_field_for_doctype("Project", "Bill of Lading")
+	if not project_bl_field:
+		project_bl_field = "custom_bill_of_lading"
+
+	project_count = frappe.db.sql(
+		f"""
+		SELECT COUNT(DISTINCT p.name)
+		FROM `tabProject` p
+		WHERE p.customer = %s
+		  AND IFNULL(p.`{project_bl_field}`, '') != ''
+		""",
+		(customer,),
+	)[0][0] or 0
+
+	bol_without_project = frappe.db.sql(
+		f"""
+		SELECT COUNT(*)
+		FROM `tabBill of Lading` bl
+		WHERE bl.customer = %s
+		  AND bl.docstatus < 2
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM `tabProject` p
+			WHERE p.`{project_bl_field}` = bl.name
+		  )
+		""",
+		(customer,),
+	)[0][0] or 0
+
+	return int(project_count) + int(bol_without_project)
+
+
+def next_batch_number_for_customer(customer: str) -> int:
+	"""Return the next batch number for a customer (count of existing allocations + 1)."""
+	lock_customer_for_batch_allocation(customer)
+	return count_customer_batch_allocations(customer) + 1
+
+
+def resolve_batch_number_for_bl(doc) -> int:
+	"""Batch for a new/amended Bill of Lading — prefer linked Opportunity batch."""
+	if doc.get("amended_from"):
+		reused = parse_batch_number_from_bl_name(doc.amended_from)
+		if reused:
+			return reused
+
+	config = get_bl_config()
+	source_field = config.get("opportunity_source_field") or "linked_opportunity"
+	opportunity = doc.get(source_field) or doc.get("custom_linked_opportunity")
+	if opportunity and frappe.db.exists("Opportunity", opportunity):
+		opp_batch = frappe.db.get_value("Opportunity", opportunity, "custom_batch_no")
+		if opp_batch and str(opp_batch).strip().isdigit():
+			return int(str(opp_batch).strip())
+
+	return next_batch_number_for_customer(doc.customer)
 
 
 def summarize_bl_container_quantities(bl_name: str | None) -> str:
@@ -156,11 +267,14 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 		if prepend_opportunity_bl_document(opp, attachment_url, bl_name=bl_doc.name):
 			changed = True
 
-	quantity_summary = get_bl_quantity_summary(bl_doc)
+	quantity_summary = bl_doc._summarize_container_quantities()
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		if opp.get(quantity_field) != quantity_summary:
 			opp.set(quantity_field, quantity_summary)
 			changed = True
+
+	if apply_bl_fields_to_doc(opp, bl_doc):
+		changed = True
 
 	if changed:
 		opp.save(ignore_permissions=True)
@@ -179,38 +293,14 @@ def prepend_opportunity_bl_document(opp_doc, attachment_url, bl_name=None) -> bo
 	if not document_type:
 		return False
 
-	existing = list(opp_doc.get(field) or [])
-	other_rows = [
-		row for row in existing if not document_types_match(row.document_type, document_type)
-	]
-
-	opp_doc.set(field, [])
-	opp_doc.append(
+	return prepend_clients_document_row(
+		opp_doc,
 		field,
-		{
-			"document_type": document_type,
-			"attachment": attachment_url,
-			"status": "Uploaded",
-			"uploaded_by": frappe.session.user,
-			"uploaded_on": now_datetime(),
-			"remarks": frappe._("From submitted Bill of Lading {0}").format(bl_name or ""),
-		},
+		document_type,
+		attachment_url,
+		status="Uploaded",
+		remarks=frappe._("From submitted Bill of Lading {0}").format(bl_name or ""),
 	)
-	for row in other_rows:
-		opp_doc.append(
-			field,
-			{
-				"document_type": row.document_type,
-				"attachment": row.attachment,
-				"status": row.status,
-				"uploaded_by": row.uploaded_by,
-				"uploaded_on": row.uploaded_on,
-				"verified_by": row.verified_by,
-				"verified_on": row.verified_on,
-				"remarks": row.remarks,
-			},
-		)
-	return True
 
 
 # ─── Whitelisted API ──────────────────────────────────────────────────────────
@@ -233,8 +323,9 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 		"bl_name": doc.name,
 		"attachment": doc.get(attachment_field) or "" if attachment_field else "",
 		"document_type": get_document_type_link_name("BL"),
-		"quantity": get_bl_quantity_summary(doc),
+		"quantity": doc._summarize_container_quantities(),
 		"opportunity": linked_opportunity,
+		**bl_propagation_payload(doc),
 	}
 
 
@@ -288,24 +379,22 @@ def create_opportunity_from_bill_of_lading(bill_of_lading: str) -> str:
 
 	if bl_field and opp.meta.has_field(bl_field):
 		opp.set(bl_field, bl.name)
-	# A Bill of Lading is an ocean-freight document, so default the mode to Sea.
-	if opp.meta.has_field("custom_mode_of_transport") and not opp.get("custom_mode_of_transport"):
-		opp.set("custom_mode_of_transport", "Sea")
+
+	apply_bl_fields_to_doc(opp, bl)
+
 	if opp.meta.has_field("custom_consignee"):
 		opp.set(
 			"custom_consignee",
 			frappe.db.get_value("Customer", customer, "customer_name") or customer,
 		)
 
-	# Carry the shipment classification details from the BL onto the Opportunity.
-	if opp.meta.has_field("custom_shipment_type") and bl.get("shipment_type"):
-		opp.set("custom_shipment_type", bl.get("shipment_type"))
+	# Shipment type, mode, and tracking fields are copied from the BL via apply_bl_fields_to_doc.
 	if opp.meta.has_field("custom_description_of_goods") and bl.get("description"):
 		opp.set("custom_description_of_goods", bl.get("description"))
 
 	# Carry the BL quantity summary onto the Opportunity.
 	quantity_field = config.get("opportunity_quantity_field")
-	quantity_summary = get_bl_quantity_summary(bl)
+	quantity_summary = bl._summarize_container_quantities()
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		opp.set(quantity_field, quantity_summary)
 

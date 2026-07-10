@@ -1,0 +1,116 @@
+"""Sales Invoice finance approval workflow."""
+
+from __future__ import annotations
+
+import frappe
+from frappe import _
+from frappe.utils.user import get_users_with_role
+
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	SALES_INVOICE_SUBMITTABLE_STATES,
+	SALES_INVOICE_WORKFLOW_STATE_APPROVED,
+	SALES_INVOICE_WORKFLOW_STATE_DRAFT,
+	SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
+	SALES_INVOICE_WORKFLOW_STATE_REJECTED,
+)
+
+FINANCE_REVIEW_ROLES = ("Accounts Manager", "Accounts User")
+
+
+def validate_sales_invoice_workflow(doc, method=None) -> None:
+	if not doc.meta.has_field("workflow_state"):
+		return
+	if doc.docstatus != 0:
+		return
+	if not doc.workflow_state:
+		doc.workflow_state = SALES_INVOICE_WORKFLOW_STATE_DRAFT
+
+
+def before_submit_sales_invoice(doc, method=None) -> None:
+	if not doc.meta.has_field("workflow_state"):
+		return
+	if (doc.workflow_state or "").strip() not in SALES_INVOICE_SUBMITTABLE_STATES:
+		frappe.throw(
+			_("Submit this Sales Invoice only after Finance has approved it."),
+			title=_("Finance Approval Required"),
+		)
+
+
+def on_update_sales_invoice_workflow(doc, method=None) -> None:
+	if not doc.meta.has_field("workflow_state"):
+		return
+
+	before = doc.get_doc_before_save()
+	if not before:
+		return
+
+	prev = (before.workflow_state or "").strip()
+	curr = (doc.workflow_state or "").strip()
+	if curr == prev:
+		return
+
+	if curr == SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE:
+		_share_sales_invoice_with_finance(doc)
+	elif curr == SALES_INVOICE_WORKFLOW_STATE_APPROVED:
+		_stamp_sales_invoice_approval(doc)
+	elif curr == SALES_INVOICE_WORKFLOW_STATE_REJECTED:
+		_stamp_sales_invoice_rejection(doc)
+	elif curr == SALES_INVOICE_WORKFLOW_STATE_DRAFT:
+		_reset_sales_invoice_finance_stamps(doc)
+
+
+def _share_sales_invoice_with_finance(doc) -> None:
+	users = _finance_users()
+	if not users:
+		return
+
+	for user in users:
+		if user in {doc.owner, frappe.session.user}:
+			continue
+		frappe.share.add_docshare(
+			doc.doctype,
+			doc.name,
+			user,
+			read=1,
+			write=0,
+			notify=1,
+		)
+
+
+def _finance_users() -> set[str]:
+	users: set[str] = set()
+	for role in FINANCE_REVIEW_ROLES:
+		users.update(get_users_with_role(role) or [])
+	return {user for user in users if user and user != "Guest"}
+
+
+def _stamp_sales_invoice_approval(doc) -> None:
+	updates = {
+		"custom_finance_approved_by": frappe.session.user,
+		"custom_finance_rejected_by": None,
+		"custom_finance_rejection_reason": None,
+	}
+	for fieldname, value in updates.items():
+		if doc.meta.has_field(fieldname):
+			doc.db_set(fieldname, value, update_modified=False)
+
+
+def _stamp_sales_invoice_rejection(doc) -> None:
+	updates = {
+		"custom_finance_rejected_by": frappe.session.user,
+		"custom_finance_approved_by": None,
+	}
+	for fieldname, value in updates.items():
+		if doc.meta.has_field(fieldname):
+			doc.db_set(fieldname, value, update_modified=False)
+
+
+def _reset_sales_invoice_finance_stamps(doc) -> None:
+	updates = {
+		"custom_finance_approved_by": None,
+		"custom_finance_rejected_by": None,
+		"custom_finance_rejection_reason": None,
+	}
+	for fieldname, value in updates.items():
+		if doc.meta.has_field(fieldname) and doc.get(fieldname):
+			doc.db_set(fieldname, value, update_modified=False)

@@ -16,12 +16,17 @@ from urllib.parse import quote
 import frappe
 from frappe import _
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
+	get_project_inspection_portal_context,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	container_timeline,
 	customer_for_user,
 	get_containers_for_shipment,
 	get_shipment_documents,
 	get_shipment_for_customer,
+	get_shipment_permits,
+	shipment_display_ref,
 	shipment_progress,
 	status_tone,
 )
@@ -77,16 +82,38 @@ def _build_context(context, project):
 		return
 
 	context.shipment = shipment
-	context.ref = shipment.custom_cgm_ref_no or shipment.name
+	context.ref = shipment.get("ref") or shipment_display_ref(shipment)
 	context.progress = shipment_progress(shipment.custom_shipment_status)
 	context.status_tone = status_tone(shipment.custom_shipment_status)
+
+	# Prefer the newer "Description of Goods" field, falling back to the
+	# legacy cargo description so older shipments still show something.
+	context.cargo = shipment.get("custom_description_of_goods") or shipment.get(
+		"custom_shipment_description"
+	)
+
+	# Pass-through charges billed on the shipment. Only surfaced when at
+	# least one is non-zero, so clean shipments don't show an empty block.
+	from frappe.utils import flt
+
+	charge_fields = [
+		(_("Breakbulk"), shipment.get("custom_breakbulk_charges")),
+		(_("Handling"), shipment.get("custom_handling_charges")),
+		(_("KEBS"), shipment.get("custom_kebs_charges")),
+	]
+	charges = [{"label": label, "amount": flt(amt)} for label, amt in charge_fields if flt(amt)]
+	context.charges = charges
+	context.charges_total = sum(c["amount"] for c in charges)
+	context.charges_currency = frappe.defaults.get_global_default("currency")
 
 	containers = get_containers_for_shipment(project)
 	for c in containers:
 		c["timeline"] = container_timeline(c)
 		c["has_charges"] = bool(
-			(c.get("demurrage_days") or 0) or (c.get("detention_days") or 0)
+			(c.get("demurrage_days") or 0)
 		)
 	context.containers = containers
 
 	context.documents = get_shipment_documents(project)
+	context.permits = get_shipment_permits(project)
+	context.inspection = get_project_inspection_portal_context(project, customer)

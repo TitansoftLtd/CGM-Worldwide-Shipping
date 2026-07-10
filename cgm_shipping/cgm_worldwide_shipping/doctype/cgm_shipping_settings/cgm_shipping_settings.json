@@ -5,9 +5,18 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "tab_quotation_customs",
+  "section_default_customs_taxes",
+  "custom_default_customs_taxes",
   "sea_import_task_plan_tab",
   "section_break_sea_import",
   "custom_sea_import_task_template",
+  "sea_transit_task_plan_tab",
+  "section_sea_transit_import",
+  "custom_sea_transit_import_shared_through_seq",
+  "custom_sea_transit_import_extension_template",
+  "section_sea_transit_export",
+  "custom_sea_transit_export_task_template",
   "tab_sea_task_requirements",
   "section_sea_task_requirements",
   "custom_sea_clearance_task_requirements",
@@ -20,23 +29,48 @@
   "roles_tab",
   "section_roles",
   "custom_finance_roles",
+  "custom_finance_department",
+  "custom_default_purchase_item",
   "custom_operations_roles",
   "custom_declaration_roles",
   "section_email_templates",
   "custom_default_email_template",
   "custom_permit_finance_email_template",
   "custom_ucr_finance_email_template",
-  "roles_tab",
-  "section_roles",
-  "custom_finance_roles",
-  "custom_operations_roles",
-  "custom_declaration_roles",
-  "section_email_templates",
-  "custom_default_email_template",
-  "custom_permit_finance_email_template",
-  "custom_ucr_finance_email_template"
+  "tab_container_tracking",
+  "section_container_task_sequences",
+  "custom_track_eta_task_seq",
+  "custom_vessel_arrival_task_seq",
+  "custom_field_clearance_task_seq",
+  "custom_kpa_paid_task_seq",
+  "custom_book_trucks_task_seq",
+  "custom_gate_out_task_seq",
+  "custom_monitor_delivery_task_seq",
+  "custom_offload_task_seq",
+  "custom_empty_return_task_seq",
+  "custom_interchange_task_seq",
+  "custom_kpa_free_days",
+  "section_batch_counter",
+  "last_batch_no"
  ],
  "fields": [
+  {
+   "fieldname": "tab_quotation_customs",
+   "fieldtype": "Tab Break",
+   "label": "Quotation customs"
+  },
+  {
+   "description": "Default percentage rates applied when VAT, IDF, or RDL is selected on a Quotation.",
+   "fieldname": "section_default_customs_taxes",
+   "fieldtype": "Section Break",
+   "label": "Default customs taxes"
+  },
+  {
+   "fieldname": "custom_default_customs_taxes",
+   "fieldtype": "Table",
+   "label": "Default Customs Taxes",
+   "options": "Default Customs Tax"
+  },
   {
    "fieldname": "sea_import_task_plan_tab",
    "fieldtype": "Tab Break",
@@ -50,6 +84,43 @@
    "fieldname": "custom_sea_import_task_template",
    "fieldtype": "Table",
    "label": "Sea import task template",
+   "options": "Sea Import Task Template Item"
+  },
+  {
+   "fieldname": "sea_transit_task_plan_tab",
+   "fieldtype": "Tab Break",
+   "label": "Sea transit task plans"
+  },
+  {
+   "description": "Sea Transit Import reuses rows from the Sea import task plan through the shared sequence, then appends the extension rows below. Edit rows here when your process changes — no code deploy required. Link a Shipment Type to this flow via Task Flow Key SEA_TRANSIT_IMPORT_E2E.",
+   "fieldname": "section_sea_transit_import",
+   "fieldtype": "Section Break",
+   "label": "Sea Transit Import"
+  },
+  {
+   "default": "20",
+   "description": "Last shared sea-import task sequence (inclusive). Steps after this come from the extension template below.",
+   "fieldname": "custom_sea_transit_import_shared_through_seq",
+   "fieldtype": "Int",
+   "label": "Shared Through Sequence"
+  },
+  {
+   "description": "Post-KPA transit steps appended after the shared sea-import sequence.",
+   "fieldname": "custom_sea_transit_import_extension_template",
+   "fieldtype": "Table",
+   "label": "Sea Transit Import extension template",
+   "options": "Sea Import Task Template Item"
+  },
+  {
+   "description": "Full task plan for Sea Transit Export. Link a Shipment Type via Task Flow Key SEA_TRANSIT_EXPORT_E2E. Container Tracker sections on each Project are driven by Project Type (standard ERPNext list — add new types there without developer help).",
+   "fieldname": "section_sea_transit_export",
+   "fieldtype": "Section Break",
+   "label": "Sea Transit Export"
+  },
+  {
+   "fieldname": "custom_sea_transit_export_task_template",
+   "fieldtype": "Table",
+   "label": "Sea Transit Export task template",
    "options": "Sea Import Task Template Item"
   },
   {
@@ -107,15 +178,29 @@
    "label": "Roles"
   },
   {
+   "description": "Which roles are notified / treated as Finance, Operations, or Declaration. Required: an empty table means no one is in that group (those notifications and role checks will match nobody).",
    "fieldname": "section_roles",
-   "fieldtype": "Section Break",
-   "description": "Which roles are notified / treated as Finance, Operations, or Declaration. Required: an empty table means no one is in that group (those notifications and role checks will match nobody)."
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "custom_finance_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Finance roles",
    "options": "CGM Role Item"
+  },
+  {
+   "description": "Tasks in this Department show the Make Payment (Journal Entry) action.",
+   "fieldname": "custom_finance_department",
+   "fieldtype": "Link",
+   "label": "Finance Department",
+   "options": "Department"
+  },
+  {
+   "description": "Default Item for auto-filled permit and finance Purchase Invoice lines when no type-specific item is set.",
+   "fieldname": "custom_default_purchase_item",
+   "fieldtype": "Link",
+   "label": "Default Purchase Item",
+   "options": "Item"
   },
   {
    "fieldname": "custom_operations_roles",
@@ -130,10 +215,10 @@
    "options": "CGM Role Item"
   },
   {
+   "description": "HTML + Jinja. Available variables: {{ message }}, {{ task_url }}, {{ project_url }}. Leave blank to use the built-in default.",
    "fieldname": "section_email_templates",
    "fieldtype": "Section Break",
-   "label": "Notification email templates",
-   "description": "HTML + Jinja. Available variables: {{ message }}, {{ task_url }}, {{ project_url }}. Leave blank to use the built-in default."
+   "label": "Notification email templates"
   },
   {
    "fieldname": "custom_default_email_template",
@@ -145,17 +230,108 @@
    "fieldtype": "Code",
    "label": "Permit finance notification template"
   },
- {
-  "fieldname": "custom_ucr_finance_email_template",
-  "fieldtype": "Code",
-  "label": "UCR finance notification template"
- }
+  {
+   "fieldname": "custom_ucr_finance_email_template",
+   "fieldtype": "Code",
+   "label": "UCR finance notification template"
+  },
+  {
+   "fieldname": "tab_container_tracking",
+   "fieldtype": "Tab Break",
+   "label": "Container tracking"
+  },
+  {
+   "description": "Sea task sequence numbers that update Container Tracker records. Leave at 0 to use the built-in default for that step.",
+   "fieldname": "section_container_task_sequences",
+   "fieldtype": "Section Break",
+   "label": "Container tracking tasks"
+  },
+  {
+   "default": "8",
+   "fieldname": "custom_track_eta_task_seq",
+   "fieldtype": "Int",
+   "label": "Track Eta"
+  },
+  {
+   "default": "11",
+   "fieldname": "custom_vessel_arrival_task_seq",
+   "fieldtype": "Int",
+   "label": "Vessel Arrival"
+  },
+  {
+   "default": "18",
+   "fieldname": "custom_field_clearance_task_seq",
+   "fieldtype": "Int",
+   "label": "Field Clearance"
+  },
+  {
+   "default": "20",
+   "fieldname": "custom_kpa_paid_task_seq",
+   "fieldtype": "Int",
+   "label": "Kpa Paid"
+  },
+  {
+   "default": "21",
+   "fieldname": "custom_book_trucks_task_seq",
+   "fieldtype": "Int",
+   "label": "Book Trucks"
+  },
+  {
+   "default": "22",
+   "fieldname": "custom_gate_out_task_seq",
+   "fieldtype": "Int",
+   "label": "Gate Out"
+  },
+  {
+   "default": "23",
+   "fieldname": "custom_monitor_delivery_task_seq",
+   "fieldtype": "Int",
+   "label": "Monitor Delivery"
+  },
+  {
+   "default": "24",
+   "fieldname": "custom_offload_task_seq",
+   "fieldtype": "Int",
+   "label": "Offload"
+  },
+  {
+   "default": "25",
+   "fieldname": "custom_empty_return_task_seq",
+   "fieldtype": "Int",
+   "label": "Empty Return"
+  },
+  {
+   "default": "26",
+   "fieldname": "custom_interchange_task_seq",
+   "fieldtype": "Int",
+   "label": "Interchange"
+  },
+  {
+   "default": "5",
+   "description": "Default KPA free days applied to new Container Tracker records.",
+   "fieldname": "custom_kpa_free_days",
+   "fieldtype": "Int",
+   "label": "Default KPA Free Days"
+  },
+  {
+   "description": "Auto-incremented when a new Opportunity is created. Reset only when re-seeding the batch sequence.",
+   "fieldname": "section_batch_counter",
+   "fieldtype": "Section Break",
+   "label": "Opportunity batch counter"
+  },
+  {
+   "default": "0",
+   "description": "Last batch number assigned on Opportunity. The next Opportunity receives this value + 1.",
+   "fieldname": "last_batch_no",
+   "fieldtype": "Int",
+   "label": "Last Batch Number"
+  }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-04 12:00:00.000000",
+ "modified": "2026-06-26 01:46:52.585603",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

@@ -1,6 +1,6 @@
 {
  "app": "cgm_shipping",
- "creation": "2026-06-06 10:41:46.626236",
+ "creation": "2026-06-09 22:48:29.967994",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
  "idx": 0,
@@ -20,9 +20,11 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "list",
    "indent": 0,
    "keep_closed": 0,
    "label": "Shipments",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
   },
@@ -101,9 +103,11 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "list",
    "indent": 0,
    "keep_closed": 0,
    "label": "Clearance & Customs",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
   },
@@ -170,9 +174,11 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "list",
    "indent": 0,
    "keep_closed": 0,
    "label": "Transport & Containers",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
   },
@@ -185,6 +191,18 @@
    "label": "Container Tracker",
    "link_to": "Container Tracker",
    "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
+   "icon": "layout-dashboard",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Ops Board",
+   "link_to": "container-ops-board",
+   "link_type": "Page",
    "show_arrow": 0,
    "type": "Link"
   },
@@ -225,11 +243,25 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "expand-alt",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
+   "icon": "list",
    "indent": 0,
    "keep_closed": 1,
    "label": "Masters & Setup",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
   },
@@ -239,8 +271,8 @@
    "icon": "boxes",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Container Type",
-   "link_to": "Container Type",
+   "label": "Cargo Type",
+   "link_to": "Cargo Type",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -316,9 +348,97 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Container Allocation",
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-06-09 22:08:04.211636",
+ "modified": "2026-06-25 03:06:12.522373",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",

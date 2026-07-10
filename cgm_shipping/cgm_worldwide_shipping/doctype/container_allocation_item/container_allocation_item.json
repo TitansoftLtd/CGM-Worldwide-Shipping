@@ -1,0 +1,109 @@
+{
+ "actions": [],
+ "creation": "2026-06-22 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "container_tracker",
+  "container_number",
+  "cargo_type",
+  "column_break_assign",
+  "truck_number",
+  "driver_name",
+  "driver_contact",
+  "assignment_status",
+  "column_break_interchange",
+  "interchange_document",
+  "interchange_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "container_tracker",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Container Tracker",
+   "options": "Container Tracker",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "container_tracker.container_number",
+   "fieldname": "container_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Container Number",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "container_tracker.cargo_type",
+   "fieldname": "cargo_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Cargo Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_assign",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "truck_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Truck Number"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Driver Name"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "driver_contact",
+   "fieldtype": "Data",
+   "label": "Driver Contact"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Pending",
+   "fieldname": "assignment_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Assignment Status",
+   "options": "Pending\nTruck Assigned\nInterchange Uploaded",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_interchange",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "interchange_document",
+   "fieldtype": "Attach",
+   "label": "Interchange Document"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "interchange_date",
+   "fieldtype": "Date",
+   "label": "Interchange Date"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Container Allocation Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}
