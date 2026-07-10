@@ -9,6 +9,8 @@ def after_migrate() -> None:
 	"""Re-apply idempotent schema installers after every bench migrate."""
 	reinstall_supplier_shipping_line_schema()
 	ensure_task_container_schema()
+	ensure_opportunity_intake_layout()
+	ensure_shipment_type_transport_defaults()
 	ensure_shipment_document_versioning()
 	ensure_finance_cost_ledger_schema()
 	ensure_transporter_portal_setup()
@@ -56,6 +58,28 @@ def ensure_shipment_document_versioning() -> None:
 	frappe.db.commit()
 
 
+def ensure_opportunity_intake_layout() -> None:
+	"""Idempotent Opportunity shipment intake form layout (custom fields, depends_on, field order)."""
+	if not frappe.db.exists("DocType", "Opportunity"):
+		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard import (
+		ensure_opportunity_intake_wizard_layout,
+	)
+
+	ensure_opportunity_intake_wizard_layout()
+	frappe.db.commit()
+
+
+def ensure_shipment_type_transport_defaults() -> None:
+	"""Seed Shipment Type.transport_documents when empty (derived from master flags)."""
+	from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
+		ensure_shipment_type_transport_document_defaults,
+	)
+
+	ensure_shipment_type_transport_document_defaults()
+	frappe.db.commit()
+
+
 def ensure_task_container_schema() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		ensure_shipment_document_version_fields,
@@ -83,12 +107,8 @@ def ensure_task_container_schema() -> None:
 			ensure_opportunity_universal_fields,
 			ensure_transit_project_fields,
 		)
-		from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard import (
-			ensure_opportunity_intake_wizard_layout,
-		)
 
 		ensure_opportunity_universal_fields()
-		ensure_opportunity_intake_wizard_layout()
 		ensure_transit_project_fields()
 		frappe.db.commit()
 

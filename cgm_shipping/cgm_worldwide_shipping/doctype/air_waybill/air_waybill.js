@@ -1,23 +1,16 @@
-# Copyright (c) 2026, Titansoft Limited and contributors
-# For license information, please see license.txt
+// Copyright (c) 2026, Titansoft Limited and contributors
+// For license information, please see license.txt
 
 frappe.ui.form.on("Air Waybill", {
 	onload(frm) {
-		set_default_air_shipment_type(frm);
-		if (frm.is_new()) {
-			if (frappe.route_options?.linked_opportunity) {
-				remember_return_opportunity(frm, frappe.route_options.linked_opportunity);
-			}
-			if (frappe.route_options?.customer && !frm.doc.customer) {
-				frm.set_value("customer", frappe.route_options.customer);
-			}
-			if (frappe.route_options?.shipment_type && !frm.doc.shipment_type) {
-				frm.set_value("shipment_type", frappe.route_options.shipment_type);
-			}
+		apply_awb_route_defaults(frm);
+		if (frm.is_new() && frappe.route_options?.linked_opportunity) {
+			remember_return_opportunity(frm, frappe.route_options.linked_opportunity);
 		}
 	},
 
 	refresh(frm) {
+		apply_awb_route_defaults(frm);
 		if (frm.doc.docstatus === 1) {
 			add_create_opportunity_button(frm);
 		}
@@ -36,13 +29,35 @@ function is_saved_opportunity_name(name) {
 	return Boolean(name && !String(name).startsWith("new-"));
 }
 
+function apply_awb_route_defaults(frm) {
+	if (!frm.is_new()) {
+		return;
+	}
+
+	const opts = frappe.route_options || {};
+	if (opts.linked_opportunity) {
+		remember_return_opportunity(frm, opts.linked_opportunity);
+	}
+	if (opts.customer && !frm.doc.customer) {
+		frm.set_value("customer", opts.customer);
+	}
+	if (opts.shipment_type && !frm.doc.shipment_type) {
+		frm.set_value("shipment_type", opts.shipment_type);
+	}
+	if (opts.client_ref && !frm.doc.client_ref) {
+		frm.set_value("client_ref", opts.client_ref);
+	}
+
+	set_default_air_shipment_type(frm);
+}
+
 function remember_return_opportunity(frm, opportunity) {
 	if (!opportunity) {
 		return;
 	}
 	localStorage.setItem(CGM_RETURN_OPPORTUNITY_KEY, opportunity);
 	if (is_saved_opportunity_name(opportunity)) {
-		frm.doc.linked_opportunity = opportunity;
+		frm.set_value("linked_opportunity", opportunity);
 	}
 }
 

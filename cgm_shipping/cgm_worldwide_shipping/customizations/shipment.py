@@ -136,8 +136,10 @@ def _shipment_type_field_queryable(fieldname: str) -> bool:
 
 
 def _shipment_type_query_fields() -> list[str]:
-	candidates = ["name", "shipment_type_name", *_OPTIONAL_SHIPMENT_TYPE_FIELDS]
-	return [f for f in candidates if _shipment_type_field_queryable(f)] or ["name"]
+	candidates = ["shipment_type_name", *_OPTIONAL_SHIPMENT_TYPE_FIELDS]
+	fields = [f for f in candidates if _shipment_type_field_queryable(f)]
+	# `name` is always a DB column but not reported by meta.has_field().
+	return ["name", *fields]
 
 
 def get_shipment_type_record(shipment_type: str | None, mode: str | None = None) -> dict | None:
@@ -391,6 +393,11 @@ BL_TO_OPPORTUNITY_TRACKING_FIELDS = (
 	("batch_no", "custom_batch_no"),
 )
 
+BL_TO_OPPORTUNITY_DETAIL_FIELDS = (
+	("description", "custom_description_of_goods"),
+	("bl_number", "custom_draft_bl_number"),
+)
+
 OPPORTUNITY_TO_PROJECT_TRACKING_FIELDS = (
 	("custom_client_refrence_no", "custom_client_refrence_no"),
 	("custom_batch_no", "custom_batch_no"),
@@ -448,11 +455,27 @@ def apply_bl_tracking_fields_to_doc(target_doc, bl_doc) -> bool:
 	return changed
 
 
+def apply_bl_detail_fields_to_doc(target_doc, bl_doc) -> bool:
+	"""Copy descriptive BL fields onto Opportunity after primary document submit."""
+	changed = False
+	for src_field, dest_field in BL_TO_OPPORTUNITY_DETAIL_FIELDS:
+		if not target_doc.meta.has_field(dest_field):
+			continue
+		value = bl_doc.get(src_field)
+		if value in (None, ""):
+			continue
+		if target_doc.get(dest_field) != value:
+			target_doc.set(dest_field, value)
+			changed = True
+	return changed
+
+
 def apply_bl_fields_to_doc(target_doc, bl_doc) -> bool:
 	"""Copy shipment classification and tracking fields from Bill of Lading."""
 	classification_changed = apply_bl_classification_to_doc(target_doc, bl_doc)
 	tracking_changed = apply_bl_tracking_fields_to_doc(target_doc, bl_doc)
-	return classification_changed or tracking_changed
+	detail_changed = apply_bl_detail_fields_to_doc(target_doc, bl_doc)
+	return classification_changed or tracking_changed or detail_changed
 
 
 def bl_classification_payload(bl_doc) -> dict:
@@ -469,7 +492,12 @@ def bl_classification_payload(bl_doc) -> dict:
 
 def bl_propagation_payload(bl_doc) -> dict:
 	"""Classification + tracking fields from Bill of Lading for API responses."""
-	return {**bl_classification_payload(bl_doc), **bl_tracking_payload(bl_doc)}
+	payload = {**bl_classification_payload(bl_doc), **bl_tracking_payload(bl_doc)}
+	for src_field, dest_field in BL_TO_OPPORTUNITY_DETAIL_FIELDS:
+		value = bl_doc.get(src_field)
+		if value not in (None, ""):
+			payload[dest_field] = value
+	return payload
 
 
 def copy_tracking_fields_from_source(target, source) -> None:
@@ -599,6 +627,43 @@ def get_container_fields() -> list[str]:
 		if field.fieldtype not in skip_types and not field.hidden
 	]
 
+
+def resolve_container_size_link(value: str | None) -> str | None:
+	"""Ensure Container Size master exists and return a valid link name."""
+	raw = (value or "").strip()
+	if not raw:
+		return None
+	if not frappe.db.exists("DocType", "Container Size"):
+		return raw
+
+	if frappe.db.exists("Container Size", raw):
+		return raw
+
+	by_field = frappe.db.get_value("Container Size", {"container_size": raw}, "name")
+	if by_field:
+		return by_field
+
+	normalized = raw.upper().replace(" ", "")
+	for row in frappe.get_all("Container Size", fields=["name", "container_size"]):
+		label = (row.get("container_size") or row.get("name") or "").upper().replace(" ", "")
+		if label == normalized:
+			return row.name
+
+	doc = frappe.get_doc({"doctype": "Container Size", "container_size": raw})
+	doc.insert(ignore_permissions=True)
+	return doc.name
+
+
+def normalize_container_row(row: dict) -> dict:
+	"""Return container child row values safe for Link validation."""
+	values = {field: row.get(field) or "" for field in get_container_fields()}
+	if values.get("type_of_container"):
+		values["type_of_container"] = resolve_container_size_link(values["type_of_container"]) or ""
+	# Tracker fields are populated on Project, not copied from BL intake rows.
+	for fieldname in ("container_tracker", "status", "demurrage_days"):
+		values[fieldname] = ""
+	return values
+
 def get_container_type_order() -> list[str]:
 	"""Pull container types from Container Type DocType ordered by idx."""
 	return frappe.get_all(
@@ -622,12 +687,15 @@ def get_bl_quantity_summary(bl_doc) -> str:
 def fetch_container_rows(bill_of_lading: str | None) -> list[dict]:
 	if not bill_of_lading or not frappe.db.exists("Bill of Lading", bill_of_lading):
 		return []
-	return frappe.get_all(
-		"Container",
-		filters={"parent": bill_of_lading, "parenttype": "Bill of Lading"},
-		fields=get_container_fields(),
-		order_by="idx asc",
-	)
+	return [
+		normalize_container_row(row)
+		for row in frappe.get_all(
+			"Container",
+			filters={"parent": bill_of_lading, "parenttype": "Bill of Lading"},
+			fields=get_container_fields(),
+			order_by="idx asc",
+		)
+	]
 
 def resolve_bill_of_lading_name(attachment: str) -> str | None:
 	"""Resolve a Bill of Lading name from its docname or attachment file path."""
@@ -732,10 +800,7 @@ def sync_preshipment_containers_from_bl(doc, method=None) -> None:
 
 	doc.set(container_field, [])
 	for row in rows:
-		doc.append(
-			container_field,
-			{field: row.get(field) or "" for field in get_container_fields()},
-		)
+		doc.append(container_field, normalize_container_row(row))
 
 def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 	"""Copy Bill of Lading link and container rows from source onto target doc."""
@@ -925,6 +990,7 @@ from frappe.utils import now_datetime
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	APPROVED_WORKFLOW_STATE,
 	BACK_LINKED_DOCTYPES,
+	OPPORTUNITY_TRANSPORT_BACK_LINK_FIELD,
 )
 
 
@@ -973,13 +1039,12 @@ def get_dashboard_data(data):
 	"""
 	data["transactions"] = [
 		{"label": "Quotation", "items": ["Quotation"]},
-		{"label": "Shipment", "items": ["Bill of Lading", "Air Waybill", "Booking Confirmation"]},
+		{"label": "Shipment", "items": list(BACK_LINKED_DOCTYPES)},
 		{"label": "Project", "items": ["Project"]},
 	]
 	non_standard = data.setdefault("non_standard_fieldnames", {})
-	non_standard["Bill of Lading"] = "linked_opportunity"
-	non_standard["Air Waybill"] = "linked_opportunity"
-	non_standard["Booking Confirmation"] = "linked_opportunity"
+	for doctype in BACK_LINKED_DOCTYPES:
+		non_standard[doctype] = OPPORTUNITY_TRANSPORT_BACK_LINK_FIELD
 	non_standard["Project"] = "custom_source_opportunity"
 
 	return data

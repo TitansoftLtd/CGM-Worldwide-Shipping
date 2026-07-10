@@ -78,6 +78,7 @@ doctype_js = {
 		"public/js/opportunity.js",
 	],
 	"Quotation": "public/js/quotation.js",
+	# Doctype folder *.js is auto-inlined; only list extra scripts here (not the doctype file itself).
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}

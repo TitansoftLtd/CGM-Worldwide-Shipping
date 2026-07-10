@@ -1,6 +1,6 @@
 """Opportunity as Shipment Intake & Document Verification — config-driven start flow.
 
-Behaviour is driven by Shipment Type master (primary_transport_document,
+Behaviour is driven by Shipment Type master (transport_documents,
 required_documents, task_flow_key). No shipment-type name hardcoding.
 """
 
@@ -14,20 +14,53 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	container_tracking_mode_for_shipment_type,
 	get_shipment_type_record,
 )
+from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
+	PRIMARY_DOC_TO_DOCTYPE,
+	PRIMARY_DOC_TO_OPP_FIELD,
+	TRANSPORT_DOC_TO_OPP_FIELD,
+	get_allowed_transport_documents,
+	resolve_primary_transport_document,
+)
 
-# Maps Shipment Type.primary_transport_document → Opportunity link field.
-PRIMARY_DOC_TO_OPP_FIELD = {
-	"Bill of Lading": "custom_bill_of_lading",
-	"Air Waybill": "custom_air_waybill",
-	"Booking Confirmation": "custom_booking_confirmation",
-}
 
-# Maps primary document label → Frappe DocType name for create routes.
-PRIMARY_DOC_TO_DOCTYPE = {
-	"Bill of Lading": "Bill of Lading",
-	"Air Waybill": "Air Waybill",
-	"Booking Confirmation": "Booking Confirmation",
-}
+def get_transport_documents_with_links(opportunity) -> list[dict]:
+	"""Allowed transport documents enriched with current Opportunity link values."""
+	allowed = get_allowed_transport_documents(opportunity.get("custom_shipment_type"))
+	out: list[dict] = []
+	for item in allowed:
+		field = item.get("opp_field")
+		linked_name = None
+		if field and opportunity.meta.has_field(field):
+			linked_name = opportunity.get(field)
+		out.append({**item, "linked_name": linked_name or None})
+	return out
+
+
+def has_any_transport_document(opportunity) -> bool:
+	for item in get_transport_documents_with_links(opportunity):
+		if item.get("linked_name"):
+			return True
+	for field in TRANSPORT_DOC_TO_OPP_FIELD.values():
+		if opportunity.meta.has_field(field) and opportunity.get(field):
+			return True
+	return False
+
+
+def has_required_transport_documents(opportunity) -> bool:
+	"""True when every transport document marked required-for-start is linked."""
+	linked = get_transport_documents_with_links(opportunity)
+	required = [item for item in linked if item.get("is_required_for_start")]
+	if not required:
+		allowed = get_allowed_transport_documents(opportunity.get("custom_shipment_type"))
+		if allowed:
+			return has_any_transport_document(opportunity)
+		return True
+	return all(item.get("linked_name") for item in required)
+
+
+def has_primary_transport_document(opportunity) -> bool:
+	"""Backward-compatible alias — required transport documents must be linked."""
+	return has_required_transport_documents(opportunity)
 
 
 def allocate_opportunity_batch_no() -> str:
@@ -65,18 +98,13 @@ def assign_opportunity_batch_on_insert(doc, _method=None) -> None:
 
 def get_shipment_type_flags(shipment_type: str | None) -> dict:
 	"""Read Shipment Type master flags for client-side field visibility (no hardcoded names)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-		_shipment_type_field_queryable,
-	)
-
 	row = get_shipment_type_record(shipment_type)
 	if not row:
 		return {}
 
 	mode = (row.get("default_mode_of_transport") or "").strip()
-	primary = "None"
-	if _shipment_type_field_queryable("primary_transport_document"):
-		primary = (row.get("primary_transport_document") or "None").strip()
+	primary = resolve_primary_transport_document(row)
+	transport_documents = get_allowed_transport_documents(shipment_type)
 
 	return {
 		"is_outbound": bool(row.get("is_outbound")),
@@ -89,6 +117,7 @@ def get_shipment_type_flags(shipment_type: str | None) -> dict:
 		"primary_transport_document": primary,
 		"primary_transport_doctype": PRIMARY_DOC_TO_DOCTYPE.get(primary),
 		"primary_transport_opp_field": PRIMARY_DOC_TO_OPP_FIELD.get(primary),
+		"transport_documents": transport_documents,
 		"container_tracker_mode": container_tracking_mode_for_shipment_type(shipment_type),
 	}
 
@@ -150,20 +179,6 @@ def get_required_intake_documents(shipment_type: str | None) -> list[dict]:
 	return out
 
 
-def has_primary_transport_document(opportunity) -> bool:
-	"""True when Shipment Type requires no primary doc, or the Opp link is set."""
-	flags = get_shipment_type_flags(opportunity.get("custom_shipment_type"))
-	primary = flags.get("primary_transport_document") or "None"
-	if primary in ("None", ""):
-		return True
-	field = flags.get("primary_transport_opp_field")
-	if not field:
-		return True
-	if not opportunity.meta.has_field(field):
-		return False
-	return bool(opportunity.get(field))
-
-
 def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 	"""Check primary transport doc + required documents uploaded & verified."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
@@ -185,11 +200,19 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 	if not shipment_type:
 		blockers.append(_("Select a Shipment Type before starting the shipment."))
 
-	if not has_primary_transport_document(opp):
-		primary = flags.get("primary_transport_document") or "primary transport document"
-		blockers.append(
-			_("Complete and link the primary transport document ({0}).").format(primary)
-		)
+	transport_documents = get_transport_documents_with_links(opp)
+	if not has_required_transport_documents(opp):
+		missing_transport = [
+			item["transport_document"]
+			for item in transport_documents
+			if item.get("is_required_for_start") and not item.get("linked_name")
+		]
+		if missing_transport:
+			blockers.append(
+				_("Link required transport document(s): {0}").format(", ".join(missing_transport))
+			)
+		elif transport_documents:
+			blockers.append(_("Attach at least one transport document to this shipment."))
 
 	docs_field = get_opportunity_documents_field()
 	uploaded_rows = list(opp.get(docs_field) or []) if docs_field else []
@@ -231,7 +254,10 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 		"primary_transport_document": flags.get("primary_transport_document"),
 		"primary_transport_doctype": flags.get("primary_transport_doctype"),
 		"primary_transport_opp_field": flags.get("primary_transport_opp_field"),
-		"primary_linked": has_primary_transport_document(opp),
+		"transport_documents": transport_documents,
+		"primary_linked": has_any_transport_document(opp),
+		"transport_docs_linked": has_any_transport_document(opp),
+		"required_transport_linked": has_required_transport_documents(opp),
 		"existing_project": existing_project,
 		"workflow_state": opp.get("workflow_state"),
 	}

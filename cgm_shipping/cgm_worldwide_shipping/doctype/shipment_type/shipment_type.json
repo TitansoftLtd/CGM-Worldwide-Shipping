@@ -25,6 +25,8 @@
   "uses_export_documents",
   "is_outbound",
   "primary_transport_document",
+  "section_transport_documents",
+  "transport_documents",
   "legacy_crm_labels",
   "section_required_documents",
   "required_documents",
@@ -158,11 +160,23 @@
   },
   {
    "default": "None",
-   "description": "Primary transport document for this shipment type. Opportunity routes create/link to this doctype after Shipment Type is selected.",
+   "description": "Legacy fallback when Transport Documents table is empty. Use the Transport Documents child table to configure multiple documents and their order.",
    "fieldname": "primary_transport_document",
    "fieldtype": "Select",
    "label": "Primary Transport Document",
    "options": "None\nBill of Lading\nAir Waybill\nBooking Confirmation"
+  },
+  {
+   "fieldname": "section_transport_documents",
+   "fieldtype": "Section Break",
+   "label": "Transport Documents"
+  },
+  {
+   "description": "Documents the user can attach to the Opportunity, in display order. Mark Required for Start Shipment when that document must exist before creating the Project.",
+   "fieldname": "transport_documents",
+   "fieldtype": "Table",
+   "label": "Transport Documents",
+   "options": "Shipment Type Transport Document"
   },
   {
    "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",

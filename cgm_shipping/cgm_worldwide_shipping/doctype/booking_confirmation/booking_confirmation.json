@@ -2,36 +2,34 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "field:booking_number",
- "creation": "2026-07-08 00:00:00.000000",
+ "creation": "2026-07-08 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "booking_number",
   "customer",
   "client_ref",
+  "booking_number",
+  "attach_booking",
   "column_break_bc_1",
+  "linked_opportunity",
   "shipment_type",
   "shipping_line",
-  "attach_booking",
-  "section_vessel",
   "vessel",
-  "voyage",
-  "column_break_bc_2",
+  "voyage_number",
+  "section_vessel",
   "port_of_loading",
   "port_of_discharge",
-  "section_cargo",
-  "commodity",
-  "requested_container_quantity",
-  "column_break_bc_3",
-  "requested_container_type",
-  "section_dates",
+  "uom",
+  "gross_weight",
+  "column_break_bc_2",
   "cargo_cut_off",
   "etd",
-  "column_break_bc_4",
   "eta",
+  "section_cargo",
+  "requested_container_type",
+  "table_esvv",
+  "commodity",
   "section_links",
-  "linked_opportunity",
-  "description",
   "amended_from"
  ],
  "fields": [
@@ -66,6 +64,7 @@
    "in_list_view": 1,
    "label": "Shipment Type",
    "options": "Shipment Type",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -81,18 +80,12 @@
   },
   {
    "fieldname": "section_vessel",
-   "fieldtype": "Section Break",
-   "label": "Vessel & Ports"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "vessel",
    "fieldtype": "Data",
    "label": "Vessel"
-  },
-  {
-   "fieldname": "voyage",
-   "fieldtype": "Data",
-   "label": "Voyage"
   },
   {
    "fieldname": "column_break_bc_2",
@@ -116,27 +109,13 @@
   {
    "fieldname": "commodity",
    "fieldtype": "Small Text",
-   "label": "Commodity"
-  },
-  {
-   "fieldname": "requested_container_quantity",
-   "fieldtype": "Int",
-   "label": "Requested Container Quantity"
-  },
-  {
-   "fieldname": "column_break_bc_3",
-   "fieldtype": "Column Break"
+   "label": "Commodity / Description of Goods"
   },
   {
    "fieldname": "requested_container_type",
    "fieldtype": "Link",
    "label": "Requested Container Type",
    "options": "Container Type"
-  },
-  {
-   "fieldname": "section_dates",
-   "fieldtype": "Section Break",
-   "label": "Schedule"
   },
   {
    "fieldname": "cargo_cut_off",
@@ -149,18 +128,13 @@
    "label": "ETD"
   },
   {
-   "fieldname": "column_break_bc_4",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "eta",
    "fieldtype": "Date",
    "label": "ETA"
   },
   {
    "fieldname": "section_links",
-   "fieldtype": "Section Break",
-   "label": "Links"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "linked_opportunity",
@@ -170,11 +144,6 @@
    "options": "Opportunity"
   },
   {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description"
-  },
-  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -182,12 +151,34 @@
    "options": "Booking Confirmation",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "voyage_number",
+   "fieldtype": "Data",
+   "label": "Voyage Number"
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM"
+  },
+  {
+   "fieldname": "gross_weight",
+   "fieldtype": "Data",
+   "label": "Gross Weight"
+  },
+  {
+   "fieldname": "table_esvv",
+   "fieldtype": "Table",
+   "label": "Requested Container Quantity",
+   "options": "Requested Containers"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-08 00:00:00.000000",
+ "modified": "2026-07-10 07:01:25.973289",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",
@@ -222,6 +213,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

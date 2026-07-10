@@ -1,0 +1,49 @@
+{
+ "actions": [],
+ "creation": "2026-07-09 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "transport_document",
+  "sort_order",
+  "is_required_for_start"
+ ],
+ "fields": [
+  {
+   "fieldname": "transport_document",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Transport Document",
+   "options": "Bill of Lading\nAir Waybill\nBooking Confirmation\nRelease Order",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "sort_order",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Sort Order"
+  },
+  {
+   "default": "0",
+   "description": "Must be linked on the Opportunity before Start Shipment.",
+   "fieldname": "is_required_for_start",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Required for Start Shipment"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Shipment Type Transport Document",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

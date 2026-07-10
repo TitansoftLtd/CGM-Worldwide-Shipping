@@ -1,6 +1,17 @@
 frappe.ui.form.on("Opportunity", {
 	onload(frm) {
+		cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
 		run_opportunity_form_syncs(frm, { apply_pending_bl: true });
+	},
+
+	before_save(frm) {
+		if (!frm.doc.opportunity_from) {
+			frm.set_value("opportunity_from", "Customer");
+		}
+	},
+
+	after_save(frm) {
+		cgm_shipping.opportunity_shipment.on_after_save(frm);
 	},
 
 	before_workflow_action(frm) {
@@ -57,12 +68,21 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	custom_shipment_type(frm) {
-		sync_opportunity_transport_and_containers(frm);
+		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
 	},
 
 	custom_bill_of_lading(frm) {
 		sync_opportunity_transport_and_containers(frm);
 		sync_bl_propagation_from_link(frm, { silent: true });
+		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
+	},
+
+	custom_air_waybill(frm) {
+		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
+	},
+
+	custom_booking_confirmation(frm) {
+		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
 	},
 });
 
@@ -76,12 +96,22 @@ frappe.ui.form.on("Shipment Document", {
 function run_opportunity_form_syncs(frm, opts = {}) {
 	register_clients_documents_remove_handler(frm);
 	configure_opportunity_clients_documents_grid(frm);
-	sync_opportunity_transport_and_containers(frm);
 	setup_opportunity_bill_of_lading_create(frm);
+	cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
 	if (opts.apply_pending_bl) {
 		apply_pending_bl_from_submit(frm);
 	}
+	cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit(frm);
+	cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit(frm);
 	sync_bl_from_clients_documents(frm, { silent: true });
+	const bl_link_field = get_opportunity_bl_link_field(frm);
+	if (frm.doc[bl_link_field]) {
+		sync_bl_propagation_from_link(frm, { silent: true });
+		sync_opportunity_transport_and_containers(frm);
+		if (cgm_shipping?.bl_containers?.schedule_sync) {
+			cgm_shipping.bl_containers.schedule_sync(frm, { silent: true });
+		}
+	}
 }
 
 function row_has_shipment_document_file(row) {
@@ -274,6 +304,16 @@ function apply_bl_classification_fields(frm, data) {
 			set_opportunity_bl_field(frm, dest, data[src]);
 		}
 	}
+
+	const detail_fields = [
+		"custom_description_of_goods",
+		"custom_draft_bl_number",
+	];
+	detail_fields.forEach((fieldname) => {
+		if (data[fieldname] != null && data[fieldname] !== "") {
+			set_opportunity_bl_field(frm, fieldname, data[fieldname]);
+		}
+	});
 }
 
 function apply_bl_propagation_data(frm, data) {
@@ -356,11 +396,6 @@ function on_clients_documents_removed(frm) {
 
 function sync_opportunity_transport_and_containers(frm) {
 	const bl_link_field = get_opportunity_bl_link_field(frm);
-	cgm_shipping.transport_reference.toggle(frm, {
-		air_waybill: "custom_air_waybill",
-		bill_of_lading: bl_link_field || undefined,
-		section: "custom_section_break_idqn5",
-	});
 	cgm_shipping.transport_reference.toggle_container_type(frm, {
 		bill_of_lading: bl_link_field || "custom_bill_of_lading",
 	});
@@ -398,6 +433,18 @@ function setup_opportunity_bill_of_lading_create(frm) {
 				if (opp_link_field) {
 					opts[opp_link_field.fieldname] = frm.doc.name;
 				}
+			}
+			if (frm.doc.custom_draft_bl_number) {
+				opts.bl_number = frm.doc.custom_draft_bl_number;
+			}
+			if (frm.doc.custom_batch_no) {
+				opts.batch_no = frm.doc.custom_batch_no;
+			}
+			if (frm.doc.party_name) {
+				opts.customer = frm.doc.party_name;
+			}
+			if (frm.doc.custom_shipment_type) {
+				opts.shipment_type = frm.doc.custom_shipment_type;
 			}
 		}
 		return opts;
@@ -738,6 +785,7 @@ function schedule_shipment_project_create_menu(frm) {
 
 function clear_shipment_project_create_menu_items(frm) {
 	force_remove_opportunity_create_menu_item(frm, "Create Shipment Project");
+	force_remove_opportunity_create_menu_item(frm, "Start Shipment");
 	force_remove_opportunity_create_menu_item(frm, "View Project");
 }
 
@@ -753,12 +801,8 @@ function prompt_shipment_project_approval_required(frm) {
 }
 
 function on_create_shipment_project_click(frm) {
-	// Gate on workflow_state (string), not docstatus — Opportunity is not submittable.
-	if (frm.doc.workflow_state !== "Approved") {
-		prompt_shipment_project_approval_required(frm);
-		return;
-	}
-	create_shipment_project_from_opportunity(frm);
+	// Unified Start Shipment path: document gates + Approved + Project create.
+	cgm_shipping.opportunity_shipment.start_shipment(frm);
 }
 
 function add_shipment_project_create_menu_item(frm) {
@@ -775,7 +819,7 @@ function add_shipment_project_create_menu_item(frm) {
 		force_remove_opportunity_create_menu_item(frm, "View Project");
 		force_add_opportunity_create_menu_item(
 			frm,
-			"Create Shipment Project",
+			"Start Shipment",
 			() => on_create_shipment_project_click(frm)
 		);
 		finalize_opportunity_create_menu(frm);

@@ -60,8 +60,35 @@ CUSTOMER_ATTACH_TO_DOCUMENT_CODE = {
 	"custom_kra_pin_attachment": "KRA_PIN",
 }
 
+# Transport documents that can attach to an Opportunity shipment intake.
+# Label keys match Shipment Type.transport_documents Select options.
+TRANSPORT_DOCUMENT_REGISTRY: dict[str, dict[str, str | None]] = {
+	"Bill of Lading": {
+		"doctype": "Bill of Lading",
+		"opp_field": "custom_bill_of_lading",
+	},
+	"Air Waybill": {
+		"doctype": "Air Waybill",
+		"opp_field": "custom_air_waybill",
+	},
+	"Booking Confirmation": {
+		"doctype": "Booking Confirmation",
+		"opp_field": "custom_booking_confirmation",
+	},
+	"Release Order": {
+		"doctype": "Release Order",
+		"opp_field": None,
+	},
+}
+
+OPPORTUNITY_TRANSPORT_BACK_LINK_FIELD = "linked_opportunity"
+
 # Doctypes with soft back-link to Opportunity via linked_opportunity.
-BACK_LINKED_DOCTYPES = ("Air Waybill", "Bill of Lading", "Booking Confirmation")
+BACK_LINKED_DOCTYPES = tuple(
+	cfg["doctype"]
+	for cfg in TRANSPORT_DOCUMENT_REGISTRY.values()
+	if cfg.get("opp_field")
+)
 
 # Map template labels or old department names → ERPNext department_name stem.
 DEPARTMENT_NAME_ALIASES = {
