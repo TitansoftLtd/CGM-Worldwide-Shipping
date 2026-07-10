@@ -20,6 +20,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bl_fields_to_doc,
 	bl_propagation_payload,
+	container_row_cargo_size,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config, get_link_field_for_doctype
 
@@ -70,7 +71,7 @@ class BillofLading(Document):
 
 		counts: dict[str, int] = {}
 		for row in self.container_information:
-			cargo_size = (row.cargo_size or "").strip()
+			cargo_size = container_row_cargo_size(row)
 			if not cargo_size:
 				continue
 			counts[cargo_size] = counts.get(cargo_size, 0) + 1

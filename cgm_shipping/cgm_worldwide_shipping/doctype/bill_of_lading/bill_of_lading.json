@@ -18,6 +18,8 @@
   "linked_opportunity",
   "section_break_abdt",
   "container_information",
+  "number_of_packages",
+  "package_type",
   "section_break_yldr",
   "description",
   "amended_from"
@@ -122,13 +124,24 @@
    "label": "Cargo Type",
    "options": "Cargo Type",
    "reqd": 1
+  },
+  {
+   "fieldname": "number_of_packages",
+   "fieldtype": "Data",
+   "label": "Number of Packages"
+  },
+  {
+   "fieldname": "package_type",
+   "fieldtype": "Link",
+   "label": "Package Type",
+   "options": "Package Type"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-10 07:11:53.920871",
+ "modified": "2026-07-10 10:21:49.965823",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",

@@ -628,6 +628,13 @@ def get_container_fields() -> list[str]:
 	]
 
 
+def container_row_cargo_size(row) -> str:
+	"""Cargo size from a Container child row (supports legacy type_of_container)."""
+	if isinstance(row, dict):
+		return (row.get("cargo_size") or row.get("type_of_container") or "").strip()
+	return (getattr(row, "cargo_size", None) or getattr(row, "type_of_container", None) or "").strip()
+
+
 def resolve_cargo_size_link(value: str | None) -> str | None:
 	"""Ensure Cargo Size master exists and return a valid link name."""
 	raw = (value or "").strip()
@@ -657,6 +664,9 @@ def resolve_cargo_size_link(value: str | None) -> str | None:
 def normalize_container_row(row: dict) -> dict:
 	"""Return container child row values safe for Link validation."""
 	values = {field: row.get(field) or "" for field in get_container_fields()}
+	legacy_size = (row.get("type_of_container") or "").strip()
+	if not values.get("cargo_size") and legacy_size:
+		values["cargo_size"] = legacy_size
 	if values.get("cargo_size"):
 		values["cargo_size"] = resolve_cargo_size_link(values["cargo_size"]) or ""
 	# Tracker fields are populated on Project, not copied from BL intake rows.
@@ -840,7 +850,7 @@ def get_bl_container_select_options(bill_of_lading: str | None = None) -> list[d
 			continue
 		parts = [number]
 		if row.get("cargo_size"):
-			parts.append(str(row.cargo_size))
+			parts.append(str(row.get("cargo_size")))
 		if row.get("seal_no"):
 			parts.append(f"Seal {row.seal_no}")
 		options.append({"value": number, "label": " - ".join(parts)})

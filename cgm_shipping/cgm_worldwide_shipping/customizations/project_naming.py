@@ -9,6 +9,7 @@ import re
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import container_row_cargo_size
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
 )
@@ -124,7 +125,7 @@ def _container_qty_size_from_rows(project) -> str | None:
 
 	counts: dict[str, int] = {}
 	for row in project.get(container_field) or []:
-		cargo_type = (row.get("cargo_size") or "").strip()
+		cargo_type = container_row_cargo_size(row)
 		if not cargo_type:
 			continue
 		counts[cargo_type] = counts.get(cargo_type, 0) + 1

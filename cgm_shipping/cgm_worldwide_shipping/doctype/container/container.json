@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "container_number",
-  "type_of_container",
+  "cargo_size",
   "seal_no",
   "column_break_onuu",
   "container_tracker",
@@ -56,7 +56,7 @@
    "read_only": 1
   },
   {
-   "fieldname": "type_of_container",
+   "fieldname": "cargo_size",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Cargo Size",
