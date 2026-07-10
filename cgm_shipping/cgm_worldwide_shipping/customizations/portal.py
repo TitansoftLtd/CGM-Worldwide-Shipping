@@ -462,6 +462,19 @@ def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
 	return rows
 
 
+def document_status_tone(status: str | None) -> str:
+	"""CSS tone class for a Shipment Document status pill (matches Desk grid)."""
+	if not status or status == "Missing":
+		return "muted"
+	if status == "Uploaded":
+		return "info"
+	if status == "Verified":
+		return "success"
+	if status == "Rejected":
+		return "danger"
+	return "muted"
+
+
 def quotation_status_tone(status: str | None) -> str:
 	"""CSS tone class for a Quotation status pill."""
 	if status in ("Ordered", "Partially Ordered"):
@@ -552,15 +565,9 @@ def _portal_document_fields() -> list[str]:
 
 
 def _is_portal_visible_document(row: dict) -> bool:
-	"""Shared documents with a file; hide missing/rejected rows."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		primary_attachment,
-	)
-
-	if not primary_attachment(row):
-		return False
-	status = (row.get("status") or "").strip()
-	return status not in ("Missing", "Rejected")
+	"""Portal document rows; hide rejected rows only."""
+	status = (row.get("status") or "Missing").strip()
+	return status != "Rejected"
 
 
 _PORTAL_INTERNAL_REMARKS = frozenset(
@@ -591,21 +598,18 @@ def _enrich_portal_document(row: dict, project_name: str) -> dict:
 	row["attachment"] = primary_attachment(row)
 	row["remarks"] = _portal_document_remarks(row.get("remarks"))
 	row["doc_label"] = _document_label(row.get("document_type"))
-	row["download_url"] = (
-		"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal.download_shipment_document"
-		+ f"?project={quote(project_name, safe='')}"
-		+ f"&row={quote(row['name'], safe='')}"
-	)
+	status = (row.get("status") or "Missing").strip()
+	row["status"] = status
+	row["tone"] = document_status_tone(status)
 	return row
 
 
 def get_shipment_documents(project_name: str) -> list[dict]:
-	"""Documents on a shipment that a customer may download.
+	"""Documents on a shipment with status for the customer portal.
 
-	Surfaces rows with a primary file (initial, final, or legacy attachment)
-	that staff have uploaded or verified. Missing and rejected rows stay
-	hidden. Each row is enriched with a friendly document name and a guarded
-	download URL.
+	Surfaces every Shipment Document row except Rejected, matching the
+	Project child table. Each row carries a friendly document name and
+	status badge tone.
 	"""
 	if not project_name:
 		return []
@@ -614,10 +618,10 @@ def get_shipment_documents(project_name: str) -> list[dict]:
 		filters={
 			"parent": project_name,
 			"parenttype": "Project",
-			"status": ["not in", ["Missing", "Rejected"]],
+			"status": ["!=", "Rejected"],
 		},
 		fields=_portal_document_fields(),
-		order_by="verified_on desc, uploaded_on desc, modified desc",
+		order_by="document_type asc, modified desc",
 	)
 	visible = []
 	for row in rows:
@@ -628,26 +632,16 @@ def get_shipment_documents(project_name: str) -> list[dict]:
 
 
 def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
-	"""Every downloadable document across a customer's shipments.
+	"""Every Shipment Document across a customer's shipments (portal list).
 
-	One join over Shipment Document → Project keeps this to a single query
-	instead of one per shipment. Same visibility rule as
-	`get_shipment_documents`. Each row carries its owning shipment's ref +
-	a guarded download URL.
+	One join over Shipment Document → Project keeps this to a single query.
+	Same visibility rule as `get_shipment_documents`. Each row carries its
+	owning shipment ref and document status.
 	"""
 	if not customer:
 		return []
 	ref_sql = _project_ref_sql_coalesce("p")
 	has_versioning = frappe.get_meta("Shipment Document").has_field("initial_attachment")
-	attachment_clause = (
-		"""(
-		  IFNULL(sd.attachment, '') != ''
-		  OR IFNULL(sd.initial_attachment, '') != ''
-		  OR IFNULL(sd.final_attachment, '') != ''
-		)"""
-		if has_versioning
-		else "IFNULL(sd.attachment, '') != ''"
-	)
 	rows = frappe.db.sql(
 		f"""
 		SELECT sd.name, sd.document_type, sd.attachment, sd.verified_on,
@@ -658,9 +652,8 @@ def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
 		JOIN `tabProject` p ON p.name = sd.parent
 		WHERE sd.parenttype = 'Project'
 		  AND p.customer = %s
-		  AND IFNULL(sd.status, 'Missing') NOT IN ('Missing', 'Rejected')
-		  AND {attachment_clause}
-		ORDER BY sd.verified_on DESC, sd.uploaded_on DESC, sd.modified DESC
+		  AND IFNULL(sd.status, 'Missing') != 'Rejected'
+		ORDER BY p.modified DESC, sd.document_type ASC, sd.modified DESC
 		LIMIT %s
 		""",
 		(customer, limit),

@@ -1,16 +1,38 @@
 .cgm-shipment-progress {
+	--cgm-red-dark: #b8122c;
+	--cgm-muted: #64748b;
 	margin: 0 0 1rem 0;
 	padding: 12px 14px;
-	background: var(--bg-light-gray, #f4f5f6);
-	border: 1px solid var(--border-color, #d1d8dd);
+	background:
+		radial-gradient(900px 200px at 100% 0%, rgba(227, 24, 55, 0.11), transparent 60%),
+		linear-gradient(135deg, #fff8f9 0%, #ffebef 55%, #fff4f6 100%);
+	border: 1px solid rgba(227, 24, 55, 0.1);
 	border-radius: 8px;
 	font-size: 12px;
+}
+
+.cgm-shipment-progress-field > .form-group,
+.cgm-shipment-progress-field .control-value,
+.frappe-control[data-fieldname="custom_shipment_progress_html"] > .form-group,
+.frappe-control[data-fieldname="custom_shipment_progress_html"] .control-value {
+	background: transparent !important;
+	border: 0 !important;
+	padding: 0 !important;
+	margin-bottom: 0 !important;
 }
 
 .cgm-shipment-progress h4 {
 	margin: 0 0 10px 0;
 	font-size: 13px;
-	font-weight: 600;
+	font-weight: 700;
+	color: var(--cgm-red-dark);
+	letter-spacing: -0.01em;
+}
+
+.cgm-si-workflow-alert {
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.45;
 }
 
 .cgm-progress-steps {
@@ -70,7 +92,7 @@
 
 .cgm-progress-meta {
 	margin-top: 10px;
-	color: #6c7680;
+	color: var(--cgm-muted, #64748b);
 }
 
 .cgm-inspection-notified,
@@ -124,10 +146,113 @@
 	font-weight: 600;
 }
 
+/* Desk status fields — compact pill badges in static cells only */
+.cgm-status-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.35;
+	white-space: nowrap;
+	border: 1px solid transparent;
+	max-width: 100%;
+	vertical-align: middle;
+}
+
+.form-grid .grid-static-col.cgm-status-col,
+.form-grid .grid-static-col.cgm-status-col .static-area,
+.form-grid .grid-static-col.cgm-status-col .field-area,
+.form-grid .grid-static-col.cgm-status-col .grid-field,
+.form-grid .grid-static-col.cgm-status-col .control-input {
+	background: transparent !important;
+}
+
+.form-grid .grid-static-col.cgm-status-col .static-area {
+	display: inline-flex;
+	align-items: center;
+	padding: 0;
+	min-height: 0;
+	overflow: visible;
+}
+
+.form-grid .grid-static-col.cgm-status-col .field-area {
+	display: flex;
+	align-items: center;
+	padding: 0;
+	min-height: 0;
+}
+
+/* Native ERPNext select while the cell is being edited */
+.form-grid .grid-static-col.cgm-status-col select.input-sm {
+	width: 100%;
+	background: var(--control-bg, #fff) !important;
+	color: var(--text-color, #333) !important;
+	border: 1px solid var(--border-color, #d1d8dd) !important;
+	border-radius: var(--border-radius-sm, 4px) !important;
+	font-weight: normal;
+	padding: 2px 6px;
+	min-height: 0;
+}
+
+.cgm-status-badge.cgm-status-muted {
+	background: #f1f5f9;
+	border-color: #e2e8f0;
+	color: #475569;
+}
+
+.cgm-status-badge.cgm-status-info {
+	background: #dbeafe;
+	border-color: #bfdbfe;
+	color: #1d4ed8;
+}
+
+.cgm-status-badge.cgm-status-primary {
+	background: #ffe8ec;
+	border-color: #fecdd3;
+	color: #b8122c;
+}
+
+.cgm-status-badge.cgm-status-active {
+	background: #fef3c7;
+	border-color: #fde68a;
+	color: #b45309;
+}
+
+.cgm-status-badge.cgm-status-warning {
+	background: #ffedd5;
+	border-color: #fed7aa;
+	color: #c2410c;
+}
+
+.cgm-status-badge.cgm-status-success {
+	background: #dcfce7;
+	border-color: #bbf7d0;
+	color: #15803d;
+}
+
+.cgm-status-badge.cgm-status-danger {
+	background: #ffe8ec;
+	border-color: #fecaca;
+	color: #b91c1c;
+}
+
+.form-grid .grid-static-col .cgm-status-badge {
+	max-width: 100%;
+}
+
+.frappe-control.cgm-status-col .control-value {
+	background: transparent !important;
+	border: 0 !important;
+	padding-left: 0 !important;
+}
+
 .cgm-tracking-legend {
 	margin-top: 8px;
 	font-size: 11px;
-	color: #6c7680;
+	color: var(--cgm-muted, #64748b);
 }
 
 .cgm-container-summary {

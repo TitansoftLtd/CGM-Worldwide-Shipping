@@ -457,6 +457,27 @@ def _filter_by_customer(rows: list[dict], customer: str | None, projects: dict) 
 	]
 
 
+def _filter_by_bill_of_lading(
+	rows: list[dict], bill_of_lading: str | None, projects: dict
+) -> list[dict]:
+	if not bill_of_lading:
+		return rows
+	bl_filter = bill_of_lading.strip().lower()
+	if not bl_filter:
+		return rows
+	filtered = []
+	for row in rows:
+		project_doc = projects.get(row.get("project")) or {}
+		bl_values = {
+			(row.get("bl_number") or "").strip().lower(),
+			(project_doc.get("custom_bill_of_lading") or "").strip().lower(),
+		}
+		bl_values.discard("")
+		if any(bl_filter == value or bl_filter in value for value in bl_values):
+			filtered.append(row)
+	return filtered
+
+
 def _free_days_expiring(row: dict, ref) -> bool:
 	free_end = row.get("free_days_end_date")
 	if not free_end or row.get("gate_out_date_port"):
@@ -537,6 +558,7 @@ def get_container_ops_board(filters=None) -> dict:
 	projects = _project_cache()
 	raw = _fetch_tracker_rows(filters)
 	raw = _filter_by_customer(raw, filters.get("customer"), projects)
+	raw = _filter_by_bill_of_lading(raw, filters.get("bill_of_lading"), projects)
 	all_rows = [_build_row(row, projects) for row in raw]
 	kpis = _kpis(all_rows)
 
@@ -558,6 +580,7 @@ def get_container_return_tracker(filters=None) -> dict:
 	month_start = ref.replace(day=1)
 	raw = _fetch_tracker_rows(filters)
 	raw = _filter_by_customer(raw, filters.get("customer"), projects)
+	raw = _filter_by_bill_of_lading(raw, filters.get("bill_of_lading"), projects)
 	rows = []
 	for row in raw:
 		built = _build_row(row, projects)

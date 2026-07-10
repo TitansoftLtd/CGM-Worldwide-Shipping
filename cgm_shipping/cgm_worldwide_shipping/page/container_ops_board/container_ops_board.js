@@ -112,6 +112,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				options: "Supplier",
 			},
 			{
+				fieldname: "bill_of_lading",
+				label: __("B/L"),
+				fieldtype: "Link",
+				options: "Bill of Lading",
+			},
+			{
 				fieldname: "clearance_station",
 				label: __("Clearance Station"),
 				fieldtype: "Link",
@@ -210,19 +216,16 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			)}</a>`;
 		}
 
-		function projectLink(row) {
-			const docname = row.project || row.name;
-			const label = row.project_ref || row.project || row.name || "";
-			if (!docname) {
-				return frappe.utils.escape_html(label || "—");
+		function shipmentCell(row) {
+			const ref = row.project_ref || row.project || "—";
+			if (!row.project) {
+				return frappe.utils.escape_html(ref);
 			}
-			return `<a href="/app/project/${encodeURIComponent(docname)}">${frappe.utils.escape_html(
-				label || docname
-			)}</a>`;
+			return `<a href="/app/project/${encodeURIComponent(row.project)}">${frappe.utils.escape_html(ref)}</a>`;
 		}
 
-		function projectCell(row) {
-			return projectLink(row);
+		function clientCell(row) {
+			return frappe.utils.escape_html(row.customer || "—");
 		}
 
 		function batchCell(row) {
@@ -268,7 +271,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				freeze: true,
 				callback(r) {
 					if (r.exc) {
-					 return;
+					return;
 					}
 					updateFilterHint();
 					if (activeTab !== "shipments") {
@@ -309,10 +312,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		function transportTableHeaders() {
 			return `
-				<th class="cgm-ops-sticky-col">${__("Container")}</th>
-				<th>${__("Project")}</th>
-				<th>${__("Batch")}</th>
+				<th class="cgm-ops-sticky-col">${__("Shipment")}</th>
+				<th>${__("Client")}</th>
 				<th>${__("B/L")}</th>
+				<th>${__("Containers")}</th>
+				<th>${__("Batch")}</th>
 				<th>${__("Gate In MBA")}</th>
 				<th>${__("Gate Out MBA")}</th>
 				<th>${__("Truck No")}</th>
@@ -334,10 +338,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				? `<div class="cgm-ops-alert">${frappe.utils.escape_html(row.alert_status)}</div>`
 				: "";
 			return `<tr class="${frappe.utils.escape_html(row.traffic_css || "")}">
-				<td class="cgm-ops-sticky-col">${trackerLink(row)}${alert}</td>
-				<td>${projectCell(row)}</td>
-				<td>${batchCell(row)}</td>
+				<td class="cgm-ops-sticky-col">${shipmentCell(row)}</td>
+				<td>${clientCell(row)}</td>
 				<td>${blCell(row)}</td>
+				<td>${trackerLink(row)}${alert}</td>
+				<td>${batchCell(row)}</td>
 				<td>${fmtDate(row.gate_in_port)}</td>
 				<td>${fmtDate(row.gate_out_date_port)}</td>
 				<td>${frappe.utils.escape_html(row.truck_number || "—")}</td>
@@ -400,6 +405,14 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("Container Deposit")}</th>
 				<th>${__("Vessel")}</th>
 			`;
+		}
+
+		function projectLink(row) {
+			const ref = row.project_ref || row.name || "—";
+			if (!row.name) {
+				return frappe.utils.escape_html(ref);
+			}
+			return `<a href="/app/project/${encodeURIComponent(row.name)}">${frappe.utils.escape_html(ref)}</a>`;
 		}
 
 		function shipmentTableRow(row) {

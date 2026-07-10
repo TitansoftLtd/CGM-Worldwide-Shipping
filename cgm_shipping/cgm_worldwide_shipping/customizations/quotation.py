@@ -17,6 +17,24 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	QUOTATION_SI_READY_STATES,
 	QUOTATION_WORKFLOW_STATE_APPROVED,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_calculation import (
+	calculate_tax_amount,
+	get_tax_type_config,
+	get_uom_category,
+	import_duty_contribution,
+	is_volume_uom,
+	rate_label_for_mode,
+	resolve_company_currency,
+	should_feed_running_base,
+	shipment_quantity,
+	validate_calculation_mode,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing import (
+	PRICING_ROW_FIELDS,
+	QUOTATION_ITEM_PRICING_TABLE,
+	apply_item_pricing_to_document,
+	calculate_quotation_item_pricing,
+)
 
 # ── Child-table fieldnames ────────────────────────────────────────────────────
 IMPORT_COST_TABLE = "custom_import_cost_component"
@@ -31,12 +49,14 @@ IMPORT_COST_ROW_FIELDS = (
 
 CUSTOMS_TAX_ROW_FIELDS = (
 	"tax_type",
+	"calculation_mode",
 	"rate",
 	"fixed_amount_kes",
 	"amount_kes",
 )
 
 CGM_QUOTATION_SO_SCALAR_FIELDS = (
+	"custom_uom",
 	"custom_weight",
 	"custom_volume",
 	"custom_hs_code",
@@ -72,19 +92,6 @@ CGM_QUOTATION_SI_EXTRA_FIELDS = (
 	"custom_shipment",
 )
 
-# ── KEBS constants ────────────────────────────────────────────────────────────
-KEBS_ITEM_CODE   = "Kebs Inspection Fee"
-KEBS_MIN_FOREIGN = 300.0   # minimum fee in transaction / foreign currency
-KEBS_PERCENT     = 0.006   # 0.6 %
-
-# ── Tax-type classification sets ──────────────────────────────────────────────
-# Add new tax-type *names* here; no other code changes are required.
-STACKING_TAX_TYPES = frozenset({"VAT"})          # stacks on the running cumulative base
-EXCISE_TAX_TYPES   = frozenset({"Excise Duty"})  # stacks on customs_value + import_duty only
-WEIGHT_TAX_TYPES   = frozenset({"MSS Levy"})     # rate is KES-per-ton, not a percentage
-# Everything else: flat % applied directly to customs_value_kes.
-
-
 # =============================================================================
 # SHARED MIXIN
 # =============================================================================
@@ -101,24 +108,29 @@ class _CGMCustomsTaxMixin:
     # ── Master entry point ────────────────────────────────────────────────────
 
     def _calculate_import_customs_taxes(self) -> None:
-        """Recalculate import-cost components, KEBS, customs taxes, and grand totals."""
-        if not self.meta.has_field(IMPORT_COST_TABLE):
-            self._set_custom_total_tax(0.0)
+        """Recalculate import costs, item pricing, customs taxes, and grand totals."""
+        has_import = self.meta.has_field(IMPORT_COST_TABLE)
+        has_taxes = self.meta.has_field(CUSTOMS_TAX_TABLE)
+        has_pricing = self.meta.has_field(QUOTATION_ITEM_PRICING_TABLE)
+
+        if not has_import and not has_taxes and not has_pricing:
             return
 
         company_currency = get_company_currency(self.company)
 
-        # Step 1 — Import Cost Component rows → customs_value
-        customs_value_foreign, customs_value_kes = self._sum_import_costs(company_currency)
+        if has_import:
+            customs_value_foreign, customs_value_kes = self._sum_import_costs(company_currency)
+            self.custom_custom_value = customs_value_foreign
+            self.custom_base_customs_value = customs_value_kes
+        else:
+            customs_value_kes = flt(getattr(self, "custom_base_customs_value", 0))
 
-        self.custom_custom_value       = customs_value_foreign
-        self.custom_base_customs_value = customs_value_kes
+        self._recalculate_item_pricing()
 
-        # Step 2 — KEBS auto-calculation (item-level charge)
-        self._recalculate_kebs_item(customs_value_foreign)
+        if has_pricing:
+            self.calculate_taxes_and_totals()
 
-        # Step 3 — Customs Tax rows
-        if not self.meta.has_field(CUSTOMS_TAX_TABLE):
+        if not has_taxes:
             self._set_custom_total_tax(0.0)
             return
 
@@ -147,11 +159,11 @@ class _CGMCustomsTaxMixin:
 
     def _sum_customs_taxes(self, customs_value_kes: float) -> float:
         """Walk customs-tax rows in idx order and return total KES tax."""
-        weight_tons     = flt(self.get("custom_weight") or 0)
-        running_base    = customs_value_kes   # grows as duties stack
-        import_duty_kes = 0.0                 # used as base for Excise
-        total_kes       = 0.0
-        seen: set[str]  = set()
+        shipment_qty = shipment_quantity(self)
+        running_base = customs_value_kes
+        import_duty_kes = 0.0
+        total_kes = 0.0
+        seen: set[str] = set()
 
         for row in sorted(self.get(CUSTOMS_TAX_TABLE) or [], key=lambda r: r.idx):
             tax_type = row.tax_type
@@ -164,80 +176,39 @@ class _CGMCustomsTaxMixin:
                 )
             seen.add(tax_type)
 
-            amount_kes, duty_delta = self._calculate_one_tax(
-                row, tax_type, customs_value_kes, running_base, import_duty_kes, weight_tons
+            mode = validate_calculation_mode(row, tax_type)
+
+            amount_kes = calculate_tax_amount(
+                row,
+                tax_type,
+                customs_value_kes=customs_value_kes,
+                running_base=running_base,
+                import_duty_kes=import_duty_kes,
+                shipment_qty=shipment_qty,
             )
             amount_kes = self._money(amount_kes, "amount_kes", row)
+            duty_delta = import_duty_contribution(tax_type, mode, amount_kes)
 
-            row.amount_kes     = amount_kes
-            row.tax_amount_kes = amount_kes   # keep legacy field in sync
+            row.amount_kes = amount_kes
+            row.tax_amount_kes = amount_kes
 
-            # Weight-based taxes don't alter the running base
-            if tax_type not in WEIGHT_TAX_TYPES:
-                running_base    += amount_kes
+            if should_feed_running_base(tax_type, mode):
+                running_base += amount_kes
                 import_duty_kes += duty_delta
 
             total_kes += amount_kes
 
         return total_kes
 
-    # ── Single-row tax dispatch ───────────────────────────────────────────────
+    # ── Item pricing (data-driven from Item.custom_item_pricing_rules) ──────────
 
-    def _calculate_one_tax(
-        self,
-        row,
-        tax_type: str,
-        customs_value_kes: float,
-        running_base: float,
-        import_duty_kes: float,
-        weight_tons: float,
-    ) -> tuple[float, float]:
-        """
-        Return (amount_kes, import_duty_contribution).
+    def _recalculate_item_pricing(self) -> None:
+        """Populate pricing table and item rates from all active Item pricing rules."""
+        if not self.meta.has_field(QUOTATION_ITEM_PRICING_TABLE):
+            return
 
-        import_duty_contribution is non-zero only for flat non-excise duties so
-        that Excise can correctly stack on customs_value + import_duty.
-        """
-        # Fixed-amount override takes precedence
-        calc_type = frappe.db.get_value("Customs Tax Type", tax_type, "calculation_type") or ""
-        rate = flt(row.rate)
-
-        if tax_type in WEIGHT_TAX_TYPES or calc_type == "Per Weight":
-            return weight_tons * rate, 0.0
-
-        if calc_type == "Fixed Amount" or flt(row.fixed_amount_kes) > 0:
-            return flt(row.fixed_amount_kes), 0.0
-
-        if tax_type in EXCISE_TAX_TYPES:
-            return (customs_value_kes + import_duty_kes) * (rate / 100), 0.0
-
-        if tax_type in STACKING_TAX_TYPES:
-            return running_base * (rate / 100), 0.0
-
-        # Default: flat % on raw customs_value_kes; contributes to import-duty pool
-        amount_kes = customs_value_kes * (rate / 100)
-        return amount_kes, amount_kes
-
-    # ── KEBS auto-calculation ─────────────────────────────────────────────────
-
-    def _recalculate_kebs_item(self, customs_value_foreign: float) -> None:
-        """
-        KEBS Inspection Fee = MAX(0.6 % of customs_value_foreign, 300 in transaction currency).
-        Updates the matching Quotation / Sales Order item row in place.
-        """
-        kebs_rate = max(flt(customs_value_foreign) * KEBS_PERCENT, KEBS_MIN_FOREIGN)
-
-        for item in self.get("items") or []:
-            if item.item_code != KEBS_ITEM_CODE:
-                continue
-            item.rate = item.net_rate = flt(kebs_rate, item.precision("rate"))
-            item.amount = item.net_amount = item.rate * flt(item.qty)
-            item.base_rate = item.base_net_rate = self._money(
-                item.rate * flt(self.conversion_rate), "base_rate", item
-            )
-            item.base_amount = item.base_net_amount = self._money(
-                item.amount * flt(self.conversion_rate), "base_amount", item
-            )
+        result = calculate_quotation_item_pricing(self)
+        apply_item_pricing_to_document(self, result)
 
     # ── Grand-total propagation ───────────────────────────────────────────────
 
@@ -340,8 +311,11 @@ class CGMSalesOrder(_CGMCustomsTaxMixin, SalesOrder):
 
     def validate(self):
         super().validate()
-        # Only recalculate when custom tables are present; harmless otherwise.
-        if self.meta.has_field(IMPORT_COST_TABLE) or self.meta.has_field(CUSTOMS_TAX_TABLE):
+        if (
+            self.meta.has_field(IMPORT_COST_TABLE)
+            or self.meta.has_field(CUSTOMS_TAX_TABLE)
+            or self.meta.has_field(QUOTATION_ITEM_PRICING_TABLE)
+        ):
             self._calculate_import_customs_taxes()
 
 
@@ -368,6 +342,7 @@ def copy_cgm_quotation_fields(source_doc, target_doc) -> None:
 	"""Copy full CGM customs/import fields from Quotation to Sales Order."""
 	_copy_child_table(source_doc, target_doc, IMPORT_COST_TABLE, IMPORT_COST_ROW_FIELDS)
 	_copy_child_table(source_doc, target_doc, CUSTOMS_TAX_TABLE, CUSTOMS_TAX_ROW_FIELDS)
+	_copy_child_table(source_doc, target_doc, QUOTATION_ITEM_PRICING_TABLE, PRICING_ROW_FIELDS)
 	_copy_scalar_fields(source_doc, target_doc, CGM_QUOTATION_SO_SCALAR_FIELDS)
 
 	if target_doc.meta.has_field("project") and source_doc.get("custom_shipment"):
@@ -441,7 +416,11 @@ def make_sales_invoice(source_name: str, target_doc=None, args=None):
 # =============================================================================
 
 @frappe.whitelist()
-def get_customs_tax_type_info(tax_type: str) -> dict:
+def get_customs_tax_type_info(
+    tax_type: str,
+    quotation_uom: str | None = None,
+    company: str | None = None,
+) -> dict:
     """
     Return calculation metadata for a Customs Tax Type.
     Called from JS when a row's tax_type is selected.
@@ -449,27 +428,52 @@ def get_customs_tax_type_info(tax_type: str) -> dict:
     if not tax_type:
         return {}
 
-    calculation_type = frappe.db.get_value(
-        "Customs Tax Type", tax_type, "calculation_type"
-    ) or ""
+    config = get_tax_type_config(tax_type)
+    currency = resolve_company_currency(company=company)
     default_rate = _get_default_rate_from_settings(tax_type)
-
-    is_weight_based = tax_type in WEIGHT_TAX_TYPES or calculation_type == "Per Weight"
-    is_fixed        = calculation_type == "Fixed Amount" and not is_weight_based
-    is_stacking     = tax_type in STACKING_TAX_TYPES
-    is_excise       = tax_type in EXCISE_TAX_TYPES
+    allowed_modes = list(config.allowed_modes)
+    default_mode = config.default_mode
+    show_mode = len(allowed_modes) > 1
 
     return {
-        "calculation_type" : calculation_type,
-        "default_rate"     : default_rate,
-        "is_weight_based"  : is_weight_based,
-        "is_stacking"      : is_stacking,
-        "is_excise"        : is_excise,
-        "is_fixed"         : is_fixed,
-        "show_rate"        : is_weight_based or not is_fixed,
-        "show_fixed_amount": is_fixed,
-        "rate_label"       : "Rate per Ton (KES)" if is_weight_based else "Rate (%)",
+        "default_rate": default_rate,
+        "allowed_modes": allowed_modes,
+        "default_calculation_mode": default_mode,
+        "show_calculation_mode": show_mode,
+        "is_stacking": config.is_stacking,
+        "is_excise": config.is_excise,
+        "affects_import_duty": config.affects_import_duty,
+        "feeds_running_base": config.feeds_running_base,
+        "per_unit_skips_running_base": config.per_unit_skips_running_base,
+        "company_currency": currency,
+        "rate_labels": {
+            mode: rate_label_for_mode(mode, quotation_uom, currency) for mode in allowed_modes
+        },
+        "rate_label": rate_label_for_mode(default_mode, quotation_uom, currency),
     }
+
+
+@frappe.whitelist()
+def is_quotation_volume_uom(uom: str | None = None) -> bool:
+	"""Return whether the given UOM should use shipment volume for per-unit taxes."""
+	return is_volume_uom(uom)
+
+
+@frappe.whitelist()
+def get_uom_quantity_fields(uom: str | None = None) -> dict:
+	"""Return which quotation quantity field to show for the selected UOM."""
+	uom = (uom or "").strip()
+	if not uom:
+		return {"show_weight": False, "show_volume": False, "is_volume": False, "category": None}
+
+	category = get_uom_category(uom)
+	is_volume = category == "Volume"
+	return {
+		"show_weight": not is_volume,
+		"show_volume": is_volume,
+		"is_volume": is_volume,
+		"category": category,
+	}
 
 
 @frappe.whitelist()

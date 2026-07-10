@@ -26,7 +26,10 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
-app_include_js = "/assets/cgm_shipping/js/cgm_container_tracking.js"
+app_include_js = [
+	"/assets/cgm_shipping/js/cgm_status_field.js",
+	"/assets/cgm_shipping/js/cgm_container_tracking.js",
+]
 
 # include js, css files in header of web template
 # Customer portal: shared design-system CSS + browser-side timezone
@@ -51,11 +54,13 @@ web_include_js = [
 # include js in doctype views
 doctype_js = {
 	"Task": [
+		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
 		"public/js/task.js",
 	],
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Project": [
+		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
@@ -67,6 +72,7 @@ doctype_js = {
 		"public/js/crm_lead.js",
 	],
 	"Customer": "public/js/crm_customer.js",
+	"Item": "public/js/item_pricing_rule.js",
 	"Opportunity": [
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
@@ -74,6 +80,8 @@ doctype_js = {
 		"public/js/opportunity.js",
 	],
 	"Quotation": "public/js/quotation.js",
+	"Sales Order": "public/js/quotation.js",
+	"Sales Invoice": "public/js/sales_invoice.js",
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -132,7 +140,7 @@ jinja = {
 # ------------
 
 # before_install = "cgm_shipping.install.before_install"
-# after_install = "cgm_shipping.install.after_install"
+after_install = "cgm_shipping.install.after_install"
 after_migrate = ["cgm_shipping.install.after_migrate"]
 
 # Uninstallation
@@ -213,6 +221,11 @@ doc_events = {
 	"Payment Entry": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
 	},
+	"Sales Invoice": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice_workflow",
+		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
+	},
 	"Journal Entry": {
 		"after_insert": (
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
@@ -237,6 +250,9 @@ doc_events = {
 	},
 	"Supplier": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_supplier.sync_transporter_supplier_portal_users",
+	},
+	"Item": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
 	},
 	"Opportunity": {
 		"before_save": [
