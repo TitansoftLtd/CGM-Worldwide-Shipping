@@ -114,8 +114,8 @@ def copy_shipment_classification_from_source(target, source) -> None:
 		if target.meta.has_field("custom_mode_of_transport"):
 			target.custom_mode_of_transport = source.get("custom_mode_of_transport")
 
-	dest_container = get_container_type_field(target.meta)
-	src_container = get_container_type_field(source.meta)
+	dest_container = get_cargo_type_field(target.meta)
+	src_container = get_cargo_type_field(source.meta)
 	if dest_container and src_container:
 		value = source.get(src_container)
 		if value not in (None, ""):
@@ -176,42 +176,42 @@ def cgm_ref_prefix_from_master(shipment_type: str | None, mode: str | None = Non
 	return None
 
 
-def _container_type_meta():
-	if not frappe.db.exists("DocType", "Container Type"):
+def _cargo_type_meta():
+	if not frappe.db.exists("DocType", "Cargo Type"):
 		return None
-	return frappe.get_meta("Container Type")
+	return frappe.get_meta("Cargo Type")
 
 
-def _container_type_field_queryable(fieldname: str) -> bool:
-	meta = _container_type_meta()
+def _cargo_type_field_queryable(fieldname: str) -> bool:
+	meta = _cargo_type_meta()
 	if not meta or not meta.has_field(fieldname):
 		return False
-	return frappe.db.has_column("Container Type", fieldname)
+	return frappe.db.has_column("Cargo Type", fieldname)
 
 
-def get_container_type_record(container_type: str | None) -> dict | None:
-	"""Load Container Type by Link name or container_type label."""
-	ct = (container_type or "").strip()
-	if not ct or not frappe.db.exists("DocType", "Container Type"):
+def get_cargo_type_record(cargo_type: str | None) -> dict | None:
+	"""Load Cargo Type by Link name or cargo_type label."""
+	ct = (cargo_type or "").strip()
+	if not ct or not frappe.db.exists("DocType", "Cargo Type"):
 		return None
 
-	fields = ["name", "container_type"]
-	if _container_type_field_queryable("cgm_ref_prefix"):
+	fields = ["name", "cargo_type"]
+	if _cargo_type_field_queryable("cgm_ref_prefix"):
 		fields.append("cgm_ref_prefix")
 
-	if frappe.db.exists("Container Type", ct):
-		return frappe.db.get_value("Container Type", ct, fields, as_dict=True)
+	if frappe.db.exists("Cargo Type", ct):
+		return frappe.db.get_value("Cargo Type", ct, fields, as_dict=True)
 
 	return frappe.db.get_value(
-		"Container Type",
-		{"container_type": ct},
+		"Cargo Type",
+		{"cargo_type": ct},
 		fields,
 		as_dict=True,
 	)
 
 
-def cgm_ref_prefix_from_container_type(container_type: str | None) -> str | None:
-	row = get_container_type_record(container_type)
+def cgm_ref_prefix_from_cargo_type(cargo_type: str | None) -> str | None:
+	row = get_cargo_type_record(cargo_type)
 	if row and row.get("cgm_ref_prefix"):
 		return str(row.cgm_ref_prefix).strip().upper()
 	return None
@@ -333,22 +333,22 @@ def apply_shipment_type_profile_to_doc(doc, shipment_type: str | None) -> bool:
 	return changed or bool(doc.has_value_changed("custom_mode_of_transport"))
 
 
-def get_container_type_field(meta) -> str | None:
+def get_cargo_type_field(meta) -> str | None:
 	"""Return the container-type Link field on Opportunity, Project, or Lead."""
-	for fieldname in ("custom_container_type", "custom_container_type_"):
+	for fieldname in ("custom_cargo_type", "custom_cargo_type_"):
 		if meta.has_field(fieldname):
 			return fieldname
 	return None
 
 
-def get_opportunity_container_type_field(meta=None) -> str | None:
-	"""Backward-compatible alias for get_container_type_field on Opportunity."""
-	return get_container_type_field(meta or frappe.get_meta("Opportunity"))
+def get_opportunity_cargo_type_field(meta=None) -> str | None:
+	"""Backward-compatible alias for get_cargo_type_field on Opportunity."""
+	return get_cargo_type_field(meta or frappe.get_meta("Opportunity"))
 
 
-def sync_container_type_from_linked_bl(doc) -> None:
+def sync_cargo_type_from_linked_bl(doc) -> None:
 	"""Keep container type aligned with the linked Bill of Lading."""
-	container_field = get_container_type_field(doc.meta)
+	container_field = get_cargo_type_field(doc.meta)
 	if not container_field:
 		return
 
@@ -360,9 +360,9 @@ def sync_container_type_from_linked_bl(doc) -> None:
 	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
 		return
 
-	container_type = frappe.db.get_value("Bill of Lading", bl_name, "container_type")
-	if container_type and doc.get(container_field) != container_type:
-		doc.set(container_field, container_type)
+	cargo_type = frappe.db.get_value("Bill of Lading", bl_name, "cargo_type")
+	if cargo_type and doc.get(container_field) != cargo_type:
+		doc.set(container_field, cargo_type)
 
 
 def _bill_of_lading_link_field(doc) -> str | None:
@@ -380,10 +380,10 @@ def apply_bl_classification_to_doc(target_doc, bl_doc) -> bool:
 	changed = False
 	if apply_shipment_type_profile_to_doc(target_doc, bl_doc.get("shipment_type")):
 		changed = True
-	container_type = bl_doc.get("container_type")
-	container_field = get_container_type_field(target_doc.meta)
-	if container_type and container_field and target_doc.get(container_field) != container_type:
-		target_doc.set(container_field, container_type)
+	cargo_type = bl_doc.get("cargo_type")
+	container_field = get_cargo_type_field(target_doc.meta)
+	if cargo_type and container_field and target_doc.get(container_field) != cargo_type:
+		target_doc.set(container_field, cargo_type)
 		changed = True
 	return changed
 
@@ -486,7 +486,7 @@ def bl_classification_payload(bl_doc) -> dict:
 	return {
 		"shipment_type": link_name or shipment_type,
 		"default_mode_of_transport": (profile or {}).get("default_mode_of_transport"),
-		"container_type": bl_doc.get("container_type"),
+		"cargo_type": bl_doc.get("cargo_type"),
 	}
 
 
@@ -628,28 +628,28 @@ def get_container_fields() -> list[str]:
 	]
 
 
-def resolve_container_size_link(value: str | None) -> str | None:
-	"""Ensure Container Size master exists and return a valid link name."""
+def resolve_cargo_size_link(value: str | None) -> str | None:
+	"""Ensure Cargo Size master exists and return a valid link name."""
 	raw = (value or "").strip()
 	if not raw:
 		return None
-	if not frappe.db.exists("DocType", "Container Size"):
+	if not frappe.db.exists("DocType", "Cargo Size"):
 		return raw
 
-	if frappe.db.exists("Container Size", raw):
+	if frappe.db.exists("Cargo Size", raw):
 		return raw
 
-	by_field = frappe.db.get_value("Container Size", {"container_size": raw}, "name")
+	by_field = frappe.db.get_value("Cargo Size", {"cargo_size": raw}, "name")
 	if by_field:
 		return by_field
 
 	normalized = raw.upper().replace(" ", "")
-	for row in frappe.get_all("Container Size", fields=["name", "container_size"]):
-		label = (row.get("container_size") or row.get("name") or "").upper().replace(" ", "")
+	for row in frappe.get_all("Cargo Size", fields=["name", "cargo_size"]):
+		label = (row.get("cargo_size") or row.get("name") or "").upper().replace(" ", "")
 		if label == normalized:
 			return row.name
 
-	doc = frappe.get_doc({"doctype": "Container Size", "container_size": raw})
+	doc = frappe.get_doc({"doctype": "Cargo Size", "cargo_size": raw})
 	doc.insert(ignore_permissions=True)
 	return doc.name
 
@@ -657,20 +657,20 @@ def resolve_container_size_link(value: str | None) -> str | None:
 def normalize_container_row(row: dict) -> dict:
 	"""Return container child row values safe for Link validation."""
 	values = {field: row.get(field) or "" for field in get_container_fields()}
-	if values.get("type_of_container"):
-		values["type_of_container"] = resolve_container_size_link(values["type_of_container"]) or ""
+	if values.get("cargo_size"):
+		values["cargo_size"] = resolve_cargo_size_link(values["cargo_size"]) or ""
 	# Tracker fields are populated on Project, not copied from BL intake rows.
 	for fieldname in ("container_tracker", "status", "demurrage_days"):
 		values[fieldname] = ""
 	return values
 
-def get_container_type_order() -> list[str]:
-	"""Pull container types from Container Type DocType ordered by idx."""
+def get_cargo_type_order() -> list[str]:
+	"""Pull cargo types from Cargo Type DocType ordered by idx."""
 	return frappe.get_all(
-		"Container Type",
-		fields=["container_type"],
+		"Cargo Type",
+		fields=["cargo_type"],
 		order_by="idx asc",
-		pluck="container_type",
+		pluck="cargo_type",
 	)
 
 def get_bl_quantity_summary(bl_doc) -> str:
@@ -784,7 +784,7 @@ def sync_preshipment_containers_from_bl(doc, method=None) -> None:
 	bl_field = config.get("opportunity_bl_field")
 	container_field = config.get("opportunity_container_field")
 
-	sync_container_type_from_linked_bl(doc)
+	sync_cargo_type_from_linked_bl(doc)
 
 	bl_name = doc.get(bl_field) if bl_field else None
 	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
@@ -839,8 +839,8 @@ def get_bl_container_select_options(bill_of_lading: str | None = None) -> list[d
 		if not number:
 			continue
 		parts = [number]
-		if row.get("type_of_container"):
-			parts.append(str(row.type_of_container))
+		if row.get("cargo_size"):
+			parts.append(str(row.cargo_size))
 		if row.get("seal_no"):
 			parts.append(f"Seal {row.seal_no}")
 		options.append({"value": number, "label": " - ".join(parts)})

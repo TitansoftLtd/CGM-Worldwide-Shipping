@@ -7,29 +7,29 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "container_size",
+  "cargo_size",
   "quantity"
  ],
  "fields": [
-  {
-   "fieldname": "container_size",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Container Size",
-   "options": "Container Size"
-  },
   {
    "fieldname": "quantity",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Quantity"
+  },
+  {
+   "fieldname": "cargo_size",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Cargo Size",
+   "options": "Cargo Size"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-10 06:59:10.745208",
+ "modified": "2026-07-10 07:15:52.672530",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Requested Containers",

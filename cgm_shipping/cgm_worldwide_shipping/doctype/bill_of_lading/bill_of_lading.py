@@ -60,20 +60,20 @@ class BillofLading(Document):
 		if not self.container_information:
 			return ""
 
-		# Fetch order directly from Container Type DocType
+		# Fetch order directly from Cargo Size DocType
 		display_order = frappe.get_all(
-			"Container Type",
-			fields=["container_type"],
+			"Cargo Size",
+			fields=["cargo_size"],
 			order_by="idx asc",
-			pluck="container_type",
+			pluck="cargo_size",
 		)
 
 		counts: dict[str, int] = {}
 		for row in self.container_information:
-			container_type = (row.type_of_container or "").strip()
-			if not container_type:
+			cargo_size = (row.cargo_size or "").strip()
+			if not cargo_size:
 				continue
-			counts[container_type] = counts.get(container_type, 0) + 1
+			counts[cargo_size] = counts.get(cargo_size, 0) + 1
 
 		if not counts:
 			return ""

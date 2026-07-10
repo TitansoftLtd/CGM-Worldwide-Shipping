@@ -89,7 +89,7 @@ def sync_opportunity_from_submitted_booking(booking_doc, opportunity: str | None
 
 	if booking_doc.get("requested_container_quantity") and opp.meta.has_field("custom_quantity"):
 		qty = booking_doc.requested_container_quantity
-		ctype = booking_doc.get("requested_container_type") or ""
+		ctype = booking_doc.get("requested_cargo_type") or ""
 		summary = f"{qty} x {ctype}".strip() if ctype else str(qty)
 		if not opp.get("custom_quantity"):
 			opp.set("custom_quantity", summary)

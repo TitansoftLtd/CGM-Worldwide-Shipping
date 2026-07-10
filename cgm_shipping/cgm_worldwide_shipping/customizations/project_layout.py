@@ -528,10 +528,10 @@ def ensure_task_container_fields() -> None:
 	_create_cf(
 		"Task",
 		{
-			"fieldname": "custom_type_of_container",
-			"label": "Type of Container",
+			"fieldname": "custom_cargo_type",
+			"label": "Cargo Type",
 			"fieldtype": "Link",
-			"options": "Container Type",
+			"options": "Cargo Type",
 			"insert_after": "custom_container_number",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "

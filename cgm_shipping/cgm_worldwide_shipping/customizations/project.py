@@ -36,7 +36,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	get_bl_quantity_summary,
 	get_project_awb_field,
 	normalize_shipment_fields_on_doc,
-	sync_container_type_from_linked_bl,
+	sync_cargo_type_from_linked_bl,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_bl_config,
@@ -709,7 +709,7 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 		("custom_clearance_station", "custom_clearance_station"),
 		("custom_station_code", "custom_station_code"),
 		("custom_country_of_origin", "custom_country_of_origin"),
-		("custom_container_type", "custom_container_type"),
+		("custom_cargo_type", "custom_cargo_type"),
 		("custom_client_refrence_no", "custom_client_refrence_no"),
 		("custom_batch_no", "custom_batch_no"),
 	)
@@ -802,6 +802,6 @@ def create_project_from_opportunity(opportunity, project_name=None):
 			proj.set(dest_field, value)
 
 	apply_project_type_from_shipment_type(proj, opp.get("custom_shipment_type"))
-	sync_container_type_from_linked_bl(proj)
+	sync_cargo_type_from_linked_bl(proj)
 	sync_predocuments_from_source(proj, opp)
 	return insert_shipment_project(proj)

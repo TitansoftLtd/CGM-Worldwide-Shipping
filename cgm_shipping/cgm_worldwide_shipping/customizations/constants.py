@@ -137,7 +137,7 @@ TASK_SEQ_EMPTY_RETURN = CONTAINER_TASK_SEQ_DEFAULTS["custom_empty_return_task_se
 # Task fields used to identify a single container for container-specific lifecycle events.
 TASK_CONTAINER_TRACKER_FIELD = "custom_container_tracker"
 TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
-TASK_TYPE_OF_CONTAINER_FIELD = "custom_type_of_container"
+TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 
 # Task child table for per-container data entry (tasks 11, 16, 18–24).
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"

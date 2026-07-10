@@ -5,20 +5,12 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "container_type",
+  "cargo_type",
   "from_day",
   "to_day",
   "daily_rate"
  ],
  "fields": [
-  {
-   "fieldname": "container_type",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Container Type",
-   "options": "Container Type",
-   "reqd": 1
-  },
   {
    "fieldname": "from_day",
    "fieldtype": "Int",
@@ -39,12 +31,20 @@
    "in_list_view": 1,
    "label": "Daily Rate (USD)",
    "reqd": 1
+  },
+  {
+   "fieldname": "cargo_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Cargo Type",
+   "options": "Cargo Type",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-12 11:48:58.255011",
+ "modified": "2026-07-10 07:11:53.471598",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipping Line Demurrage Tier",

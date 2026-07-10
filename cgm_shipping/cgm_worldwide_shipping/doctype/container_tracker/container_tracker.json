@@ -151,12 +151,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "type_of_container",
-   "fieldtype": "Link",
-   "label": "Type of Container",
-   "options": "Container Type"
-  },
-  {
    "fieldname": "seal_no",
    "fieldtype": "Data",
    "label": "Seal Number"
@@ -713,11 +707,17 @@
    "fieldname": "get_out_mombasa",
    "fieldtype": "Date",
    "label": "Get Out Mombasa"
+  },
+  {
+   "fieldname": "type_of_container",
+   "fieldtype": "Link",
+   "label": "Type of Container",
+   "options": "Cargo Type"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-05 16:14:35.837824",
+ "modified": "2026-07-10 07:11:54.310475",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

@@ -19,7 +19,7 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 	"custom_consignee",
 	"custom_mode_of_transport",
 	"column_break0",
-	"custom_container_type_",
+	"custom_cargo_type_",
 	"custom_batch_no",
 	"custom_weight_nw",
 	"custom_gross_weight",

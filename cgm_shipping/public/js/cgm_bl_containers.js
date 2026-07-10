@@ -5,7 +5,7 @@ const BL_LINK_FIELD = "custom_bill_of_lading";
 const BL_CONTAINER_DOCTYPES = ["Lead", "Project", "Opportunity"];
 const BL_CONTAINER_SYNC_FIELDS = [
 	"container_number",
-	"type_of_container",
+	"cargo_size",
 	"no_container",
 	"seal_no",
 ];

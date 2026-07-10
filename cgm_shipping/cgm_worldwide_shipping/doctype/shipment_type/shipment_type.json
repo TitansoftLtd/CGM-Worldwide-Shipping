@@ -111,7 +111,7 @@
    "options": "Project Type"
   },
   {
-   "description": "Optional prefix for CGM tracking references on air/road shipments (e.g. AIR, ROD). Sea shipments can use Container Type CGM Ref Prefix instead.",
+   "description": "Optional prefix for CGM tracking references on air/road shipments (e.g. AIR, ROD). Sea shipments can use Cargo Type CGM Ref Prefix instead.",
    "fieldname": "cgm_ref_prefix",
    "fieldtype": "Data",
    "in_list_view": 1,

@@ -2,18 +2,18 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "allow_rename": 1,
- "autoname": "field:container_size",
+ "autoname": "field:cargo_size",
  "creation": "2026-06-16 19:12:29.792177",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "container_size"
+  "cargo_size"
  ],
  "fields": [
   {
-   "fieldname": "container_size",
+   "fieldname": "cargo_size",
    "fieldtype": "Data",
-   "label": "Container Size",
+   "label": "Cargo Size",
    "unique": 1
   }
  ],
@@ -23,7 +23,7 @@
  "modified": "2026-06-16 19:13:38.823808",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
- "name": "Container Size",
+ "name": "Cargo Size",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [

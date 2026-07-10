@@ -26,7 +26,7 @@
   "etd",
   "eta",
   "section_cargo",
-  "requested_container_type",
+  "requested_cargo_type",
   "table_esvv",
   "commodity",
   "section_links",
@@ -112,12 +112,6 @@
    "label": "Commodity / Description of Goods"
   },
   {
-   "fieldname": "requested_container_type",
-   "fieldtype": "Link",
-   "label": "Requested Container Type",
-   "options": "Container Type"
-  },
-  {
    "fieldname": "cargo_cut_off",
    "fieldtype": "Datetime",
    "label": "Cargo Cut-off"
@@ -171,14 +165,20 @@
   {
    "fieldname": "table_esvv",
    "fieldtype": "Table",
-   "label": "Requested Container Quantity",
+   "label": "Requested Cargo Quantity",
    "options": "Requested Containers"
+  },
+  {
+   "fieldname": "requested_cargo_type",
+   "fieldtype": "Link",
+   "label": "Requested Cargo Type",
+   "options": "Cargo Type"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-10 07:01:25.973289",
+ "modified": "2026-07-10 07:23:40.050047",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",

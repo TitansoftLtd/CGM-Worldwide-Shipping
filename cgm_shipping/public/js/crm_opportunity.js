@@ -255,12 +255,12 @@ function find_populate_containers_row(frm) {
 	return find_bl_clients_document_row(frm);
 }
 
-function get_opportunity_container_type_field(frm) {
-	if (frm.fields_dict.custom_container_type) {
-		return "custom_container_type";
+function get_opportunity_cargo_type_field(frm) {
+	if (frm.fields_dict.custom_cargo_type) {
+		return "custom_cargo_type";
 	}
-	if (frm.fields_dict.custom_container_type_) {
-		return "custom_container_type_";
+	if (frm.fields_dict.custom_cargo_type_) {
+		return "custom_cargo_type_";
 	}
 	return null;
 }
@@ -290,9 +290,9 @@ function apply_bl_classification_fields(frm, data) {
 	if (data.default_mode_of_transport) {
 		set_opportunity_bl_field(frm, "custom_mode_of_transport", data.default_mode_of_transport);
 	}
-	const container_type_field = get_opportunity_container_type_field(frm);
-	if (data.container_type && container_type_field) {
-		set_opportunity_bl_field(frm, container_type_field, data.container_type);
+	const cargo_type_field = get_opportunity_cargo_type_field(frm);
+	if (data.cargo_type && cargo_type_field) {
+		set_opportunity_bl_field(frm, cargo_type_field, data.cargo_type);
 	}
 
 	const tracking_fields = [
@@ -396,7 +396,7 @@ function on_clients_documents_removed(frm) {
 
 function sync_opportunity_transport_and_containers(frm) {
 	const bl_link_field = get_opportunity_bl_link_field(frm);
-	cgm_shipping.transport_reference.toggle_container_type(frm, {
+	cgm_shipping.transport_reference.toggle_cargo_type(frm, {
 		bill_of_lading: bl_link_field || "custom_bill_of_lading",
 	});
 }
@@ -595,7 +595,7 @@ function fetch_and_apply_bl_data(frm, row, cdt, cdn, opts = {}) {
 
 const BL_CONTAINER_COMPARE_FIELDS = [
 	"container_number",
-	"type_of_container",
+	"cargo_size",
 	"no_container",
 	"seal_no",
 ];

@@ -75,7 +75,7 @@ CONTAINER_FIELDS = [
 	"days_outstanding",
 	"status",
 	"current_location",
-	"type_of_container",
+	"cargo_type",
 ]
 
 

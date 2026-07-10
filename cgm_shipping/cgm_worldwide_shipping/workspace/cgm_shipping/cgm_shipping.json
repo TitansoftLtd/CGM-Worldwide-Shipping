@@ -141,9 +141,9 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Container Type",
+   "label": "Cargo Type",
    "link_count": 0,
-   "link_to": "Container Type",
+   "link_to": "Cargo Type",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"

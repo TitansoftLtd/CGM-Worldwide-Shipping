@@ -138,6 +138,7 @@ jinja = {
 
 # before_install = "cgm_shipping.install.before_install"
 # after_install = "cgm_shipping.install.after_install"
+before_migrate = ["cgm_shipping.install.before_migrate"]
 after_migrate = ["cgm_shipping.install.after_migrate"]
 
 # Uninstallation

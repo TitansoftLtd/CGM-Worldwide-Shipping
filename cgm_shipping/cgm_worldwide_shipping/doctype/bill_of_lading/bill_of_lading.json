@@ -10,7 +10,7 @@
   "client_refrence_no",
   "column_break_sqbc",
   "shipment_type",
-  "container_type",
+  "cargo_type",
   "attach_bill_of_lading",
   "column_break_chhk",
   "batch_no",
@@ -106,13 +106,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "container_type",
-   "fieldtype": "Link",
-   "label": "Container Type",
-   "options": "Container Type",
-   "reqd": 1
-  },
-  {
    "fieldname": "client_refrence_no",
    "fieldtype": "Data",
    "label": "Client Refrence No"
@@ -122,13 +115,20 @@
    "fieldtype": "Data",
    "label": "Batch No",
    "read_only": 1
+  },
+  {
+   "fieldname": "cargo_type",
+   "fieldtype": "Link",
+   "label": "Cargo Type",
+   "options": "Cargo Type",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-05 08:18:58.917809",
+ "modified": "2026-07-10 07:11:53.920871",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",

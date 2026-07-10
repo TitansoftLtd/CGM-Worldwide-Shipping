@@ -5,8 +5,18 @@ from __future__ import annotations
 import frappe
 
 
+def before_migrate() -> None:
+	"""Rename legacy container DocTypes before schema sync."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
+		ensure_cargo_doctype_renames_before_migrate,
+	)
+
+	ensure_cargo_doctype_renames_before_migrate()
+
+
 def after_migrate() -> None:
 	"""Re-apply idempotent schema installers after every bench migrate."""
+	ensure_cargo_terminology_renames()
 	reinstall_supplier_shipping_line_schema()
 	ensure_task_container_schema()
 	ensure_opportunity_intake_layout()
@@ -111,6 +121,15 @@ def ensure_task_container_schema() -> None:
 		ensure_opportunity_universal_fields()
 		ensure_transit_project_fields()
 		frappe.db.commit()
+
+
+def ensure_cargo_terminology_renames() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
+		ensure_cargo_field_renames_after_migrate,
+	)
+
+	ensure_cargo_field_renames_after_migrate()
+	frappe.db.commit()
 
 
 def reinstall_supplier_shipping_line_schema() -> None:

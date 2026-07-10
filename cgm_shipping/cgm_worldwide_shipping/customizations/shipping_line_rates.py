@@ -71,9 +71,9 @@ def _category_name(preferred: str) -> str:
 
 
 def resolve_container_category(
-	type_of_container: str | None, container_number: str | None = None
+	cargo_type: str | None, container_number: str | None = None
 ) -> str:
-	label = (type_of_container or "").upper()
+	label = (cargo_type or "").upper()
 	if container_number and "RF" in container_number.upper():
 		return _category_name("Reefer")
 	if "REEFER" in label or label.endswith("RF") or " RF" in label:
@@ -81,15 +81,15 @@ def resolve_container_category(
 	return _category_name("Standard")
 
 
-def resolve_container_type_key(type_of_container: str | None) -> str:
+def resolve_cargo_type_key(cargo_type: str | None) -> str:
 	valid_types = (
-		frappe.get_all("Container Type", pluck="container_type", order_by="name asc")
-		if frappe.db.exists("DocType", "Container Type")
+		frappe.get_all("Cargo Type", pluck="cargo_type", order_by="name asc")
+		if frappe.db.exists("DocType", "Cargo Type")
 		else []
 	)
-	if not type_of_container:
+	if not cargo_type:
 		return "All"
-	label = type_of_container.upper()
+	label = cargo_type.upper()
 	if "REEFER" in label or label.endswith("RF"):
 		for size in valid_types:
 			if size.upper() == "REEFER":
@@ -99,9 +99,9 @@ def resolve_container_type_key(type_of_container: str | None) -> str:
 		key = size.upper()
 		if key.replace("FT", "") in label.replace(" ", "") or key in label:
 			return size
-	if frappe.db.exists("Container Type", type_of_container):
+	if frappe.db.exists("Cargo Type", cargo_type):
 		name = (
-			frappe.db.get_value("Container Type", type_of_container, "container_type") or ""
+			frappe.db.get_value("Cargo Type", cargo_type, "cargo_type") or ""
 		).upper()
 		for size in sorted(valid_types, key=len, reverse=True):
 			key = size.upper()
@@ -224,31 +224,31 @@ def build_rate_source_label(
 
 
 def get_charge_tiers(
-	shipping_line: str, charge_type: str, container_type_key: str
+	shipping_line: str, charge_type: str, cargo_type_key: str
 ) -> list[dict[str, Any]]:
 	if not shipping_line:
 		return []
 	field = DEMURRAGE_TIERS_FIELD if charge_type == "demurrage" else DETENTION_TIERS_FIELD
 	rows = get_supplier_child_rows(shipping_line, field)
 	if not rows and charge_type == "demurrage":
-		return _legacy_flat_demurrage_tier(shipping_line, container_type_key)
+		return _legacy_flat_demurrage_tier(shipping_line, cargo_type_key)
 	if not rows and charge_type == "detention":
-		return _legacy_flat_detention_tier(shipping_line, container_type_key)
+		return _legacy_flat_detention_tier(shipping_line, cargo_type_key)
 	matched = [
 		_rule_row_dict(r)
 		for r in rows
-		if _rule_row_dict(r).get("container_type") in (container_type_key, "All")
+		if _rule_row_dict(r).get("cargo_type") in (cargo_type_key, "All")
 	]
 	if not matched:
 		matched = [
 			_rule_row_dict(r)
 			for r in rows
-			if _rule_row_dict(r).get("container_type") == "All"
+			if _rule_row_dict(r).get("cargo_type") == "All"
 		]
 	return sorted(matched, key=lambda r: int(r.get("from_day") or 1))
 
 
-def _legacy_flat_demurrage_tier(shipping_line: str, container_type_key: str) -> list[dict]:
+def _legacy_flat_demurrage_tier(shipping_line: str, cargo_type_key: str) -> list[dict]:
 	meta = frappe.get_meta("Supplier")
 	if not meta.has_field("custom_demurrage_daily_rate"):
 		return []
@@ -257,7 +257,7 @@ def _legacy_flat_demurrage_tier(shipping_line: str, container_type_key: str) -> 
 		return []
 	return [
 		{
-			"container_type": container_type_key,
+			"cargo_type": cargo_type_key,
 			"from_day": 1,
 			"to_day": 0,
 			"daily_rate": flt(rate),
@@ -265,7 +265,7 @@ def _legacy_flat_demurrage_tier(shipping_line: str, container_type_key: str) -> 
 	]
 
 
-def _legacy_flat_detention_tier(shipping_line: str, container_type_key: str) -> list[dict]:
+def _legacy_flat_detention_tier(shipping_line: str, cargo_type_key: str) -> list[dict]:
 	meta = frappe.get_meta("Supplier")
 	if not meta.has_field("custom_detention_daily_rate"):
 		return []
@@ -274,7 +274,7 @@ def _legacy_flat_detention_tier(shipping_line: str, container_type_key: str) -> 
 		return []
 	return [
 		{
-			"container_type": container_type_key,
+			"cargo_type": cargo_type_key,
 			"from_day": 1,
 			"to_day": 0,
 			"daily_rate": flt(rate),
