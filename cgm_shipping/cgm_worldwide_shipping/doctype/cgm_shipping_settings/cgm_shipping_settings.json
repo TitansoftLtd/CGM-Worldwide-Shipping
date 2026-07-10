@@ -178,9 +178,9 @@
    "label": "Roles"
   },
   {
+   "description": "Which roles are notified / treated as Finance, Operations, or Declaration. Required: an empty table means no one is in that group (those notifications and role checks will match nobody).",
    "fieldname": "section_roles",
-   "fieldtype": "Section Break",
-   "description": "Which roles are notified / treated as Finance, Operations, or Declaration. Required: an empty table means no one is in that group (those notifications and role checks will match nobody)."
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "custom_finance_roles",
@@ -189,11 +189,11 @@
    "options": "CGM Role Item"
   },
   {
+   "description": "Tasks in this Department show the Make Payment (Journal Entry) action.",
    "fieldname": "custom_finance_department",
    "fieldtype": "Link",
    "label": "Finance Department",
-   "options": "Department",
-   "description": "Tasks in this Department show the Make Payment (Journal Entry) action."
+   "options": "Department"
   },
   {
    "description": "Default Item for auto-filled permit and finance Purchase Invoice lines when no type-specific item is set.",
@@ -215,10 +215,10 @@
    "options": "CGM Role Item"
   },
   {
+   "description": "HTML + Jinja. Available variables: {{ message }}, {{ task_url }}, {{ project_url }}. Leave blank to use the built-in default.",
    "fieldname": "section_email_templates",
    "fieldtype": "Section Break",
-   "label": "Notification email templates",
-   "description": "HTML + Jinja. Available variables: {{ message }}, {{ task_url }}, {{ project_url }}. Leave blank to use the built-in default."
+   "label": "Notification email templates"
   },
   {
    "fieldname": "custom_default_email_template",
@@ -331,7 +331,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-04 12:00:00.000000",
+ "modified": "2026-06-26 01:46:52.585603",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

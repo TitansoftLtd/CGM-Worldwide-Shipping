@@ -93,6 +93,12 @@ function configure_project_document_grid(frm) {
 	cgm_configure_shipment_document_grid(grid);
 }
 
+function configure_project_status_fields(frm) {
+	cgm_configure_project_status_fields(frm);
+	cgm_configure_document_status_grids(frm);
+	cgm_configure_permit_status_grids(frm);
+}
+
 const WORKFLOW_COLOURS = {
 	Success: "green",
 	Warning: "orange",
@@ -296,6 +302,7 @@ function render_shipment_progress_chart(frm) {
 	if (!field || !frm.doc.name) {
 		return;
 	}
+	frappe.require("/assets/cgm_shipping/css/project_tracking.css");
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.project_layout.get_project_tracking_dashboard",
 		args: { project: frm.doc.name },
@@ -349,9 +356,27 @@ function render_shipment_progress_chart(frm) {
 					"Port arrival confirmed"
 				)} · ${frappe.datetime.str_to_user(d.port_arrival_confirmed_on)}${by}</div>`;
 			}
+			field.$wrapper
+				.closest('[data-fieldname="custom_shipment_progress_html"]')
+				.addClass("cgm-shipment-progress-field");
+			const progress_panel_style = [
+				"margin:0 0 1rem 0",
+				"padding:12px 14px",
+				"border-radius:8px",
+				"font-size:12px",
+				"background:radial-gradient(900px 200px at 100% 0%, rgba(227, 24, 55, 0.11), transparent 60%), linear-gradient(135deg, #fff8f9 0%, #ffebef 55%, #fff4f6 100%)",
+				"border:1px solid rgba(227, 24, 55, 0.1)",
+			].join(";");
+			const progress_title_style = [
+				"margin:0 0 10px 0",
+				"font-size:13px",
+				"font-weight:700",
+				"color:#b8122c",
+				"letter-spacing:-0.01em",
+			].join(";");
 			field.$wrapper.html(`
-				<div class="cgm-shipment-progress">
-					<h4>${__("Shipment clearance workflow")}</h4>
+				<div class="cgm-shipment-progress" style="${progress_panel_style}">
+					<h4 style="${progress_title_style}">${__("Shipment clearance workflow")}</h4>
 					<div class="cgm-progress-steps">${steps}</div>
 					${taskLine}
 					${inspectionLine}
@@ -695,6 +720,7 @@ frappe.ui.form.on("Project", {
 
 		render_shipment_progress_chart(frm);
 		configure_project_document_grid(frm);
+		configure_project_status_fields(frm);
 		configure_project_container_grid(frm);
 
 		setup_port_arrival_confirmation_button(frm);
@@ -761,5 +787,13 @@ frappe.ui.form.on("Project", {
 
 	custom_bill_of_lading(frm) {
 		toggle_project_transport_reference_fields(frm);
+	},
+
+	custom_shipment_status(frm) {
+		cgm_configure_project_status_fields(frm);
+	},
+
+	custom_inspection_notification_status(frm) {
+		cgm_configure_project_status_fields(frm);
 	},
 });

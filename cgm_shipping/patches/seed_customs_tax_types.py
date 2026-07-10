@@ -1,23 +1,16 @@
-"""Seed Customs Tax Type master records and default rates in CGM Shipping Settings."""
+"""Optional execute helper wrapping install seed of Customs Tax Types.
+
+Not registered in patches.txt. Fresh installs use default_seed_data instead.
+"""
 
 from __future__ import annotations
 
 import frappe
 
-CUSTOMS_TAX_TYPES: list[dict[str, str]] = [
-	{"tax_name": "Duty", "calculation_type": "Percentage"},
-	{"tax_name": "VAT", "calculation_type": "Percentage"},
-	{"tax_name": "IDF", "calculation_type": "Percentage"},
-	{"tax_name": "RDL", "calculation_type": "Percentage"},
-	{"tax_name": "Excise Duty", "calculation_type": "Percentage"},
-	{"tax_name": "MSS Levy", "calculation_type": "Per Weight"},
-]
-
-DEFAULT_CUSTOMS_TAX_RATES: dict[str, float] = {
-	"VAT": 16,
-	"IDF": 2.5,
-	"RDL": 2,
-}
+from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_type_seed_data import (
+	CUSTOMS_TAX_TYPES,
+	DEFAULT_CUSTOMS_TAX_RATES,
+)
 
 
 def execute():
@@ -32,17 +25,8 @@ def _ensure_customs_tax_types() -> None:
 	for row in CUSTOMS_TAX_TYPES:
 		name = row["tax_name"]
 		if frappe.db.exists("Customs Tax Type", name):
-			frappe.db.set_value(
-				"Customs Tax Type",
-				name,
-				"calculation_type",
-				row["calculation_type"],
-				update_modified=False,
-			)
 			continue
-
-		doc = frappe.get_doc({"doctype": "Customs Tax Type", **row})
-		doc.insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "Customs Tax Type", **row}).insert(ignore_permissions=True)
 
 	frappe.db.commit()
 
