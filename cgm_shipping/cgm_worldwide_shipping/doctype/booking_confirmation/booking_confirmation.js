@@ -1,8 +1,20 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 // For license information, please see license.txt
 
+const REQUESTED_CONTAINERS_FIELD = "requested_cargo_quantity";
+
+function toggle_cargo_fields(frm) {
+	const is_fcl = (frm.doc.requested_cargo_type || "").trim() === "FCL";
+
+	frm.toggle_display(REQUESTED_CONTAINERS_FIELD, is_fcl);
+	frm.toggle_display("number_of_packages", !is_fcl);
+	frm.toggle_display("package_type", !is_fcl);
+}
+
 frappe.ui.form.on("Booking Confirmation", {
 	onload(frm) {
+		toggle_cargo_fields(frm);
+
 		if (frm.is_new()) {
 			if (frappe.route_options?.linked_opportunity) {
 				remember_return_opportunity(frm, frappe.route_options.linked_opportunity);
@@ -17,6 +29,8 @@ frappe.ui.form.on("Booking Confirmation", {
 	},
 
 	refresh(frm) {
+		toggle_cargo_fields(frm);
+
 		if (frm.doc.docstatus === 1) {
 			add_create_opportunity_button(frm);
 		}
@@ -25,6 +39,10 @@ frappe.ui.form.on("Booking Confirmation", {
 
 	on_submit(frm) {
 		return_to_opportunity_after_submit(frm);
+	},
+
+	requested_cargo_type(frm) {
+		toggle_cargo_fields(frm);
 	},
 });
 
