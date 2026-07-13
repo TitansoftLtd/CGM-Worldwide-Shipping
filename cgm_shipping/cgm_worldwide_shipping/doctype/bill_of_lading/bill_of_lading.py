@@ -47,6 +47,13 @@ class BillofLading(Document):
 		if not self.get("batch_no"):
 			self.batch_no = str(batch_number)
 		summary = self._summarize_container_quantities()
+		if not summary:
+			pkgs = (self.get("number_of_packages") or "").strip()
+			ptype = (self.get("package_type") or "").strip()
+			if pkgs and ptype:
+				summary = f"{pkgs} {ptype}"
+			else:
+				summary = pkgs or ptype
 		if self.meta.has_field("container_summary"):
 			self.container_summary = summary
 		if self.meta.has_field("quantity"):
@@ -269,6 +276,13 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 			changed = True
 
 	quantity_summary = bl_doc._summarize_container_quantities()
+	if not quantity_summary:
+		pkgs = (bl_doc.get("number_of_packages") or "").strip()
+		ptype = (bl_doc.get("package_type") or "").strip()
+		if pkgs and ptype:
+			quantity_summary = f"{pkgs} {ptype}"
+		else:
+			quantity_summary = pkgs or ptype
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		if opp.get(quantity_field) != quantity_summary:
 			opp.set(quantity_field, quantity_summary)
@@ -320,11 +334,17 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 	attachment_field = get_bl_config().get("attachment_field")
 	linked_opportunity = sync_opportunity_from_submitted_bl(doc, opportunity)
 
+	quantity = doc._summarize_container_quantities() or (doc.get("quantity") or "")
+	if not quantity:
+		pkgs = (doc.get("number_of_packages") or "").strip()
+		ptype = (doc.get("package_type") or "").strip()
+		quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
+
 	return {
 		"bl_name": doc.name,
 		"attachment": doc.get(attachment_field) or "" if attachment_field else "",
 		"document_type": get_document_type_link_name("BL"),
-		"quantity": doc._summarize_container_quantities(),
+		"quantity": quantity,
 		"opportunity": linked_opportunity,
 		**bl_propagation_payload(doc),
 	}
