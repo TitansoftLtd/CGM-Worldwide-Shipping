@@ -41,6 +41,12 @@ BOOKING_TO_OPPORTUNITY_FIELDS = (
 	("client_ref", "custom_client_refrence_no"),
 	("gross_weight", "custom_gross_weight"),
 	("weight_uom", "custom_uom"),
+	("port_of_loading", "custom_port_of_loading"),
+	("port_of_discharge", "custom_port_of_discharge"),
+	("voyage_number", "custom_voyage_number"),
+	("cargo_cut_off", "custom_cargo_cut_off"),
+	("number_of_packages", "custom_number_of_packages"),
+	("package_type", "custom_package_type"),
 )
 
 
@@ -202,6 +208,10 @@ def booking_propagation_payload(booking_doc) -> dict:
 		"weight_uom": booking_doc.get("weight_uom"),
 		"quantity": summarize_booking_quantity(booking_doc),
 		"requested_cargo_quantity": requested_cargo_quantity_rows(booking_doc),
+		"port_of_loading": booking_doc.get("port_of_loading"),
+		"port_of_discharge": booking_doc.get("port_of_discharge"),
+		"voyage_number": booking_doc.get("voyage_number"),
+		"cargo_cut_off": booking_doc.get("cargo_cut_off"),
 		"number_of_packages": booking_doc.get("number_of_packages"),
 		"package_type": booking_doc.get("package_type"),
 	}

@@ -396,6 +396,8 @@ BL_TO_OPPORTUNITY_TRACKING_FIELDS = (
 BL_TO_OPPORTUNITY_DETAIL_FIELDS = (
 	("description", "custom_description_of_goods"),
 	("bl_number", "custom_draft_bl_number"),
+	("number_of_packages", "custom_number_of_packages"),
+	("package_type", "custom_package_type"),
 )
 
 OPPORTUNITY_TO_PROJECT_TRACKING_FIELDS = (

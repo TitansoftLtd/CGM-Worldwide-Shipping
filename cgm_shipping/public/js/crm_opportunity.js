@@ -312,6 +312,8 @@ function apply_bl_classification_fields(frm, data) {
 	const detail_fields = [
 		"custom_description_of_goods",
 		"custom_draft_bl_number",
+		"custom_number_of_packages",
+		"custom_package_type",
 	];
 	detail_fields.forEach((fieldname) => {
 		if (data[fieldname] != null && data[fieldname] !== "") {

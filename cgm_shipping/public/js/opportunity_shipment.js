@@ -36,12 +36,16 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 	"column_break_10",
 	"custom_vessel",
 	"custom_airline",
+	"custom_port_of_loading",
+	"custom_port_of_discharge",
+	"custom_voyage_number",
 	"custom_country_of_origin",
 	"custom_clearance_station",
 	"custom_station_code",
 	"custom_draft_bl_number",
 	"custom_eta",
 	"custom_etd",
+	"custom_cargo_cut_off",
 	"custom_shipping_line",
 	"custom_delivery_destination",
 	"custom_handling_agent",
@@ -53,6 +57,8 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 	"custom_booking_confirmation",
 	"custom_column_break_bbq21",
 	"custom_quantity",
+	"custom_number_of_packages",
+	"custom_package_type",
 	"custom_section_break_idqn5",
 	"custom_container_information",
 	"custom_section_break_jyvyi",
@@ -623,6 +629,12 @@ cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (
 	set_if("custom_gross_weight", pending.gross_weight);
 	set_if("custom_uom", pending.weight_uom);
 	set_if("custom_quantity", pending.quantity);
+	set_if("custom_port_of_loading", pending.port_of_loading);
+	set_if("custom_port_of_discharge", pending.port_of_discharge);
+	set_if("custom_voyage_number", pending.voyage_number);
+	set_if("custom_cargo_cut_off", pending.cargo_cut_off);
+	set_if("custom_number_of_packages", pending.number_of_packages);
+	set_if("custom_package_type", pending.package_type);
 
 	const cargo_type =
 		pending.requested_cargo_type || pending.cargo_type || null;

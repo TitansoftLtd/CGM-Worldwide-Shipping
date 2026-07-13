@@ -1529,6 +1529,61 @@ def ensure_opportunity_universal_fields() -> None:
 			"insert_after": "custom_section_transport_document",
 		},
 	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_port_of_loading",
+			"label": "Port of Loading",
+			"fieldtype": "Data",
+			"insert_after": "custom_vessel",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_port_of_discharge",
+			"label": "Port of Discharge",
+			"fieldtype": "Data",
+			"insert_after": "custom_port_of_loading",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_voyage_number",
+			"label": "Voyage Number",
+			"fieldtype": "Data",
+			"insert_after": "custom_port_of_discharge",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_cargo_cut_off",
+			"label": "Cargo Cut-off",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_etd",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_number_of_packages",
+			"label": "Number of Packages",
+			"fieldtype": "Data",
+			"insert_after": "custom_quantity",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_package_type",
+			"label": "Package Type",
+			"fieldtype": "Link",
+			"options": "Package Type",
+			"insert_after": "custom_number_of_packages",
+		},
+	)
 
 	for dt, fields in (
 		(

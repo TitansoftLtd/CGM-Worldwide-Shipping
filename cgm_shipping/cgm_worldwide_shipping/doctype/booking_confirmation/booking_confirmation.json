@@ -20,6 +20,7 @@
   "port_of_loading",
   "port_of_discharge",
   "weight_uom",
+  "net_weight",
   "gross_weight",
   "column_break_bc_2",
   "cargo_cut_off",
@@ -186,12 +187,17 @@
    "fieldtype": "Table",
    "label": "Requested Cargo Quantity",
    "options": "Requested Containers"
+  },
+  {
+   "fieldname": "net_weight",
+   "fieldtype": "Data",
+   "label": "Net Weight"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-10 10:19:46.770205",
+ "modified": "2026-07-14 02:25:37.741552",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",
