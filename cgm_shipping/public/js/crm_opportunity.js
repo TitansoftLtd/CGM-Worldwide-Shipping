@@ -98,18 +98,22 @@ function run_opportunity_form_syncs(frm, opts = {}) {
 	configure_opportunity_clients_documents_grid(frm);
 	setup_opportunity_bill_of_lading_create(frm);
 	cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
-	if (opts.apply_pending_bl) {
-		apply_pending_bl_from_submit(frm);
-	}
-	cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit(frm);
-	cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit(frm);
-	sync_bl_from_clients_documents(frm, { silent: true });
-	const bl_link_field = get_opportunity_bl_link_field(frm);
-	if (frm.doc[bl_link_field]) {
-		sync_bl_propagation_from_link(frm, { silent: true });
-		sync_opportunity_transport_and_containers(frm);
-		if (cgm_shipping?.bl_containers?.schedule_sync) {
-			cgm_shipping.bl_containers.schedule_sync(frm, { silent: true });
+
+	// Pending transport-doc redirects only apply to the saved Opportunity they came from.
+	if (!frm.is_new()) {
+		if (opts.apply_pending_bl) {
+			apply_pending_bl_from_submit(frm);
+		}
+		cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit(frm);
+		cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit(frm);
+		sync_bl_from_clients_documents(frm, { silent: true });
+		const bl_link_field = get_opportunity_bl_link_field(frm);
+		if (frm.doc[bl_link_field]) {
+			sync_bl_propagation_from_link(frm, { silent: true });
+			sync_opportunity_transport_and_containers(frm);
+			if (cgm_shipping?.bl_containers?.schedule_sync) {
+				cgm_shipping.bl_containers.schedule_sync(frm, { silent: true });
+			}
 		}
 	}
 }
@@ -455,7 +459,7 @@ function setup_opportunity_bill_of_lading_create(frm) {
 // ─── Pending BL from submit ───────────────────────────────────────────────────
 
 function apply_pending_bl_from_submit(frm) {
-	if (!frm.doc.name) {
+	if (!frm.doc.name || frm.is_new()) {
 		return;
 	}
 

@@ -693,10 +693,19 @@ def get_intake_wizard_context(
 				updates["custom_uses_container_tracking"] = doc.custom_uses_container_tracking
 			frappe.db.set_value("Opportunity", opportunity, updates, update_modified=False)
 	elif shipment_type:
+		# Unsaved / new form: only expose shipment-type flags for preview,
+		# never Start Shipment blockers or documents-stage messaging.
 		flags = get_shipment_type_flags(shipment_type)
-		readiness.update(flags)
-		if stage == STAGE_INTAKE and shipment_type:
-			readiness["blockers"] = []
+		readiness.update(
+			{
+				"transport_documents": flags.get("transport_documents") or [],
+				"primary_transport_document": flags.get("primary_transport_document"),
+				"uses_container_tracking": flags.get("uses_container_tracking"),
+				"default_mode_of_transport": flags.get("default_mode_of_transport"),
+				"blockers": [],
+			}
+		)
+		stage = STAGE_INTAKE
 
 	return {
 		"stage": stage,

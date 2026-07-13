@@ -1,11 +1,21 @@
 frappe.provide("cgm_shipping.opportunity_shipment");
 
 const CGM_RETURN_OPPORTUNITY_KEY = "cgm_return_opportunity";
+const CGM_PENDING_BL_LINK_KEY = "cgm_pending_bl_link";
 const CGM_PENDING_AWB_LINK_KEY = "cgm_pending_awb_link";
 const CGM_PENDING_BOOKING_LINK_KEY = "cgm_pending_booking_link";
 
 const STAGE_INTAKE = "intake";
 const STAGE_AWAITING_PRIMARY = "awaiting_primary";
+const STAGE_DOCUMENTS = "documents";
+const STAGE_AUTHORIZATION = "authorization";
+
+const TRANSPORT_DASHBOARD_STAGES = [
+	STAGE_AWAITING_PRIMARY,
+	STAGE_DOCUMENTS,
+	STAGE_AUTHORIZATION,
+];
+const READINESS_STAGES = [STAGE_DOCUMENTS, STAGE_AUTHORIZATION];
 
 const INTAKE_ALWAYS_VISIBLE_FIELDS = [
 	"company",
@@ -50,6 +60,7 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 ];
 
 cgm_shipping.opportunity_shipment.init_intake_wizard = function (frm) {
+	cgm_shipping.opportunity_shipment._reset_new_opportunity_session(frm);
 	cgm_shipping.opportunity_shipment._prepare_intake_defaults(frm);
 	cgm_shipping.opportunity_shipment._configure_intake_form(frm);
 	cgm_shipping.opportunity_shipment._ensure_intake_fields_visible(frm);
@@ -57,12 +68,107 @@ cgm_shipping.opportunity_shipment.init_intake_wizard = function (frm) {
 	cgm_shipping.opportunity_shipment.setup_start_shipment_button(frm);
 };
 
+/**
+ * New Opportunity = clean intake session.
+ * Drop leftover localStorage and stage-gated HTML from a previous BL/AWB/Booking flow.
+ */
+cgm_shipping.opportunity_shipment._reset_new_opportunity_session = function (frm) {
+	if (!frm.is_new()) {
+		return;
+	}
+
+	localStorage.removeItem(CGM_RETURN_OPPORTUNITY_KEY);
+	localStorage.removeItem(CGM_PENDING_BL_LINK_KEY);
+	localStorage.removeItem(CGM_PENDING_AWB_LINK_KEY);
+	localStorage.removeItem(CGM_PENDING_BOOKING_LINK_KEY);
+
+	if (frm.meta.has_field("custom_intake_stage")) {
+		frm.doc.custom_intake_stage = STAGE_INTAKE;
+	}
+	if (frm.meta.has_field("custom_primary_doc_linked")) {
+		frm.doc.custom_primary_doc_linked = 0;
+	}
+	if (frm.meta.has_field("custom_uses_container_tracking")) {
+		frm.doc.custom_uses_container_tracking = 0;
+	}
+
+	// Paint Step 1 immediately so prior Opportunity HTML cannot flash.
+	if (frm.fields_dict.custom_shipment_intake_wizard_html) {
+		frm.get_field("custom_shipment_intake_wizard_html").html(
+			cgm_shipping.opportunity_shipment._local_intake_wizard_html(STAGE_INTAKE)
+		);
+	}
+	cgm_shipping.opportunity_shipment._clear_stage_gated_html(frm);
+};
+
+cgm_shipping.opportunity_shipment._local_intake_wizard_html = function (stage) {
+	const steps = [
+		[STAGE_INTAKE, __("1. Shipment Intake"), __("Customer & shipment type")],
+		[STAGE_AWAITING_PRIMARY, __("2. Transport Documents"), __("Add documents as they arrive")],
+		[STAGE_DOCUMENTS, __("3. Documents"), __("Transport info & verification")],
+		[STAGE_AUTHORIZATION, __("4. Start Shipment"), __("Approve & create project")],
+	];
+	const completed = new Set();
+	if (stage !== STAGE_INTAKE) {
+		completed.add(STAGE_INTAKE);
+	}
+	if (stage === STAGE_DOCUMENTS || stage === STAGE_AUTHORIZATION) {
+		completed.add(STAGE_AWAITING_PRIMARY);
+	}
+	if (stage === STAGE_AUTHORIZATION) {
+		completed.add(STAGE_DOCUMENTS);
+	}
+
+	const parts = ['<div class="cgm-shipment-intake-wizard">'];
+	steps.forEach(([key, title, subtitle]) => {
+		let cls = "cgm-wizard-step";
+		if (key === stage) {
+			cls += " is-active";
+		} else if (completed.has(key)) {
+			cls += " is-done";
+		}
+		parts.push(
+			`<div class="${cls}"><div class="cgm-wizard-step-title">${title}</div>` +
+				`<div class="cgm-wizard-step-sub">${subtitle}</div></div>`
+		);
+	});
+	parts.push("</div>");
+
+	let message = "";
+	if (stage === STAGE_INTAKE) {
+		message = __("Select the customer and shipment type, then save to continue.");
+	} else if (stage === STAGE_AWAITING_PRIMARY) {
+		message = __(
+			"Use <b>Transport Documents</b> below to add Bill of Lading, Booking Confirmation, or other transport documents as they become available."
+		);
+	}
+	if (message) {
+		parts.push(`<div class="cgm-shipment-intake-message">${message}</div>`);
+	}
+	return parts.join("");
+};
+
+cgm_shipping.opportunity_shipment._clear_stage_gated_html = function (frm) {
+	if (frm.fields_dict.custom_transport_documents_html) {
+		frm.get_field("custom_transport_documents_html").$wrapper.empty();
+		frm.toggle_display("custom_transport_documents_html", false);
+	}
+	if (frm.fields_dict.custom_intake_readiness_html) {
+		frm.get_field("custom_intake_readiness_html").html("");
+		frm.toggle_display("custom_intake_readiness_html", false);
+	}
+};
+
+cgm_shipping.opportunity_shipment._current_stage = function (frm) {
+	return (frm.doc.custom_intake_stage || STAGE_INTAKE).trim() || STAGE_INTAKE;
+};
+
 cgm_shipping.opportunity_shipment._prepare_intake_defaults = function (frm) {
 	if (!frm.doc.opportunity_from) {
 		frm.set_value("opportunity_from", "Customer");
 	}
-	if (frm.is_new() && frm.meta.has_field("custom_intake_stage") && !frm.doc.custom_intake_stage) {
-		frm.set_value("custom_intake_stage", STAGE_INTAKE);
+	if (frm.is_new() && frm.meta.has_field("custom_intake_stage")) {
+		frm.doc.custom_intake_stage = STAGE_INTAKE;
 	}
 	if (frm.is_new() && !frm.doc.transaction_date) {
 		frm.set_value("transaction_date", frappe.datetime.get_today());
@@ -122,6 +228,9 @@ cgm_shipping.opportunity_shipment._ensure_intake_fields_visible = function (frm)
 cgm_shipping.opportunity_shipment.refresh_wizard_ui = function (frm) {
 	const opportunity = frm.is_new() ? null : frm.doc.name;
 	const shipment_type = frm.doc.custom_shipment_type || null;
+	const request_token = (frm._cgm_wizard_request_token =
+		(frm._cgm_wizard_request_token || 0) + 1);
+
 	return frappe
 		.call({
 			method:
@@ -129,19 +238,41 @@ cgm_shipping.opportunity_shipment.refresh_wizard_ui = function (frm) {
 			args: { opportunity, shipment_type },
 		})
 		.then((r) => {
+			// Ignore stale responses after navigating away / reopening New.
+			if (request_token !== frm._cgm_wizard_request_token || cur_frm !== frm) {
+				return r.message || {};
+			}
+
 			const ctx = r.message || {};
 			frm._cgm_intake_context = ctx;
+
+			if (frm.is_new()) {
+				frm.doc.custom_intake_stage = STAGE_INTAKE;
+				ctx.stage = STAGE_INTAKE;
+				ctx.html = cgm_shipping.opportunity_shipment._local_intake_wizard_html(STAGE_INTAKE);
+			}
+
 			if (frm.fields_dict.custom_shipment_intake_wizard_html) {
 				frm.get_field("custom_shipment_intake_wizard_html").html(ctx.html || "");
 			}
+
+			const stage = cgm_shipping.opportunity_shipment._current_stage(frm);
 			if (frm.fields_dict.custom_intake_readiness_html) {
-				frm.get_field("custom_intake_readiness_html").html(
-					cgm_shipping.opportunity_shipment._build_readiness_html(ctx.readiness || {})
-				);
+				if (READINESS_STAGES.includes(stage)) {
+					frm.toggle_display("custom_intake_readiness_html", true);
+					frm.get_field("custom_intake_readiness_html").html(
+						cgm_shipping.opportunity_shipment._build_readiness_html(ctx.readiness || {})
+					);
+				} else {
+					frm.get_field("custom_intake_readiness_html").html("");
+					frm.toggle_display("custom_intake_readiness_html", false);
+				}
 			}
+
 			if (ctx.stage && frm.doc.custom_intake_stage !== ctx.stage && !frm.is_new()) {
 				frm.set_value("custom_intake_stage", ctx.stage);
 			}
+
 			const flags = ctx.readiness || {};
 			frm._cgm_shipment_type_flags = flags;
 			cgm_shipping.opportunity_shipment._ensure_intake_fields_visible(frm);
@@ -197,11 +328,13 @@ cgm_shipping.opportunity_shipment._build_readiness_html = function (readiness) {
 
 cgm_shipping.opportunity_shipment._apply_post_bl_layout_visibility = function (frm, flags) {
 	const readiness = flags || frm._cgm_intake_context?.readiness || {};
+	const stage = cgm_shipping.opportunity_shipment._current_stage(frm);
 	const show =
-		Boolean(readiness.transport_docs_linked) ||
-		Boolean(readiness.primary_linked) ||
-		frm.doc.custom_primary_doc_linked ||
-		["documents", "authorization"].includes(frm.doc.custom_intake_stage);
+		!frm.is_new() &&
+		(Boolean(readiness.transport_docs_linked) ||
+			Boolean(readiness.primary_linked) ||
+			frm.doc.custom_primary_doc_linked ||
+			[STAGE_DOCUMENTS, STAGE_AUTHORIZATION].includes(stage));
 
 	if (!show) {
 		return;
@@ -234,8 +367,12 @@ cgm_shipping.opportunity_shipment.render_transport_documents_dashboard = functio
 		return;
 	}
 
+	const stage = cgm_shipping.opportunity_shipment._current_stage(frm);
 	const docs = (flags || frm._cgm_intake_context?.readiness || {}).transport_documents || [];
-	if (frm.is_new() || !docs.length) {
+	const show_dashboard =
+		!frm.is_new() && TRANSPORT_DASHBOARD_STAGES.includes(stage) && docs.length > 0;
+
+	if (!show_dashboard) {
 		field.$wrapper.empty();
 		frm.toggle_display("custom_transport_documents_html", false);
 		return;
@@ -401,7 +538,7 @@ cgm_shipping.opportunity_shipment.setup_booking_create_route = function (frm) {
 };
 
 cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit = function (frm) {
-	if (!frm.doc.name) {
+	if (!frm.doc.name || frm.is_new()) {
 		return;
 	}
 	let pending;
@@ -413,12 +550,35 @@ cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit = function (frm)
 	if (!pending || pending.opportunity !== frm.doc.name) {
 		return;
 	}
-	if (pending.awb_name && frm.doc.custom_air_waybill !== pending.awb_name) {
-		frm.set_value("custom_air_waybill", pending.awb_name);
-	}
+
+	const set_if = (fieldname, value) => {
+		if (value == null || value === "" || !frm.fields_dict[fieldname]) {
+			return;
+		}
+		if (frm.doc[fieldname] === value) {
+			return;
+		}
+		frm.set_value(fieldname, value);
+	};
+
+	set_if("custom_air_waybill", pending.awb_name);
+	set_if("custom_shipment_type", pending.shipment_type);
+	set_if(
+		"custom_mode_of_transport",
+		pending.default_mode_of_transport || (pending.shipment_type ? null : "Air")
+	);
+	set_if(
+		"custom_client_refrence_no",
+		pending.custom_client_refrence_no || pending.client_ref
+	);
+	set_if(
+		"custom_description_of_goods",
+		pending.custom_description_of_goods || pending.description
+	);
+
 	localStorage.removeItem(CGM_PENDING_AWB_LINK_KEY);
 	frappe.show_alert({
-		message: __("Air Waybill {0} linked — continue completing this Opportunity.", [
+		message: __("Air Waybill {0} linked — fields synced; continue completing this Opportunity.", [
 			pending.awb_name,
 		]),
 		indicator: "green",
@@ -426,7 +586,7 @@ cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit = function (frm)
 };
 
 cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (frm) {
-	if (!frm.doc.name) {
+	if (!frm.doc.name || frm.is_new()) {
 		return;
 	}
 	let pending;
@@ -438,21 +598,59 @@ cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (
 	if (!pending || pending.opportunity !== frm.doc.name) {
 		return;
 	}
-	if (
-		pending.booking_name &&
-		frm.doc.custom_booking_confirmation !== pending.booking_name &&
-		frm.fields_dict.custom_booking_confirmation
-	) {
-		frm.set_value("custom_booking_confirmation", pending.booking_name);
+
+	const set_if = (fieldname, value) => {
+		if (value == null || value === "" || !frm.fields_dict[fieldname]) {
+			return;
+		}
+		if (String(frm.doc[fieldname] ?? "") === String(value ?? "")) {
+			return;
+		}
+		frm.set_value(fieldname, value);
+	};
+
+	set_if("custom_booking_confirmation", pending.booking_name);
+	set_if("custom_booking_ref", pending.booking_number);
+	set_if("custom_shipping_order_ref", pending.booking_number);
+	set_if("custom_shipment_type", pending.shipment_type);
+	set_if("custom_mode_of_transport", pending.default_mode_of_transport);
+	set_if("custom_shipping_line", pending.shipping_line);
+	set_if("custom_vessel", pending.vessel);
+	set_if("custom_etd", pending.etd);
+	set_if("custom_eta", pending.eta);
+	set_if("custom_client_refrence_no", pending.client_ref);
+	set_if("custom_description_of_goods", pending.commodity);
+	set_if("custom_gross_weight", pending.gross_weight);
+	set_if("custom_uom", pending.weight_uom);
+	set_if("custom_quantity", pending.quantity);
+
+	const cargo_type =
+		pending.requested_cargo_type || pending.cargo_type || null;
+	if (cargo_type) {
+		if (frm.fields_dict.custom_cargo_type) {
+			set_if("custom_cargo_type", cargo_type);
+		} else if (frm.fields_dict.custom_cargo_type_) {
+			set_if("custom_cargo_type_", cargo_type);
+		}
 	}
-	if (pending.booking_number && frm.fields_dict.custom_booking_ref) {
-		frm.set_value("custom_booking_ref", pending.booking_number);
+
+	const table_field = "custom_requested_cargo_quantity";
+	if (frm.fields_dict[table_field] && Array.isArray(pending.requested_cargo_quantity)) {
+		frm.clear_table(table_field);
+		(pending.requested_cargo_quantity || []).forEach((row) => {
+			const child = frm.add_child(table_field);
+			child.cargo_size = row.cargo_size || "";
+			child.quantity = row.quantity || "";
+		});
+		frm.refresh_field(table_field);
 	}
+
 	localStorage.removeItem(CGM_PENDING_BOOKING_LINK_KEY);
 	frappe.show_alert({
-		message: __("Booking Confirmation {0} linked — continue verifying documents.", [
-			pending.booking_name,
-		]),
+		message: __(
+			"Booking Confirmation {0} linked — fields synced; continue verifying documents.",
+			[pending.booking_name]
+		),
 		indicator: "green",
 	});
 };
