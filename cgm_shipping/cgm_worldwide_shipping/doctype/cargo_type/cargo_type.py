@@ -5,8 +5,8 @@ import frappe
 from frappe.model.document import Document
 
 
-class ContainerType(Document):
+class CargoType(Document):
 	def autoname(self):
-		if not self.container_type:
-			frappe.throw(frappe._("Container Type is required"))
-		self.name = self.container_type.strip()
+		if not self.cargo_type:
+			frappe.throw(frappe._("Cargo Type is required"))
+		self.name = self.cargo_type.strip()

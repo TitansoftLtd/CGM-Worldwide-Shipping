@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class ContainerSize(Document):
+class ShipmentRoute(Document):
 	pass

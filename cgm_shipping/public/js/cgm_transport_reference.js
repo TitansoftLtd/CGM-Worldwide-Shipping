@@ -98,8 +98,8 @@ cgm_shipping.transport_reference.shipment_type_names_for_category = function (
 /**
  * Show container type when the Shipment Type master uses unit tracking and a B/L is linked.
  */
-cgm_shipping.transport_reference.toggle_container_type = function (frm, options = {}) {
-	const field = options.container_type || "custom_container_type";
+cgm_shipping.transport_reference.toggle_cargo_type = function (frm, options = {}) {
+	const field = options.cargo_type || "custom_cargo_type";
 	if (!frm.fields_dict[field]) {
 		return Promise.resolve();
 	}

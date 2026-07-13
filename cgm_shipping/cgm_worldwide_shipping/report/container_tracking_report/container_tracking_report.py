@@ -20,14 +20,14 @@ EXPANDED_COLUMNS = [
 	{"fieldname": "kpa_days", "label": _("KPA Days"), "fieldtype": "Int", "width": 80},
 	{"fieldname": "days_outstanding", "label": _("Days Outstanding"), "fieldtype": "Int", "width": 110},
 	{"fieldname": "seal_no", "label": _("Seal Number"), "fieldtype": "Data", "width": 90},
-	{"fieldname": "type_of_container", "label": _("Type of Container"), "fieldtype": "Data", "width": 100},
+	{"fieldname": "cargo_type", "label": _("Cargo Type"), "fieldtype": "Data", "width": 100},
 ]
 
 CONTAINER_FIELDS = [
 	"name",
 	"project",
 	"container_number",
-	"type_of_container",
+	"cargo_type",
 	"bl_number",
 	"shipping_line",
 	"transporter",

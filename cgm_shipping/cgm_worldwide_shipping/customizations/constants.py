@@ -2,6 +2,19 @@
 
 # Sea clearance task flow discriminator on Task.
 SEA_TASK_FLOW_KEY = "SEA_IMPORT_E2E"
+SEA_TRANSIT_IMPORT_TASK_FLOW_KEY = "SEA_TRANSIT_IMPORT_E2E"
+SEA_TRANSIT_EXPORT_TASK_FLOW_KEY = "SEA_TRANSIT_EXPORT_E2E"
+ROAD_TRANSIT_OUTBOUND_TASK_FLOW_KEY = "ROAD_TRANSIT_OUTBOUND_E2E"
+ROAD_TRANSIT_INBOUND_TASK_FLOW_KEY = "ROAD_TRANSIT_INBOUND_E2E"
+
+TRANSIT_TASK_FLOW_KEYS = frozenset(
+	{
+		SEA_TRANSIT_IMPORT_TASK_FLOW_KEY,
+		SEA_TRANSIT_EXPORT_TASK_FLOW_KEY,
+		ROAD_TRANSIT_OUTBOUND_TASK_FLOW_KEY,
+		ROAD_TRANSIT_INBOUND_TASK_FLOW_KEY,
+	}
+)
 
 # Project / Opportunity / Task document child-table fieldnames.
 SHIPMENT_DOCUMENTS_FIELD = "custom_shipment_documents"
@@ -55,8 +68,35 @@ CUSTOMER_ATTACH_TO_DOCUMENT_CODE = {
 	"custom_kra_pin_attachment": "KRA_PIN",
 }
 
+# Transport documents that can attach to an Opportunity shipment intake.
+# Label keys match Shipment Type.transport_documents Select options.
+TRANSPORT_DOCUMENT_REGISTRY: dict[str, dict[str, str | None]] = {
+	"Bill of Lading": {
+		"doctype": "Bill of Lading",
+		"opp_field": "custom_bill_of_lading",
+	},
+	"Air Waybill": {
+		"doctype": "Air Waybill",
+		"opp_field": "custom_air_waybill",
+	},
+	"Booking Confirmation": {
+		"doctype": "Booking Confirmation",
+		"opp_field": "custom_booking_confirmation",
+	},
+	"Release Order": {
+		"doctype": "Release Order",
+		"opp_field": None,
+	},
+}
+
+OPPORTUNITY_TRANSPORT_BACK_LINK_FIELD = "linked_opportunity"
+
 # Doctypes with soft back-link to Opportunity via linked_opportunity.
-BACK_LINKED_DOCTYPES = ("Air Waybill", "Bill of Lading")
+BACK_LINKED_DOCTYPES = tuple(
+	cfg["doctype"]
+	for cfg in TRANSPORT_DOCUMENT_REGISTRY.values()
+	if cfg.get("opp_field")
+)
 
 # Map template labels or old department names → ERPNext department_name stem.
 DEPARTMENT_NAME_ALIASES = {
@@ -105,7 +145,7 @@ TASK_SEQ_EMPTY_RETURN = CONTAINER_TASK_SEQ_DEFAULTS["custom_empty_return_task_se
 # Task fields used to identify a single container for container-specific lifecycle events.
 TASK_CONTAINER_TRACKER_FIELD = "custom_container_tracker"
 TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
-TASK_TYPE_OF_CONTAINER_FIELD = "custom_type_of_container"
+TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 
 # Task child table for per-container data entry (tasks 11, 16, 18–24).
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"

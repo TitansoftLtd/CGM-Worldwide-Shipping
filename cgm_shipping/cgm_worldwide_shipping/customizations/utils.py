@@ -119,3 +119,79 @@ def load_sea_task_template() -> list[dict[str, str]]:
 		frappe.throw("Add at least one row to Sea import task template in CGM Shipping Settings.")
 
 	return out
+
+
+def load_sea_transit_import_task_template() -> list[dict]:
+	"""Compose shared sea-import steps + transit extension from CGM Shipping Settings."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
+		sea_import_task_sequence_no,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		normalize_department_stem,
+	)
+
+	settings = frappe.get_single("CGM Shipping Settings")
+	shared_through = int(settings.get("custom_sea_transit_import_shared_through_seq") or 20)
+
+	composed: list[dict] = []
+	for idx, row in enumerate(load_sea_task_template(), start=1):
+		seq = sea_import_task_sequence_no(idx)
+		if seq > shared_through:
+			break
+		composed.append({**row, "sequence_no": seq, "shared": True})
+
+	next_seq = shared_through + 1
+	for row in sorted(
+		settings.get("custom_sea_transit_import_extension_template") or [],
+		key=lambda r: r.idx or 0,
+	):
+		subject = (row.task_subject or "").strip()
+		dept = normalize_department_stem(row.department)
+		if not subject:
+			continue
+		if not dept:
+			frappe.throw(f"Sea transit import extension: Department is required for task: {subject}")
+		composed.append(
+			{
+				"subject": subject,
+				"department": dept,
+				"sequence_no": next_seq,
+				"shared": False,
+			}
+		)
+		next_seq += 1
+
+	if not composed:
+		frappe.throw(
+			"Configure Sea Transit Import extension template in CGM Shipping Settings."
+		)
+	return composed
+
+
+def load_sea_transit_export_task_template() -> list[dict[str, str]]:
+	"""Return sea transit export tasks from CGM Shipping Settings."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		normalize_department_stem,
+	)
+
+	settings = frappe.get_single("CGM Shipping Settings")
+	rows = sorted(
+		settings.get("custom_sea_transit_export_task_template") or [],
+		key=lambda r: r.idx or 0,
+	)
+
+	out: list[dict[str, str]] = []
+	for row in rows:
+		subject = (row.task_subject or "").strip()
+		dept = normalize_department_stem(row.department)
+		if not subject:
+			continue
+		if not dept:
+			frappe.throw(f"Sea transit export task template: Department is required for task: {subject}")
+		out.append({"subject": subject, "department": dept})
+
+	if not out:
+		frappe.throw(
+			"Add at least one row to Sea Transit Export task template in CGM Shipping Settings."
+		)
+	return out

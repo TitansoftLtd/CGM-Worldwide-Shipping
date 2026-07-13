@@ -9,6 +9,7 @@ import re
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import container_row_cargo_size
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
 )
@@ -109,7 +110,7 @@ def should_auto_name_project(project) -> bool:
 	return is_legacy_business_reference(name)
 
 
-def _normalize_container_size_code(label: str | None) -> str:
+def _normalize_cargo_size_code(label: str | None) -> str:
 	text = (label or "").strip().upper()
 	if not text:
 		return "0"
@@ -124,17 +125,17 @@ def _container_qty_size_from_rows(project) -> str | None:
 
 	counts: dict[str, int] = {}
 	for row in project.get(container_field) or []:
-		container_type = (row.get("type_of_container") or "").strip()
-		if not container_type:
+		cargo_type = container_row_cargo_size(row)
+		if not cargo_type:
 			continue
-		counts[container_type] = counts.get(container_type, 0) + 1
+		counts[cargo_type] = counts.get(cargo_type, 0) + 1
 
 	if not counts:
 		return None
 
 	dominant_type = max(counts, key=lambda key: (counts[key], key))
 	qty = counts[dominant_type]
-	size = _normalize_container_size_code(dominant_type)
+	size = _normalize_cargo_size_code(dominant_type)
 	return f"{qty}X{size}"
 
 
@@ -147,7 +148,7 @@ def _container_qty_size_from_quantity_field(project) -> str | None:
 	if not match:
 		return None
 	qty, size_label = match.group(1), match.group(2)
-	return f"{int(qty)}X{_normalize_container_size_code(size_label)}"
+	return f"{int(qty)}X{_normalize_cargo_size_code(size_label)}"
 
 
 def container_qty_size_segment(project) -> str:

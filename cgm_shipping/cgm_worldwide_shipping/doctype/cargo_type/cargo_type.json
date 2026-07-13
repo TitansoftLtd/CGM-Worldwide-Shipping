@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_gppx",
-  "container_type",
+  "cargo_type",
   "cgm_ref_prefix",
   "description"
  ],
@@ -17,10 +17,10 @@
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "container_type",
+   "fieldname": "cargo_type",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Container Type",
+   "label": "Cargo Type",
    "reqd": 1,
    "unique": 1
   },
@@ -44,7 +44,7 @@
  "modified": "2026-06-09 21:47:01.167259",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
- "name": "Container Type",
+ "name": "Cargo Type",
  "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [

@@ -1,0 +1,83 @@
+.cgm-shipment-intake-wizard {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 12px;
+	margin: 0 0 16px;
+}
+
+.cgm-wizard-step {
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	padding: 10px 12px;
+	background: var(--fg-color, #fff);
+}
+
+.cgm-wizard-step.is-active {
+	border-color: var(--primary, #171717);
+	box-shadow: 0 0 0 1px var(--primary, #171717);
+}
+
+.cgm-wizard-step.is-done {
+	border-color: #2f9d46;
+	background: #f3fcf5;
+}
+
+.cgm-wizard-step-title {
+	font-weight: 600;
+	font-size: 13px;
+}
+
+.cgm-wizard-step-sub {
+	color: var(--text-muted, #6c7680);
+	font-size: 12px;
+	margin-top: 4px;
+}
+
+.cgm-shipment-intake-message {
+	margin-top: 8px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: var(--control-bg, #f7f7f7);
+	font-size: 13px;
+}
+
+.cgm-intake-readiness ul {
+	margin: 8px 0 0 18px;
+}
+
+@media (max-width: 991px) {
+	.cgm-shipment-intake-wizard {
+		grid-template-columns: 1fr;
+	}
+}
+
+.cgm-transport-documents {
+	margin: 12px 0 20px;
+	padding: 14px 16px;
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	background: var(--fg-color, #fff);
+}
+
+.cgm-transport-documents-title {
+	font-weight: 600;
+	font-size: 13px;
+	margin-bottom: 10px;
+}
+
+.cgm-transport-doc-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.cgm-transport-doc-linked .cgm-transport-doc-check {
+	color: #2f9d46;
+	font-weight: 700;
+	margin-right: 4px;
+}
+
+.cgm-transport-doc-required::after {
+	content: " *";
+	color: var(--text-muted, #6c7680);
+}

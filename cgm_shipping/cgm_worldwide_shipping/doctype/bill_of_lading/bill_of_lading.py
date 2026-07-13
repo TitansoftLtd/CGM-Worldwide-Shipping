@@ -20,6 +20,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bl_fields_to_doc,
 	bl_propagation_payload,
+	container_row_cargo_size,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config, get_link_field_for_doctype
 
@@ -60,20 +61,20 @@ class BillofLading(Document):
 		if not self.container_information:
 			return ""
 
-		# Fetch order directly from Container Type DocType
+		# Fetch order directly from Cargo Size DocType
 		display_order = frappe.get_all(
-			"Container Type",
-			fields=["container_type"],
+			"Cargo Size",
+			fields=["cargo_size"],
 			order_by="idx asc",
-			pluck="container_type",
+			pluck="cargo_size",
 		)
 
 		counts: dict[str, int] = {}
 		for row in self.container_information:
-			container_type = (row.type_of_container or "").strip()
-			if not container_type:
+			cargo_size = container_row_cargo_size(row)
+			if not cargo_size:
 				continue
-			counts[container_type] = counts.get(container_type, 0) + 1
+			counts[cargo_size] = counts.get(cargo_size, 0) + 1
 
 		if not counts:
 			return ""
@@ -167,11 +168,20 @@ def next_batch_number_for_customer(customer: str) -> int:
 
 
 def resolve_batch_number_for_bl(doc) -> int:
-	"""Batch for a new/amended Bill of Lading without hardcoding."""
+	"""Batch for a new/amended Bill of Lading — prefer linked Opportunity batch."""
 	if doc.get("amended_from"):
 		reused = parse_batch_number_from_bl_name(doc.amended_from)
 		if reused:
 			return reused
+
+	config = get_bl_config()
+	source_field = config.get("opportunity_source_field") or "linked_opportunity"
+	opportunity = doc.get(source_field) or doc.get("custom_linked_opportunity")
+	if opportunity and frappe.db.exists("Opportunity", opportunity):
+		opp_batch = frappe.db.get_value("Opportunity", opportunity, "custom_batch_no")
+		if opp_batch and str(opp_batch).strip().isdigit():
+			return int(str(opp_batch).strip())
+
 	return next_batch_number_for_customer(doc.customer)
 
 

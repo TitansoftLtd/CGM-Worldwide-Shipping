@@ -528,10 +528,10 @@ def ensure_task_container_fields() -> None:
 	_create_cf(
 		"Task",
 		{
-			"fieldname": "custom_type_of_container",
-			"label": "Type of Container",
+			"fieldname": "custom_cargo_type",
+			"label": "Cargo Type",
 			"fieldtype": "Link",
-			"options": "Container Type",
+			"options": "Cargo Type",
 			"insert_after": "custom_container_number",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
@@ -1327,4 +1327,231 @@ def ensure_project_finance_cost_fields() -> None:
 			"bold": 1,
 		},
 	)
+	frappe.clear_cache(doctype="Project")
+
+
+def ensure_transit_project_fields() -> None:
+	"""Project fields for transit export destination entry and UBS permit tracking."""
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_uses_destination_entry",
+			"label": "Uses Destination Entry",
+			"fieldtype": "Check",
+			"insert_after": "custom_shipment_type",
+			"fetch_from": "custom_shipment_type.uses_destination_entry",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_destination_entry_number",
+			"label": "Destination Entry Number",
+			"fieldtype": "Data",
+			"insert_after": "project_type",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_ubs_permit_number",
+			"label": "UBS Permit Number",
+			"fieldtype": "Data",
+			"insert_after": "custom_destination_entry_number",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_ubs_permit_date",
+			"label": "UBS Permit Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_ubs_permit_number",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_destination_entry_confirmed",
+			"label": "Destination Entry Confirmed",
+			"fieldtype": "Check",
+			"insert_after": "custom_ubs_permit_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_uganda_release_date",
+			"label": "Destination Country Release Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_destination_entry_confirmed",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_coc_application_date",
+			"label": "COC Application Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_uganda_release_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_eac_application_date",
+			"label": "EAC Application Date",
+			"fieldtype": "Date",
+			"insert_after": "custom_coc_application_date",
+			"depends_on": "eval:doc.custom_uses_destination_entry",
+		},
+	)
+
+	if frappe.db.exists("Property Setter", "Project-project_type-hidden"):
+		frappe.db.set_value("Property Setter", "Project-project_type-hidden", "value", "0")
+
+	frappe.clear_cache(doctype="Project")
+
+
+def ensure_opportunity_universal_fields() -> None:
+	"""Opportunity intake fields driven by Shipment Type flags (universal starting point)."""
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_section_shipment_intake",
+			"label": "Shipment Intake",
+			"fieldtype": "Section Break",
+			"insert_after": "party_name",
+			"collapsible": 0,
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_eta",
+			"label": "ETA",
+			"fieldtype": "Date",
+			"insert_after": "custom_shipment_type",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_etd",
+			"label": "ETD — Estimated Departure",
+			"fieldtype": "Date",
+			"insert_after": "custom_eta",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_shipping_line",
+			"label": "Shipping Line",
+			"fieldtype": "Link",
+			"options": "Supplier",
+			"insert_after": "custom_etd",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_shipping_order_ref",
+			"label": "Shipping Order Reference",
+			"fieldtype": "Data",
+			"insert_after": "custom_shipping_line",
+			"description": "First document received for export. BL number is added when available.",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_booking_ref",
+			"label": "Booking Reference",
+			"fieldtype": "Data",
+			"insert_after": "custom_shipping_order_ref",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_delivery_destination",
+			"label": "Destination Country",
+			"fieldtype": "Link",
+			"options": "Delivery Destination",
+			"insert_after": "custom_booking_ref",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_handling_agent",
+			"label": "Handling Agent",
+			"fieldtype": "Data",
+			"insert_after": "custom_delivery_destination",
+			"description": "FedEx, Transglobal, Swissport, etc.",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_draft_bl_number",
+			"label": "B/L Number (if known)",
+			"fieldtype": "Data",
+			"insert_after": "custom_handling_agent",
+			"description": "Enter when the client provides a BL number before the Bill of Lading record is created.",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_section_transport_document",
+			"label": "Transport Document",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_draft_bl_number",
+		},
+	)
+	_ensure_cf(
+		"Opportunity",
+		{
+			"fieldname": "custom_booking_confirmation",
+			"label": "Booking Confirmation",
+			"fieldtype": "Link",
+			"options": "Booking Confirmation",
+			"insert_after": "custom_section_transport_document",
+		},
+	)
+
+	for dt, fields in (
+		(
+			"Project",
+			(
+				("custom_shipping_order_ref", "Data", "Shipping Order Reference"),
+				("custom_booking_ref", "Data", "Booking Reference"),
+				("custom_handling_agent", "Data", "Handling Agent"),
+				("custom_booking_confirmation", "Link", "Booking Confirmation", "Booking Confirmation"),
+			),
+		),
+	):
+		for item in fields:
+			fieldname, fieldtype, label = item[0], item[1], item[2]
+			values = {
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": fieldtype,
+				"insert_after": "custom_shipping_line",
+			}
+			if len(item) > 3:
+				values["options"] = item[3]
+			_ensure_cf(dt, values)
+
+	frappe.clear_cache(doctype="Opportunity")
 	frappe.clear_cache(doctype="Project")
