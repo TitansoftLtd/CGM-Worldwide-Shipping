@@ -619,17 +619,8 @@ cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit = function (frm)
 	});
 };
 
-cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (frm) {
-	if (!frm.doc.name || frm.is_new()) {
-		return;
-	}
-	let pending;
-	try {
-		pending = JSON.parse(localStorage.getItem(CGM_PENDING_BOOKING_LINK_KEY) || "null");
-	} catch {
-		return;
-	}
-	if (!pending || pending.opportunity !== frm.doc.name) {
+cgm_shipping.opportunity_shipment.apply_booking_payload = function (frm, pending) {
+	if (!pending || !frm) {
 		return;
 	}
 
@@ -643,7 +634,9 @@ cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (
 		frm.set_value(fieldname, value);
 	};
 
-	set_if("custom_booking_confirmation", pending.booking_name);
+	if (pending.booking_name) {
+		set_if("custom_booking_confirmation", pending.booking_name);
+	}
 	set_if("custom_booking_ref", pending.booking_number);
 	set_if("custom_shipping_order_ref", pending.booking_number);
 	set_if("custom_shipment_type", pending.shipment_type);
@@ -665,8 +658,7 @@ cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (
 	set_if("custom_number_of_packages", pending.number_of_packages);
 	set_if("custom_package_type", pending.package_type);
 
-	const cargo_type =
-		pending.requested_cargo_type || pending.cargo_type || null;
+	const cargo_type = pending.requested_cargo_type || pending.cargo_type || null;
 	if (cargo_type) {
 		if (frm.fields_dict.custom_cargo_type) {
 			set_if("custom_cargo_type", cargo_type);
@@ -675,19 +667,75 @@ cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (
 		}
 	}
 
+	[
+		"custom_weight_uom_",
+		"custom_weight_nw",
+		"custom_gross_weight",
+		"custom_quantity",
+		"custom_number_of_packages",
+		"custom_package_type",
+		"custom_requested_cargo_quantity",
+	].forEach((fieldname) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.toggle_display(fieldname, true);
+		}
+	});
+
 	const table_field = "custom_requested_cargo_quantity";
-	if (frm.fields_dict[table_field] && Array.isArray(pending.requested_cargo_quantity)) {
+	const rows = Array.isArray(pending.requested_cargo_quantity)
+		? pending.requested_cargo_quantity
+		: null;
+	if (frm.fields_dict[table_field] && rows) {
 		frm.clear_table(table_field);
-		(pending.requested_cargo_quantity || []).forEach((row) => {
+		rows.forEach((row) => {
 			const child = frm.add_child(table_field);
 			child.cargo_size = row.cargo_size || "";
 			child.quantity = row.quantity || "";
 		});
 		const show_requested =
-			(cargo_type || "") === "FCL" || (pending.requested_cargo_quantity || []).length > 0;
-		frm.toggle_display(table_field, show_requested);
+			String(cargo_type || "").toUpperCase() === "FCL" || rows.length > 0;
+		frm.set_df_property(table_field, "hidden", show_requested ? 0 : 1);
 		frm.refresh_field(table_field);
 	}
+};
+
+cgm_shipping.opportunity_shipment.sync_from_linked_booking = function (frm) {
+	const booking = frm.doc.custom_booking_confirmation;
+	if (!booking || frm.is_new() || frm.doc.docstatus !== 0) {
+		return Promise.resolve();
+	}
+	return frappe
+		.call({
+			method:
+				"cgm_shipping.cgm_worldwide_shipping.doctype.booking_confirmation.booking_confirmation.get_booking_fields_for_opportunity",
+			args: { booking_confirmation: booking },
+		})
+		.then((r) => {
+			if (r.exc || !r.message) {
+				return;
+			}
+			cgm_shipping.opportunity_shipment.apply_booking_payload(frm, {
+				booking_name: booking,
+				...r.message,
+			});
+		});
+};
+
+cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (frm) {
+	if (!frm.doc.name || frm.is_new()) {
+		return;
+	}
+	let pending;
+	try {
+		pending = JSON.parse(localStorage.getItem(CGM_PENDING_BOOKING_LINK_KEY) || "null");
+	} catch {
+		return;
+	}
+	if (!pending || pending.opportunity !== frm.doc.name) {
+		return;
+	}
+
+	cgm_shipping.opportunity_shipment.apply_booking_payload(frm, pending);
 
 	localStorage.removeItem(CGM_PENDING_BOOKING_LINK_KEY);
 	frappe.show_alert({

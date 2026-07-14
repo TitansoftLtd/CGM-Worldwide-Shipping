@@ -86,6 +86,7 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	custom_booking_confirmation(frm) {
+		cgm_shipping.opportunity_shipment.sync_from_linked_booking(frm);
 		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
 	},
 });
@@ -122,6 +123,7 @@ function run_opportunity_form_syncs(frm, opts = {}) {
 		}
 		cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit(frm);
 		cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit(frm);
+		cgm_shipping.opportunity_shipment.sync_from_linked_booking(frm);
 		sync_bl_from_clients_documents(frm, { silent: true });
 		const bl_link_field = get_opportunity_bl_link_field(frm);
 		if (frm.doc[bl_link_field]) {

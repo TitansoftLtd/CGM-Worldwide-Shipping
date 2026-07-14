@@ -55,8 +55,13 @@ class BookingConfirmation(Document):
 	def validate(self):
 		sanitize_booking_linked_opportunity(self)
 
+	def on_update(self):
+		# Keep linked Opportunity in sync while the booking is being filled (before submit).
+		if self.get(OPPORTUNITY_SOURCE_FIELD):
+			sync_opportunity_from_booking(self, allow_draft=True)
+
 	def on_submit(self):
-		sync_opportunity_from_submitted_booking(self)
+		sync_opportunity_from_booking(self, allow_draft=False)
 
 
 def is_valid_opportunity_link(opportunity: str | None) -> bool:
@@ -227,10 +232,21 @@ def booking_propagation_payload(booking_doc) -> dict:
 	return payload
 
 
-def sync_opportunity_from_submitted_booking(booking_doc, opportunity: str | None = None) -> str | None:
-	"""Link submitted Booking Confirmation data onto the source Opportunity."""
+def sync_opportunity_from_booking(
+	booking_doc,
+	opportunity: str | None = None,
+	*,
+	allow_draft: bool = False,
+) -> str | None:
+	"""Copy Booking Confirmation fields onto the linked Opportunity.
+
+	``allow_draft=True`` syncs while the booking is still being prepared so
+	Opportunity mirrors weights / requested cargo before submit.
+	"""
 	opportunity = opportunity or booking_doc.get(OPPORTUNITY_SOURCE_FIELD)
 	if not is_valid_opportunity_link(opportunity):
+		return None
+	if not allow_draft and booking_doc.docstatus != 1:
 		return None
 
 	opp = frappe.get_doc("Opportunity", opportunity)
@@ -238,7 +254,12 @@ def sync_opportunity_from_submitted_booking(booking_doc, opportunity: str | None
 
 	attachment_url = booking_doc.get("attach_booking")
 	clients_field = get_opportunity_documents_field()
-	if attachment_url and clients_field and opp.meta.has_field(clients_field):
+	if (
+		booking_doc.docstatus == 1
+		and attachment_url
+		and clients_field
+		and opp.meta.has_field(clients_field)
+	):
 		if prepend_opportunity_booking_document(opp, attachment_url, booking_name=booking_doc.name):
 			changed = True
 
@@ -246,6 +267,11 @@ def sync_opportunity_from_submitted_booking(booking_doc, opportunity: str | None
 		opp.save(ignore_permissions=True)
 
 	return opportunity
+
+
+def sync_opportunity_from_submitted_booking(booking_doc, opportunity: str | None = None) -> str | None:
+	"""Backward-compatible alias used by submit / payload helpers."""
+	return sync_opportunity_from_booking(booking_doc, opportunity, allow_draft=False)
 
 
 def prepend_opportunity_booking_document(opp_doc, attachment_url, booking_name=None) -> bool:
@@ -266,6 +292,16 @@ def prepend_opportunity_booking_document(opp_doc, attachment_url, booking_name=N
 		status="Uploaded",
 		remarks=frappe._("From submitted Booking Confirmation {0}").format(booking_name or ""),
 	)
+
+
+@frappe.whitelist()
+def get_booking_fields_for_opportunity(booking_confirmation: str | None = None) -> dict:
+	"""Return booking field payload for Opportunity client/server refresh."""
+	if not booking_confirmation or not frappe.db.exists("Booking Confirmation", booking_confirmation):
+		return {}
+	frappe.has_permission("Booking Confirmation", ptype="read", doc=booking_confirmation, throw=True)
+	doc = frappe.get_doc("Booking Confirmation", booking_confirmation)
+	return booking_propagation_payload(doc)
 
 
 @frappe.whitelist()
