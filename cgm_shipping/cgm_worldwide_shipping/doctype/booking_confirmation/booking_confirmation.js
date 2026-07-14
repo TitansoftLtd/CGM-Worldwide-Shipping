@@ -1,5 +1,5 @@
-# Copyright (c) 2026, Titansoft Limited and contributors
-# For license information, please see license.txt
+// Copyright (c) 2026, Titansoft Limited and contributors
+// For license information, please see license.txt
 
 const REQUESTED_CONTAINERS_FIELD = "requested_cargo_quantity";
 
