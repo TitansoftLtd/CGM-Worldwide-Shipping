@@ -232,6 +232,9 @@ cgm_shipping.opportunity_shipment._ensure_intake_fields_visible = function (frm)
 		if (!frm.fields_dict[fieldname]) {
 			return;
 		}
+		// Clear stage-gated depends_on so Customer / Consignee / Shipment Type stay visible on intake.
+		frm.set_df_property(fieldname, "depends_on", "");
+		frm.set_df_property(fieldname, "hidden", 0);
 		if (fieldname === "custom_mode_of_transport") {
 			frm.toggle_display(fieldname, Boolean(frm.doc.custom_shipment_type));
 			return;

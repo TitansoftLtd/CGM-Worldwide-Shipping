@@ -72,7 +72,7 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	party_name(frm) {
-		sync_opportunity_consignee_from_customer(frm);
+		sync_opportunity_consignee_from_customer(frm, { force_show: true });
 	},
 
 	custom_bill_of_lading(frm) {
@@ -98,15 +98,22 @@ frappe.ui.form.on("Shipment Document", {
 	},
 });
 
-function sync_opportunity_consignee_from_customer(frm) {
+function sync_opportunity_consignee_from_customer(frm, opts = {}) {
 	if (!frm.fields_dict.custom_consignee) {
 		return;
+	}
+	if (opts.force_show || frm.doc.party_name) {
+		frm.set_df_property("custom_consignee", "hidden", 0);
+		frm.toggle_display("custom_consignee", true);
 	}
 	if ((frm.doc.opportunity_from || "Customer") !== "Customer" || !frm.doc.party_name) {
 		return;
 	}
 	frappe.db.get_value("Customer", frm.doc.party_name, "customer_name", (values) => {
-		frm.set_value("custom_consignee", values?.customer_name || frm.doc.party_name);
+		const label = values?.customer_name || frm.doc.party_name;
+		if (frm.doc.custom_consignee !== label) {
+			frm.set_value("custom_consignee", label);
+		}
 	});
 }
 
@@ -115,6 +122,7 @@ function run_opportunity_form_syncs(frm, opts = {}) {
 	configure_opportunity_clients_documents_grid(frm);
 	setup_opportunity_bill_of_lading_create(frm);
 	cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
+	sync_opportunity_consignee_from_customer(frm, { force_show: true });
 
 	// Pending transport-doc redirects only apply to the saved Opportunity they came from.
 	if (!frm.is_new()) {
