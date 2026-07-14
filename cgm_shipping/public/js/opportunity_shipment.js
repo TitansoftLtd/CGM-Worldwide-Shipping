@@ -23,6 +23,7 @@ const INTAKE_ALWAYS_VISIBLE_FIELDS = [
 	"party_name",
 	"custom_consignee",
 	"custom_shipment_type",
+	"custom_mode_of_transport",
 	"custom_client_refrence_no",
 ];
 
@@ -228,10 +229,33 @@ cgm_shipping.opportunity_shipment._ensure_intake_fields_visible = function (frm)
 		return;
 	}
 	INTAKE_ALWAYS_VISIBLE_FIELDS.forEach((fieldname) => {
-		if (frm.fields_dict[fieldname]) {
-			frm.toggle_display(fieldname, true);
+		if (!frm.fields_dict[fieldname]) {
+			return;
 		}
+		if (fieldname === "custom_mode_of_transport") {
+			frm.toggle_display(fieldname, Boolean(frm.doc.custom_shipment_type));
+			return;
+		}
+		frm.toggle_display(fieldname, true);
 	});
+};
+
+cgm_shipping.opportunity_shipment._apply_mode_from_shipment_type = function (frm, flags) {
+	if (!frm.fields_dict.custom_mode_of_transport) {
+		return;
+	}
+	const mode = (flags || {}).default_mode_of_transport;
+	if (!frm.doc.custom_shipment_type) {
+		if (frm.doc.custom_mode_of_transport) {
+			frm.set_value("custom_mode_of_transport", "");
+		}
+		frm.toggle_display("custom_mode_of_transport", false);
+		return;
+	}
+	frm.toggle_display("custom_mode_of_transport", true);
+	if (mode && frm.doc.custom_mode_of_transport !== mode) {
+		frm.set_value("custom_mode_of_transport", mode);
+	}
 };
 
 cgm_shipping.opportunity_shipment.refresh_wizard_ui = function (frm) {
@@ -284,6 +308,7 @@ cgm_shipping.opportunity_shipment.refresh_wizard_ui = function (frm) {
 
 			const flags = ctx.readiness || {};
 			frm._cgm_shipment_type_flags = flags;
+			cgm_shipping.opportunity_shipment._apply_mode_from_shipment_type(frm, flags);
 			cgm_shipping.opportunity_shipment._ensure_intake_fields_visible(frm);
 			cgm_shipping.opportunity_shipment.render_transport_documents_dashboard(frm, flags);
 			cgm_shipping.opportunity_shipment._apply_post_bl_layout_visibility(frm, flags);

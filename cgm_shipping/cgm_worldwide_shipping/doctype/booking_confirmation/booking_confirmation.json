@@ -55,7 +55,8 @@
   {
    "fieldname": "client_ref",
    "fieldtype": "Data",
-   "label": "Client Reference"
+   "label": "Client Reference",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_bc_1",
@@ -197,7 +198,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-14 03:13:16.265638",
+ "modified": "2026-07-14 03:43:32.764138",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",

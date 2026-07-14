@@ -51,8 +51,9 @@ def sync_opportunity_intake_stage(doc) -> None:
 	if doc.meta.has_field("custom_uses_container_tracking"):
 		doc.custom_uses_container_tracking = int(bool(flags.get("uses_container_tracking")))
 	mode = (flags.get("default_mode_of_transport") or "").strip()
-	if mode and doc.meta.has_field("custom_mode_of_transport") and not doc.get("custom_mode_of_transport"):
-		doc.custom_mode_of_transport = mode
+	if mode and doc.meta.has_field("custom_mode_of_transport"):
+		if not doc.get("custom_mode_of_transport") or doc.has_value_changed("custom_shipment_type"):
+			doc.custom_mode_of_transport = mode
 
 	primary_linked = has_any_transport_document(doc)
 	if doc.meta.has_field("custom_primary_doc_linked"):
