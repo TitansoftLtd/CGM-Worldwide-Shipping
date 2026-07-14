@@ -1,7 +1,7 @@
 {
  "app": "cgm_shipping",
  "charts": [],
- "content": "[{\"id\": \"uWiLsJUdVJ\", \"type\": \"header\", \"data\": {\"text\": \"<span style=\\\"font-size: 16px;\\\"><b>Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"5slaFAopFc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer\", \"col\": 3}}, {\"id\": \"yNse_cDnTB\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Project\", \"col\": 3}}, {\"id\": \"qc7j4a49Sa\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bill Of Lading\", \"col\": 3}}, {\"id\": \"ZCVcZygZ0r\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Air Waybill\", \"col\": 3}}, {\"id\": \"iXULP7P6qN\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Opportunity\", \"col\": 3}}, {\"id\": \"HooY9lDlzt\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Container Tracker\", \"col\": 3}}, {\"id\": \"cgmOpsBrd01\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Container Ops Board\", \"col\": 3}}, {\"id\": \"pt6I2_8o9i\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customs Entry\", \"col\": 3}}, {\"id\": \"mF1Spy7u2_\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"s-vIcHLenp\", \"type\": \"card\", \"data\": {\"card_name\": \"Shipments\", \"col\": 3}}, {\"id\": \"3UvHg06GlH\", \"type\": \"card\", \"data\": {\"card_name\": \"Clearance & Customs\", \"col\": 3}}, {\"id\": \"5280sQiiF1\", \"type\": \"card\", \"data\": {\"card_name\": \"Transport & Containers\", \"col\": 3}}, {\"id\": \"9lOSeVN8nN\", \"type\": \"card\", \"data\": {\"card_name\": \"Masters & Setup\", \"col\": 3}}]",
+ "content": "[{\"id\":\"uWiLsJUdVJ\",\"type\":\"header\",\"data\":{\"text\":\"<span style=\\\"font-size: 16px;\\\"><b>Shortcuts</b></span>\",\"col\":12}},{\"id\":\"5slaFAopFc\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customer\",\"col\":3}},{\"id\":\"yNse_cDnTB\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Project\",\"col\":3}},{\"id\":\"qc7j4a49Sa\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bill Of Lading\",\"col\":3}},{\"id\":\"ZCVcZygZ0r\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Air Waybill\",\"col\":3}},{\"id\":\"iXULP7P6qN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Opportunity\",\"col\":3}},{\"id\":\"HooY9lDlzt\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Container Tracker\",\"col\":3}},{\"id\":\"cgmOpsBrd01\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Container Ops Board\",\"col\":3}},{\"id\":\"pt6I2_8o9i\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customs Entry\",\"col\":3}},{\"id\":\"mF1Spy7u2_\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"s-vIcHLenp\",\"type\":\"card\",\"data\":{\"card_name\":\"Shipments\",\"col\":3}},{\"id\":\"3UvHg06GlH\",\"type\":\"card\",\"data\":{\"card_name\":\"Clearance & Customs\",\"col\":3}},{\"id\":\"5280sQiiF1\",\"type\":\"card\",\"data\":{\"card_name\":\"Transport & Containers\",\"col\":3}},{\"id\":\"9lOSeVN8nN\",\"type\":\"card\",\"data\":{\"card_name\":\"Masters & Setup\",\"col\":3}}]",
  "creation": "2026-06-09 22:50:45.113316",
  "custom_blocks": [],
  "docstatus": 0,
@@ -13,74 +13,6 @@
  "is_hidden": 0,
  "label": "CGM Shipping",
  "links": [
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipments",
-   "link_count": 6,
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Project",
-   "link_count": 0,
-   "link_to": "Project",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Bill of Lading",
-   "link_count": 0,
-   "link_to": "Bill of Lading",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Air Waybill",
-   "link_count": 0,
-   "link_to": "Air Waybill",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Export Shipment",
-   "link_count": 0,
-   "link_to": "Export Shipment",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipment tracker",
-   "link_count": 0,
-   "link_to": "Shipment tracker",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Daily Status Update",
-   "link_count": 0,
-   "link_to": "Daily Status Update",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
   {
    "hidden": 0,
    "is_query_report": 0,
@@ -209,9 +141,9 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Container Type",
+   "label": "Cargo Type",
    "link_count": 0,
-   "link_to": "Container Type",
+   "link_to": "Cargo Type",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -275,9 +207,88 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shipments",
+   "link_count": 7,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Project",
+   "link_count": 0,
+   "link_to": "Project",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Bill of Lading",
+   "link_count": 0,
+   "link_to": "Bill of Lading",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Air Waybill",
+   "link_count": 0,
+   "link_to": "Air Waybill",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Export Shipment",
+   "link_count": 0,
+   "link_to": "Export Shipment",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shipment tracker",
+   "link_count": 0,
+   "link_to": "Shipment tracker",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Daily Status Update",
+   "link_count": 0,
+   "link_to": "Daily Status Update",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Opportunity",
+   "link_count": 0,
+   "link_to": "Opportunity",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-06-22 10:06:57.677894",
+ "modified": "2026-07-08 19:08:17.786995",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",

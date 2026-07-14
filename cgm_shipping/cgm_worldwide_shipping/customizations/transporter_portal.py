@@ -271,7 +271,7 @@ def get_allocation_detail(allocation_name: str) -> dict:
 				"name": row.name,
 				"container_tracker": row.container_tracker,
 				"container_number": row.container_number or tracker_data.get("container_number"),
-				"type_of_container": row.type_of_container or tracker_data.get("type_of_container"),
+				"cargo_type": row.cargo_type or tracker_data.get("cargo_type"),
 				"truck_number": truck_number,
 				"driver_name": driver_name,
 				"driver_contact": driver_contact,

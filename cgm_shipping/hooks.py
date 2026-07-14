@@ -25,7 +25,10 @@ app_license = "mit"
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/cgm_shipping/css/project_tracking.css"
+app_include_css = [
+	"/assets/cgm_shipping/css/project_tracking.css",
+	"/assets/cgm_shipping/css/opportunity_intake_wizard.css",
+]
 app_include_js = [
 	"/assets/cgm_shipping/js/cgm_status_field.js",
 	"/assets/cgm_shipping/js/cgm_container_tracking.js",
@@ -74,6 +77,7 @@ doctype_js = {
 	"Customer": "public/js/crm_customer.js",
 	"Item": "public/js/item_pricing_rule.js",
 	"Opportunity": [
+		"public/js/opportunity_shipment.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/crm_opportunity.js",
@@ -82,6 +86,7 @@ doctype_js = {
 	"Quotation": "public/js/quotation.js",
 	"Sales Order": "public/js/quotation.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
+	# Doctype folder *.js is auto-inlined; only list extra scripts here (not the doctype file itself).
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -141,6 +146,7 @@ jinja = {
 
 # before_install = "cgm_shipping.install.before_install"
 after_install = "cgm_shipping.install.after_install"
+before_migrate = ["cgm_shipping.install.before_migrate"]
 after_migrate = ["cgm_shipping.install.after_migrate"]
 
 # Uninstallation
@@ -255,8 +261,17 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
 	},
 	"Opportunity": {
+		"before_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.prepare_opportunity_intake",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.assign_opportunity_batch_on_insert",
+		],
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.validate_opportunity_intake",
+		],
 		"before_save": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.sync_opportunity_intake_on_save",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.documents.normalize_opportunity_clients_documents",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.seed_required_documents_on_opportunity",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_bl_from_clients_documents",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",

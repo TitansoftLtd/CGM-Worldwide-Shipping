@@ -3,15 +3,84 @@
 
 frappe.ui.form.on("Air Waybill", {
 	onload(frm) {
-		set_default_air_shipment_type(frm);
+		apply_awb_route_defaults(frm);
+		if (frm.is_new() && frappe.route_options?.linked_opportunity) {
+			remember_return_opportunity(frm, frappe.route_options.linked_opportunity);
+		}
 	},
 
 	refresh(frm) {
+		apply_awb_route_defaults(frm);
 		if (frm.doc.docstatus === 1) {
 			add_create_opportunity_button(frm);
 		}
+		add_back_to_opportunity_button(frm);
+	},
+
+	on_submit(frm) {
+		return_to_opportunity_after_submit(frm);
 	},
 });
+
+const CGM_RETURN_OPPORTUNITY_KEY = "cgm_return_opportunity";
+const CGM_PENDING_AWB_LINK_KEY = "cgm_pending_awb_link";
+
+function is_saved_opportunity_name(name) {
+	return Boolean(name && !String(name).startsWith("new-"));
+}
+
+function apply_awb_route_defaults(frm) {
+	if (!frm.is_new()) {
+		return;
+	}
+
+	const opts = frappe.route_options || {};
+	if (opts.linked_opportunity) {
+		remember_return_opportunity(frm, opts.linked_opportunity);
+	}
+	if (opts.customer && !frm.doc.customer) {
+		frm.set_value("customer", opts.customer);
+	}
+	if (opts.shipment_type && !frm.doc.shipment_type) {
+		frm.set_value("shipment_type", opts.shipment_type);
+	}
+	if (opts.client_ref && !frm.doc.client_ref) {
+		frm.set_value("client_ref", opts.client_ref);
+	}
+
+	set_default_air_shipment_type(frm);
+}
+
+function remember_return_opportunity(frm, opportunity) {
+	if (!opportunity) {
+		return;
+	}
+	localStorage.setItem(CGM_RETURN_OPPORTUNITY_KEY, opportunity);
+	if (is_saved_opportunity_name(opportunity)) {
+		frm.set_value("linked_opportunity", opportunity);
+	}
+}
+
+function get_cgm_return_opportunity(frm) {
+	const from_storage = localStorage.getItem(CGM_RETURN_OPPORTUNITY_KEY);
+	if (is_saved_opportunity_name(from_storage)) {
+		return from_storage;
+	}
+	if (is_saved_opportunity_name(frm.doc.linked_opportunity)) {
+		return frm.doc.linked_opportunity;
+	}
+	return null;
+}
+
+function add_back_to_opportunity_button(frm) {
+	const opportunity = get_cgm_return_opportunity(frm);
+	if (!opportunity) {
+		return;
+	}
+	frm.add_custom_button(__("Back to Opportunity"), () => {
+		frappe.set_route("Form", "Opportunity", opportunity);
+	});
+}
 
 function set_default_air_shipment_type(frm) {
 	if (!frm.is_new() || frm.doc.shipment_type) {
@@ -40,7 +109,6 @@ function add_create_opportunity_button(frm) {
 		return;
 	}
 
-	// Branch a CRM Opportunity off a submitted Air Waybill.
 	frm.add_custom_button(
 		__("Opportunity"),
 		() => {
@@ -62,4 +130,53 @@ function add_create_opportunity_button(frm) {
 		__("Create")
 	);
 	frm.page.set_inner_btn_group_as_primary(__("Create"));
+}
+
+function return_to_opportunity_after_submit(frm) {
+	if (frm.doc.docstatus !== 1) {
+		return;
+	}
+	const opportunity = get_cgm_return_opportunity(frm);
+	if (!opportunity || frm.__cgm_returned_to_opportunity) {
+		return;
+	}
+	frm.__cgm_returned_to_opportunity = true;
+
+	const redirect = (target_opportunity) => {
+		if (!target_opportunity) {
+			frm.__cgm_returned_to_opportunity = false;
+			return;
+		}
+		localStorage.removeItem(CGM_RETURN_OPPORTUNITY_KEY);
+		frappe.show_alert({
+			message: __("Air Waybill submitted — returning to Opportunity to continue."),
+			indicator: "green",
+		});
+		frappe.set_route("Form", "Opportunity", target_opportunity);
+	};
+
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.air_waybill.air_waybill.get_awb_submit_payload",
+		args: {
+			awb_name: frm.doc.name,
+			opportunity,
+		},
+		callback(r) {
+			const target = (!r.exc && r.message && r.message.opportunity) || opportunity;
+			if (!r.exc && r.message) {
+				localStorage.setItem(
+					CGM_PENDING_AWB_LINK_KEY,
+					JSON.stringify({
+						opportunity: target,
+						...r.message,
+					})
+				);
+			}
+			redirect(target);
+		},
+		error() {
+			redirect(opportunity);
+		},
+	});
 }

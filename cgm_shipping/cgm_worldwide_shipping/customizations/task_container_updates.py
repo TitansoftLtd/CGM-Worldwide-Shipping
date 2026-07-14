@@ -134,7 +134,7 @@ def _containers_missing_step(project: str, seq: int) -> list[str]:
 TRACKER_SEED_FIELDS = [
 	"name",
 	"container_number",
-	"type_of_container",
+	"cargo_type",
 	"status",
 	"truck_number",
 	"driver_name",
@@ -253,7 +253,7 @@ def seed_container_update_rows(doc) -> bool:
 		row_data = {
 			"container_tracker": tracker.name,
 			"container_number": tracker.container_number,
-			"type_of_container": tracker.type_of_container,
+			"cargo_type": tracker.cargo_type,
 			"current_status": tracker.status,
 		}
 		if seq == book_seq:

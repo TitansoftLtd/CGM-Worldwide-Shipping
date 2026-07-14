@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestContainerSize(IntegrationTestCase):
+class IntegrationTestCargoSize(IntegrationTestCase):
 	"""
-	Integration tests for ContainerSize.
+	Integration tests for CargoSize.
 	Use this class for testing interactions between multiple components.
 	"""
 

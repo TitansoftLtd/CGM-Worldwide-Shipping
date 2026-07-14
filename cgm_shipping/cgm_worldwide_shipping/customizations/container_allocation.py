@@ -131,7 +131,7 @@ def build_unallocated_container_rows(project: str) -> list[dict]:
 	containers: list[dict] = []
 	seen: set[str] = set()
 
-	def _append_tracker(tracker: str, container_number: str = "", type_of_container: str = "") -> None:
+	def _append_tracker(tracker: str, container_number: str = "", cargo_type: str = "") -> None:
 		if not tracker or tracker in allocated or tracker in seen:
 			return
 		if not frappe.db.exists("Container Tracker", tracker):
@@ -139,14 +139,14 @@ def build_unallocated_container_rows(project: str) -> list[dict]:
 		tracker_values = frappe.db.get_value(
 			"Container Tracker",
 			tracker,
-			["container_number", "type_of_container"],
+			["container_number", "cargo_type"],
 			as_dict=True,
 		) or {}
 		containers.append(
 			{
 				"container_tracker": tracker,
 				"container_number": container_number or tracker_values.get("container_number") or "",
-				"type_of_container": type_of_container or tracker_values.get("type_of_container") or "",
+				"cargo_type": cargo_type or tracker_values.get("cargo_type") or "",
 				"assignment_status": ASSIGNMENT_PENDING,
 			}
 		)
@@ -163,19 +163,19 @@ def build_unallocated_container_rows(project: str) -> list[dict]:
 		_append_tracker(
 			tracker,
 			row.container_number or "",
-			row.type_of_container or "",
+			row.cargo_type or "",
 		)
 
 	for tracker_row in frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=["name", "container_number", "type_of_container"],
+		fields=["name", "container_number", "cargo_type"],
 		order_by="container_number asc",
 	):
 		_append_tracker(
 			tracker_row.name,
 			tracker_row.container_number or "",
-			tracker_row.type_of_container or "",
+			tracker_row.cargo_type or "",
 		)
 
 	return containers

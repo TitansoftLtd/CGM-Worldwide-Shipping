@@ -31,16 +31,47 @@
   "gate_out_date_port",
   "section_icd",
   "get_in_mombasa",
-  "icd_mombasa_discharge_date",
+  "get_out_mombasa",
   "column_break_btiy",
   "icd_gate_in_date",
   "icd_gate_out_date",
   "section_transit",
+  "release_order_number",
+  "release_order_date",
+  "column_break_transit_ro",
+  "kpa_booking_reference",
+  "loading_slip_number",
+  "loading_slip_date",
+  "column_break_transit_dn",
+  "delivery_note_number",
+  "delivery_note_date",
+  "c2_number",
+  "c2_date",
+  "column_break_transit_c2",
+  "exit_note_number",
+  "exit_note_date",
+  "ecmd_device_number",
+  "ecmd_fitted_date",
+  "column_break_transit_ecmd",
+  "transit_departure_date",
+  "border_post",
   "border_clearance_date",
+  "uganda_release_date",
   "column_break_qkej",
   "transit_gate_in_date",
   "column_break_mtin",
   "transit_gate_out_date",
+  "section_export",
+  "port_entry_date",
+  "stuffing_date",
+  "column_break_export",
+  "mother_entry_number",
+  "child_entry_number",
+  "armed_date",
+  "column_break_export_sail",
+  "sailing_date",
+  "coe_date",
+  "coe_document",
   "free_days_tab",
   "section_shipping_line_free_days",
   "free_days_start_date",
@@ -112,18 +143,12 @@
    "label": "B/L Number"
   },
   {
-   "default": "Mombasa Port",
+   "fetch_from": "project.project_type",
    "fieldname": "container_mode",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Container Mode",
-   "options": "\nMombasa Port\nICD Nairobi\nTransit Kenya\u2192Border\nTransit Border\u2192Kenya\nExport"
-  },
-  {
-   "fieldname": "type_of_container",
-   "fieldtype": "Link",
-   "label": "Type of Container",
-   "options": "Container Type"
+   "read_only": 1
   },
   {
    "fieldname": "seal_no",
@@ -142,10 +167,9 @@
   },
   {
    "fieldname": "status",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Operational Status",
-   "options": "Pending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received",
    "read_only": 1
   },
   {
@@ -176,19 +200,19 @@
    "label": "ATA / Berthing Date"
   },
   {
-   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "section_mombasa",
    "fieldtype": "Section Break",
    "label": "Mombasa Port"
   },
   {
-   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "discharging_date",
    "fieldtype": "Date",
    "label": "Gate In Port / Discharge Date"
   },
   {
-   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "custom_release_date",
    "fieldtype": "Date",
    "label": "Custom Release Date"
@@ -198,7 +222,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
    "label": "Gate Out Port Date"
@@ -211,15 +235,10 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:['ICD Nairobi'].includes(doc.container_mode)",
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('ICD')",
    "fieldname": "section_icd",
    "fieldtype": "Section Break",
    "label": "ICD"
-  },
-  {
-   "fieldname": "icd_mombasa_discharge_date",
-   "fieldtype": "Date",
-   "label": "ICD Mombasa Discharge Date"
   },
   {
    "fieldname": "icd_gate_in_date",
@@ -232,7 +251,7 @@
    "label": "ICD Gate Out Date"
   },
   {
-   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "section_transport",
    "fieldtype": "Section Break",
    "label": "Transport"
@@ -259,7 +278,7 @@
    "options": "Supplier"
   },
   {
-   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "section_warehouse",
    "fieldtype": "Section Break",
    "label": "Warehouse"
@@ -286,19 +305,212 @@
    "label": "Transit"
   },
   {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "release_order_number",
+   "fieldtype": "Data",
+   "label": "KPA Release Order No."
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "release_order_date",
+   "fieldtype": "Date",
+   "label": "Release Order Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "column_break_transit_ro",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "kpa_booking_reference",
+   "fieldtype": "Data",
+   "label": "KPA Truck Booking Ref"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "loading_slip_number",
+   "fieldtype": "Data",
+   "label": "Loading Slip Number"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "loading_slip_date",
+   "fieldtype": "Date",
+   "label": "Loading Slip Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "column_break_transit_dn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "delivery_note_number",
+   "fieldtype": "Data",
+   "label": "Delivery Note Number"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "delivery_note_date",
+   "fieldtype": "Date",
+   "label": "Delivery Note Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "c2_number",
+   "fieldtype": "Data",
+   "label": "C2 Number"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "c2_date",
+   "fieldtype": "Date",
+   "label": "C2 Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "column_break_transit_c2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "exit_note_number",
+   "fieldtype": "Data",
+   "label": "Exit Note Number"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "exit_note_date",
+   "fieldtype": "Date",
+   "label": "Exit Note Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "ecmd_device_number",
+   "fieldtype": "Data",
+   "label": "ECMD Device Number"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "ecmd_fitted_date",
+   "fieldtype": "Date",
+   "label": "ECMD Fitted Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "column_break_transit_ecmd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "transit_departure_date",
+   "fieldtype": "Date",
+   "label": "Transit Departure Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "border_post",
+   "fieldtype": "Data",
+   "label": "Border Post"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "border_clearance_date",
    "fieldtype": "Date",
    "label": "Border Clearance Date"
   },
   {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "uganda_release_date",
+   "fieldtype": "Date",
+   "label": "Destination Country Release Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "column_break_qkej",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "transit_gate_in_date",
    "fieldtype": "Date",
    "label": "Transit Gate In Date"
   },
   {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
+   "fieldname": "column_break_mtin",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "transit_gate_out_date",
    "fieldtype": "Date",
    "label": "Transit Gate Out Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "section_export",
+   "fieldtype": "Section Break",
+   "label": "Export"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "port_entry_date",
+   "fieldtype": "Date",
+   "label": "Port Entry Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "stuffing_date",
+   "fieldtype": "Date",
+   "label": "Stuffing Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "column_break_export",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "mother_entry_number",
+   "fieldtype": "Data",
+   "label": "Mother Entry Number"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "child_entry_number",
+   "fieldtype": "Data",
+   "label": "Child Entry Number"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "armed_date",
+   "fieldtype": "Date",
+   "label": "Armed / Sealed Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "column_break_export_sail",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "sailing_date",
+   "fieldtype": "Date",
+   "label": "Sailing Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "coe_date",
+   "fieldtype": "Date",
+   "label": "Certificate of Export Date"
+  },
+  {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
+   "fieldname": "coe_document",
+   "fieldtype": "Attach",
+   "label": "Certificate of Export"
   },
   {
    "fieldname": "section_shipping_line_free_days",
@@ -371,7 +583,7 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "section_empty_return",
    "fieldtype": "Section Break",
    "label": "Empty Return & Interchange"
@@ -442,14 +654,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "column_break_qkej",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_mtin",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "transport_and_delivery_tab",
    "fieldtype": "Tab Break",
    "label": "Transport and Delivery"
@@ -498,11 +702,22 @@
   {
    "fieldname": "column_break_gcfc",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "get_out_mombasa",
+   "fieldtype": "Date",
+   "label": "Get Out Mombasa"
+  },
+  {
+   "fieldname": "type_of_container",
+   "fieldtype": "Link",
+   "label": "Type of Container",
+   "options": "Cargo Type"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-26 11:03:22.429378",
+ "modified": "2026-07-10 07:11:54.310475",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

@@ -48,13 +48,13 @@ def _sync_project_child_row(doc) -> None:
 			"parenttype": "Project",
 			"parentfield": container_field,
 		},
-		fields=["name", "container_tracker", "container_number", "type_of_container"],
+		fields=["name", "container_tracker", "container_number", "cargo_type"],
 	)
 
 	for row in child_rows:
 		matched = row.container_tracker == doc.name or (
 			row.container_number == doc.container_number
-			and (row.type_of_container or "") == (doc.type_of_container or "")
+			and (row.cargo_type or "") == (doc.cargo_type or "")
 		)
 		if not matched:
 			continue
@@ -78,7 +78,7 @@ _CONTAINER_TRACKER_FIELDS = [
 	"container_number",
 	"bl_number",
 	"container_mode",
-	"type_of_container",
+	"cargo_type",
 	"seal_no",
 	"shipping_line",
 	"delivery_destination",
