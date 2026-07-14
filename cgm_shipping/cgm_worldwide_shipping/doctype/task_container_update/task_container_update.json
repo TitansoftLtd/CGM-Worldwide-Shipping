@@ -9,6 +9,8 @@
   "container_number",
   "type_of_container",
   "current_status",
+  "has_deposit",
+  "deposit_amount",
   "column_break_identity",
   "discharging_date",
   "verification_location",
@@ -58,13 +60,29 @@
    "label": "Type",
    "read_only": 1
   },
-  {
+   {
    "fetch_from": "container_tracker.status",
    "fieldname": "current_status",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Status",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Tick when this container has a shipping-line deposit. Leave unticked when there is no deposit.",
+   "fieldname": "has_deposit",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Has Deposit"
+  },
+  {
+   "depends_on": "has_deposit",
+   "fieldname": "deposit_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Deposit Amount",
+   "mandatory_depends_on": "has_deposit"
   },
   {
    "fieldname": "column_break_identity",

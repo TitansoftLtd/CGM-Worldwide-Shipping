@@ -299,6 +299,12 @@ def is_shipping_line_finance_payment_task(sequence_no: int) -> bool:
 	return get_finance_payment_kind(sequence_no) == "Shipping Line"
 
 
+def shipping_line_finance_payment_sequences() -> frozenset[int]:
+	return frozenset(
+		s for s in finance_payment_sequences() if is_shipping_line_finance_payment_task(s)
+	)
+
+
 def is_kpa_finance_payment_task(sequence_no: int) -> bool:
 	return get_finance_payment_kind(sequence_no) == "KPA"
 
@@ -1394,10 +1400,14 @@ def validate_sea_task_can_complete(task) -> None:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			APPLICATION_FINANCE_PROFILES,
 		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			validate_shipping_line_deposit_declarations,
+		)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
 			validate_application_not_manually_completed,
 		)
 
+		validate_shipping_line_deposit_declarations(task)
 		validate_application_not_manually_completed(
 			task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
 		)
@@ -1579,6 +1589,11 @@ def validate_permit_application_task(task, seq: int) -> None:
 		if not row.permit_type:
 			missing.append(f"Permit type{eg}")
 			continue
+		origin = (row.get("origin") or "Local").strip()
+		if origin == "Foreign":
+			if not row.get("permit_document"):
+				missing.append(f"{label} - permit certificate (foreign origin)")
+			continue
 		if not row.get("payment_invoice"):
 			missing.append(f"{label} - supplier/permit invoice")
 
@@ -1651,11 +1666,15 @@ def sync_task_permits_to_project(task) -> None:
 		prow.stage = trow.stage or default_stage
 		if trow.get("payment_invoice"):
 			prow.payment_invoice = trow.payment_invoice
+			prow.invoice_uploaded_on = trow.get("invoice_uploaded_on")
+			prow.invoice_uploaded_by = trow.get("invoice_uploaded_by")
 			prow.status = "Invoice Submitted"
 			if trow.get("invoice_amount"):
 				prow.invoice_amount = trow.invoice_amount
 		if trow.get("permit_document"):
 			prow.permit_document = trow.permit_document
+			prow.certificate_uploaded_on = trow.get("certificate_uploaded_on")
+			prow.certificate_uploaded_by = trow.get("certificate_uploaded_by")
 		if trow.get("payment_receipt"):
 			prow.payment_receipt = trow.payment_receipt
 			prow.status = prow.status or "Receipt Submitted"
@@ -1704,7 +1723,15 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 	if not is_permit_application_task(seq):
 		frappe.throw("This action is only for pre-/post-clearance permit application tasks.")
 
-	missing = [r.permit_type for r in task.get(TASK_PERMITS_FIELD) or [] if not r.get("payment_invoice")]
+	missing = [
+		r.permit_type
+		for r in task.get(TASK_PERMITS_FIELD) or []
+		if r.permit_type
+		and (
+			((r.get("origin") or "Local").strip() == "Foreign" and not r.get("permit_document"))
+			or ((r.get("origin") or "Local").strip() != "Foreign" and not r.get("payment_invoice"))
+		)
+	]
 	if not missing and task.status != "Completed":
 		frappe.throw("Task is already open, or all permit rows already have invoices attached.")
 
@@ -2883,6 +2910,15 @@ def on_task_onload(doc, _method=None):
 
 def before_task_save(doc, _method=None):
 	"""Pre-fill required document rows while the task is still open."""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		stamp_permit_register_upload_metadata,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.doctype.shipment_document.shipment_document import (
+		stamp_shipment_document_upload_metadata,
+	)
+
+	stamp_permit_register_upload_metadata(doc, TASK_PERMITS_FIELD)
+	stamp_shipment_document_upload_metadata(doc, TASK_DOCUMENTS_FIELD)
 	if not _is_sea_task(doc):
 		return
 	if doc.status in ("Completed", "Cancelled"):
@@ -2942,9 +2978,11 @@ def before_task_save(doc, _method=None):
 	if _is_sea_task(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
 			apply_container_updates_from_task,
+			validate_shipping_line_deposit_declarations,
 		)
 
 		apply_container_updates_from_task(doc)
+		validate_shipping_line_deposit_declarations(doc)
 
 
 def on_task_update(doc, _method=None):
