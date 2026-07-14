@@ -21,6 +21,7 @@ const INTAKE_ALWAYS_VISIBLE_FIELDS = [
 	"company",
 	"transaction_date",
 	"party_name",
+	"custom_consignee",
 	"custom_shipment_type",
 	"custom_client_refrence_no",
 ];
@@ -31,6 +32,7 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 	"column_break0",
 	"custom_cargo_type_",
 	"custom_batch_no",
+	"custom_weight_uom_",
 	"custom_weight_nw",
 	"custom_gross_weight",
 	"column_break_10",
@@ -59,6 +61,7 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 	"custom_quantity",
 	"custom_number_of_packages",
 	"custom_package_type",
+	"custom_requested_cargo_quantity",
 	"custom_section_break_idqn5",
 	"custom_container_information",
 	"custom_section_break_jyvyi",
@@ -627,7 +630,8 @@ cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (
 	set_if("custom_client_refrence_no", pending.client_ref);
 	set_if("custom_description_of_goods", pending.commodity);
 	set_if("custom_gross_weight", pending.gross_weight);
-	set_if("custom_uom", pending.weight_uom);
+	set_if("custom_weight_nw", pending.net_weight);
+	set_if("custom_weight_uom_", pending.weight_uom);
 	set_if("custom_quantity", pending.quantity);
 	set_if("custom_port_of_loading", pending.port_of_loading);
 	set_if("custom_port_of_discharge", pending.port_of_discharge);
@@ -654,6 +658,9 @@ cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (
 			child.cargo_size = row.cargo_size || "";
 			child.quantity = row.quantity || "";
 		});
+		const show_requested =
+			(cargo_type || "") === "FCL" || (pending.requested_cargo_quantity || []).length > 0;
+		frm.toggle_display(table_field, show_requested);
 		frm.refresh_field(table_field);
 	}
 

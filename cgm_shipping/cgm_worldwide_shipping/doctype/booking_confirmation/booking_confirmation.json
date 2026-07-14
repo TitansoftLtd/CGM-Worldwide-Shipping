@@ -29,9 +29,9 @@
   "section_cargo",
   "requested_cargo_type",
   "requested_cargo_quantity",
-  "commodity",
   "number_of_packages",
   "package_type",
+  "commodity",
   "section_links",
   "amended_from"
  ],
@@ -67,7 +67,6 @@
    "in_list_view": 1,
    "label": "Shipment Type",
    "options": "Shipment Type",
-   "read_only": 1,
    "reqd": 1
   },
   {
@@ -79,7 +78,8 @@
   {
    "fieldname": "attach_booking",
    "fieldtype": "Attach",
-   "label": "Booking Attachment"
+   "label": "Booking Attachment",
+   "reqd": 1
   },
   {
    "fieldname": "section_vessel",
@@ -197,7 +197,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-14 02:25:37.741552",
+ "modified": "2026-07-14 03:13:16.265638",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",

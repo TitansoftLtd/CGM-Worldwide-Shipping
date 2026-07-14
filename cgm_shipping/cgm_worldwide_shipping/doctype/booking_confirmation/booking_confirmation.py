@@ -40,7 +40,8 @@ BOOKING_TO_OPPORTUNITY_FIELDS = (
 	("commodity", "custom_description_of_goods"),
 	("client_ref", "custom_client_refrence_no"),
 	("gross_weight", "custom_gross_weight"),
-	("weight_uom", "custom_uom"),
+	("net_weight", "custom_weight_nw"),
+	("weight_uom", "custom_weight_uom_"),
 	("port_of_loading", "custom_port_of_loading"),
 	("port_of_discharge", "custom_port_of_discharge"),
 	("voyage_number", "custom_voyage_number"),
@@ -126,7 +127,12 @@ def copy_requested_cargo_quantity_to_opportunity(opp, booking_doc) -> bool:
 		return False
 
 	cargo_type = (booking_doc.get("requested_cargo_type") or "").strip()
-	new_rows = [] if cargo_type == "LCL" else requested_cargo_quantity_rows(booking_doc)
+	rows = requested_cargo_quantity_rows(booking_doc)
+	# LCL has packages instead of container request rows.
+	if cargo_type == "LCL":
+		new_rows = []
+	else:
+		new_rows = rows
 
 	existing = [
 		{
@@ -205,6 +211,7 @@ def booking_propagation_payload(booking_doc) -> dict:
 		"commodity": booking_doc.get("commodity"),
 		"requested_cargo_type": booking_doc.get("requested_cargo_type"),
 		"gross_weight": booking_doc.get("gross_weight"),
+		"net_weight": booking_doc.get("net_weight"),
 		"weight_uom": booking_doc.get("weight_uom"),
 		"quantity": summarize_booking_quantity(booking_doc),
 		"requested_cargo_quantity": requested_cargo_quantity_rows(booking_doc),

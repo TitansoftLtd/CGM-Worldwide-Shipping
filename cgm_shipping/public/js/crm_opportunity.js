@@ -71,6 +71,10 @@ frappe.ui.form.on("Opportunity", {
 		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
 	},
 
+	party_name(frm) {
+		sync_opportunity_consignee_from_customer(frm);
+	},
+
 	custom_bill_of_lading(frm) {
 		sync_opportunity_transport_and_containers(frm);
 		sync_bl_propagation_from_link(frm, { silent: true });
@@ -92,6 +96,18 @@ frappe.ui.form.on("Shipment Document", {
 		frappe.model.set_value(cdt, cdn, "uploaded_on", frappe.datetime.now_datetime());
 	},
 });
+
+function sync_opportunity_consignee_from_customer(frm) {
+	if (!frm.fields_dict.custom_consignee) {
+		return;
+	}
+	if ((frm.doc.opportunity_from || "Customer") !== "Customer" || !frm.doc.party_name) {
+		return;
+	}
+	frappe.db.get_value("Customer", frm.doc.party_name, "customer_name", (values) => {
+		frm.set_value("custom_consignee", values?.customer_name || frm.doc.party_name);
+	});
+}
 
 function run_opportunity_form_syncs(frm, opts = {}) {
 	register_clients_documents_remove_handler(frm);
