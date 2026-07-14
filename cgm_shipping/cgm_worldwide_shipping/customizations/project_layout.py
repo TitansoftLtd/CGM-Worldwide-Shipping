@@ -508,7 +508,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_section_container_event",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
+				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -521,7 +521,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_container_tracker",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
+				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -535,7 +535,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_container_number",
 			"depends_on": (
 				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
-				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
+				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
 			),
 		},
 	)
@@ -543,34 +543,45 @@ def ensure_task_container_fields() -> None:
 
 
 def ensure_task_container_update_fields() -> None:
-	"""Task child table for per-container data entry (tasks 11, 16, 18–24)."""
-	container_seqs = "11,18,20,21,22,23,24,25,26"
+	"""Task child table for per-container data entry (SL deposit + transport steps)."""
+	# Include Shipping Line application (10) for deposit confirmation.
+	container_seqs = "10,12,17,19,20,21,22,23,24,25"
 	depends = (
 		f"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
 		f"[{container_seqs}].includes(doc.custom_sequence_no)"
 	)
-	_create_cf(
-		"Task",
-		{
-			"fieldname": "custom_section_container_updates",
-			"label": "Container Updates",
-			"fieldtype": "Section Break",
-			"insert_after": "custom_sequence_no",
-			"collapsible": 1,
-			"depends_on": depends,
-		},
-	)
-	_create_cf(
-		"Task",
-		{
-			"fieldname": "custom_container_updates",
-			"label": "Container Updates",
-			"fieldtype": "Table",
-			"options": "Task Container Update",
-			"insert_after": "custom_section_container_updates",
-			"depends_on": depends,
-		},
-	)
+	for fieldname, values in (
+		(
+			"custom_section_container_updates",
+			{
+				"fieldname": "custom_section_container_updates",
+				"label": "Container Updates",
+				"fieldtype": "Section Break",
+				"insert_after": "custom_sequence_no",
+				"collapsible": 1,
+				"depends_on": depends,
+			},
+		),
+		(
+			"custom_container_updates",
+			{
+				"fieldname": "custom_container_updates",
+				"label": "Container Updates",
+				"fieldtype": "Table",
+				"options": "Task Container Update",
+				"insert_after": "custom_section_container_updates",
+				"depends_on": depends,
+			},
+		),
+	):
+		name = f"Task-{fieldname}"
+		if frappe.db.exists("Custom Field", name):
+			doc = frappe.get_doc("Custom Field", name)
+			if doc.depends_on != depends:
+				doc.depends_on = depends
+				doc.save(ignore_permissions=True)
+		else:
+			_create_cf("Task", values)
 	_create_cf(
 		"Task",
 		{
@@ -1328,3 +1339,29 @@ def ensure_project_finance_cost_fields() -> None:
 		},
 	)
 	frappe.clear_cache(doctype="Project")
+
+
+def ensure_cargo_type_fields() -> None:
+	"""Select Cargo Type on Project / Opportunity / Quotation (from CARGO_TYPE_OPTIONS)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import CARGO_TYPE_OPTIONS
+
+	options = "\n" + "\n".join(CARGO_TYPE_OPTIONS)
+	targets = (
+		("Project", "custom_shipment_type"),
+		("Opportunity", "custom_shipment_type"),
+		("Quotation", "custom_shipment_type"),
+	)
+	for dt, insert_after in targets:
+		if not frappe.db.exists("DocType", dt):
+			continue
+		_create_cf(
+			dt,
+			{
+				"fieldname": "custom_cargo_type",
+				"label": "Cargo Type",
+				"fieldtype": "Select",
+				"options": options,
+				"insert_after": insert_after,
+			},
+		)
+		frappe.clear_cache(doctype=dt)
