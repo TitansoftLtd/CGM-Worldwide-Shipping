@@ -404,6 +404,7 @@ frappe.ui.form.on("Container Tracker", {
 		lock_transport_assignment_fields(frm);
 		render_container_tracker_alerts(frm);
 		apply_container_tracker_status_indicator(frm);
+		render_container_tracker_truck_updates(frm);
 		if (frm.doc.custom_bill_of_lading) {
 			sync_bl_container_pick_list(frm);
 		}
@@ -483,3 +484,40 @@ frappe.ui.form.on("Container Tracker", {
 		prompt_track_next_container(frm);
 	},
 });
+
+function render_container_tracker_truck_updates(frm) {
+	if (!frm.doc.name || frm.doc.__islocal) {
+		return;
+	}
+	let section = frm.layout.wrapper.find(".cgm-tracker-truck-updates");
+	if (!section.length) {
+		section = $(`
+			<div class="cgm-tracker-truck-updates form-section">
+				<div class="section-head">${__("Transporter truck updates")}</div>
+				<div class="cgm-tracker-truck-updates-body text-muted">${__("Loading…")}</div>
+			</div>
+		`);
+		const transportSection = frm.fields_dict.section_transport;
+		if (transportSection && transportSection.$wrapper) {
+			section.insertAfter(transportSection.$wrapper);
+		} else {
+			section.prependTo(frm.layout.wrapper);
+		}
+	}
+
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates.get_tracker_truck_updates",
+		args: { container_tracker: frm.doc.name },
+		callback(r) {
+			const rows = r.message || [];
+			const body = section.find(".cgm-tracker-truck-updates-body");
+			if (!rows.length) {
+				body.html(`<p class="text-muted" style="margin:0;">${__("No transporter updates yet.")}</p>`);
+				return;
+			}
+			body.html(cgm.updates.renderList(rows));
+			cgm.updates.bindListClicks(body);
+		},
+	});
+}
