@@ -3,12 +3,32 @@
 
 const REQUESTED_CONTAINERS_FIELD = "requested_cargo_quantity";
 
-function toggle_cargo_fields(frm) {
-	const is_fcl = (frm.doc.requested_cargo_type || "").trim() === "FCL";
+function cargo_type_code(frm) {
+	return (frm.doc.requested_cargo_type || "").trim().toUpperCase();
+}
 
-	frm.toggle_display(REQUESTED_CONTAINERS_FIELD, is_fcl);
-	frm.toggle_display("number_of_packages", !is_fcl);
-	frm.toggle_display("package_type", !is_fcl);
+/**
+ * LCL → packages only.
+ * Otherwise show the requested-containers table (FCL, empty, or size-like
+ * Cargo Type values). Hiding only when cargo === LCL avoids mid-edit
+ * disappear when Cargo Type is not exactly "FCL".
+ */
+function toggle_cargo_fields(frm) {
+	const is_lcl = cargo_type_code(frm) === "LCL";
+	const show_table = !is_lcl;
+	const show_packages = is_lcl;
+
+	frm.set_df_property(REQUESTED_CONTAINERS_FIELD, "hidden", show_table ? 0 : 1);
+	frm.set_df_property("number_of_packages", "hidden", show_packages ? 0 : 1);
+	frm.set_df_property("package_type", "hidden", show_packages ? 0 : 1);
+
+	if (show_table) {
+		frm.refresh_field(REQUESTED_CONTAINERS_FIELD);
+	}
+	if (show_packages) {
+		frm.refresh_field("number_of_packages");
+		frm.refresh_field("package_type");
+	}
 }
 
 frappe.ui.form.on("Booking Confirmation", {

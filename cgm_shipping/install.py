@@ -26,7 +26,6 @@ def after_migrate() -> None:
 	ensure_cargo_terminology_renames()
 	reinstall_supplier_shipping_line_schema()
 	ensure_task_container_schema()
-	ensure_opportunity_intake_layout()
 	ensure_shipment_type_transport_defaults()
 	ensure_shipment_document_versioning()
 	ensure_finance_cost_ledger_schema()
@@ -72,18 +71,6 @@ def ensure_shipment_document_versioning() -> None:
 	)
 
 	hide_computed_shipment_document_columns()
-	frappe.db.commit()
-
-
-def ensure_opportunity_intake_layout() -> None:
-	"""Idempotent Opportunity shipment intake form layout (custom fields, depends_on, field order)."""
-	if not frappe.db.exists("DocType", "Opportunity"):
-		return
-	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard import (
-		ensure_opportunity_intake_wizard_layout,
-	)
-
-	ensure_opportunity_intake_wizard_layout()
 	frappe.db.commit()
 
 

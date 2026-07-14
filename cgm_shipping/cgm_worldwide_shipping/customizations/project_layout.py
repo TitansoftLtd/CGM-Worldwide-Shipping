@@ -1422,136 +1422,26 @@ def ensure_transit_project_fields() -> None:
 
 
 def ensure_opportunity_universal_fields() -> None:
-	"""Opportunity intake fields driven by Shipment Type flags (universal starting point)."""
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_section_shipment_intake",
-			"label": "Shipment Intake",
-			"fieldtype": "Section Break",
-			"insert_after": "party_name",
-			"collapsible": 0,
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_eta",
-			"label": "ETA",
-			"fieldtype": "Date",
-			"insert_after": "custom_shipment_type",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_etd",
-			"label": "ETD — Estimated Departure",
-			"fieldtype": "Date",
-			"insert_after": "custom_eta",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_shipping_line",
-			"label": "Shipping Line",
-			"fieldtype": "Link",
-			"options": "Supplier",
-			"insert_after": "custom_etd",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_shipping_order_ref",
-			"label": "Shipping Order Reference",
-			"fieldtype": "Data",
-			"insert_after": "custom_shipping_line",
-			"description": "First document received for export. BL number is added when available.",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_booking_ref",
-			"label": "Booking Reference",
-			"fieldtype": "Data",
-			"insert_after": "custom_shipping_order_ref",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_delivery_destination",
-			"label": "Destination Country",
-			"fieldtype": "Link",
-			"options": "Delivery Destination",
-			"insert_after": "custom_booking_ref",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_handling_agent",
-			"label": "Handling Agent",
-			"fieldtype": "Data",
-			"insert_after": "custom_delivery_destination",
-			"description": "FedEx, Transglobal, Swissport, etc.",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_draft_bl_number",
-			"label": "B/L Number (if known)",
-			"fieldtype": "Data",
-			"insert_after": "custom_handling_agent",
-			"description": "Enter when the client provides a BL number before the Bill of Lading record is created.",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_section_transport_document",
-			"label": "Transport Document",
-			"fieldtype": "Section Break",
-			"insert_after": "custom_draft_bl_number",
-		},
-	)
-	_ensure_cf(
-		"Opportunity",
-		{
-			"fieldname": "custom_booking_confirmation",
-			"label": "Booking Confirmation",
-			"fieldtype": "Link",
-			"options": "Booking Confirmation",
-			"insert_after": "custom_section_transport_document",
-		},
-	)
+	"""Ensure Project shipping fields that mirror Opportunity intake.
 
-	for dt, fields in (
-		(
-			"Project",
-			(
-				("custom_shipping_order_ref", "Data", "Shipping Order Reference"),
-				("custom_booking_ref", "Data", "Booking Reference"),
-				("custom_handling_agent", "Data", "Handling Agent"),
-				("custom_booking_confirmation", "Link", "Booking Confirmation", "Booking Confirmation"),
-			),
-		),
+	Opportunity layout / custom fields live in ``custom/opportunity.json``
+	(``sync_on_migrate``). Do not create Opportunity Custom Fields here.
+	"""
+	for item in (
+		("custom_shipping_order_ref", "Data", "Shipping Order Reference"),
+		("custom_booking_ref", "Data", "Booking Reference"),
+		("custom_handling_agent", "Data", "Handling Agent"),
+		("custom_booking_confirmation", "Link", "Booking Confirmation", "Booking Confirmation"),
 	):
-		for item in fields:
-			fieldname, fieldtype, label = item[0], item[1], item[2]
-			values = {
-				"fieldname": fieldname,
-				"label": label,
-				"fieldtype": fieldtype,
-				"insert_after": "custom_shipping_line",
-			}
-			if len(item) > 3:
-				values["options"] = item[3]
-			_ensure_cf(dt, values)
+		fieldname, fieldtype, label = item[0], item[1], item[2]
+		values = {
+			"fieldname": fieldname,
+			"label": label,
+			"fieldtype": fieldtype,
+			"insert_after": "custom_shipping_line",
+		}
+		if len(item) > 3:
+			values["options"] = item[3]
+		_ensure_cf("Project", values)
 
-	frappe.clear_cache(doctype="Opportunity")
 	frappe.clear_cache(doctype="Project")

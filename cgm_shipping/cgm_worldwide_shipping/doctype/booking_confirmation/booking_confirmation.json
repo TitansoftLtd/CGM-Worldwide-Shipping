@@ -20,6 +20,7 @@
   "port_of_loading",
   "port_of_discharge",
   "weight_uom",
+  "net_weight",
   "gross_weight",
   "column_break_bc_2",
   "cargo_cut_off",
@@ -28,9 +29,9 @@
   "section_cargo",
   "requested_cargo_type",
   "requested_cargo_quantity",
-  "commodity",
   "number_of_packages",
   "package_type",
+  "commodity",
   "section_links",
   "amended_from"
  ],
@@ -54,7 +55,8 @@
   {
    "fieldname": "client_ref",
    "fieldtype": "Data",
-   "label": "Client Reference"
+   "label": "Client Reference",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_bc_1",
@@ -66,7 +68,6 @@
    "in_list_view": 1,
    "label": "Shipment Type",
    "options": "Shipment Type",
-   "read_only": 1,
    "reqd": 1
   },
   {
@@ -78,7 +79,8 @@
   {
    "fieldname": "attach_booking",
    "fieldtype": "Attach",
-   "label": "Booking Attachment"
+   "label": "Booking Attachment",
+   "reqd": 1
   },
   {
    "fieldname": "section_vessel",
@@ -186,12 +188,17 @@
    "fieldtype": "Table",
    "label": "Requested Cargo Quantity",
    "options": "Requested Containers"
+  },
+  {
+   "fieldname": "net_weight",
+   "fieldtype": "Data",
+   "label": "Net Weight"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-10 10:19:46.770205",
+ "modified": "2026-07-14 03:43:32.764138",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",

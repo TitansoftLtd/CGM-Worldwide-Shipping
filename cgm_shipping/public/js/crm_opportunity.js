@@ -71,6 +71,10 @@ frappe.ui.form.on("Opportunity", {
 		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
 	},
 
+	party_name(frm) {
+		sync_opportunity_consignee_from_customer(frm, { force_show: true });
+	},
+
 	custom_bill_of_lading(frm) {
 		sync_opportunity_transport_and_containers(frm);
 		sync_bl_propagation_from_link(frm, { silent: true });
@@ -82,6 +86,7 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	custom_booking_confirmation(frm) {
+		cgm_shipping.opportunity_shipment.sync_from_linked_booking(frm);
 		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
 	},
 });
@@ -93,23 +98,48 @@ frappe.ui.form.on("Shipment Document", {
 	},
 });
 
+function sync_opportunity_consignee_from_customer(frm, opts = {}) {
+	if (!frm.fields_dict.custom_consignee) {
+		return;
+	}
+	if (opts.force_show || frm.doc.party_name) {
+		frm.set_df_property("custom_consignee", "hidden", 0);
+		frm.toggle_display("custom_consignee", true);
+	}
+	if ((frm.doc.opportunity_from || "Customer") !== "Customer" || !frm.doc.party_name) {
+		return;
+	}
+	frappe.db.get_value("Customer", frm.doc.party_name, "customer_name", (values) => {
+		const label = values?.customer_name || frm.doc.party_name;
+		if (frm.doc.custom_consignee !== label) {
+			frm.set_value("custom_consignee", label);
+		}
+	});
+}
+
 function run_opportunity_form_syncs(frm, opts = {}) {
 	register_clients_documents_remove_handler(frm);
 	configure_opportunity_clients_documents_grid(frm);
 	setup_opportunity_bill_of_lading_create(frm);
 	cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
-	if (opts.apply_pending_bl) {
-		apply_pending_bl_from_submit(frm);
-	}
-	cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit(frm);
-	cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit(frm);
-	sync_bl_from_clients_documents(frm, { silent: true });
-	const bl_link_field = get_opportunity_bl_link_field(frm);
-	if (frm.doc[bl_link_field]) {
-		sync_bl_propagation_from_link(frm, { silent: true });
-		sync_opportunity_transport_and_containers(frm);
-		if (cgm_shipping?.bl_containers?.schedule_sync) {
-			cgm_shipping.bl_containers.schedule_sync(frm, { silent: true });
+	sync_opportunity_consignee_from_customer(frm, { force_show: true });
+
+	// Pending transport-doc redirects only apply to the saved Opportunity they came from.
+	if (!frm.is_new()) {
+		if (opts.apply_pending_bl) {
+			apply_pending_bl_from_submit(frm);
+		}
+		cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit(frm);
+		cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit(frm);
+		cgm_shipping.opportunity_shipment.sync_from_linked_booking(frm);
+		sync_bl_from_clients_documents(frm, { silent: true });
+		const bl_link_field = get_opportunity_bl_link_field(frm);
+		if (frm.doc[bl_link_field]) {
+			sync_bl_propagation_from_link(frm, { silent: true });
+			sync_opportunity_transport_and_containers(frm);
+			if (cgm_shipping?.bl_containers?.schedule_sync) {
+				cgm_shipping.bl_containers.schedule_sync(frm, { silent: true });
+			}
 		}
 	}
 }
@@ -308,6 +338,8 @@ function apply_bl_classification_fields(frm, data) {
 	const detail_fields = [
 		"custom_description_of_goods",
 		"custom_draft_bl_number",
+		"custom_number_of_packages",
+		"custom_package_type",
 	];
 	detail_fields.forEach((fieldname) => {
 		if (data[fieldname] != null && data[fieldname] !== "") {
@@ -455,7 +487,7 @@ function setup_opportunity_bill_of_lading_create(frm) {
 // ─── Pending BL from submit ───────────────────────────────────────────────────
 
 function apply_pending_bl_from_submit(frm) {
-	if (!frm.doc.name) {
+	if (!frm.doc.name || frm.is_new()) {
 		return;
 	}
 

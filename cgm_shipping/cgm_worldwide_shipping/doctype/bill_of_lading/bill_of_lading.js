@@ -1,13 +1,37 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 // For license information, please see license.txt
 
+/**
+ * FCL → container table
+ * LCL → number of packages / package type
+ */
 function toggle_cargo_fields(frm) {
-	const is_fcl = (frm.doc.cargo_type || "").trim() === "FCL";
+	const cargo = (frm.doc.cargo_type || "").trim().toUpperCase();
+	const is_fcl = cargo === "FCL";
+	const is_lcl = cargo === "LCL";
 
-	frm.toggle_display("container_information", is_fcl);
-	frm.toggle_display("number_of_packages", !is_fcl);
-	frm.toggle_display("package_type", !is_fcl);
+	[
+		["section_fcl", is_fcl],
+		["container_information", is_fcl],
+		["section_lcl", is_lcl],
+		["number_of_packages", is_lcl],
+		["package_type", is_lcl],
+	].forEach(([fieldname, show]) => {
+		if (!frm.fields_dict[fieldname]) {
+			return;
+		}
+		frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
+	});
+
+	if (is_fcl) {
+		frm.refresh_field("container_information");
+	}
+	if (is_lcl) {
+		frm.refresh_field("number_of_packages");
+		frm.refresh_field("package_type");
+	}
 }
+
 
 frappe.ui.form.on("Bill of Lading", {
 	onload(frm) {

@@ -35,6 +35,11 @@ class BillofLading(Document):
 		batch_number = resolve_batch_number_for_bl(self)
 		self.name = build_bill_of_lading_name(self.bl_number, quantity, batch_number)
 
+	def on_update(self):
+		"""Keep linked Opportunity aligned while the BL remains in draft."""
+		if self.get("linked_opportunity") or self.get("custom_linked_opportunity"):
+			sync_opportunity_from_bl(self, allow_draft=True)
+
 	def _quantity_for_naming(self) -> str:
 		"""Quantity segment for the document name (from field or container rows)."""
 		if self.get("quantity"):
@@ -47,6 +52,13 @@ class BillofLading(Document):
 		if not self.get("batch_no"):
 			self.batch_no = str(batch_number)
 		summary = self._summarize_container_quantities()
+		if not summary:
+			pkgs = (self.get("number_of_packages") or "").strip()
+			ptype = (self.get("package_type") or "").strip()
+			if pkgs and ptype:
+				summary = f"{pkgs} {ptype}"
+			else:
+				summary = pkgs or ptype
 		if self.meta.has_field("container_summary"):
 			self.container_summary = summary
 		if self.meta.has_field("quantity"):
@@ -241,11 +253,14 @@ def resolve_opportunity_for_bl(bl_doc, opportunity: str | None = None) -> str | 
 	return None
 
 
-def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
-	"""Link submitted BL data back onto the source Opportunity."""
+def sync_opportunity_from_bl(bl_doc, opportunity: str | None = None, allow_draft: bool = False) -> str | None:
+	"""Link BL data back onto the source Opportunity for draft or submitted BLs."""
 	config = get_bl_config()
 	opportunity = resolve_opportunity_for_bl(bl_doc, opportunity)
 	if not opportunity:
+		return None
+
+	if not allow_draft and bl_doc.docstatus != 1:
 		return None
 
 	bl_field = config.get("opportunity_bl_field")
@@ -269,6 +284,13 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 			changed = True
 
 	quantity_summary = bl_doc._summarize_container_quantities()
+	if not quantity_summary:
+		pkgs = (bl_doc.get("number_of_packages") or "").strip()
+		ptype = (bl_doc.get("package_type") or "").strip()
+		if pkgs and ptype:
+			quantity_summary = f"{pkgs} {ptype}"
+		else:
+			quantity_summary = pkgs or ptype
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		if opp.get(quantity_field) != quantity_summary:
 			opp.set(quantity_field, quantity_summary)
@@ -281,6 +303,11 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 		opp.save(ignore_permissions=True)
 
 	return opportunity
+
+
+def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
+	"""Link submitted BL data back onto the source Opportunity."""
+	return sync_opportunity_from_bl(bl_doc, opportunity=opportunity, allow_draft=False)
 
 
 def prepend_opportunity_bl_document(opp_doc, attachment_url, bl_name=None) -> bool:
@@ -320,11 +347,17 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 	attachment_field = get_bl_config().get("attachment_field")
 	linked_opportunity = sync_opportunity_from_submitted_bl(doc, opportunity)
 
+	quantity = doc._summarize_container_quantities() or (doc.get("quantity") or "")
+	if not quantity:
+		pkgs = (doc.get("number_of_packages") or "").strip()
+		ptype = (doc.get("package_type") or "").strip()
+		quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
+
 	return {
 		"bl_name": doc.name,
 		"attachment": doc.get(attachment_field) or "" if attachment_field else "",
 		"document_type": get_document_type_link_name("BL"),
-		"quantity": doc._summarize_container_quantities(),
+		"quantity": quantity,
 		"opportunity": linked_opportunity,
 		**bl_propagation_payload(doc),
 	}
