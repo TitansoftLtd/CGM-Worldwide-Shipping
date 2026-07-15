@@ -118,10 +118,10 @@
    "label": "Client Refrence No"
   },
   {
+   "description": "Leave blank for next batch, or enter an existing customer batch to share.",
    "fieldname": "batch_no",
    "fieldtype": "Data",
-   "label": "Batch No",
-   "read_only": 1
+   "label": "Batch No"
   }
  ],
  "grid_page_length": 50,
