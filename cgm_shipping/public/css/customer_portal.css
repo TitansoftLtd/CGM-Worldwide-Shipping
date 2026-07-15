@@ -449,3 +449,62 @@ button.cp-kpi { width: 100%; text-align: left; font: inherit; }
 .tp-interchange-file-name:empty {
   display: none;
 }
+
+/* ───── Transporter update form (Frappe FieldGroup) ───── */
+.tp-update-form-wrap {
+  margin-top: 0.75rem;
+}
+.tp-update-form-wrap .form-layout {
+  margin: 0;
+}
+.tp-update-form-wrap .form-section {
+  border: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  background: transparent;
+  box-shadow: none;
+}
+.tp-update-form-wrap .section-head,
+.tp-update-form-wrap .section-head.collapsible {
+  display: none;
+}
+.tp-update-form-wrap .form-column {
+  padding-left: 0;
+  padding-right: 0.75rem;
+}
+.tp-update-form-wrap .frappe-control {
+  margin-bottom: 0.85rem;
+  position: relative;
+}
+.tp-update-form-wrap .control-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--cp-text-muted);
+  margin-bottom: 0.25rem;
+}
+/* Desk shows fieldnames as hover tooltips; website CSS does not hide them. */
+.tp-update-form-wrap .tooltip-content,
+.tp-update-form-wrap .help-box,
+.tp-update-form-wrap .description {
+  display: none !important;
+}
+.tp-update-actions {
+  margin-top: 0.5rem;
+}
+.tp-update-actions .cp-btn.tp-post-update {
+  background: var(--cp-brand);
+  color: #fff;
+  border: none;
+  padding: 0.55rem 1.25rem;
+  font-weight: 600;
+}
+.tp-update-actions .cp-btn.tp-post-update:hover,
+.tp-update-actions .cp-btn.tp-post-update:focus {
+  background: var(--cp-brand-dark);
+  color: #fff;
+}
+.tp-update-actions .cp-btn.tp-post-update:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
