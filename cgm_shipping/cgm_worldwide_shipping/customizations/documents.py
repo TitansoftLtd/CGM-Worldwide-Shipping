@@ -130,8 +130,79 @@ def _shipment_document_meta():
 	return frappe.get_meta("Shipment Document")
 
 
+def draft_document_field(meta=None) -> str | None:
+	meta = meta or _shipment_document_meta()
+	if meta.has_field("draft_documents"):
+		return "draft_documents"
+	if meta.has_field("initial_attachment"):
+		return "initial_attachment"
+	return None
+
+
+def get_draft_attachment(row) -> str:
+	if not row:
+		return ""
+	field = draft_document_field(row.meta if hasattr(row, "meta") else None)
+	if field:
+		return (row.get(field) or "").strip()
+	return ""
+
+
+def set_draft_attachment(row, url: str) -> None:
+	field = draft_document_field(row.meta if hasattr(row, "meta") else None)
+	if field and url:
+		setattr(row, field, url)
+
+
 def has_document_versioning() -> bool:
-	return _shipment_document_meta().has_field("initial_attachment")
+	meta = _shipment_document_meta()
+	return meta.has_field("final_attachment") or bool(draft_document_field(meta))
+
+
+def _ensure_row_attachment_metadata(
+	row, attach_field: str, on_field: str, by_field: str
+) -> None:
+	if not row.meta.has_field(on_field) or not row.meta.has_field(by_field):
+		return
+	if not (row.get(attach_field) or "").strip():
+		return
+	if row.get(on_field):
+		return
+	setattr(row, on_field, now_datetime())
+	setattr(row, by_field, frappe.session.user)
+
+
+def shipment_document_metadata_dict(row) -> dict:
+	"""Serialize attachment upload audit fields when present on the row."""
+	data = {}
+	meta = row.meta if hasattr(row, "meta") else _shipment_document_meta()
+	for attach_field, on_field, by_field in (
+		("draft_documents", "draft_documents_uploaded_on", "draft_documents_uploaded_by"),
+		("final_attachment", "final_document_uploaded_on", "final_document_uploaded_by"),
+	):
+		if not meta.has_field(attach_field):
+			continue
+		if row.get(attach_field):
+			data[attach_field] = row.get(attach_field)
+		if meta.has_field(on_field):
+			data[on_field] = row.get(on_field)
+		if meta.has_field(by_field):
+			data[by_field] = row.get(by_field)
+	draft_field = draft_document_field(meta)
+	if draft_field and draft_field != "draft_documents" and row.get(draft_field):
+		data[draft_field] = row.get(draft_field)
+	if meta.has_field("uploaded_by"):
+		data["uploaded_by"] = row.get("uploaded_by")
+	if meta.has_field("uploaded_on"):
+		data["uploaded_on"] = row.get("uploaded_on")
+	for fieldname in (
+		"final_document_status",
+		"final_document_approved_by",
+		"final_document_approved_on",
+	):
+		if meta.has_field(fieldname):
+			data[fieldname] = row.get(fieldname)
+	return data
 
 
 def primary_attachment(row) -> str:
@@ -141,7 +212,7 @@ def primary_attachment(row) -> str:
 	if has_document_versioning():
 		return (
 			(row.get("final_attachment") or "").strip()
-			or (row.get("initial_attachment") or "").strip()
+			or get_draft_attachment(row)
 			or (row.get("attachment") or "").strip()
 		)
 	return (row.get("attachment") or "").strip()
@@ -150,12 +221,12 @@ def primary_attachment(row) -> str:
 def derive_version_status(row) -> str:
 	if not has_document_versioning():
 		return (row.get("version_status") or "").strip()
-	initial = (row.get("initial_attachment") or "").strip()
+	draft = get_draft_attachment(row)
 	final = (row.get("final_attachment") or "").strip()
 	legacy = (row.get("attachment") or "").strip()
 	if final:
 		return "Final Received"
-	if initial:
+	if draft:
 		return "Awaiting Final"
 	if legacy:
 		return "Only Version"
@@ -163,17 +234,17 @@ def derive_version_status(row) -> str:
 
 
 def normalize_shipment_document_row(row, *, prefer_initial_for_legacy: bool = True) -> None:
-	"""Keep version_status and primary attachment in sync with initial/final slots."""
+	"""Keep version_status and primary attachment in sync with draft/final slots."""
 	if not row or not has_document_versioning():
 		return
 
 	legacy = (row.get("attachment") or "").strip()
-	initial = (row.get("initial_attachment") or "").strip()
+	draft = get_draft_attachment(row)
 	final = (row.get("final_attachment") or "").strip()
 
-	if legacy and not initial and not final and prefer_initial_for_legacy:
-		row.initial_attachment = legacy
-		initial = legacy
+	if legacy and not draft and not final and prefer_initial_for_legacy:
+		set_draft_attachment(row, legacy)
+		draft = legacy
 
 	if row.meta.has_field("version_status"):
 		row.version_status = derive_version_status(row)
@@ -185,33 +256,29 @@ def normalize_shipment_document_row(row, *, prefer_initial_for_legacy: bool = Tr
 			row.status = "Uploaded"
 
 
-	if row.attachment and row.meta.has_field("status"):
-		if row.get("status") in (None, "", "Missing"):
-			row.status = "Uploaded"
-
-
 def resolve_document_row_slots(row) -> tuple[str, str]:
-	"""Return (initial_url, final_url) from a Shipment Document row."""
+	"""Return (draft_url, final_url) from a Shipment Document row."""
 	if not row:
 		return "", ""
 	normalize_shipment_document_row(row)
-	initial = (row.get("initial_attachment") or "").strip()
+	draft = get_draft_attachment(row)
 	final = (row.get("final_attachment") or "").strip()
 	legacy = (row.get("attachment") or "").strip()
 	version = (row.get("version_status") or "").strip()
 
 	if not final and legacy:
-		if initial and legacy != initial:
+		if draft and legacy != draft:
 			final = legacy
 		elif version == "Final Received":
-			final = legacy or initial
-		elif not initial:
-			initial = legacy
+			final = legacy or draft
+		elif not draft:
+			set_draft_attachment(row, legacy)
+			draft = legacy
 
-	if version == "Final Received" and initial and not final:
-		final = initial
+	if version == "Final Received" and draft and not final:
+		final = draft
 
-	return initial, final
+	return draft, final
 
 
 def promote_checkpoint_task_final_uploads(task) -> None:
@@ -227,19 +294,19 @@ def promote_checkpoint_task_final_uploads(task) -> None:
 		return
 
 	for row in task.get(TASK_DOCUMENTS_FIELD) or []:
-		initial = (row.get("initial_attachment") or "").strip()
+		draft = get_draft_attachment(row)
 		final = (row.get("final_attachment") or "").strip()
 		legacy = (row.get("attachment") or "").strip()
 		version = (row.get("version_status") or "").strip()
 
-		if not final and legacy and initial and legacy != initial:
+		if not final and legacy and draft and legacy != draft:
 			row.final_attachment = legacy
 		elif not final and version == "Final Received" and legacy:
 			row.final_attachment = legacy
-		elif not final and version == "Final Received" and initial:
-			row.final_attachment = initial
-		elif not final and legacy and not initial:
-			row.initial_attachment = legacy
+		elif not final and version == "Final Received" and draft:
+			row.final_attachment = draft
+		elif not final and legacy and not draft:
+			set_draft_attachment(row, legacy)
 
 		normalize_shipment_document_row(row)
 
@@ -261,9 +328,9 @@ def hide_computed_shipment_document_columns() -> None:
 def ensure_shipment_document_version_fields() -> None:
 	"""Idempotent Custom Field installer when JSON migrate has not run yet."""
 	meta = _shipment_document_meta()
-	if not meta.has_field("initial_attachment"):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _create_cf
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _create_cf
 
+	if not meta.has_field("initial_attachment"):
 		_create_cf(
 			"Shipment Document",
 			{
@@ -274,16 +341,18 @@ def ensure_shipment_document_version_fields() -> None:
 				"in_list_view": 1,
 			},
 		)
+	if not meta.has_field("final_attachment"):
 		_create_cf(
 			"Shipment Document",
 			{
 				"fieldname": "final_attachment",
 				"label": "Final Document",
 				"fieldtype": "Attach",
-				"insert_after": "initial_attachment",
+				"insert_after": draft_document_field(meta) or "required",
 				"in_list_view": 1,
 			},
 		)
+	if not meta.has_field("version_status"):
 		_create_cf(
 			"Shipment Document",
 			{
@@ -380,13 +449,26 @@ def _copy_version_slots_to_row(target_row, source_row) -> bool:
 	normalize_shipment_document_row(source_row)
 	normalize_shipment_document_row(target_row)
 	changed = False
-	initial_url = (source_row.get("initial_attachment") or "").strip() or primary_attachment(source_row)
+	draft_url = get_draft_attachment(source_row) or primary_attachment(source_row)
 	final_url = (source_row.get("final_attachment") or "").strip()
-	if initial_url and target_row.get("initial_attachment") != initial_url:
-		target_row.initial_attachment = initial_url
+	draft_field = draft_document_field(target_row.meta)
+	if draft_url and draft_field and target_row.get(draft_field) != draft_url:
+		setattr(target_row, draft_field, draft_url)
+		_ensure_row_attachment_metadata(
+			target_row,
+			draft_field,
+			"draft_documents_uploaded_on",
+			"draft_documents_uploaded_by",
+		)
 		changed = True
 	if final_url and target_row.get("final_attachment") != final_url:
 		target_row.final_attachment = final_url
+		_ensure_row_attachment_metadata(
+			target_row,
+			"final_attachment",
+			"final_document_uploaded_on",
+			"final_document_uploaded_by",
+		)
 		changed = True
 	for field in ("remarks",):
 		val = source_row.get(field)
@@ -431,11 +513,24 @@ def upsert_shipment_document_row(
 		)
 
 	file_url = (final_url or initial_url or "").strip()
+	draft_field = draft_document_field(row.meta)
 	if has_document_versioning():
-		if initial_url:
-			row.initial_attachment = initial_url
+		if initial_url and draft_field:
+			setattr(row, draft_field, initial_url)
+			_ensure_row_attachment_metadata(
+				row,
+				draft_field,
+				"draft_documents_uploaded_on",
+				"draft_documents_uploaded_by",
+			)
 		if final_url:
 			row.final_attachment = final_url
+			_ensure_row_attachment_metadata(
+				row,
+				"final_attachment",
+				"final_document_uploaded_on",
+				"final_document_uploaded_by",
+			)
 		normalize_shipment_document_row(row)
 	elif file_url:
 		row.attachment = file_url
@@ -458,10 +553,8 @@ def upsert_shipment_document_row(
 		row.status = "Uploaded"
 
 	if verify and primary_attachment(row):
-		row.verified_by = row.verified_by or frappe.session.user
-		row.verified_on = row.verified_on or now_datetime()
-		row.uploaded_by = row.uploaded_by or frappe.session.user
-		row.uploaded_on = row.uploaded_on or now_datetime()
+		row.verified_by = row.get("verified_by") or frappe.session.user
+		row.verified_on = row.get("verified_on") or now_datetime()
 
 
 def serialize_clients_document_row(row) -> dict:
@@ -470,15 +563,12 @@ def serialize_clients_document_row(row) -> dict:
 	data = {
 		"document_type": row.document_type,
 		"status": row.status,
-		"uploaded_by": row.uploaded_by,
-		"uploaded_on": row.uploaded_on,
-		"verified_by": row.verified_by,
-		"verified_on": row.verified_on,
+		"verified_by": row.get("verified_by"),
+		"verified_on": row.get("verified_on"),
 		"remarks": row.remarks,
 	}
+	data.update(shipment_document_metadata_dict(row))
 	if has_document_versioning():
-		data["initial_attachment"] = row.get("initial_attachment")
-		data["final_attachment"] = row.get("final_attachment")
 		data["attachment"] = primary_attachment(row)
 		if row.meta.has_field("version_status"):
 			data["version_status"] = row.get("version_status")
@@ -518,9 +608,18 @@ def prepend_clients_document_row(
 	)
 
 	rows = parent_doc.get(table_field) or []
-	if rows:
-		rows[0].uploaded_by = rows[0].uploaded_by or frappe.session.user
-		rows[0].uploaded_on = rows[0].uploaded_on or now_datetime()
+	if rows and rows[0].meta.has_field("draft_documents_uploaded_by"):
+		_ensure_row_attachment_metadata(
+			rows[0],
+			draft_document_field(rows[0].meta) or "draft_documents",
+			"draft_documents_uploaded_on",
+			"draft_documents_uploaded_by",
+		)
+	elif rows and rows[0].meta.has_field("uploaded_by"):
+		if not rows[0].get("uploaded_by"):
+			rows[0].uploaded_by = frappe.session.user
+		if not rows[0].get("uploaded_on"):
+			rows[0].uploaded_on = now_datetime()
 
 	for row in other_rows:
 		parent_doc.append(table_field, serialize_clients_document_row(row))
@@ -534,6 +633,11 @@ def normalize_opportunity_clients_documents(doc, _method=None) -> None:
 	field = get_opportunity_documents_field()
 	if not field or not doc.meta.has_field(field):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.doctype.shipment_document.shipment_document import (
+		stamp_shipment_document_upload_metadata,
+	)
+
+	stamp_shipment_document_upload_metadata(doc, field)
 	normalize_shipment_documents_table(doc.get(field))
 
 
@@ -558,7 +662,7 @@ def seed_checkpoint_task_documents_from_project(task) -> bool:
 	source_rows = [
 		r
 		for r in project.get(SHIPMENT_DOCUMENTS_FIELD) or []
-		if r.document_type and (primary_attachment(r) or r.get("initial_attachment") or r.get("final_attachment"))
+		if r.document_type and (primary_attachment(r) or get_draft_attachment(r) or r.get("final_attachment"))
 	]
 	if not source_rows:
 		return False
@@ -614,9 +718,9 @@ def backfill_checkpoint_task_documents_from_project(task) -> bool:
 		prow = _find_matching_document_row(project_rows, trow.document_type)
 		if not prow:
 			continue
-		needs_initial = not (trow.get("initial_attachment") or "").strip()
+		needs_draft = not get_draft_attachment(trow)
 		needs_final = not (trow.get("final_attachment") or "").strip()
-		if not needs_initial and not needs_final:
+		if not needs_draft and not needs_final:
 			continue
 		if _copy_version_slots_to_row(trow, prow):
 			changed = True
@@ -689,11 +793,24 @@ def apply_checkpoint_task_documents_to_project(project_doc, task) -> bool:
 			)
 			changed = True
 
-		if initial_url and prow.get("initial_attachment") != initial_url:
-			prow.initial_attachment = initial_url
+		draft_field = draft_document_field(prow.meta)
+		if initial_url and draft_field and prow.get(draft_field) != initial_url:
+			setattr(prow, draft_field, initial_url)
+			_ensure_row_attachment_metadata(
+				prow,
+				draft_field,
+				"draft_documents_uploaded_on",
+				"draft_documents_uploaded_by",
+			)
 			changed = True
 		if final_url and prow.get("final_attachment") != final_url:
 			prow.final_attachment = final_url
+			_ensure_row_attachment_metadata(
+				prow,
+				"final_attachment",
+				"final_document_uploaded_on",
+				"final_document_uploaded_by",
+			)
 			changed = True
 		if initial_url or final_url:
 			normalize_shipment_document_row(prow)
@@ -881,7 +998,7 @@ def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 def _append_or_update_shipment_document_row(
 	project_doc, source_row, *, verify_from_approved_opportunity: bool = False
 ) -> None:
-	initial = source_row.get("initial_attachment")
+	initial = get_draft_attachment(source_row) or source_row.get("initial_attachment")
 	final = source_row.get("final_attachment")
 	legacy = source_row.get("attachment")
 	status = resolve_document_row_status(source_row)
@@ -913,12 +1030,18 @@ def _append_or_update_shipment_document_row(
 		elif existing.meta.has_field("status") and status != "Missing":
 			existing.status = status
 		for field in (
+			"draft_documents_uploaded_on",
+			"draft_documents_uploaded_by",
+			"final_document_uploaded_on",
+			"final_document_uploaded_by",
 			"uploaded_by",
 			"uploaded_on",
 			"verified_by",
 			"verified_on",
 			"remarks",
 		):
+			if not existing.meta.has_field(field):
+				continue
 			value = source_row.get(field)
 			if value and not existing.get(field):
 				existing.set(field, value)
@@ -927,12 +1050,11 @@ def _append_or_update_shipment_document_row(
 	row_data = {
 		"document_type": source_row.document_type,
 		"attachment": legacy,
-		"uploaded_by": source_row.uploaded_by,
-		"uploaded_on": source_row.uploaded_on,
-		"verified_by": source_row.verified_by,
-		"verified_on": source_row.verified_on,
+		"verified_by": source_row.get("verified_by"),
+		"verified_on": source_row.get("verified_on"),
 		"remarks": source_row.remarks,
 	}
+	row_data.update(shipment_document_metadata_dict(source_row))
 	if frappe.get_meta("Shipment Document").has_field("status"):
 		row_data["status"] = "Verified" if verify else status
 	if verify:
@@ -1123,7 +1245,7 @@ def carry_task_documents_to_project(project_doc, project_name=None):
 				if not before and after:
 					changed = True
 				elif before and after and (
-					before.get("initial_attachment") != after.get("initial_attachment")
+					get_draft_attachment(before) != get_draft_attachment(after)
 					or before.get("final_attachment") != after.get("final_attachment")
 				):
 					changed = True
