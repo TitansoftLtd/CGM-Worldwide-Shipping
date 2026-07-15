@@ -200,8 +200,8 @@
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.container_mode == 'Mombasa Port'",
-   "fieldname": "gate_out_date_port",
+
+    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
    "label": "Gate Out Mombasa"
   },
