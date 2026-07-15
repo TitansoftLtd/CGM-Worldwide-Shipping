@@ -42,6 +42,25 @@ QUOTATION_SI_READY_STATES = frozenset(
 	}
 )
 
+# Shipment Document final attachment review workflow (child-table state machine).
+APPROVAL_STATUS_DRAFT = "Draft"
+APPROVAL_STATUS_PENDING_REVIEW = "Pending Review"
+APPROVAL_STATUS_APPROVED = "Approved"
+APPROVAL_STATUS_REJECTED = "Rejected"
+APPROVAL_WORKFLOW_ACTION_SEND = "Send for Review"
+APPROVAL_WORKFLOW_ACTION_APPROVE = "Approve"
+APPROVAL_WORKFLOW_ACTION_REJECT = "Reject"
+
+FINAL_DOCUMENT_STATUS_DRAFT = APPROVAL_STATUS_DRAFT
+FINAL_DOCUMENT_STATUS_PENDING_REVIEW = APPROVAL_STATUS_PENDING_REVIEW
+FINAL_DOCUMENT_STATUS_APPROVED = APPROVAL_STATUS_APPROVED
+FINAL_DOCUMENT_STATUS_REJECTED = APPROVAL_STATUS_REJECTED
+FINAL_DOCUMENT_WORKFLOW_ACTION_SEND = APPROVAL_WORKFLOW_ACTION_SEND
+FINAL_DOCUMENT_WORKFLOW_ACTION_APPROVE = APPROVAL_WORKFLOW_ACTION_APPROVE
+FINAL_DOCUMENT_WORKFLOW_ACTION_REJECT = APPROVAL_WORKFLOW_ACTION_REJECT
+FINAL_DOCUMENT_ATTACHMENT_FIELD = "final_attachment"
+FINAL_DOCUMENT_NOTIFICATION = "CGM Shipment Document - Final Document Review"
+
 # Sales Invoice finance approval workflow (reuses Quotation state names).
 SALES_INVOICE_WORKFLOW_NAME = "CGM Sales Invoice Approval"
 SALES_INVOICE_WORKFLOW_STATE_DRAFT = QUOTATION_WORKFLOW_STATE_DRAFT
@@ -87,15 +106,16 @@ CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 # tracking tasks to override these.
 CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
 	"custom_track_eta_task_seq": 8,
-	"custom_vessel_arrival_task_seq": 11,
-	"custom_field_clearance_task_seq": 18,
-	"custom_kpa_paid_task_seq": 20,
-	"custom_book_trucks_task_seq": 21,
-	"custom_gate_out_task_seq": 22,
-	"custom_monitor_delivery_task_seq": 23,
-	"custom_offload_task_seq": 24,
-	"custom_empty_return_task_seq": 25,
-	"custom_interchange_task_seq": 26,
+	# Create Entry sequence after Shipping Line was moved before Entry.
+	"custom_vessel_arrival_task_seq": 12,
+	"custom_field_clearance_task_seq": 17,
+	"custom_kpa_paid_task_seq": 19,
+	"custom_book_trucks_task_seq": 20,
+	"custom_gate_out_task_seq": 21,
+	"custom_monitor_delivery_task_seq": 22,
+	"custom_offload_task_seq": 23,
+	"custom_empty_return_task_seq": 24,
+	"custom_interchange_task_seq": 25,
 }
 
 # Backward-compatible aliases.
@@ -109,8 +129,8 @@ TASK_TYPE_OF_CONTAINER_FIELD = "custom_type_of_container"
 
 # Task child table for per-container data entry (tasks 11, 16, 18–24).
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
-CONTAINER_UPDATE_TASK_SEQS = frozenset({11, 18, 20, 21, 22, 23, 24, 25, 26})
-CONTAINER_UPDATE_SEED_SEQS = frozenset({11, 18, 20, 21, 22, 23, 24, 25, 26})
+CONTAINER_UPDATE_TASK_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
+CONTAINER_UPDATE_SEED_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
 TRANSPORT_TASK_SEQS = frozenset({21, 22, 23, 24, 25, 26})
 
 # Settings fieldnames — bulk events update every tracker on the project.
@@ -138,6 +158,20 @@ DEPOSIT_REFUND_STATUSES = (
 	"Forfeited",
 )
 
+DEPOSIT_PAYMENT_STATUSES = (
+	"Not Applicable",
+	"Unpaid",
+	"Paid",
+)
+
+# High-level cargo classification (distinct from Container Type size masters).
+CARGO_TYPE_OPTIONS = (
+	"FCL",
+	"LCL",
+	"Breakbulk",
+	"Project Cargo",
+)
+
 # ERPNext Notification fixture names (see fixtures/notification.json).
 FINANCE_PAYMENT_ACTION = "CGM Task - Finance Payment Action"
 PERMIT_INVOICES_TO_FINANCE = "CGM Task - Permit Invoices to Finance"
@@ -156,6 +190,8 @@ KPA_INVOICE_TO_FINANCE = "CGM Task - KPA Invoice to Finance"
 KPA_RECEIPT_FOR_SUPERVISOR = "CGM Task - KPA Receipt for Supervisor"
 KPA_RECEIPT_VERIFY_FINANCE = "CGM Task - KPA Receipt Verify Finance"
 DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
+TRANSPORTER_TRUCK_UPDATE = "CGM Operational Update"  # legacy alias
+OPERATIONAL_UPDATE_NOTIFICATION = "CGM Operational Update"
 
 # Standard Task fields to hide on all sea clearance tasks (reduce noise).
 SEA_TASK_HIDDEN_FIELDS = (
