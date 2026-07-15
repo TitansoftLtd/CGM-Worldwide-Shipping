@@ -35,11 +35,6 @@ class BillofLading(Document):
 		batch_number = resolve_batch_number_for_bl(self)
 		self.name = build_bill_of_lading_name(self.bl_number, quantity, batch_number)
 
-	def on_update(self):
-		"""Keep linked Opportunity aligned while the BL remains in draft."""
-		if self.get("linked_opportunity") or self.get("custom_linked_opportunity"):
-			sync_opportunity_from_bl(self, allow_draft=True)
-
 	def _quantity_for_naming(self) -> str:
 		"""Quantity segment for the document name (from field or container rows)."""
 		if self.get("quantity"):
@@ -253,14 +248,11 @@ def resolve_opportunity_for_bl(bl_doc, opportunity: str | None = None) -> str | 
 	return None
 
 
-def sync_opportunity_from_bl(bl_doc, opportunity: str | None = None, allow_draft: bool = False) -> str | None:
-	"""Link BL data back onto the source Opportunity for draft or submitted BLs."""
+def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
+	"""Link submitted BL data back onto the source Opportunity."""
 	config = get_bl_config()
 	opportunity = resolve_opportunity_for_bl(bl_doc, opportunity)
 	if not opportunity:
-		return None
-
-	if not allow_draft and bl_doc.docstatus != 1:
 		return None
 
 	bl_field = config.get("opportunity_bl_field")
@@ -303,11 +295,6 @@ def sync_opportunity_from_bl(bl_doc, opportunity: str | None = None, allow_draft
 		opp.save(ignore_permissions=True)
 
 	return opportunity
-
-
-def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
-	"""Link submitted BL data back onto the source Opportunity."""
-	return sync_opportunity_from_bl(bl_doc, opportunity=opportunity, allow_draft=False)
 
 
 def prepend_opportunity_bl_document(opp_doc, attachment_url, bl_name=None) -> bool:

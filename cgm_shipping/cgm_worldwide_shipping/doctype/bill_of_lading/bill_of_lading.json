@@ -9,16 +9,14 @@
   "bl_number",
   "customer",
   "client_refrence_no",
-  "shipment_type",
   "column_break_basic",
+  "shipment_type",
   "cargo_type",
-  "etd",
-  "eta",
+  "quantity",
   "column_break_xiys",
   "booking_confirmation",
   "linked_opportunity",
   "batch_no",
-  "quantity",
   "section_shipping",
   "shipping_line",
   "vessel",
@@ -26,11 +24,14 @@
   "column_break_shipping",
   "port_of_loading",
   "port_of_discharge",
+  "etd",
+  "eta",
   "section_cargo_info",
   "weight_uom",
-  "net_weight",
   "gross_weight",
+  "commodity",
   "column_break_cargo",
+  "net_weight",
   "description",
   "section_fcl",
   "container_information",
@@ -102,7 +103,6 @@
   {
    "fieldname": "booking_confirmation",
    "fieldtype": "Link",
-   "hidden": 1,
    "label": "Booking Confirmation",
    "options": "Booking Confirmation"
   },
@@ -164,6 +164,11 @@
    "label": "Cargo Information"
   },
   {
+   "fieldname": "commodity",
+   "fieldtype": "Small Text",
+   "label": "Commodity"
+  },
+  {
    "fieldname": "weight_uom",
    "fieldtype": "Link",
    "label": "Weight UOM",
@@ -186,7 +191,7 @@
   {
    "fieldname": "description",
    "fieldtype": "Small Text",
-   "label": "Commodity Description",
+   "label": "Description",
    "reqd": 1
   },
   {
@@ -252,7 +257,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-14 10:47:57.919627",
+ "modified": "2026-07-14 05:25:25.292741",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",

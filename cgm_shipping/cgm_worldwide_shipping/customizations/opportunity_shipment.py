@@ -17,6 +17,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
 	PRIMARY_DOC_TO_DOCTYPE,
 	PRIMARY_DOC_TO_OPP_FIELD,
+	START_GATE_ALTERNATES,
 	TRANSPORT_DOC_TO_OPP_FIELD,
 	get_allowed_transport_documents,
 	resolve_primary_transport_document,
@@ -47,19 +48,33 @@ def has_any_transport_document(opportunity) -> bool:
 
 
 def has_required_transport_documents(opportunity) -> bool:
-	"""True when every transport document marked required-for-start is linked."""
+	"""True when Start Shipment transport gate is satisfied.
+
+	Bill of Lading and Booking Confirmation are interchangeable: either one is
+	enough when both are allowed on the Shipment Type (whichever arrives first).
+	Other required documents (e.g. Air Waybill) still use an OR within their set.
+	"""
 	linked = get_transport_documents_with_links(opportunity)
+	if not linked:
+		return has_any_transport_document(opportunity)
+
+	alternates = [
+		item for item in linked if item.get("transport_document") in START_GATE_ALTERNATES
+	]
+	if alternates:
+		return any(item.get("linked_name") for item in alternates)
+
 	required = [item for item in linked if item.get("is_required_for_start")]
 	if not required:
 		allowed = get_allowed_transport_documents(opportunity.get("custom_shipment_type"))
 		if allowed:
 			return has_any_transport_document(opportunity)
 		return True
-	return all(item.get("linked_name") for item in required)
+	return any(item.get("linked_name") for item in required)
 
 
 def has_primary_transport_document(opportunity) -> bool:
-	"""Backward-compatible alias — required transport documents must be linked."""
+	"""Backward-compatible alias — start-gate transport document(s) must be linked."""
 	return has_required_transport_documents(opportunity)
 
 
@@ -202,17 +217,29 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 
 	transport_documents = get_transport_documents_with_links(opp)
 	if not has_required_transport_documents(opp):
-		missing_transport = [
+		alternates = [
 			item["transport_document"]
 			for item in transport_documents
-			if item.get("is_required_for_start") and not item.get("linked_name")
+			if item.get("transport_document") in START_GATE_ALTERNATES
 		]
-		if missing_transport:
+		if len(alternates) >= 2:
 			blockers.append(
-				_("Link required transport document(s): {0}").format(", ".join(missing_transport))
+				_("Link Bill of Lading or Booking Confirmation (whichever was provided first).")
 			)
-		elif transport_documents:
-			blockers.append(_("Attach at least one transport document to this shipment."))
+		else:
+			missing_transport = [
+				item["transport_document"]
+				for item in transport_documents
+				if item.get("is_required_for_start") and not item.get("linked_name")
+			]
+			if missing_transport:
+				blockers.append(
+					_("Link required transport document(s): {0}").format(
+						", ".join(missing_transport)
+					)
+				)
+			elif transport_documents:
+				blockers.append(_("Attach at least one transport document to this shipment."))
 
 	docs_field = get_opportunity_documents_field()
 	uploaded_rows = list(opp.get(docs_field) or []) if docs_field else []

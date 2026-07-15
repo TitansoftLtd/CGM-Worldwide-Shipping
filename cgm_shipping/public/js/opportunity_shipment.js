@@ -332,16 +332,29 @@ cgm_shipping.opportunity_shipment._build_readiness_html = function (readiness) {
 	}
 	const items = [];
 	const transport_docs = readiness.transport_documents || [];
-	const missing_required = transport_docs.filter(
-		(doc) => doc.is_required_for_start && !doc.linked_name
+	const startAlternates = new Set(["Bill of Lading", "Booking Confirmation"]);
+	const alternateDocs = transport_docs.filter((doc) =>
+		startAlternates.has(doc.transport_document)
 	);
-	if (missing_required.length) {
+	const alternateLinked = alternateDocs.some((doc) => doc.linked_name);
+	if (alternateDocs.length >= 2 && !alternateLinked) {
 		items.push(
-			__("Link required transport document(s): {0}", [
-				missing_required.map((doc) => doc.transport_document).join(", "),
-			])
+			__("Link Bill of Lading or Booking Confirmation (whichever was provided first).")
 		);
-	} else if (!readiness.transport_docs_linked && transport_docs.length) {
+	} else if (!alternateDocs.length) {
+		const missing_required = transport_docs.filter(
+			(doc) => doc.is_required_for_start && !doc.linked_name
+		);
+		if (missing_required.length) {
+			items.push(
+				__("Link required transport document(s): {0}", [
+					missing_required.map((doc) => doc.transport_document).join(", "),
+				])
+			);
+		} else if (!readiness.transport_docs_linked && transport_docs.length) {
+			items.push(__("Attach at least one transport document"));
+		}
+	} else if (!alternateLinked && !readiness.required_transport_linked) {
 		items.push(__("Attach at least one transport document"));
 	}
 	(readiness.missing_documents || []).forEach((doc) => {
