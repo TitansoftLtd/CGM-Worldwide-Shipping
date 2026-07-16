@@ -17,12 +17,19 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	get_opportunity_documents_field,
 	prepend_clients_document_row,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+	allocate_fcl_batch_for_doc,
+	derived_quantity_from_bl,
+	format_derived_quantity,
+	is_fcl_cargo_type,
+	is_lcl_cargo_type,
+	counts_from_container_rows,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bl_fields_to_doc,
 	bl_propagation_payload,
-	container_row_cargo_size,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config, get_link_field_for_doctype
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import coerce_numeric_fields, get_bl_config
 
 
 class BillofLading(Document):
@@ -31,27 +38,16 @@ class BillofLading(Document):
 			frappe.throw(frappe._("Bill of Lading Number is required"))
 		if not self.customer:
 			frappe.throw(frappe._("Customer is required"))
-		quantity = self._quantity_for_naming()
-		batch_number = resolve_batch_number_for_bl(self)
-		self.name = build_bill_of_lading_name(self.bl_number, quantity, batch_number)
-
-	def on_update(self):
-		"""Keep linked Opportunity aligned while the BL remains in draft."""
-		if self.get("linked_opportunity") or self.get("custom_linked_opportunity"):
-			sync_opportunity_from_bl(self, allow_draft=True)
-
-	def _quantity_for_naming(self) -> str:
-		"""Quantity segment for the document name (from field or container rows)."""
-		if self.get("quantity"):
-			return (self.quantity or "").strip()
-		return self._summarize_container_quantities()
+		# Quantity / batch stay on their own fields — name is always the BL number.
+		apply_bl_quantity_and_batch(self)
+		resolve_batch_number_for_bl(self)
+		self.name = (self.bl_number or "").strip()
 
 	def validate(self):
+		coerce_numeric_fields(self, ("gross_weight", "net_weight"), empty_as_zero=True)
 		sanitize_bill_of_lading_linked_opportunity(self)
-		batch_number = resolve_batch_number_for_bl(self)
-		if not self.get("batch_no"):
-			self.batch_no = str(batch_number)
-		summary = self._summarize_container_quantities()
+		apply_bl_quantity_and_batch(self)
+		summary = (self.get("quantity") or "").strip() or self._summarize_container_quantities()
 		if not summary:
 			pkgs = (self.get("number_of_packages") or "").strip()
 			ptype = (self.get("package_type") or "").strip()
@@ -61,7 +57,7 @@ class BillofLading(Document):
 				summary = pkgs or ptype
 		if self.meta.has_field("container_summary"):
 			self.container_summary = summary
-		if self.meta.has_field("quantity"):
+		if self.meta.has_field("quantity") and summary:
 			self.quantity = summary
 
 	def on_submit(self):
@@ -70,144 +66,119 @@ class BillofLading(Document):
 
 	def _summarize_container_quantities(self) -> str:
 		"""Return e.g. '6 x 40FT, 7 x 20FT' from this document's container rows."""
-		if not self.container_information:
-			return ""
+		return format_derived_quantity(counts_from_container_rows(self.container_information))
 
-		# Fetch order directly from Cargo Size DocType
-		display_order = frappe.get_all(
-			"Cargo Size",
-			fields=["cargo_size"],
-			order_by="idx asc",
-			pluck="cargo_size",
+
+def apply_bl_quantity_and_batch(doc) -> None:
+	"""Set derived quantity and batch on Bill of Lading (FCL only for batch)."""
+	if is_lcl_cargo_type(doc.get("cargo_type")):
+		pkgs = (doc.get("number_of_packages") or "").strip()
+		ptype = (doc.get("package_type") or "").strip()
+		if doc.meta.has_field("quantity"):
+			doc.quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
+		# LCL must not participate in FCL batch numbering.
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = None
+		# Drop empty container rows that can appear when toggling from FCL UI.
+		_clear_empty_container_rows(doc)
+		return
+
+	if not is_fcl_cargo_type(doc.get("cargo_type")):
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = None
+		return
+
+	derived = derived_quantity_from_bl(doc)
+	allocate_fcl_batch_for_doc(
+		doc,
+		cargo_type_field="cargo_type",
+		derived_quantity=derived,
+	)
+
+
+def _clear_empty_container_rows(doc) -> None:
+	rows = list(doc.get("container_information") or [])
+	if not rows:
+		return
+	kept = []
+	for row in rows:
+		has_data = any(
+			[
+				(row.get("container_number") or "").strip(),
+				(row.get("cargo_size") or "").strip(),
+				(row.get("seal_no") or "").strip(),
+			]
 		)
-
-		counts: dict[str, int] = {}
-		for row in self.container_information:
-			cargo_size = container_row_cargo_size(row)
-			if not cargo_size:
-				continue
-			counts[cargo_size] = counts.get(cargo_size, 0) + 1
-
-		if not counts:
-			return ""
-
-		ordered = [t for t in display_order if t in counts]
-		for t in sorted(counts):
-			if t not in ordered:
-				ordered.append(t)
-
-		return ", ".join(f"{counts[t]} x {t}" for t in ordered)
+		if has_data:
+			kept.append(row)
+	if len(kept) != len(rows):
+		doc.set("container_information", [])
+		for row in kept:
+			doc.append(
+				"container_information",
+				{
+					"container_number": row.get("container_number"),
+					"cargo_size": row.get("cargo_size"),
+					"seal_no": row.get("seal_no"),
+					"container_tracker": row.get("container_tracker"),
+					"demurrage_days": row.get("demurrage_days"),
+					"status": row.get("status"),
+				},
+			)
 
 
 def build_bill_of_lading_name(
-	bl_number: str, quantity: str | None, batch_number: int
+	bl_number: str, quantity: str | None = None, batch_number: int | None = None
 ) -> str:
-	"""BL_NUMBER + ' ' + QUANTITY + '-' + BATCH_NUMBER (e.g. MB-0ONUJ 2 x 20FT-10)."""
-	bl_number = (bl_number or "").strip()
-	quantity = (quantity or "").strip()
-	suffix = f"-{int(batch_number)}"
-	if quantity:
-		return f"{bl_number} {quantity}{suffix}"
-	return f"{bl_number}{suffix}"
+	"""Document name is always the Bill of Lading number (FCL and LCL).
+
+	``quantity`` / ``batch_number`` are ignored; kept for call-site compatibility.
+	"""
+	_ = (quantity, batch_number)
+	return (bl_number or "").strip()
 
 
 def parse_batch_number_from_bl_name(name: str | None) -> int | None:
-	"""Extract trailing batch integer from a Bill of Lading name, if present."""
+	"""Extract trailing batch integer from a legacy Bill of Lading name, if present.
+
+	New BLs are named by ``bl_number`` only; batch lives on ``batch_no``.
+	"""
 	if not name:
 		return None
 	suffix = str(name).rsplit("-", 1)[-1].strip()
 	return int(suffix) if suffix.isdigit() else None
 
 
-def lock_customer_for_batch_allocation(customer: str) -> None:
-	"""Serialize batch allocation for one customer under concurrent creation."""
-	if not customer:
-		return
-	frappe.db.sql(
-		"SELECT name FROM `tabCustomer` WHERE name = %s FOR UPDATE",
-		(customer,),
-	)
-
-
-def count_customer_batch_allocations(customer: str) -> int:
-	"""Count shipment batches already allocated for a customer (dynamic, no counter table).
-
-	Includes:
-	- distinct Projects for the customer that already reference a Bill of Lading
-	- Bill of Lading records not yet linked to a Project (draft or submitted)
-
-	Cancelled Bill of Lading records (docstatus = 2) are excluded.
-	"""
-	if not customer:
-		return 0
-
-	project_bl_field = get_link_field_for_doctype("Project", "Bill of Lading")
-	if not project_bl_field:
-		project_bl_field = "custom_bill_of_lading"
-
-	project_count = frappe.db.sql(
-		f"""
-		SELECT COUNT(DISTINCT p.name)
-		FROM `tabProject` p
-		WHERE p.customer = %s
-		  AND IFNULL(p.`{project_bl_field}`, '') != ''
-		""",
-		(customer,),
-	)[0][0] or 0
-
-	bol_without_project = frappe.db.sql(
-		f"""
-		SELECT COUNT(*)
-		FROM `tabBill of Lading` bl
-		WHERE bl.customer = %s
-		  AND bl.docstatus < 2
-		  AND NOT EXISTS (
-			SELECT 1
-			FROM `tabProject` p
-			WHERE p.`{project_bl_field}` = bl.name
-		  )
-		""",
-		(customer,),
-	)[0][0] or 0
-
-	return int(project_count) + int(bol_without_project)
-
-
-def next_batch_number_for_customer(customer: str) -> int:
-	"""Return the next batch number for a customer (count of existing allocations + 1)."""
-	lock_customer_for_batch_allocation(customer)
-	return count_customer_batch_allocations(customer) + 1
-
-
-def resolve_batch_number_for_bl(doc) -> int:
+def resolve_batch_number_for_bl(doc) -> int | None:
 	"""Batch for a new/amended Bill of Lading.
 
-	Prefers linked Opportunity batch, then an existing numeric batch_no on the
-	document (shared customer batch).
+	FCL: Customer + Shipment Type + Derived Quantity (reuse Booking batch when linked).
+	LCL: no batch number.
 	"""
-	if doc.get("amended_from"):
-		reused = parse_batch_number_from_bl_name(doc.amended_from)
+	if is_lcl_cargo_type(doc.get("cargo_type")):
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = None
+		return None
+
+	if doc.get("amended_from") and is_fcl_cargo_type(doc.get("cargo_type")):
+		reused = None
+		amended = doc.amended_from
+		if frappe.db.exists("Bill of Lading", amended):
+			raw = frappe.db.get_value("Bill of Lading", amended, "batch_no")
+			if raw not in (None, "") and str(raw).strip().isdigit():
+				reused = int(str(raw).strip())
+		if reused is None:
+			reused = parse_batch_number_from_bl_name(amended)
 		if reused:
+			if doc.meta.has_field("batch_no"):
+				doc.batch_no = str(reused)
 			return reused
 
-	config = get_bl_config()
-	source_field = config.get("opportunity_source_field") or "linked_opportunity"
-	opportunity = doc.get(source_field) or doc.get("custom_linked_opportunity")
-	if opportunity and frappe.db.exists("Opportunity", opportunity):
-		opp_batch = frappe.db.get_value("Opportunity", opportunity, "custom_batch_no")
-		if opp_batch and str(opp_batch).strip().isdigit():
-			return int(str(opp_batch).strip())
-
-	raw = (doc.get("batch_no") or "").strip()
-	if raw:
-		try:
-			existing = int(raw)
-		except (TypeError, ValueError):
-			existing = 0
-		if existing > 0:
-			return existing
-
-	return next_batch_number_for_customer(doc.customer)
+	apply_bl_quantity_and_batch(doc)
+	existing = str(doc.get("batch_no") or "").strip()
+	if existing.isdigit():
+		return int(existing)
+	return None
 
 
 @frappe.whitelist()
@@ -303,14 +274,11 @@ def resolve_opportunity_for_bl(bl_doc, opportunity: str | None = None) -> str | 
 	return None
 
 
-def sync_opportunity_from_bl(bl_doc, opportunity: str | None = None, allow_draft: bool = False) -> str | None:
-	"""Link BL data back onto the source Opportunity for draft or submitted BLs."""
+def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
+	"""Link submitted BL data back onto the source Opportunity."""
 	config = get_bl_config()
 	opportunity = resolve_opportunity_for_bl(bl_doc, opportunity)
 	if not opportunity:
-		return None
-
-	if not allow_draft and bl_doc.docstatus != 1:
 		return None
 
 	bl_field = config.get("opportunity_bl_field")
@@ -353,11 +321,6 @@ def sync_opportunity_from_bl(bl_doc, opportunity: str | None = None, allow_draft
 		opp.save(ignore_permissions=True)
 
 	return opportunity
-
-
-def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
-	"""Link submitted BL data back onto the source Opportunity."""
-	return sync_opportunity_from_bl(bl_doc, opportunity=opportunity, allow_draft=False)
 
 
 def prepend_opportunity_bl_document(opp_doc, attachment_url, bl_name=None) -> bool:

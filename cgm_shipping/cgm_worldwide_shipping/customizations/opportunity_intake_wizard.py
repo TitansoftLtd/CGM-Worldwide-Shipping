@@ -86,10 +86,29 @@ def prepare_opportunity_intake(doc, _method=None) -> None:
 	doc.opportunity_from = "Customer"
 	if doc.meta.has_field("custom_intake_stage"):
 		doc.custom_intake_stage = STAGE_INTAKE
+	# Clear site Country defaults (e.g. Kenya) — user selects these manually.
+	for fieldname in ("custom_country_of_origin", "custom_delivery_destination"):
+		if doc.meta.has_field(fieldname) and doc.is_new():
+			doc.set(fieldname, None)
 	sync_opportunity_intake_stage(doc)
 
 
 def validate_opportunity_intake(doc, _method=None) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import coerce_numeric_fields
+
+	coerce_numeric_fields(
+		doc,
+		("custom_gross_weight", "custom_weight_nw", "custom_net_weight"),
+		empty_as_zero=False,
+	)
+	# Prefer the visible Net Weight field; keep legacy NOT NULL column aligned.
+	if doc.meta.has_field("custom_weight_nw") and doc.meta.has_field("custom_net_weight"):
+		nw = doc.get("custom_weight_nw")
+		if nw not in (None, ""):
+			doc.set("custom_net_weight", nw)
+		else:
+			doc.set("custom_net_weight", 0)
+
 	if not doc.opportunity_from:
 		doc.opportunity_from = "Customer"
 	if not doc.party_name:
