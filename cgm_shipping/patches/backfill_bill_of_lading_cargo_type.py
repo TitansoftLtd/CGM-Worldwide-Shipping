@@ -13,10 +13,12 @@ def execute():
 	if not frappe.db.table_exists("Bill of Lading"):
 		return
 
-	names = frappe.get_all(
-		"Bill of Lading",
-		filters={"cargo_type": ["in", ["", None]]},
-		pluck="name",
+	names = frappe.db.sql_list(
+		"""
+		SELECT name
+		FROM `tabBill of Lading`
+		WHERE IFNULL(cargo_type, '') = ''
+		"""
 	)
 	for name in names:
 		doc = frappe.get_doc("Bill of Lading", name)

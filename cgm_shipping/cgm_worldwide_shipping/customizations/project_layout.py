@@ -1475,7 +1475,9 @@ def ensure_opportunity_universal_fields() -> None:
 			"fieldname": fieldname,
 			"label": label,
 			"fieldtype": fieldtype,
-			"insert_after": "custom_shipping_line",
+			"insert_after": "custom_cargo_type"
+			if fieldname == "custom_booking_confirmation"
+			else "custom_shipping_line",
 		}
 		if len(item) > 3:
 			values["options"] = item[3]

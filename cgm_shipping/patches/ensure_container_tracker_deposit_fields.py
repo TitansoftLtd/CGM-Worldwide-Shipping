@@ -17,9 +17,17 @@ def execute():
 	if not missing:
 		return
 
-	frappe.reload_doc(
-		"cgm_worldwide_shipping",
-		"doctype",
-		"container_tracker",
-	)
+	try:
+		frappe.reload_doc(
+			"cgm_worldwide_shipping",
+			"doctype",
+			"container_tracker",
+		)
+	except Exception:
+		frappe.log_error(
+			title="Container Tracker deposit fields patch",
+			message=frappe.get_traceback(),
+		)
+		return
+
 	frappe.clear_cache(doctype="Container Tracker")

@@ -74,7 +74,7 @@ def _rename_standard_fields() -> None:
 		("Booking Confirmation", "requested_container_type", "requested_cargo_type"),
 		("Requested Containers", "container_size", "cargo_size"),
 		("Container", "type_of_container", "cargo_size"),
-		("Container Tracker", "type_of_container", "cargo_type"),
+		("Container Tracker", "type_of_container", "cargo_size"),
 		("Shipping Line Demurrage Tier", "container_type", "cargo_type"),
 		("Shipping Line Detention Tier", "container_type", "cargo_type"),
 		("Container Allocation Item", "type_of_container", "cargo_type"),
@@ -114,8 +114,14 @@ def _rename_field_if_needed(doctype: str, old_field: str, new_field: str) -> Non
 		has_old = frappe.db.has_column(doctype, old_field)
 	if not has_old:
 		return
-	if meta.has_field(old_field) and not meta.issingle:
-		rename_field(doctype, old_field, new_field, validate=True)
-		return
-	# JSON sync dropped old DocField but the legacy DB column may still hold data.
-	rename_field(doctype, old_field, new_field, validate=False)
+	try:
+		if meta.has_field(old_field) and not meta.issingle:
+			rename_field(doctype, old_field, new_field, validate=True)
+			return
+		# JSON sync dropped old DocField but the legacy DB column may still hold data.
+		rename_field(doctype, old_field, new_field, validate=False)
+	except Exception:
+		frappe.log_error(
+			title=f"Cargo terminology rename: {doctype}.{old_field}",
+			message=frappe.get_traceback(),
+		)
