@@ -5,33 +5,47 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "section_basic",
   "bl_number",
   "customer",
   "client_refrence_no",
-  "column_break_sqbc",
+  "column_break_basic",
   "shipment_type",
-  "container_type",
-  "attach_bill_of_lading",
-  "column_break_chhk",
-  "batch_no",
+  "cargo_type",
   "quantity",
+  "column_break_xiys",
+  "booking_confirmation",
   "linked_opportunity",
-  "section_break_abdt",
-  "container_information",
-  "section_break_yldr",
+  "batch_no",
+  "section_shipping",
+  "shipping_line",
+  "vessel",
+  "voyage_number",
+  "column_break_shipping",
+  "port_of_loading",
+  "port_of_discharge",
+  "etd",
+  "eta",
+  "section_cargo_info",
+  "weight_uom",
+  "net_weight",
+  "gross_weight",
+  "column_break_cargo",
   "description",
+  "section_fcl",
+  "container_information",
+  "section_lcl",
+  "number_of_packages",
+  "package_type",
+  "section_attachments",
+  "attach_bill_of_lading",
   "amended_from"
  ],
  "fields": [
   {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "Bill of Lading",
-   "print_hide": 1,
-   "read_only": 1,
-   "search_index": 1
+   "fieldname": "section_basic",
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
   },
   {
    "fieldname": "bl_number",
@@ -51,42 +65,9 @@
    "search_index": 1
   },
   {
-   "fieldname": "container_information",
-   "fieldtype": "Table",
-   "label": "Container Information",
-   "options": "Container",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_sqbc",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "section_break_abdt",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "column_break_chhk",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "linked_opportunity",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Linked Opportunity",
-   "options": "Opportunity"
-  },
-  {
-   "fieldname": "attach_bill_of_lading",
-   "fieldtype": "Attach",
-   "label": "Attach Bill of Lading",
-   "reqd": 1
-  },
-  {
-   "fieldname": "quantity",
+   "fieldname": "client_refrence_no",
    "fieldtype": "Data",
-   "label": "Quantity",
-   "read_only": 1
+   "label": "Client Refrence No"
   },
   {
    "fieldname": "shipment_type",
@@ -96,40 +77,181 @@
    "reqd": 1
   },
   {
-   "fieldname": "section_break_yldr",
-   "fieldtype": "Section Break"
+   "fieldname": "column_break_basic",
+   "fieldtype": "Column Break"
   },
   {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description",
-   "reqd": 1
-  },
-  {
-   "fieldname": "container_type",
+   "fieldname": "cargo_type",
    "fieldtype": "Link",
-   "label": "Container Type",
-   "options": "Container Type",
+   "label": "Cargo Type",
+   "options": "Cargo Type",
    "reqd": 1
   },
   {
-   "fieldname": "client_refrence_no",
+   "fieldname": "quantity",
    "fieldtype": "Data",
-   "label": "Client Refrence No"
+   "label": "Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_xiys",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "booking_confirmation",
+   "fieldtype": "Link",
+   "label": "Booking Confirmation",
+   "options": "Booking Confirmation"
+  },
+  {
+   "fieldname": "linked_opportunity",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Linked Opportunity",
+   "options": "Opportunity"
   },
   {
    "description": "Leave blank for next batch, or enter an existing customer batch to share.",
    "fieldname": "batch_no",
    "fieldtype": "Data",
    "label": "Batch No"
+  },
+  {
+   "fieldname": "section_shipping",
+   "fieldtype": "Section Break",
+   "label": "Shipping Information"
+  },
+  {
+   "fieldname": "shipping_line",
+   "fieldtype": "Link",
+   "label": "Shipping Line",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "vessel",
+   "fieldtype": "Data",
+   "label": "Vessel"
+  },
+  {
+   "fieldname": "voyage_number",
+   "fieldtype": "Data",
+   "label": "Voyage Number"
+  },
+  {
+   "fieldname": "column_break_shipping",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "port_of_loading",
+   "fieldtype": "Data",
+   "label": "Port of Loading"
+  },
+  {
+   "fieldname": "port_of_discharge",
+   "fieldtype": "Data",
+   "label": "Port of Discharge"
+  },
+  {
+   "fieldname": "etd",
+   "fieldtype": "Date",
+   "label": "ETD"
+  },
+  {
+   "fieldname": "eta",
+   "fieldtype": "Date",
+   "label": "ETA"
+  },
+  {
+   "fieldname": "section_cargo_info",
+   "fieldtype": "Section Break",
+   "label": "Cargo Information"
+  },
+  {
+   "fieldname": "weight_uom",
+   "fieldtype": "Link",
+   "label": "Weight UOM",
+   "options": "UOM"
+  },
+  {
+   "fieldname": "column_break_cargo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "gross_weight",
+   "fieldtype": "Float",
+   "label": "Gross Weight"
+  },
+  {
+   "fieldname": "net_weight",
+   "fieldtype": "Float",
+   "label": "Net Weight"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Commodity Description",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.cargo_type=='FCL'",
+   "fieldname": "section_fcl",
+   "fieldtype": "Section Break",
+   "label": "FCL / Containers"
+  },
+  {
+   "depends_on": "eval:doc.cargo_type=='FCL'",
+   "fieldname": "container_information",
+   "fieldtype": "Table",
+   "label": "Container Information",
+   "mandatory_depends_on": "eval:doc.cargo_type=='FCL'",
+   "options": "Container"
+  },
+  {
+   "depends_on": "eval:doc.cargo_type=='LCL'",
+   "fieldname": "section_lcl",
+   "fieldtype": "Section Break",
+   "label": "LCL / Packages"
+  },
+  {
+   "depends_on": "eval:doc.cargo_type=='LCL'",
+   "fieldname": "number_of_packages",
+   "fieldtype": "Data",
+   "label": "Number of Packages"
+  },
+  {
+   "depends_on": "eval:doc.cargo_type=='LCL'",
+   "fieldname": "package_type",
+   "fieldtype": "Link",
+   "label": "Package Type",
+   "options": "Package Type"
+  },
+  {
+   "fieldname": "section_attachments",
+   "fieldtype": "Section Break",
+   "label": "Attachments"
+  },
+  {
+   "fieldname": "attach_bill_of_lading",
+   "fieldtype": "Attach",
+   "label": "Attach Bill of Lading",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Bill of Lading",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "make_attachments_public": 1,
- "modified": "2026-06-22 15:28:20.865360",
+ "modified": "2026-07-14 05:40:54.631570",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",

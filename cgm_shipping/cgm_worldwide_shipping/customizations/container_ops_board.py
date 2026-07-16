@@ -339,10 +339,10 @@ def _apply_container_post_filters(
 def _container_qty_size_from_trackers(rows: list[dict]) -> str | None:
 	counts: dict[str, int] = {}
 	for row in rows:
-		container_type = (row.get("type_of_container") or "").strip()
-		if not container_type:
+		cargo_type = (row.get("cargo_type") or "").strip()
+		if not cargo_type:
 			continue
-		counts[container_type] = counts.get(container_type, 0) + 1
+		counts[cargo_type] = counts.get(cargo_type, 0) + 1
 	if not counts:
 		return None
 	dominant_type = max(counts, key=lambda key: (counts[key], key))

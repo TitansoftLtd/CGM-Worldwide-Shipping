@@ -5,6 +5,15 @@ from __future__ import annotations
 import frappe
 
 
+def before_migrate() -> None:
+	"""Rename legacy container DocTypes before schema sync."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
+		ensure_cargo_doctype_renames_before_migrate,
+	)
+
+	ensure_cargo_doctype_renames_before_migrate()
+
+
 def after_install() -> None:
 	"""Seed default masters and CGM Shipping Settings on a fresh site."""
 	from cgm_shipping.default_seed_data import seed_all_defaults
@@ -14,8 +23,10 @@ def after_install() -> None:
 
 def after_migrate() -> None:
 	"""Re-apply idempotent schema installers after every bench migrate."""
+	ensure_cargo_terminology_renames()
 	reinstall_supplier_shipping_line_schema()
 	ensure_task_container_schema()
+	ensure_shipment_type_transport_defaults()
 	ensure_shipment_document_versioning()
 	ensure_finance_cost_ledger_schema()
 	ensure_transporter_portal_setup()
@@ -63,6 +74,16 @@ def ensure_shipment_document_versioning() -> None:
 	frappe.db.commit()
 
 
+def ensure_shipment_type_transport_defaults() -> None:
+	"""Seed Shipment Type.transport_documents when empty (derived from master flags)."""
+	from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
+		ensure_shipment_type_transport_document_defaults,
+	)
+
+	ensure_shipment_type_transport_document_defaults()
+	frappe.db.commit()
+
+
 def ensure_task_container_schema() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		ensure_shipment_document_version_fields,
@@ -90,10 +111,23 @@ def ensure_task_container_schema() -> None:
 		ensure_project_port_arrival_fields()
 		from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 			ensure_cargo_type_fields,
+			ensure_opportunity_universal_fields,
+			ensure_transit_project_fields,
 		)
 
 		ensure_cargo_type_fields()
+		ensure_opportunity_universal_fields()
+		ensure_transit_project_fields()
 		frappe.db.commit()
+
+
+def ensure_cargo_terminology_renames() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
+		ensure_cargo_field_renames_after_migrate,
+	)
+
+	ensure_cargo_field_renames_after_migrate()
+	frappe.db.commit()
 
 
 def reinstall_supplier_shipping_line_schema() -> None:

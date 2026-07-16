@@ -20,6 +20,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	enforce_workflow_task_gate,
 	get_sea_closure_blockers,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.transit_clearance import (
+	bootstrap_transit_task_plan_for_project,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	assign_lp_project_reference,
 	is_lp_project_reference,
@@ -33,7 +36,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	get_bl_quantity_summary,
 	get_project_awb_field,
 	normalize_shipment_fields_on_doc,
-	sync_container_type_from_linked_bl,
+	sync_cargo_type_from_linked_bl,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_bl_config,
@@ -645,6 +648,7 @@ def insert_shipment_project(project) -> str:
 	try:
 		project.insert(ignore_permissions=True)
 		bootstrap_sea_task_plan_for_project(project.name)
+		bootstrap_transit_task_plan_for_project(project.name)
 	finally:
 		frappe.flags.cgm_skip_task_project_sync = False
 	refresh_project_documents(project.name)
@@ -705,7 +709,7 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 		("custom_clearance_station", "custom_clearance_station"),
 		("custom_station_code", "custom_station_code"),
 		("custom_country_of_origin", "custom_country_of_origin"),
-		("custom_container_type", "custom_container_type"),
+		("custom_cargo_type", "custom_cargo_type"),
 		("custom_client_refrence_no", "custom_client_refrence_no"),
 		("custom_batch_no", "custom_batch_no"),
 	)
@@ -785,6 +789,19 @@ def create_project_from_opportunity(opportunity, project_name=None):
 
 	apply_opportunity_to_project_mappings(proj, opp)
 	apply_preshipment_transport_defaults(proj, opp)
-	sync_container_type_from_linked_bl(proj)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
+		apply_project_type_from_shipment_type,
+		opportunity_to_project_field_pairs,
+	)
+
+	for src_field, dest_field in opportunity_to_project_field_pairs():
+		if not proj.meta.has_field(dest_field) or not opp.meta.has_field(src_field):
+			continue
+		value = opp.get(src_field)
+		if value not in (None, "") and not proj.get(dest_field):
+			proj.set(dest_field, value)
+
+	apply_project_type_from_shipment_type(proj, opp.get("custom_shipment_type"))
+	sync_cargo_type_from_linked_bl(proj)
 	sync_predocuments_from_source(proj, opp)
 	return insert_shipment_project(proj)

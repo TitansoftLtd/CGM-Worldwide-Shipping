@@ -54,7 +54,7 @@
     <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap; align-items:flex-start;">
       <div>
         <h4 style="margin:0;">{{ row.container_number }}</h4>
-        <span class="text-muted">{{ row.type_of_container or "" }}</span>
+        <span class="text-muted">{{ row.cargo_type or "" }}</span>
       </div>
       {% if row.assignment_status == 'Pending' and row.has_draft %}
       <span class="indicator-pill blue tp-status-pill">{{ _("Draft saved") }}</span>

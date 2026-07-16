@@ -7,7 +7,7 @@
  "field_order": [
   "container_tracker",
   "container_number",
-  "type_of_container",
+  "cargo_type",
   "current_status",
   "has_deposit",
   "deposit_amount",
@@ -53,8 +53,8 @@
    "read_only": 1
   },
   {
-   "fetch_from": "container_tracker.type_of_container",
-   "fieldname": "type_of_container",
+   "fetch_from": "container_tracker.cargo_type",
+   "fieldname": "cargo_type",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Type",

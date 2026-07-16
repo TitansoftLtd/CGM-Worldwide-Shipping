@@ -26,7 +26,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	SEA_TASK_FLOW_KEY,
 	TASK_CONTAINER_NUMBER_FIELD,
 	TASK_CONTAINER_TRACKER_FIELD,
-	TASK_TYPE_OF_CONTAINER_FIELD,
+	TASK_CARGO_TYPE_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates import (
 	default_destination_name,
@@ -322,17 +322,7 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	if expected and not effective_return and ref_date > expected:
 		out["days_outstanding"] = (ref_date - expected).days
 
-	out["status"] = _derive_status(
-		interchange=interchange,
-		actual_return=actual_return,
-		expected_return=expected,
-		offloading=offloading,
-		gate_in_wh=gate_in_wh,
-		gate_out=gate_out,
-		discharging=discharging,
-		ata=ata,
-		ref_date=ref_date,
-	)
+	out["status"] = _derive_tracker_status(data, ref_date=ref_date)
 	out["alert_status"] = _derive_alert_status(
 		free_end=free_end,
 		free_start=free_start,
@@ -355,6 +345,62 @@ def apply_metrics_to_doc(doc) -> None:
 		if field in _COMPUTED_ONLY_METRIC_FIELDS:
 			continue
 		setattr(doc, field, value)
+
+
+def _derive_tracker_status(data: dict[str, Any], *, ref_date) -> str:
+	mode = (data.get("container_mode") or "").strip()
+	if mode and "Transit" in mode:
+		return _derive_transit_status(data)
+	return _derive_status(
+		interchange=_optional_date(data.get("interchange_date")),
+		actual_return=_optional_date(data.get("actual_empty_return")),
+		expected_return=_optional_date(data.get("expected_empty_return")),
+		offloading=_optional_date(data.get("offloading_date")),
+		gate_in_wh=_optional_date(data.get("gate_in_date_warehouse")),
+		gate_out=_optional_date(data.get("gate_out_date_port")),
+		discharging=_optional_date(data.get("discharging_date")),
+		ata=_optional_date(data.get("ata")),
+		ref_date=ref_date,
+	)
+
+
+def _derive_transit_status(data: dict[str, Any]) -> str:
+	mode = data.get("container_mode") or ""
+	is_outbound = "Export" in mode
+
+	if data.get("offloading_date"):
+		return "Offloaded at Destination"
+	if data.get("gate_in_date_warehouse"):
+		return "Arrived at Destination"
+	if data.get("border_clearance_date"):
+		return "Border Cleared"
+	if data.get("transit_departure_date"):
+		return "In Transit"
+	if data.get("ecmd_fitted_date"):
+		return "Departed / ECMD Active"
+	if data.get("c2_number"):
+		return "C2 Obtained"
+	if data.get("delivery_note_number"):
+		return "Delivery Note Ready"
+	if data.get("loading_slip_number"):
+		return "Loading Slip Received"
+	if data.get("release_order_number"):
+		return "Release Order Obtained"
+
+	if is_outbound:
+		if data.get("warehouse_loading_date"):
+			return "Loading at Warehouse"
+		return "Pending Loading"
+
+	if data.get("gate_out_date_port"):
+		return "Released from Port"
+	if data.get("custom_release_date"):
+		return "KRA Released"
+	if data.get("discharging_date"):
+		return "Discharged / At Port"
+	if data.get("ata"):
+		return "Vessel Berthed"
+	return "Pending Arrival"
 
 
 def _derive_status(
@@ -428,29 +474,17 @@ def _derive_alert_status(
 
 
 def _derive_container_mode(project) -> str:
-	delivery_type = (project.get("custom_delivery_type") or "").lower()
-	if "icd" in delivery_type:
-		return "ICD Nairobi"
-	if "transit" in delivery_type or "border" in delivery_type:
-		return "Transit Kenya→Border"
+	project_type = (project.get("project_type") or "").strip()
+	if project_type:
+		return project_type
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-		container_tracking_mode_for_shipment_type,
-	)
-
-	tracked = container_tracking_mode_for_shipment_type(
-		project.get("custom_shipment_type"),
-		project.get("custom_mode_of_transport"),
-	)
-	if tracked:
-		return tracked
-	return "Mombasa Port"
+	return frappe.db.get_value("Project", project.name, "project_type") or "Mombasa Port"
 
 
 def find_tracker_by_identity(
 	project_name: str,
 	container_number: str,
-	type_of_container: str | None = None,
+	cargo_type: str | None = None,
 ) -> str | None:
 	if not project_name or not container_number:
 		return None
@@ -458,22 +492,22 @@ def find_tracker_by_identity(
 		"project": project_name,
 		"container_number": container_number,
 	}
-	if type_of_container:
-		filters["type_of_container"] = type_of_container
+	if cargo_type:
+		filters["cargo_type"] = cargo_type
 	return frappe.db.get_value("Container Tracker", filters, "name")
 
 
 def _container_identity_filters(
 	project_name: str,
 	container_number: str,
-	type_of_container: str | None,
+	cargo_type: str | None,
 ) -> dict[str, Any]:
 	filters: dict[str, Any] = {
 		"project": project_name,
 		"container_number": container_number,
 	}
-	if type_of_container:
-		filters["type_of_container"] = type_of_container
+	if cargo_type:
+		filters["cargo_type"] = cargo_type
 	return filters
 
 
@@ -482,7 +516,7 @@ def resolve_single_tracker(
 	*,
 	container_tracker: str | None = None,
 	container_number: str | None = None,
-	type_of_container: str | None = None,
+	cargo_type: str | None = None,
 ) -> frappe.Document:
 	"""Resolve exactly one Container Tracker for a container-specific lifecycle event."""
 	if container_tracker:
@@ -505,13 +539,13 @@ def resolve_single_tracker(
 		frappe.throw(
 			_(
 				"This task affects a single container. Set <b>Container Tracker</b> "
-				"or <b>Container Number</b> (+ Type of Container when required) on the Task."
+				"or <b>Container Number</b> (+ Cargo Type when required) on the Task."
 			),
 			ContainerEventResolutionError,
 		)
 
 	filters = _container_identity_filters(
-		project_name, container_number, type_of_container
+		project_name, container_number, cargo_type
 	)
 	names = frappe.get_all(
 		"Container Tracker",
@@ -527,12 +561,12 @@ def resolve_single_tracker(
 		frappe.throw(
 			_(
 				"Multiple Container Tracker records match container <b>{0}</b> on this project. "
-				"Set <b>Type of Container</b> or link the exact <b>Container Tracker</b>."
+				"Set <b>Cargo Type</b> or link the exact <b>Container Tracker</b>."
 			).format(container_number),
 			ContainerEventResolutionError,
 		)
 
-	if not type_of_container:
+	if not cargo_type:
 		without_type = frappe.get_all(
 			"Container Tracker",
 			filters={"project": project_name, "container_number": container_number},
@@ -543,7 +577,7 @@ def resolve_single_tracker(
 			frappe.throw(
 				_(
 					"Container <b>{0}</b> appears more than once on this project. "
-					"Set <b>Type of Container</b> or link the exact <b>Container Tracker</b>."
+					"Set <b>Cargo Type</b> or link the exact <b>Container Tracker</b>."
 				).format(container_number),
 				ContainerEventResolutionError,
 			)
@@ -563,7 +597,7 @@ def _event_context_from_task(task_doc) -> dict[str, Any]:
 	return {
 		"container_tracker": task_doc.get(TASK_CONTAINER_TRACKER_FIELD),
 		"container_number": task_doc.get(TASK_CONTAINER_NUMBER_FIELD),
-		"type_of_container": task_doc.get(TASK_TYPE_OF_CONTAINER_FIELD),
+		"cargo_type": task_doc.get(TASK_CARGO_TYPE_FIELD),
 	}
 
 
@@ -576,7 +610,7 @@ def _resolve_tracker_from_row_link(project_name: str, row) -> frappe.Document | 
 		return None
 	if (
 		ct.container_number == row.container_number
-		and (ct.type_of_container or "") == (row.get("type_of_container") or "")
+		and (ct.cargo_type or "") == (row.get("cargo_type") or "")
 	):
 		return ct
 	return None
@@ -595,12 +629,12 @@ def _link_bl_container_trackers(project) -> None:
 	for row in frappe.get_all(
 		"Container",
 		filters={"parent": bl_name, "parenttype": "Bill of Lading"},
-		fields=["name", "container_number", "type_of_container"],
+		fields=["name", "container_number", "cargo_type"],
 	):
 		if not row.container_number:
 			continue
 		tracker_name = find_tracker_by_identity(
-			project.name, row.container_number, row.type_of_container
+			project.name, row.container_number, row.cargo_type
 		)
 		if tracker_name and row.get("container_tracker") != tracker_name:
 			frappe.db.set_value(
@@ -615,7 +649,7 @@ def _link_bl_container_trackers(project) -> None:
 def _populate_tracker_from_project_and_row(ct, project, row, *, at_creation: bool = False) -> None:
 	ct.project = project.name
 	ct.container_number = row.container_number
-	ct.type_of_container = row.get("type_of_container")
+	ct.cargo_type = row.get("cargo_type")
 	ct.seal_no = row.get("seal_no")
 	ct.bl_number = project.get("custom_bill_of_lading")
 	ct.shipping_line = project.get("custom_shipping_line")
@@ -644,11 +678,11 @@ def _default_kpa_free_end_from_settings(doc) -> None:
 
 
 def create_or_sync_tracker_for_row(project, row) -> str:
-	"""Create or reuse tracker by (project, container_number, type_of_container)."""
+	"""Create or reuse tracker by (project, container_number, cargo_type)."""
 	existing_name = find_tracker_by_identity(
 		project.name,
 		row.container_number,
-		row.get("type_of_container"),
+		row.get("cargo_type"),
 	)
 	if existing_name:
 		ct = frappe.get_doc("Container Tracker", existing_name)
@@ -883,7 +917,7 @@ def _resolve_event_tracker(project_name: str, ctx: dict):
 				project_name,
 				container_tracker=container_tracker,
 				container_number=container_number,
-				type_of_container=ctx.get("type_of_container"),
+				cargo_type=ctx.get("cargo_type"),
 			)
 		except ContainerEventResolutionError as exc:
 			frappe.msgprint(str(exc), indicator="orange", alert=True)

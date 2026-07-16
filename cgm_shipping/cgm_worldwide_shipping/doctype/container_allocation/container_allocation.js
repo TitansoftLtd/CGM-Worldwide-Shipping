@@ -32,7 +32,7 @@ function populate_containers_from_project(frm, replace = false) {
 			const child = frm.add_child("containers");
 			child.container_tracker = row.container_tracker;
 			child.container_number = row.container_number;
-			child.type_of_container = row.type_of_container;
+			child.cargo_type = row.cargo_type;
 			child.assignment_status = row.assignment_status || "Pending";
 		});
 		frm.refresh_field("containers");

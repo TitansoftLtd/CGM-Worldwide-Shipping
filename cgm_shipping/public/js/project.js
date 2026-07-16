@@ -237,7 +237,7 @@ function toggle_project_transport_reference_fields(frm) {
 		bill_of_lading: "custom_bill_of_lading",
 		container_table: "custom_container_information",
 	});
-	cgm_shipping.transport_reference.toggle_container_type(frm);
+	cgm_shipping.transport_reference.toggle_cargo_type(frm);
 }
 
 function project_clearance_indicator(doc) {
@@ -519,7 +519,7 @@ function render_container_tracking_table(frm, dashboard) {
 				return `<div class="cgm-container-card">
 					<div class="cgm-container-card-head">
 						<span>${dot} <b>${frappe.utils.escape_html(c.container_number || c.name)}</b>
-						<span class="text-muted">${frappe.utils.escape_html(c.type_of_container || "")}</span></span>
+						<span class="text-muted">${frappe.utils.escape_html(c.cargo_type || "")}</span></span>
 						<span class="indicator-pill ${container_status_badge_class(
 							c.status
 						)} cgm-container-card-status">${frappe.utils.escape_html(c.status || "")}</span>

@@ -938,6 +938,11 @@ DOCUMENT_TYPE_DEFAULTS = {
 		"default_required": 0,
 		"required_stage": "Arrival & manifest",
 	},
+	"BOOKING": {
+		"category": "Transport",
+		"default_required": 0,
+		"required_stage": "Pre-IDF",
+	},
 }
 
 def ensure_document_types():

@@ -20,6 +20,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bl_fields_to_doc,
 	bl_propagation_payload,
+	container_row_cargo_size,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config, get_link_field_for_doctype
 
@@ -34,6 +35,11 @@ class BillofLading(Document):
 		batch_number = resolve_batch_number_for_bl(self)
 		self.name = build_bill_of_lading_name(self.bl_number, quantity, batch_number)
 
+	def on_update(self):
+		"""Keep linked Opportunity aligned while the BL remains in draft."""
+		if self.get("linked_opportunity") or self.get("custom_linked_opportunity"):
+			sync_opportunity_from_bl(self, allow_draft=True)
+
 	def _quantity_for_naming(self) -> str:
 		"""Quantity segment for the document name (from field or container rows)."""
 		if self.get("quantity"):
@@ -46,6 +52,13 @@ class BillofLading(Document):
 		if not self.get("batch_no"):
 			self.batch_no = str(batch_number)
 		summary = self._summarize_container_quantities()
+		if not summary:
+			pkgs = (self.get("number_of_packages") or "").strip()
+			ptype = (self.get("package_type") or "").strip()
+			if pkgs and ptype:
+				summary = f"{pkgs} {ptype}"
+			else:
+				summary = pkgs or ptype
 		if self.meta.has_field("container_summary"):
 			self.container_summary = summary
 		if self.meta.has_field("quantity"):
@@ -60,20 +73,20 @@ class BillofLading(Document):
 		if not self.container_information:
 			return ""
 
-		# Fetch order directly from Container Type DocType
+		# Fetch order directly from Cargo Size DocType
 		display_order = frappe.get_all(
-			"Container Type",
-			fields=["container_type"],
+			"Cargo Size",
+			fields=["cargo_size"],
 			order_by="idx asc",
-			pluck="container_type",
+			pluck="cargo_size",
 		)
 
 		counts: dict[str, int] = {}
 		for row in self.container_information:
-			container_type = (row.type_of_container or "").strip()
-			if not container_type:
+			cargo_size = container_row_cargo_size(row)
+			if not cargo_size:
 				continue
-			counts[container_type] = counts.get(container_type, 0) + 1
+			counts[cargo_size] = counts.get(cargo_size, 0) + 1
 
 		if not counts:
 			return ""
@@ -167,14 +180,24 @@ def next_batch_number_for_customer(customer: str) -> int:
 
 
 def resolve_batch_number_for_bl(doc) -> int:
-	"""Batch for a new/amended Bill of Lading without hardcoding.
+	"""Batch for a new/amended Bill of Lading.
 
-	Honours an existing numeric batch_no on the document (shared customer batch).
+	Prefers linked Opportunity batch, then an existing numeric batch_no on the
+	document (shared customer batch).
 	"""
 	if doc.get("amended_from"):
 		reused = parse_batch_number_from_bl_name(doc.amended_from)
 		if reused:
 			return reused
+
+	config = get_bl_config()
+	source_field = config.get("opportunity_source_field") or "linked_opportunity"
+	opportunity = doc.get(source_field) or doc.get("custom_linked_opportunity")
+	if opportunity and frappe.db.exists("Opportunity", opportunity):
+		opp_batch = frappe.db.get_value("Opportunity", opportunity, "custom_batch_no")
+		if opp_batch and str(opp_batch).strip().isdigit():
+			return int(str(opp_batch).strip())
+
 	raw = (doc.get("batch_no") or "").strip()
 	if raw:
 		try:
@@ -183,6 +206,7 @@ def resolve_batch_number_for_bl(doc) -> int:
 			existing = 0
 		if existing > 0:
 			return existing
+
 	return next_batch_number_for_customer(doc.customer)
 
 
@@ -279,11 +303,14 @@ def resolve_opportunity_for_bl(bl_doc, opportunity: str | None = None) -> str | 
 	return None
 
 
-def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
-	"""Link submitted BL data back onto the source Opportunity."""
+def sync_opportunity_from_bl(bl_doc, opportunity: str | None = None, allow_draft: bool = False) -> str | None:
+	"""Link BL data back onto the source Opportunity for draft or submitted BLs."""
 	config = get_bl_config()
 	opportunity = resolve_opportunity_for_bl(bl_doc, opportunity)
 	if not opportunity:
+		return None
+
+	if not allow_draft and bl_doc.docstatus != 1:
 		return None
 
 	bl_field = config.get("opportunity_bl_field")
@@ -307,6 +334,13 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 			changed = True
 
 	quantity_summary = bl_doc._summarize_container_quantities()
+	if not quantity_summary:
+		pkgs = (bl_doc.get("number_of_packages") or "").strip()
+		ptype = (bl_doc.get("package_type") or "").strip()
+		if pkgs and ptype:
+			quantity_summary = f"{pkgs} {ptype}"
+		else:
+			quantity_summary = pkgs or ptype
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		if opp.get(quantity_field) != quantity_summary:
 			opp.set(quantity_field, quantity_summary)
@@ -319,6 +353,11 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 		opp.save(ignore_permissions=True)
 
 	return opportunity
+
+
+def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
+	"""Link submitted BL data back onto the source Opportunity."""
+	return sync_opportunity_from_bl(bl_doc, opportunity=opportunity, allow_draft=False)
 
 
 def prepend_opportunity_bl_document(opp_doc, attachment_url, bl_name=None) -> bool:
@@ -358,11 +397,17 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 	attachment_field = get_bl_config().get("attachment_field")
 	linked_opportunity = sync_opportunity_from_submitted_bl(doc, opportunity)
 
+	quantity = doc._summarize_container_quantities() or (doc.get("quantity") or "")
+	if not quantity:
+		pkgs = (doc.get("number_of_packages") or "").strip()
+		ptype = (doc.get("package_type") or "").strip()
+		quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
+
 	return {
 		"bl_name": doc.name,
 		"attachment": doc.get(attachment_field) or "" if attachment_field else "",
 		"document_type": get_document_type_link_name("BL"),
-		"quantity": doc._summarize_container_quantities(),
+		"quantity": quantity,
 		"opportunity": linked_opportunity,
 		**bl_propagation_payload(doc),
 	}

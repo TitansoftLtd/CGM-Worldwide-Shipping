@@ -11,6 +11,12 @@
   "sea_import_task_plan_tab",
   "section_break_sea_import",
   "custom_sea_import_task_template",
+  "sea_transit_task_plan_tab",
+  "section_sea_transit_import",
+  "custom_sea_transit_import_shared_through_seq",
+  "custom_sea_transit_import_extension_template",
+  "section_sea_transit_export",
+  "custom_sea_transit_export_task_template",
   "tab_sea_task_requirements",
   "section_sea_task_requirements",
   "custom_sea_clearance_task_requirements",
@@ -43,7 +49,9 @@
   "custom_offload_task_seq",
   "custom_empty_return_task_seq",
   "custom_interchange_task_seq",
-  "custom_kpa_free_days"
+  "custom_kpa_free_days",
+  "section_batch_counter",
+  "last_batch_no"
  ],
  "fields": [
   {
@@ -76,6 +84,43 @@
    "fieldname": "custom_sea_import_task_template",
    "fieldtype": "Table",
    "label": "Sea import task template",
+   "options": "Sea Import Task Template Item"
+  },
+  {
+   "fieldname": "sea_transit_task_plan_tab",
+   "fieldtype": "Tab Break",
+   "label": "Sea transit task plans"
+  },
+  {
+   "description": "Sea Transit Import reuses rows from the Sea import task plan through the shared sequence, then appends the extension rows below. Edit rows here when your process changes — no code deploy required. Link a Shipment Type to this flow via Task Flow Key SEA_TRANSIT_IMPORT_E2E.",
+   "fieldname": "section_sea_transit_import",
+   "fieldtype": "Section Break",
+   "label": "Sea Transit Import"
+  },
+  {
+   "default": "20",
+   "description": "Last shared sea-import task sequence (inclusive). Steps after this come from the extension template below.",
+   "fieldname": "custom_sea_transit_import_shared_through_seq",
+   "fieldtype": "Int",
+   "label": "Shared Through Sequence"
+  },
+  {
+   "description": "Post-KPA transit steps appended after the shared sea-import sequence.",
+   "fieldname": "custom_sea_transit_import_extension_template",
+   "fieldtype": "Table",
+   "label": "Sea Transit Import extension template",
+   "options": "Sea Import Task Template Item"
+  },
+  {
+   "description": "Full task plan for Sea Transit Export. Link a Shipment Type via Task Flow Key SEA_TRANSIT_EXPORT_E2E. Container Tracker sections on each Project are driven by Project Type (standard ERPNext list — add new types there without developer help).",
+   "fieldname": "section_sea_transit_export",
+   "fieldtype": "Section Break",
+   "label": "Sea Transit Export"
+  },
+  {
+   "fieldname": "custom_sea_transit_export_task_template",
+   "fieldtype": "Table",
+   "label": "Sea Transit Export task template",
    "options": "Sea Import Task Template Item"
   },
   {
@@ -267,6 +312,19 @@
    "fieldname": "custom_kpa_free_days",
    "fieldtype": "Int",
    "label": "Default KPA Free Days"
+  },
+  {
+   "description": "Auto-incremented when a new Opportunity is created. Reset only when re-seeding the batch sequence.",
+   "fieldname": "section_batch_counter",
+   "fieldtype": "Section Break",
+   "label": "Opportunity batch counter"
+  },
+  {
+   "default": "0",
+   "description": "Last batch number assigned on Opportunity. The next Opportunity receives this value + 1.",
+   "fieldname": "last_batch_no",
+   "fieldtype": "Int",
+   "label": "Last Batch Number"
   }
  ],
  "grid_page_length": 50,

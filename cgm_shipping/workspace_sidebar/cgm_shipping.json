@@ -271,8 +271,8 @@
    "icon": "boxes",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Container Type",
-   "link_to": "Container Type",
+   "label": "Cargo Type",
+   "link_to": "Cargo Type",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
