@@ -9,10 +9,9 @@
   "customer",
   "client_ref",
   "booking_number",
-  "attach_booking",
+  "shipment_type",
   "column_break_bc_1",
   "linked_opportunity",
-  "shipment_type",
   "shipping_line",
   "vessel",
   "voyage_number",
@@ -20,18 +19,19 @@
   "port_of_loading",
   "port_of_discharge",
   "weight_uom",
-  "net_weight",
-  "gross_weight",
   "column_break_bc_2",
-  "cargo_cut_off",
-  "etd",
   "eta",
+  "etd",
+  "cargo_cut_off",
+  "batch_no",
+  "quantity",
   "section_cargo",
   "requested_cargo_type",
   "requested_cargo_quantity",
   "number_of_packages",
   "package_type",
   "commodity",
+  "attach_booking",
   "section_links",
   "amended_from"
  ],
@@ -156,11 +156,6 @@
    "label": "Voyage Number"
   },
   {
-   "fieldname": "gross_weight",
-   "fieldtype": "Data",
-   "label": "Gross Weight"
-  },
-  {
    "fieldname": "requested_cargo_type",
    "fieldtype": "Link",
    "label": "Requested Cargo Type",
@@ -190,15 +185,22 @@
    "options": "Requested Containers"
   },
   {
-   "fieldname": "net_weight",
+   "fieldname": "quantity",
    "fieldtype": "Data",
-   "label": "Net Weight"
+   "label": "Derived Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-14 03:43:32.764138",
+ "modified": "2026-07-16 05:05:43.708643",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",

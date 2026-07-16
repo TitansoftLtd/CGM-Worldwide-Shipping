@@ -19,6 +19,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	get_opportunity_documents_field,
 	prepend_clients_document_row,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+	allocate_fcl_batch_for_doc,
+	derived_quantity_from_booking,
+	is_fcl_cargo_type,
+	is_lcl_cargo_type,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_shipment_type_profile_to_doc,
 	get_cargo_type_field,
@@ -48,12 +54,14 @@ BOOKING_TO_OPPORTUNITY_FIELDS = (
 	("cargo_cut_off", "custom_cargo_cut_off"),
 	("number_of_packages", "custom_number_of_packages"),
 	("package_type", "custom_package_type"),
+	("batch_no", "custom_batch_no"),
 )
 
 
 class BookingConfirmation(Document):
 	def validate(self):
 		sanitize_booking_linked_opportunity(self)
+		apply_booking_quantity_and_batch(self)
 
 	def on_update(self):
 		# Keep linked Opportunity in sync while the booking is being filled (before submit).
@@ -85,33 +93,55 @@ def _set_opp_value(opp, fieldname: str, value) -> bool:
 		return False
 	if value in (None, ""):
 		return False
+
+	df = opp.meta.get_field(fieldname)
+	if df and df.fieldtype in ("Float", "Currency", "Percent", "Int"):
+		try:
+			value = float(str(value).replace(",", "").strip())
+		except (TypeError, ValueError):
+			return False
+		if df.fieldtype == "Int":
+			value = int(value)
+
 	if opp.get(fieldname) == value:
 		return False
 	opp.set(fieldname, value)
 	return True
 
 
+def apply_booking_quantity_and_batch(doc) -> None:
+	"""Set derived quantity and FCL batch on Booking Confirmation."""
+	cargo_type = doc.get("requested_cargo_type")
+	if is_lcl_cargo_type(cargo_type):
+		# LCL uses packages — not the FCL batch sequence.
+		pkgs = (doc.get("number_of_packages") or "").strip()
+		ptype = (doc.get("package_type") or "").strip()
+		if doc.meta.has_field("quantity"):
+			doc.quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
+		return
+
+	if not is_fcl_cargo_type(cargo_type):
+		return
+
+	derived = derived_quantity_from_booking(doc)
+	allocate_fcl_batch_for_doc(
+		doc,
+		cargo_type_field="requested_cargo_type",
+		derived_quantity=derived,
+	)
+
+
 def summarize_booking_quantity(booking_doc) -> str:
 	"""Build a quantity summary from FCL requested rows or LCL packages."""
 	cargo_type = (booking_doc.get("requested_cargo_type") or "").strip()
-	if cargo_type == "LCL":
+	if is_lcl_cargo_type(cargo_type):
 		pkgs = (booking_doc.get("number_of_packages") or "").strip()
 		ptype = (booking_doc.get("package_type") or "").strip()
 		if pkgs and ptype:
 			return f"{pkgs} {ptype}"
 		return pkgs or ptype
 
-	parts: list[str] = []
-	for row in booking_doc.get("requested_cargo_quantity") or []:
-		size = (row.get("cargo_size") or "").strip()
-		qty = str(row.get("quantity") or "").strip()
-		if size and qty:
-			parts.append(f"{qty} x {size}")
-		elif size:
-			parts.append(size)
-		elif qty:
-			parts.append(qty)
-	return ", ".join(parts)
+	return derived_quantity_from_booking(booking_doc)
 
 
 def requested_cargo_quantity_rows(booking_doc) -> list[dict]:
@@ -218,7 +248,8 @@ def booking_propagation_payload(booking_doc) -> dict:
 		"gross_weight": booking_doc.get("gross_weight"),
 		"net_weight": booking_doc.get("net_weight"),
 		"weight_uom": booking_doc.get("weight_uom"),
-		"quantity": summarize_booking_quantity(booking_doc),
+		"quantity": summarize_booking_quantity(booking_doc) or booking_doc.get("quantity"),
+		"batch_no": booking_doc.get("batch_no"),
 		"requested_cargo_quantity": requested_cargo_quantity_rows(booking_doc),
 		"port_of_loading": booking_doc.get("port_of_loading"),
 		"port_of_discharge": booking_doc.get("port_of_discharge"),

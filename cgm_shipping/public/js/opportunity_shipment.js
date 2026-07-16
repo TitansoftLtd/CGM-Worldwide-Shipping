@@ -667,6 +667,7 @@ cgm_shipping.opportunity_shipment.apply_booking_payload = function (frm, pending
 	set_if("custom_weight_nw", pending.net_weight);
 	set_if("custom_weight_uom_", pending.weight_uom);
 	set_if("custom_quantity", pending.quantity);
+	set_if("custom_batch_no", pending.batch_no);
 	set_if("custom_port_of_loading", pending.port_of_loading);
 	set_if("custom_port_of_discharge", pending.port_of_discharge);
 	set_if("custom_voyage_number", pending.voyage_number);

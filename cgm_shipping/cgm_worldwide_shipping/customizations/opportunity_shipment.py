@@ -103,12 +103,12 @@ def allocate_opportunity_batch_no() -> str:
 
 
 def assign_opportunity_batch_on_insert(doc, _method=None) -> None:
-	"""Assign custom_batch_no on new Opportunities from Settings counter."""
-	if not doc.meta.has_field("custom_batch_no"):
-		return
-	if (doc.get("custom_batch_no") or "").strip():
-		return
-	doc.custom_batch_no = allocate_opportunity_batch_no()
+	"""Opportunity batch is assigned from FCL Booking Confirmation / Bill of Lading.
+
+	Do not use the global Settings counter here — FCL batches are per
+	Customer + Shipment Type + Derived Quantity.
+	"""
+	return
 
 
 def get_shipment_type_flags(shipment_type: str | None) -> dict:
