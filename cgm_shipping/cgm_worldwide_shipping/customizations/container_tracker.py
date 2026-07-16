@@ -6,7 +6,7 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, today
+from frappe.utils import cint, flt, getdate, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	BULK_CONTAINER_TASK_SEQ_FIELDS,
@@ -21,7 +21,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_STATUS_RETURN_OVERDUE,
 	CONTAINER_STATUS_VESSEL_BERTHED,
 	CONTAINER_TASK_SEQ_DEFAULTS,
+	DEPOSIT_PAYMENT_STATUSES,
 	DEPOSIT_REFUND_STATUSES,
+	SEA_TASK_FLOW_KEY,
 	TASK_CONTAINER_NUMBER_FIELD,
 	TASK_CONTAINER_TRACKER_FIELD,
 	TASK_CARGO_TYPE_FIELD,
@@ -48,12 +50,70 @@ def get_container_task_sequence(fieldname: str) -> int:
 	if default is None:
 		frappe.throw(f"Unknown container task sequence field: {fieldname}")
 	if frappe.db.exists("DocType", "CGM Shipping Settings"):
-		meta = frappe.get_meta("CGM Shipping Settings")
-		if meta.has_field(fieldname):
-			val = frappe.db.get_single_value("CGM Shipping Settings", fieldname)
-			if val:
-				return int(val)
+		settings = frappe.get_single("CGM Shipping Settings")
+		if settings.meta.has_field(fieldname):
+			configured = cint(settings.get(fieldname) or 0)
+			if configured:
+				return configured
 	return default
+
+
+def project_shipping_line_finance_paid(project: str | None) -> bool:
+	"""True when the project's Shipping Line finance task is completed."""
+	if not project:
+		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		shipping_line_finance_payment_sequences,
+	)
+
+	finance_seqs = shipping_line_finance_payment_sequences()
+	if not finance_seqs:
+		return False
+	return bool(
+		frappe.db.exists(
+			"Task",
+			{
+				"project": project,
+				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+				"custom_sequence_no": ("in", list(finance_seqs)),
+				"status": "Completed",
+			},
+		)
+	)
+
+
+def refresh_deposit_payment_status(ct) -> None:
+	"""Derive deposit_payment_status from has_deposit + SL finance payment."""
+	if not ct.meta.has_field("deposit_payment_status"):
+		return
+	has_deposit = cint(ct.get("has_deposit")) if ct.meta.has_field("has_deposit") else 0
+	if not has_deposit:
+		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[0]  # Not Applicable
+		return
+	if project_shipping_line_finance_paid(ct.get("project")):
+		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[2]  # Paid
+	else:
+		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[1]  # Unpaid
+
+
+def sync_project_deposit_payment_statuses(project: str | None) -> int:
+	"""Recompute deposit_payment_status on all trackers for a project. Returns updated count."""
+	if not project or not frappe.db.exists("DocType", "Container Tracker"):
+		return 0
+	meta = frappe.get_meta("Container Tracker")
+	if not meta.has_field("deposit_payment_status"):
+		return 0
+	updated = 0
+	for name in frappe.get_all(
+		"Container Tracker", filters={"project": project}, pluck="name"
+	):
+		ct = frappe.get_doc("Container Tracker", name)
+		before = ct.get("deposit_payment_status")
+		refresh_deposit_payment_status(ct)
+		if ct.get("deposit_payment_status") != before:
+			ct.db_set("deposit_payment_status", ct.deposit_payment_status, update_modified=False)
+			updated += 1
+	return updated
 
 
 def get_gate_out_task_sequence() -> int:

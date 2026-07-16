@@ -11,6 +11,8 @@
   "mode_of_transport",
   "required_stage",
   "default_required",
+  "requires_download_permission",
+  "download_roles",
   "column_break_jjki",
   "text_editor_eisl"
  ],
@@ -55,6 +57,19 @@
    "fieldname": "default_required",
    "fieldtype": "Check",
    "label": "Default Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_download_permission",
+   "fieldtype": "Check",
+   "label": "Requires Download Permission"
+  },
+  {
+   "depends_on": "requires_download_permission",
+   "fieldname": "download_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Download Roles",
+   "options": "CGM Role Item"
   },
   {
    "fieldname": "text_editor_eisl",

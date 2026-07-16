@@ -14,7 +14,12 @@
   {% elif allocation %}
   <section class="cp-hero" style="margin-bottom:1.5rem;">
     <h1>{{ allocation.bill_of_lading or _("Allocation") }}</h1>
-    <p class="cp-sub">{{ _("Project") }}: {{ allocation.project_ref }} · {{ _("Date") }}: {{ frappe.format(allocation.allocation_date, {"fieldtype": "Date"}) }}</p>
+    <p class="cp-sub">
+      {{ _("Project") }}: {{ allocation.project_ref }}
+      · {{ _("Date") }}: {{ frappe.format(allocation.allocation_date, {"fieldtype": "Date"}) }}
+      · {{ _("Trucks booked") }}: {{ allocation.trucks_booked or allocation.container_total or 0 }}
+      · {{ _("Containers") }}: {{ allocation.container_total or allocation.containers|length }}
+    </p>
     {% if allocation.is_completed %}
     <p style="margin:.75rem 0 0;"><span class="indicator-pill green">{{ _("Completed") }}</span></p>
     {% endif %}
@@ -28,10 +33,22 @@
   {% else %}
   <div class="cp-banner-info" style="margin-bottom:1.25rem;">
     <h4>{{ _("How it works") }}</h4>
-    <p>{{ _("For each container: save truck and driver details, submit the assignment, then upload the interchange and submit it to CGM when ready.") }}</p>
+    <p>{{ _("For each container: save truck and driver details, submit the assignment, post truck updates as the job progresses, then upload the interchange and submit it to CGM when ready.") }}</p>
   </div>
   {% endif %}
 
+  <div class="cp-tabs" style="margin:0 0 1rem;" role="tablist">
+    <button type="button" class="cp-tab active" data-cp-tab="containers" role="tab" aria-selected="true">
+      {{ _("Containers") }}
+      {% if allocation.containers %}<span class="cp-tab-count">{{ allocation.containers|length }}</span>{% endif %}
+    </button>
+    <button type="button" class="cp-tab" data-cp-tab="updates" role="tab" aria-selected="false">
+      {{ _("Updates") }}
+      {% if allocation.my_updates %}<span class="cp-tab-count">{{ allocation.my_updates|length }}</span>{% endif %}
+    </button>
+  </div>
+
+  <div class="cp-tab-panel active" data-cp-panel="containers" role="tabpanel">
   {% for row in allocation.containers %}
   <div class="cp-card tp-container-row" style="margin-bottom:1rem; padding:1rem;" data-item="{{ row.name|e }}">
     <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap; align-items:flex-start;">
@@ -146,12 +163,38 @@
       {% endif %}
     </div>
     {% endif %}
+
   </div>
   {% endfor %}
+  </div>
+
+  <div class="cp-tab-panel" data-cp-panel="updates" role="tabpanel">
+    <div class="cp-card" style="margin-bottom:1rem; padding:1rem;">
+      <p class="text-muted" style="margin:0 0 1rem; font-size:.88rem;">
+        {{ _("Post truck updates for a container on this allocation. Only your own updates are listed below.") }}
+      </p>
+      {% if not allocation.is_completed %}
+      <div class="tp-update-form form-section" data-item="" style="margin-bottom:1rem;">
+        <div class="tp-update-form-mount"></div>
+      </div>
+      {% endif %}
+      <div class="tp-updates-mount" id="tp-allocation-updates-mount">
+        {% if allocation.my_updates_html %}
+          {{ allocation.my_updates_html | safe }}
+        {% else %}
+          <p class="text-muted" style="margin:0;">{{ _("No updates posted yet.") }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
   {% endif %}
 </div>
 
-{% if allocation and not error_message and not allocation.is_completed %}
+{% if allocation and not error_message %}
+<script type="application/json" id="tp-update-types-json">{{ allocation.update_types_json | safe }}</script>
+<script type="application/json" id="tp-container-options-json">{{ allocation.container_options_json | safe }}</script>
+<script type="application/json" id="tp-my-updates-json">{{ allocation.my_updates_json | safe }}</script>
 <script>
 frappe.ready(function () {
 	const page = document.getElementById("tp-allocation-page");
@@ -160,11 +203,49 @@ frappe.ready(function () {
 	}
 	page.dataset.tpBound = "1";
 
+	function mountUpdateLists() {
+		page.querySelectorAll(".cp-tab").forEach(function (tab) {
+			tab.addEventListener("click", function () {
+				const key = tab.getAttribute("data-cp-tab");
+				page.querySelectorAll(".cp-tab").forEach(function (t) {
+					const active = t === tab;
+					t.classList.toggle("active", active);
+					t.setAttribute("aria-selected", active ? "true" : "false");
+				});
+				page.querySelectorAll(".cp-tab-panel").forEach(function (panel) {
+					panel.classList.toggle("active", panel.getAttribute("data-cp-panel") === key);
+				});
+			});
+		});
+
+		frappe.require(["dialog.bundle.js", "/assets/cgm_shipping/js/operational_updates_ui.js"], function () {
+			if (!(window.cgm && cgm.updates && cgm.updates.bindListClicks)) {
+				return;
+			}
+			const listOpts = { showSource: false };
+			let myUpdates = [];
+			try {
+				myUpdates = JSON.parse((document.getElementById("tp-my-updates-json") || {}).textContent || "[]");
+			} catch (e) {
+				myUpdates = [];
+			}
+			const mount = document.getElementById("tp-allocation-updates-mount");
+			if (mount && myUpdates.length && cgm.updates.mount) {
+				cgm.updates.mount(mount, myUpdates, listOpts);
+			} else if (mount) {
+				cgm.updates.bindListClicks(mount, listOpts);
+			}
+		});
+	}
+	mountUpdateLists();
+
+{% if not allocation.is_completed %}
 	const allocationName = page.dataset.allocation;
 	const SAVE_METHOD = "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal.save_truck_assignment";
 	const SUBMIT_METHOD = "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal.submit_truck_assignment_portal";
 	const SAVE_INTERCHANGE_METHOD = "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal.save_interchange_draft_portal";
 	const SUBMIT_INTERCHANGE_METHOD = "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal.submit_interchange_portal";
+	const POST_UPDATE_METHOD = "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal.post_truck_update_portal";
 
 	function readFields(form) {
 		return {
@@ -332,6 +413,93 @@ frappe.ready(function () {
 			.finally(function () { frappe.unfreeze(); });
 	}
 
+	let updateTypes = [];
+	try {
+		const typesEl = document.getElementById("tp-update-types-json");
+		updateTypes = JSON.parse((typesEl && typesEl.textContent) || "[]");
+	} catch (e) {
+		updateTypes = [];
+	}
+
+	let containerOptions = [];
+	try {
+		const cEl = document.getElementById("tp-container-options-json");
+		containerOptions = JSON.parse((cEl && cEl.textContent) || "[]");
+	} catch (e) {
+		containerOptions = [];
+	}
+
+	frappe.require(
+		["dialog.bundle.js", "web_form.bundle.js", "file_uploader.bundle.js", "/assets/cgm_shipping/js/transporter_update_form.js"],
+		function () {
+			if (window.cgm && cgm.updates && cgm.updates.mountTransporterForms) {
+				cgm.updates.mountTransporterForms(page, {
+					updateTypes: updateTypes,
+					containerOptions: containerOptions,
+					doctype: "Container Allocation",
+					docname: allocationName,
+				});
+			}
+		}
+	);
+
+	function postTruckUpdate(form, btn) {
+		const mount = form.querySelector(".tp-update-form-mount");
+		const cgmForm = mount && mount._cgmUpdateForm;
+		if (!cgmForm) {
+			frappe.msgprint({
+				title: __("Form"),
+				indicator: "red",
+				message: __("Update form is not ready. Please refresh the page."),
+			});
+			return;
+		}
+
+		const values = cgmForm.validate();
+		if (!values) {
+			return;
+		}
+
+		const itemName = values.allocation_item || form.dataset.item;
+		if (!itemName) {
+			frappe.msgprint({
+				title: __("Container"),
+				indicator: "orange",
+				message: __("Select a container."),
+			});
+			return;
+		}
+		setBtnLoading(btn, true, __("Posting..."));
+		frappe.call({
+			method: POST_UPDATE_METHOD,
+			args: {
+				allocation_name: allocationName,
+				item_name: itemName,
+				subject: values.subject,
+				update_type: values.subject,
+				message: values.message,
+				event_date: values.event_date || null,
+				attachment: values.attachment || "",
+				truck_number: values.truck_number,
+				driver_name: values.driver_name,
+				driver_contact: values.driver_contact,
+			},
+			freeze: true,
+			callback: function (r) {
+				setBtnLoading(btn, false);
+				if (r.exc) return;
+				frappe.show_alert({
+					message: (r.message && r.message.message) || __("Truck update posted."),
+					indicator: "green",
+				});
+				window.location.reload();
+			},
+			error: function () {
+				setBtnLoading(btn, false);
+			},
+		});
+	}
+
 	page.addEventListener("click", function (e) {
 		const saveBtn = e.target.closest(".tp-save-draft");
 		if (saveBtn) {
@@ -446,6 +614,14 @@ frappe.ready(function () {
 					action: function () { frappe.hide_msgprint(); },
 				},
 			});
+			return;
+		}
+
+		const postBtn = e.target.closest(".tp-post-update");
+		if (postBtn) {
+			e.preventDefault();
+			const form = postBtn.closest(".tp-update-form");
+			if (form) postTruckUpdate(form, postBtn);
 		}
 	});
 
@@ -454,6 +630,7 @@ frappe.ready(function () {
 			uploadInterchangeFile(input);
 		});
 	});
+{% endif %}
 });
 </script>
 {% endif %}

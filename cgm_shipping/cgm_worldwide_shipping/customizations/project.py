@@ -250,7 +250,13 @@ def normalize_document_rows(doc):
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		normalize_shipment_document_row,
 		primary_attachment,
+		get_draft_attachment,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.doctype.shipment_document.shipment_document import (
+		stamp_shipment_document_upload_metadata,
+	)
+
+	stamp_shipment_document_upload_metadata(doc, SHIPMENT_DOCUMENTS_FIELD)
 
 	rows = list(get_documents(doc))
 	# Batch the Document Type 'default_required' lookups (was one query per row).
@@ -273,27 +279,16 @@ def normalize_document_rows(doc):
 			if default_required is not None:
 				row.required = int(default_required)
 
-		# 2. Auto-manage upload state and uploader metadata.
+		# 2. Auto-manage upload state (metadata stamped separately on attachment change).
 		if primary_attachment(row):
 			if row.status in (None, "", "Missing"):
 				row.status = "Uploaded"
-			if not row.uploaded_by:
-				row.uploaded_by = frappe.session.user
-			if not row.uploaded_on:
-				row.uploaded_on = now_datetime()
-		elif row.get("initial_attachment") or row.get("final_attachment"):
+		elif get_draft_attachment(row) or row.get("final_attachment"):
 			normalize_shipment_document_row(row)
-			if primary_attachment(row):
-				if row.status in (None, "", "Missing"):
-					row.status = "Uploaded"
-				if not row.uploaded_by:
-					row.uploaded_by = frappe.session.user
-				if not row.uploaded_on:
-					row.uploaded_on = now_datetime()
+			if primary_attachment(row) and row.status in (None, "", "Missing"):
+				row.status = "Uploaded"
 		else:
 			row.status = "Missing"
-			row.uploaded_by = None
-			row.uploaded_on = None
 			row.verified_by = None
 			row.verified_on = None
 
@@ -379,9 +374,14 @@ def enforce_intake_documents_before_documents_received(doc):
 		)
 
 def normalize_permit_register_rows(doc):
-	"""Derive Pre-Cleared / Post-Cleared from invoice, payment, and permit document fields."""
+	"""Derive clearance phase and stamp permit attachment upload metadata."""
 	if not doc.meta.has_field(PERMIT_REGISTER_FIELD):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		stamp_permit_register_upload_metadata,
+	)
+
+	stamp_permit_register_upload_metadata(doc, PERMIT_REGISTER_FIELD)
 	for row in doc.get(PERMIT_REGISTER_FIELD) or []:
 		row.clearance_phase = derive_permit_clearance_phase(row)
 

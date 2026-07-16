@@ -9,6 +9,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import
 	CLOSED_CONTAINER_STATUSES,
 	compute_container_metrics,
 	populate_rates_from_shipping_line,
+	refresh_deposit_payment_status,
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_charges import (
 	apply_metrics_to_doc,
@@ -17,6 +18,7 @@ from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_cha
 
 class ContainerTracker(Document):
 	def validate(self):
+		refresh_deposit_payment_status(self)
 		populate_rates_from_shipping_line(self)
 		apply_metrics_to_doc(self)
 
@@ -99,6 +101,9 @@ _CONTAINER_TRACKER_FIELDS = [
 	"kpa_free_days",
 	"kpa_daily_rate",
 	"free_days_count_from",
+	"deposit_amount",
+	"deposit_payment_status",
+	"has_deposit",
 	"icd_mombasa_discharge_date",
 	"icd_gate_in_date",
 	"icd_gate_out_date",

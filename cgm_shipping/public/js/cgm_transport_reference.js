@@ -96,7 +96,8 @@ cgm_shipping.transport_reference.shipment_type_names_for_category = function (
 };
 
 /**
- * Show container type when the Shipment Type master uses unit tracking and a B/L is linked.
+ * Show container type when cargo is FCL (or empty), shipment type uses unit tracking,
+ * and a B/L is linked. Hide for LCL / Breakbulk / Project Cargo unless a value exists.
  */
 cgm_shipping.transport_reference.toggle_cargo_type = function (frm, options = {}) {
 	const field = options.cargo_type || "custom_cargo_type";
@@ -105,6 +106,9 @@ cgm_shipping.transport_reference.toggle_cargo_type = function (frm, options = {}
 	}
 
 	const blField = options.bill_of_lading || "custom_bill_of_lading";
+	const cargoField = options.cargo_type || "custom_cargo_type";
+	const cargoType = (frm.doc[cargoField] || "").trim();
+	const nonFclCargo = ["LCL", "Breakbulk", "Project Cargo"].includes(cargoType);
 
 	return cgm_shipping.transport_reference.ensure_profiles().then((profiles) => {
 		const shipmentType = (
@@ -120,6 +124,7 @@ cgm_shipping.transport_reference.toggle_cargo_type = function (frm, options = {}
 			profile.uses_unit_tracking ||
 			profile.requires_bill_of_lading ||
 			profile.category === "sea";
-		frm.toggle_display(field, hasValue || (hasBl && masterAllows));
+		const cargoAllows = !cargoType || cargoType === "FCL" || !nonFclCargo;
+		frm.toggle_display(field, hasValue || (hasBl && masterAllows && cargoAllows));
 	});
 };

@@ -181,6 +181,43 @@ def resolve_batch_number_for_bl(doc) -> int | None:
 	return None
 
 
+@frappe.whitelist()
+def get_customer_batch_numbers(customer: str) -> list[str]:
+	"""Distinct batch numbers already used for this customer (Project + B/L)."""
+	if not customer:
+		return []
+	frappe.has_permission("Customer", ptype="read", doc=customer, throw=True)
+
+	batches: set[str] = set()
+	if frappe.get_meta("Project").has_field("custom_batch_no"):
+		for value in frappe.get_all(
+			"Project",
+			filters={"customer": customer, "custom_batch_no": ["is", "set"]},
+			pluck="custom_batch_no",
+		):
+			text = str(value or "").strip()
+			if text:
+				batches.add(text)
+
+	if frappe.get_meta("Bill of Lading").has_field("batch_no"):
+		for value in frappe.get_all(
+			"Bill of Lading",
+			filters={"customer": customer, "batch_no": ["is", "set"]},
+			pluck="batch_no",
+		):
+			text = str(value or "").strip()
+			if text:
+				batches.add(text)
+
+	def sort_key(item: str):
+		try:
+			return (0, int(item))
+		except (TypeError, ValueError):
+			return (1, item)
+
+	return sorted(batches, key=sort_key)
+
+
 def summarize_bl_container_quantities(bl_name: str | None) -> str:
 	"""Summarize container type counts for a Bill of Lading by name."""
 	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):

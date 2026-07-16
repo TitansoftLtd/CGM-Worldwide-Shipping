@@ -390,6 +390,12 @@ def run_application_payment_completion_hooks(
 		)
 
 		run_project_refresh_hooks(task.project)
+		if profile.payment_item == "Shipping Line":
+			from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+				sync_project_deposit_payment_statuses,
+			)
+
+			sync_project_deposit_payment_statuses(task.project)
 	publish_task_completed_event(task)
 
 

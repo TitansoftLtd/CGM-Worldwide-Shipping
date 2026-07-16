@@ -90,16 +90,14 @@
    "reqd": 1
   },
   {
-   "fieldname": "batch_no",
-   "fieldtype": "Data",
-   "label": "Batch No",
-   "read_only": 1
-  },
-  {
    "fieldname": "quantity",
    "fieldtype": "Data",
    "label": "Derived Quantity",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_xiys",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "booking_confirmation",
@@ -114,6 +112,12 @@
    "hidden": 1,
    "label": "Linked Opportunity",
    "options": "Opportunity"
+  },
+  {
+   "description": "Leave blank for next batch, or enter an existing customer batch to share.",
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No"
   },
   {
    "fieldname": "section_shipping",
