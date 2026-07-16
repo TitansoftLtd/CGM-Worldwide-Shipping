@@ -11,6 +11,7 @@
   "client_refrence_no",
   "column_break_basic",
   "shipment_type",
+  "cargo_type",
   "etd",
   "eta",
   "column_break_xiys",
@@ -31,8 +32,6 @@
   "gross_weight",
   "column_break_cargo",
   "commodity",
-  "section_break_ytoj",
-  "cargo_type",
   "section_fcl",
   "container_information",
   "section_lcl",
@@ -90,6 +89,14 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval:doc.cargo_type!='LCL'",
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.cargo_type!='LCL'",
    "fieldname": "quantity",
    "fieldtype": "Data",
    "label": "Derived Quantity",
@@ -196,13 +203,13 @@
    "label": "Net Weight"
   },
   {
-   "depends_on": "eval:doc.cargo_type=='FCL'",
+   "depends_on": "eval:doc.cargo_type!='LCL'",
    "fieldname": "section_fcl",
    "fieldtype": "Section Break",
    "label": "FCL / Containers"
   },
   {
-   "depends_on": "eval:doc.cargo_type=='FCL'",
+   "depends_on": "eval:doc.cargo_type!='LCL'",
    "fieldname": "container_information",
    "fieldtype": "Table",
    "label": "Container Information",
@@ -252,10 +259,6 @@
   {
    "fieldname": "column_break_xiys",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "section_break_ytoj",
-   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,

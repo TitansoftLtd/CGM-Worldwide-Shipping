@@ -11,6 +11,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import
 	populate_rates_from_shipping_line,
 	refresh_deposit_payment_status,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	container_row_cargo_size,
+	tracker_cargo_size_field,
+	tracker_row_cargo_size,
+)
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_charges import (
 	apply_metrics_to_doc,
 )
@@ -50,13 +55,15 @@ def _sync_project_child_row(doc) -> None:
 			"parenttype": "Project",
 			"parentfield": container_field,
 		},
-		fields=["name", "container_tracker", "container_number", "cargo_type"],
+		fields=["name", "container_tracker", "container_number", "cargo_size", "type_of_container"],
 	)
+	tracker_size = tracker_row_cargo_size(doc)
 
 	for row in child_rows:
+		row_size = container_row_cargo_size(row)
 		matched = row.container_tracker == doc.name or (
 			row.container_number == doc.container_number
-			and (row.cargo_type or "") == (doc.cargo_type or "")
+			and row_size == tracker_size
 		)
 		if not matched:
 			continue
@@ -80,7 +87,7 @@ _CONTAINER_TRACKER_FIELDS = [
 	"container_number",
 	"bl_number",
 	"container_mode",
-	"cargo_type",
+	tracker_cargo_size_field(),
 	"seal_no",
 	"shipping_line",
 	"delivery_destination",
@@ -129,6 +136,12 @@ _CONTAINER_TRACKER_FIELDS = [
 	"status",
 	"current_location",
 ]
+
+
+def container_tracker_query_fields() -> list[str]:
+	"""Return Container Tracker fields that exist in the current site schema."""
+	meta = frappe.get_meta("Container Tracker")
+	return [field for field in _CONTAINER_TRACKER_FIELDS if meta.has_field(field)]
 
 
 def sync_container_summary_to_project(project: str | None) -> None:
@@ -206,7 +219,7 @@ def get_containers_for_project(project: str) -> list[dict]:
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=_CONTAINER_TRACKER_FIELDS,
+		fields=container_tracker_query_fields(),
 		order_by="container_number asc",
 	)
 	return [enrich_container_row(r) for r in rows]
@@ -229,7 +242,7 @@ def refresh_open_container_metrics() -> int:
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"status": ["not in", list(CLOSED_CONTAINER_STATUSES)]},
-		fields=_CONTAINER_TRACKER_FIELDS,
+		fields=container_tracker_query_fields(),
 	)
 	projects = set()
 	for row in rows:

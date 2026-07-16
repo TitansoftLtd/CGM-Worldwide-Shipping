@@ -17,14 +17,22 @@ For **sales** and **customer onboarding**: Lead → Opportunity → Project.
 
 ## The intake flow
 
+Opportunity is the **shipment intake & authorization record** (single source of truth).
+Transport documents (Booking Confirmation, Bill of Lading, Air Waybill) synchronize into it.
+The Project is created only after approval.
+
 ```
-Lead
-  → attach CI, PKL, B/L, container details
-    → Opportunity
-      → client documents, workflow approval
-        → [Approved] + Customer party
-          → Project (sea-import task plan created)
+New Shipment
+  → Create Opportunity → Select Shipment Type
+    → Choose initial document (BL / Booking / AWB / None for Transit)
+      → Complete document → fields sync to Opportunity
+        → Upload & verify remaining client documents
+          → Approve Opportunity → Start Shipment → Project + Tasks
 ```
+
+Booking Confirmation = **planned** shipment. Bill of Lading = **confirmed** cargo.
+Either may arrive first; both workflows are supported. Adding a BL later (from Opportunity
+or Project) prefills from the Booking and replaces planned vessel/ETA/etc. with confirmed values.
 
 ---
 
@@ -94,8 +102,11 @@ These are mandatory intake codes (`INTAKE_DOCUMENT_CODES`).
 ## Bill of Lading
 
 - Unique `bl_number`
-- Container child table
-- Can link to Opportunity (`custom_linked_opportunity`)
+- Container child table (FCL): when created from a Booking, rows are auto-generated from
+  requested size×qty — user only enters container number and seal
+- LCL: packages/package type prefilled; no container table
+- Links: `linked_opportunity`, optional `booking_confirmation`
+- On submit: syncs shipping/cargo/containers into Opportunity (and Project if already created)
 - Container rows feed **Container Tracker** on Project
 
 ---

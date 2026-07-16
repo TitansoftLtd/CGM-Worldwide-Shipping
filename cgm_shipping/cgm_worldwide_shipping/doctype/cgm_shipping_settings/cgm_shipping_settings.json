@@ -317,14 +317,16 @@
    "description": "Auto-incremented when a new Opportunity is created. Reset only when re-seeding the batch sequence.",
    "fieldname": "section_batch_counter",
    "fieldtype": "Section Break",
-   "label": "Opportunity batch counter"
+   "hidden": 1,
+   "label": "Legacy batch counter (deprecated)"
   },
   {
    "default": "0",
-   "description": "Last batch number assigned on Opportunity. The next Opportunity receives this value + 1.",
+   "description": "Deprecated. FCL batches are allocated per Customer + Shipment Type + Derived Quantity on Booking Confirmation / Bill of Lading. This field is no longer incremented automatically.",
    "fieldname": "last_batch_no",
    "fieldtype": "Int",
-   "label": "Last Batch Number"
+   "hidden": 1,
+   "label": "Last Batch Number (legacy)"
   }
  ],
  "grid_page_length": 50,

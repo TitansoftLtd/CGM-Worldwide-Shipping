@@ -278,6 +278,7 @@ doc_events = {
 		],
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.sync_opportunity_intake_on_save",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.sync_opportunity_batch_from_transport_doc",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.documents.normalize_opportunity_clients_documents",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.seed_required_documents_on_opportunity",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_bl_from_clients_documents",

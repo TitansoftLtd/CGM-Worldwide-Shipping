@@ -352,6 +352,17 @@ function apply_bl_classification_fields(frm, data) {
 		"custom_draft_bl_number",
 		"custom_number_of_packages",
 		"custom_package_type",
+		// Confirmed shipping / cargo — Opportunity stays the latest shipment record.
+		"custom_shipping_line",
+		"custom_vessel",
+		"custom_etd",
+		"custom_eta",
+		"custom_port_of_loading",
+		"custom_port_of_discharge",
+		"custom_voyage_number",
+		"custom_gross_weight",
+		"custom_weight_nw",
+		"custom_weight_uom_",
 	];
 	detail_fields.forEach((fieldname) => {
 		if (data[fieldname] != null && data[fieldname] !== "") {
@@ -491,6 +502,7 @@ function setup_opportunity_bill_of_lading_create(frm) {
 		const opts = {};
 		if (frm.doc.name) {
 			localStorage.setItem("cgm_return_opportunity", frm.doc.name);
+			localStorage.setItem("cgm_bl_seed_opportunity", frm.doc.name);
 		}
 		if (is_saved_opportunity_name(frm.doc.name)) {
 			const linked_doctype = df.options;
@@ -505,17 +517,24 @@ function setup_opportunity_bill_of_lading_create(frm) {
 					opts[opp_link_field.fieldname] = frm.doc.name;
 				}
 			}
+			opts.linked_opportunity = frm.doc.name;
 			if (frm.doc.custom_draft_bl_number) {
 				opts.bl_number = frm.doc.custom_draft_bl_number;
 			}
-			if (frm.doc.custom_batch_no) {
-				opts.batch_no = frm.doc.custom_batch_no;
-			}
+			// FCL batch is allocated on Booking/BL save — not from Opportunity.
 			if (frm.doc.party_name) {
 				opts.customer = frm.doc.party_name;
 			}
 			if (frm.doc.custom_shipment_type) {
 				opts.shipment_type = frm.doc.custom_shipment_type;
+			}
+			const cargo_field = get_opportunity_cargo_type_field(frm);
+			if (cargo_field && frm.doc[cargo_field]) {
+				opts.cargo_type = frm.doc[cargo_field];
+			}
+			// Prefill planned → confirmed path when Booking already exists.
+			if (frm.doc.custom_booking_confirmation) {
+				opts.booking_confirmation = frm.doc.custom_booking_confirmation;
 			}
 		}
 		return opts;

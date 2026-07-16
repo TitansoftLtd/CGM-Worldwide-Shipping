@@ -9,7 +9,7 @@ on the custom doctype it belongs to.
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now_datetime
+from frappe.utils import cint
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	ensure_document_types,
@@ -19,17 +19,63 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	allocate_fcl_batch_for_doc,
+	counts_from_container_rows,
 	derived_quantity_from_bl,
 	format_derived_quantity,
 	is_fcl_cargo_type,
 	is_lcl_cargo_type,
-	counts_from_container_rows,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bl_fields_to_doc,
 	bl_propagation_payload,
+	get_cargo_type_field,
+	normalize_container_row,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import coerce_numeric_fields, get_bl_config
+
+# Planned Booking Confirmation → confirmed Bill of Lading (prefill / link).
+BOOKING_TO_BL_FIELDS = (
+	("customer", "customer"),
+	("client_ref", "client_refrence_no"),
+	("shipment_type", "shipment_type"),
+	("requested_cargo_type", "cargo_type"),
+	("shipping_line", "shipping_line"),
+	("vessel", "vessel"),
+	("voyage_number", "voyage_number"),
+	("port_of_loading", "port_of_loading"),
+	("port_of_discharge", "port_of_discharge"),
+	("etd", "etd"),
+	("eta", "eta"),
+	("commodity", "commodity"),
+	("gross_weight", "gross_weight"),
+	("net_weight", "net_weight"),
+	("weight_uom", "weight_uom"),
+	("number_of_packages", "number_of_packages"),
+	("package_type", "package_type"),
+	("batch_no", "batch_no"),
+	("linked_opportunity", "linked_opportunity"),
+)
+
+# Opportunity scalars used when creating a BL before / without a Booking.
+OPPORTUNITY_TO_BL_FIELDS = (
+	("party_name", "customer"),
+	("custom_client_refrence_no", "client_refrence_no"),
+	("custom_shipment_type", "shipment_type"),
+	("custom_shipping_line", "shipping_line"),
+	("custom_vessel", "vessel"),
+	("custom_voyage_number", "voyage_number"),
+	("custom_port_of_loading", "port_of_loading"),
+	("custom_port_of_discharge", "port_of_discharge"),
+	("custom_etd", "etd"),
+	("custom_eta", "eta"),
+	("custom_description_of_goods", "commodity"),
+	("custom_gross_weight", "gross_weight"),
+	("custom_weight_nw", "net_weight"),
+	("custom_weight_uom_", "weight_uom"),
+	("custom_number_of_packages", "number_of_packages"),
+	("custom_package_type", "package_type"),
+	("custom_draft_bl_number", "bl_number"),
+)
 
 
 class BillofLading(Document):
@@ -39,6 +85,7 @@ class BillofLading(Document):
 		if not self.customer:
 			frappe.throw(frappe._("Customer is required"))
 		# Quantity / batch stay on their own fields — name is always the BL number.
+		ensure_bl_cargo_type(self)
 		apply_bl_quantity_and_batch(self)
 		resolve_batch_number_for_bl(self)
 		self.name = (self.bl_number or "").strip()
@@ -46,23 +93,29 @@ class BillofLading(Document):
 	def validate(self):
 		coerce_numeric_fields(self, ("gross_weight", "net_weight"), empty_as_zero=True)
 		sanitize_bill_of_lading_linked_opportunity(self)
+		ensure_bl_cargo_type(self)
 		apply_bl_quantity_and_batch(self)
+		if is_lcl_cargo_type(self.get("cargo_type")):
+			if self.meta.has_field("quantity"):
+				self.quantity = None
+			if self.meta.has_field("batch_no"):
+				self.batch_no = None
+			return
+
 		summary = (self.get("quantity") or "").strip() or self._summarize_container_quantities()
-		if not summary:
-			pkgs = (self.get("number_of_packages") or "").strip()
-			ptype = (self.get("package_type") or "").strip()
-			if pkgs and ptype:
-				summary = f"{pkgs} {ptype}"
-			else:
-				summary = pkgs or ptype
 		if self.meta.has_field("container_summary"):
 			self.container_summary = summary
 		if self.meta.has_field("quantity") and summary:
 			self.quantity = summary
 
+	def before_submit(self):
+		ensure_bl_cargo_type(self)
+
 	def on_submit(self):
-		"""Link this submitted BL back to its source Opportunity and sync documents."""
-		sync_opportunity_from_submitted_bl(self)
+		"""Link this submitted BL back to its source Opportunity (and Project if any)."""
+		opportunity = sync_opportunity_from_submitted_bl(self)
+		if opportunity:
+			sync_linked_project_from_bl(self, opportunity)
 
 	def _summarize_container_quantities(self) -> str:
 		"""Return e.g. '6 x 40FT, 7 x 20FT' from this document's container rows."""
@@ -71,11 +124,10 @@ class BillofLading(Document):
 
 def apply_bl_quantity_and_batch(doc) -> None:
 	"""Set derived quantity and batch on Bill of Lading (FCL only for batch)."""
+	ensure_bl_cargo_type(doc)
 	if is_lcl_cargo_type(doc.get("cargo_type")):
-		pkgs = (doc.get("number_of_packages") or "").strip()
-		ptype = (doc.get("package_type") or "").strip()
 		if doc.meta.has_field("quantity"):
-			doc.quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
+			doc.quantity = None
 		# LCL must not participate in FCL batch numbering.
 		if doc.meta.has_field("batch_no"):
 			doc.batch_no = None
@@ -248,6 +300,51 @@ def sanitize_bill_of_lading_linked_opportunity(doc) -> None:
 		doc.set(source_field, None)
 
 
+def ensure_bl_cargo_type(doc) -> None:
+	"""Keep FCL/LCL classification on the BL when users only fill container/package rows."""
+	if (doc.get("cargo_type") or "").strip():
+		return
+
+	quantity = (doc.get("quantity") or "").strip()
+	if quantity and " x " in quantity.lower():
+		doc.cargo_type = "FCL"
+		return
+
+	if str(doc.get("batch_no") or "").strip():
+		doc.cargo_type = "FCL"
+		return
+
+	if any(
+		(row.get("container_number") or row.get("cargo_size") or row.get("seal_no"))
+		for row in doc.get("container_information") or []
+	):
+		doc.cargo_type = "FCL"
+		return
+
+	if (doc.get("number_of_packages") or "").strip() or (doc.get("package_type") or "").strip():
+		doc.cargo_type = "LCL"
+		return
+
+	booking = doc.get("booking_confirmation")
+	if booking and frappe.db.exists("Booking Confirmation", booking):
+		requested = frappe.db.get_value("Booking Confirmation", booking, "requested_cargo_type")
+		if requested:
+			doc.cargo_type = requested
+			return
+
+	for opp_field in ("linked_opportunity", "custom_linked_opportunity"):
+		if not doc.meta.has_field(opp_field):
+			continue
+		opp_name = doc.get(opp_field)
+		if not is_valid_opportunity_link(opp_name):
+			continue
+		opp = frappe.get_doc("Opportunity", opp_name)
+		cargo_field = get_cargo_type_field(opp.meta)
+		if cargo_field and opp.get(cargo_field):
+			doc.cargo_type = opp.get(cargo_field)
+			return
+
+
 # ─── Opportunity sync ─────────────────────────────────────────────────────────
 def resolve_opportunity_for_bl(bl_doc, opportunity: str | None = None) -> str | None:
 	"""Return a saved Opportunity name linked to this Bill of Lading."""
@@ -274,8 +371,46 @@ def resolve_opportunity_for_bl(bl_doc, opportunity: str | None = None) -> str | 
 	return None
 
 
+def expand_requested_cargo_to_container_stubs(rows) -> list[dict]:
+	"""Expand FCL requested size×qty rows into one empty Container stub per unit.
+
+	User only fills container_number and seal_no; quantity is derived from the rows.
+	"""
+	stubs: list[dict] = []
+	for row in rows or []:
+		if isinstance(row, dict):
+			size = (row.get("cargo_size") or "").strip()
+			qty = cint(row.get("quantity") or 0)
+		else:
+			size = (getattr(row, "cargo_size", None) or "").strip()
+			qty = cint(getattr(row, "quantity", None) or 0)
+		if not size or qty <= 0:
+			continue
+		for _ in range(qty):
+			stubs.append(
+				{
+					"cargo_size": size,
+					"container_number": "",
+					"seal_no": "",
+				}
+			)
+	return stubs
+
+
+def bl_quantity_summary(bl_doc) -> str:
+	"""FCL container summary or LCL package summary for Opportunity / Project."""
+	summary = format_derived_quantity(counts_from_container_rows(bl_doc.get("container_information")))
+	if summary:
+		return summary
+	pkgs = (bl_doc.get("number_of_packages") or "").strip()
+	ptype = (bl_doc.get("package_type") or "").strip()
+	if pkgs and ptype:
+		return f"{pkgs} {ptype}"
+	return pkgs or ptype
+
+
 def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -> str | None:
-	"""Link submitted BL data back onto the source Opportunity."""
+	"""Link submitted BL data back onto the source Opportunity (shipment SSoT)."""
 	config = get_bl_config()
 	opportunity = resolve_opportunity_for_bl(bl_doc, opportunity)
 	if not opportunity:
@@ -296,19 +431,22 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 		opp.set(bl_field, bl_doc.name)
 		changed = True
 
+	# Keep Booking ↔ BL link on Opportunity when the BL was created from a Booking.
+	booking = bl_doc.get("booking_confirmation")
+	if (
+		booking
+		and opp.meta.has_field("custom_booking_confirmation")
+		and opp.get("custom_booking_confirmation") != booking
+	):
+		opp.set("custom_booking_confirmation", booking)
+		changed = True
+
 	attachment_url = bl_doc.get(attachment_field) if attachment_field else None
 	if attachment_url and clients_field and opp.meta.has_field(clients_field):
 		if prepend_opportunity_bl_document(opp, attachment_url, bl_name=bl_doc.name):
 			changed = True
 
-	quantity_summary = bl_doc._summarize_container_quantities()
-	if not quantity_summary:
-		pkgs = (bl_doc.get("number_of_packages") or "").strip()
-		ptype = (bl_doc.get("package_type") or "").strip()
-		if pkgs and ptype:
-			quantity_summary = f"{pkgs} {ptype}"
-		else:
-			quantity_summary = pkgs or ptype
+	quantity_summary = bl_quantity_summary(bl_doc)
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		if opp.get(quantity_field) != quantity_summary:
 			opp.set(quantity_field, quantity_summary)
@@ -321,6 +459,100 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 		opp.save(ignore_permissions=True)
 
 	return opportunity
+
+
+def sync_linked_project_from_bl(bl_doc, opportunity: str) -> str | None:
+	"""When a Project already exists, push confirmed BL values from Opportunity/BL.
+
+	Edge case: shipment started from Booking Confirmation, Project created, then BL
+	arrives later — Project must replace planned vessel/ETA/etc. with confirmed values.
+	"""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
+	)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	changed = False
+
+	config = get_bl_config()
+	bl_field = config.get("opportunity_bl_field")
+	if bl_field and project.meta.has_field(bl_field) and project.get(bl_field) != bl_doc.name:
+		project.set(bl_field, bl_doc.name)
+		changed = True
+
+	booking = bl_doc.get("booking_confirmation")
+	if (
+		booking
+		and project.meta.has_field("custom_booking_confirmation")
+		and project.get("custom_booking_confirmation") != booking
+	):
+		project.set("custom_booking_confirmation", booking)
+		changed = True
+
+	# Confirmed BL overwrites planned Opportunity-derived values on Project.
+	if apply_bl_fields_to_doc(project, bl_doc):
+		changed = True
+
+	quantity_field = config.get("opportunity_quantity_field")
+	quantity_summary = bl_quantity_summary(bl_doc)
+	if quantity_summary and quantity_field and project.meta.has_field(quantity_field):
+		if project.get(quantity_field) != quantity_summary:
+			project.set(quantity_field, quantity_summary)
+			changed = True
+
+	# Align common Opportunity → Project scalars that BL just refreshed on Opportunity.
+	for src_field, dest_field in (
+		("custom_eta", "custom_eta"),
+		("custom_etd", "custom_etd"),
+		("custom_shipping_line", "custom_shipping_line"),
+		("custom_vessel", "custom_vessel"),
+		("custom_gross_weight", "custom_gross_weight"),
+		("custom_weight_nw", "custom_net_weight"),
+		("custom_description_of_goods", "custom_description_of_goods"),
+		("custom_client_refrence_no", "custom_client_refrence_no"),
+		("custom_batch_no", "custom_batch_no"),
+		("custom_booking_ref", "custom_booking_ref"),
+		("custom_shipping_order_ref", "custom_shipping_order_ref"),
+	):
+		if not project.meta.has_field(dest_field) or not opp.meta.has_field(src_field):
+			continue
+		value = opp.get(src_field)
+		if value in (None, ""):
+			continue
+		if project.get(dest_field) != value:
+			project.set(dest_field, value)
+			changed = True
+
+	container_field = config.get("opportunity_container_field")
+	if container_field and project.meta.has_field(container_field):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import fetch_container_rows
+
+		rows = fetch_container_rows(bl_doc.name)
+		project.set(container_field, [])
+		for row in rows:
+			project.append(container_field, normalize_container_row(row))
+		changed = True
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		carry_bill_of_lading_attachment_to_project,
+	)
+
+	carry_bill_of_lading_attachment_to_project(
+		project, bl_name=bl_doc.name, source_doc=opp
+	)
+	# Always save: container table / document rows may have changed even when
+	# scalar compares looked equal (e.g. seal numbers filled in).
+	project.save(ignore_permissions=True)
+	_ = changed
+
+	return project_name
 
 
 def prepend_opportunity_bl_document(opp_doc, attachment_url, bl_name=None) -> bool:
@@ -344,7 +576,102 @@ def prepend_opportunity_bl_document(opp_doc, attachment_url, bl_name=None) -> bo
 	)
 
 
+def _scalar_seed_value(value):
+	if value in (None, ""):
+		return None
+	return value
+
+
+def build_bl_seed_from_booking(booking_doc) -> dict:
+	"""Prefill payload for a new Bill of Lading created from a Booking Confirmation."""
+	seed: dict = {"booking_confirmation": booking_doc.name}
+	for src, dest in BOOKING_TO_BL_FIELDS:
+		value = _scalar_seed_value(booking_doc.get(src))
+		if value is not None:
+			seed[dest] = value
+
+	cargo_type = (booking_doc.get("requested_cargo_type") or "").strip()
+	if is_fcl_cargo_type(cargo_type):
+		stubs = expand_requested_cargo_to_container_stubs(
+			booking_doc.get("requested_cargo_quantity")
+		)
+		seed["container_stubs"] = stubs
+		seed["quantity"] = (
+			format_derived_quantity(counts_from_container_rows(stubs))
+			or booking_doc.get("quantity")
+		)
+	else:
+		seed["container_stubs"] = []
+
+	return seed
+
+
+def build_bl_seed_from_opportunity(opp) -> dict:
+	"""Prefill payload when creating a BL from Opportunity (booking optional)."""
+	seed: dict = {}
+	if opp.name and is_valid_opportunity_link(opp.name):
+		seed["linked_opportunity"] = opp.name
+
+	booking = opp.get("custom_booking_confirmation")
+	if booking and frappe.db.exists("Booking Confirmation", booking):
+		booking_doc = frappe.get_doc("Booking Confirmation", booking)
+		seed.update(build_bl_seed_from_booking(booking_doc))
+		# Opportunity link wins if booking missed it.
+		if is_valid_opportunity_link(opp.name):
+			seed["linked_opportunity"] = opp.name
+		return seed
+
+	for src, dest in OPPORTUNITY_TO_BL_FIELDS:
+		value = _scalar_seed_value(opp.get(src))
+		if value is not None:
+			seed[dest] = value
+
+	cargo_field = get_cargo_type_field(opp.meta)
+	cargo_type = (opp.get(cargo_field) if cargo_field else None) or ""
+	if not cargo_type:
+		# Fallback legacy field name on some Opportunity layouts.
+		cargo_type = opp.get("custom_cargo_type_") or opp.get("custom_cargo_type") or ""
+	if cargo_type:
+		seed["cargo_type"] = cargo_type
+
+	if is_fcl_cargo_type(cargo_type) and opp.meta.has_field("custom_requested_cargo_quantity"):
+		seed["container_stubs"] = expand_requested_cargo_to_container_stubs(
+			opp.get("custom_requested_cargo_quantity")
+		)
+	else:
+		seed["container_stubs"] = []
+
+	return seed
+
+
 # ─── Whitelisted API ──────────────────────────────────────────────────────────
+@frappe.whitelist()
+def get_bl_seed_for_opportunity(opportunity: str | None = None) -> dict:
+	"""Return BL prefill fields (+ FCL container stubs) from the linked Opportunity/Booking.
+
+	Used by + Add Bill of Lading so users never re-enter planned shipment data.
+	"""
+	if not is_valid_opportunity_link(opportunity):
+		return {}
+
+	frappe.has_permission("Opportunity", ptype="read", doc=opportunity, throw=True)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	return build_bl_seed_from_opportunity(opp)
+
+
+@frappe.whitelist()
+def get_bl_seed_from_booking(booking_confirmation: str | None = None) -> dict:
+	"""Return BL prefill fields from a Booking Confirmation (FCL stubs included)."""
+	if not booking_confirmation or not frappe.db.exists("Booking Confirmation", booking_confirmation):
+		return {}
+
+	frappe.has_permission(
+		"Booking Confirmation", ptype="read", doc=booking_confirmation, throw=True
+	)
+	booking = frappe.get_doc("Booking Confirmation", booking_confirmation)
+	return build_bl_seed_from_booking(booking)
+
+
 @frappe.whitelist()
 def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 	"""Return BL link + attachment metadata for applying on the Opportunity form after submit."""
@@ -360,11 +687,7 @@ def get_bl_submit_payload(bl_name: str, opportunity: str | None = None) -> dict:
 	attachment_field = get_bl_config().get("attachment_field")
 	linked_opportunity = sync_opportunity_from_submitted_bl(doc, opportunity)
 
-	quantity = doc._summarize_container_quantities() or (doc.get("quantity") or "")
-	if not quantity:
-		pkgs = (doc.get("number_of_packages") or "").strip()
-		ptype = (doc.get("package_type") or "").strip()
-		quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
+	quantity = bl_quantity_summary(doc) or (doc.get("quantity") or "")
 
 	return {
 		"bl_name": doc.name,
@@ -435,13 +758,9 @@ def create_opportunity_from_bill_of_lading(bill_of_lading: str) -> str:
 			frappe.db.get_value("Customer", customer, "customer_name") or customer,
 		)
 
-	# Shipment type, mode, and tracking fields are copied from the BL via apply_bl_fields_to_doc.
-	if opp.meta.has_field("custom_description_of_goods") and bl.get("description"):
-		opp.set("custom_description_of_goods", bl.get("description"))
-
 	# Carry the BL quantity summary onto the Opportunity.
 	quantity_field = config.get("opportunity_quantity_field")
-	quantity_summary = bl._summarize_container_quantities()
+	quantity_summary = bl_quantity_summary(bl)
 	if quantity_summary and quantity_field and opp.meta.has_field(quantity_field):
 		opp.set(quantity_field, quantity_summary)
 
