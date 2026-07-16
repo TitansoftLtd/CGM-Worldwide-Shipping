@@ -158,7 +158,7 @@ function row_has_shipment_document_file(row) {
 		return false;
 	}
 	const draft_field = typeof cgm_draft_document_field === "function" ? cgm_draft_document_field() : null;
-	const draft = draft_field ? row[draft_field] : row.initial_attachment;
+	const draft = draft_field ? row[draft_field] : null;
 	return Boolean(row.final_attachment || draft || row.attachment);
 }
 
@@ -571,7 +571,7 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
 
 	const draft_field = typeof cgm_draft_document_field === "function" ? cgm_draft_document_field() : null;
 	const already_exists = rows.some((row) => {
-		const draft = draft_field ? row[draft_field] : row.initial_attachment;
+		const draft = draft_field ? row[draft_field] : null;
 		return (
 			row.document_type === pending.document_type ||
 			draft === pending.attachment ||
@@ -604,7 +604,6 @@ function prepend_opportunity_bl_client_document(frm, pending, docs_field) {
 			document_type: row.document_type,
 			attachment: row.attachment,
 			draft_documents: row.draft_documents,
-			initial_attachment: row.initial_attachment,
 			final_attachment: row.final_attachment,
 			draft_documents_uploaded_on: row.draft_documents_uploaded_on,
 			draft_documents_uploaded_by: row.draft_documents_uploaded_by,
@@ -653,7 +652,7 @@ function sync_bl_from_clients_documents(frm, opts = {}) {
 
 function fetch_and_apply_bl_data(frm, row, cdt, cdn, opts = {}) {
 	const draft_field = typeof cgm_draft_document_field === "function" ? cgm_draft_document_field() : null;
-	const draft = draft_field ? row[draft_field] : row.initial_attachment;
+	const draft = draft_field ? row[draft_field] : null;
 	const file_ref = row.final_attachment || draft || row.attachment;
 	if (!file_ref) {
 		return;

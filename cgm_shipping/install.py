@@ -59,11 +59,15 @@ def ensure_finance_cost_ledger_schema() -> None:
 def ensure_shipment_document_versioning() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		ensure_shipment_document_version_fields,
+		migrate_initial_attachment_to_draft_documents,
 		migrate_legacy_shipment_document_attachments,
+		remove_initial_attachment_field,
 	)
 
 	if not frappe.db.exists("DocType", "Shipment Document"):
 		return
+	migrate_initial_attachment_to_draft_documents()
+	remove_initial_attachment_field()
 	ensure_shipment_document_version_fields()
 	migrate_legacy_shipment_document_attachments()
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
@@ -109,25 +113,7 @@ def ensure_task_container_schema() -> None:
 	if frappe.db.exists("DocType", "Project"):
 		ensure_project_inspection_notification_fields()
 		ensure_project_port_arrival_fields()
-		from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
-			ensure_cargo_type_fields,
-			ensure_opportunity_universal_fields,
-			ensure_transit_project_fields,
-		)
-
-		ensure_cargo_type_fields()
-		ensure_opportunity_universal_fields()
-		ensure_transit_project_fields()
 		frappe.db.commit()
-
-
-def ensure_cargo_terminology_renames() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
-		ensure_cargo_field_renames_after_migrate,
-	)
-
-	ensure_cargo_field_renames_after_migrate()
-	frappe.db.commit()
 
 
 def reinstall_supplier_shipping_line_schema() -> None:

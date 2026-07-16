@@ -560,7 +560,6 @@ def _portal_document_fields() -> list[str]:
 	meta = frappe.get_meta("Shipment Document")
 	for fieldname in (
 		"draft_documents",
-		"initial_attachment",
 		"final_attachment",
 		"draft_documents_uploaded_on",
 		"final_document_uploaded_on",
@@ -692,7 +691,7 @@ def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
 	ref_sql = _project_ref_sql_coalesce("p")
 	meta = frappe.get_meta("Shipment Document")
 	extra_cols = []
-	for fieldname in ("draft_documents", "initial_attachment", "final_attachment"):
+	for fieldname in ("draft_documents", "final_attachment"):
 		if meta.has_field(fieldname):
 			extra_cols.append(f"sd.{fieldname}")
 	uploaded_parts = [
