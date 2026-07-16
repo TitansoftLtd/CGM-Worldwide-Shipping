@@ -138,6 +138,12 @@ _CONTAINER_TRACKER_FIELDS = [
 ]
 
 
+def container_tracker_query_fields() -> list[str]:
+	"""Return Container Tracker fields that exist in the current site schema."""
+	meta = frappe.get_meta("Container Tracker")
+	return [field for field in _CONTAINER_TRACKER_FIELDS if meta.has_field(field)]
+
+
 def sync_container_summary_to_project(project: str | None) -> None:
 	if not project or not frappe.db.exists("Project", project):
 		return
@@ -213,7 +219,7 @@ def get_containers_for_project(project: str) -> list[dict]:
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=_CONTAINER_TRACKER_FIELDS,
+		fields=container_tracker_query_fields(),
 		order_by="container_number asc",
 	)
 	return [enrich_container_row(r) for r in rows]
@@ -236,7 +242,7 @@ def refresh_open_container_metrics() -> int:
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"status": ["not in", list(CLOSED_CONTAINER_STATUSES)]},
-		fields=_CONTAINER_TRACKER_FIELDS,
+		fields=container_tracker_query_fields(),
 	)
 	projects = set()
 	for row in rows:

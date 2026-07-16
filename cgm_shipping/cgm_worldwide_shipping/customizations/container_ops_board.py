@@ -24,6 +24,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates impo
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
 	_CONTAINER_TRACKER_FIELDS,
+	container_tracker_query_fields,
 	enrich_container_row,
 )
 
@@ -247,7 +248,7 @@ def _fetch_tracker_rows(filters) -> list[dict]:
 	return frappe.get_list(
 		"Container Tracker",
 		filters=_list_filters(filters),
-		fields=_CONTAINER_TRACKER_FIELDS,
+		fields=container_tracker_query_fields(),
 		order_by="modified desc",
 		limit_page_length=0,
 	)
@@ -565,7 +566,7 @@ def get_shipment_tracker(filters=None) -> dict:
 		tracker_rows = frappe.get_all(
 			"Container Tracker",
 			filters={"project": ["in", list(project_map)]},
-			fields=_CONTAINER_TRACKER_FIELDS,
+			fields=container_tracker_query_fields(),
 			order_by="modified desc",
 			limit_page_length=0,
 		)
@@ -598,7 +599,7 @@ def get_project_containers_for_board(project: str) -> list[dict]:
 	raw = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=_CONTAINER_TRACKER_FIELDS,
+		fields=container_tracker_query_fields(),
 		order_by="container_number asc",
 		limit_page_length=0,
 	)

@@ -30,3 +30,4 @@ cgm_shipping.patches.seed_last_batch_no_setting
 cgm_shipping.patches.rename_transit_project_types
 cgm_shipping.patches.rename_container_tracker_cargo_size_field
 cgm_shipping.patches.backfill_bill_of_lading_cargo_type
+cgm_shipping.patches.ensure_container_tracker_deposit_fields
