@@ -106,6 +106,7 @@ cgm_shipping.transport_reference.toggle_cargo_type = function (frm, options = {}
 	}
 
 	const blField = options.bill_of_lading || "custom_bill_of_lading";
+	const bookingField = options.booking_confirmation || "custom_booking_confirmation";
 	const cargoField = options.cargo_type || "custom_cargo_type";
 	const cargoType = (frm.doc[cargoField] || "").trim();
 	const nonFclCargo = ["LCL", "Breakbulk", "Project Cargo"].includes(cargoType);
@@ -119,12 +120,16 @@ cgm_shipping.transport_reference.toggle_cargo_type = function (frm, options = {}
 		const profile = shipmentType ? profiles[shipmentType] : null;
 		const hasValue = Boolean(frm.doc[field]);
 		const hasBl = Boolean(frm.doc[blField]);
+		const hasBooking = Boolean(frm.doc[bookingField]);
 		const masterAllows =
 			!profile ||
 			profile.uses_unit_tracking ||
 			profile.requires_bill_of_lading ||
 			profile.category === "sea";
 		const cargoAllows = !cargoType || cargoType === "FCL" || !nonFclCargo;
-		frm.toggle_display(field, hasValue || (hasBl && masterAllows && cargoAllows));
+		frm.toggle_display(
+			field,
+			hasValue || hasBooking || (hasBl && masterAllows && cargoAllows)
+		);
 	});
 };

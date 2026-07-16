@@ -16,6 +16,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	get_container_task_sequence,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	tracker_cargo_size_field,
+	tracker_row_cargo_size,
+)
 
 TRACKER_TO_TASK_FIELDS = (
 	"transporter",
@@ -155,7 +159,7 @@ def _containers_missing_step(project: str, seq: int) -> list[str]:
 TRACKER_SEED_FIELDS = [
 	"name",
 	"container_number",
-	"cargo_type",
+	tracker_cargo_size_field(),
 	"status",
 	"truck_number",
 	"driver_name",
@@ -283,7 +287,7 @@ def seed_container_update_rows(doc) -> bool:
 		row_data = {
 			"container_tracker": tracker.name,
 			"container_number": tracker.container_number,
-			"cargo_type": tracker.cargo_type,
+			"cargo_size": tracker_row_cargo_size(tracker),
 			"current_status": tracker.status,
 		}
 		if seq in _shipping_line_application_seqs():

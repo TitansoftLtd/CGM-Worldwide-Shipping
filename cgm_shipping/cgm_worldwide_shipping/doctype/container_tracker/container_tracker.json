@@ -11,7 +11,7 @@
   "container_number",
   "bl_number",
   "container_mode",
-  "type_of_container",
+  "cargo_size",
   "seal_no",
   "new_serial_number",
   "column_break_identity",
@@ -734,10 +734,10 @@
    "label": "Get Out Mombasa"
   },
   {
-   "fieldname": "type_of_container",
+   "fieldname": "cargo_size",
    "fieldtype": "Link",
-   "label": "Type of Container",
-   "options": "Cargo Type"
+   "label": "Cargo Size",
+   "options": "Cargo Size"
   }
  ],
  "index_web_pages_for_search": 1,

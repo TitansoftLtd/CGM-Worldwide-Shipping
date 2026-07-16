@@ -23,6 +23,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.transit_clearance import (
 	bootstrap_transit_task_plan_for_project,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
+	resolve_fcl_batch_for_opportunity,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	assign_lp_project_reference,
 	is_lp_project_reference,
@@ -699,26 +702,93 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 def apply_opportunity_to_project_mappings(project, opp) -> None:
 	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""
 	meta = project.meta
+	# Edge case: older mappings used non-existent custom_*weightkg fields, so
+	# weights never copied onto Project. Use the real Project fieldnames.
 	pairs = (
 		("custom_entry_no", "custom_entry_no"),
 		("custom_consignee", "custom_consignee"),
 		("custom_quantity", "custom_quantity"),
-		("custom_gross_weight", "custom_gross_weightkg"),
-		("custom_weight_nw", "custom_net_weightkg"),
+		("custom_gross_weight", "custom_gross_weight"),
+		("custom_weight_nw", "custom_net_weight"),
 		("custom_description_of_goods", "custom_description_of_goods"),
 		("custom_clearance_station", "custom_clearance_station"),
 		("custom_station_code", "custom_station_code"),
 		("custom_country_of_origin", "custom_country_of_origin"),
 		("custom_cargo_type", "custom_cargo_type"),
+		("custom_cargo_type_", "custom_cargo_type"),
+		("custom_number_of_packages", "custom_number_of_packages"),
+		("custom_package_type", "custom_package_type"),
 		("custom_client_refrence_no", "custom_client_refrence_no"),
 		("custom_batch_no", "custom_batch_no"),
+		("custom_weight_uom_", "custom_weight_uom"),
 	)
 	for src_field, dest_field in pairs:
 		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
 			continue
+		if dest_field == "custom_batch_no":
+			value = resolve_fcl_batch_for_opportunity(opp)
+		else:
+			value = opp.get(src_field)
+		if value not in (None, "") and not project.get(dest_field):
+			project.set(dest_field, value)
+
+	copy_opportunity_requested_cargo_to_project(opp, project)
+
+
+REQUESTED_CARGO_ROW_FIELDS = ("cargo_size", "quantity")
+
+
+def copy_opportunity_requested_cargo_to_project(opp, project) -> bool:
+	"""Copy FCL requested-cargo rows from Opportunity when the Project table is empty."""
+	table_field = "custom_requested_cargo_quantity"
+	if not (opp.meta.has_field(table_field) and project.meta.has_field(table_field)):
+		return False
+	if project.get(table_field):
+		return False
+	rows = opp.get(table_field) or []
+	if not rows:
+		return False
+	for row in rows:
+		project.append(
+			table_field,
+			{field: row.get(field) for field in REQUESTED_CARGO_ROW_FIELDS},
+		)
+	return True
+
+
+def sync_linked_project_from_opportunity(opp, _method=None) -> None:
+	"""Keep linked Project transport fields aligned when Opportunity intake data is filled later."""
+	if getattr(opp, "is_new", lambda: False)() or not opp.name:
+		return
+	if not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opp.name}, "name"
+	)
+	if not project_name:
+		return
+
+	project = frappe.get_doc("Project", project_name)
+	apply_opportunity_to_project_mappings(project, opp)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
+		opportunity_to_project_field_pairs,
+	)
+
+	for src_field, dest_field in opportunity_to_project_field_pairs():
+		if not project.meta.has_field(dest_field) or not opp.meta.has_field(src_field):
+			continue
 		value = opp.get(src_field)
 		if value not in (None, "") and not project.get(dest_field):
 			project.set(dest_field, value)
+
+	if not project.has_value_changed():
+		return
+
+	project.flags.ignore_validate = True
+	project.save(ignore_permissions=True)
+
 
 def sync_predocuments_from_source(project, source_doc) -> None:
 	"""Copy Opportunity Clients Documents and Customer KRA PIN onto Project shipment documents."""

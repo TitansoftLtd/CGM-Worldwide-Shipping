@@ -24,6 +24,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates impo
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
 	_CONTAINER_TRACKER_FIELDS,
+	container_tracker_query_fields,
 	enrich_container_row,
 )
 
@@ -247,7 +248,7 @@ def _fetch_tracker_rows(filters) -> list[dict]:
 	return frappe.get_list(
 		"Container Tracker",
 		filters=_list_filters(filters),
-		fields=_CONTAINER_TRACKER_FIELDS,
+		fields=container_tracker_query_fields(),
 		order_by="modified desc",
 		limit_page_length=0,
 	)
@@ -339,15 +340,17 @@ def _apply_container_post_filters(
 def _container_qty_size_from_trackers(rows: list[dict]) -> str | None:
 	counts: dict[str, int] = {}
 	for row in rows:
-		cargo_type = (row.get("cargo_type") or "").strip()
-		if not cargo_type:
+		cargo_size = (
+			row.get("cargo_size") or row.get("cargo_type") or row.get("type_of_container") or ""
+		).strip()
+		if not cargo_size:
 			continue
-		counts[cargo_type] = counts.get(cargo_type, 0) + 1
+		counts[cargo_size] = counts.get(cargo_size, 0) + 1
 	if not counts:
 		return None
-	dominant_type = max(counts, key=lambda key: (counts[key], key))
-	qty = counts[dominant_type]
-	size = re.sub(r"[^0-9]", "", dominant_type.upper()) or dominant_type.upper().replace("FT", "")
+	dominant_size = max(counts, key=lambda key: (counts[key], key))
+	qty = counts[dominant_size]
+	size = re.sub(r"[^0-9]", "", dominant_size.upper()) or dominant_size.upper().replace("FT", "")
 	return f"{qty}X{size}"
 
 
@@ -563,7 +566,7 @@ def get_shipment_tracker(filters=None) -> dict:
 		tracker_rows = frappe.get_all(
 			"Container Tracker",
 			filters={"project": ["in", list(project_map)]},
-			fields=_CONTAINER_TRACKER_FIELDS,
+			fields=container_tracker_query_fields(),
 			order_by="modified desc",
 			limit_page_length=0,
 		)
@@ -596,7 +599,7 @@ def get_project_containers_for_board(project: str) -> list[dict]:
 	raw = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=_CONTAINER_TRACKER_FIELDS,
+		fields=container_tracker_query_fields(),
 		order_by="container_number asc",
 		limit_page_length=0,
 	)

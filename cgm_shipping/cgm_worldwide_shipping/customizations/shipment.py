@@ -393,8 +393,22 @@ BL_TO_OPPORTUNITY_TRACKING_FIELDS = (
 	("batch_no", "custom_batch_no"),
 )
 
+# Confirmed shipment fields — keep Opportunity as the latest source of truth.
+BL_TO_OPPORTUNITY_SHIPPING_FIELDS = (
+	("shipping_line", "custom_shipping_line"),
+	("vessel", "custom_vessel"),
+	("etd", "custom_etd"),
+	("eta", "custom_eta"),
+	("port_of_loading", "custom_port_of_loading"),
+	("port_of_discharge", "custom_port_of_discharge"),
+	("voyage_number", "custom_voyage_number"),
+	("gross_weight", "custom_gross_weight"),
+	("net_weight", "custom_weight_nw"),
+	("weight_uom", "custom_weight_uom_"),
+)
+
 BL_TO_OPPORTUNITY_DETAIL_FIELDS = (
-	("description", "custom_description_of_goods"),
+	("commodity", "custom_description_of_goods"),
 	("bl_number", "custom_draft_bl_number"),
 	("number_of_packages", "custom_number_of_packages"),
 	("package_type", "custom_package_type"),
@@ -457,27 +471,66 @@ def apply_bl_tracking_fields_to_doc(target_doc, bl_doc) -> bool:
 	return changed
 
 
+def _set_doc_field_if_changed(target_doc, fieldname: str, value) -> bool:
+	"""Set a field when the source value is present and differs. Returns True if changed."""
+	if not fieldname or not target_doc.meta.has_field(fieldname):
+		return False
+	if value in (None, ""):
+		return False
+
+	df = target_doc.meta.get_field(fieldname)
+	if df and df.fieldtype in ("Float", "Currency", "Percent", "Int"):
+		try:
+			value = float(str(value).replace(",", "").strip())
+		except (TypeError, ValueError):
+			return False
+		if df.fieldtype == "Int":
+			value = int(value)
+
+	if target_doc.get(fieldname) == value:
+		return False
+	target_doc.set(fieldname, value)
+	# Keep legacy duplicate Net Weight column in sync when present.
+	if fieldname == "custom_weight_nw" and target_doc.meta.has_field("custom_net_weight"):
+		target_doc.set("custom_net_weight", value)
+	return True
+
+
 def apply_bl_detail_fields_to_doc(target_doc, bl_doc) -> bool:
 	"""Copy descriptive BL fields onto Opportunity after primary document submit."""
 	changed = False
 	for src_field, dest_field in BL_TO_OPPORTUNITY_DETAIL_FIELDS:
-		if not target_doc.meta.has_field(dest_field):
-			continue
-		value = bl_doc.get(src_field)
-		if value in (None, ""):
-			continue
-		if target_doc.get(dest_field) != value:
-			target_doc.set(dest_field, value)
+		if _set_doc_field_if_changed(target_doc, dest_field, bl_doc.get(src_field)):
+			changed = True
+	return changed
+
+
+def apply_bl_shipping_fields_to_doc(target_doc, bl_doc) -> bool:
+	"""Copy confirmed shipping / cargo scalars from Bill of Lading onto Opportunity/Project."""
+	changed = False
+	for src_field, dest_field in BL_TO_OPPORTUNITY_SHIPPING_FIELDS:
+		if _set_doc_field_if_changed(target_doc, dest_field, bl_doc.get(src_field)):
+			changed = True
+
+	# Project fieldnames differ slightly from Opportunity (weight_uom / net_weight).
+	alternates = (
+		("net_weight", "custom_net_weight"),
+		("weight_uom", "custom_weight_uom"),
+		("gross_weight", "custom_gross_weight"),
+	)
+	for src_field, dest_field in alternates:
+		if _set_doc_field_if_changed(target_doc, dest_field, bl_doc.get(src_field)):
 			changed = True
 	return changed
 
 
 def apply_bl_fields_to_doc(target_doc, bl_doc) -> bool:
-	"""Copy shipment classification and tracking fields from Bill of Lading."""
+	"""Copy shipment classification, shipping, tracking, and detail fields from Bill of Lading."""
 	classification_changed = apply_bl_classification_to_doc(target_doc, bl_doc)
+	shipping_changed = apply_bl_shipping_fields_to_doc(target_doc, bl_doc)
 	tracking_changed = apply_bl_tracking_fields_to_doc(target_doc, bl_doc)
 	detail_changed = apply_bl_detail_fields_to_doc(target_doc, bl_doc)
-	return classification_changed or tracking_changed or detail_changed
+	return classification_changed or shipping_changed or tracking_changed or detail_changed
 
 
 def bl_classification_payload(bl_doc) -> dict:
@@ -493,12 +546,17 @@ def bl_classification_payload(bl_doc) -> dict:
 
 
 def bl_propagation_payload(bl_doc) -> dict:
-	"""Classification + tracking fields from Bill of Lading for API responses."""
+	"""Classification + shipping + tracking fields from Bill of Lading for API responses."""
 	payload = {**bl_classification_payload(bl_doc), **bl_tracking_payload(bl_doc)}
-	for src_field, dest_field in BL_TO_OPPORTUNITY_DETAIL_FIELDS:
+	for src_field, dest_field in (
+		*BL_TO_OPPORTUNITY_SHIPPING_FIELDS,
+		*BL_TO_OPPORTUNITY_DETAIL_FIELDS,
+	):
 		value = bl_doc.get(src_field)
 		if value not in (None, ""):
 			payload[dest_field] = value
+			# Also expose source names for client helpers that read BL field names.
+			payload[src_field] = value
 	return payload
 
 
@@ -635,6 +693,29 @@ def container_row_cargo_size(row) -> str:
 	if isinstance(row, dict):
 		return (row.get("cargo_size") or row.get("type_of_container") or "").strip()
 	return (getattr(row, "cargo_size", None) or getattr(row, "type_of_container", None) or "").strip()
+
+
+def tracker_cargo_size_field() -> str:
+	"""Container Tracker field storing physical size (20FT / 45FT)."""
+	meta = frappe.get_meta("Container Tracker")
+	for fieldname in ("cargo_size", "cargo_type", "type_of_container"):
+		if meta.has_field(fieldname):
+			return fieldname
+	return "cargo_size"
+
+
+def tracker_row_cargo_size(row) -> str:
+	"""Cargo size from a Container Tracker row or document."""
+	fieldname = tracker_cargo_size_field()
+	if isinstance(row, dict):
+		return (row.get(fieldname) or row.get("cargo_size") or row.get("cargo_type") or row.get("type_of_container") or "").strip()
+	return (
+		getattr(row, fieldname, None)
+		or getattr(row, "cargo_size", None)
+		or getattr(row, "cargo_type", None)
+		or getattr(row, "type_of_container", None)
+		or ""
+	).strip()
 
 
 def resolve_cargo_size_link(value: str | None) -> str | None:

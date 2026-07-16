@@ -17,6 +17,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
 	PRIMARY_DOC_TO_DOCTYPE,
 	PRIMARY_DOC_TO_OPP_FIELD,
+	START_GATE_ALTERNATES,
 	TRANSPORT_DOC_TO_OPP_FIELD,
 	get_allowed_transport_documents,
 	resolve_primary_transport_document,
@@ -47,53 +48,62 @@ def has_any_transport_document(opportunity) -> bool:
 
 
 def has_required_transport_documents(opportunity) -> bool:
-	"""True when every transport document marked required-for-start is linked."""
+	"""True when Start Shipment transport gate is satisfied.
+
+	Bill of Lading and Booking Confirmation are interchangeable: either one is
+	enough when both are allowed on the Shipment Type (whichever arrives first).
+	Other required documents (e.g. Air Waybill) still use an OR within their set.
+	"""
 	linked = get_transport_documents_with_links(opportunity)
+	if not linked:
+		return has_any_transport_document(opportunity)
+
+	alternates = [
+		item for item in linked if item.get("transport_document") in START_GATE_ALTERNATES
+	]
+	if alternates:
+		return any(item.get("linked_name") for item in alternates)
+
 	required = [item for item in linked if item.get("is_required_for_start")]
 	if not required:
 		allowed = get_allowed_transport_documents(opportunity.get("custom_shipment_type"))
 		if allowed:
 			return has_any_transport_document(opportunity)
 		return True
-	return all(item.get("linked_name") for item in required)
+	return any(item.get("linked_name") for item in required)
 
 
 def has_primary_transport_document(opportunity) -> bool:
-	"""Backward-compatible alias — required transport documents must be linked."""
+	"""Backward-compatible alias — start-gate transport document(s) must be linked."""
 	return has_required_transport_documents(opportunity)
 
 
-def allocate_opportunity_batch_no() -> str:
-	"""Increment CGM Shipping Settings last_batch_no and return the new batch as a string."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
-		return "1"
-
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("last_batch_no"):
-		return "1"
-
-	# tabSingles columns are doctype / field / value (no name column).
-	frappe.db.sql(
-		"""
-		SELECT `value` FROM `tabSingles`
-		WHERE `doctype` = %s AND `field` = %s
-		FOR UPDATE
-		""",
-		("CGM Shipping Settings", "last_batch_no"),
-	)
-	last = cint(frappe.db.get_single_value("CGM Shipping Settings", "last_batch_no") or 0)
-	new_batch = last + 1
-	frappe.db.set_single_value("CGM Shipping Settings", "last_batch_no", new_batch)
-	return str(new_batch)
-
-
 def assign_opportunity_batch_on_insert(doc, _method=None) -> None:
-	"""Assign custom_batch_no on new Opportunities from Settings counter."""
-	if not doc.meta.has_field("custom_batch_no"):
-		return
-	if (doc.get("custom_batch_no") or "").strip():
-		return
-	doc.custom_batch_no = allocate_opportunity_batch_no()
+	"""FCL batch is allocated on Booking Confirmation / Bill of Lading only."""
+	if doc.meta.has_field("custom_batch_no"):
+		doc.custom_batch_no = None
+
+
+def resolve_fcl_batch_for_opportunity(opp) -> str | None:
+	"""Batch from linked FCL transport docs — not the legacy global Settings counter."""
+	booking = (opp.get("custom_booking_confirmation") or "").strip()
+	if booking and frappe.db.exists("Booking Confirmation", booking):
+		batch = frappe.db.get_value("Booking Confirmation", booking, "batch_no")
+		if batch and str(batch).strip().isdigit():
+			return str(batch).strip()
+
+	bl = (opp.get("custom_bill_of_lading") or "").strip()
+	if bl and frappe.db.exists("Bill of Lading", bl):
+		batch = frappe.db.get_value("Bill of Lading", bl, "batch_no")
+		if batch and str(batch).strip().isdigit():
+			return str(batch).strip()
+	return None
+
+
+def sync_opportunity_batch_from_transport_doc(doc, _method=None) -> None:
+	"""Opportunity batch mirrors linked Booking/BL FCL allocation only."""
+	if doc.meta.has_field("custom_batch_no"):
+		doc.custom_batch_no = resolve_fcl_batch_for_opportunity(doc)
 
 
 def get_shipment_type_flags(shipment_type: str | None) -> dict:
@@ -147,11 +157,13 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_eta", "custom_eta"),
 		("custom_etd", "custom_etd"),
 		("custom_shipping_line", "custom_shipping_line"),
+		("custom_vessel", "custom_vessel"),
 		("custom_shipping_order_ref", "custom_shipping_order_ref"),
 		("custom_booking_ref", "custom_booking_ref"),
 		("custom_handling_agent", "custom_handling_agent"),
 		("custom_delivery_destination", "custom_final_destination"),
 		("custom_booking_confirmation", "custom_booking_confirmation"),
+		("custom_bill_of_lading", "custom_bill_of_lading"),
 	)
 
 
@@ -202,17 +214,29 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 
 	transport_documents = get_transport_documents_with_links(opp)
 	if not has_required_transport_documents(opp):
-		missing_transport = [
+		alternates = [
 			item["transport_document"]
 			for item in transport_documents
-			if item.get("is_required_for_start") and not item.get("linked_name")
+			if item.get("transport_document") in START_GATE_ALTERNATES
 		]
-		if missing_transport:
+		if len(alternates) >= 2:
 			blockers.append(
-				_("Link required transport document(s): {0}").format(", ".join(missing_transport))
+				_("Link Bill of Lading or Booking Confirmation (whichever was provided first).")
 			)
-		elif transport_documents:
-			blockers.append(_("Attach at least one transport document to this shipment."))
+		else:
+			missing_transport = [
+				item["transport_document"]
+				for item in transport_documents
+				if item.get("is_required_for_start") and not item.get("linked_name")
+			]
+			if missing_transport:
+				blockers.append(
+					_("Link required transport document(s): {0}").format(
+						", ".join(missing_transport)
+					)
+				)
+			elif transport_documents:
+				blockers.append(_("Attach at least one transport document to this shipment."))
 
 	docs_field = get_opportunity_documents_field()
 	uploaded_rows = list(opp.get(docs_field) or []) if docs_field else []

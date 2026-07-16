@@ -12,11 +12,13 @@
   "column_break_basic",
   "shipment_type",
   "cargo_type",
-  "quantity",
+  "etd",
+  "eta",
   "column_break_xiys",
+  "quantity",
+  "batch_no",
   "booking_confirmation",
   "linked_opportunity",
-  "batch_no",
   "section_shipping",
   "shipping_line",
   "vessel",
@@ -24,14 +26,12 @@
   "column_break_shipping",
   "port_of_loading",
   "port_of_discharge",
-  "etd",
-  "eta",
   "section_cargo_info",
   "weight_uom",
   "net_weight",
   "gross_weight",
   "column_break_cargo",
-  "description",
+  "commodity",
   "section_fcl",
   "container_information",
   "section_lcl",
@@ -67,7 +67,8 @@
   {
    "fieldname": "client_refrence_no",
    "fieldtype": "Data",
-   "label": "Client Refrence No"
+   "label": "Client Refrence No",
+   "reqd": 1
   },
   {
    "fieldname": "shipment_type",
@@ -88,9 +89,17 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval:doc.cargo_type!='LCL'",
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.cargo_type!='LCL'",
    "fieldname": "quantity",
    "fieldtype": "Data",
-   "label": "Quantity",
+   "label": "Derived Quantity",
    "read_only": 1
   },
   {
@@ -100,6 +109,7 @@
   {
    "fieldname": "booking_confirmation",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Booking Confirmation",
    "options": "Booking Confirmation"
   },
@@ -167,6 +177,12 @@
    "label": "Cargo Information"
   },
   {
+   "fieldname": "commodity",
+   "fieldtype": "Small Text",
+   "label": " Commodity / Description of Goods ",
+   "reqd": 1
+  },
+  {
    "fieldname": "weight_uom",
    "fieldtype": "Link",
    "label": "Weight UOM",
@@ -187,19 +203,13 @@
    "label": "Net Weight"
   },
   {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Commodity Description",
-   "reqd": 1
-  },
-  {
-   "depends_on": "eval:doc.cargo_type=='FCL'",
+   "depends_on": "eval:doc.cargo_type!='LCL'",
    "fieldname": "section_fcl",
    "fieldtype": "Section Break",
    "label": "FCL / Containers"
   },
   {
-   "depends_on": "eval:doc.cargo_type=='FCL'",
+   "depends_on": "eval:doc.cargo_type!='LCL'",
    "fieldname": "container_information",
    "fieldtype": "Table",
    "label": "Container Information",
@@ -245,13 +255,17 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "column_break_xiys",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-14 05:40:54.631570",
+ "modified": "2026-07-16 05:01:39.944824",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",
@@ -285,6 +299,7 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "naming_rule": "By script",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": []

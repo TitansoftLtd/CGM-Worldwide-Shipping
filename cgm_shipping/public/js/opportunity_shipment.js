@@ -189,6 +189,14 @@ cgm_shipping.opportunity_shipment._prepare_intake_defaults = function (frm) {
 			frm.set_value("company", company);
 		}
 	}
+	// Do not inherit site default Country (e.g. Kenya) — user must choose.
+	if (frm.is_new()) {
+		["custom_country_of_origin", "custom_delivery_destination"].forEach((fieldname) => {
+			if (frm.meta.has_field(fieldname) && frm.doc[fieldname]) {
+				frm.doc[fieldname] = null;
+			}
+		});
+	}
 };
 
 cgm_shipping.opportunity_shipment._configure_intake_form = function (frm) {
@@ -332,16 +340,29 @@ cgm_shipping.opportunity_shipment._build_readiness_html = function (readiness) {
 	}
 	const items = [];
 	const transport_docs = readiness.transport_documents || [];
-	const missing_required = transport_docs.filter(
-		(doc) => doc.is_required_for_start && !doc.linked_name
+	const startAlternates = new Set(["Bill of Lading", "Booking Confirmation"]);
+	const alternateDocs = transport_docs.filter((doc) =>
+		startAlternates.has(doc.transport_document)
 	);
-	if (missing_required.length) {
+	const alternateLinked = alternateDocs.some((doc) => doc.linked_name);
+	if (alternateDocs.length >= 2 && !alternateLinked) {
 		items.push(
-			__("Link required transport document(s): {0}", [
-				missing_required.map((doc) => doc.transport_document).join(", "),
-			])
+			__("Link Bill of Lading or Booking Confirmation (whichever was provided first).")
 		);
-	} else if (!readiness.transport_docs_linked && transport_docs.length) {
+	} else if (!alternateDocs.length) {
+		const missing_required = transport_docs.filter(
+			(doc) => doc.is_required_for_start && !doc.linked_name
+		);
+		if (missing_required.length) {
+			items.push(
+				__("Link required transport document(s): {0}", [
+					missing_required.map((doc) => doc.transport_document).join(", "),
+				])
+			);
+		} else if (!readiness.transport_docs_linked && transport_docs.length) {
+			items.push(__("Attach at least one transport document"));
+		}
+	} else if (!alternateLinked && !readiness.required_transport_linked) {
 		items.push(__("Attach at least one transport document"));
 	}
 	(readiness.missing_documents || []).forEach((doc) => {
@@ -491,6 +512,7 @@ cgm_shipping.opportunity_shipment._build_transport_document_seed = function (frm
 	}
 	if (frm.doc.custom_client_refrence_no) {
 		seed.client_ref = frm.doc.custom_client_refrence_no;
+		seed.client_refrence_no = frm.doc.custom_client_refrence_no;
 	}
 
 	const opp_field = doc.opp_field;
@@ -503,8 +525,14 @@ cgm_shipping.opportunity_shipment._build_transport_document_seed = function (frm
 		if (frm.doc.custom_draft_bl_number) {
 			seed.bl_number = frm.doc.custom_draft_bl_number;
 		}
-		if (frm.doc.custom_batch_no) {
-			seed.batch_no = frm.doc.custom_batch_no;
+		// Batch is allocated on save (FCL key) — do not seed from Opportunity.
+		// Link Booking so BL onload can expand FCL container stubs / LCL packages.
+		if (frm.doc.custom_booking_confirmation) {
+			seed.booking_confirmation = frm.doc.custom_booking_confirmation;
+		}
+		// Flag for BL form to fetch the full Opportunity/Booking seed (incl. child rows).
+		if (frm.doc.name && !String(frm.doc.name).startsWith("new-")) {
+			localStorage.setItem("cgm_bl_seed_opportunity", frm.doc.name);
 		}
 	}
 
@@ -654,6 +682,7 @@ cgm_shipping.opportunity_shipment.apply_booking_payload = function (frm, pending
 	set_if("custom_weight_nw", pending.net_weight);
 	set_if("custom_weight_uom_", pending.weight_uom);
 	set_if("custom_quantity", pending.quantity);
+	set_if("custom_batch_no", pending.batch_no);
 	set_if("custom_port_of_loading", pending.port_of_loading);
 	set_if("custom_port_of_discharge", pending.port_of_discharge);
 	set_if("custom_voyage_number", pending.voyage_number);

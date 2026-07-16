@@ -237,7 +237,89 @@ function toggle_project_transport_reference_fields(frm) {
 		bill_of_lading: "custom_bill_of_lading",
 		container_table: "custom_container_information",
 	});
-	cgm_shipping.transport_reference.toggle_cargo_type(frm);
+	cgm_shipping.transport_reference.toggle_cargo_type(frm, {
+		booking_confirmation: "custom_booking_confirmation",
+	});
+	toggle_project_cargo_fields(frm);
+}
+
+function project_cargo_type_code(frm) {
+	return (frm.doc.custom_cargo_type || "").trim().toUpperCase();
+}
+
+function toggle_project_cargo_fields(frm) {
+	const is_lcl = project_cargo_type_code(frm) === "LCL";
+	const show_fcl = !is_lcl;
+	const show_packages = is_lcl;
+
+	[
+		["custom_requested_cargo_quantity", show_fcl],
+		["custom_number_of_packages", show_packages],
+		["custom_package_type", show_packages],
+	].forEach(([fieldname, show]) => {
+		if (!frm.fields_dict[fieldname]) {
+			return;
+		}
+		frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
+	});
+
+	if (frm.fields_dict.custom_booking_confirmation) {
+		frm.set_df_property("custom_booking_confirmation", "hidden", 0);
+	}
+	if (frm.fields_dict.custom_cargo_type) {
+		frm.set_df_property("custom_cargo_type", "hidden", 0);
+	}
+
+	if (show_fcl) {
+		frm.refresh_field("custom_requested_cargo_quantity");
+	}
+	if (show_packages) {
+		frm.refresh_field("custom_number_of_packages");
+		frm.refresh_field("custom_package_type");
+	}
+}
+
+function setup_add_bill_of_lading_button(frm) {
+	frm.remove_custom_button(__("Add Bill of Lading"), __("Shipment"));
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	// Only when shipment started without a BL (typically Booking-first).
+	if (frm.doc.custom_bill_of_lading) {
+		return;
+	}
+	if (!frm.doc.custom_source_opportunity && !frm.doc.custom_booking_confirmation) {
+		return;
+	}
+
+	frm.add_custom_button(
+		__("Add Bill of Lading"),
+		() => open_bill_of_lading_from_project(frm),
+		__("Shipment")
+	);
+}
+
+function open_bill_of_lading_from_project(frm) {
+	const opportunity = frm.doc.custom_source_opportunity;
+	if (opportunity) {
+		localStorage.setItem("cgm_return_opportunity", opportunity);
+		localStorage.setItem("cgm_bl_seed_opportunity", opportunity);
+	}
+
+	const seed = {
+		linked_opportunity: opportunity || undefined,
+		booking_confirmation: frm.doc.custom_booking_confirmation || undefined,
+		customer: frm.doc.customer || undefined,
+		shipment_type: frm.doc.custom_shipment_type || undefined,
+		client_refrence_no: frm.doc.custom_client_refrence_no || undefined,
+		cargo_type: frm.doc.custom_cargo_type || undefined,
+		batch_no: frm.doc.custom_batch_no || undefined,
+	};
+
+	frappe.route_options = seed;
+	frappe.model.with_doctype("Bill of Lading", () => {
+		frappe.new_doc("Bill of Lading");
+	});
 }
 
 function project_clearance_indicator(doc) {
@@ -519,7 +601,7 @@ function render_container_tracking_table(frm, dashboard) {
 				return `<div class="cgm-container-card">
 					<div class="cgm-container-card-head">
 						<span>${dot} <b>${frappe.utils.escape_html(c.container_number || c.name)}</b>
-						<span class="text-muted">${frappe.utils.escape_html(c.cargo_type || "")}</span></span>
+						<span class="text-muted">${frappe.utils.escape_html(c.cargo_size || c.cargo_type || "")}</span></span>
 						<span class="indicator-pill ${container_status_badge_class(
 							c.status
 						)} cgm-container-card-status">${frappe.utils.escape_html(c.status || "")}</span>
@@ -728,7 +810,7 @@ frappe.ui.form.on("Project", {
 
 		setup_port_arrival_confirmation_button(frm);
 		setup_create_container_allocation_button(frm);
-		render_project_operational_updates(frm);
+		setup_add_bill_of_lading_button(frm);
 
 		if (frm.doc.name && !frm.is_new()) {
 			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass("btn-primary");
@@ -790,6 +872,10 @@ frappe.ui.form.on("Project", {
 	},
 
 	custom_cargo_type(frm) {
+		toggle_project_transport_reference_fields(frm);
+	},
+
+	custom_booking_confirmation(frm) {
 		toggle_project_transport_reference_fields(frm);
 	},
 

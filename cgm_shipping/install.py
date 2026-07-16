@@ -23,13 +23,26 @@ def after_install() -> None:
 
 def after_migrate() -> None:
 	"""Re-apply idempotent schema installers after every bench migrate."""
-	ensure_cargo_terminology_renames()
-	reinstall_supplier_shipping_line_schema()
-	ensure_task_container_schema()
-	ensure_shipment_type_transport_defaults()
-	ensure_shipment_document_versioning()
-	ensure_finance_cost_ledger_schema()
-	ensure_transporter_portal_setup()
+	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
+		ensure_cargo_terminology_renames,
+	)
+
+	for label, fn in (
+		("cargo terminology renames", ensure_cargo_terminology_renames),
+		("supplier shipping line schema", reinstall_supplier_shipping_line_schema),
+		("task container schema", ensure_task_container_schema),
+		("shipment type transport defaults", ensure_shipment_type_transport_defaults),
+		("shipment document versioning", ensure_shipment_document_versioning),
+		("finance cost ledger schema", ensure_finance_cost_ledger_schema),
+		("transporter portal setup", ensure_transporter_portal_setup),
+	):
+		try:
+			fn()
+		except Exception:
+			frappe.log_error(
+				title=f"CGM after_migrate: {label}",
+				message=frappe.get_traceback(),
+			)
 
 
 def ensure_transporter_portal_setup() -> None:
