@@ -134,8 +134,6 @@ def draft_document_field(meta=None) -> str | None:
 	meta = meta or _shipment_document_meta()
 	if meta.has_field("draft_documents"):
 		return "draft_documents"
-	if meta.has_field("initial_attachment"):
-		return "initial_attachment"
 	return None
 
 
@@ -156,7 +154,7 @@ def set_draft_attachment(row, url: str) -> None:
 
 def has_document_versioning() -> bool:
 	meta = _shipment_document_meta()
-	return meta.has_field("final_attachment") or bool(draft_document_field(meta))
+	return meta.has_field("final_attachment") or meta.has_field("draft_documents")
 
 
 def _ensure_row_attachment_metadata(
@@ -188,9 +186,6 @@ def shipment_document_metadata_dict(row) -> dict:
 			data[on_field] = row.get(on_field)
 		if meta.has_field(by_field):
 			data[by_field] = row.get(by_field)
-	draft_field = draft_document_field(meta)
-	if draft_field and draft_field != "draft_documents" and row.get(draft_field):
-		data[draft_field] = row.get(draft_field)
 	if meta.has_field("uploaded_by"):
 		data["uploaded_by"] = row.get("uploaded_by")
 	if meta.has_field("uploaded_on"):
@@ -233,7 +228,7 @@ def derive_version_status(row) -> str:
 	return ""
 
 
-def normalize_shipment_document_row(row, *, prefer_initial_for_legacy: bool = True) -> None:
+def normalize_shipment_document_row(row, *, prefer_draft_for_legacy: bool = True) -> None:
 	"""Keep version_status and primary attachment in sync with draft/final slots."""
 	if not row or not has_document_versioning():
 		return
@@ -242,7 +237,7 @@ def normalize_shipment_document_row(row, *, prefer_initial_for_legacy: bool = Tr
 	draft = get_draft_attachment(row)
 	final = (row.get("final_attachment") or "").strip()
 
-	if legacy and not draft and not final and prefer_initial_for_legacy:
+	if legacy and not draft and not final and prefer_draft_for_legacy:
 		set_draft_attachment(row, legacy)
 		draft = legacy
 
@@ -330,17 +325,6 @@ def ensure_shipment_document_version_fields() -> None:
 	meta = _shipment_document_meta()
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _create_cf
 
-	if not meta.has_field("initial_attachment"):
-		_create_cf(
-			"Shipment Document",
-			{
-				"fieldname": "initial_attachment",
-				"label": "Initial Document",
-				"fieldtype": "Attach",
-				"insert_after": "required",
-				"in_list_view": 1,
-			},
-		)
 	if not meta.has_field("final_attachment"):
 		_create_cf(
 			"Shipment Document",
@@ -376,7 +360,7 @@ def ensure_shipment_document_version_fields() -> None:
 				"read_only": 1,
 				"hidden": 1,
 				"in_list_view": 0,
-				"description": "Synced from Final Document when present, otherwise Initial Document.",
+				"description": "Synced from Final Document when present, otherwise Draft Document.",
 			},
 			update_modified=False,
 		)
@@ -385,8 +369,51 @@ def ensure_shipment_document_version_fields() -> None:
 	frappe.clear_cache(doctype="Shipment Document")
 
 
+def migrate_initial_attachment_to_draft_documents() -> int:
+	"""Copy initial_attachment → draft_documents before the legacy field is removed."""
+	meta = _shipment_document_meta()
+	if not meta.has_field("initial_attachment") or not meta.has_field("draft_documents"):
+		return 0
+	count = frappe.db.sql(
+		"""
+		SELECT COUNT(*) FROM `tabShipment Document`
+		WHERE IFNULL(initial_attachment, '') != ''
+		  AND IFNULL(draft_documents, '') = ''
+		"""
+	)[0][0]
+	if count:
+		frappe.db.sql(
+			"""
+			UPDATE `tabShipment Document`
+			SET draft_documents = initial_attachment
+			WHERE IFNULL(initial_attachment, '') != ''
+			  AND IFNULL(draft_documents, '') = ''
+			"""
+		)
+	return count
+
+
+def remove_initial_attachment_field() -> None:
+	"""Delete the legacy Initial Document field definition and database column."""
+	meta = _shipment_document_meta()
+	cf_name = "Shipment Document-initial_attachment"
+	if frappe.db.exists("Custom Field", cf_name):
+		frappe.delete_doc("Custom Field", cf_name, force=1, ignore_permissions=True)
+	for docfield in frappe.get_all(
+		"DocField",
+		filters={"parent": "Shipment Document", "fieldname": "initial_attachment"},
+		pluck="name",
+	):
+		frappe.delete_doc("DocField", docfield, force=1, ignore_permissions=True)
+	if meta.has_field("initial_attachment") or frappe.db.has_column(
+		"Shipment Document", "initial_attachment"
+	):
+		frappe.db.sql_ddl("ALTER TABLE `tabShipment Document` DROP COLUMN `initial_attachment`")
+	frappe.clear_cache(doctype="Shipment Document")
+
+
 def migrate_legacy_shipment_document_attachments() -> None:
-	"""One-time: move lone attachment values into initial_attachment."""
+	"""One-time: move lone attachment values into draft_documents."""
 	if not has_document_versioning():
 		return
 	for parenttype in ("Project", "Task", "Opportunity"):
@@ -413,7 +440,7 @@ def migrate_legacy_shipment_document_attachments() -> None:
 				"parenttype": parenttype,
 				"parentfield": parentfield,
 				"attachment": ["is", "set"],
-				"initial_attachment": ["is", "not set"],
+				"draft_documents": ["is", "not set"],
 				"final_attachment": ["is", "not set"],
 			},
 			fields=["name", "attachment"],
@@ -423,7 +450,7 @@ def migrate_legacy_shipment_document_attachments() -> None:
 				"Shipment Document",
 				row.name,
 				{
-					"initial_attachment": row.attachment,
+					"draft_documents": row.attachment,
 					"version_status": "Only Version",
 				},
 				update_modified=False,
@@ -436,7 +463,7 @@ def normalize_shipment_documents_table(rows) -> None:
 
 
 def prepare_shipment_documents_for_form(doc, table_field: str) -> None:
-	"""Hydrate legacy attachment into initial/final slots for form display (in-memory)."""
+	"""Hydrate legacy attachment into draft/final slots for form display (in-memory)."""
 	if not doc.meta.has_field(table_field):
 		return
 	normalize_shipment_documents_table(doc.get(table_field))
@@ -1003,7 +1030,7 @@ def carry_clients_documents_to_project(project_doc, source_doc) -> None:
 def _append_or_update_shipment_document_row(
 	project_doc, source_row, *, verify_from_approved_opportunity: bool = False
 ) -> None:
-	initial = get_draft_attachment(source_row) or source_row.get("initial_attachment")
+	draft = get_draft_attachment(source_row)
 	final = source_row.get("final_attachment")
 	legacy = source_row.get("attachment")
 	status = resolve_document_row_status(source_row)
@@ -1013,7 +1040,7 @@ def _append_or_update_shipment_document_row(
 			project_doc,
 			SHIPMENT_DOCUMENTS_FIELD,
 			source_row.document_type,
-			initial_url=initial or legacy,
+			initial_url=draft or legacy,
 			final_url=final,
 			status="Verified" if verify else status,
 			remarks=source_row.get("remarks"),
