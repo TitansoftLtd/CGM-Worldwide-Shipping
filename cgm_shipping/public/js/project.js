@@ -237,7 +237,46 @@ function toggle_project_transport_reference_fields(frm) {
 		bill_of_lading: "custom_bill_of_lading",
 		container_table: "custom_container_information",
 	});
-	cgm_shipping.transport_reference.toggle_cargo_type(frm);
+	cgm_shipping.transport_reference.toggle_cargo_type(frm, {
+		booking_confirmation: "custom_booking_confirmation",
+	});
+	toggle_project_cargo_fields(frm);
+}
+
+function project_cargo_type_code(frm) {
+	return (frm.doc.custom_cargo_type || "").trim().toUpperCase();
+}
+
+function toggle_project_cargo_fields(frm) {
+	const is_lcl = project_cargo_type_code(frm) === "LCL";
+	const show_fcl = !is_lcl;
+	const show_packages = is_lcl;
+
+	[
+		["custom_requested_cargo_quantity", show_fcl],
+		["custom_number_of_packages", show_packages],
+		["custom_package_type", show_packages],
+	].forEach(([fieldname, show]) => {
+		if (!frm.fields_dict[fieldname]) {
+			return;
+		}
+		frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
+	});
+
+	if (frm.fields_dict.custom_booking_confirmation) {
+		frm.set_df_property("custom_booking_confirmation", "hidden", 0);
+	}
+	if (frm.fields_dict.custom_cargo_type) {
+		frm.set_df_property("custom_cargo_type", "hidden", 0);
+	}
+
+	if (show_fcl) {
+		frm.refresh_field("custom_requested_cargo_quantity");
+	}
+	if (show_packages) {
+		frm.refresh_field("custom_number_of_packages");
+		frm.refresh_field("custom_package_type");
+	}
 }
 
 function setup_add_bill_of_lading_button(frm) {
@@ -833,6 +872,10 @@ frappe.ui.form.on("Project", {
 	},
 
 	custom_cargo_type(frm) {
+		toggle_project_transport_reference_fields(frm);
+	},
+
+	custom_booking_confirmation(frm) {
 		toggle_project_transport_reference_fields(frm);
 	},
 
