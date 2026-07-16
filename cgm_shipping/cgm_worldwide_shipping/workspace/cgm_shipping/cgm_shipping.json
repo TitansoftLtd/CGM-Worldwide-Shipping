@@ -16,8 +16,106 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Shipments",
+   "link_count": 9,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Project",
+   "link_count": 0,
+   "link_to": "Project",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Bill of Lading",
+   "link_count": 0,
+   "link_to": "Bill of Lading",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Air Waybill",
+   "link_count": 0,
+   "link_to": "Air Waybill",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Export Shipment",
+   "link_count": 0,
+   "link_to": "Export Shipment",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Booking Confirmation",
+   "link_count": 0,
+   "link_to": "Booking Confirmation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shipment Route",
+   "link_count": 0,
+   "link_to": "Shipment Route",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shipment tracker",
+   "link_count": 0,
+   "link_to": "Shipment tracker",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Daily Status Update",
+   "link_count": 0,
+   "link_to": "Daily Status Update",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Opportunity",
+   "link_count": 0,
+   "link_to": "Opportunity",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Clearance & Customs",
-   "link_count": 5,
+   "link_count": 7,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -54,9 +152,29 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Clearance Port",
+   "link_count": 0,
+   "link_to": "Clearance Port",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Port Charges KPA Invoice",
    "link_count": 0,
    "link_to": "Port Charges KPA Invoice",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Customs Tax Type",
+   "link_count": 0,
+   "link_to": "Customs Tax Type",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -75,7 +193,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Transport & Containers",
-   "link_count": 5,
+   "link_count": 6,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -85,6 +203,16 @@
    "label": "Container Tracker",
    "link_count": 0,
    "link_to": "Container Tracker",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Container Allocation",
+   "link_count": 0,
+   "link_to": "Container Allocation",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -134,7 +262,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Masters & Setup",
-   "link_count": 7,
+   "link_count": 11,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -144,6 +272,16 @@
    "label": "Cargo Type",
    "link_count": 0,
    "link_to": "Cargo Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cargo Size",
+   "link_count": 0,
+   "link_to": "Cargo Size",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -171,6 +309,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Package Type",
+   "link_count": 0,
+   "link_to": "Package Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Document Type",
    "link_count": 0,
    "link_to": "Document Type",
@@ -184,6 +332,26 @@
    "label": "Permit Type",
    "link_count": 0,
    "link_to": "Permit Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Charge Item",
+   "link_count": 0,
+   "link_to": "Charge Item",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cost Type",
+   "link_count": 0,
+   "link_to": "Cost Type",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -207,88 +375,9 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipments",
-   "link_count": 7,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Project",
-   "link_count": 0,
-   "link_to": "Project",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Bill of Lading",
-   "link_count": 0,
-   "link_to": "Bill of Lading",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Air Waybill",
-   "link_count": 0,
-   "link_to": "Air Waybill",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Export Shipment",
-   "link_count": 0,
-   "link_to": "Export Shipment",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipment tracker",
-   "link_count": 0,
-   "link_to": "Shipment tracker",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Daily Status Update",
-   "link_count": 0,
-   "link_to": "Daily Status Update",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Opportunity",
-   "link_count": 0,
-   "link_to": "Opportunity",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
   }
  ],
- "modified": "2026-07-08 19:08:17.786995",
+ "modified": "2026-07-16 06:15:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",

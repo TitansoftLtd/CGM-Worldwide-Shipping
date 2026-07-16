@@ -2,9 +2,6 @@ function cgm_draft_document_field() {
 	if (frappe.meta.get_docfield("Shipment Document", "draft_documents")) {
 		return "draft_documents";
 	}
-	if (frappe.meta.get_docfield("Shipment Document", "initial_attachment")) {
-		return "initial_attachment";
-	}
 	return null;
 }
 
@@ -111,9 +108,6 @@ function cgm_sync_shipment_document_rows_on_refresh(frm, table_field) {
 
 frappe.ui.form.on("Shipment Document", {
 	draft_documents(frm, cdt, cdn) {
-		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
-	},
-	initial_attachment(frm, cdt, cdn) {
 		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
 	},
 	final_attachment(frm, cdt, cdn) {

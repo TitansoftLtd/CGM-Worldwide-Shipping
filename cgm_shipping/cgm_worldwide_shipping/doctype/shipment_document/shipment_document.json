@@ -47,7 +47,7 @@
    "label": "Final Document"
   },
   {
-   "description": "Synced from Final Document when present, otherwise Initial Document.",
+   "description": "Synced from Final Document when present, otherwise Draft Document.",
    "fieldname": "attachment",
    "fieldtype": "Attach",
    "hidden": 1,
