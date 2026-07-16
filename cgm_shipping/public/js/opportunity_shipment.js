@@ -512,6 +512,7 @@ cgm_shipping.opportunity_shipment._build_transport_document_seed = function (frm
 	}
 	if (frm.doc.custom_client_refrence_no) {
 		seed.client_ref = frm.doc.custom_client_refrence_no;
+		seed.client_refrence_no = frm.doc.custom_client_refrence_no;
 	}
 
 	const opp_field = doc.opp_field;
@@ -524,8 +525,14 @@ cgm_shipping.opportunity_shipment._build_transport_document_seed = function (frm
 		if (frm.doc.custom_draft_bl_number) {
 			seed.bl_number = frm.doc.custom_draft_bl_number;
 		}
-		if (frm.doc.custom_batch_no) {
-			seed.batch_no = frm.doc.custom_batch_no;
+		// Batch is allocated on save (FCL key) — do not seed from Opportunity.
+		// Link Booking so BL onload can expand FCL container stubs / LCL packages.
+		if (frm.doc.custom_booking_confirmation) {
+			seed.booking_confirmation = frm.doc.custom_booking_confirmation;
+		}
+		// Flag for BL form to fetch the full Opportunity/Booking seed (incl. child rows).
+		if (frm.doc.name && !String(frm.doc.name).startsWith("new-")) {
+			localStorage.setItem("cgm_bl_seed_opportunity", frm.doc.name);
 		}
 	}
 

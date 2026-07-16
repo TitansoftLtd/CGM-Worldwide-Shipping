@@ -7,7 +7,7 @@
  "field_order": [
   "container_tracker",
   "container_number",
-  "cargo_type",
+  "cargo_size",
   "column_break_assign",
   "truck_number",
   "driver_name",
@@ -35,11 +35,11 @@
    "read_only": 1
   },
   {
-   "fetch_from": "container_tracker.cargo_type",
-   "fieldname": "cargo_type",
+   "fetch_from": "container_tracker.cargo_size",
+   "fieldname": "cargo_size",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Cargo Type",
+   "label": "Cargo Size",
    "read_only": 1
   },
   {

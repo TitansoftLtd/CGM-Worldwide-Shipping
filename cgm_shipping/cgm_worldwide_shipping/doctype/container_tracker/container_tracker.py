@@ -10,6 +10,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import
 	compute_container_metrics,
 	populate_rates_from_shipping_line,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	container_row_cargo_size,
+	tracker_cargo_size_field,
+	tracker_row_cargo_size,
+)
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_charges import (
 	apply_metrics_to_doc,
 )
@@ -48,13 +53,15 @@ def _sync_project_child_row(doc) -> None:
 			"parenttype": "Project",
 			"parentfield": container_field,
 		},
-		fields=["name", "container_tracker", "container_number", "cargo_type"],
+		fields=["name", "container_tracker", "container_number", "cargo_size", "type_of_container"],
 	)
+	tracker_size = tracker_row_cargo_size(doc)
 
 	for row in child_rows:
+		row_size = container_row_cargo_size(row)
 		matched = row.container_tracker == doc.name or (
 			row.container_number == doc.container_number
-			and (row.cargo_type or "") == (doc.cargo_type or "")
+			and row_size == tracker_size
 		)
 		if not matched:
 			continue
@@ -78,7 +85,7 @@ _CONTAINER_TRACKER_FIELDS = [
 	"container_number",
 	"bl_number",
 	"container_mode",
-	"cargo_type",
+	tracker_cargo_size_field(),
 	"seal_no",
 	"shipping_line",
 	"delivery_destination",

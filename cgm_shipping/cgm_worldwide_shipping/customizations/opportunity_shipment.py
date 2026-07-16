@@ -78,37 +78,32 @@ def has_primary_transport_document(opportunity) -> bool:
 	return has_required_transport_documents(opportunity)
 
 
-def allocate_opportunity_batch_no() -> str:
-	"""Increment CGM Shipping Settings last_batch_no and return the new batch as a string."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
-		return "1"
-
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("last_batch_no"):
-		return "1"
-
-	# tabSingles columns are doctype / field / value (no name column).
-	frappe.db.sql(
-		"""
-		SELECT `value` FROM `tabSingles`
-		WHERE `doctype` = %s AND `field` = %s
-		FOR UPDATE
-		""",
-		("CGM Shipping Settings", "last_batch_no"),
-	)
-	last = cint(frappe.db.get_single_value("CGM Shipping Settings", "last_batch_no") or 0)
-	new_batch = last + 1
-	frappe.db.set_single_value("CGM Shipping Settings", "last_batch_no", new_batch)
-	return str(new_batch)
-
-
 def assign_opportunity_batch_on_insert(doc, _method=None) -> None:
-	"""Opportunity batch is assigned from FCL Booking Confirmation / Bill of Lading.
+	"""FCL batch is allocated on Booking Confirmation / Bill of Lading only."""
+	if doc.meta.has_field("custom_batch_no"):
+		doc.custom_batch_no = None
 
-	Do not use the global Settings counter here — FCL batches are per
-	Customer + Shipment Type + Derived Quantity.
-	"""
-	return
+
+def resolve_fcl_batch_for_opportunity(opp) -> str | None:
+	"""Batch from linked FCL transport docs — not the legacy global Settings counter."""
+	booking = (opp.get("custom_booking_confirmation") or "").strip()
+	if booking and frappe.db.exists("Booking Confirmation", booking):
+		batch = frappe.db.get_value("Booking Confirmation", booking, "batch_no")
+		if batch and str(batch).strip().isdigit():
+			return str(batch).strip()
+
+	bl = (opp.get("custom_bill_of_lading") or "").strip()
+	if bl and frappe.db.exists("Bill of Lading", bl):
+		batch = frappe.db.get_value("Bill of Lading", bl, "batch_no")
+		if batch and str(batch).strip().isdigit():
+			return str(batch).strip()
+	return None
+
+
+def sync_opportunity_batch_from_transport_doc(doc, _method=None) -> None:
+	"""Opportunity batch mirrors linked Booking/BL FCL allocation only."""
+	if doc.meta.has_field("custom_batch_no"):
+		doc.custom_batch_no = resolve_fcl_batch_for_opportunity(doc)
 
 
 def get_shipment_type_flags(shipment_type: str | None) -> dict:
@@ -162,11 +157,13 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_eta", "custom_eta"),
 		("custom_etd", "custom_etd"),
 		("custom_shipping_line", "custom_shipping_line"),
+		("custom_vessel", "custom_vessel"),
 		("custom_shipping_order_ref", "custom_shipping_order_ref"),
 		("custom_booking_ref", "custom_booking_ref"),
 		("custom_handling_agent", "custom_handling_agent"),
 		("custom_delivery_destination", "custom_final_destination"),
 		("custom_booking_confirmation", "custom_booking_confirmation"),
+		("custom_bill_of_lading", "custom_bill_of_lading"),
 	)
 
 

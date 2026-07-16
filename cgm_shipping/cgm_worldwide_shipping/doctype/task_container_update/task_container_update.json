@@ -7,7 +7,7 @@
  "field_order": [
   "container_tracker",
   "container_number",
-  "cargo_type",
+  "cargo_size",
   "current_status",
   "column_break_identity",
   "discharging_date",
@@ -51,11 +51,11 @@
    "read_only": 1
   },
   {
-   "fetch_from": "container_tracker.cargo_type",
-   "fieldname": "cargo_type",
+   "fetch_from": "container_tracker.cargo_size",
+   "fieldname": "cargo_size",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Type",
+   "label": "Cargo Size",
    "read_only": 1
   },
   {

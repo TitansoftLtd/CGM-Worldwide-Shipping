@@ -233,15 +233,17 @@ def _project_filters(filters) -> dict:
 def _container_qty_size_from_trackers(rows: list[dict]) -> str | None:
 	counts: dict[str, int] = {}
 	for row in rows:
-		cargo_type = (row.get("cargo_type") or "").strip()
-		if not cargo_type:
+		cargo_size = (
+			row.get("cargo_size") or row.get("cargo_type") or row.get("type_of_container") or ""
+		).strip()
+		if not cargo_size:
 			continue
-		counts[cargo_type] = counts.get(cargo_type, 0) + 1
+		counts[cargo_size] = counts.get(cargo_size, 0) + 1
 	if not counts:
 		return None
-	dominant_type = max(counts, key=lambda key: (counts[key], key))
-	qty = counts[dominant_type]
-	size = re.sub(r"[^0-9]", "", dominant_type.upper()) or dominant_type.upper().replace("FT", "")
+	dominant_size = max(counts, key=lambda key: (counts[key], key))
+	qty = counts[dominant_size]
+	size = re.sub(r"[^0-9]", "", dominant_size.upper()) or dominant_size.upper().replace("FT", "")
 	return f"{qty}X{size}"
 
 

@@ -16,7 +16,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
 	build_bill_of_lading_name,
+	ensure_bl_cargo_type,
+	expand_requested_cargo_to_container_stubs,
 	parse_batch_number_from_bl_name,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	BL_TO_OPPORTUNITY_DETAIL_FIELDS,
 )
 
 
@@ -86,3 +91,38 @@ class TestBillOfLadingNaming(IntegrationTestCase):
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ 2 x 20FT-10"), 10)
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ"), None)
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ-7"), 7)
+
+
+class TestBillOfLadingBookingPrefill(IntegrationTestCase):
+	def test_expand_requested_cargo_to_container_stubs(self):
+		stubs = expand_requested_cargo_to_container_stubs(
+			[
+				{"cargo_size": "40FT", "quantity": "2"},
+				{"cargo_size": "20FT", "quantity": 1},
+			]
+		)
+		self.assertEqual(len(stubs), 3)
+		self.assertEqual([s["cargo_size"] for s in stubs], ["40FT", "40FT", "20FT"])
+		self.assertTrue(all(not s["container_number"] and not s["seal_no"] for s in stubs))
+
+	def test_bl_opportunity_maps_commodity_not_description(self):
+		src_fields = {src for src, _dest in BL_TO_OPPORTUNITY_DETAIL_FIELDS}
+		self.assertIn("commodity", src_fields)
+		self.assertNotIn("description", src_fields)
+
+
+class TestBillOfLadingCargoType(IntegrationTestCase):
+	def test_ensure_bl_cargo_type_from_quantity(self):
+		doc = frappe._dict(quantity="1 x 45FT", container_information=[])
+		ensure_bl_cargo_type(doc)
+		self.assertEqual(doc.cargo_type, "FCL")
+
+	def test_ensure_bl_cargo_type_from_batch_no(self):
+		doc = frappe._dict(batch_no="2123", container_information=[])
+		ensure_bl_cargo_type(doc)
+		self.assertEqual(doc.cargo_type, "FCL")
+
+	def test_ensure_bl_cargo_type_from_packages(self):
+		doc = frappe._dict(number_of_packages="10", package_type="Cartons")
+		ensure_bl_cargo_type(doc)
+		self.assertEqual(doc.cargo_type, "LCL")
