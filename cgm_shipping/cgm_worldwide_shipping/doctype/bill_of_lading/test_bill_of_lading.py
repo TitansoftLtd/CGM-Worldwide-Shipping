@@ -74,16 +74,15 @@ class TestFclBatchQuantity(IntegrationTestCase):
 
 
 class TestBillOfLadingNaming(IntegrationTestCase):
-	def test_build_bill_of_lading_name_with_quantity(self):
+	def test_build_bill_of_lading_name_uses_bl_number_only(self):
+		self.assertEqual(build_bill_of_lading_name("MB-0ONUJ", "2 x 20FT", 10), "MB-0ONUJ")
+		self.assertEqual(build_bill_of_lading_name("MB-0ONUJ", "", 3), "MB-0ONUJ")
 		self.assertEqual(
-			build_bill_of_lading_name("MB-0ONUJ", "2 x 20FT", 10),
-			"MB-0ONUJ 2 x 20FT-10",
+			build_bill_of_lading_name("234567890", "10 Cartons", None),
+			"234567890",
 		)
 
-	def test_build_bill_of_lading_name_without_quantity(self):
-		self.assertEqual(build_bill_of_lading_name("MB-0ONUJ", "", 3), "MB-0ONUJ-3")
-
-	def test_parse_batch_number_from_bl_name(self):
+	def test_parse_batch_number_from_legacy_bl_name(self):
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ 2 x 20FT-10"), 10)
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ"), None)
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ-7"), 7)

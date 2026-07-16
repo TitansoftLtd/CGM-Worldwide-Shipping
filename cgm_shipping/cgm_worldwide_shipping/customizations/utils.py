@@ -4,6 +4,49 @@ from __future__ import annotations
 
 import frappe
 
+NUMERIC_FIELDTYPES = ("Float", "Currency", "Percent", "Int")
+
+
+def coerce_numeric_fields(
+	doc,
+	fieldnames: list[str] | tuple[str, ...] | None = None,
+	*,
+	empty_as_zero: bool = False,
+) -> None:
+	"""Normalize empty / non-numeric values on Float-like fields before SQL write.
+
+	Empty strings against decimal columns raise MySQL 1265 (Data truncated).
+	"""
+	meta = doc.meta
+	names = list(fieldnames) if fieldnames is not None else [
+		df.fieldname for df in meta.fields if df.fieldtype in NUMERIC_FIELDTYPES
+	]
+	for fieldname in names:
+		if not meta.has_field(fieldname):
+			continue
+		value = doc.get(fieldname)
+		if value is None:
+			continue
+		df = meta.get_field(fieldname)
+		if value == "" or (isinstance(value, str) and not str(value).strip()):
+			# NOT NULL decimal columns need 0; nullable Floats can stay empty.
+			use_zero = empty_as_zero or bool(getattr(df, "not_nullable", 0))
+			if not use_zero and df and df.default not in (None, ""):
+				use_zero = True
+			doc.set(fieldname, 0 if use_zero else None)
+			continue
+		if isinstance(value, (int, float)) and not isinstance(value, bool):
+			if df and df.fieldtype == "Int":
+				doc.set(fieldname, int(value))
+			continue
+		try:
+			num = float(str(value).replace(",", "").strip())
+		except (TypeError, ValueError):
+			use_zero = empty_as_zero or bool(getattr(df, "not_nullable", 0))
+			doc.set(fieldname, 0 if use_zero else None)
+			continue
+		doc.set(fieldname, int(num) if df and df.fieldtype == "Int" else num)
+
 
 @frappe.request_cache
 def get_field_from_meta(doctype: str, keyword: str) -> str | None:

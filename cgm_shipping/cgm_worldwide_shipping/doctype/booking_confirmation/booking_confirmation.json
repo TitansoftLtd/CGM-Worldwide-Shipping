@@ -19,6 +19,8 @@
   "port_of_loading",
   "port_of_discharge",
   "weight_uom",
+  "net_weight",
+  "gross_weight",
   "column_break_bc_2",
   "eta",
   "etd",
@@ -166,6 +168,16 @@
    "fieldtype": "Link",
    "label": "Weight UOM",
    "options": "UOM"
+  },
+  {
+   "fieldname": "net_weight",
+   "fieldtype": "Float",
+   "label": "Net Weight"
+  },
+  {
+   "fieldname": "gross_weight",
+   "fieldtype": "Float",
+   "label": "Gross Weight"
   },
   {
    "fieldname": "number_of_packages",

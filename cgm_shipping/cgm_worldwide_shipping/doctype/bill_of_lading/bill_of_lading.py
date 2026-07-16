@@ -29,7 +29,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bl_fields_to_doc,
 	bl_propagation_payload,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_bl_config
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import coerce_numeric_fields, get_bl_config
 
 
 class BillofLading(Document):
@@ -38,21 +38,13 @@ class BillofLading(Document):
 			frappe.throw(frappe._("Bill of Lading Number is required"))
 		if not self.customer:
 			frappe.throw(frappe._("Customer is required"))
-		quantity = self._quantity_for_naming()
-		batch_number = resolve_batch_number_for_bl(self)
-		self.name = build_bill_of_lading_name(self.bl_number, quantity, batch_number)
-
-	def _quantity_for_naming(self) -> str:
-		"""Quantity segment for the document name (from field or container rows)."""
-		if is_fcl_cargo_type(self.get("cargo_type")):
-			derived = derived_quantity_from_bl(self)
-			if derived:
-				return derived
-		if self.get("quantity"):
-			return (self.quantity or "").strip()
-		return self._summarize_container_quantities()
+		# Quantity / batch stay on their own fields — name is always the BL number.
+		apply_bl_quantity_and_batch(self)
+		resolve_batch_number_for_bl(self)
+		self.name = (self.bl_number or "").strip()
 
 	def validate(self):
+		coerce_numeric_fields(self, ("gross_weight", "net_weight"), empty_as_zero=True)
 		sanitize_bill_of_lading_linked_opportunity(self)
 		apply_bl_quantity_and_batch(self)
 		summary = (self.get("quantity") or "").strip() or self._summarize_container_quantities()
@@ -78,19 +70,22 @@ class BillofLading(Document):
 
 
 def apply_bl_quantity_and_batch(doc) -> None:
-	"""Set derived quantity and batch on Bill of Lading (FCL sequence or LCL skip)."""
+	"""Set derived quantity and batch on Bill of Lading (FCL only for batch)."""
 	if is_lcl_cargo_type(doc.get("cargo_type")):
 		pkgs = (doc.get("number_of_packages") or "").strip()
 		ptype = (doc.get("package_type") or "").strip()
 		if doc.meta.has_field("quantity"):
 			doc.quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
-		if not doc.get("batch_no"):
-			doc.batch_no = "1"
+		# LCL must not participate in FCL batch numbering.
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = None
+		# Drop empty container rows that can appear when toggling from FCL UI.
+		_clear_empty_container_rows(doc)
 		return
 
 	if not is_fcl_cargo_type(doc.get("cargo_type")):
-		if not doc.get("batch_no"):
-			doc.batch_no = "1"
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = None
 		return
 
 	derived = derived_quantity_from_bl(doc)
@@ -99,47 +94,91 @@ def apply_bl_quantity_and_batch(doc) -> None:
 		cargo_type_field="cargo_type",
 		derived_quantity=derived,
 	)
-	if not doc.get("batch_no"):
-		# FCL without container rows yet — keep naming workable.
-		doc.batch_no = "1"
+
+
+def _clear_empty_container_rows(doc) -> None:
+	rows = list(doc.get("container_information") or [])
+	if not rows:
+		return
+	kept = []
+	for row in rows:
+		has_data = any(
+			[
+				(row.get("container_number") or "").strip(),
+				(row.get("cargo_size") or "").strip(),
+				(row.get("seal_no") or "").strip(),
+			]
+		)
+		if has_data:
+			kept.append(row)
+	if len(kept) != len(rows):
+		doc.set("container_information", [])
+		for row in kept:
+			doc.append(
+				"container_information",
+				{
+					"container_number": row.get("container_number"),
+					"cargo_size": row.get("cargo_size"),
+					"seal_no": row.get("seal_no"),
+					"container_tracker": row.get("container_tracker"),
+					"demurrage_days": row.get("demurrage_days"),
+					"status": row.get("status"),
+				},
+			)
 
 
 def build_bill_of_lading_name(
-	bl_number: str, quantity: str | None, batch_number: int
+	bl_number: str, quantity: str | None = None, batch_number: int | None = None
 ) -> str:
-	"""BL_NUMBER + ' ' + QUANTITY + '-' + BATCH_NUMBER (e.g. MB-0ONUJ 2 x 20FT-10)."""
-	bl_number = (bl_number or "").strip()
-	quantity = (quantity or "").strip()
-	suffix = f"-{int(batch_number)}"
-	if quantity:
-		return f"{bl_number} {quantity}{suffix}"
-	return f"{bl_number}{suffix}"
+	"""Document name is always the Bill of Lading number (FCL and LCL).
+
+	``quantity`` / ``batch_number`` are ignored; kept for call-site compatibility.
+	"""
+	_ = (quantity, batch_number)
+	return (bl_number or "").strip()
 
 
 def parse_batch_number_from_bl_name(name: str | None) -> int | None:
-	"""Extract trailing batch integer from a Bill of Lading name, if present."""
+	"""Extract trailing batch integer from a legacy Bill of Lading name, if present.
+
+	New BLs are named by ``bl_number`` only; batch lives on ``batch_no``.
+	"""
 	if not name:
 		return None
 	suffix = str(name).rsplit("-", 1)[-1].strip()
 	return int(suffix) if suffix.isdigit() else None
 
 
-def resolve_batch_number_for_bl(doc) -> int:
+def resolve_batch_number_for_bl(doc) -> int | None:
 	"""Batch for a new/amended Bill of Lading.
 
 	FCL: Customer + Shipment Type + Derived Quantity (reuse Booking batch when linked).
-	LCL: not part of the FCL sequence — use 1.
+	LCL: no batch number.
 	"""
-	if doc.get("amended_from"):
-		reused = parse_batch_number_from_bl_name(doc.amended_from)
+	if is_lcl_cargo_type(doc.get("cargo_type")):
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = None
+		return None
+
+	if doc.get("amended_from") and is_fcl_cargo_type(doc.get("cargo_type")):
+		reused = None
+		amended = doc.amended_from
+		if frappe.db.exists("Bill of Lading", amended):
+			raw = frappe.db.get_value("Bill of Lading", amended, "batch_no")
+			if raw not in (None, "") and str(raw).strip().isdigit():
+				reused = int(str(raw).strip())
+		if reused is None:
+			reused = parse_batch_number_from_bl_name(amended)
 		if reused:
+			if doc.meta.has_field("batch_no"):
+				doc.batch_no = str(reused)
 			return reused
 
 	apply_bl_quantity_and_batch(doc)
 	existing = str(doc.get("batch_no") or "").strip()
 	if existing.isdigit():
 		return int(existing)
-	return 1
+	return None
 
 
 def summarize_bl_container_quantities(bl_name: str | None) -> str:

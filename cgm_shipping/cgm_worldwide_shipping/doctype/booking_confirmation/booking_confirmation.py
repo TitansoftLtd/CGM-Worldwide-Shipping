@@ -29,6 +29,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_shipment_type_profile_to_doc,
 	get_cargo_type_field,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.utils import coerce_numeric_fields
 
 OPPORTUNITY_SOURCE_FIELD = "linked_opportunity"
 OPPORTUNITY_BOOKING_FIELD = "custom_booking_confirmation"
@@ -60,6 +61,7 @@ BOOKING_TO_OPPORTUNITY_FIELDS = (
 
 class BookingConfirmation(Document):
 	def validate(self):
+		coerce_numeric_fields(self, ("gross_weight", "net_weight"))
 		sanitize_booking_linked_opportunity(self)
 		apply_booking_quantity_and_batch(self)
 
@@ -106,6 +108,9 @@ def _set_opp_value(opp, fieldname: str, value) -> bool:
 	if opp.get(fieldname) == value:
 		return False
 	opp.set(fieldname, value)
+	# Keep legacy duplicate Net Weight column in sync when present.
+	if fieldname == "custom_weight_nw" and opp.meta.has_field("custom_net_weight"):
+		opp.set("custom_net_weight", value)
 	return True
 
 
@@ -118,6 +123,8 @@ def apply_booking_quantity_and_batch(doc) -> None:
 		ptype = (doc.get("package_type") or "").strip()
 		if doc.meta.has_field("quantity"):
 			doc.quantity = f"{pkgs} {ptype}".strip() if pkgs or ptype else ""
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = None
 		return
 
 	if not is_fcl_cargo_type(cargo_type):

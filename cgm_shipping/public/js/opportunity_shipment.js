@@ -189,6 +189,14 @@ cgm_shipping.opportunity_shipment._prepare_intake_defaults = function (frm) {
 			frm.set_value("company", company);
 		}
 	}
+	// Do not inherit site default Country (e.g. Kenya) — user must choose.
+	if (frm.is_new()) {
+		["custom_country_of_origin", "custom_delivery_destination"].forEach((fieldname) => {
+			if (frm.meta.has_field(fieldname) && frm.doc[fieldname]) {
+				frm.doc[fieldname] = null;
+			}
+		});
+	}
 };
 
 cgm_shipping.opportunity_shipment._configure_intake_form = function (frm) {
