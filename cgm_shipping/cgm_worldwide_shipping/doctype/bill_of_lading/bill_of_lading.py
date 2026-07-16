@@ -180,7 +180,11 @@ def next_batch_number_for_customer(customer: str) -> int:
 
 
 def resolve_batch_number_for_bl(doc) -> int:
-	"""Batch for a new/amended Bill of Lading — prefer linked Opportunity batch."""
+	"""Batch for a new/amended Bill of Lading.
+
+	Prefers linked Opportunity batch, then an existing numeric batch_no on the
+	document (shared customer batch).
+	"""
 	if doc.get("amended_from"):
 		reused = parse_batch_number_from_bl_name(doc.amended_from)
 		if reused:
@@ -194,7 +198,53 @@ def resolve_batch_number_for_bl(doc) -> int:
 		if opp_batch and str(opp_batch).strip().isdigit():
 			return int(str(opp_batch).strip())
 
+	raw = (doc.get("batch_no") or "").strip()
+	if raw:
+		try:
+			existing = int(raw)
+		except (TypeError, ValueError):
+			existing = 0
+		if existing > 0:
+			return existing
+
 	return next_batch_number_for_customer(doc.customer)
+
+
+@frappe.whitelist()
+def get_customer_batch_numbers(customer: str) -> list[str]:
+	"""Distinct batch numbers already used for this customer (Project + B/L)."""
+	if not customer:
+		return []
+	frappe.has_permission("Customer", ptype="read", doc=customer, throw=True)
+
+	batches: set[str] = set()
+	if frappe.get_meta("Project").has_field("custom_batch_no"):
+		for value in frappe.get_all(
+			"Project",
+			filters={"customer": customer, "custom_batch_no": ["is", "set"]},
+			pluck="custom_batch_no",
+		):
+			text = str(value or "").strip()
+			if text:
+				batches.add(text)
+
+	if frappe.get_meta("Bill of Lading").has_field("batch_no"):
+		for value in frappe.get_all(
+			"Bill of Lading",
+			filters={"customer": customer, "batch_no": ["is", "set"]},
+			pluck="batch_no",
+		):
+			text = str(value or "").strip()
+			if text:
+				batches.add(text)
+
+	def sort_key(item: str):
+		try:
+			return (0, int(item))
+		except (TypeError, ValueError):
+			return (1, item)
+
+	return sorted(batches, key=sort_key)
 
 
 def summarize_bl_container_quantities(bl_name: str | None) -> str:

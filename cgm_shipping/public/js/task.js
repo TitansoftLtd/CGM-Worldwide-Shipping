@@ -228,6 +228,7 @@ frappe.ui.form.on("Task", {
 
 		if (ui.is_shipping_line_application && frm.doc.project) {
 			ensure_app_finance_lines_on_form(frm, "shipping_line");
+			configure_shipping_line_deposit_grid(frm);
 			if (!frm._cgm_shipping_line_declarant_status_loaded) {
 				load_app_finance_declarant_status(frm, "shipping_line");
 			}
@@ -1160,7 +1161,15 @@ function permit_rows_have_invoices(frm) {
 	if (!rows.length) {
 		return false;
 	}
-	return rows.every((r) => r.permit_type && r.payment_invoice);
+	return rows.every((r) => {
+		if (!r.permit_type) {
+			return false;
+		}
+		if ((r.origin || "Local") === "Foreign") {
+			return Boolean(r.permit_document);
+		}
+		return Boolean(r.payment_invoice);
+	});
 }
 
 function permit_rows_pending_receipt_verification(frm) {
@@ -1283,6 +1292,7 @@ function configure_task_document_version_grid(frm, ui) {
 	cgm_configure_shipment_document_grid(grid, {
 		initial_read_only: versioned && ui.documents_initial_read_only,
 	});
+	cgm_sync_shipment_document_rows_on_refresh(frm, "custom_task_documents");
 }
 
 function ensure_checkpoint_task_documents_on_form(frm) {
@@ -1379,6 +1389,18 @@ function configure_finance_line_grid(frm, ui) {
 	}
 
 	frm._cgm_finance_grid_ready = true;
+	if (cgm_shipping.status_field?.attach_grid_formatters) {
+		cgm_shipping.status_field.attach_grid_formatters(
+			grid,
+			"verified",
+			(value) => cgm_shipping.status_field.tone_for_verified(value)
+		);
+		cgm_shipping.status_field.paint_grid?.(
+			grid,
+			"verified",
+			(value) => cgm_shipping.status_field.tone_for_verified(value)
+		);
+	}
 }
 
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
@@ -1550,6 +1572,22 @@ function apply_ucr_application_intro(frm, status) {
 	set_task_intro(frm, intro);
 }
 
+function toggle_permit_invoice_fields_for_origin(grid) {
+	if (!grid) {
+		return;
+	}
+	const invoice_fields = [
+		"payment_invoice",
+		"invoice_amount",
+		"invoice_uploaded_on",
+		"invoice_uploaded_by",
+		"invoice_verified",
+	];
+	invoice_fields.forEach((fn) => {
+		grid.update_docfield_property(fn, "depends_on", 'eval:doc.origin != "Foreign"');
+	});
+}
+
 function configure_permit_grid(frm) {
 	const grid = frm.fields_dict.custom_task_permits?.grid;
 	if (!grid) {
@@ -1581,14 +1619,16 @@ function configure_permit_grid(frm) {
 		frappe.session.user === "Administrator";
 
 	if (is_permit_application_step(frm, seq)) {
+		grid.update_docfield_property("origin", "read_only", lock_invoices ? 1 : 0);
 		grid.update_docfield_property("payment_invoice", "read_only", lock_invoices ? 1 : can_upload_proof ? 0 : 1);
 		grid.update_docfield_property("invoice_amount", "read_only", lock_invoices ? 1 : can_upload_proof ? 0 : 1);
 		grid.update_docfield_property("payment_receipt", "hidden", invoices_ready ? 0 : 1);
 		grid.update_docfield_property("payment_receipt", "read_only", can_upload_proof ? 0 : 1);
-		grid.update_docfield_property("permit_document", "hidden", invoices_ready ? 0 : 1);
+		grid.update_docfield_property("permit_document", "hidden", 0);
 		grid.update_docfield_property("permit_document", "read_only", can_upload_proof ? 0 : 1);
 		grid.update_docfield_property("receipt_verified", "hidden", invoices_ready ? 0 : 1);
 		grid.update_docfield_property("receipt_verified", "read_only", 1);
+		toggle_permit_invoice_fields_for_origin(grid);
 	} else if (is_permit_finance_step(frm, seq)) {
 		["payment_invoice", "purchase_invoice", "payment_entry", "permit_document"].forEach((fn) => {
 			grid.update_docfield_property(fn, "read_only", 1);
@@ -1765,6 +1805,21 @@ frappe.ui.form.on("Permit Register", {
 	custom_task_permits_remove(frm) {
 		if (frm.doctype !== "Task") {
 			return;
+		}
+		configure_permit_grid(frm);
+	},
+
+	origin(frm, cdt, cdn) {
+		if (frm.doctype !== "Task") {
+			return;
+		}
+		const row = locals[cdt][cdn];
+		if ((row.origin || "Local") === "Foreign") {
+			["payment_invoice", "invoice_amount", "invoice_verified"].forEach((fn) => {
+				if (row[fn]) {
+					frappe.model.set_value(cdt, cdn, fn, fn === "invoice_verified" ? 0 : "");
+				}
+			});
 		}
 		configure_permit_grid(frm);
 	},
@@ -2162,6 +2217,22 @@ function load_app_finance_declarant_status(frm, profileKey) {
 	});
 }
 
+function configure_shipping_line_deposit_grid(frm) {
+	const grid = frm.fields_dict.custom_container_updates?.grid;
+	if (!grid) {
+		return;
+	}
+	frm.toggle_display("custom_section_container_updates", true);
+	frm.toggle_display("custom_container_updates", true);
+	["has_deposit", "deposit_amount"].forEach((fn) => {
+		grid.update_docfield_property(fn, "hidden", 0);
+		grid.update_docfield_property(fn, "in_list_view", 1);
+	});
+	if (grid.wrapper) {
+		grid.refresh();
+	}
+}
+
 function apply_app_finance_application_intro(frm, status, profileKey) {
 	if (!is_app_finance_application_step(frm, undefined, profileKey) || !frm.doc.project) {
 		return;
@@ -2205,6 +2276,15 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 				"supplier <b>{2}</b>.",
 			[uploadRole, invoiceLabel, receiptLabel]
 		);
+		if (profileKey === "shipping_line") {
+			intro +=
+				"<br><br>" +
+				__(
+					"<b>Container deposits:</b> On <b>Container Updates</b>, tick <b>Has Deposit</b> " +
+						"and enter the amount for each container that has a deposit. Leave unticked " +
+						"when there is no deposit. Payment status updates automatically after Shipping Line finance is completed."
+				);
+		}
 	}
 	set_task_intro(frm, intro);
 }

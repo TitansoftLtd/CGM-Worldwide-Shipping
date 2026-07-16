@@ -6,7 +6,7 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_UPDATE_TASK_SEQS,
@@ -44,7 +44,7 @@ TRANSPORT_TRACKER_FIELDS = (
 
 def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 	"""Task grid field → Container Tracker field, keyed by configured sequence number."""
-	return {
+	mapping: dict[int, list[tuple[str, str]]] = {
 		get_container_task_sequence("custom_vessel_arrival_task_seq"): [
 			("discharging_date", "discharging_date"),
 		],
@@ -81,6 +81,27 @@ def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 			("interchange_document", "interchange_document"),
 		],
 	}
+	for seq in _shipping_line_application_seqs():
+		mapping[seq] = [
+			("has_deposit", "has_deposit"),
+			("deposit_amount", "deposit_amount"),
+		]
+	return mapping
+
+
+def _shipping_line_application_seqs() -> frozenset[int]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		shipping_line_application_sequences,
+	)
+
+	return shipping_line_application_sequences()
+
+
+def is_shipping_line_deposit_task(doc) -> bool:
+	return (
+		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
+		and _sea_task_seq(doc) in _shipping_line_application_seqs()
+	)
 
 
 def _completion_field_by_seq() -> dict[int, str]:
@@ -151,6 +172,8 @@ TRACKER_SEED_FIELDS = [
 	"interchange_document",
 	"gate_in_date_warehouse",
 	"delivery_location",
+	"has_deposit",
+	"deposit_amount",
 ]
 
 
@@ -159,10 +182,10 @@ def _sea_task_seq(doc) -> int:
 
 
 def is_container_update_task(doc) -> bool:
-	return (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and _sea_task_seq(doc) in CONTAINER_UPDATE_TASK_SEQS
-	)
+	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+		return False
+	seq = _sea_task_seq(doc)
+	return seq in CONTAINER_UPDATE_TASK_SEQS or seq in _shipping_line_application_seqs()
 
 
 def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
@@ -178,7 +201,14 @@ def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
 	empty_seq = get_container_task_sequence("custom_empty_return_task_seq")
 	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
 
-	if seq == book_seq:
+	if seq in _shipping_line_application_seqs():
+		if cint(row.get("has_deposit")) != cint(tracker.get("has_deposit")):
+			row.has_deposit = cint(tracker.get("has_deposit"))
+			changed = True
+		if not row.get("deposit_amount") and tracker.get("deposit_amount"):
+			row.deposit_amount = tracker.get("deposit_amount")
+			changed = True
+	elif seq == book_seq:
 		for field in TRANSPORT_TRACKER_FIELDS:
 			if not row.get(field) and tracker.get(field):
 				row.set(field, tracker.get(field))
@@ -256,7 +286,14 @@ def seed_container_update_rows(doc) -> bool:
 			"cargo_type": tracker.cargo_type,
 			"current_status": tracker.status,
 		}
-		if seq == book_seq:
+		if seq in _shipping_line_application_seqs():
+			row_data.update(
+				{
+					"has_deposit": cint(tracker.get("has_deposit")),
+					"deposit_amount": tracker.get("deposit_amount") or 0,
+				}
+			)
+		elif seq == book_seq:
 			row_data.update(
 				{
 					"truck_number": tracker.truck_number or "",
@@ -290,6 +327,7 @@ def apply_container_updates_from_task(doc) -> None:
 	if not field_pairs:
 		return
 
+	check_fields = {"has_deposit"}
 	for row in doc.get(TASK_CONTAINER_UPDATES_FIELD) or []:
 		tracker_name = row.get("container_tracker")
 		if not tracker_name or not frappe.db.exists("Container Tracker", tracker_name):
@@ -298,8 +336,16 @@ def apply_container_updates_from_task(doc) -> None:
 		updates: dict[str, Any] = {}
 		for task_field, tracker_field in field_pairs:
 			val = row.get(task_field)
+			if task_field in check_fields:
+				updates[tracker_field] = cint(val)
+				continue
 			if val is not None and val != "":
 				updates[tracker_field] = val
+
+		if seq in _shipping_line_application_seqs():
+			if not cint(row.get("has_deposit")):
+				updates["has_deposit"] = 0
+				updates["deposit_amount"] = 0
 
 		if not updates:
 			continue
@@ -314,6 +360,52 @@ def apply_container_updates_from_task(doc) -> None:
 		for field, value in updates.items():
 			ct.set(field, value)
 		ct.save(ignore_permissions=True)
+
+
+def validate_shipping_line_deposit_declarations(doc) -> None:
+	"""Every container must be listed; Has Deposit + amount confirmed on SL invoice task."""
+	if not is_shipping_line_deposit_task(doc):
+		return
+	if not doc.get("project"):
+		return
+	if not frappe.db.exists("Container Tracker", {"project": doc.project}):
+		return
+
+	seed_container_update_rows(doc)
+	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
+		return
+
+	rows = doc.get(TASK_CONTAINER_UPDATES_FIELD) or []
+	by_tracker = {
+		row.container_tracker: row for row in rows if row.get("container_tracker")
+	}
+	trackers = frappe.get_all(
+		"Container Tracker",
+		filters={"project": doc.project},
+		fields=["name", "container_number"],
+		order_by="container_number asc",
+	)
+	missing = [
+		t.container_number or t.name for t in trackers if t.name not in by_tracker
+	]
+	if missing:
+		frappe.throw(
+			_(
+				"Confirm deposit for every container on <b>Container Updates</b>. "
+				"Missing: {0}"
+			).format(", ".join(missing))
+		)
+
+	amount_missing = []
+	for row in rows:
+		if cint(row.get("has_deposit")) and not flt(row.get("deposit_amount")):
+			amount_missing.append(row.container_number or row.container_tracker)
+	if amount_missing:
+		frappe.throw(
+			_(
+				"Enter <b>Deposit Amount</b> for containers marked Has Deposit: {0}"
+			).format(", ".join(amount_missing))
+		)
 
 
 def sync_tracker_fields_to_open_task_rows(tracker) -> None:

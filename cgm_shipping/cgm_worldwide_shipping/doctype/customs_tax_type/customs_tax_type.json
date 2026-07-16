@@ -7,16 +7,12 @@
  "engine": "InnoDB",
  "field_order": [
   "tax_name",
-  "calculation_type",
   "section_calculation_config",
   "allowed_calculation_modes",
   "default_calculation_mode",
-  "column_break_behavior",
-  "is_stacking",
-  "is_excise",
-  "affects_import_duty",
-  "feeds_running_base",
-  "per_unit_skips_running_base"
+  "section_percentage_base",
+  "percentage_base",
+  "include_in_subsequent_tax_base"
  ],
  "fields": [
   {
@@ -28,74 +24,54 @@
    "unique": 1
   },
   {
-   "fieldname": "calculation_type",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Calculation Type",
-   "options": "Percentage\nFixed Amount\nPer Weight",
+   "fieldname": "section_calculation_config",
+   "fieldtype": "Section Break",
+   "label": "Calculation Modes"
+  },
+  {
+   "description": "Modes that may be selected on a Quotation for this tax.",
+   "fieldname": "allowed_calculation_modes",
+   "fieldtype": "Table MultiSelect",
+   "label": "Allowed Calculation Modes",
+   "options": "Customs Tax Allowed Mode",
    "reqd": 1
   },
   {
-   "fieldname": "section_calculation_config",
-   "fieldtype": "Section Break",
-   "label": "Calculation Configuration"
-  },
-  {
-   "description": "One mode per line: Percentage, Per Unit, Fixed Amount",
-   "fieldname": "allowed_calculation_modes",
-   "fieldtype": "Small Text",
-   "label": "Allowed Calculation Modes"
-  },
-  {
+   "description": "Used when a Quotation row does not yet have a Calculation Mode set.",
    "fieldname": "default_calculation_mode",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Default Calculation Mode",
-   "options": "Percentage\nPer Unit\nFixed Amount"
+   "options": "Customs Calculation Mode",
+   "reqd": 1
   },
   {
-   "fieldname": "column_break_behavior",
-   "fieldtype": "Column Break"
+   "fieldname": "section_percentage_base",
+   "fieldtype": "Section Break",
+   "label": "Percentage Calculation"
   },
   {
-   "default": "0",
-   "description": "Tax amount stacks on the running cumulative base (e.g. VAT).",
-   "fieldname": "is_stacking",
-   "fieldtype": "Check",
-   "label": "Is Stacking"
-  },
-  {
-   "default": "0",
-   "description": "Tax is calculated on customs value plus import duty (e.g. Excise).",
-   "fieldname": "is_excise",
-   "fieldtype": "Check",
-   "label": "Is Excise"
-  },
-  {
-   "default": "1",
-   "description": "Percentage-mode amounts count toward the import-duty pool used by Excise.",
-   "fieldname": "affects_import_duty",
-   "fieldtype": "Check",
-   "label": "Affects Import Duty"
+   "default": "Customs Value",
+   "description": "When Calculation Mode is Percentage, the rate applies to this base. Customs Value uses the shipment customs value only. Running Tax Base uses the customs value plus earlier taxes that are included in subsequent bases. Tax row order on the Quotation matters.",
+   "fieldname": "percentage_base",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Percentage Base",
+   "options": "Customs Value\nRunning Tax Base",
+   "reqd": 1
   },
   {
    "default": "1",
-   "description": "Tax amount is added to the running base for subsequent stacking taxes.",
-   "fieldname": "feeds_running_base",
+   "description": "When enabled, this tax amount is added to the Running Tax Base used by later percentage-based taxes.",
+   "fieldname": "include_in_subsequent_tax_base",
    "fieldtype": "Check",
-   "label": "Feeds Running Base"
-  },
-  {
-   "default": "0",
-   "description": "Per Unit mode does not feed running base or import duty (e.g. MSS Levy per weight).",
-   "fieldname": "per_unit_skips_running_base",
-   "fieldtype": "Check",
-   "label": "Per Unit Skips Running Base"
+   "label": "Include this tax when calculating subsequent percentage-based taxes"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-15 10:00:00.000000",
+ "modified": "2026-07-12 04:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Customs Tax Type",

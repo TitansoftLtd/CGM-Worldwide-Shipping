@@ -125,6 +125,7 @@ def calculate_rule_amount(
 	quotation_currency: str,
 	company_currency: str,
 	conversion_rate: float,
+	transaction_date: str | None = None,
 ) -> float:
 	"""Return the rule amount in quotation currency."""
 	calculation_type = rule["calculation_type"]
@@ -134,13 +135,57 @@ def calculate_rule_amount(
 		rule_currency = rule["currency"]
 		exchange_rate = flt(conversion_rate)
 
+		if rule.get("fx_to_quotation") is not None:
+			return flt(fixed_rate * flt(rule["fx_to_quotation"]))
+
 		if rule_currency == quotation_currency:
 			return fixed_rate
 		if rule_currency == company_currency:
 			return flt(fixed_rate / exchange_rate) if exchange_rate else 0.0
-		return 0.0
+
+		fx = _exchange_rate(rule_currency, quotation_currency, transaction_date)
+		return flt(fixed_rate * fx) if fx else 0.0
 
 	return (flt(rule["percentage_rate"]) / 100) * flt(custom_value)
+
+
+def _exchange_rate(
+	from_currency: str | None,
+	to_currency: str | None,
+	transaction_date: str | None = None,
+) -> float:
+	from_currency = (from_currency or "").strip()
+	to_currency = (to_currency or "").strip()
+	if not from_currency or not to_currency:
+		return 0.0
+	if from_currency == to_currency:
+		return 1.0
+	try:
+		from erpnext.setup.utils import get_exchange_rate
+
+		return flt(get_exchange_rate(from_currency, to_currency, transaction_date))
+	except Exception:
+		return 0.0
+
+
+def _attach_fx_to_rules(
+	rules: dict[str, list[dict[str, Any]]],
+	*,
+	quotation_currency: str | None,
+	company: str | None,
+	transaction_date: str | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+	"""Attach rule→quotation FX so clients can convert Fixed rates correctly."""
+	quotation_currency = (quotation_currency or "").strip()
+	if not quotation_currency:
+		return rules
+
+	for item_rules in rules.values():
+		for rule in item_rules:
+			rule["fx_to_quotation"] = _exchange_rate(
+				rule.get("currency"), quotation_currency, transaction_date
+			)
+	return rules
 
 
 def calculate_item_pricing_for_item(
@@ -150,17 +195,20 @@ def calculate_item_pricing_for_item(
 	quotation_currency: str,
 	company_currency: str,
 	conversion_rate: float,
+	transaction_date: str | None = None,
 ) -> tuple[dict[str, Any] | None, float]:
 	"""
 	Evaluate every rule for one item and return the winning audit row plus the final rate.
 
 	The winning rate is the highest calculated amount in quotation currency.
+	When every rule evaluates to zero (e.g. no customs value yet), the first rule is
+	still returned so the Item Pricing table shows that the item is rule-driven.
 	"""
 	if not rules:
 		return None, 0.0
 
 	winning_rule = None
-	winning_amount = 0.0
+	winning_amount: float | None = None
 
 	for rule in rules:
 		amount = calculate_rule_amount(
@@ -169,21 +217,27 @@ def calculate_item_pricing_for_item(
 			quotation_currency=quotation_currency,
 			company_currency=company_currency,
 			conversion_rate=conversion_rate,
+			transaction_date=transaction_date,
 		)
-		if amount > winning_amount:
+		if winning_amount is None or amount > winning_amount:
 			winning_amount = amount
 			winning_rule = rule
 
 	if not winning_rule:
 		return None, 0.0
 
+	winning_amount = flt(winning_amount)
 	calculation_type = winning_rule["calculation_type"]
 	audit_row = {
 		"rule_type": _rule_type_label(calculation_type),
 		"percentage_rate": flt(winning_rule["percentage_rate"]),
 		"fixed_rate": flt(winning_rule["fixed_rate"]),
 		"rule_currency": winning_rule["currency"],
-		"exchange_rate_used": flt(conversion_rate),
+		"exchange_rate_used": flt(
+			winning_rule.get("fx_to_quotation")
+			if winning_rule.get("fx_to_quotation") is not None
+			else conversion_rate
+		),
 		"calculated_amount": winning_amount,
 		"final_applied_rate": winning_amount,
 	}
@@ -205,11 +259,18 @@ def calculate_quotation_item_pricing(
 	company = _get_value(doc, "company")
 	company_currency = get_company_currency(company)
 	conversion_rate = flt(_get_value(doc, "conversion_rate"))
+	transaction_date = _get_value(doc, "transaction_date") or _get_value(doc, "posting_date")
 
 	items = _get_value(doc, "items") or []
 	if rules is None:
 		item_codes = [_get_value(item, "item_code") for item in items if _get_value(item, "item_code")]
 		rules = get_item_pricing_rules_for_items(item_codes)
+		rules = _attach_fx_to_rules(
+			rules,
+			quotation_currency=quotation_currency,
+			company=company,
+			transaction_date=transaction_date,
+		)
 
 	pricing_rows: list[dict[str, Any]] = []
 	item_updates: list[dict[str, Any]] = []
@@ -229,6 +290,7 @@ def calculate_quotation_item_pricing(
 			quotation_currency=quotation_currency,
 			company_currency=company_currency,
 			conversion_rate=conversion_rate,
+			transaction_date=transaction_date,
 		)
 		if not audit_row:
 			continue
@@ -264,11 +326,22 @@ def apply_item_pricing_to_document(doc, result: dict[str, list[dict[str, Any]]])
 
 
 @frappe.whitelist()
-def get_item_pricing_rules(item_codes) -> dict[str, list[dict[str, Any]]]:
+def get_item_pricing_rules(
+	item_codes,
+	quotation_currency: str | None = None,
+	company: str | None = None,
+	transaction_date: str | None = None,
+) -> dict[str, list[dict[str, Any]]]:
 	"""Return all pricing rules for the given item codes (batch, single query)."""
 	if isinstance(item_codes, str):
 		item_codes = json.loads(item_codes)
-	return get_item_pricing_rules_for_items(item_codes)
+	rules = get_item_pricing_rules_for_items(item_codes)
+	return _attach_fx_to_rules(
+		rules,
+		quotation_currency=quotation_currency,
+		company=company,
+		transaction_date=transaction_date,
+	)
 
 
 @frappe.whitelist()

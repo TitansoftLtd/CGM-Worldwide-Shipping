@@ -1,0 +1,139 @@
+/* Operational Updates — native Frappe list spacing + typography (Desk + portal) */
+
+.cgm-updates-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--margin-sm, 0.5rem);
+}
+
+.cgm-updates-list .list-row-container {
+	border: 1px solid var(--border-color, var(--cp-border, #e5e7eb));
+	border-radius: var(--border-radius-md, var(--border-radius, 8px));
+	background: var(--fg-color, var(--card-bg, var(--cp-surface, #fff)));
+	padding: var(--padding-md, 1rem);
+}
+
+.cgm-updates-list .list-row-container.is-unread {
+	background-color: var(--highlight-color, #fffce7);
+}
+
+.cgm-updates-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--margin-sm, 0.5rem);
+	margin-bottom: var(--margin-sm, 0.5rem);
+}
+
+.cgm-updates-badges {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--margin-xs, 0.25rem);
+	min-width: 0;
+}
+
+/* Portal-safe badge colors when desk indicator tokens are missing */
+.cgm-updates-list .indicator-pill.red {
+	background: var(--bg-red, var(--cp-red-soft, #fee2e2));
+	color: var(--text-on-red, var(--cp-red, #dc2626));
+}
+
+.cgm-updates-list .indicator-pill.orange {
+	background: var(--bg-orange, var(--cp-amber-soft, #fef3c7));
+	color: var(--text-on-orange, var(--cp-amber, #d97706));
+}
+
+.cgm-updates-list .indicator-pill.blue {
+	background: var(--bg-blue, var(--cp-blue-soft, #dbeafe));
+	color: var(--text-on-blue, var(--cp-blue, #2563eb));
+}
+
+.cgm-updates-list .indicator-pill.gray,
+.cgm-updates-list .indicator-pill.grey {
+	background: var(--bg-gray, var(--cp-surface-alt, #f8fafc));
+	color: var(--text-on-gray, var(--cp-text-muted, #64748b));
+}
+
+.cgm-updates-list .indicator-pill.cyan {
+	background: var(--bg-cyan, var(--cp-teal-soft, #ccfbf1));
+	color: var(--text-on-cyan, var(--cp-teal, #0d9488));
+}
+
+.cgm-updates-list .indicator-pill.yellow {
+	background: var(--bg-yellow, #fef9c3);
+	color: var(--text-on-yellow, #a16207);
+}
+
+.cgm-updates-list .cgm-upd-subject {
+	font-weight: var(--weight-semibold, 600);
+	height: auto;
+	min-height: 20px;
+	line-height: 1.2;
+	white-space: nowrap;
+}
+
+.cgm-updates-list .cgm-upd-source {
+	font-size: var(--text-xs, 0.75rem);
+	font-weight: var(--weight-semibold, 600);
+	letter-spacing: 0.03em;
+}
+
+.cgm-updates-when {
+	flex-shrink: 0;
+	white-space: nowrap;
+	color: var(--text-muted, var(--cp-text-muted, #64748b));
+}
+
+.cgm-updates-body {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-end;
+	gap: var(--margin-md, 1rem);
+}
+
+.cgm-updates-list .list-row-left {
+	flex: 1;
+	min-width: 0;
+}
+
+.cgm-updates-list .list-row-right {
+	flex-shrink: 0;
+	display: flex;
+	align-items: flex-end;
+}
+
+.cgm-updates-meta {
+	margin-bottom: var(--margin-sm, 0.5rem);
+}
+
+.cgm-updates-meta-line {
+	font-size: var(--text-sm, 0.875rem);
+	line-height: 1.5;
+	margin-bottom: var(--margin-xs, 0.25rem);
+}
+
+.cgm-updates-meta-line:last-child {
+	margin-bottom: 0;
+}
+
+.cgm-updates-meta-label {
+	color: var(--text-color, var(--cp-text, #0f172a));
+	font-weight: var(--weight-bold, 700);
+}
+
+.cgm-updates-meta-value {
+	color: var(--text-color, var(--cp-text, #0f172a));
+	font-weight: var(--weight-medium, 500);
+}
+
+.cgm-updates-preview {
+	margin-top: var(--margin-sm, 0.5rem);
+	color: var(--text-color, var(--cp-text, #0f172a));
+	font-size: var(--text-sm, 0.875rem);
+	line-height: 1.5;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+}
