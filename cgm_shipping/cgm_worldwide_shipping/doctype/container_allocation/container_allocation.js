@@ -32,10 +32,16 @@ function populate_containers_from_project(frm, replace = false) {
 			const child = frm.add_child("containers");
 			child.container_tracker = row.container_tracker;
 			child.container_number = row.container_number;
-			child.cargo_type = row.cargo_type;
+			child.cargo_size = row.cargo_size || row.cargo_type;
 			child.assignment_status = row.assignment_status || "Pending";
 		});
 		frm.refresh_field("containers");
+		if (
+			replace
+			|| !cint(frm.doc.trucks_booked)
+		) {
+			frm.set_value("trucks_booked", (frm.doc.containers || []).length);
+		}
 	};
 
 	frappe.call({
@@ -90,4 +96,65 @@ frappe.ui.form.on("Container Allocation", {
 
 		populate(true);
 	},
+
+	refresh(frm) {
+		render_allocation_truck_updates(frm);
+	},
 });
+
+function render_allocation_truck_updates(frm) {
+	const field = frm.get_field("transporter_updates_html");
+	if (!field || !field.$wrapper) {
+		return;
+	}
+
+	if (frm.doc.docstatus !== 1 || !frm.doc.name) {
+		field.$wrapper.html(
+			`<div class="text-muted">${__("Submit the allocation to see updates.")}</div>`
+		);
+		return;
+	}
+
+	field.$wrapper.html(`<div class="text-muted">${__("Loading updates…")}</div>`);
+
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates.get_allocation_truck_updates",
+		args: { allocation_name: frm.doc.name },
+		callback(r) {
+			if (r.exc) {
+				field.$wrapper.html(
+					`<div class="text-danger">${__("Could not load updates.")}</div>`
+				);
+				return;
+			}
+			field.$wrapper.html(build_allocation_updates_html(frm, r.message || []));
+			if (window.cgm && cgm.updates) {
+				cgm.updates.bindListClicks(field.$wrapper);
+			}
+		},
+	});
+}
+
+function build_allocation_updates_html(frm, rows) {
+	const list_route = `/app/update?allocation=${encodeURIComponent(frm.doc.name)}`;
+	const header = `
+		<div class="flex justify-between align-items-center flex-wrap" style="gap: var(--margin-sm); margin-bottom: var(--margin-md);">
+			<div class="text-muted small">
+				${__("Updates linked to this allocation and its containers.")}
+			</div>
+			<a class="btn btn-xs btn-default" href="${list_route}">${__("Open full update log")}</a>
+		</div>`;
+
+	if (!rows.length) {
+		return `${header}<div class="text-muted" style="padding: var(--padding-md); border: 1px dashed var(--border-color); border-radius: var(--border-radius);">
+			${__("No updates yet. Transporter, customer, and internal updates appear here when linked to this allocation.")}
+		</div>`;
+	}
+
+	if (!(window.cgm && cgm.updates && cgm.updates.renderList)) {
+		return `${header}<div class="text-danger">${__("Updates UI failed to load. Refresh the page.")}</div>`;
+	}
+
+	return `${header}${cgm.updates.renderList(rows)}`;
+}

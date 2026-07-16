@@ -20,10 +20,14 @@ _SEED_BY_NAME = {row["tax_name"]: row for row in CUSTOMS_TAX_TYPES}
 
 
 def _ensure_tax_type_config() -> None:
-	"""Fill blank Customs Tax Type config so strict validation can run."""
+	"""Fill blank Customs Tax Type config so strict validation can run (legacy schema only)."""
 	if not frappe.db.exists("DocType", "Customs Tax Type"):
 		return
 	if not frappe.get_meta("Customs Tax Type").has_field("allowed_calculation_modes"):
+		return
+
+	df = frappe.get_meta("Customs Tax Type").get_field("allowed_calculation_modes")
+	if df and df.fieldtype == "Table MultiSelect":
 		return
 
 	for name, values in _SEED_BY_NAME.items():
@@ -34,6 +38,7 @@ def _ensure_tax_type_config() -> None:
 		)
 		if existing and str(existing).strip():
 			continue
+		meta = frappe.get_meta("Customs Tax Type")
 		update = {
 			key: values[key]
 			for key in (
@@ -45,9 +50,10 @@ def _ensure_tax_type_config() -> None:
 				"feeds_running_base",
 				"per_unit_skips_running_base",
 			)
-			if key in values
+			if key in values and meta.has_field(key) and isinstance(values[key], (str, int))
 		}
-		frappe.db.set_value("Customs Tax Type", name, update, update_modified=False)
+		if update:
+			frappe.db.set_value("Customs Tax Type", name, update, update_modified=False)
 
 	frappe.db.commit()
 
@@ -63,19 +69,39 @@ def _default_mode_for_backfill(tax_type: str) -> str:
 		except frappe.ValidationError:
 			pass
 
-		values = frappe.db.get_value(
-			"Customs Tax Type",
-			tax_type,
-			["allowed_calculation_modes", "default_calculation_mode"],
-			as_dict=True,
-		)
-		if values:
-			modes = parse_allowed_modes(values.get("allowed_calculation_modes"))
-			default_mode = (values.get("default_calculation_mode") or "").strip()
-			if modes and default_mode in modes:
-				return default_mode
-			if modes:
-				return modes[0]
+		meta = frappe.get_meta("Customs Tax Type")
+		if meta.has_field("allowed_calculation_modes"):
+			df = meta.get_field("allowed_calculation_modes")
+			if df and df.fieldtype == "Table MultiSelect":
+				modes = frappe.get_all(
+					"Customs Tax Allowed Mode",
+					filters={"parent": tax_type, "parenttype": "Customs Tax Type"},
+					pluck="calculation_mode",
+				)
+				default_mode = (
+					frappe.db.get_value(
+						"Customs Tax Type", tax_type, "default_calculation_mode"
+					)
+					or ""
+				).strip()
+				if modes and default_mode in modes:
+					return default_mode
+				if modes:
+					return modes[0]
+			else:
+				values = frappe.db.get_value(
+					"Customs Tax Type",
+					tax_type,
+					["allowed_calculation_modes", "default_calculation_mode"],
+					as_dict=True,
+				)
+				if values:
+					modes = parse_allowed_modes(values.get("allowed_calculation_modes"))
+					default_mode = (values.get("default_calculation_mode") or "").strip()
+					if modes and default_mode in modes:
+						return default_mode
+					if modes:
+						return modes[0]
 
 	seed = _SEED_BY_NAME.get(tax_type)
 	if seed:
@@ -93,7 +119,7 @@ def execute():
 	for row in frappe.get_all(
 		"Customs Tax Component",
 		fields=["name", "tax_type", "calculation_mode"],
-		filters={"parenttype": ["in", ["Quotation", "Sales Order"]]},
+		filters={"parenttype": ["in", ["Quotation"]]},
 	):
 		if row.calculation_mode:
 			continue

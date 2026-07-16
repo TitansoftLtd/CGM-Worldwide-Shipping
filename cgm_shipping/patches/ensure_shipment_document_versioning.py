@@ -1,4 +1,4 @@
-"""Add initial/final document versioning fields to Shipment Document child table."""
+"""Add draft/final document versioning fields to Shipment Document child table."""
 
 from __future__ import annotations
 

@@ -20,10 +20,10 @@ DEFAULT_SEA_IMPORT_TASK_TEMPLATE: list[dict[str, str]] = [
 		"department": "Documentation",
 	},
 	{"task_subject": "Request Manifest and Local Import Charges", "department": "Documentation"},
-	{"task_subject": "Create Entry (after vessel arrival confirmation)", "department": "Declaration"},
-	{"task_subject": "Finance Pays Entry Slip", "department": "Finance"},
 	{"task_subject": "Attach Shipping Line Invoice", "department": "Documentation"},
 	{"task_subject": "Finance pays Shipping Line Charges", "department": "Finance"},
+	{"task_subject": "Create Entry (after vessel arrival confirmation)", "department": "Declaration"},
+	{"task_subject": "Finance Pays Entry Slip", "department": "Finance"},
 	{"task_subject": "Lodge Delivery Order", "department": "Operations"},
 	{"task_subject": "Prepare Post-Clearance Permits", "department": "Declaration"},
 	{"task_subject": "Finance pays for Post-Clearance Permits", "department": "Finance"},
@@ -38,35 +38,34 @@ DEFAULT_SEA_IMPORT_TASK_TEMPLATE: list[dict[str, str]] = [
 	{"task_subject": "Receive interchange confirmation", "department": "Transport"},
 ]
 
-DEFAULT_DOCUMENT_CHECKPOINT_SEQS: frozenset[int] = frozenset({9})
-
 DEFAULT_DOC_CODES: dict[int, list[str]] = {
 	3: [],
 	4: [],
 	7: ["INSPECT"],
-	10: ["MANIFEST"],
+	8: [],
+	9: ["MANIFEST"],
+	10: [],
 	11: [],
-	12: [],
-	15: ["DO"],
-	18: ["FIELD", "DELIVERY_NOTE"],
+	14: ["DO"],
+	17: ["FIELD", "DELIVERY_NOTE"],
 }
 
-DEFAULT_PERMIT_APPLICATION_SEQS: frozenset[int] = frozenset({5, 16})
-DEFAULT_LIGHT_PROOF_SEQS: frozenset[int] = frozenset({21, 22, 23, 24, 25, 26})
-DEFAULT_PERMIT_STAGES: dict[int, str] = {5: "Pre-clearance", 16: "Post-clearance"}
+DEFAULT_PERMIT_APPLICATION_SEQS: frozenset[int] = frozenset({5, 15})
+DEFAULT_LIGHT_PROOF_SEQS: frozenset[int] = frozenset({20, 21, 22, 23, 24, 25})
+DEFAULT_PERMIT_STAGES: dict[int, str] = {5: "Pre-clearance", 15: "Post-clearance"}
 DEFAULT_AUTO_COMPLETE_SEQS: frozenset[int] = frozenset({1, 2})
 DEFAULT_UCR_APPLICATION_SEQS: frozenset[int] = frozenset({3})
-DEFAULT_ENTRY_APPLICATION_SEQS: frozenset[int] = frozenset({11})
-DEFAULT_SHIPPING_LINE_APPLICATION_SEQS: frozenset[int] = frozenset({13})
-DEFAULT_KPA_APPLICATION_SEQS: frozenset[int] = frozenset({19})
-DEFAULT_FINANCE_PAYMENT_SEQS: frozenset[int] = frozenset({4, 6, 12, 14, 17, 20})
+DEFAULT_ENTRY_APPLICATION_SEQS: frozenset[int] = frozenset({12})
+DEFAULT_SHIPPING_LINE_APPLICATION_SEQS: frozenset[int] = frozenset({10})
+DEFAULT_KPA_APPLICATION_SEQS: frozenset[int] = frozenset({18})
+DEFAULT_FINANCE_PAYMENT_SEQS: frozenset[int] = frozenset({4, 6, 11, 13, 16, 19})
 DEFAULT_FINANCE_KIND_BY_SEQ: dict[int, str] = {
 	4: "UCR",
 	6: "Permit",
-	12: "Entry Slip",
-	14: "Shipping Line",
-	17: "Permit",
-	20: "KPA",
+	11: "Shipping Line",
+	13: "Entry Slip",
+	16: "Permit",
+	19: "KPA",
 }
 
 DEFAULT_SEA_WORKFLOW_TASK_GATES: list[dict] = [
@@ -76,18 +75,20 @@ DEFAULT_SEA_WORKFLOW_TASK_GATES: list[dict] = [
 	{"shipment_workflow_state": "Pre-clearance", "min_completed_task_seq": 5, "gate_rule": "Permit Invoices Submitted"},
 	{"shipment_workflow_state": "Client Inspection", "min_completed_task_seq": 7, "gate_rule": "Standard"},
 	{"shipment_workflow_state": "In Transit", "min_completed_task_seq": 8, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Final Docs Received", "min_completed_task_seq": 9, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Manifest Requested", "min_completed_task_seq": 10, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Entry Lodged", "min_completed_task_seq": 11, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Entry Paid", "min_completed_task_seq": 12, "gate_rule": "Entry Finance Complete"},
-	{"shipment_workflow_state": "Line Paid & DO Lodged", "min_completed_task_seq": 15, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Post-clearance", "min_completed_task_seq": 16, "gate_rule": "Permit Invoices Submitted"},
-	{"shipment_workflow_state": "Field Clearance", "min_completed_task_seq": 18, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "KPA Paid", "min_completed_task_seq": 20, "gate_rule": "KPA Finance Complete"},
-	{"shipment_workflow_state": "In Delivery", "min_completed_task_seq": 20, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Containers Returned", "min_completed_task_seq": 25, "gate_rule": "Standard"},
-	{"shipment_workflow_state": "Completed", "min_completed_task_seq": 26, "gate_rule": "All Sea Tasks Complete"},
+	{"shipment_workflow_state": "Final Docs Received", "min_completed_task_seq": 8, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "Manifest Requested", "min_completed_task_seq": 9, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "Line Paid & DO Lodged", "min_completed_task_seq": 14, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "Entry Lodged", "min_completed_task_seq": 12, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "Entry Paid", "min_completed_task_seq": 13, "gate_rule": "Entry Finance Complete"},
+	{"shipment_workflow_state": "Post-clearance", "min_completed_task_seq": 15, "gate_rule": "Permit Invoices Submitted"},
+	{"shipment_workflow_state": "Field Clearance", "min_completed_task_seq": 17, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "KPA Paid", "min_completed_task_seq": 19, "gate_rule": "KPA Finance Complete"},
+	{"shipment_workflow_state": "In Delivery", "min_completed_task_seq": 19, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "Containers Returned", "min_completed_task_seq": 24, "gate_rule": "Standard"},
+	{"shipment_workflow_state": "Completed", "min_completed_task_seq": 25, "gate_rule": "All Sea Tasks Complete"},
 ]
+
+DEFAULT_DOCUMENT_CHECKPOINT_SEQS: frozenset[int] = frozenset({8})
 
 
 def build_requirement_seed_rows() -> list[dict]:

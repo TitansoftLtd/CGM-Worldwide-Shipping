@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
 	ALLOCATION_STATUS_ACKNOWLEDGED,
@@ -23,6 +24,13 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation imp
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	compute_container_metrics,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+	TRANSPORTER_SUBJECTS,
+	get_my_updates_for_allocation,
+	get_updates_for_allocation_item,
+	post_truck_update,
+	render_updates_list_html,
 )
 
 
@@ -142,6 +150,7 @@ def _summarize_allocation_row(row: dict) -> dict:
 		"status": row.status,
 		"is_completed": is_completed,
 		"container_total": counts["total"],
+		"trucks_booked": cint(row.get("trucks_booked")) or counts["total"],
 		"pending_count": counts.get(ASSIGNMENT_PENDING, 0),
 		"truck_assigned_count": counts.get(ASSIGNMENT_TRUCK, 0),
 		"interchange_count": counts.get(ASSIGNMENT_INTERCHANGE, 0),
@@ -165,6 +174,7 @@ def _list_allocations_for_statuses(transporter: str, statuses: tuple[str, ...]) 
 			"bill_of_lading",
 			"allocation_date",
 			"status",
+			"trucks_booked",
 		],
 		order_by="allocation_date desc, modified desc",
 		ignore_permissions=True,
@@ -266,12 +276,16 @@ def get_allocation_detail(allocation_name: str) -> dict:
 			driver_contact = (tracker_data.get("driver_contact") or "").strip()
 		assignment_status = row.assignment_status or ASSIGNMENT_PENDING
 
+		truck_updates = get_updates_for_allocation_item(
+			row.name,
+			container_tracker=row.container_tracker,
+		)
 		containers.append(
 			{
 				"name": row.name,
 				"container_tracker": row.container_tracker,
 				"container_number": row.container_number or tracker_data.get("container_number"),
-				"cargo_type": row.cargo_type or tracker_data.get("cargo_type"),
+				"cargo_size": row.cargo_size or row.cargo_type or tracker_data.get("cargo_size") or tracker_data.get("cargo_type"),
 				"truck_number": truck_number,
 				"driver_name": driver_name,
 				"driver_contact": driver_contact,
@@ -283,8 +297,19 @@ def get_allocation_detail(allocation_name: str) -> dict:
 				"tracker_alert": tracker_data.get("alert_status") or "",
 				"interchange_document": interchange_url,
 				"interchange_date": interchange_date_val,
+				"truck_updates": truck_updates,
 			}
 		)
+
+	my_updates = get_my_updates_for_allocation(allocation.name, limit=100)
+	container_options = [
+		{
+			"value": c["name"],
+			"label": c.get("container_number") or c["name"],
+			"container_number": c.get("container_number") or c["name"],
+		}
+		for c in containers
+	]
 
 	return {
 		"name": allocation.name,
@@ -294,7 +319,16 @@ def get_allocation_detail(allocation_name: str) -> dict:
 		"allocation_date": allocation.allocation_date,
 		"status": allocation.status,
 		"is_completed": allocation.status == ALLOCATION_STATUS_COMPLETED,
+		"trucks_booked": cint(allocation.get("trucks_booked")) or len(containers),
+		"container_total": len(containers),
 		"containers": containers,
+		"my_updates": my_updates,
+		"my_updates_html": render_updates_list_html(my_updates, show_source=False),
+		"my_updates_json": frappe.as_json(my_updates),
+		"container_options": container_options,
+		"container_options_json": frappe.as_json(container_options),
+		"update_types": list(TRANSPORTER_SUBJECTS),
+		"update_types_json": frappe.as_json(list(TRANSPORTER_SUBJECTS)),
 	}
 
 
@@ -394,6 +428,37 @@ def upload_interchange(
 		item_name,
 		interchange_document,
 		interchange_date,
+	)
+
+
+@frappe.whitelist()
+def post_truck_update_portal(
+	allocation_name: str,
+	item_name: str,
+	update_type: str = "",
+	message: str = "",
+	event_date: str | None = None,
+	attachment: str = "",
+	truck_number: str = "",
+	driver_name: str = "",
+	driver_contact: str = "",
+	subject: str = "",
+) -> dict:
+	"""Post a structured truck status update for one container."""
+	transporter = require_transporter_portal_access()
+	_get_allocation_for_transporter(allocation_name, transporter)
+	return post_truck_update(
+		allocation_name,
+		item_name,
+		update_type or subject,
+		message=message,
+		event_date=event_date,
+		attachment=attachment,
+		truck_number=truck_number,
+		driver_name=driver_name,
+		driver_contact=driver_contact,
+		subject=subject or update_type,
+		transporter=transporter,
 	)
 
 

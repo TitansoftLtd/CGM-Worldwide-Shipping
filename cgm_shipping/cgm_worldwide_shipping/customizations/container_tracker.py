@@ -6,7 +6,7 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, today
+from frappe.utils import cint, flt, getdate, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	BULK_CONTAINER_TASK_SEQ_FIELDS,
@@ -21,7 +21,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_STATUS_RETURN_OVERDUE,
 	CONTAINER_STATUS_VESSEL_BERTHED,
 	CONTAINER_TASK_SEQ_DEFAULTS,
+	DEPOSIT_PAYMENT_STATUSES,
 	DEPOSIT_REFUND_STATUSES,
+	SEA_TASK_FLOW_KEY,
 	TASK_CONTAINER_NUMBER_FIELD,
 	TASK_CONTAINER_TRACKER_FIELD,
 	TASK_CARGO_TYPE_FIELD,
@@ -33,6 +35,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates impo
 from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 	build_project_ata_updates,
 	get_project_ata,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	container_row_cargo_size,
+	tracker_cargo_size_field,
+	tracker_row_cargo_size,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
@@ -48,12 +55,70 @@ def get_container_task_sequence(fieldname: str) -> int:
 	if default is None:
 		frappe.throw(f"Unknown container task sequence field: {fieldname}")
 	if frappe.db.exists("DocType", "CGM Shipping Settings"):
-		meta = frappe.get_meta("CGM Shipping Settings")
-		if meta.has_field(fieldname):
-			val = frappe.db.get_single_value("CGM Shipping Settings", fieldname)
-			if val:
-				return int(val)
+		settings = frappe.get_single("CGM Shipping Settings")
+		if settings.meta.has_field(fieldname):
+			configured = cint(settings.get(fieldname) or 0)
+			if configured:
+				return configured
 	return default
+
+
+def project_shipping_line_finance_paid(project: str | None) -> bool:
+	"""True when the project's Shipping Line finance task is completed."""
+	if not project:
+		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		shipping_line_finance_payment_sequences,
+	)
+
+	finance_seqs = shipping_line_finance_payment_sequences()
+	if not finance_seqs:
+		return False
+	return bool(
+		frappe.db.exists(
+			"Task",
+			{
+				"project": project,
+				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+				"custom_sequence_no": ("in", list(finance_seqs)),
+				"status": "Completed",
+			},
+		)
+	)
+
+
+def refresh_deposit_payment_status(ct) -> None:
+	"""Derive deposit_payment_status from has_deposit + SL finance payment."""
+	if not ct.meta.has_field("deposit_payment_status"):
+		return
+	has_deposit = cint(ct.get("has_deposit")) if ct.meta.has_field("has_deposit") else 0
+	if not has_deposit:
+		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[0]  # Not Applicable
+		return
+	if project_shipping_line_finance_paid(ct.get("project")):
+		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[2]  # Paid
+	else:
+		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[1]  # Unpaid
+
+
+def sync_project_deposit_payment_statuses(project: str | None) -> int:
+	"""Recompute deposit_payment_status on all trackers for a project. Returns updated count."""
+	if not project or not frappe.db.exists("DocType", "Container Tracker"):
+		return 0
+	meta = frappe.get_meta("Container Tracker")
+	if not meta.has_field("deposit_payment_status"):
+		return 0
+	updated = 0
+	for name in frappe.get_all(
+		"Container Tracker", filters={"project": project}, pluck="name"
+	):
+		ct = frappe.get_doc("Container Tracker", name)
+		before = ct.get("deposit_payment_status")
+		refresh_deposit_payment_status(ct)
+		if ct.get("deposit_payment_status") != before:
+			ct.db_set("deposit_payment_status", ct.deposit_payment_status, update_modified=False)
+			updated += 1
+	return updated
 
 
 def get_gate_out_task_sequence() -> int:
@@ -424,30 +489,32 @@ def _derive_container_mode(project) -> str:
 def find_tracker_by_identity(
 	project_name: str,
 	container_number: str,
-	cargo_type: str | None = None,
+	cargo_size: str | None = None,
 ) -> str | None:
 	if not project_name or not container_number:
 		return None
+	size_field = tracker_cargo_size_field()
 	filters: dict[str, Any] = {
 		"project": project_name,
 		"container_number": container_number,
 	}
-	if cargo_type:
-		filters["cargo_type"] = cargo_type
+	if cargo_size:
+		filters[size_field] = cargo_size
 	return frappe.db.get_value("Container Tracker", filters, "name")
 
 
 def _container_identity_filters(
 	project_name: str,
 	container_number: str,
-	cargo_type: str | None,
+	cargo_size: str | None,
 ) -> dict[str, Any]:
+	size_field = tracker_cargo_size_field()
 	filters: dict[str, Any] = {
 		"project": project_name,
 		"container_number": container_number,
 	}
-	if cargo_type:
-		filters["cargo_type"] = cargo_type
+	if cargo_size:
+		filters[size_field] = cargo_size
 	return filters
 
 
@@ -456,9 +523,11 @@ def resolve_single_tracker(
 	*,
 	container_tracker: str | None = None,
 	container_number: str | None = None,
+	cargo_size: str | None = None,
 	cargo_type: str | None = None,
 ) -> frappe.Document:
 	"""Resolve exactly one Container Tracker for a container-specific lifecycle event."""
+	cargo_size = cargo_size or cargo_type
 	if container_tracker:
 		if not frappe.db.exists("Container Tracker", container_tracker):
 			frappe.throw(
@@ -485,7 +554,7 @@ def resolve_single_tracker(
 		)
 
 	filters = _container_identity_filters(
-		project_name, container_number, cargo_type
+		project_name, container_number, cargo_size
 	)
 	names = frappe.get_all(
 		"Container Tracker",
@@ -501,12 +570,12 @@ def resolve_single_tracker(
 		frappe.throw(
 			_(
 				"Multiple Container Tracker records match container <b>{0}</b> on this project. "
-				"Set <b>Cargo Type</b> or link the exact <b>Container Tracker</b>."
+				"Set <b>Cargo Size</b> or link the exact <b>Container Tracker</b>."
 			).format(container_number),
 			ContainerEventResolutionError,
 		)
 
-	if not cargo_type:
+	if not cargo_size:
 		without_type = frappe.get_all(
 			"Container Tracker",
 			filters={"project": project_name, "container_number": container_number},
@@ -517,7 +586,7 @@ def resolve_single_tracker(
 			frappe.throw(
 				_(
 					"Container <b>{0}</b> appears more than once on this project. "
-					"Set <b>Cargo Type</b> or link the exact <b>Container Tracker</b>."
+					"Set <b>Cargo Size</b> or link the exact <b>Container Tracker</b>."
 				).format(container_number),
 				ContainerEventResolutionError,
 			)
@@ -550,7 +619,7 @@ def _resolve_tracker_from_row_link(project_name: str, row) -> frappe.Document | 
 		return None
 	if (
 		ct.container_number == row.container_number
-		and (ct.cargo_type or "") == (row.get("cargo_type") or "")
+		and tracker_row_cargo_size(ct) == container_row_cargo_size(row)
 	):
 		return ct
 	return None
@@ -569,12 +638,12 @@ def _link_bl_container_trackers(project) -> None:
 	for row in frappe.get_all(
 		"Container",
 		filters={"parent": bl_name, "parenttype": "Bill of Lading"},
-		fields=["name", "container_number", "cargo_type"],
+		fields=["name", "container_number", "cargo_size", "type_of_container"],
 	):
 		if not row.container_number:
 			continue
 		tracker_name = find_tracker_by_identity(
-			project.name, row.container_number, row.cargo_type
+			project.name, row.container_number, container_row_cargo_size(row)
 		)
 		if tracker_name and row.get("container_tracker") != tracker_name:
 			frappe.db.set_value(
@@ -587,9 +656,10 @@ def _link_bl_container_trackers(project) -> None:
 
 
 def _populate_tracker_from_project_and_row(ct, project, row, *, at_creation: bool = False) -> None:
+	size_field = tracker_cargo_size_field()
 	ct.project = project.name
 	ct.container_number = row.container_number
-	ct.cargo_type = row.get("cargo_type")
+	ct.set(size_field, container_row_cargo_size(row))
 	ct.seal_no = row.get("seal_no")
 	ct.bl_number = project.get("custom_bill_of_lading")
 	ct.shipping_line = project.get("custom_shipping_line")
@@ -618,11 +688,12 @@ def _default_kpa_free_end_from_settings(doc) -> None:
 
 
 def create_or_sync_tracker_for_row(project, row) -> str:
-	"""Create or reuse tracker by (project, container_number, cargo_type)."""
+	"""Create or reuse tracker by (project, container_number, cargo_size)."""
+	row_size = container_row_cargo_size(row)
 	existing_name = find_tracker_by_identity(
 		project.name,
 		row.container_number,
-		row.get("cargo_type"),
+		row_size,
 	)
 	if existing_name:
 		ct = frappe.get_doc("Container Tracker", existing_name)

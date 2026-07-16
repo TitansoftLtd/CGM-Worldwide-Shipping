@@ -11,7 +11,7 @@
   "container_number",
   "bl_number",
   "container_mode",
-  "type_of_container",
+  "cargo_size",
   "seal_no",
   "new_serial_number",
   "column_break_identity",
@@ -110,7 +110,9 @@
   "interchange_document",
   "column_break_empty",
   "days_outstanding",
+  "has_deposit",
   "deposit_amount",
+  "deposit_payment_status",
   "deposit_refund_status",
   "deposit_refund_applied_on"
  ],
@@ -209,7 +211,7 @@
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "discharging_date",
    "fieldtype": "Date",
-   "label": "Gate In Port / Discharge Date"
+   "label": "Gate In Mombasa"
   },
   {
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
@@ -225,7 +227,7 @@
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
-   "label": "Gate Out Port Date"
+   "label": "Gate Out Mombasa"
   },
   {
    "fieldname": "free_days_count_from",
@@ -243,12 +245,12 @@
   {
    "fieldname": "icd_gate_in_date",
    "fieldtype": "Date",
-   "label": "ICD Gate In Date"
+   "label": "Gate In ICD"
   },
   {
    "fieldname": "icd_gate_out_date",
    "fieldtype": "Date",
-   "label": "ICD Gate Out Date"
+   "label": "Gate Out ICD"
   },
   {
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
@@ -626,9 +628,31 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Confirmed on Attach Shipping Line Invoice. Leave unchecked when the container has no deposit.",
+   "fieldname": "has_deposit",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Has Deposit"
+  },
+  {
+   "depends_on": "has_deposit",
    "fieldname": "deposit_amount",
    "fieldtype": "Currency",
-   "label": "Deposit Amount"
+   "label": "Deposit Amount",
+   "mandatory_depends_on": "has_deposit"
+  },
+  {
+   "default": "Not Applicable",
+   "description": "Derived from Has Deposit + Shipping Line finance payment. Not edited manually.",
+   "fieldname": "deposit_payment_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Deposit Payment Status",
+   "options": "\nNot Applicable\nUnpaid\nPaid",
+   "read_only": 1
   },
   {
    "fieldname": "deposit_refund_status",
@@ -688,9 +712,10 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "Optional transfer/arrival date at Mombasa when distinct from Gate In Mombasa.",
    "fieldname": "get_in_mombasa",
    "fieldtype": "Date",
-   "label": "Get in Mombasa"
+   "label": "Mombasa Arrival (Transfer)"
   },
   {
    "description": "First chargeable day \u2014 the day after Shipping Line Free Day End Date",
@@ -709,10 +734,10 @@
    "label": "Get Out Mombasa"
   },
   {
-   "fieldname": "type_of_container",
+   "fieldname": "cargo_size",
    "fieldtype": "Link",
-   "label": "Type of Container",
-   "options": "Cargo Type"
+   "label": "Cargo Size",
+   "options": "Cargo Size"
   }
  ],
  "index_web_pages_for_search": 1,

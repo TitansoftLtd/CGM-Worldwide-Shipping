@@ -1,0 +1,246 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-07-13 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "update_source",
+  "subject",
+  "column_break_meta",
+  "posted_on",
+  "posted_by",
+  "is_read",
+  "section_links",
+  "project",
+  "customer",
+  "column_break_links",
+  "container_tracker",
+  "container_number",
+  "related_doctype",
+  "related_name",
+  "section_message",
+  "message",
+  "attachment",
+  "section_transporter",
+  "transporter",
+  "allocation",
+  "allocation_item",
+  "column_break_transport",
+  "event_date",
+  "truck_number",
+  "driver_name",
+  "driver_contact"
+ ],
+ "fields": [
+  {
+   "default": "Internal",
+   "fieldname": "update_source",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Update Source",
+   "options": "Transporter\nCustomer\nInternal\nCustoms\nFinance\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "subject",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Subject",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_meta",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "posted_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Posted On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "posted_by",
+   "fieldtype": "Link",
+   "label": "Posted By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_read",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Read",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_links",
+   "fieldtype": "Section Break",
+   "label": "Links"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project / Shipment",
+   "options": "Project"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "column_break_links",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "container_tracker",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Container Tracker",
+   "options": "Container Tracker"
+  },
+  {
+   "fieldname": "container_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Container Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "related_doctype",
+   "fieldtype": "Link",
+   "label": "Related Document Type",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "related_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Related Document",
+   "options": "related_doctype"
+  },
+  {
+   "fieldname": "section_message",
+   "fieldtype": "Section Break",
+   "label": "Message"
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Text",
+   "label": "Message"
+  },
+  {
+   "fieldname": "attachment",
+   "fieldtype": "Attach",
+   "label": "Attachment"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.update_source=='Transporter'",
+   "fieldname": "section_transporter",
+   "fieldtype": "Section Break",
+   "label": "Transporter Details"
+  },
+  {
+   "fieldname": "transporter",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Transporter",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "allocation",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Container Allocation",
+   "options": "Container Allocation"
+  },
+  {
+   "fieldname": "allocation_item",
+   "fieldtype": "Data",
+   "label": "Allocation Item"
+  },
+  {
+   "fieldname": "column_break_transport",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "event_date",
+   "fieldtype": "Date",
+   "label": "Event Date"
+  },
+  {
+   "depends_on": "eval:doc.subject=='Truck Changed'",
+   "fieldname": "truck_number",
+   "fieldtype": "Data",
+   "label": "Truck Number"
+  },
+  {
+   "depends_on": "eval:doc.subject=='Truck Changed'",
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "label": "Driver Name"
+  },
+  {
+   "depends_on": "eval:doc.subject=='Truck Changed'",
+   "fieldname": "driver_contact",
+   "fieldtype": "Data",
+   "label": "Driver Contact"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Update",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Operations Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Transport Officer",
+   "write": 1
+  }
+ ],
+ "sort_field": "posted_on",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "subject",
+ "track_changes": 1
+}

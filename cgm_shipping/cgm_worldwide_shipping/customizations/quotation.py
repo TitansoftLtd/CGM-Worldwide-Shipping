@@ -21,11 +21,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_calculation 
 	calculate_tax_amount,
 	get_tax_type_config,
 	get_uom_category,
-	import_duty_contribution,
 	is_volume_uom,
 	rate_label_for_mode,
 	resolve_company_currency,
-	should_feed_running_base,
+	should_include_in_subsequent_tax_base,
 	shipment_quantity,
 	validate_calculation_mode,
 )
@@ -50,6 +49,7 @@ IMPORT_COST_ROW_FIELDS = (
 CUSTOMS_TAX_ROW_FIELDS = (
 	"tax_type",
 	"calculation_mode",
+	"tax_base",
 	"rate",
 	"fixed_amount_kes",
 	"amount_kes",
@@ -158,10 +158,9 @@ class _CGMCustomsTaxMixin:
     # ── Customs Tax accumulation ──────────────────────────────────────────────
 
     def _sum_customs_taxes(self, customs_value_kes: float) -> float:
-        """Walk customs-tax rows in idx order and return total KES tax."""
+        """Walk customs-tax rows in idx order and return total tax in company currency."""
         shipment_qty = shipment_quantity(self)
-        running_base = customs_value_kes
-        import_duty_kes = 0.0
+        running_tax_base = customs_value_kes
         total_kes = 0.0
         seen: set[str] = set()
 
@@ -177,24 +176,24 @@ class _CGMCustomsTaxMixin:
             seen.add(tax_type)
 
             mode = validate_calculation_mode(row, tax_type)
+            if not (row.get("calculation_mode") or "").strip():
+                row.calculation_mode = mode
 
-            amount_kes = calculate_tax_amount(
+            result = calculate_tax_amount(
                 row,
                 tax_type,
-                customs_value_kes=customs_value_kes,
-                running_base=running_base,
-                import_duty_kes=import_duty_kes,
+                customs_value=customs_value_kes,
+                running_tax_base=running_tax_base,
                 shipment_qty=shipment_qty,
             )
-            amount_kes = self._money(amount_kes, "amount_kes", row)
-            duty_delta = import_duty_contribution(tax_type, mode, amount_kes)
+            amount_kes = self._money(result.amount, "amount_kes", row)
 
+            row.tax_base = flt(result.tax_base)
             row.amount_kes = amount_kes
             row.tax_amount_kes = amount_kes
 
-            if should_feed_running_base(tax_type, mode):
-                running_base += amount_kes
-                import_duty_kes += duty_delta
+            if should_include_in_subsequent_tax_base(tax_type):
+                running_tax_base += amount_kes
 
             total_kes += amount_kes
 
@@ -420,6 +419,7 @@ def get_customs_tax_type_info(
     tax_type: str,
     quotation_uom: str | None = None,
     company: str | None = None,
+    currency: str | None = None,
 ) -> dict:
     """
     Return calculation metadata for a Customs Tax Type.
@@ -429,27 +429,27 @@ def get_customs_tax_type_info(
         return {}
 
     config = get_tax_type_config(tax_type)
-    currency = resolve_company_currency(company=company)
+    company_currency = resolve_company_currency(company=company)
+    display_currency = (currency or "").strip() or company_currency
     default_rate = _get_default_rate_from_settings(tax_type)
     allowed_modes = list(config.allowed_modes)
     default_mode = config.default_mode
-    show_mode = len(allowed_modes) > 1
 
     return {
         "default_rate": default_rate,
         "allowed_modes": allowed_modes,
         "default_calculation_mode": default_mode,
-        "show_calculation_mode": show_mode,
-        "is_stacking": config.is_stacking,
-        "is_excise": config.is_excise,
-        "affects_import_duty": config.affects_import_duty,
-        "feeds_running_base": config.feeds_running_base,
-        "per_unit_skips_running_base": config.per_unit_skips_running_base,
-        "company_currency": currency,
+        "show_calculation_mode": len(allowed_modes) > 1,
+        "calculation_mode_read_only": len(allowed_modes) <= 1,
+        "percentage_base": config.percentage_base,
+        "include_in_subsequent_tax_base": config.include_in_subsequent_tax_base,
+        "company_currency": company_currency,
+        "display_currency": display_currency,
         "rate_labels": {
-            mode: rate_label_for_mode(mode, quotation_uom, currency) for mode in allowed_modes
+            mode: rate_label_for_mode(mode, quotation_uom, display_currency)
+            for mode in allowed_modes
         },
-        "rate_label": rate_label_for_mode(default_mode, quotation_uom, currency),
+        "rate_label": rate_label_for_mode(default_mode, quotation_uom, display_currency),
     }
 
 

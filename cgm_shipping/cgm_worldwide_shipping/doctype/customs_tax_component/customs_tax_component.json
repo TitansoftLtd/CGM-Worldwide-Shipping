@@ -8,6 +8,7 @@
  "field_order": [
   "tax_type",
   "calculation_mode",
+  "tax_base",
   "rate",
   "fixed_amount_kes",
   "amount_kes"
@@ -22,23 +23,33 @@
    "reqd": 1
   },
   {
+   "description": "How this tax amount is calculated.",
    "fieldname": "calculation_mode",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Calculation Mode",
-   "options": "Percentage\nPer Unit\nFixed Amount"
+   "options": "Customs Calculation Mode"
+  },
+  {
+   "description": "The base amount used to calculate this tax (customs value, running tax base, or shipment quantity for per-unit).",
+   "fieldname": "tax_base",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Tax Base",
+   "precision": "2",
+   "read_only": 1
   },
   {
    "fieldname": "rate",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Rate / Amount"
+   "label": "Rate"
   },
   {
    "depends_on": "eval:doc.calculation_mode=='Fixed Amount'",
    "fieldname": "fixed_amount_kes",
    "fieldtype": "Currency",
-   "label": "Rate / Amount",
+   "label": "Fixed Amount",
    "options": "Company:company:default_currency"
   },
   {
@@ -54,7 +65,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-07 23:00:00.000000",
+ "modified": "2026-07-12 04:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Customs Tax Component",

@@ -9,6 +9,11 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, today
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	container_row_cargo_size,
+	tracker_cargo_size_field,
+)
+
 ALLOCATION_STATUS_DRAFT = "Draft"
 ALLOCATION_STATUS_ALLOCATED = "Allocated"
 ALLOCATION_STATUS_ACKNOWLEDGED = "Acknowledged"
@@ -131,22 +136,23 @@ def build_unallocated_container_rows(project: str) -> list[dict]:
 	containers: list[dict] = []
 	seen: set[str] = set()
 
-	def _append_tracker(tracker: str, container_number: str = "", cargo_type: str = "") -> None:
+	def _append_tracker(tracker: str, container_number: str = "", cargo_size: str = "") -> None:
 		if not tracker or tracker in allocated or tracker in seen:
 			return
 		if not frappe.db.exists("Container Tracker", tracker):
 			return
+		size_field = tracker_cargo_size_field()
 		tracker_values = frappe.db.get_value(
 			"Container Tracker",
 			tracker,
-			["container_number", "cargo_type"],
+			["container_number", size_field],
 			as_dict=True,
 		) or {}
 		containers.append(
 			{
 				"container_tracker": tracker,
 				"container_number": container_number or tracker_values.get("container_number") or "",
-				"cargo_type": cargo_type or tracker_values.get("cargo_type") or "",
+				"cargo_size": cargo_size or tracker_values.get(size_field) or "",
 				"assignment_status": ASSIGNMENT_PENDING,
 			}
 		)
@@ -163,19 +169,20 @@ def build_unallocated_container_rows(project: str) -> list[dict]:
 		_append_tracker(
 			tracker,
 			row.container_number or "",
-			row.cargo_type or "",
+			container_row_cargo_size(row),
 		)
 
+	size_field = tracker_cargo_size_field()
 	for tracker_row in frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=["name", "container_number", "cargo_type"],
+		fields=["name", "container_number", size_field],
 		order_by="container_number asc",
 	):
 		_append_tracker(
 			tracker_row.name,
 			tracker_row.container_number or "",
-			tracker_row.cargo_type or "",
+			tracker_row.get(size_field) or "",
 		)
 
 	return containers
