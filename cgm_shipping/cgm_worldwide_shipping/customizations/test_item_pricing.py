@@ -126,3 +126,27 @@ class TestItemPricing(IntegrationTestCase):
 
 		self.assertEqual(winning_rate, 500)
 		self.assertEqual(audit_row["rule_type"], "Fixed Rate")
+
+	def test_zero_customs_value_still_returns_rule_row(self):
+		"""Item Pricing table must show a row even before customs value is set."""
+		rules = [
+			{
+				"currency": "USD",
+				"calculation_type": CALCULATION_PERCENTAGE,
+				"percentage_rate": 5,
+				"fixed_rate": 0,
+			},
+			{
+				"currency": "USD",
+				"calculation_type": CALCULATION_FIXED,
+				"percentage_rate": 0,
+				"fixed_rate": 300,
+				"fx_to_quotation": 130,
+			},
+		]
+
+		audit_row, winning_rate = self._item(rules, 0, quotation_currency="KES")
+
+		self.assertIsNotNone(audit_row)
+		self.assertEqual(winning_rate, 39_000)
+		self.assertEqual(audit_row["rule_type"], "Fixed Rate")

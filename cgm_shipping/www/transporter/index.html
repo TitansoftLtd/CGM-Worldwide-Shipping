@@ -164,6 +164,7 @@
             <div class="cp-list-sub">
               {% if row.bill_of_lading %}{{ _("B/L") }} {{ row.bill_of_lading }} · {% endif %}
               {{ frappe.format(row.allocation_date, {"fieldtype": "Date"}) }}
+              · {{ _("Trucks booked") }} {{ row.trucks_booked or row.container_total }}
               · {{ _("Pending") }} {{ row.pending_count }}
               · {{ _("Assigned") }} {{ row.truck_assigned_count }}
             </div>
@@ -199,6 +200,7 @@
             <div class="cp-list-sub">
               {% if row.bill_of_lading %}{{ _("B/L") }} {{ row.bill_of_lading }} · {% endif %}
               {{ frappe.format(row.allocation_date, {"fieldtype": "Date"}) }}
+              · {{ _("Trucks booked") }} {{ row.trucks_booked or row.container_total }}
               · {{ row.container_total }} {{ _("containers") }}
             </div>
           </div>

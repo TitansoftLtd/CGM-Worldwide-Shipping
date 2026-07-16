@@ -24,6 +24,7 @@ from urllib.parse import quote
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 # ─── Customer resolution ─────────────────────────────────────────────────────
 
@@ -553,21 +554,63 @@ def _portal_document_fields() -> list[str]:
 		"document_type",
 		"attachment",
 		"verified_on",
-		"uploaded_on",
 		"remarks",
 		"status",
 	]
 	meta = frappe.get_meta("Shipment Document")
-	for fieldname in ("initial_attachment", "final_attachment"):
+	for fieldname in (
+		"draft_documents",
+		"initial_attachment",
+		"final_attachment",
+		"draft_documents_uploaded_on",
+		"final_document_uploaded_on",
+		"uploaded_on",
+	):
 		if meta.has_field(fieldname):
 			fields.append(fieldname)
 	return fields
 
 
 def _is_portal_visible_document(row: dict) -> bool:
-	"""Portal document rows; hide rejected rows only."""
+	"""Portal document rows; hide rejected rows and download-restricted types."""
 	status = (row.get("status") or "Missing").strip()
-	return status != "Rejected"
+	if status == "Rejected":
+		return False
+	document_type = row.get("document_type")
+	if document_type and not _user_can_download_document_type(document_type):
+		return False
+	return True
+
+
+def _user_can_download_document_type(document_type: str | None) -> bool:
+	"""True when Document Type has no download gate, or the user has an allowed role."""
+	if not document_type or not frappe.db.exists("Document Type", document_type):
+		return True
+	if frappe.session.user == "Administrator" or "System Manager" in frappe.get_roles():
+		return True
+	meta = frappe.get_meta("Document Type")
+	if not meta.has_field("requires_download_permission"):
+		return True
+	requires = cint(
+		frappe.db.get_value("Document Type", document_type, "requires_download_permission")
+	)
+	if not requires:
+		return True
+	if not meta.has_field("download_roles"):
+		return False
+	allowed = frappe.get_all(
+		"CGM Role Item",
+		filters={
+			"parent": document_type,
+			"parenttype": "Document Type",
+			"parentfield": "download_roles",
+		},
+		pluck="role",
+	)
+	if not allowed:
+		return False
+	user_roles = set(frappe.get_roles())
+	return bool(user_roles.intersection(allowed))
 
 
 _PORTAL_INTERNAL_REMARKS = frozenset(
@@ -596,6 +639,11 @@ def _enrich_portal_document(row: dict, project_name: str) -> dict:
 	)
 
 	row["attachment"] = primary_attachment(row)
+	row["uploaded_on"] = (
+		row.get("final_document_uploaded_on")
+		or row.get("draft_documents_uploaded_on")
+		or row.get("uploaded_on")
+	)
 	row["remarks"] = _portal_document_remarks(row.get("remarks"))
 	row["doc_label"] = _document_label(row.get("document_type"))
 	status = (row.get("status") or "Missing").strip()
@@ -641,13 +689,32 @@ def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
 	if not customer:
 		return []
 	ref_sql = _project_ref_sql_coalesce("p")
-	has_versioning = frappe.get_meta("Shipment Document").has_field("initial_attachment")
+	ref_sql = _project_ref_sql_coalesce("p")
+	meta = frappe.get_meta("Shipment Document")
+	extra_cols = []
+	for fieldname in ("draft_documents", "initial_attachment", "final_attachment"):
+		if meta.has_field(fieldname):
+			extra_cols.append(f"sd.{fieldname}")
+	uploaded_parts = [
+		f"sd.{fieldname}"
+		for fieldname in (
+			"final_document_uploaded_on",
+			"draft_documents_uploaded_on",
+			"uploaded_on",
+		)
+		if meta.has_field(fieldname)
+	]
+	uploaded_select = (
+		f"COALESCE({', '.join(uploaded_parts)}) AS uploaded_on"
+		if uploaded_parts
+		else "NULL AS uploaded_on"
+	)
 	rows = frappe.db.sql(
 		f"""
 		SELECT sd.name, sd.document_type, sd.attachment, sd.verified_on,
-		       sd.uploaded_on, sd.status, sd.remarks, p.name AS project,
+		       {uploaded_select}, sd.status, sd.remarks, p.name AS project,
 		       {ref_sql} AS ref
-		       {", sd.initial_attachment, sd.final_attachment" if has_versioning else ""}
+		       {", " + ", ".join(extra_cols) if extra_cols else ""}
 		FROM `tabShipment Document` sd
 		JOIN `tabProject` p ON p.name = sd.parent
 		WHERE sd.parenttype = 'Project'
@@ -709,6 +776,9 @@ def download_shipment_document(project: str, row: str):
 	)
 	if not doc_row or not _is_portal_visible_document(doc_row):
 		raise frappe.PermissionError(_("Document not found on this shipment."))
+
+	if not _user_can_download_document_type(doc_row.get("document_type")):
+		raise frappe.PermissionError(_("You are not allowed to download this document type."))
 
 	file_url = primary_attachment(doc_row)
 	if not file_url:
@@ -803,3 +873,44 @@ def download_shipment_permit(project: str, row: str):
 	frappe.local.response.filename = file_doc.file_name or "permit"
 	frappe.local.response.filecontent = file_doc.get_content()
 	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
+def post_shipment_update(project: str, subject: str, message: str) -> dict:
+	"""Customer portal: post an operational Update (source=Customer) for a shipment."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		post_customer_update,
+	)
+
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+
+	shipment = get_shipment_for_customer(project, customer)
+	if not shipment:
+		raise frappe.PermissionError(_("You can only post updates on your own shipments."))
+
+	return post_customer_update(
+		project,
+		subject,
+		message,
+		customer=customer,
+	)
+
+
+@frappe.whitelist()
+def get_shipment_updates_portal(project: str) -> list[dict]:
+	"""Customer portal: updates posted by the logged-in user for a shipment."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		get_my_updates_for_project,
+	)
+
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+
+	shipment = get_shipment_for_customer(project, customer)
+	if not shipment:
+		raise frappe.PermissionError(_("You can only view updates on your own shipments."))
+
+	return get_my_updates_for_project(project, limit=100)

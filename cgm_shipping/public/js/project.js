@@ -1,73 +1,3 @@
-function cgm_on_shipment_document_slot_change(frm, cdt, cdn) {
-	const row = locals[cdt][cdn];
-	const has_file = row.final_attachment || row.initial_attachment || row.attachment;
-	if (has_file) {
-		if (!row.status || row.status === "Missing") {
-			frappe.model.set_value(cdt, cdn, "status", "Uploaded");
-		}
-		if (!row.uploaded_by) {
-			frappe.model.set_value(cdt, cdn, "uploaded_by", frappe.session.user);
-		}
-		if (row.final_attachment) {
-			frappe.model.set_value(cdt, cdn, "version_status", "Final Received");
-		} else if (row.initial_attachment) {
-			frappe.model.set_value(cdt, cdn, "version_status", "Awaiting Final");
-		}
-		frappe.model.set_value(
-			cdt,
-			cdn,
-			"attachment",
-			row.final_attachment || row.initial_attachment || row.attachment
-		);
-	} else if (!row.initial_attachment && !row.final_attachment && !row.attachment) {
-		frappe.model.set_value(cdt, cdn, "status", "Missing");
-		frappe.model.set_value(cdt, cdn, "uploaded_by", "");
-		frappe.model.set_value(cdt, cdn, "uploaded_on", "");
-		frappe.model.set_value(cdt, cdn, "verified_by", "");
-		frappe.model.set_value(cdt, cdn, "verified_on", "");
-		frappe.model.set_value(cdt, cdn, "version_status", "");
-	}
-}
-
-frappe.ui.form.on("Shipment Document", {
-	initial_attachment(frm, cdt, cdn) {
-		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
-	},
-	final_attachment(frm, cdt, cdn) {
-		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
-	},
-	attachment(frm, cdt, cdn) {
-		const row = locals[cdt][cdn];
-		if (
-			frm.doctype === "Task" &&
-			row.initial_attachment &&
-			row.attachment &&
-			row.attachment !== row.initial_attachment &&
-			!row.final_attachment
-		) {
-			frappe.model.set_value(cdt, cdn, "final_attachment", row.attachment);
-		}
-		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
-	},
-
-	status(frm, cdt, cdn) {
-		const row = locals[cdt][cdn];
-		const file = row.final_attachment || row.initial_attachment || row.attachment;
-		if (["Verified", "Rejected"].includes(row.status)) {
-			if (!file) {
-				frappe.msgprint(__("Attach a file before verification."));
-				frappe.model.set_value(cdt, cdn, "status", "Missing");
-				return;
-			}
-			frappe.model.set_value(cdt, cdn, "verified_by", frappe.session.user);
-			frappe.model.set_value(cdt, cdn, "verified_on", frappe.datetime.now_datetime());
-		} else if (row.status === "Uploaded") {
-			frappe.model.set_value(cdt, cdn, "verified_by", "");
-			frappe.model.set_value(cdt, cdn, "verified_on", "");
-		}
-	}
-});
-
 function configure_project_document_grid(frm) {
 	const grid = frm.fields_dict.custom_shipment_documents?.grid;
 	if (!grid) {
@@ -76,13 +6,15 @@ function configure_project_document_grid(frm) {
 
 	if (cgm_has_shipment_document_versioning()) {
 		let changed = false;
+		const draft_field = cgm_draft_document_field();
 		for (const row of frm.doc.custom_shipment_documents || []) {
-			if (!row.initial_attachment && row.attachment) {
-				row.initial_attachment = row.attachment;
+			const draft = draft_field ? row[draft_field] : null;
+			if (draft_field && !draft && row.attachment) {
+				row[draft_field] = row.attachment;
 				changed = true;
 			}
-			if (row.initial_attachment || row.final_attachment) {
-				row.attachment = row.final_attachment || row.initial_attachment || row.attachment;
+			if (draft || row.final_attachment) {
+				row.attachment = row.final_attachment || draft || row.attachment;
 			}
 		}
 		if (changed) {
@@ -91,6 +23,7 @@ function configure_project_document_grid(frm) {
 	}
 
 	cgm_configure_shipment_document_grid(grid);
+	cgm_sync_shipment_document_rows_on_refresh(frm, "custom_shipment_documents");
 }
 
 function configure_project_status_fields(frm) {
@@ -274,6 +207,27 @@ function sync_consignee_from_customer(frm) {
 	}
 	frappe.db.get_value("Customer", frm.doc.customer, "customer_name", (values) => {
 		frm.set_value("custom_consignee", values?.customer_name || frm.doc.customer);
+	});
+}
+
+function setup_customer_batch_autocomplete(frm) {
+	const fieldname = "custom_batch_no";
+	if (!frm.fields_dict[fieldname] || !frm.doc.customer) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_customer_batch_numbers",
+		args: { customer: frm.doc.customer },
+		callback(r) {
+			const options = (r.message || []).join("\n");
+			frm.set_df_property(fieldname, "options", options);
+			const df = frm.get_field(fieldname)?.df;
+			if (df && df.fieldtype === "Data") {
+				frm.set_df_property(fieldname, "fieldtype", "Autocomplete");
+			}
+			frm.refresh_field(fieldname);
+		},
 	});
 }
 
@@ -736,6 +690,53 @@ frappe.realtime.on("cgm_project_tracking_refresh", (data) => {
 	}
 });
 
+function render_project_operational_updates(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	let section = frm.layout.wrapper.find(".cgm-project-updates");
+	if (!section.length) {
+		section = $(`
+			<div class="cgm-project-updates form-section" style="margin:1rem 0;">
+				<div class="section-head">${__("Operational Updates")}</div>
+				<div class="cgm-project-updates-toolbar" style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;margin:0.5rem 0 0.75rem;">
+					<div class="text-muted" style="font-size:0.85rem;">
+						${__("Transporter and customer updates linked to this shipment.")}
+					</div>
+					<a class="btn btn-xs btn-default" href="/app/update?project=${encodeURIComponent(frm.doc.name)}">${__("Open full update log")}</a>
+				</div>
+				<div class="cgm-project-updates-body text-muted">${__("Loading…")}</div>
+			</div>
+		`);
+		const after =
+			frm.fields_dict.custom_shipment_progress_html ||
+			frm.fields_dict.custom_project_details ||
+			frm.fields_dict.project_name;
+		if (after && after.$wrapper) {
+			section.insertAfter(after.$wrapper.closest(".form-section").length
+				? after.$wrapper.closest(".form-section")
+				: after.$wrapper);
+		} else {
+			section.prependTo(frm.layout.wrapper);
+		}
+	}
+
+	frappe.call({
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates.get_project_updates",
+		args: { project: frm.doc.name },
+		callback(r) {
+			const rows = r.message || [];
+			const body = section.find(".cgm-project-updates-body");
+			if (!rows.length) {
+				body.html(`<div class="text-muted">${__("No operational updates yet.")}</div>`);
+				return;
+			}
+			body.html(cgm.updates.renderList(rows.slice(0, 25)));
+			cgm.updates.bindListClicks(body);
+		},
+	});
+}
+
 frappe.ui.form.on("Project", {
 	onload(frm) {
 		if (frm.is_new() && frm.fields_dict.custom_opened_date && !frm.doc.custom_opened_date) {
@@ -749,10 +750,12 @@ frappe.ui.form.on("Project", {
 
 	customer(frm) {
 		sync_consignee_from_customer(frm);
+		setup_customer_batch_autocomplete(frm);
 	},
 
 	refresh(frm) {
 		toggle_project_transport_reference_fields(frm);
+		setup_customer_batch_autocomplete(frm);
 
 		if (frm.doc.custom_shipment_status) {
 			const indicator = project_clearance_indicator(frm.doc);
@@ -826,6 +829,10 @@ frappe.ui.form.on("Project", {
 	},
 
 	custom_shipment_type(frm) {
+		toggle_project_transport_reference_fields(frm);
+	},
+
+	custom_cargo_type(frm) {
 		toggle_project_transport_reference_fields(frm);
 	},
 

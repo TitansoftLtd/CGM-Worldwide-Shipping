@@ -5,7 +5,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, today
+from frappe.utils import cint, getdate, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	CLOSED_CONTAINER_STATUSES,
@@ -15,6 +15,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	display_ref_from_values,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+	format_latest_update_summary,
+	get_latest_updates_for_trackers,
+	get_ops_updates,
+	get_unread_update_count,
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
 	_CONTAINER_TRACKER_FIELDS,
@@ -128,6 +134,9 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 
 	status = enriched.get("status") or ""
 	container_status = enriched.get("current_location") or ""
+	shipping_line_id = (
+		enriched.get("shipping_line") or project_doc.get("custom_shipping_line") or ""
+	)
 	out = {
 		"name": enriched.get("name"),
 		"container_number": enriched.get("container_number"),
@@ -136,6 +145,15 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 		"batch_no": project_doc.get("custom_batch_no") or "",
 		"customer": _customer_name(project_doc.get("customer")),
 		"bl_number": enriched.get("bl_number") or project_doc.get("custom_bill_of_lading"),
+		"shipping_line": _transporter_names().get(shipping_line_id, "") or shipping_line_id,
+		"country_of_origin": project_doc.get("custom_country_of_origin") or "",
+		"eta": project_doc.get("custom_eta"),
+		"ata": project_doc.get("custom_actual_time_of_arrival_ata"),
+		"vessel_name": project_doc.get("custom_vessel") or "",
+		"deposit_amount": float(enriched.get("deposit_amount") or 0),
+		"deposit_payment_status": enriched.get("deposit_payment_status") or "",
+		"has_deposit": int(enriched.get("has_deposit") or 0),
+		"remarks": alert_status or "",
 		"operational_status": status,
 		"container_status": container_status,
 		"status": status,
@@ -154,6 +172,8 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 		"effective_return_date": effective_return,
 		"gate_in_port": enriched.get("discharging_date"),
 		"gate_out_date_port": enriched.get("gate_out_date_port"),
+		"icd_gate_in_date": enriched.get("icd_gate_in_date"),
+		"icd_gate_out_date": enriched.get("icd_gate_out_date"),
 		"gate_in_date_warehouse": enriched.get("gate_in_date_warehouse"),
 		"offloading_date": enriched.get("offloading_date"),
 		"discharging_date": enriched.get("discharging_date"),
@@ -165,7 +185,8 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 		"transporter_name": _transporter_names().get(enriched.get("transporter") or "", "")
 		or enriched.get("transporter")
 		or "",
-		"clearance_station": _station_label(enriched),
+		"clearance_station": _station_label(enriched)
+		or _station_label(project_doc),
 		"alert_status": alert_status,
 		"traffic_light": tl.get("level"),
 		"traffic_label": tl.get("label"),
@@ -178,12 +199,40 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 	return out
 
 
+def _enrich_rows_with_transporter_updates(rows: list[dict]) -> list[dict]:
+	tracker_names = [row.get("name") for row in rows if row.get("name")]
+	latest = get_latest_updates_for_trackers(tracker_names)
+	for row in rows:
+		update = latest.get(row.get("name") or "") or {}
+		row["last_transporter_update"] = format_latest_update_summary(update or None)
+		row["last_transporter_update_type"] = (
+			update.get("subject") or update.get("update_type") or ""
+		)
+		row["last_transporter_update_on"] = update.get("posted_on")
+		row["last_transporter_update_message"] = update.get("message") or ""
+	return rows
+
+
+def _normalize_date_field(date_field: str | None) -> str | None:
+	"""Map UI labels (ETA/ATA) and keys (eta/ata) to a canonical key."""
+	if not date_field:
+		return None
+	key = str(date_field).strip().lower()
+	if key in ("eta", "ata"):
+		return key
+	return None
+
+
 def _list_filters(filters) -> dict:
+	"""DB filters applied directly on Container Tracker.
+
+	Customer / B/L / shipping-line fallback / date ranges that depend on Project
+	are applied after fetch via post-filters — shipping_line and status that live
+	on the tracker itself are applied here.
+	"""
 	list_filters: dict = {}
 	if filters.get("project"):
 		list_filters["project"] = filters.project
-	if filters.get("shipping_line"):
-		list_filters["shipping_line"] = filters.shipping_line
 	if filters.get("status"):
 		list_filters["status"] = filters.status
 	if filters.get("container_mode"):
@@ -215,11 +264,12 @@ def _project_filters(filters) -> dict:
 	station = filters.get("clearance_station")
 	if station:
 		project_filters["custom_clearance_station"] = station
-	if filters.get("date_field") in ("eta", "ata"):
+	if filters.get("bill_of_lading"):
+		project_filters["custom_bill_of_lading"] = filters.bill_of_lading
+	date_key = _normalize_date_field(filters.get("date_field"))
+	if date_key:
 		field = (
-			"custom_eta"
-			if filters.date_field == "eta"
-			else "custom_actual_time_of_arrival_ata"
+			"custom_eta" if date_key == "eta" else "custom_actual_time_of_arrival_ata"
 		)
 		if filters.get("date_from") and filters.get("date_to"):
 			project_filters[field] = ["between", [filters.date_from, filters.date_to]]
@@ -228,6 +278,62 @@ def _project_filters(filters) -> dict:
 		elif filters.get("date_to"):
 			project_filters[field] = ["<=", filters.date_to]
 	return project_filters
+
+
+def _filter_by_shipping_line(
+	rows: list[dict], shipping_line: str | None, projects: dict
+) -> list[dict]:
+	"""Match tracker.shipping_line or the parent project's custom_shipping_line."""
+	if not shipping_line:
+		return rows
+	filtered = []
+	for row in rows:
+		tracker_line = (row.get("shipping_line") or "").strip()
+		project_line = (
+			(projects.get(row.get("project")) or {}).get("custom_shipping_line") or ""
+		).strip()
+		if shipping_line in (tracker_line, project_line):
+			filtered.append(row)
+	return filtered
+
+
+def _filter_by_date_range(rows: list[dict], filters, projects: dict) -> list[dict]:
+	"""Filter container rows by project ETA/ATA (same date field as Shipments tab)."""
+	date_key = _normalize_date_field(filters.get("date_field"))
+	if not date_key:
+		return rows
+	date_from = getdate(filters.date_from) if filters.get("date_from") else None
+	date_to = getdate(filters.date_to) if filters.get("date_to") else None
+	if not date_from and not date_to:
+		return rows
+
+	project_field = (
+		"custom_eta" if date_key == "eta" else "custom_actual_time_of_arrival_ata"
+	)
+	filtered = []
+	for row in rows:
+		project_doc = projects.get(row.get("project")) or {}
+		value = project_doc.get(project_field) or row.get(date_key)
+		if not value:
+			continue
+		value = getdate(value)
+		if date_from and value < date_from:
+			continue
+		if date_to and value > date_to:
+			continue
+		filtered.append(row)
+	return filtered
+
+
+def _apply_container_post_filters(
+	rows: list[dict], filters, projects: dict
+) -> list[dict]:
+	"""Shared post-fetch filters for All Containers / Return Tracker tabs."""
+	rows = _filter_by_customer(rows, filters.get("customer"), projects)
+	rows = _filter_by_bill_of_lading(rows, filters.get("bill_of_lading"), projects)
+	rows = _filter_by_shipping_line(rows, filters.get("shipping_line"), projects)
+	rows = _filter_by_date_range(rows, filters, projects)
+	return rows
 
 
 def _container_qty_size_from_trackers(rows: list[dict]) -> str | None:
@@ -318,6 +424,13 @@ def _container_location_summary(rows: list[dict]) -> str:
 COMPLETED_SHIPMENT_STATUSES = frozenset({"Completed", "Settled"})
 
 
+def _is_in_demurrage(row: dict) -> bool:
+	"""Active demurrage only — closed/returned containers are excluded from the KPI."""
+	if row.get("status") in CLOSED_CONTAINER_STATUSES:
+		return False
+	return (row.get("demurrage_days") or 0) > 0
+
+
 def _shipment_kpis(projects: list[dict], container_rows: list[dict]) -> dict:
 	total = len(projects)
 	completed = sum(
@@ -331,10 +444,20 @@ def _shipment_kpis(projects: list[dict], container_rows: list[dict]) -> dict:
 		"active_shipments": active_shipments,
 		"completed_shipments": completed,
 		"overdue_returns": sum(1 for r in container_rows if _is_overdue_return(r)),
-		"in_demurrage": sum(
-			1 for r in container_rows if (r.get("demurrage_days") or 0) > 0
-		),
+		"in_demurrage": sum(1 for r in container_rows if _is_in_demurrage(r)),
 	}
+
+
+def _latest_update_among(containers: list[dict]) -> dict | None:
+	"""Most recent transporter update across a shipment's containers."""
+	latest = None
+	for row in containers:
+		posted = row.get("last_transporter_update_on")
+		if not posted:
+			continue
+		if latest is None or posted > latest.get("last_transporter_update_on"):
+			latest = row
+	return latest
 
 
 def _build_shipment_row(project: dict, projects: dict[str, dict], container_rows: list[dict]) -> dict:
@@ -348,6 +471,7 @@ def _build_shipment_row(project: dict, projects: dict[str, dict], container_rows
 	]
 	quantity = _container_qty_size_from_trackers(containers) or (project.get("custom_quantity") or "—")
 	traffic = _shipment_traffic_light(containers)
+	latest = _latest_update_among(containers)
 	return {
 		"name": project.get("name"),
 		"project_ref": display_ref_from_values(project),
@@ -377,9 +501,13 @@ def _build_shipment_row(project: dict, projects: dict[str, dict], container_rows
 		"traffic_css": traffic.get("css"),
 		"sort_key": _TRAFFIC_SORT.get(traffic.get("level"), 9),
 		"has_overdue": any(_is_overdue_return(c) for c in containers),
-		"has_demurrage": any(
-			(c.get("demurrage_days") or 0) > 0 and c.get("status") not in CLOSED_CONTAINER_STATUSES
-			for c in containers
+		"has_demurrage": any(_is_in_demurrage(c) for c in containers),
+		"last_transporter_update": (latest or {}).get("last_transporter_update") or "",
+		"last_transporter_update_type": (latest or {}).get("last_transporter_update_type") or "",
+		"last_transporter_update_message": (latest or {}).get("last_transporter_update_message") or "",
+		"last_transporter_update_on": (latest or {}).get("last_transporter_update_on"),
+		"transporter_update_count": sum(
+			1 for c in containers if c.get("last_transporter_update_type")
 		),
 	}
 
@@ -408,10 +536,28 @@ def _apply_shipment_kpi_filter(rows: list[dict], kpi_filter: str | None) -> list
 	return rows
 
 
+def _paginate_rows(rows: list[dict], filters) -> tuple[list[dict], int, int, int]:
+	"""Slice rows for list-style pagination. KPIs stay based on the full filtered set."""
+	total = len(rows)
+	try:
+		start = max(0, int(filters.get("start") or 0))
+	except (TypeError, ValueError):
+		start = 0
+	try:
+		page_length = int(filters.get("page_length") or 20)
+	except (TypeError, ValueError):
+		page_length = 20
+	page_length = min(max(page_length, 1), 500)
+	if start >= total and total > 0:
+		start = (total - 1) // page_length * page_length
+	return rows[start : start + page_length], total, start, page_length
+
+
 @frappe.whitelist()
 def get_shipment_tracker(filters=None) -> dict:
 	frappe.has_permission("Container Tracker", ptype="read", throw=True)
 	filters = _parse_filters(filters)
+	# Status on the Shipments tab is shipment status — never pass it to tracker rows.
 	projects = _fetch_shipment_rows(filters)
 	project_map = {project["name"]: project for project in projects}
 	tracker_rows = []
@@ -423,14 +569,24 @@ def get_shipment_tracker(filters=None) -> dict:
 			order_by="modified desc",
 			limit_page_length=0,
 		)
-	all_tracker_rows = [_build_row(row, project_map) for row in tracker_rows]
+	all_tracker_rows = _enrich_rows_with_transporter_updates(
+		[_build_row(row, project_map) for row in tracker_rows]
+	)
 	kpis = _shipment_kpis(projects, all_tracker_rows)
 	rows: list[dict] = []
 	for project in projects:
 		rows.append(_build_shipment_row(project, project_map, all_tracker_rows))
 	rows = _apply_shipment_kpi_filter(rows, filters.get("kpi_filter"))
 	rows.sort(key=lambda r: (r.get("sort_key", 9), -(r.get("deposit_amount") or 0)))
-	return {"kpis": kpis, "rows": rows, "kpi_filter": filters.get("kpi_filter")}
+	page_rows, total_count, start, page_length = _paginate_rows(rows, filters)
+	return {
+		"kpis": kpis,
+		"rows": page_rows,
+		"total_count": total_count,
+		"start": start,
+		"page_length": page_length,
+		"kpi_filter": filters.get("kpi_filter"),
+	}
 
 
 @frappe.whitelist()
@@ -446,7 +602,9 @@ def get_project_containers_for_board(project: str) -> list[dict]:
 		order_by="container_number asc",
 		limit_page_length=0,
 	)
-	return [_build_row(row, projects) for row in raw]
+	return _enrich_rows_with_transporter_updates(
+		[_build_row(row, projects) for row in raw]
+	)
 
 
 def _filter_by_customer(rows: list[dict], customer: str | None, projects: dict) -> list[dict]:
@@ -496,6 +654,8 @@ def _returned_this_month(row: dict, month_start) -> bool:
 
 
 def _is_overdue_return(row: dict) -> bool:
+	if row.get("status") in CLOSED_CONTAINER_STATUSES:
+		return False
 	if (row.get("days_outstanding") or 0) > 0:
 		return True
 	if row.get("status") == "Return Overdue":
@@ -503,9 +663,21 @@ def _is_overdue_return(row: dict) -> bool:
 	alert = row.get("alert_status") or ""
 	if "Late" in alert or "Overdue" in alert:
 		return True
-	if (row.get("demurrage_days") or 0) > 0 and row.get("status") not in CLOSED_CONTAINER_STATUSES:
+	if _is_in_demurrage(row):
 		return True
 	return False
+
+
+def _has_deposit(row: dict) -> bool:
+	if row.get("has_deposit") is not None:
+		return bool(cint(row.get("has_deposit")))
+	return float(row.get("deposit_amount") or 0) > 0 and (
+		row.get("deposit_payment_status") or ""
+	) not in ("", "Not Applicable")
+
+
+def _deposit_status(row: dict) -> str:
+	return (row.get("deposit_payment_status") or "").strip()
 
 
 def _apply_kpi_filter(rows: list[dict], kpi_filter: str | None, ref) -> list[dict]:
@@ -517,11 +689,15 @@ def _apply_kpi_filter(rows: list[dict], kpi_filter: str | None, ref) -> list[dic
 	if kpi_filter == "overdue_returns":
 		return [r for r in rows if _is_overdue_return(r)]
 	if kpi_filter == "in_demurrage":
-		return [r for r in rows if (r.get("demurrage_days") or 0) > 0]
+		return [r for r in rows if _is_in_demurrage(r)]
 	if kpi_filter == "free_days_expiring":
 		return [r for r in rows if _free_days_expiring(r, ref)]
 	if kpi_filter == "returned_this_month":
 		return [r for r in rows if _returned_this_month(r, month_start)]
+	if kpi_filter == "deposit_unpaid":
+		return [r for r in rows if _has_deposit(r) and _deposit_status(r) == "Unpaid"]
+	if kpi_filter == "deposit_paid":
+		return [r for r in rows if _has_deposit(r) and _deposit_status(r) == "Paid"]
 	return rows
 
 
@@ -532,9 +708,13 @@ def _kpis(rows: list[dict]) -> dict:
 	return {
 		"total_active": len(active),
 		"overdue_returns": sum(1 for r in rows if _is_overdue_return(r)),
-		"in_demurrage": sum(1 for r in rows if (r.get("demurrage_days") or 0) > 0),
+		"in_demurrage": sum(1 for r in rows if _is_in_demurrage(r)),
 		"free_days_expiring": sum(1 for r in rows if _free_days_expiring(r, ref)),
 		"returned_this_month": sum(1 for r in rows if _returned_this_month(r, month_start)),
+		"deposit_unpaid": sum(
+			1 for r in rows if _has_deposit(r) and _deposit_status(r) == "Unpaid"
+		),
+		"deposit_paid": sum(1 for r in rows if _has_deposit(r) and _deposit_status(r) == "Paid"),
 	}
 
 
@@ -559,9 +739,8 @@ def get_container_ops_board(filters=None) -> dict:
 	filters = _parse_filters(filters)
 	projects = _project_cache()
 	raw = _fetch_tracker_rows(filters)
-	raw = _filter_by_customer(raw, filters.get("customer"), projects)
-	raw = _filter_by_bill_of_lading(raw, filters.get("bill_of_lading"), projects)
-	all_rows = [_build_row(row, projects) for row in raw]
+	raw = _apply_container_post_filters(raw, filters, projects)
+	all_rows = _enrich_rows_with_transporter_updates([_build_row(row, projects) for row in raw])
 	kpis = _kpis(all_rows)
 
 	rows = list(all_rows)
@@ -570,7 +749,15 @@ def get_container_ops_board(filters=None) -> dict:
 	rows = _apply_kpi_filter(rows, filters.get("kpi_filter"), getdate(today()))
 
 	rows.sort(key=lambda r: (r.get("sort_key", 9), -(r.get("days_display") or 0)))
-	return {"kpis": kpis, "rows": rows, "kpi_filter": filters.get("kpi_filter")}
+	page_rows, total_count, start, page_length = _paginate_rows(rows, filters)
+	return {
+		"kpis": kpis,
+		"rows": page_rows,
+		"total_count": total_count,
+		"start": start,
+		"page_length": page_length,
+		"kpi_filter": filters.get("kpi_filter"),
+	}
 
 
 @frappe.whitelist()
@@ -581,19 +768,18 @@ def get_container_return_tracker(filters=None) -> dict:
 	ref = getdate(today())
 	month_start = ref.replace(day=1)
 	raw = _fetch_tracker_rows(filters)
-	raw = _filter_by_customer(raw, filters.get("customer"), projects)
-	raw = _filter_by_bill_of_lading(raw, filters.get("bill_of_lading"), projects)
-	rows = []
-	for row in raw:
-		built = _build_row(row, projects)
-		if not _is_return_tracker_row(built, ref, month_start):
-			continue
-		rows.append(built)
+	raw = _apply_container_post_filters(raw, filters, projects)
 
-	all_rows = [_build_row(row, projects) for row in raw]
-	kpis = _kpis(all_rows)
-
-	rows = _apply_kpi_filter(rows, filters.get("kpi_filter"), ref)
+	pipeline_rows = _enrich_rows_with_transporter_updates(
+		[
+			built
+			for built in (_build_row(row, projects) for row in raw)
+			if _is_return_tracker_row(built, ref, month_start)
+		]
+	)
+	# KPIs always reflect the full return-pipeline under current filters (not the KPI drill-down).
+	kpis = _kpis(pipeline_rows)
+	rows = _apply_kpi_filter(list(pipeline_rows), filters.get("kpi_filter"), ref)
 	rows.sort(
 		key=lambda r: (
 			-(r.get("days_outstanding") or 0),
@@ -601,4 +787,13 @@ def get_container_return_tracker(filters=None) -> dict:
 			r.get("container_number") or "",
 		)
 	)
-	return {"rows": rows, "kpis": kpis, "count": len(rows), "kpi_filter": filters.get("kpi_filter")}
+	page_rows, total_count, start, page_length = _paginate_rows(rows, filters)
+	return {
+		"rows": page_rows,
+		"kpis": kpis,
+		"count": total_count,
+		"total_count": total_count,
+		"start": start,
+		"page_length": page_length,
+		"kpi_filter": filters.get("kpi_filter"),
+	}

@@ -27,21 +27,25 @@ app_license = "mit"
 # include js, css files in header of desk.html
 app_include_css = [
 	"/assets/cgm_shipping/css/project_tracking.css",
+	"/assets/cgm_shipping/css/operational_updates.css",
 	"/assets/cgm_shipping/css/opportunity_intake_wizard.css",
 ]
 app_include_js = [
 	"/assets/cgm_shipping/js/cgm_status_field.js",
 	"/assets/cgm_shipping/js/cgm_container_tracking.js",
+	"/assets/cgm_shipping/js/operational_updates_ui.js",
 ]
 
 # include js, css files in header of web template
 # Customer portal: shared design-system CSS + browser-side timezone
 # localization for the /portal, /my-shipments, /shipment and /documents pages.
 web_include_css = [
-    "/assets/cgm_shipping/css/customer_portal.css",
+	"/assets/cgm_shipping/css/customer_portal.css",
+	"/assets/cgm_shipping/css/operational_updates.css",
 ]
 web_include_js = [
-    "/assets/cgm_shipping/js/portal_localize_time.js",
+	"/assets/cgm_shipping/js/portal_localize_time.js",
+	"/assets/cgm_shipping/js/operational_updates_ui.js",
 ]
 
 # include custom scss in every website theme (without file extension ".scss")
@@ -59,12 +63,14 @@ doctype_js = {
 	"Task": [
 		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
+		"public/js/attachment_approval_workflow.js",
 		"public/js/task.js",
 	],
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Project": [
 		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
+		"public/js/attachment_approval_workflow.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/project.js",
@@ -80,6 +86,8 @@ doctype_js = {
 		"public/js/opportunity_shipment.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
+		"public/js/shipment_document_grid.js",
+		"public/js/attachment_approval_workflow.js",
 		"public/js/crm_opportunity.js",
 		"public/js/opportunity.js",
 	],
