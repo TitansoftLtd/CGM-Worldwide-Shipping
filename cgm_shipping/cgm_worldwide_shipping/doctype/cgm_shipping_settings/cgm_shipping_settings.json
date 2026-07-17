@@ -5,27 +5,20 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "tab_quotation_customs",
-  "section_default_customs_taxes",
-  "custom_default_customs_taxes",
-  "sea_import_task_plan_tab",
-  "section_break_sea_import",
-  "custom_sea_import_task_template",
-  "sea_transit_task_plan_tab",
-  "section_sea_transit_import",
-  "custom_sea_transit_import_shared_through_seq",
-  "custom_sea_transit_import_extension_template",
-  "section_sea_transit_export",
-  "custom_sea_transit_export_task_template",
-  "tab_sea_task_requirements",
-  "section_sea_task_requirements",
-  "custom_sea_clearance_task_requirements",
-  "tab_sea_workflow_task_gates",
-  "section_sea_workflow_task_gates",
-  "custom_sea_workflow_task_gates",
-  "tab_workflow_document_gates",
-  "section_workflow_document_gates",
-  "custom_workflow_stage_requirements",
+  "tab_task_workflow_settings",
+  "section_task_workflow_settings",
+  "default_company",
+  "sea_import_template",
+  "tab_container_port_settings",
+  "section_container_port_settings",
+  "kpa_default_free_days",
+  "default_dem_currency",
+  "custom_kpa_free_days",
+  "tab_notification_settings",
+  "section_notification_settings",
+  "inspection_reminder_hours",
+  "portal_url",
+  "ops_notification_email",
   "roles_tab",
   "section_roles",
   "custom_finance_roles",
@@ -37,6 +30,18 @@
   "custom_default_email_template",
   "custom_permit_finance_email_template",
   "custom_ucr_finance_email_template",
+  "tab_quotation_customs",
+  "section_default_customs_taxes",
+  "custom_default_customs_taxes",
+  "tab_sea_task_requirements",
+  "section_sea_task_requirements",
+  "custom_sea_clearance_task_requirements",
+  "tab_sea_workflow_task_gates",
+  "section_sea_workflow_task_gates",
+  "custom_sea_workflow_task_gates",
+  "tab_workflow_document_gates",
+  "section_workflow_document_gates",
+  "custom_workflow_stage_requirements",
   "tab_container_tracking",
   "section_container_task_sequences",
   "custom_track_eta_task_seq",
@@ -48,10 +53,7 @@
   "custom_monitor_delivery_task_seq",
   "custom_offload_task_seq",
   "custom_empty_return_task_seq",
-  "custom_interchange_task_seq",
-  "custom_kpa_free_days",
-  "section_batch_counter",
-  "last_batch_no"
+  "custom_interchange_task_seq"
  ],
  "fields": [
   {
@@ -72,61 +74,10 @@
    "options": "Default Customs Tax"
   },
   {
-   "fieldname": "sea_import_task_plan_tab",
-   "fieldtype": "Tab Break",
-   "label": "Sea import task plan"
-  },
-  {
-   "fieldname": "section_break_sea_import",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "custom_sea_import_task_template",
-   "fieldtype": "Table",
-   "label": "Sea import task template",
-   "options": "Sea Import Task Template Item"
-  },
-  {
-   "fieldname": "sea_transit_task_plan_tab",
-   "fieldtype": "Tab Break",
-   "label": "Sea transit task plans"
-  },
-  {
-   "description": "Sea Transit Import reuses rows from the Sea import task plan through the shared sequence, then appends the extension rows below. Edit rows here when your process changes — no code deploy required. Link a Shipment Type to this flow via Task Flow Key SEA_TRANSIT_IMPORT_E2E.",
-   "fieldname": "section_sea_transit_import",
-   "fieldtype": "Section Break",
-   "label": "Sea Transit Import"
-  },
-  {
-   "default": "20",
-   "description": "Last shared sea-import task sequence (inclusive). Steps after this come from the extension template below.",
-   "fieldname": "custom_sea_transit_import_shared_through_seq",
-   "fieldtype": "Int",
-   "label": "Shared Through Sequence"
-  },
-  {
-   "description": "Post-KPA transit steps appended after the shared sea-import sequence.",
-   "fieldname": "custom_sea_transit_import_extension_template",
-   "fieldtype": "Table",
-   "label": "Sea Transit Import extension template",
-   "options": "Sea Import Task Template Item"
-  },
-  {
-   "description": "Full task plan for Sea Transit Export. Link a Shipment Type via Task Flow Key SEA_TRANSIT_EXPORT_E2E. Container Tracker sections on each Project are driven by Project Type (standard ERPNext list — add new types there without developer help).",
-   "fieldname": "section_sea_transit_export",
-   "fieldtype": "Section Break",
-   "label": "Sea Transit Export"
-  },
-  {
-   "fieldname": "custom_sea_transit_export_task_template",
-   "fieldtype": "Table",
-   "label": "Sea Transit Export task template",
-   "options": "Sea Import Task Template Item"
-  },
-  {
    "fieldname": "tab_sea_task_requirements",
    "fieldtype": "Tab Break",
-   "label": "Sea task completion rules"
+   "hidden": 1,
+   "label": "Sea task completion rules (legacy)"
   },
   {
    "description": "What must be satisfied before each sea clearance task can be marked completed. Prefer this table over hard-coded Python rules.",
@@ -143,7 +94,8 @@
   {
    "fieldname": "tab_sea_workflow_task_gates",
    "fieldtype": "Tab Break",
-   "label": "Sea workflow task gates"
+   "hidden": 1,
+   "label": "Sea workflow task gates (legacy)"
   },
   {
    "description": "Before Project shipment status can move to each workflow state, these sea task steps must be satisfied. Aligns with CGM Sea Import Workflow on Project.",
@@ -160,7 +112,8 @@
   {
    "fieldname": "tab_workflow_document_gates",
    "fieldtype": "Tab Break",
-   "label": "Shipment status and required document stages"
+   "hidden": 1,
+   "label": "Shipment status and required document stages (legacy)"
   },
   {
    "fieldname": "section_workflow_document_gates",
@@ -238,7 +191,8 @@
   {
    "fieldname": "tab_container_tracking",
    "fieldtype": "Tab Break",
-   "label": "Container tracking"
+   "hidden": 1,
+   "label": "Container tracking (legacy seq map)"
   },
   {
    "description": "Sea task sequence numbers that update Container Tracker records. Leave at 0 to use the built-in default for that step.",
@@ -311,22 +265,81 @@
    "description": "Default KPA free days applied to new Container Tracker records.",
    "fieldname": "custom_kpa_free_days",
    "fieldtype": "Int",
-   "label": "Default KPA Free Days"
+   "label": "Default KPA Free Days (legacy alias)"
   },
   {
-   "description": "Auto-incremented when a new Opportunity is created. Reset only when re-seeding the batch sequence.",
-   "fieldname": "section_batch_counter",
+   "fieldname": "tab_task_workflow_settings",
+   "fieldtype": "Tab Break",
+   "label": "General"
+  },
+  {
+   "description": "Global shipping configuration. Task plans are maintained in CGM Task Template — not here.",
+   "fieldname": "section_task_workflow_settings",
    "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Legacy batch counter (deprecated)"
+   "label": "General Settings"
   },
   {
-   "default": "0",
-   "description": "Deprecated. FCL batches are allocated per Customer + Shipment Type + Derived Quantity on Booking Confirmation / Bill of Lading. This field is no longer incremented automatically.",
-   "fieldname": "last_batch_no",
+   "description": "Used to look up department suffix (abbr) when creating tasks.",
+   "fieldname": "default_company",
+   "fieldtype": "Link",
+   "label": "Default Company",
+   "options": "Company"
+  },
+  {
+   "description": "Optional fallback template name for manual migration only. Shipment Types should use Task Workflow Template instead.",
+   "fieldname": "sea_import_template",
+   "fieldtype": "Link",
+   "label": "Sea Import Fallback Template",
+   "options": "CGM Task Template"
+  },
+  {
+   "fieldname": "tab_container_port_settings",
+   "fieldtype": "Tab Break",
+   "label": "Container & Port Settings"
+  },
+  {
+   "fieldname": "section_container_port_settings",
+   "fieldtype": "Section Break",
+   "label": "Container & Port Settings"
+  },
+  {
+   "default": "5",
+   "fieldname": "kpa_default_free_days",
    "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Last Batch Number (legacy)"
+   "label": "KPA Default Free Days"
+  },
+  {
+   "fieldname": "default_dem_currency",
+   "fieldtype": "Link",
+   "label": "Default Demurrage Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "tab_notification_settings",
+   "fieldtype": "Tab Break",
+   "label": "Notification Settings"
+  },
+  {
+   "fieldname": "section_notification_settings",
+   "fieldtype": "Section Break",
+   "label": "Notification Settings"
+  },
+  {
+   "default": "48",
+   "description": "Hours after permit payment before reminding client to inspect.",
+   "fieldname": "inspection_reminder_hours",
+   "fieldtype": "Int",
+   "label": "Inspection Reminder (hours)"
+  },
+  {
+   "fieldname": "portal_url",
+   "fieldtype": "Data",
+   "label": "Client Portal URL"
+  },
+  {
+   "fieldname": "ops_notification_email",
+   "fieldtype": "Data",
+   "label": "Operations Notification Email"
   }
  ],
  "grid_page_length": 50,

@@ -5,7 +5,6 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-	DEFAULT_SEA_IMPORT_TASK_TEMPLATE,
 	DEFAULT_SEA_WORKFLOW_TASK_GATES,
 	build_requirement_seed_rows,
 )
@@ -74,13 +73,6 @@ def seed_cgm_shipping_settings() -> None:
 	meta = frappe.get_meta("CGM Shipping Settings")
 	changed = False
 
-	if meta.has_field("custom_sea_import_task_template") and not settings.get(
-		"custom_sea_import_task_template"
-	):
-		for row in DEFAULT_SEA_IMPORT_TASK_TEMPLATE:
-			settings.append("custom_sea_import_task_template", row)
-		changed = True
-
 	if meta.has_field("custom_sea_clearance_task_requirements") and not settings.get(
 		"custom_sea_clearance_task_requirements"
 	):
@@ -95,12 +87,22 @@ def seed_cgm_shipping_settings() -> None:
 			settings.append("custom_sea_workflow_task_gates", row)
 		changed = True
 
+	if meta.has_field("sea_import_template") and not settings.get("sea_import_template"):
+		if frappe.db.exists("CGM Task Template", "Sea Import Workflow"):
+			settings.sea_import_template = "Sea Import Workflow"
+			changed = True
+
 	if changed:
 		settings.save(ignore_permissions=True)
 
 
 def seed_all_defaults() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
+		seed_task_workflow_masters,
+	)
+
 	seed_customs_tax_types()
 	seed_default_customs_tax_rates()
 	seed_cgm_shipping_settings()
+	seed_task_workflow_masters()
 	frappe.db.commit()

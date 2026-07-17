@@ -10,24 +10,24 @@
   "default_mode_of_transport",
   "column_break_st_cfg",
   "is_active",
-  "use_sea_import_workflow",
   "uses_unit_tracking",
   "amended_from",
-  "section_break_integration",
-  "task_flow_key",
+  "section_workflow_configuration",
+  "task_template",
   "container_tracker_mode",
-  "cgm_ref_prefix",
-  "container_tracking_mode",
-  "column_break_st_flags",
+  "column_break_wf_cfg",
   "uses_container_tracking",
   "uses_transit_documents",
   "uses_destination_entry",
   "uses_export_documents",
   "is_outbound",
+  "section_break_integration",
+  "task_flow_key",
+  "cgm_ref_prefix",
+  "container_tracking_mode",
   "primary_transport_document",
   "section_transport_documents",
   "transport_documents",
-  "legacy_crm_labels",
   "section_required_documents",
   "required_documents",
   "section_break_newf",
@@ -56,21 +56,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "0",
-   "fieldname": "use_sea_import_workflow",
-   "fieldtype": "Check",
-   "label": "Use Sea Import Workflow"
-  },
-  {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Active"
-  },
-  {
-   "fieldname": "section_break_2k6q",
-   "fieldtype": "Section Break"
   },
   {
    "default": "0",
@@ -93,22 +83,40 @@
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "section_break_integration",
+   "fieldname": "section_workflow_configuration",
    "fieldtype": "Section Break",
-   "label": "Integration"
+   "label": "Workflow Configuration"
   },
   {
-   "description": "Matches a task plan in CGM Shipping Settings (e.g. SEA_IMPORT_E2E, SEA_TRANSIT_IMPORT_E2E). Create a new Shipment Type row and point this at your Settings template — no code change needed.",
-   "fieldname": "task_flow_key",
-   "fieldtype": "Data",
-   "label": "Task Flow Key"
+   "description": "Which task plan to create when a project is opened for this shipment type. Leave blank for shipment types that do not use the task system.",
+   "fieldname": "task_template",
+   "fieldtype": "Link",
+   "label": "Task Workflow Template",
+   "options": "CGM Task Template"
   },
   {
-   "description": "Default Project Type for new projects using this shipment type. Container Tracker sections match Project.project_type. Add new types in the Project Type list (Setup) — names containing Mombasa, ICD, Transit, or Export control which tracker sections appear.",
+   "description": "Where containers for this shipment type are tracked (Mombasa, ICD, Transit, Export). Copied to Project on create.",
    "fieldname": "container_tracker_mode",
    "fieldtype": "Link",
    "label": "Container Tracker Mode",
-   "options": "Project Type"
+   "options": "Container Tracker Mode"
+  },
+  {
+   "fieldname": "column_break_wf_cfg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_integration",
+   "fieldtype": "Section Break",
+   "label": "Integration (Legacy)"
+  },
+  {
+   "description": "Deprecated \u2014 use Task Workflow Template. Kept for records not yet migrated.",
+   "fieldname": "task_flow_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Task Flow Key"
   },
   {
    "description": "Optional prefix for CGM tracking references on air/road shipments (e.g. AIR, ROD). Sea shipments can use Cargo Type CGM Ref Prefix instead.",
@@ -118,15 +126,11 @@
    "label": "CGM Ref Prefix"
   },
   {
-   "description": "Deprecated — use Container Tracker Mode. Kept for legacy records.",
+   "description": "Deprecated \u2014 use Container Tracker Mode. Kept for legacy records.",
    "fieldname": "container_tracking_mode",
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Container Tracking Mode"
-  },
-  {
-   "fieldname": "column_break_st_flags",
-   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -136,24 +140,28 @@
   },
   {
    "default": "0",
+   "description": "Default transport docs for transit shipments (Release Order + BL/Booking). Used when Transport Documents table is empty.",
    "fieldname": "uses_transit_documents",
    "fieldtype": "Check",
    "label": "Uses Transit Documents"
   },
   {
    "default": "0",
+   "description": "Show Uganda/transit destination entry fields on Project (fetched to custom_uses_destination_entry).",
    "fieldname": "uses_destination_entry",
    "fieldtype": "Check",
    "label": "Uses Destination Entry"
   },
   {
    "default": "0",
+   "description": "Export document behaviour; with is_outbound, defaults transport docs to Booking + BL.",
    "fieldname": "uses_export_documents",
    "fieldtype": "Check",
    "label": "Uses Export Documents"
   },
   {
    "default": "0",
+   "description": "Export/outbound direction. Defaults transport docs to Booking Confirmation + Bill of Lading.",
    "fieldname": "is_outbound",
    "fieldtype": "Check",
    "label": "Is Outbound"
@@ -179,13 +187,7 @@
    "options": "Shipment Type Transport Document"
   },
   {
-   "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",
-   "fieldname": "legacy_crm_labels",
-   "fieldtype": "Small Text",
-   "label": "Legacy CRM Labels"
-  },
-  {
-   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type — no code change needed.",
+   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type \u2014 no code change needed.",
    "fieldname": "section_required_documents",
    "fieldtype": "Section Break",
    "label": "Required Intake Documents"
@@ -204,11 +206,15 @@
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description"
+  },
+  {
+   "fieldname": "section_break_2k6q",
+   "fieldtype": "Section Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-16 19:25:26.856538",
+ "modified": "2026-07-17 13:09:41.127283",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Type",

@@ -477,6 +477,12 @@ frappe.ui.form.on("Task", {
 });
 
 const SEA_FLOW_KEY = "SEA_IMPORT_E2E";
+const SEA_IMPORT_TEMPLATE = "Sea Import Workflow";
+const SEA_FLOW_KEYS_EXPR = "['SEA_IMPORT_E2E','Sea Import Workflow'].includes(doc.custom_task_flow_key)";
+
+function isSeaImportFlowKey(flowKey) {
+	return flowKey === SEA_FLOW_KEY || flowKey === SEA_IMPORT_TEMPLATE;
+}
 
 /** Empty shell until get_sea_task_ui_sequences returns (no hardcoded business rules). */
 const CGM_SEA_UI_SEQUENCES_EMPTY = {
@@ -507,9 +513,9 @@ function sea_task_permits_depends_on(frm) {
 		]),
 	].sort((a, b) => a - b);
 	if (!seqs.length) {
-		return "eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E'";
+		return `eval:${SEA_FLOW_KEYS_EXPR}`;
 	}
-	return `eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && [${seqs.join(",")}].includes(doc.custom_sequence_no)`;
+	return `eval:${SEA_FLOW_KEYS_EXPR} && [${seqs.join(",")}].includes(doc.custom_sequence_no)`;
 }
 
 const CGM_TASK_PERMISSIONS_FALLBACK = {
@@ -771,7 +777,7 @@ const SEA_TASK_HIDDEN_FIELDS = [
 ];
 
 function is_sea_clearance_task(frm) {
-	return frm.doc.custom_task_flow_key === SEA_FLOW_KEY;
+	return isSeaImportFlowKey(frm.doc.custom_task_flow_key);
 }
 
 function sea_task_sequence(frm) {

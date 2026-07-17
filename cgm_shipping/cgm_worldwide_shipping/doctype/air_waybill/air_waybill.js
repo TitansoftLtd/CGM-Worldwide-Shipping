@@ -3,10 +3,11 @@
 
 frappe.ui.form.on("Air Waybill", {
 	onload(frm) {
-		apply_awb_route_defaults(frm);
 		if (frm.is_new() && frappe.route_options?.linked_opportunity) {
 			remember_return_opportunity(frm, frappe.route_options.linked_opportunity);
 		}
+		apply_awb_route_defaults(frm);
+		apply_awb_seed_from_opportunity(frm);
 	},
 
 	refresh(frm) {
@@ -24,6 +25,23 @@ frappe.ui.form.on("Air Waybill", {
 
 const CGM_RETURN_OPPORTUNITY_KEY = "cgm_return_opportunity";
 const CGM_PENDING_AWB_LINK_KEY = "cgm_pending_awb_link";
+const CGM_AWB_SEED_OPPORTUNITY_KEY = "cgm_awb_seed_opportunity";
+
+const AWB_SEED_SCALAR_FIELDS = [
+	"customer",
+	"shipment_type",
+	"client_reference_no",
+	"airline",
+	"eta",
+	"etd",
+	"weight_uom",
+	"net_weight",
+	"gross_weight",
+	"port_of_loading",
+	"port_of_discharge",
+	"description",
+	"linked_opportunity",
+];
 
 function is_saved_opportunity_name(name) {
 	return Boolean(name && !String(name).startsWith("new-"));
@@ -38,17 +56,79 @@ function apply_awb_route_defaults(frm) {
 	if (opts.linked_opportunity) {
 		remember_return_opportunity(frm, opts.linked_opportunity);
 	}
-	if (opts.customer && !frm.doc.customer) {
-		frm.set_value("customer", opts.customer);
+
+	AWB_SEED_SCALAR_FIELDS.forEach((fieldname) => {
+		const value = opts[fieldname];
+		if (value == null || value === "" || !frm.fields_dict[fieldname]) {
+			return;
+		}
+		if (frm.doc[fieldname]) {
+			return;
+		}
+		frm.set_value(fieldname, value);
+	});
+
+	// Legacy route_options aliases from older Opportunity seeds.
+	if (opts.client_ref && !frm.doc.client_reference_no) {
+		frm.set_value("client_reference_no", opts.client_ref);
 	}
-	if (opts.shipment_type && !frm.doc.shipment_type) {
-		frm.set_value("shipment_type", opts.shipment_type);
-	}
-	if (opts.client_ref && !frm.doc.client_ref) {
-		frm.set_value("client_ref", opts.client_ref);
+	if (opts.client_refrence_no && !frm.doc.client_reference_no) {
+		frm.set_value("client_reference_no", opts.client_refrence_no);
 	}
 
 	set_default_air_shipment_type(frm);
+}
+
+function apply_awb_seed_from_opportunity(frm) {
+	if (!frm.is_new() || frm._cgm_awb_seed_applied) {
+		return;
+	}
+
+	const opportunity =
+		frm.doc.linked_opportunity ||
+		localStorage.getItem(CGM_AWB_SEED_OPPORTUNITY_KEY) ||
+		localStorage.getItem(CGM_RETURN_OPPORTUNITY_KEY);
+
+	if (!is_saved_opportunity_name(opportunity)) {
+		return;
+	}
+
+	remember_return_opportunity(frm, opportunity);
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.air_waybill.air_waybill.get_awb_seed_for_opportunity",
+		args: { opportunity },
+		callback(r) {
+			if (r.exc || !r.message) {
+				return;
+			}
+			apply_awb_seed_payload(frm, r.message);
+			frm._cgm_awb_seed_applied = true;
+			localStorage.removeItem(CGM_AWB_SEED_OPPORTUNITY_KEY);
+		},
+	});
+}
+
+function apply_awb_seed_payload(frm, seed) {
+	if (!seed || typeof seed !== "object") {
+		return;
+	}
+
+	AWB_SEED_SCALAR_FIELDS.forEach((fieldname) => {
+		const value = seed[fieldname];
+		if (value == null || value === "" || !frm.fields_dict[fieldname]) {
+			return;
+		}
+		const current = frm.doc[fieldname];
+		if (current != null && current !== "") {
+			return;
+		}
+		frm.set_value(fieldname, value);
+	});
+
+	if (seed.linked_opportunity) {
+		remember_return_opportunity(frm, seed.linked_opportunity);
+	}
 }
 
 function remember_return_opportunity(frm, opportunity) {
