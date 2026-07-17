@@ -160,6 +160,17 @@ def _sea_task_progress_fields() -> list[str]:
 	return fields
 
 
+def _project_workflow_flow_keys(project: str) -> tuple[str, ...]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_project_workflow_flow_keys,
+	)
+
+	keys = get_project_workflow_flow_keys(project)
+	if keys:
+		return keys
+	return (SEA_TASK_FLOW_KEY,)
+
+
 def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	"""Advance Project workflow field when sea tasks have passed the current state."""
 	if frappe.flags.get("cgm_skip_task_project_sync"):
@@ -168,7 +179,10 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 		return None
 	tasks = frappe.get_all(
 		"Task",
-		filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
+		filters={
+			"project": project,
+			"custom_task_flow_key": ["in", list(_project_workflow_flow_keys(project))],
+		},
 		fields=_sea_task_progress_fields(),
 		limit=30,
 	)

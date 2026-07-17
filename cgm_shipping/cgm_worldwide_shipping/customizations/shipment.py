@@ -439,6 +439,10 @@ AWB_TO_OPPORTUNITY_FIELDS = (
 	("port_of_discharge", "custom_port_of_discharge"),
 )
 
+OPPORTUNITY_TO_AWB_FIELDS = tuple(
+	(opp_field, awb_field) for awb_field, opp_field in AWB_TO_OPPORTUNITY_FIELDS
+)
+
 OPPORTUNITY_TO_PROJECT_TRACKING_FIELDS = (
 	("custom_client_refrence_no", "custom_client_refrence_no"),
 	("custom_batch_no", "custom_batch_no"),

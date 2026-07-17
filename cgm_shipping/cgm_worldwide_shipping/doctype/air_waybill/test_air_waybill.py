@@ -53,6 +53,76 @@ class TestAirWaybillSync(IntegrationTestCase):
 		self.assertEqual(payload["custom_airline"], "KQ")
 		self.assertEqual(payload["custom_port_of_loading"], "NBO")
 
+	def test_build_awb_seed_from_opportunity(self):
+		class FakeMeta:
+			def has_field(self, fieldname):
+				return fieldname.startswith("custom_")
+
+		class FakeOpp:
+			name = "CRM-OPP-2026-00001"
+			opportunity_from = "Customer"
+			meta = FakeMeta()
+			_values = {
+				"party_name": "Ducorp Trading Kenya Limited",
+				"custom_shipment_type": "Air Import",
+				"custom_client_refrence_no": "987654re9u",
+				"custom_description_of_goods": "Electronics",
+				"custom_airline": "KQ",
+				"custom_eta": "2026-08-01",
+				"custom_etd": "2026-07-30",
+			}
+
+			def get(self, fieldname):
+				return self._values.get(fieldname)
+
+		from cgm_shipping.cgm_worldwide_shipping.doctype.air_waybill.air_waybill import (
+			build_awb_seed_from_opportunity,
+		)
+
+		with self.patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.air_waybill.air_waybill.is_valid_opportunity_link",
+			return_value=True,
+		):
+			seed = build_awb_seed_from_opportunity(FakeOpp())
+
+		self.assertEqual(seed["customer"], "Ducorp Trading Kenya Limited")
+		self.assertEqual(seed["client_reference_no"], "987654re9u")
+		self.assertEqual(seed["airline"], "KQ")
+		self.assertEqual(seed["linked_opportunity"], "CRM-OPP-2026-00001")
+
+	def test_apply_awb_fields_skips_link_when_awb_not_saved(self):
+		class FakeMeta:
+			def has_field(self, fieldname):
+				return fieldname.startswith("custom_")
+
+		class FakeOpp:
+			meta = FakeMeta()
+			_values = {}
+
+			def get(self, fieldname):
+				return self._values.get(fieldname)
+
+			def set(self, fieldname, value):
+				self._values[fieldname] = value
+
+		class FakeAWB:
+			name = "987654qwdqw"
+			shipment_type = None
+
+			def get(self, fieldname):
+				return {"client_reference_no": "REF-1"}.get(fieldname)
+
+		from cgm_shipping.cgm_worldwide_shipping.doctype.air_waybill.air_waybill import (
+			apply_awb_fields_to_opportunity,
+		)
+
+		opp = FakeOpp()
+		with self.patch("frappe.db.exists", return_value=False):
+			apply_awb_fields_to_opportunity(opp, FakeAWB())
+
+		self.assertIsNone(opp.get("custom_air_waybill"))
+		self.assertEqual(opp.get("custom_client_refrence_no"), "REF-1")
+
 	def test_apply_awb_fields_to_opportunity_doc(self):
 		class FakeMeta:
 			def has_field(self, fieldname):

@@ -108,6 +108,20 @@ def legacy_flow_key_for_template(template_name: str | None) -> str | None:
 	return TEMPLATE_TO_LEGACY_FLOW_KEY.get(normalized)
 
 
+def workflow_flow_keys_for_template(template_name: str | None) -> list[str]:
+	"""Task.custom_task_flow_key values for a template (name + legacy key)."""
+	normalized = normalize_template_name(template_name)
+	if not normalized:
+		raw = (template_name or "").strip()
+		return [raw] if raw else []
+
+	keys = [normalized]
+	legacy = TEMPLATE_TO_LEGACY_FLOW_KEY.get(normalized)
+	if legacy and legacy not in keys:
+		keys.append(legacy)
+	return keys
+
+
 def is_transit_template_name(name: str | None) -> bool:
 	normalized = normalize_template_name(name)
 	return normalized in {
