@@ -16,14 +16,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	sync_project_documents_from_opportunity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-	bootstrap_sea_task_plan_for_project,
 	enforce_workflow_task_gate,
 	get_sea_closure_blockers,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.transit_clearance import (
-	bootstrap_transit_task_plan_for_project,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
+	copy_opportunity_scalars_to_project,
 	resolve_fcl_batch_for_opportunity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
@@ -650,8 +647,6 @@ def insert_shipment_project(project) -> str:
 	frappe.flags.cgm_skip_task_project_sync = True
 	try:
 		project.insert(ignore_permissions=True)
-		bootstrap_sea_task_plan_for_project(project.name)
-		bootstrap_transit_task_plan_for_project(project.name)
 	finally:
 		frappe.flags.cgm_skip_task_project_sync = False
 	refresh_project_documents(project.name)
@@ -701,37 +696,7 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 
 def apply_opportunity_to_project_mappings(project, opp) -> None:
 	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""
-	meta = project.meta
-	# Edge case: older mappings used non-existent custom_*weightkg fields, so
-	# weights never copied onto Project. Use the real Project fieldnames.
-	pairs = (
-		("custom_entry_no", "custom_entry_no"),
-		("custom_consignee", "custom_consignee"),
-		("custom_quantity", "custom_quantity"),
-		("custom_gross_weight", "custom_gross_weight"),
-		("custom_weight_nw", "custom_net_weight"),
-		("custom_description_of_goods", "custom_description_of_goods"),
-		("custom_clearance_station", "custom_clearance_station"),
-		("custom_station_code", "custom_station_code"),
-		("custom_country_of_origin", "custom_country_of_origin"),
-		("custom_cargo_type", "custom_cargo_type"),
-		("custom_cargo_type_", "custom_cargo_type"),
-		("custom_number_of_packages", "custom_number_of_packages"),
-		("custom_package_type", "custom_package_type"),
-		("custom_client_refrence_no", "custom_client_refrence_no"),
-		("custom_batch_no", "custom_batch_no"),
-		("custom_weight_uom_", "custom_weight_uom"),
-	)
-	for src_field, dest_field in pairs:
-		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
-			continue
-		if dest_field == "custom_batch_no":
-			value = resolve_fcl_batch_for_opportunity(opp)
-		else:
-			value = opp.get(src_field)
-		if value not in (None, "") and not project.get(dest_field):
-			project.set(dest_field, value)
-
+	copy_opportunity_scalars_to_project(project, opp, only_empty=True)
 	copy_opportunity_requested_cargo_to_project(opp, project)
 
 
@@ -770,18 +735,8 @@ def sync_linked_project_from_opportunity(opp, _method=None) -> None:
 		return
 
 	project = frappe.get_doc("Project", project_name)
-	apply_opportunity_to_project_mappings(project, opp)
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
-		opportunity_to_project_field_pairs,
-	)
-
-	for src_field, dest_field in opportunity_to_project_field_pairs():
-		if not project.meta.has_field(dest_field) or not opp.meta.has_field(src_field):
-			continue
-		value = opp.get(src_field)
-		if value not in (None, "") and not project.get(dest_field):
-			project.set(dest_field, value)
+	copy_opportunity_scalars_to_project(project, opp, only_empty=True)
+	copy_opportunity_requested_cargo_to_project(opp, project)
 
 	if not project.has_value_changed():
 		return
@@ -861,15 +816,7 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	apply_preshipment_transport_defaults(proj, opp)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
 		apply_project_type_from_shipment_type,
-		opportunity_to_project_field_pairs,
 	)
-
-	for src_field, dest_field in opportunity_to_project_field_pairs():
-		if not proj.meta.has_field(dest_field) or not opp.meta.has_field(src_field):
-			continue
-		value = opp.get(src_field)
-		if value not in (None, "") and not proj.get(dest_field):
-			proj.set(dest_field, value)
 
 	apply_project_type_from_shipment_type(proj, opp.get("custom_shipment_type"))
 	sync_cargo_type_from_linked_bl(proj)

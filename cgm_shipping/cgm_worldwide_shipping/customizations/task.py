@@ -23,15 +23,24 @@ def task_sequence(task) -> int:
 def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 	if not project or not sequence_no:
 		return None
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": sequence_no,
-		},
-		"name",
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		SEA_IMPORT_TEMPLATE,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
+
+	for flow_key in (SEA_IMPORT_TEMPLATE, SEA_TASK_FLOW_KEY):
+		name = frappe.db.get_value(
+			"Task",
+			{
+				"project": project,
+				"custom_task_flow_key": flow_key,
+				"custom_sequence_no": sequence_no,
+			},
+			"name",
+		)
+		if name:
+			return name
+	return None
 
 
 
@@ -449,20 +458,22 @@ def finance_payment_with_supplier_invoice_sequences() -> frozenset[int]:
 
 def is_sea_finance_payment_task(task) -> bool:
 	"""Task is a sea import finance payment step (settings-driven)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_task,
+	)
 
-	return (
-		task.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and is_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+	return is_sea_import_task(task) and is_finance_payment_task(
+		int(task.get("custom_sequence_no") or 0)
 	)
 
 
 def is_sea_auto_complete_task(task) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_task,
+	)
 
-	return (
-		task.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and is_auto_complete_task(int(task.get("custom_sequence_no") or 0))
+	return is_sea_import_task(task) and is_auto_complete_task(
+		int(task.get("custom_sequence_no") or 0)
 	)
 
 
@@ -1361,7 +1372,11 @@ def seed_required_task_document_rows(task) -> None:
 
 
 def validate_sea_task_can_complete(task) -> None:
-	if task.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_task,
+	)
+
+	if not is_sea_import_task(task):
 		return
 	if frappe.flags.get("cgm_auto_completing_sea_task"):
 		return
@@ -2821,7 +2836,11 @@ def _sea_task_seq(doc) -> int:
 
 
 def _is_sea_task(doc) -> bool:
-	return doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_task,
+	)
+
+	return is_sea_import_task(doc)
 
 
 def on_task_onload(doc, _method=None):

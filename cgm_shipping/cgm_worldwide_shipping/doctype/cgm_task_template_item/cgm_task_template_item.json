@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-17 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sequence_no",
+  "subject",
+  "department_role",
+  "column_break_item",
+  "depends_on_sequences",
+  "description",
+  "section_flags",
+  "requires_finance_action",
+  "requires_document_upload",
+  "requires_container_update",
+  "requires_permit_action",
+  "column_break_flags",
+  "is_auto_completable",
+  "completion_condition",
+  "is_optional"
+ ],
+ "fields": [
+  {
+   "fieldname": "sequence_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Sequence",
+   "reqd": 1
+  },
+  {
+   "fieldname": "subject",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Task Subject",
+   "reqd": 1
+  },
+  {
+   "description": "Department stem only, e.g. Operations, Finance, Declaration, Transport, Field. Company suffix added automatically on task creation.",
+   "fieldname": "department_role",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Department",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_item",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Comma-separated sequence numbers this task waits for. e.g. 1,2",
+   "fieldname": "depends_on_sequences",
+   "fieldtype": "Data",
+   "label": "Depends On (sequences)"
+  },
+  {
+   "description": "Shown to the user when they open this task.",
+   "fieldname": "description",
+   "fieldtype": "Text",
+   "label": "Instructions"
+  },
+  {
+   "fieldname": "section_flags",
+   "fieldtype": "Section Break",
+   "label": "Task Behaviour"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_finance_action",
+   "fieldtype": "Check",
+   "label": "Finance Action Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_document_upload",
+   "fieldtype": "Check",
+   "label": "Document Upload Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_container_update",
+   "fieldtype": "Check",
+   "label": "Container Update Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_permit_action",
+   "fieldtype": "Check",
+   "label": "Permit Action Required"
+  },
+  {
+   "fieldname": "column_break_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "System marks complete when condition is met.",
+   "fieldname": "is_auto_completable",
+   "fieldtype": "Check",
+   "label": "Auto-completable"
+  },
+  {
+   "depends_on": "eval:doc.is_auto_completable",
+   "description": "Dot-path to field that must be non-empty for auto-completion. e.g. project.custom_actual_time_of_arrival_ata",
+   "fieldname": "completion_condition",
+   "fieldtype": "Data",
+   "label": "Completion Condition"
+  },
+  {
+   "default": "0",
+   "description": "Task created but does not block project completion.",
+   "fieldname": "is_optional",
+   "fieldtype": "Check",
+   "label": "Optional Task"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-17 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "CGM Task Template Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

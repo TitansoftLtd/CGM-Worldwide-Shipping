@@ -23,6 +23,7 @@ frappe.ui.form.on("Opportunity", {
 		if (frm.doc.docstatus > 0) {
 			// Submitted Opportunity — show fields only; never run BL sync / clear logic.
 			sync_opportunity_transport_and_containers(frm);
+			cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
 			setup_opportunity_batch_autocomplete(frm);
 			schedule_shipment_project_create_menu(frm);
 			hide_procurement_create_buttons(frm);
@@ -92,7 +93,16 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	custom_air_waybill(frm) {
+		cgm_shipping.opportunity_shipment.sync_from_linked_awb(frm);
 		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
+	},
+
+	custom_clearance_station(frm) {
+		cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+	},
+
+	custom_station_code(frm) {
+		cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
 	},
 
 	custom_booking_confirmation(frm) {
@@ -141,6 +151,7 @@ function run_opportunity_form_syncs(frm, opts = {}) {
 		cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit(frm);
 		cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit(frm);
 		cgm_shipping.opportunity_shipment.sync_from_linked_booking(frm);
+		cgm_shipping.opportunity_shipment.sync_from_linked_awb(frm);
 		sync_bl_from_clients_documents(frm, { silent: true });
 		const bl_link_field = get_opportunity_bl_link_field(frm);
 		if (frm.doc[bl_link_field]) {

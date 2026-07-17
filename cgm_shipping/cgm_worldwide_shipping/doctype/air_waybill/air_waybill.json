@@ -8,12 +8,22 @@
   "section_break_awb_details",
   "customer",
   "air_waybill",
-  "client_ref",
-  "column_break_utxs",
+  "client_reference_no",
   "shipment_type",
-  "attach_airwaybill",
+  "column_break_utxs",
+  "airline",
+  "eta",
+  "etd",
+  "section_break_inai",
+  "weight_uom",
+  "net_weight",
+  "gross_weight",
+  "column_break_ikxv",
+  "port_of_loading",
+  "port_of_discharge",
   "section_break_rpnc",
   "description",
+  "attach_airwaybill",
   "linked_opportunity",
   "amended_from"
  ],
@@ -32,11 +42,6 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "client_ref",
-   "fieldtype": "Data",
-   "label": "Client Ref"
   },
   {
    "fieldname": "air_waybill",
@@ -67,7 +72,8 @@
   {
    "fieldname": "attach_airwaybill",
    "fieldtype": "Attach",
-   "label": "Attach Airwaybill"
+   "label": "Attach Airwaybill",
+   "reqd": 1
   },
   {
    "fieldname": "section_break_rpnc",
@@ -76,7 +82,7 @@
   {
    "fieldname": "description",
    "fieldtype": "Small Text",
-   "label": "Description",
+   "label": "Comodity / Description of goods",
    "reqd": 1
   },
   {
@@ -85,13 +91,68 @@
    "hidden": 1,
    "label": "Linked Opportunity",
    "options": "Opportunity"
+  },
+  {
+   "fieldname": "section_break_inai",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "weight_uom",
+   "fieldtype": "Link",
+   "label": " Weight UOM ",
+   "options": "UOM"
+  },
+  {
+   "fieldname": "net_weight",
+   "fieldtype": "Float",
+   "label": " Net Weight "
+  },
+  {
+   "fieldname": "gross_weight",
+   "fieldtype": "Float",
+   "label": " Gross Weight "
+  },
+  {
+   "fieldname": "column_break_ikxv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "eta",
+   "fieldtype": "Data",
+   "label": " ETA "
+  },
+  {
+   "fieldname": "etd",
+   "fieldtype": "Data",
+   "label": " ETD "
+  },
+  {
+   "fieldname": "port_of_loading",
+   "fieldtype": "Data",
+   "label": " Port of Loading "
+  },
+  {
+   "fieldname": "client_reference_no",
+   "fieldtype": "Data",
+   "label": "Client Reference No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "airline",
+   "fieldtype": "Data",
+   "label": "Airline"
+  },
+  {
+   "fieldname": "port_of_discharge",
+   "fieldtype": "Data",
+   "label": "Port of Discharge"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-09 18:17:04.726358",
+ "modified": "2026-07-17 13:04:11.144337",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Air Waybill",

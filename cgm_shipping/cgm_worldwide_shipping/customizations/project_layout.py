@@ -1372,6 +1372,17 @@ def ensure_transit_project_fields() -> None:
 	_ensure_cf(
 		"Project",
 		{
+			"fieldname": "custom_container_tracker_mode",
+			"label": "Container Tracker Mode",
+			"fieldtype": "Link",
+			"options": "Container Tracker Mode",
+			"insert_after": "custom_shipment_type",
+			"in_standard_filter": 1,
+		},
+	)
+	_ensure_cf(
+		"Project",
+		{
 			"fieldname": "custom_uses_destination_entry",
 			"label": "Uses Destination Entry",
 			"fieldtype": "Check",

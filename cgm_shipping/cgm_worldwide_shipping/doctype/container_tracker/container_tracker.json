@@ -145,7 +145,8 @@
    "label": "B/L Number"
   },
   {
-   "fetch_from": "project.project_type",
+   "fetch_from": "project.custom_container_tracker_mode",
+   "fetch_if_empty": 1,
    "fieldname": "container_mode",
    "fieldtype": "Data",
    "in_list_view": 1,
