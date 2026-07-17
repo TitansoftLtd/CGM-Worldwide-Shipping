@@ -456,6 +456,11 @@ def sync_opportunity_from_submitted_bl(bl_doc, opportunity: str | None = None) -
 		changed = True
 
 	if changed:
+		# Booking-first shipments add their BL after the Opportunity is approved
+		# and submitted. This controlled system sync must still carry confirmed
+		# BL values back without making those fields manually editable afterward.
+		if opp.docstatus == 1:
+			opp.flags.ignore_validate_update_after_submit = True
 		opp.save(ignore_permissions=True)
 
 	return opportunity
