@@ -18,21 +18,19 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	get_opportunity_documents_field,
 	prepend_clients_document_row,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
+	copy_opportunity_scalars_to_project,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-	apply_shipment_type_profile_to_doc,
-	canonical_shipment_type_link,
-	shipment_type_profile,
+	apply_awb_fields_to_doc,
+	awb_propagation_payload,
+	OPPORTUNITY_TO_AWB_FIELDS,
 )
 
 # Air Waybill -> Opportunity (back-link on this doctype) and Opportunity -> AWB.
 OPPORTUNITY_SOURCE_FIELD = "linked_opportunity"
 OPPORTUNITY_AWB_FIELD = "custom_air_waybill"
 DOCUMENT_TYPE_CODE = "AWB"
-
-AWB_TO_OPPORTUNITY_FIELDS = (
-	("client_ref", "custom_client_refrence_no"),
-	("description", "custom_description_of_goods"),
-)
 
 
 class AirWaybill(Document):
@@ -45,9 +43,17 @@ class AirWaybill(Document):
 	def validate(self):
 		sanitize_air_waybill_linked_opportunity(self)
 
+	def on_update(self):
+		# Sync after the AWB row exists — validate runs before insert and cannot
+		# set Opportunity.custom_air_waybill (Link) yet.
+		if self.get(OPPORTUNITY_SOURCE_FIELD):
+			sync_opportunity_from_awb(self, allow_draft=True)
+
 	def on_submit(self):
 		"""Keep the linked Opportunity aligned once the Air Waybill is submitted."""
-		sync_opportunity_from_submitted_awb(self)
+		opportunity = sync_opportunity_from_awb(self, allow_draft=False)
+		if opportunity:
+			sync_linked_project_from_awb(self, opportunity)
 
 
 # ─── Opportunity link validation ──────────────────────────────────────────────
@@ -85,47 +91,27 @@ def apply_awb_fields_to_opportunity(opp, awb_doc) -> bool:
 	"""Copy AWB fields onto Opportunity. Returns True if anything changed."""
 	changed = False
 
-	if _set_opp_value(opp, OPPORTUNITY_AWB_FIELD, awb_doc.name):
-		changed = True
-
-	if apply_shipment_type_profile_to_doc(opp, awb_doc.get("shipment_type")):
-		changed = True
-	elif (
-		opp.meta.has_field("custom_mode_of_transport")
-		and not opp.get("custom_mode_of_transport")
-		and _set_opp_value(opp, "custom_mode_of_transport", "Air")
-	):
-		changed = True
-
-	for src, dest in AWB_TO_OPPORTUNITY_FIELDS:
-		if _set_opp_value(opp, dest, awb_doc.get(src)):
+	if awb_doc.name and frappe.db.exists("Air Waybill", awb_doc.name):
+		if _set_opp_value(opp, OPPORTUNITY_AWB_FIELD, awb_doc.name):
 			changed = True
+
+	if apply_awb_fields_to_doc(opp, awb_doc):
+		changed = True
 
 	return changed
 
 
-def awb_propagation_payload(awb_doc) -> dict:
-	"""Fields for client-side Opportunity apply after AWB submit redirect."""
-	shipment_type = awb_doc.get("shipment_type")
-	link_name = canonical_shipment_type_link(shipment_type) if shipment_type else None
-	profile = shipment_type_profile(link_name or shipment_type) if shipment_type else None
-	return {
-		"awb_name": awb_doc.name,
-		"attachment": awb_doc.get("attach_airwaybill") or "",
-		"document_type": get_document_type_link_name(DOCUMENT_TYPE_CODE),
-		"shipment_type": link_name or shipment_type,
-		"default_mode_of_transport": (profile or {}).get("default_mode_of_transport") or "Air",
-		"client_ref": awb_doc.get("client_ref"),
-		"description": awb_doc.get("description"),
-		"custom_description_of_goods": awb_doc.get("description"),
-		"custom_client_refrence_no": awb_doc.get("client_ref"),
-	}
-
-
-def sync_opportunity_from_submitted_awb(awb_doc, opportunity: str | None = None) -> str | None:
-	"""Link submitted AWB data back onto the source Opportunity."""
+def sync_opportunity_from_awb(
+	awb_doc,
+	opportunity: str | None = None,
+	*,
+	allow_draft: bool = False,
+) -> str | None:
+	"""Link AWB data back onto the source Opportunity."""
 	opportunity = opportunity or awb_doc.get(OPPORTUNITY_SOURCE_FIELD)
 	if not is_valid_opportunity_link(opportunity):
+		return None
+	if not allow_draft and awb_doc.docstatus != 1:
 		return None
 
 	opp = frappe.get_doc("Opportunity", opportunity)
@@ -133,7 +119,12 @@ def sync_opportunity_from_submitted_awb(awb_doc, opportunity: str | None = None)
 
 	attachment_url = awb_doc.get("attach_airwaybill")
 	clients_field = get_opportunity_documents_field()
-	if attachment_url and clients_field and opp.meta.has_field(clients_field):
+	if (
+		awb_doc.docstatus == 1
+		and attachment_url
+		and clients_field
+		and opp.meta.has_field(clients_field)
+	):
 		if prepend_opportunity_awb_document(opp, attachment_url, awb_name=awb_doc.name):
 			changed = True
 
@@ -141,6 +132,73 @@ def sync_opportunity_from_submitted_awb(awb_doc, opportunity: str | None = None)
 		opp.save(ignore_permissions=True)
 
 	return opportunity
+
+
+def sync_opportunity_from_submitted_awb(awb_doc, opportunity: str | None = None) -> str | None:
+	"""Backward-compatible alias used by submit / payload helpers."""
+	return sync_opportunity_from_awb(awb_doc, opportunity, allow_draft=False)
+
+
+def _scalar_seed_value(value):
+	if value in (None, ""):
+		return None
+	return value
+
+
+def build_awb_seed_from_opportunity(opp) -> dict:
+	"""Prefill payload when creating an Air Waybill from Opportunity."""
+	seed: dict = {}
+	if opp.name and is_valid_opportunity_link(opp.name):
+		seed["linked_opportunity"] = opp.name
+
+	if opp.opportunity_from == "Customer" and opp.get("party_name"):
+		seed["customer"] = opp.party_name
+
+	if opp.get("custom_shipment_type"):
+		seed["shipment_type"] = opp.get("custom_shipment_type")
+
+	for src, dest in OPPORTUNITY_TO_AWB_FIELDS:
+		if not opp.meta.has_field(src):
+			continue
+		value = _scalar_seed_value(opp.get(src))
+		if value is not None:
+			seed[dest] = value
+
+	return seed
+
+
+def sync_linked_project_from_awb(awb_doc, opportunity: str) -> str | None:
+	"""When a Project already exists, push AWB / Opportunity values onto it."""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
+	)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	changed = False
+
+	if project.meta.has_field(OPPORTUNITY_AWB_FIELD) and project.get(OPPORTUNITY_AWB_FIELD) != awb_doc.name:
+		project.set(OPPORTUNITY_AWB_FIELD, awb_doc.name)
+		changed = True
+
+	if apply_awb_fields_to_doc(project, awb_doc):
+		changed = True
+
+	if copy_opportunity_scalars_to_project(project, opp):
+		changed = True
+
+	if not changed:
+		return project_name
+
+	project.flags.ignore_validate = True
+	project.save(ignore_permissions=True)
+	return project_name
 
 
 def prepend_opportunity_awb_document(opp_doc, attachment_url, awb_name=None) -> bool:
@@ -166,6 +224,30 @@ def prepend_opportunity_awb_document(opp_doc, attachment_url, awb_name=None) -> 
 
 # ─── Whitelisted API ──────────────────────────────────────────────────────────
 @frappe.whitelist()
+def get_awb_seed_for_opportunity(opportunity: str | None = None) -> dict:
+	"""Return AWB prefill fields from the linked Opportunity.
+
+	Used by + Add Air Waybill so users never re-enter intake shipment data.
+	"""
+	if not is_valid_opportunity_link(opportunity):
+		return {}
+
+	frappe.has_permission("Opportunity", ptype="read", doc=opportunity, throw=True)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	return build_awb_seed_from_opportunity(opp)
+
+
+@frappe.whitelist()
+def get_awb_fields_for_opportunity(air_waybill: str | None = None) -> dict:
+	"""Return AWB field payload for Opportunity client/server refresh."""
+	if not air_waybill or not frappe.db.exists("Air Waybill", air_waybill):
+		return {}
+	frappe.has_permission("Air Waybill", ptype="read", doc=air_waybill, throw=True)
+	doc = frappe.get_doc("Air Waybill", air_waybill)
+	return awb_propagation_payload(doc)
+
+
+@frappe.whitelist()
 def get_awb_submit_payload(awb_name: str, opportunity: str | None = None) -> dict:
 	"""Return AWB link metadata for applying on the Opportunity form after submit."""
 	if not awb_name or not frappe.db.exists("Air Waybill", awb_name):
@@ -179,6 +261,8 @@ def get_awb_submit_payload(awb_name: str, opportunity: str | None = None) -> dic
 	linked_opportunity = sync_opportunity_from_submitted_awb(doc, opportunity)
 	payload = awb_propagation_payload(doc)
 	payload["opportunity"] = linked_opportunity
+	payload["attachment"] = doc.get("attach_airwaybill") or ""
+	payload["document_type"] = get_document_type_link_name(DOCUMENT_TYPE_CODE)
 	return payload
 
 

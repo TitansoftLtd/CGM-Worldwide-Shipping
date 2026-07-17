@@ -35,6 +35,7 @@ def after_migrate() -> None:
 		("shipment document versioning", ensure_shipment_document_versioning),
 		("finance cost ledger schema", ensure_finance_cost_ledger_schema),
 		("transporter portal setup", ensure_transporter_portal_setup),
+		("task workflow masters", ensure_task_workflow_masters),
 	):
 		try:
 			fn()
@@ -43,6 +44,22 @@ def after_migrate() -> None:
 				title=f"CGM after_migrate: {label}",
 				message=frappe.get_traceback(),
 			)
+
+
+def ensure_task_workflow_masters() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
+		ensure_transit_project_fields,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
+		seed_task_workflow_masters,
+	)
+	from cgm_shipping.default_seed_data import seed_cgm_shipping_settings
+
+	if frappe.db.exists("DocType", "Project"):
+		ensure_transit_project_fields()
+	seed_task_workflow_masters()
+	seed_cgm_shipping_settings()
+	frappe.db.commit()
 
 
 def ensure_transporter_portal_setup() -> None:

@@ -60,23 +60,27 @@ def resolve_primary_transport_document(row: dict | None) -> str:
 	return value or "None"
 
 
-def _apply_primary_start_requirement(docs: list[dict], row: dict | None) -> list[dict]:
+def _apply_primary_start_requirement(
+	docs: list[dict], row: dict | None, *, strict: bool = False
+) -> list[dict]:
 	"""Ensure Primary Transport Document is listed and counts toward Start Shipment.
 
-	Do not demote other start-gate documents — BL and Booking Confirmation are
-	interchangeable (whichever arrives first unlocks Start Shipment).
+	When ``strict`` is True (explicit Shipment Type.transport_documents rows),
+	never inject documents that are not already configured — only promote flags
+	on listed rows. Sea BL / Booking alternates apply only when those labels exist.
 	"""
 	primary = resolve_primary_transport_document(row)
 	out = list(docs)
 	if primary and primary != "None":
 		labels = {item["transport_document"] for item in out}
-		if primary not in labels:
+		if primary in labels:
+			for item in out:
+				if item["transport_document"] == primary:
+					item["is_required_for_start"] = True
+		elif not strict:
 			entry = _transport_doc_entry(primary, is_required=True, sort_order=0)
 			if entry:
 				out.insert(0, entry)
-		for item in out:
-			if item["transport_document"] == primary:
-				item["is_required_for_start"] = True
 
 	# Sea start-gate alternates: both count toward Start Shipment (OR).
 	labels = {item["transport_document"] for item in out}
@@ -99,8 +103,8 @@ def derive_transport_documents_from_flags(row: dict | None) -> list[dict]:
 
 	rows: list[tuple[str, int, bool]] = []
 
-	# Outbound before transit. BL and Booking Confirmation are both start-capable (OR).
-	if mode == "air" and not outbound:
+	# Air freight always uses Air Waybill. Sea export uses Booking + BL.
+	if mode == "air":
 		rows.append(("Air Waybill", 1, True))
 	elif outbound:
 		rows.append(("Booking Confirmation", 1, True))
@@ -153,25 +157,14 @@ def get_allowed_transport_documents(shipment_type: str | None) -> list[dict]:
 				configured.append(entry)
 
 	if configured:
-		return _apply_primary_start_requirement(
-			_merge_transport_documents(configured, row), row
-		)
+		return _apply_primary_start_requirement(configured, row, strict=True)
 
 	return derive_transport_documents_from_flags(row)
 
 
 def _merge_transport_documents(configured: list[dict], row: dict) -> list[dict]:
-	"""Keep explicit Shipment Type rows and add any flag-derived documents not yet listed."""
-	# Derive without primary remapping so we can merge labels, then apply primary once.
-	derived_row = dict(row or {})
-	derived_row["primary_transport_document"] = "None"
-	derived = derive_transport_documents_from_flags(derived_row)
-	existing = {item["transport_document"] for item in configured}
-	merged = list(configured)
-	for item in derived:
-		if item["transport_document"] not in existing:
-			merged.append(item)
-	return sorted(merged, key=lambda item: (item["sort_order"], item["transport_document"]))
+	"""Legacy merge helper — explicit Shipment Type rows are no longer augmented."""
+	return list(configured)
 
 
 def ensure_shipment_type_transport_document_defaults() -> None:
@@ -226,18 +219,22 @@ def ensure_shipment_type_transport_document_defaults() -> None:
 		):
 			updates["uses_transit_documents"] = 1
 
-		# Outbound / export shipments start with Booking Confirmation; BL attaches later.
+		# Sea export starts with Booking Confirmation; air export uses Air Waybill.
+		mode = (row.get("default_mode_of_transport") or "").strip().lower()
 		outbound_after = bool(row.get("is_outbound")) or bool(updates.get("is_outbound"))
 		export_after = bool(row.get("uses_export_documents")) or bool(
 			updates.get("uses_export_documents")
 		)
-		if (
-			meta.has_field("primary_transport_document")
-			and (outbound_after or export_after or "EXPORT" in task_flow or export_named)
-			and (row.get("primary_transport_document") or "None").strip()
-			in ("None", "", "Bill of Lading")
-		):
-			updates["primary_transport_document"] = "Booking Confirmation"
+		if meta.has_field("primary_transport_document"):
+			current_primary = (row.get("primary_transport_document") or "None").strip()
+			if mode == "air" and current_primary in ("None", "", "Booking Confirmation", "Bill of Lading"):
+				updates["primary_transport_document"] = "Air Waybill"
+			elif (
+				mode != "air"
+				and (outbound_after or export_after or "EXPORT" in task_flow or export_named)
+				and current_primary in ("None", "", "Bill of Lading")
+			):
+				updates["primary_transport_document"] = "Booking Confirmation"
 
 		if updates:
 			frappe.db.set_value("Shipment Type", st_name, updates, update_modified=False)
@@ -255,6 +252,9 @@ def ensure_shipment_type_transport_document_defaults() -> None:
 			row["is_outbound"] = 1
 
 		st = frappe.get_doc("Shipment Type", st_name)
+		if st.get("transport_documents"):
+			continue
+
 		defaults = derive_transport_documents_from_flags(row)
 		if not defaults:
 			continue

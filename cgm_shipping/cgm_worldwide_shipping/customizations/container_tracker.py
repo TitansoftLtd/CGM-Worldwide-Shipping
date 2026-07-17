@@ -479,11 +479,18 @@ def _derive_alert_status(
 
 
 def _derive_container_mode(project) -> str:
-	project_type = (project.get("project_type") or "").strip()
-	if project_type:
-		return project_type
+	for fieldname in ("custom_container_tracker_mode", "project_type"):
+		value = (project.get(fieldname) or "").strip()
+		if value:
+			return value
 
-	return frappe.db.get_value("Project", project.name, "project_type") or "Mombasa Port"
+	if project.name:
+		for fieldname in ("custom_container_tracker_mode", "project_type"):
+			value = frappe.db.get_value("Project", project.name, fieldname) or ""
+			if str(value).strip():
+				return str(value).strip()
+
+	return "Mombasa Port"
 
 
 def find_tracker_by_identity(

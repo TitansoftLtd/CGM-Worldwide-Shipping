@@ -86,7 +86,6 @@ frappe.ui.form.on("Bill of Lading", {
 		toggle_cargo_fields(frm);
 		clear_draft_linked_opportunity_link(frm);
 		hide_linked_opportunity_field(frm);
-		add_back_to_opportunity_button(frm);
 		if (!frm.is_new()) {
 			add_create_opportunity_button(frm);
 		}
@@ -343,17 +342,6 @@ function get_cgm_return_opportunity(frm) {
 		return frm.doc.custom_linked_opportunity;
 	}
 	return null;
-}
-
-function add_back_to_opportunity_button(frm) {
-	const opportunity = get_cgm_return_opportunity(frm);
-	if (!opportunity) {
-		return;
-	}
-	frm.add_custom_button(__("Back to Opportunity"), () => {
-		frappe.set_route("Form", "Opportunity", opportunity);
-	}, __("CGM"));
-	frm.page.set_inner_btn_group_as_primary(__("CGM"));
 }
 
 function get_bl_linked_opportunity_name(frm) {

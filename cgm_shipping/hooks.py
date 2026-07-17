@@ -29,11 +29,13 @@ app_include_css = [
 	"/assets/cgm_shipping/css/project_tracking.css",
 	"/assets/cgm_shipping/css/operational_updates.css",
 	"/assets/cgm_shipping/css/opportunity_intake_wizard.css",
+	"/assets/cgm_shipping/css/cgm_shipping_workspace.css",
 ]
 app_include_js = [
 	"/assets/cgm_shipping/js/cgm_status_field.js",
 	"/assets/cgm_shipping/js/cgm_container_tracking.js",
 	"/assets/cgm_shipping/js/operational_updates_ui.js",
+	"/assets/cgm_shipping/js/cgm_shipping_workspace.js",
 ]
 
 # include js, css files in header of web template
@@ -219,7 +221,9 @@ override_doctype_class = {
 doc_events = {
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
+		"after_insert": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_after_insert",
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.project.on_project_onload",
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_update",
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_ata_fields",
@@ -427,6 +431,21 @@ before_request = [
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+# Fixtures loaded on migrate (master data for workflows and container modes).
+fixtures = [
+	"Container Tracker Mode",
+	{"dt": "CGM Task Template", "filters": [["template_name", "in", [
+		"Sea Import Workflow",
+		"Sea Export Workflow",
+		"Air Import Workflow",
+		"Air Export Workflow",
+		"Sea Transit Import Workflow",
+		"Sea Transit Export Workflow",
+		"Road Transit Outbound Workflow",
+		"Road Transit Inbound Workflow",
+	]]]},
+]
 
 # Translation
 # ------------

@@ -101,9 +101,12 @@ def resolve_fcl_batch_for_opportunity(opp) -> str | None:
 
 
 def sync_opportunity_batch_from_transport_doc(doc, _method=None) -> None:
-	"""Opportunity batch mirrors linked Booking/BL FCL allocation only."""
-	if doc.meta.has_field("custom_batch_no"):
-		doc.custom_batch_no = resolve_fcl_batch_for_opportunity(doc)
+	"""FCL batch from Booking/BL overrides sequential batch when linked."""
+	if not doc.meta.has_field("custom_batch_no"):
+		return
+	fcl_batch = resolve_fcl_batch_for_opportunity(doc)
+	if fcl_batch:
+		doc.custom_batch_no = fcl_batch
 
 
 def get_shipment_type_flags(shipment_type: str | None) -> dict:
@@ -138,33 +141,86 @@ def get_shipment_type_flags_for_doc(shipment_type: str | None = None) -> dict:
 
 
 def project_type_for_shipment_type(shipment_type: str | None) -> str | None:
-	"""Map Shipment Type → Project.project_type via container_tracker_mode."""
+	"""Map Shipment Type → container tracker mode name."""
 	return container_tracking_mode_for_shipment_type(shipment_type)
 
 
 def apply_project_type_from_shipment_type(project, shipment_type: str | None = None) -> None:
+	"""Copy container tracker mode from Shipment Type onto Project."""
 	st = shipment_type or project.get("custom_shipment_type")
-	if not st or not project.meta.has_field("project_type"):
+	if not st:
 		return
-	project_type = project_type_for_shipment_type(st)
-	if project_type:
-		project.project_type = project_type
+
+	mode = container_tracking_mode_for_shipment_type(st)
+	if not mode:
+		return
+
+	if project.meta.has_field("custom_container_tracker_mode"):
+		project.custom_container_tracker_mode = mode
+
+	# Keep ERPNext project_type aligned for legacy reports and integrations.
+	if project.meta.has_field("project_type"):
+		project.project_type = mode
 
 
 def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
-	"""Scalar fields copied Opportunity → Project on create."""
+	"""Scalar fields copied Opportunity → Project on create and on later sync."""
 	return (
 		("custom_eta", "custom_eta"),
 		("custom_etd", "custom_etd"),
 		("custom_shipping_line", "custom_shipping_line"),
 		("custom_vessel", "custom_vessel"),
+		("custom_airline", "custom_airline"),
 		("custom_shipping_order_ref", "custom_shipping_order_ref"),
 		("custom_booking_ref", "custom_booking_ref"),
 		("custom_handling_agent", "custom_handling_agent"),
 		("custom_delivery_destination", "custom_final_destination"),
+		("custom_port_of_loading", "custom_port_of_loading"),
+		("custom_port_of_discharge", "custom_port_of_discharge"),
+		("custom_voyage_number", "custom_voyage_number"),
 		("custom_booking_confirmation", "custom_booking_confirmation"),
 		("custom_bill_of_lading", "custom_bill_of_lading"),
+		("custom_air_waybill", "custom_air_waybill"),
+		("custom_clearance_station", "custom_clearance_station"),
+		("custom_station_code", "custom_station_code"),
+		("custom_client_refrence_no", "custom_client_refrence_no"),
+		("custom_entry_no", "custom_entry_no"),
+		("custom_consignee", "custom_consignee"),
+		("custom_quantity", "custom_quantity"),
+		("custom_gross_weight", "custom_gross_weight"),
+		("custom_weight_nw", "custom_net_weight"),
+		("custom_description_of_goods", "custom_description_of_goods"),
+		("custom_country_of_origin", "custom_country_of_origin"),
+		("custom_cargo_type", "custom_cargo_type"),
+		("custom_cargo_type_", "custom_cargo_type"),
+		("custom_number_of_packages", "custom_number_of_packages"),
+		("custom_package_type", "custom_package_type"),
+		("custom_batch_no", "custom_batch_no"),
+		("custom_weight_uom_", "custom_weight_uom"),
 	)
+
+
+def copy_opportunity_scalars_to_project(project, opp, *, only_empty: bool = True) -> bool:
+	"""Copy filled Opportunity scalars onto a linked Project."""
+	meta = project.meta
+	changed = False
+
+	for src_field, dest_field in opportunity_to_project_field_pairs():
+		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
+			continue
+		if dest_field == "custom_batch_no":
+			value = resolve_fcl_batch_for_opportunity(opp)
+		else:
+			value = opp.get(src_field)
+		if value in (None, ""):
+			continue
+		if only_empty and project.get(dest_field):
+			continue
+		if project.get(dest_field) != value:
+			project.set(dest_field, value)
+			changed = True
+
+	return changed
 
 
 def get_required_intake_documents(shipment_type: str | None) -> list[dict]:

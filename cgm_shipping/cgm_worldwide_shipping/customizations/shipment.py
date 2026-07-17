@@ -23,7 +23,6 @@ from frappe.utils import getdate, today
 # optional columns never break a save.
 
 _OPTIONAL_SHIPMENT_TYPE_FIELDS = (
-	"use_sea_import_workflow",
 	"requires_bill_of_lading",
 	"requires_air_waybill",
 	"uses_unit_tracking",
@@ -34,6 +33,7 @@ _OPTIONAL_SHIPMENT_TYPE_FIELDS = (
 	"is_outbound",
 	"primary_transport_document",
 	"task_flow_key",
+	"task_template",
 	"container_tracker_mode",
 	"default_mode_of_transport",
 	"cgm_ref_prefix",
@@ -233,6 +233,16 @@ def container_tracking_mode_for_shipment_type(
 	return None
 
 
+def get_task_template_for_shipment_type(shipment_type: str | None) -> str | None:
+	"""CGM Task Template linked on Shipment Type."""
+	row = get_shipment_type_record(shipment_type)
+	if not row:
+		return None
+	if _shipment_type_field_queryable("task_template") and row.get("task_template"):
+		return str(row.task_template).strip()
+	return None
+
+
 def get_task_flow_key_for_shipment_type(shipment_type: str | None) -> str | None:
 	"""Task flow key from Shipment Type master (e.g. SEA_TRANSIT_IMPORT_E2E)."""
 	row = get_shipment_type_record(shipment_type)
@@ -249,7 +259,7 @@ def uses_container_tracking_for_shipment_type(shipment_type: str | None) -> bool
 		return False
 	if _shipment_type_field_queryable("uses_container_tracking"):
 		return bool(row.get("uses_container_tracking"))
-	return bool(row.get("use_sea_import_workflow"))
+	return False
 
 
 def mode_from_master(shipment_type: str | None) -> str | None:
@@ -294,13 +304,14 @@ def shipment_type_profile(shipment_type: str | None) -> dict | None:
 		"shipment_type_name": row.get("shipment_type_name") or name,
 		"default_mode_of_transport": mode,
 		"category": get_transport_category(name, mode),
-		"use_sea_import_workflow": bool(row.get("use_sea_import_workflow")),
 		"uses_unit_tracking": bool(row.get("uses_unit_tracking")),
 	}
 	if _shipment_type_field_queryable("container_tracker_mode") and row.get("container_tracker_mode"):
 		profile["container_tracker_mode"] = row.get("container_tracker_mode")
 	elif row.get("container_tracking_mode"):
 		profile["container_tracking_mode"] = row.get("container_tracking_mode")
+	if _shipment_type_field_queryable("task_template") and row.get("task_template"):
+		profile["task_template"] = row.get("task_template")
 	if _shipment_type_field_queryable("task_flow_key") and row.get("task_flow_key"):
 		profile["task_flow_key"] = row.get("task_flow_key")
 	if _shipment_type_field_queryable("uses_container_tracking"):
@@ -412,6 +423,24 @@ BL_TO_OPPORTUNITY_DETAIL_FIELDS = (
 	("bl_number", "custom_draft_bl_number"),
 	("number_of_packages", "custom_number_of_packages"),
 	("package_type", "custom_package_type"),
+)
+
+# Air Waybill → Opportunity / Project scalar mappings.
+AWB_TO_OPPORTUNITY_FIELDS = (
+	("client_reference_no", "custom_client_refrence_no"),
+	("description", "custom_description_of_goods"),
+	("airline", "custom_airline"),
+	("eta", "custom_eta"),
+	("etd", "custom_etd"),
+	("weight_uom", "custom_weight_uom_"),
+	("net_weight", "custom_weight_nw"),
+	("gross_weight", "custom_gross_weight"),
+	("port_of_loading", "custom_port_of_loading"),
+	("port_of_discharge", "custom_port_of_discharge"),
+)
+
+OPPORTUNITY_TO_AWB_FIELDS = tuple(
+	(opp_field, awb_field) for awb_field, opp_field in AWB_TO_OPPORTUNITY_FIELDS
 )
 
 OPPORTUNITY_TO_PROJECT_TRACKING_FIELDS = (
@@ -533,6 +562,56 @@ def apply_bl_fields_to_doc(target_doc, bl_doc) -> bool:
 	return classification_changed or shipping_changed or tracking_changed or detail_changed
 
 
+def apply_awb_scalar_fields_to_doc(target_doc, awb_doc) -> bool:
+	"""Copy Air Waybill scalars onto Opportunity or Project."""
+	changed = False
+	for src_field, dest_field in AWB_TO_OPPORTUNITY_FIELDS:
+		if _set_doc_field_if_changed(target_doc, dest_field, awb_doc.get(src_field)):
+			changed = True
+	alternates = (
+		("net_weight", "custom_net_weight"),
+		("weight_uom", "custom_weight_uom"),
+		("gross_weight", "custom_gross_weight"),
+	)
+	for src_field, dest_field in alternates:
+		if _set_doc_field_if_changed(target_doc, dest_field, awb_doc.get(src_field)):
+			changed = True
+	return changed
+
+
+def apply_awb_fields_to_doc(target_doc, awb_doc) -> bool:
+	"""Copy shipment type, mode, and scalar fields from Air Waybill."""
+	classification_changed = apply_shipment_type_profile_to_doc(
+		target_doc, awb_doc.get("shipment_type")
+	)
+	if (
+		target_doc.meta.has_field("custom_mode_of_transport")
+		and not target_doc.get("custom_mode_of_transport")
+		and _set_doc_field_if_changed(target_doc, "custom_mode_of_transport", "Air")
+	):
+		classification_changed = True
+	scalar_changed = apply_awb_scalar_fields_to_doc(target_doc, awb_doc)
+	return classification_changed or scalar_changed
+
+
+def awb_propagation_payload(awb_doc) -> dict:
+	"""Air Waybill fields for client-side Opportunity apply and API responses."""
+	shipment_type = awb_doc.get("shipment_type")
+	link_name = canonical_shipment_type_link(shipment_type) if shipment_type else None
+	profile = shipment_type_profile(link_name or shipment_type) if shipment_type else None
+	payload = {
+		"awb_name": awb_doc.name,
+		"shipment_type": link_name or shipment_type,
+		"default_mode_of_transport": (profile or {}).get("default_mode_of_transport") or "Air",
+	}
+	for src_field, dest_field in AWB_TO_OPPORTUNITY_FIELDS:
+		value = awb_doc.get(src_field)
+		if value not in (None, ""):
+			payload[dest_field] = value
+			payload[src_field] = value
+	return payload
+
+
 def bl_classification_payload(bl_doc) -> dict:
 	"""Shipment classification fields from a Bill of Lading for client-side apply."""
 	shipment_type = bl_doc.get("shipment_type")
@@ -571,25 +650,31 @@ def copy_tracking_fields_from_source(target, source) -> None:
 
 
 def is_sea_import_enabled(shipment_type: str | None) -> bool:
-	"""True when the Shipment Type master flags sea import workflow."""
-	row = get_shipment_type_record(shipment_type)
-	if not row:
-		return False
-	if _shipment_type_field_queryable("use_sea_import_workflow"):
-		return bool(row.get("use_sea_import_workflow"))
-	return get_transport_category(shipment_type) == "sea"
+	"""True when Shipment Type uses the sea import task template (or legacy flow key)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		SEA_TASK_FLOW_KEY,
+		SEA_TRANSIT_IMPORT_TASK_FLOW_KEY,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		SEA_IMPORT_TEMPLATE,
+		SEA_TRANSIT_IMPORT_TEMPLATE,
+		normalize_template_name,
+	)
+
+	template = get_task_template_for_shipment_type(shipment_type)
+	if template:
+		normalized = normalize_template_name(template)
+		return normalized in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE)
+
+	flow = get_task_flow_key_for_shipment_type(shipment_type)
+	return flow in (SEA_TASK_FLOW_KEY, SEA_TRANSIT_IMPORT_TASK_FLOW_KEY)
 
 
 def sea_import_enabled_for_project(project) -> bool:
-	"""Project-level sea import gate from Shipment Type master configuration."""
+	"""Project uses sea-import automation (UCR gates, workflow) from its Shipment Type."""
 	shipment_type = project.get("custom_shipment_type") if hasattr(project, "get") else None
 	if shipment_type:
-		if is_sea_import_enabled(shipment_type):
-			return True
-		if _shipment_type_field_queryable("use_sea_import_workflow") and get_shipment_type_record(
-			shipment_type
-		):
-			return False
+		return is_sea_import_enabled(shipment_type)
 	mode = project.get("custom_mode_of_transport") if hasattr(project, "get") else None
 	return get_transport_category(None, mode) == "sea"
 
@@ -979,7 +1064,7 @@ def get_shipment_type_profiles() -> dict:
 
 	fields = ["name", "shipment_type_name", "default_mode_of_transport"]
 	for optional in (
-		"use_sea_import_workflow",
+		"task_template",
 		"uses_unit_tracking",
 		"uses_container_tracking",
 		"uses_transit_documents",
@@ -1010,11 +1095,12 @@ def get_shipment_type_profiles() -> dict:
 			"shipment_type_name": row.get("shipment_type_name") or name,
 			"default_mode_of_transport": mode,
 			"category": transport_category_from_mode(mode),
-			"use_sea_import_workflow": bool(row.get("use_sea_import_workflow")),
 			"uses_unit_tracking": bool(row.get("uses_unit_tracking")),
 			"requires_bill_of_lading": bool(row.get("requires_bill_of_lading")),
 			"requires_air_waybill": bool(row.get("requires_air_waybill")),
 		}
+		if row.get("task_template"):
+			profile["task_template"] = row.get("task_template")
 		if row.get("container_tracker_mode"):
 			profile["container_tracker_mode"] = row.get("container_tracker_mode")
 		elif row.get("container_tracking_mode"):

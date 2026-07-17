@@ -193,12 +193,24 @@ function open_project_clearance_tasks(frm) {
 	if (!frm.doc.name || frm.is_new()) {
 		return;
 	}
-	frappe.route_options = {
-		project: frm.doc.name,
-		custom_task_flow_key: "SEA_IMPORT_E2E",
-		status: ["in", ["Open", "Working", "Pending Review", "Overdue", "Completed"]],
-	};
-	frappe.set_route("List", "Task");
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks.get_project_workflow_flow_keys_api",
+		args: { project: frm.doc.name },
+		callback(r) {
+			const flowKeys = (r.message || []).filter(Boolean);
+			frappe.route_options = {
+				project: frm.doc.name,
+				status: ["in", ["Open", "Working", "Pending Review", "Overdue", "Completed"]],
+			};
+			if (flowKeys.length === 1) {
+				frappe.route_options.custom_task_flow_key = flowKeys[0];
+			} else if (flowKeys.length > 1) {
+				frappe.route_options.custom_task_flow_key = ["in", flowKeys];
+			}
+			frappe.set_route("List", "Task");
+		},
+	});
 }
 
 function sync_consignee_from_customer(frm) {
@@ -359,17 +371,26 @@ function render_shipment_progress_chart(frm) {
 				"No clearance tasks on this project yet."
 			)}</div>`;
 			if (d.tasks_total > 0) {
-				let nextHint = __("Create UCR (IDF)");
+				let nextHint = __("Next open task");
 				if (d.first_open_task) {
 					nextHint = `Task ${d.first_open_task.seq}: ${d.first_open_task.subject}`;
 				}
-				taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> sea tasks completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
+				const taskLabel = d.task_progress_label || __("workflow tasks");
+				taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> ${frappe.utils.escape_html(taskLabel)} completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
 			}
 			const berth = frappe.utils.escape_html(d.berth_phase || "Before Vessel Berth");
 			const wfNote =
 				d.workflow_behind && d.workflow_status
 					? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
 					: "";
+			const legendLine = d.uses_clearance_states
+				? `<div class="cgm-tracking-legend">
+						${__("Berth phase")}: <b>${berth}</b> ·
+						${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
+					</div>`
+				: `<div class="cgm-tracking-legend">
+						${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current
+					</div>`;
 			let inspectionLine = "";
 			if (d.inspection_notification_status === "Notified" && d.inspection_notified_on) {
 				inspectionLine = `<div class="cgm-inspection-notified">${__(
@@ -395,32 +416,14 @@ function render_shipment_progress_chart(frm) {
 			field.$wrapper
 				.closest('[data-fieldname="custom_shipment_progress_html"]')
 				.addClass("cgm-shipment-progress-field");
-			const progress_panel_style = [
-				"margin:0 0 1rem 0",
-				"padding:12px 14px",
-				"border-radius:8px",
-				"font-size:12px",
-				"background:radial-gradient(900px 200px at 100% 0%, rgba(227, 24, 55, 0.11), transparent 60%), linear-gradient(135deg, #fff8f9 0%, #ffebef 55%, #fff4f6 100%)",
-				"border:1px solid rgba(227, 24, 55, 0.1)",
-			].join(";");
-			const progress_title_style = [
-				"margin:0 0 10px 0",
-				"font-size:13px",
-				"font-weight:700",
-				"color:#b8122c",
-				"letter-spacing:-0.01em",
-			].join(";");
 			field.$wrapper.html(`
-				<div class="cgm-shipment-progress" style="${progress_panel_style}">
-					<h4 style="${progress_title_style}">${__("Shipment clearance workflow")}</h4>
+				<div class="cgm-shipment-progress">
+					<h4>${__("Shipment clearance workflow")}</h4>
 					<div class="cgm-progress-steps">${steps}</div>
 					${taskLine}
 					${inspectionLine}
 					${portArrivalLine}
-					<div class="cgm-tracking-legend">
-						${__("Berth phase")}: <b>${berth}</b> ·
-						${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
-					</div>
+					${legendLine}
 				</div>
 			`);
 			if (d.workflow_behind && frm.doc.custom_shipment_status !== d.current_status) {
