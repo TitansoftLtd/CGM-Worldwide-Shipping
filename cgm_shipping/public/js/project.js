@@ -232,15 +232,18 @@ function setup_customer_batch_autocomplete(frm) {
 }
 
 function toggle_project_transport_reference_fields(frm) {
-	cgm_shipping.transport_reference.toggle(frm, {
+	const transportToggle = cgm_shipping.transport_reference.toggle(frm, {
 		air_waybill: "custom_awb_number",
 		bill_of_lading: "custom_bill_of_lading",
 		container_table: "custom_container_information",
 	});
-	cgm_shipping.transport_reference.toggle_cargo_type(frm, {
+	const cargoTypeToggle = cgm_shipping.transport_reference.toggle_cargo_type(frm, {
 		booking_confirmation: "custom_booking_confirmation",
 	});
 	toggle_project_cargo_fields(frm);
+	return Promise.all([transportToggle, cargoTypeToggle]).then(([category]) => {
+		toggle_project_document_stage_fields(frm, category);
+	});
 }
 
 function project_cargo_type_code(frm) {
@@ -251,9 +254,10 @@ function toggle_project_cargo_fields(frm) {
 	const is_lcl = project_cargo_type_code(frm) === "LCL";
 	const show_fcl = !is_lcl;
 	const show_packages = is_lcl;
+	const showRequestedCargo = show_fcl && !frm.doc.custom_bill_of_lading;
 
 	[
-		["custom_requested_cargo_quantity", show_fcl],
+		["custom_requested_cargo_quantity", showRequestedCargo],
 		["custom_number_of_packages", show_packages],
 		["custom_package_type", show_packages],
 	].forEach(([fieldname, show]) => {
@@ -270,13 +274,38 @@ function toggle_project_cargo_fields(frm) {
 		frm.set_df_property("custom_cargo_type", "hidden", 0);
 	}
 
-	if (show_fcl) {
+	if (showRequestedCargo) {
 		frm.refresh_field("custom_requested_cargo_quantity");
 	}
 	if (show_packages) {
 		frm.refresh_field("custom_number_of_packages");
 		frm.refresh_field("custom_package_type");
 	}
+}
+
+function toggle_project_document_stage_fields(frm, category) {
+	const hasBillOfLading = Boolean(frm.doc.custom_bill_of_lading);
+	if (category !== "sea") {
+		return;
+	}
+
+	const is_lcl = project_cargo_type_code(frm) === "LCL";
+	const showBookingCargo = !hasBillOfLading && !is_lcl;
+	const showContainerSection = hasBillOfLading || is_lcl;
+	const showContainers = hasBillOfLading && !is_lcl;
+
+	[
+		["custom_section_break_yqqmp", hasBillOfLading],
+		["custom_bill_of_lading", hasBillOfLading],
+		["custom_section_break_amabs", showContainerSection],
+		["custom_container_information", showContainers],
+		["custom_section_break_is8hz", showBookingCargo],
+		["custom_requested_cargo_quantity", showBookingCargo],
+	].forEach(([fieldname, show]) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.toggle_display(fieldname, show);
+		}
+	});
 }
 
 function setup_add_bill_of_lading_button(frm) {
@@ -881,6 +910,7 @@ frappe.ui.form.on("Project", {
 
 	custom_bill_of_lading(frm) {
 		toggle_project_transport_reference_fields(frm);
+		setup_add_bill_of_lading_button(frm);
 	},
 
 	custom_shipment_status(frm) {
