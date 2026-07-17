@@ -4,6 +4,7 @@ const CGM_RETURN_OPPORTUNITY_KEY = "cgm_return_opportunity";
 const CGM_PENDING_BL_LINK_KEY = "cgm_pending_bl_link";
 const CGM_PENDING_AWB_LINK_KEY = "cgm_pending_awb_link";
 const CGM_PENDING_BOOKING_LINK_KEY = "cgm_pending_booking_link";
+const CGM_AWB_SEED_OPPORTUNITY_KEY = "cgm_awb_seed_opportunity";
 
 const STAGE_INTAKE = "intake";
 const STAGE_AWAITING_PRIMARY = "awaiting_primary";
@@ -47,8 +48,6 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 	"custom_port_of_discharge",
 	"custom_voyage_number",
 	"custom_country_of_origin",
-	"custom_clearance_station",
-	"custom_station_code",
 	"custom_draft_bl_number",
 	"custom_eta",
 	"custom_etd",
@@ -73,12 +72,17 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 	"custom_clients_documents",
 ];
 
-cgm_shipping.opportunity_shipment.init_intake_wizard = function (frm) {
+cgm_shipping.opportunity_shipment.init_intake_wizard = function (frm, opts = {}) {
 	cgm_shipping.opportunity_shipment._reset_new_opportunity_session(frm);
 	cgm_shipping.opportunity_shipment._prepare_intake_defaults(frm);
 	cgm_shipping.opportunity_shipment._configure_intake_form(frm);
 	cgm_shipping.opportunity_shipment._ensure_intake_fields_visible(frm);
-	cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
+	cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+	if (!opts.defer_refresh) {
+		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm).then(() => {
+			cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+		});
+	}
 	cgm_shipping.opportunity_shipment.setup_start_shipment_button(frm);
 };
 
@@ -241,6 +245,10 @@ cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible = fun
 			return;
 		}
 		frm.set_df_property(fieldname, "depends_on", "");
+		frm.set_df_property(fieldname, "read_only_depends_on", "");
+		if (fieldname === "custom_clearance_station") {
+			frm.set_df_property(fieldname, "read_only", 0);
+		}
 		frm.set_df_property(fieldname, "hidden", 0);
 		frm.toggle_display(fieldname, true);
 	});
@@ -514,6 +522,50 @@ cgm_shipping.opportunity_shipment._open_transport_document = function (frm, doc)
 	});
 };
 
+cgm_shipping.opportunity_shipment._build_awb_route_options = function (frm) {
+	const opts = {};
+	if (frm.doc.name && !String(frm.doc.name).startsWith("new-")) {
+		opts.linked_opportunity = frm.doc.name;
+	}
+	if (frm.doc.party_name) {
+		opts.customer = frm.doc.party_name;
+	}
+	if (frm.doc.custom_shipment_type) {
+		opts.shipment_type = frm.doc.custom_shipment_type;
+	}
+	if (frm.doc.custom_client_refrence_no) {
+		opts.client_reference_no = frm.doc.custom_client_refrence_no;
+	}
+	if (frm.doc.custom_description_of_goods) {
+		opts.description = frm.doc.custom_description_of_goods;
+	}
+	if (frm.doc.custom_airline) {
+		opts.airline = frm.doc.custom_airline;
+	}
+	if (frm.doc.custom_eta) {
+		opts.eta = frm.doc.custom_eta;
+	}
+	if (frm.doc.custom_etd) {
+		opts.etd = frm.doc.custom_etd;
+	}
+	if (frm.doc.custom_weight_uom_) {
+		opts.weight_uom = frm.doc.custom_weight_uom_;
+	}
+	if (frm.doc.custom_weight_nw != null && frm.doc.custom_weight_nw !== "") {
+		opts.net_weight = frm.doc.custom_weight_nw;
+	}
+	if (frm.doc.custom_gross_weight != null && frm.doc.custom_gross_weight !== "") {
+		opts.gross_weight = frm.doc.custom_gross_weight;
+	}
+	if (frm.doc.custom_port_of_loading) {
+		opts.port_of_loading = frm.doc.custom_port_of_loading;
+	}
+	if (frm.doc.custom_port_of_discharge) {
+		opts.port_of_discharge = frm.doc.custom_port_of_discharge;
+	}
+	return opts;
+};
+
 cgm_shipping.opportunity_shipment._build_transport_document_seed = function (frm, doc) {
 	const seed = {};
 	if (frm.doc.name && !String(frm.doc.name).startsWith("new-")) {
@@ -527,6 +579,8 @@ cgm_shipping.opportunity_shipment._build_transport_document_seed = function (frm
 		seed.shipment_type = frm.doc.custom_shipment_type;
 	}
 	if (frm.doc.custom_client_refrence_no) {
+		seed.client_reference_no = frm.doc.custom_client_refrence_no;
+		// Legacy aliases consumed by older AWB onload handlers.
 		seed.client_ref = frm.doc.custom_client_refrence_no;
 		seed.client_refrence_no = frm.doc.custom_client_refrence_no;
 	}
@@ -549,6 +603,13 @@ cgm_shipping.opportunity_shipment._build_transport_document_seed = function (frm
 		// Flag for BL form to fetch the full Opportunity/Booking seed (incl. child rows).
 		if (frm.doc.name && !String(frm.doc.name).startsWith("new-")) {
 			localStorage.setItem("cgm_bl_seed_opportunity", frm.doc.name);
+		}
+	}
+
+	if (doc.doctype === "Air Waybill") {
+		Object.assign(seed, cgm_shipping.opportunity_shipment._build_awb_route_options(frm));
+		if (frm.doc.name && !String(frm.doc.name).startsWith("new-")) {
+			localStorage.setItem(CGM_AWB_SEED_OPPORTUNITY_KEY, frm.doc.name);
 		}
 	}
 
@@ -575,20 +636,13 @@ cgm_shipping.opportunity_shipment.setup_awb_create_route = function (frm) {
 	}
 	frm._cgm_awb_create_route_setup = true;
 	df.get_route_options_for_new_doc = () => {
-		const opts = {};
 		if (frm.doc.name) {
 			localStorage.setItem(CGM_RETURN_OPPORTUNITY_KEY, frm.doc.name);
 		}
 		if (frm.doc.name && !String(frm.doc.name).startsWith("new-")) {
-			opts.linked_opportunity = frm.doc.name;
-			if (frm.doc.custom_shipment_type) {
-				opts.shipment_type = frm.doc.custom_shipment_type;
-			}
-			if (frm.doc.party_name) {
-				opts.customer = frm.doc.party_name;
-			}
+			localStorage.setItem(CGM_AWB_SEED_OPPORTUNITY_KEY, frm.doc.name);
 		}
-		return opts;
+		return cgm_shipping.opportunity_shipment._build_awb_route_options(frm);
 	};
 };
 
@@ -670,6 +724,10 @@ cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit = function (frm)
 	cgm_shipping.opportunity_shipment.apply_awb_payload(frm, pending);
 
 	localStorage.removeItem(CGM_PENDING_AWB_LINK_KEY);
+	cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+	cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm).then(() => {
+		cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+	});
 	frappe.show_alert({
 		message: __("Air Waybill {0} linked — fields synced; continue completing this Opportunity.", [
 			pending.awb_name,

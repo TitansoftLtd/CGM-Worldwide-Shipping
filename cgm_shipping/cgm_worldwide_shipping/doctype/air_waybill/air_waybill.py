@@ -24,6 +24,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment imp
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_awb_fields_to_doc,
 	awb_propagation_payload,
+	OPPORTUNITY_TO_AWB_FIELDS,
 )
 
 # Air Waybill -> Opportunity (back-link on this doctype) and Opportunity -> AWB.
@@ -41,7 +42,12 @@ class AirWaybill(Document):
 
 	def validate(self):
 		sanitize_air_waybill_linked_opportunity(self)
-		sync_opportunity_from_awb(self, allow_draft=True)
+
+	def on_update(self):
+		# Sync after the AWB row exists — validate runs before insert and cannot
+		# set Opportunity.custom_air_waybill (Link) yet.
+		if self.get(OPPORTUNITY_SOURCE_FIELD):
+			sync_opportunity_from_awb(self, allow_draft=True)
 
 	def on_submit(self):
 		"""Keep the linked Opportunity aligned once the Air Waybill is submitted."""
@@ -85,8 +91,9 @@ def apply_awb_fields_to_opportunity(opp, awb_doc) -> bool:
 	"""Copy AWB fields onto Opportunity. Returns True if anything changed."""
 	changed = False
 
-	if _set_opp_value(opp, OPPORTUNITY_AWB_FIELD, awb_doc.name):
-		changed = True
+	if awb_doc.name and frappe.db.exists("Air Waybill", awb_doc.name):
+		if _set_opp_value(opp, OPPORTUNITY_AWB_FIELD, awb_doc.name):
+			changed = True
 
 	if apply_awb_fields_to_doc(opp, awb_doc):
 		changed = True
@@ -130,6 +137,34 @@ def sync_opportunity_from_awb(
 def sync_opportunity_from_submitted_awb(awb_doc, opportunity: str | None = None) -> str | None:
 	"""Backward-compatible alias used by submit / payload helpers."""
 	return sync_opportunity_from_awb(awb_doc, opportunity, allow_draft=False)
+
+
+def _scalar_seed_value(value):
+	if value in (None, ""):
+		return None
+	return value
+
+
+def build_awb_seed_from_opportunity(opp) -> dict:
+	"""Prefill payload when creating an Air Waybill from Opportunity."""
+	seed: dict = {}
+	if opp.name and is_valid_opportunity_link(opp.name):
+		seed["linked_opportunity"] = opp.name
+
+	if opp.opportunity_from == "Customer" and opp.get("party_name"):
+		seed["customer"] = opp.party_name
+
+	if opp.get("custom_shipment_type"):
+		seed["shipment_type"] = opp.get("custom_shipment_type")
+
+	for src, dest in OPPORTUNITY_TO_AWB_FIELDS:
+		if not opp.meta.has_field(src):
+			continue
+		value = _scalar_seed_value(opp.get(src))
+		if value is not None:
+			seed[dest] = value
+
+	return seed
 
 
 def sync_linked_project_from_awb(awb_doc, opportunity: str) -> str | None:
@@ -188,6 +223,20 @@ def prepend_opportunity_awb_document(opp_doc, attachment_url, awb_name=None) -> 
 
 
 # ─── Whitelisted API ──────────────────────────────────────────────────────────
+@frappe.whitelist()
+def get_awb_seed_for_opportunity(opportunity: str | None = None) -> dict:
+	"""Return AWB prefill fields from the linked Opportunity.
+
+	Used by + Add Air Waybill so users never re-enter intake shipment data.
+	"""
+	if not is_valid_opportunity_link(opportunity):
+		return {}
+
+	frappe.has_permission("Opportunity", ptype="read", doc=opportunity, throw=True)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	return build_awb_seed_from_opportunity(opp)
+
+
 @frappe.whitelist()
 def get_awb_fields_for_opportunity(air_waybill: str | None = None) -> dict:
 	"""Return AWB field payload for Opportunity client/server refresh."""

@@ -140,7 +140,7 @@ function run_opportunity_form_syncs(frm, opts = {}) {
 	register_clients_documents_remove_handler(frm);
 	configure_opportunity_clients_documents_grid(frm);
 	setup_opportunity_bill_of_lading_create(frm);
-	cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
+	cgm_shipping.opportunity_shipment.init_intake_wizard(frm, { defer_refresh: true });
 	sync_opportunity_consignee_from_customer(frm, { force_show: true });
 
 	// Pending transport-doc redirects only apply to the saved Opportunity they came from.
@@ -162,6 +162,11 @@ function run_opportunity_form_syncs(frm, opts = {}) {
 			}
 		}
 	}
+
+	cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+	cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm).then(() => {
+		cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+	});
 }
 
 function row_has_shipment_document_file(row) {

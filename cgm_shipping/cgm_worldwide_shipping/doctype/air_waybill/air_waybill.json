@@ -7,9 +7,9 @@
  "field_order": [
   "section_break_awb_details",
   "customer",
-  "air_waybill",
   "client_reference_no",
   "shipment_type",
+  "air_waybill",
   "column_break_utxs",
   "airline",
   "eta",
@@ -46,7 +46,7 @@
   {
    "fieldname": "air_waybill",
    "fieldtype": "Data",
-   "label": "Air Waybill",
+   "label": "Air Waybill Number",
    "reqd": 1
   },
   {
@@ -117,16 +117,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "eta",
-   "fieldtype": "Data",
-   "label": " ETA "
-  },
-  {
-   "fieldname": "etd",
-   "fieldtype": "Data",
-   "label": " ETD "
-  },
-  {
    "fieldname": "port_of_loading",
    "fieldtype": "Data",
    "label": " Port of Loading "
@@ -146,13 +136,23 @@
    "fieldname": "port_of_discharge",
    "fieldtype": "Data",
    "label": "Port of Discharge"
+  },
+  {
+   "fieldname": "eta",
+   "fieldtype": "Date",
+   "label": " ETA "
+  },
+  {
+   "fieldname": "etd",
+   "fieldtype": "Date",
+   "label": "ETD"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-17 13:04:11.144337",
+ "modified": "2026-07-17 13:33:17.865382",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Air Waybill",
