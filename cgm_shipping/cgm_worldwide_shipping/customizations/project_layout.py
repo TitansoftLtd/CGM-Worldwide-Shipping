@@ -1042,7 +1042,7 @@ def _ensure_tracking_fields() -> None:
 			"in_standard_filter": 1,
 			"in_global_search": 1,
 			"read_only": 1,
-			"description": "Business project reference (e.g. LP 4X40-8/0082).",
+			"description": "Business project reference (e.g. PO-99 / 3X20 / 1 or PO-99 / 10 Cartons).",
 		},
 	)
 	_create_cf(

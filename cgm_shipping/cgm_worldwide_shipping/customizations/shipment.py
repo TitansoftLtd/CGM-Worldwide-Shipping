@@ -682,7 +682,7 @@ def sea_import_enabled_for_project(project) -> bool:
 	return get_transport_category(None, mode) == "sea"
 
 # ─── Legacy CGM reference (old project names) ────────────────────────────────
-# New Projects use LP {qty}X{size}-{batch}/{seq} via project_naming.py.
+# New Projects use Client Ref / Quantity[/ Batch] via project_naming.py.
 
 LEGACY_CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$", re.IGNORECASE)
 
