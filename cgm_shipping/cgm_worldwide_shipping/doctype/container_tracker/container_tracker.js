@@ -56,6 +56,33 @@ const MODE_SECTIONS = {
 	],
 };
 
+const TAB_SECTIONS = {
+	transport_and_delivery_tab: ["section_transport"],
+	warehouse_tab: ["section_warehouse"],
+	empty_return_and_interchange_tab: ["section_empty_return"],
+	free_days_tab: ["section_shipping_line_free_days", "section_kpa_free_days"],
+};
+
+function resolve_mode_sections(mode) {
+	const normalized = (mode || "").trim();
+	if (MODE_SECTIONS[normalized]) {
+		return MODE_SECTIONS[normalized];
+	}
+	if (normalized.includes("ICD")) {
+		return MODE_SECTIONS["ICD Nairobi"];
+	}
+	if (normalized.includes("Transit Export")) {
+		return MODE_SECTIONS["Transit Export"];
+	}
+	if (normalized.includes("Transit")) {
+		return MODE_SECTIONS["Transit Import"];
+	}
+	if (normalized.includes("Export")) {
+		return MODE_SECTIONS.Export;
+	}
+	return MODE_SECTIONS["Mombasa Port"];
+}
+
 function lock_transport_assignment_fields(frm) {
 	const can_override =
 		frappe.user.has_role("System Manager") || frappe.user.has_role("Operations Manager");
@@ -67,8 +94,7 @@ function lock_transport_assignment_fields(frm) {
 }
 
 function apply_container_mode_layout(frm) {
-	const mode = frm.doc.container_mode || "Mombasa Port";
-	const show = new Set(MODE_SECTIONS[mode] || MODE_SECTIONS["Mombasa Port"]);
+	const show = new Set(resolve_mode_sections(frm.doc.container_mode));
 	Object.keys(frm.fields_dict).forEach((fn) => {
 		const f = frm.fields_dict[fn];
 		if (!f || f.df.fieldtype !== "Section Break") {
@@ -77,6 +103,14 @@ function apply_container_mode_layout(frm) {
 		if (fn.startsWith("section_")) {
 			frm.set_df_property(fn, "hidden", show.has(fn) ? 0 : 1);
 		}
+	});
+
+	Object.entries(TAB_SECTIONS).forEach(([tab_field, section_fields]) => {
+		if (!frm.fields_dict[tab_field]) {
+			return;
+		}
+		const tab_visible = section_fields.some((section) => show.has(section));
+		frm.set_df_property(tab_field, "hidden", tab_visible ? 0 : 1);
 	});
 }
 

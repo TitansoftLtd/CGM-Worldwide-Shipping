@@ -374,6 +374,33 @@ def _set_cf_property(fieldname: str, **kwargs) -> None:
 		frappe.db.set_value("Custom Field", name, key, value, update_modified=False)
 
 
+def check_project_layout_export_drift() -> list[str]:
+	"""Return Project custom fields that exist in DB but are missing from field_order.
+
+	When non-empty, export Customize Form to ``custom/project.json`` so production
+	migrate applies the same layout (``sync_on_migrate``).
+	"""
+	ps_name = "Project-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return []
+
+	raw = frappe.db.get_value("Property Setter", ps_name, "value") or "[]"
+	try:
+		order = json.loads(raw)
+	except json.JSONDecodeError:
+		return []
+
+	if not isinstance(order, list):
+		return []
+
+	order_set = set(order)
+	return sorted(
+		fn
+		for fn in frappe.get_all("Custom Field", filters={"dt": "Project"}, pluck="fieldname")
+		if fn not in order_set
+	)
+
+
 def ensure_supplier_field_order() -> None:
 	"""Ensure CGM Supplier fields are listed in field_order (otherwise they stay hidden)."""
 	ps_name = "Supplier-main-field_order"
@@ -1373,7 +1400,7 @@ def ensure_cargo_type_fields() -> None:
 
 
 def ensure_transit_project_fields() -> None:
-	"""Project fields for transit export destination entry and UBS permit tracking."""
+	"""Project fields for container tracker mode, transit entry, and UBS permit tracking."""
 	_ensure_cf(
 		"Project",
 		{
@@ -1382,8 +1409,17 @@ def ensure_transit_project_fields() -> None:
 			"fieldtype": "Link",
 			"options": "Container Tracker Mode",
 			"insert_after": "custom_shipment_type",
+			"fetch_from": "custom_shipment_type.container_tracker_mode",
+			"fetch_if_empty": 1,
 			"in_standard_filter": 1,
+			"description": "Where containers for this shipment are tracked (Mombasa, ICD, Transit, Export). Defaults from Shipment Type.",
 		},
+	)
+	_set_cf_property(
+		"custom_container_tracker_mode",
+		hidden=0,
+		fetch_from="custom_shipment_type.container_tracker_mode",
+		fetch_if_empty=1,
 	)
 	_ensure_cf(
 		"Project",
@@ -1471,7 +1507,42 @@ def ensure_transit_project_fields() -> None:
 	if frappe.db.exists("Property Setter", "Project-project_type-hidden"):
 		frappe.db.set_value("Property Setter", "Project-project_type-hidden", "value", "0")
 
+	_backfill_project_container_tracker_modes()
 	frappe.clear_cache(doctype="Project")
+
+
+def _backfill_project_container_tracker_modes() -> None:
+	"""Copy Shipment Type container tracker mode onto projects that are still blank."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+		container_tracking_mode_for_shipment_type,
+	)
+
+	if not frappe.db.has_column("Project", "custom_container_tracker_mode"):
+		return
+
+	for row in frappe.get_all(
+		"Project",
+		filters={
+			"custom_shipment_type": ["is", "set"],
+			"custom_container_tracker_mode": ["in", ("", None)],
+		},
+		fields=["name", "custom_shipment_type"],
+		limit=500,
+	):
+		mode = container_tracking_mode_for_shipment_type(row.custom_shipment_type)
+		if not mode:
+			continue
+		frappe.db.set_value(
+			"Project",
+			row.name,
+			"custom_container_tracker_mode",
+			mode,
+			update_modified=False,
+		)
+		if frappe.db.has_column("Project", "project_type"):
+			frappe.db.set_value(
+				"Project", row.name, "project_type", mode, update_modified=False
+			)
 
 
 def ensure_opportunity_universal_fields() -> None:

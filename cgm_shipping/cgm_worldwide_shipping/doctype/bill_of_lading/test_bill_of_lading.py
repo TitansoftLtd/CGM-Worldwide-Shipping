@@ -13,6 +13,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	is_fcl_cargo_type,
 	is_lcl_cargo_type,
 	next_fcl_batch_number,
+	normalize_derived_quantity,
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
 	build_bill_of_lading_name,
@@ -71,11 +72,20 @@ class TestFclBatchQuantity(IntegrationTestCase):
 			self.assertEqual(
 				next_fcl_batch_number(
 					customer="CUST-A",
-					shipment_type="Sea Import",
 					derived_quantity="1 x 40FT",
 				),
 				3,
 			)
+
+	def test_normalize_derived_quantity_treats_size_variants_equally(self):
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch.normalize_cargo_size",
+			side_effect=lambda size: (size or "").replace(" ", "").upper(),
+		):
+			left = normalize_derived_quantity("2 x 40 Ft")
+			right = normalize_derived_quantity("2 x 40FT")
+			self.assertEqual(left, right)
+			self.assertEqual(left, "2 x 40FT")
 
 
 class TestBillOfLadingNaming(IntegrationTestCase):

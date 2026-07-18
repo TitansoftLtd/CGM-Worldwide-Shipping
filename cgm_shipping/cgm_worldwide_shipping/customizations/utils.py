@@ -112,7 +112,27 @@ def get_bl_config() -> dict:
 		config["opportunity_container_field"] = get_container_table_field_for_doctype("Opportunity")
 	if not config.get("opportunity_source_field"):
 		config["opportunity_source_field"] = get_link_field_for_doctype("Bill of Lading", "Opportunity")
+	config["attachment_field"] = resolve_doctype_attachment_field(
+		"Bill of Lading",
+		"attach_bill_of_lading",
+		"attach_bill",
+		"attach_bl",
+	)
 	return config
+
+
+def resolve_doctype_attachment_field(doctype: str, *preferred: str) -> str | None:
+	"""Return the primary Attach field on a DocType (explicit names first)."""
+	if not doctype or not frappe.db.exists("DocType", doctype):
+		return None
+	meta = frappe.get_meta(doctype)
+	for fieldname in preferred:
+		if fieldname and meta.has_field(fieldname):
+			return fieldname
+	for df in meta.fields:
+		if df.fieldtype == "Attach":
+			return df.fieldname
+	return None
 
 
 def load_cgm_task_template_items(template_name: str) -> list[dict]:

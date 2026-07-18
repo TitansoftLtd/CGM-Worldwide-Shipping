@@ -8,14 +8,16 @@
  "field_order": [
   "section_identity",
   "project",
-  "container_number",
   "bl_number",
-  "container_mode",
+  "custom_release_date",
+  "container_number",
   "cargo_size",
   "seal_no",
-  "new_serial_number",
+  "new_seal_number",
+  "reason_for_new_seal_number",
   "column_break_identity",
   "shipping_line",
+  "container_mode",
   "status",
   "delivery_destination",
   "current_location",
@@ -25,10 +27,9 @@
   "ata",
   "section_mombasa",
   "discharging_date",
-  "custom_release_date",
   "column_break_dates",
-  "free_days_count_from",
   "gate_out_date_port",
+  "free_days_count_from",
   "section_icd",
   "get_in_mombasa",
   "get_out_mombasa",
@@ -36,31 +37,24 @@
   "icd_gate_in_date",
   "icd_gate_out_date",
   "section_transit",
+  "transit_gate_in_date",
   "release_order_number",
-  "release_order_date",
-  "column_break_transit_ro",
   "kpa_booking_reference",
-  "loading_slip_number",
-  "loading_slip_date",
-  "column_break_transit_dn",
+  "release_order_date",
   "delivery_note_number",
   "delivery_note_date",
-  "c2_number",
+  "column_break_transit_ro",
+  "loading_slip_number",
+  "loading_slip_date",
   "c2_date",
-  "column_break_transit_c2",
+  "c2_number",
   "exit_note_number",
   "exit_note_date",
-  "ecmd_device_number",
-  "ecmd_fitted_date",
-  "column_break_transit_ecmd",
-  "transit_departure_date",
+  "column_break_transit_c2",
   "border_post",
   "border_clearance_date",
   "uganda_release_date",
-  "column_break_qkej",
-  "transit_gate_in_date",
-  "column_break_mtin",
-  "transit_gate_out_date",
+  "transit_departure_date",
   "section_export",
   "port_entry_date",
   "stuffing_date",
@@ -254,7 +248,7 @@
    "label": "Gate Out ICD"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
+   "depends_on": "eval:doc.container_mode && (doc.container_mode.includes('Mombasa') || doc.container_mode.includes('ICD') || doc.container_mode.includes('Transit') || doc.container_mode.includes('Export'))",
    "fieldname": "section_transport",
    "fieldtype": "Section Break",
    "label": "Transport"
@@ -281,7 +275,7 @@
    "options": "Supplier"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
+   "depends_on": "eval:doc.container_mode && (doc.container_mode.includes('Mombasa') || doc.container_mode.includes('ICD') || doc.container_mode.includes('Transit'))",
    "fieldname": "section_warehouse",
    "fieldtype": "Section Break",
    "label": "Warehouse"
@@ -344,11 +338,6 @@
   },
   {
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
-   "fieldname": "column_break_transit_dn",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "delivery_note_number",
    "fieldtype": "Data",
    "label": "Delivery Note Number"
@@ -390,23 +379,6 @@
   },
   {
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
-   "fieldname": "ecmd_device_number",
-   "fieldtype": "Data",
-   "label": "ECMD Device Number"
-  },
-  {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
-   "fieldname": "ecmd_fitted_date",
-   "fieldtype": "Date",
-   "label": "ECMD Fitted Date"
-  },
-  {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
-   "fieldname": "column_break_transit_ecmd",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "transit_departure_date",
    "fieldtype": "Date",
    "label": "Transit Departure Date"
@@ -431,25 +403,9 @@
   },
   {
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
-   "fieldname": "column_break_qkej",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "transit_gate_in_date",
    "fieldtype": "Date",
    "label": "Transit Gate In Date"
-  },
-  {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
-   "fieldname": "column_break_mtin",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
-   "fieldname": "transit_gate_out_date",
-   "fieldtype": "Date",
-   "label": "Transit Gate Out Date"
   },
   {
    "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
@@ -586,7 +542,7 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
+   "depends_on": "eval:doc.container_mode && (doc.container_mode.includes('Mombasa') || doc.container_mode.includes('ICD'))",
    "fieldname": "section_empty_return",
    "fieldtype": "Section Break",
    "label": "Empty Return & Interchange"
@@ -595,8 +551,7 @@
    "description": "Last day to return the empty without demurrage/detention charges",
    "fieldname": "expected_empty_return",
    "fieldtype": "Date",
-   "label": "Expected Empty Return",
-   "read_only": 1
+   "label": "Expected Empty Return"
   },
   {
    "fieldname": "actual_empty_return",
@@ -694,11 +649,6 @@
    "label": "Empty Return and Interchange"
   },
   {
-   "fieldname": "new_serial_number",
-   "fieldtype": "Data",
-   "label": "New Serial number"
-  },
-  {
    "fieldname": "delivery_destination",
    "fieldtype": "Data",
    "label": "Delivery Destination "
@@ -716,7 +666,7 @@
    "description": "Optional transfer/arrival date at Mombasa when distinct from Gate In Mombasa.",
    "fieldname": "get_in_mombasa",
    "fieldtype": "Date",
-   "label": "Mombasa Arrival (Transfer)"
+   "label": "Get In Mombasa"
   },
   {
    "description": "First chargeable day \u2014 the day after Shipping Line Free Day End Date",
@@ -739,11 +689,22 @@
    "fieldtype": "Link",
    "label": "Cargo Size",
    "options": "Cargo Size"
+  },
+  {
+   "fieldname": "new_seal_number",
+   "fieldtype": "Data",
+   "label": "New Seal Number"
+  },
+  {
+   "depends_on": "eval:doc.new_seal_number",
+   "fieldname": "reason_for_new_seal_number",
+   "fieldtype": "Small Text",
+   "label": "Reason for New Seal Number "
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-10 07:11:54.310475",
+ "modified": "2026-07-18 08:01:09.415763",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

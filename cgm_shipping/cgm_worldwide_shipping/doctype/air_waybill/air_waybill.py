@@ -193,8 +193,11 @@ def sync_linked_project_from_awb(awb_doc, opportunity: str) -> str | None:
 	if copy_opportunity_scalars_to_project(project, opp):
 		changed = True
 
-	if not changed:
-		return project_name
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		sync_project_documents_from_opportunity,
+	)
+
+	sync_project_documents_from_opportunity(project, opp)
 
 	project.flags.ignore_validate = True
 	project.save(ignore_permissions=True)
