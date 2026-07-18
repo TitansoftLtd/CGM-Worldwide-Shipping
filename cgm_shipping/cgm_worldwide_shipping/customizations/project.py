@@ -749,6 +749,31 @@ def sync_predocuments_from_source(project, source_doc) -> None:
 	"""Copy Opportunity Clients Documents and Customer KRA PIN onto Project shipment documents."""
 	sync_project_documents_from_opportunity(project, source_doc)
 
+
+def sync_linked_project_documents_from_opportunity(opportunity: str) -> str | None:
+	"""Push Opportunity client documents + Customer KRA PIN onto the linked Project."""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
+	)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	sync_project_documents_from_opportunity(project, opp)
+
+	frappe.flags.cgm_syncing_shipment_documents = True
+	try:
+		project.flags.ignore_validate = True
+		project.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_shipment_documents = False
+	return project_name
+
 @frappe.whitelist()
 def get_shipment_project_for_opportunity(opportunity: str) -> str | None:
 	"""Return the shipment Project linked to an Opportunity, if any."""

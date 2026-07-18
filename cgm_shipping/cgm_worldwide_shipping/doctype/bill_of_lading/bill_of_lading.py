@@ -135,12 +135,12 @@ def apply_bl_quantity_and_batch(doc) -> None:
 		_clear_empty_container_rows(doc)
 		return
 
-	if not is_fcl_cargo_type(doc.get("cargo_type")):
+	derived = derived_quantity_from_bl(doc)
+	if not derived:
 		if doc.meta.has_field("batch_no"):
 			doc.batch_no = None
 		return
 
-	derived = derived_quantity_from_bl(doc)
 	allocate_fcl_batch_for_doc(
 		doc,
 		cargo_type_field="cargo_type",
@@ -541,14 +541,11 @@ def sync_linked_project_from_bl(bl_doc, opportunity: str) -> str | None:
 		changed = True
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		carry_bill_of_lading_attachment_to_project,
+		sync_project_documents_from_opportunity,
 	)
 
-	carry_bill_of_lading_attachment_to_project(
-		project, bl_name=bl_doc.name, source_doc=opp
-	)
-	# Always save: container table / document rows may have changed even when
-	# scalar compares looked equal (e.g. seal numbers filled in).
+	sync_project_documents_from_opportunity(project, opp)
+	project.flags.ignore_validate = True
 	project.save(ignore_permissions=True)
 	_ = changed
 

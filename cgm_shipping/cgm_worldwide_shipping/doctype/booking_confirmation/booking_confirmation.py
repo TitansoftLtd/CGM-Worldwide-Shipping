@@ -22,7 +22,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	allocate_fcl_batch_for_doc,
 	derived_quantity_from_booking,
-	is_fcl_cargo_type,
 	is_lcl_cargo_type,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
@@ -71,7 +70,13 @@ class BookingConfirmation(Document):
 			sync_opportunity_from_booking(self, allow_draft=True)
 
 	def on_submit(self):
-		sync_opportunity_from_booking(self, allow_draft=False)
+		opportunity = sync_opportunity_from_booking(self, allow_draft=False)
+		if opportunity:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+				sync_linked_project_documents_from_opportunity,
+			)
+
+			sync_linked_project_documents_from_opportunity(opportunity)
 
 
 def is_valid_opportunity_link(opportunity: str | None) -> bool:
@@ -127,10 +132,12 @@ def apply_booking_quantity_and_batch(doc) -> None:
 			doc.batch_no = None
 		return
 
-	if not is_fcl_cargo_type(cargo_type):
+	derived = derived_quantity_from_booking(doc)
+	if not derived:
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = None
 		return
 
-	derived = derived_quantity_from_booking(doc)
 	allocate_fcl_batch_for_doc(
 		doc,
 		cargo_type_field="requested_cargo_type",
