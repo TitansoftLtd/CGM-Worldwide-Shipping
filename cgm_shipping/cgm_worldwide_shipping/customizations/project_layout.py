@@ -374,24 +374,30 @@ def _set_cf_property(fieldname: str, **kwargs) -> None:
 		frappe.db.set_value("Custom Field", name, key, value, update_modified=False)
 
 
-def _ensure_project_field_in_order(fieldname: str, after_fieldname: str) -> None:
-	"""Insert a Project custom field into the main field_order property setter."""
+def check_project_layout_export_drift() -> list[str]:
+	"""Return Project custom fields that exist in DB but are missing from field_order.
+
+	When non-empty, export Customize Form to ``custom/project.json`` so production
+	migrate applies the same layout (``sync_on_migrate``).
+	"""
 	ps_name = "Project-main-field_order"
 	if not frappe.db.exists("Property Setter", ps_name):
-		return
+		return []
+
 	raw = frappe.db.get_value("Property Setter", ps_name, "value") or "[]"
 	try:
 		order = json.loads(raw)
 	except json.JSONDecodeError:
-		return
-	if not isinstance(order, list) or fieldname in order:
-		return
-	if after_fieldname in order:
-		order.insert(order.index(after_fieldname) + 1, fieldname)
-	else:
-		order.append(fieldname)
-	frappe.db.set_value(
-		"Property Setter", ps_name, "value", json.dumps(order), update_modified=False
+		return []
+
+	if not isinstance(order, list):
+		return []
+
+	order_set = set(order)
+	return sorted(
+		fn
+		for fn in frappe.get_all("Custom Field", filters={"dt": "Project"}, pluck="fieldname")
+		if fn not in order_set
 	)
 
 
@@ -1408,9 +1414,6 @@ def ensure_transit_project_fields() -> None:
 			"in_standard_filter": 1,
 			"description": "Where containers for this shipment are tracked (Mombasa, ICD, Transit, Export). Defaults from Shipment Type.",
 		},
-	)
-	_ensure_project_field_in_order(
-		"custom_container_tracker_mode", "custom_shipment_type"
 	)
 	_set_cf_property(
 		"custom_container_tracker_mode",
