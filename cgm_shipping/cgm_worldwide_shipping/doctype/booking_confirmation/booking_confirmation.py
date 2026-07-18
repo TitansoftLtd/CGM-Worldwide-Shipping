@@ -22,7 +22,13 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	allocate_fcl_batch_for_doc,
 	derived_quantity_from_booking,
+	hydrate_requested_cargo_rows,
 	is_lcl_cargo_type,
+	request_row_cargo_size,
+	request_row_quantity,
+	requested_cargo_rows_from_counts,
+	counts_from_derived_quantity_text,
+	counts_from_request_rows,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_shipment_type_profile_to_doc,
@@ -51,7 +57,7 @@ BOOKING_TO_OPPORTUNITY_FIELDS = (
 	("port_of_loading", "custom_port_of_loading"),
 	("port_of_discharge", "custom_port_of_discharge"),
 	("voyage_number", "custom_voyage_number"),
-	("cargo_cut_off", "custom_cargo_cut_off"),
+	("cargo_cut_off", "custom_cargo_cutoff"),
 	("number_of_packages", "custom_number_of_packages"),
 	("package_type", "custom_package_type"),
 	("batch_no", "custom_batch_no"),
@@ -73,10 +79,10 @@ class BookingConfirmation(Document):
 		opportunity = sync_opportunity_from_booking(self, allow_draft=False)
 		if opportunity:
 			from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
-				sync_linked_project_documents_from_opportunity,
+				sync_linked_project_from_booking,
 			)
 
-			sync_linked_project_documents_from_opportunity(opportunity)
+			sync_linked_project_from_booking(self, opportunity)
 
 
 def is_valid_opportunity_link(opportunity: str | None) -> bool:
@@ -119,6 +125,28 @@ def _set_opp_value(opp, fieldname: str, value) -> bool:
 	return True
 
 
+def _validate_booking_requested_cargo_sizes(doc) -> None:
+	"""FCL Booking rows must include Cargo Size (size is required for Opp/Project sync)."""
+	if is_lcl_cargo_type(doc.get("requested_cargo_type")):
+		return
+	rows = list(doc.get("requested_cargo_quantity") or [])
+	if not rows:
+		return
+	missing = [
+		idx
+		for idx, row in enumerate(rows, start=1)
+		if not request_row_cargo_size(row) and request_row_quantity(row)
+	]
+	if not missing:
+		return
+	frappe.throw(
+		frappe._(
+			"Cargo Size is required on Requested Cargo Quantity row(s) {0}."
+		).format(", ".join(str(i) for i in missing)),
+		title=frappe._("Requested Cargo"),
+	)
+
+
 def apply_booking_quantity_and_batch(doc) -> None:
 	"""Set derived quantity and FCL batch on Booking Confirmation."""
 	cargo_type = doc.get("requested_cargo_type")
@@ -131,6 +159,10 @@ def apply_booking_quantity_and_batch(doc) -> None:
 		if doc.meta.has_field("batch_no"):
 			doc.batch_no = None
 		return
+
+	# Recover cargo_size onto child rows before deriving quantity / batch.
+	hydrate_requested_cargo_rows(doc)
+	_validate_booking_requested_cargo_sizes(doc)
 
 	derived = derived_quantity_from_booking(doc)
 	if not derived:
@@ -155,19 +187,32 @@ def summarize_booking_quantity(booking_doc) -> str:
 			return f"{pkgs} {ptype}"
 		return pkgs or ptype
 
-	return derived_quantity_from_booking(booking_doc)
+	derived = derived_quantity_from_booking(booking_doc)
+	if derived:
+		return derived
+	# Fall back to stored derived quantity when child sizes were not persisted.
+	return (booking_doc.get("quantity") or "").strip()
 
 
 def requested_cargo_quantity_rows(booking_doc) -> list[dict]:
 	"""Serialize Requested Containers child rows for payloads / Opportunity copy."""
+	hydrate_requested_cargo_rows(booking_doc)
 	rows: list[dict] = []
 	for row in booking_doc.get("requested_cargo_quantity") or []:
-		size = (row.get("cargo_size") or "").strip()
-		qty = str(row.get("quantity") or "").strip()
+		size = request_row_cargo_size(row)
+		qty = request_row_quantity(row)
 		if not size and not qty:
 			continue
-		rows.append({"cargo_size": size, "quantity": qty})
-	return rows
+		rows.append({"cargo_size": size, "quantity": str(qty) if qty else ""})
+
+	if rows and all(row.get("cargo_size") for row in rows):
+		return rows
+
+	# Rebuild from parent derived quantity when child sizes are missing.
+	counts = counts_from_request_rows(booking_doc.get("requested_cargo_quantity"))
+	if not counts:
+		counts = counts_from_derived_quantity_text(booking_doc.get("quantity"))
+	return requested_cargo_rows_from_counts(counts) if counts else rows
 
 
 def copy_requested_cargo_quantity_to_opportunity(opp, booking_doc) -> bool:

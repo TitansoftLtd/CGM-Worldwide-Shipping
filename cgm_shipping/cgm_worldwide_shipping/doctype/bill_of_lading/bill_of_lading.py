@@ -515,7 +515,9 @@ def sync_linked_project_from_bl(bl_doc, opportunity: str) -> str | None:
 	# Align common Opportunity → Project scalars that BL just refreshed on Opportunity.
 	for src_field, dest_field in (
 		("custom_eta", "custom_eta"),
+		("custom_etd", "custom_expected_time_of_depatureetd"),
 		("custom_etd", "custom_etd"),
+		("custom_voyage_number", "custom_voyage_number"),
 		("custom_shipping_line", "custom_shipping_line"),
 		("custom_vessel", "custom_vessel"),
 		("custom_gross_weight", "custom_gross_weight"),
@@ -534,6 +536,13 @@ def sync_linked_project_from_bl(bl_doc, opportunity: str) -> str | None:
 		if project.get(dest_field) != value:
 			project.set(dest_field, value)
 			changed = True
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
+		align_project_etd_fields,
+	)
+
+	if align_project_etd_fields(project):
+		changed = True
 
 	container_field = config.get("opportunity_container_field")
 	if container_field and project.meta.has_field(container_field):

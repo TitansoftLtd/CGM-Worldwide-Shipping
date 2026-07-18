@@ -176,6 +176,7 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_shipping_order_ref", "custom_shipping_order_ref"),
 		("custom_booking_ref", "custom_booking_ref"),
 		("custom_handling_agent", "custom_handling_agent"),
+		("custom_delivery_destination", "custom_destination_country"),
 		("custom_delivery_destination", "custom_final_destination"),
 		("custom_port_of_loading", "custom_port_of_loading"),
 		("custom_port_of_discharge", "custom_port_of_discharge"),
