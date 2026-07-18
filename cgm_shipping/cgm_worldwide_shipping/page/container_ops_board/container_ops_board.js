@@ -401,6 +401,10 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			return frappe.utils.escape_html(row.batch_no || "—");
 		}
 
+		function clientReferenceCell(row) {
+			return frappe.utils.escape_html(row.client_reference_no || "—");
+		}
+
 		function blCell(row) {
 			return frappe.utils.escape_html(row.bl_number || "—");
 		}
@@ -659,6 +663,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th class="cgm-ops-sticky-col">${__("Client Name")}</th>
 				<th>${__("B/L Number")}</th>
 				<th>${__("Client Batch No")}</th>
+				<th>${__("Client Reference No")}</th>
 				<th>${__("Shipment")}</th>
 				<th>${__("Shipping Line")}</th>
 				<th>${__("Country of Origin")}</th>
@@ -710,6 +715,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<td class="cgm-ops-sticky-col">${clientCell(row)}</td>
 				<td>${blCell(row)}</td>
 				<td>${batchCell(row)}</td>
+				<td>${clientReferenceCell(row)}</td>
 				<td>${shipmentCell(row)}</td>
 				<td>${frappe.utils.escape_html(row.shipping_line || "—")}</td>
 				<td>${frappe.utils.escape_html(row.country_of_origin || "—")}</td>
@@ -775,6 +781,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th class="cgm-ops-sticky-col">${__("Client Name")}</th>
 				<th>${__("B/L Number")}</th>
 				<th>${__("Client Batch No")}</th>
+				<th>${__("Client Reference No")}</th>
 				<th>${__("Shipment")}</th>
 				<th>${__("Shipping Line")}</th>
 				<th>${__("Country of Origin")}</th>
@@ -805,6 +812,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<td class="cgm-ops-sticky-col">${frappe.utils.escape_html(row.customer || "—")}</td>
 				<td>${frappe.utils.escape_html(row.bl_number || "—")}</td>
 				<td>${frappe.utils.escape_html(row.batch_no || "—")}</td>
+				<td>${frappe.utils.escape_html(row.client_reference_no || "—")}</td>
 				<td>${projectLink(row)}</td>
 				<td>${frappe.utils.escape_html(row.shipping_line || "—")}</td>
 				<td>${frappe.utils.escape_html(row.country_of_origin || "—")}</td>
@@ -879,6 +887,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 						${shipmentDetailField(__("Client"), project.customer)}
 						${shipmentDetailField(__("B/L"), project.bl_number)}
 						${shipmentDetailField(__("Batch"), project.batch_no)}
+						${shipmentDetailField(__("Client Reference No"), project.client_reference_no)}
 						${shipmentDetailField(__("Containers"), project.quantity)}
 						${shipmentDetailField(__("Operational Status"), project.operational_status, { pill: true })}
 						${shipmentDetailField(__("Country of Origin"), project.country_of_origin)}
