@@ -64,6 +64,35 @@ frappe.ui.form.on("Booking Confirmation", {
 	requested_cargo_type(frm) {
 		toggle_cargo_fields(frm);
 	},
+
+	validate(frm) {
+		if ((frm.doc.requested_cargo_type || "").trim().toUpperCase() === "LCL") {
+			return;
+		}
+		const rows = frm.doc[REQUESTED_CONTAINERS_FIELD] || [];
+		const missing = [];
+		rows.forEach((row, idx) => {
+			if ((row.quantity || "").toString().trim() && !(row.cargo_size || "").toString().trim()) {
+				missing.push(idx + 1);
+			}
+		});
+		if (missing.length) {
+			frappe.throw(
+				__("Cargo Size is required on Requested Cargo Quantity row(s) {0}.", [
+					missing.join(", "),
+				])
+			);
+		}
+	},
+});
+
+frappe.ui.form.on("Requested Containers", {
+	cargo_size(frm) {
+		frm.refresh_field(REQUESTED_CONTAINERS_FIELD);
+	},
+	quantity(frm) {
+		frm.refresh_field(REQUESTED_CONTAINERS_FIELD);
+	},
 });
 
 const CGM_RETURN_OPPORTUNITY_KEY = "cgm_return_opportunity";

@@ -1,12 +1,13 @@
 # Copyright (c) 2026, Titansoft Limited and contributors
 # For license information, please see license.txt
-"""FCL batch number allocation — Customer + Shipment Type + Derived Quantity.
+"""FCL batch number allocation — Customer + Derived Quantity.
 
 Applies only to FCL shipments. LCL must not use this sequence.
 
 Batch is assigned when creating a Booking Confirmation or Bill of Lading (when
-cargo type and container configuration are known). Booking → BL reuses the same
-batch; container sizes/qty are expected to match.
+container configuration is known). The sequence is per customer and per derived
+quantity profile (e.g. ``2 x 40FT`` vs ``2 x 20FT`` are separate counters).
+Booking → BL reuses the same batch when linked.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from frappe.utils import cint
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	container_row_cargo_size,
+	resolve_cargo_size_link,
 )
 
 FCL_CARGO_TYPE = "FCL"
@@ -35,21 +37,83 @@ def is_lcl_cargo_type(cargo_type: str | None) -> bool:
 def _cargo_size_display_order() -> list[str]:
 	if not frappe.db.exists("DocType", "Cargo Size"):
 		return []
-	return frappe.get_all(
+	ordered: list[str] = []
+	for row in frappe.get_all(
 		"Cargo Size",
-		fields=["cargo_size"],
+		fields=["name", "cargo_size"],
 		order_by="idx asc",
-		pluck="cargo_size",
-	) or []
+	):
+		label = (row.get("cargo_size") or row.get("name") or "").strip()
+		if label and label not in ordered:
+			ordered.append(label)
+	return ordered
+
+
+def normalize_cargo_size(size: str | None) -> str:
+	"""Canonical Cargo Size link name for batch matching."""
+	raw = (size or "").strip()
+	if not raw:
+		return ""
+	return resolve_cargo_size_link(raw) or raw
+
+
+def counts_from_derived_quantity_text(derived_quantity: str | None) -> dict[str, int]:
+	"""Parse ``2 x 20FT, 1 x 40FT`` into ``{size: qty}``."""
+	text = (derived_quantity or "").strip()
+	if not text or " x " not in text.lower():
+		return {}
+
+	counts: dict[str, int] = {}
+	for part in (segment.strip() for segment in text.split(",")):
+		if not part or " x " not in part.lower():
+			continue
+		qty_text, size_text = part.rsplit(" x ", 1)
+		qty = cint((qty_text or "").strip())
+		size = normalize_cargo_size((size_text or "").strip())
+		if not size or qty <= 0:
+			continue
+		counts[size] = counts.get(size, 0) + qty
+	return counts
+
+
+def normalize_derived_quantity(derived_quantity: str | None) -> str:
+	"""Parse and re-canonicalize a derived quantity string for batch matching."""
+	return format_derived_quantity(counts_from_derived_quantity_text(derived_quantity))
+
+
+def request_row_cargo_size(row) -> str:
+	"""Cargo size from a Requested Containers row (incl. legacy container_size)."""
+	if isinstance(row, dict):
+		raw = row.get("cargo_size") or row.get("container_size") or ""
+	else:
+		raw = getattr(row, "cargo_size", None) or getattr(row, "container_size", None) or ""
+	return normalize_cargo_size(str(raw).strip())
+
+
+def request_row_quantity(row) -> int:
+	"""Integer quantity from a Requested Containers row."""
+	if isinstance(row, dict):
+		raw = row.get("quantity")
+	else:
+		raw = getattr(row, "quantity", None)
+	text = str(raw or "").strip()
+	if " x " in text.lower():
+		# User pasted a derived string into the quantity cell.
+		counts = counts_from_derived_quantity_text(text)
+		if len(counts) == 1:
+			return next(iter(counts.values()))
+	return cint(text)
 
 
 def format_derived_quantity(counts: Mapping[str, int]) -> str:
 	"""Canonical derived quantity, e.g. ``2 x 20FT, 1 x 40FT``."""
-	cleaned = {
-		str(size).strip(): cint(qty)
-		for size, qty in (counts or {}).items()
-		if str(size).strip() and cint(qty) > 0
-	}
+	cleaned: dict[str, int] = {}
+	for size, qty in (counts or {}).items():
+		normalized_size = normalize_cargo_size(str(size).strip())
+		parsed_qty = cint(qty)
+		if not normalized_size or parsed_qty <= 0:
+			continue
+		cleaned[normalized_size] = cleaned.get(normalized_size, 0) + parsed_qty
 	if not cleaned:
 		return ""
 
@@ -65,23 +129,109 @@ def counts_from_request_rows(rows: Iterable | None) -> dict[str, int]:
 	"""Aggregate Booking / Opportunity requested-container rows (size + quantity)."""
 	counts: dict[str, int] = {}
 	for row in rows or []:
-		if isinstance(row, dict):
-			size = (row.get("cargo_size") or "").strip()
-			qty = cint(row.get("quantity") or 0)
-		else:
-			size = (getattr(row, "cargo_size", None) or "").strip()
-			qty = cint(getattr(row, "quantity", None) or 0)
-		if not size or qty <= 0:
+		size = request_row_cargo_size(row)
+		qty = request_row_quantity(row)
+		if not size:
+			# Quantity cell may hold a full derived string (e.g. ``3 x 20FT``).
+			if isinstance(row, dict):
+				raw_qty = str(row.get("quantity") or "").strip()
+			else:
+				raw_qty = str(getattr(row, "quantity", None) or "").strip()
+			parsed = counts_from_derived_quantity_text(raw_qty)
+			for parsed_size, parsed_qty in parsed.items():
+				counts[parsed_size] = counts.get(parsed_size, 0) + parsed_qty
+			continue
+		if qty <= 0:
 			continue
 		counts[size] = counts.get(size, 0) + qty
 	return counts
+
+
+def requested_cargo_rows_from_counts(counts: Mapping[str, int]) -> list[dict]:
+	"""Build Requested Containers row dicts from size→qty counts."""
+	text = format_derived_quantity(counts)
+	parsed = counts_from_derived_quantity_text(text) if text else dict(counts or {})
+	return [
+		{"cargo_size": size, "quantity": str(qty)}
+		for size, qty in parsed.items()
+		if size and cint(qty) > 0
+	]
+
+
+def hydrate_requested_cargo_rows(doc, table_field: str = "requested_cargo_quantity") -> bool:
+	"""Ensure Requested Containers rows have cargo_size (+ numeric quantity).
+
+	Recovers size from legacy ``container_size``, from a derived string pasted into
+	the quantity cell, or from the parent derived-quantity field when child sizes
+	were not persisted.
+	"""
+	if not doc.meta.has_field(table_field):
+		return False
+
+	rows = list(doc.get(table_field) or [])
+	changed = False
+	counts = counts_from_request_rows(rows)
+
+	if not counts:
+		parent_qty = ""
+		if doc.meta.has_field("quantity"):
+			parent_qty = str(doc.get("quantity") or "").strip()
+		counts = counts_from_derived_quantity_text(parent_qty)
+
+	if not counts:
+		return False
+
+	# Rebuild rows when any size is missing or quantity is a derived string.
+	needs_rebuild = False
+	if len(rows) != len(counts):
+		needs_rebuild = True
+	else:
+		for row in rows:
+			size = request_row_cargo_size(row)
+			raw_qty = (
+				str(row.get("quantity") or "").strip()
+				if isinstance(row, dict)
+				else str(getattr(row, "quantity", None) or "").strip()
+			)
+			if not size or " x " in raw_qty.lower():
+				needs_rebuild = True
+				break
+
+	if not needs_rebuild:
+		# Still normalize link values / quantity digits onto existing rows.
+		for row in rows:
+			size = request_row_cargo_size(row)
+			qty = request_row_quantity(row)
+			if not size or qty <= 0:
+				continue
+			if isinstance(row, dict):
+				if row.get("cargo_size") != size:
+					row["cargo_size"] = size
+					changed = True
+				if str(row.get("quantity") or "") != str(qty):
+					row["quantity"] = str(qty)
+					changed = True
+			else:
+				if row.get("cargo_size") != size:
+					row.cargo_size = size
+					changed = True
+				if str(row.get("quantity") or "") != str(qty):
+					row.quantity = str(qty)
+					changed = True
+		return changed
+
+	new_rows = requested_cargo_rows_from_counts(counts)
+	doc.set(table_field, [])
+	for row in new_rows:
+		doc.append(table_field, row)
+	return True
 
 
 def counts_from_container_rows(rows: Iterable | None) -> dict[str, int]:
 	"""Aggregate Bill of Lading container rows (one physical container per row)."""
 	counts: dict[str, int] = {}
 	for row in rows or []:
-		size = container_row_cargo_size(row)
+		size = normalize_cargo_size(container_row_cargo_size(row))
 		if not size:
 			continue
 		counts[size] = counts.get(size, 0) + 1
@@ -119,12 +269,11 @@ def _max_batch_from_doctype(
 	doctype: str,
 	*,
 	customer: str,
-	shipment_type: str,
 	derived_quantity: str,
 	cargo_type_field: str,
 	exclude_name: str | None = None,
 ) -> int:
-	"""Highest batch_no for the FCL key on one DocType (draft + submitted)."""
+	"""Highest batch_no for Customer + Derived Quantity on one DocType (draft + submitted)."""
 	if not frappe.db.exists("DocType", doctype):
 		return 0
 	meta = frappe.get_meta(doctype)
@@ -133,50 +282,54 @@ def _max_batch_from_doctype(
 	if not meta.has_field(cargo_type_field):
 		return 0
 
+	target = normalize_derived_quantity(derived_quantity)
+	if not target:
+		return 0
+
 	conditions = [
 		"customer = %(customer)s",
-		"shipment_type = %(shipment_type)s",
-		"quantity = %(quantity)s",
-		f"`{cargo_type_field}` = %(cargo_type)s",
 		"docstatus < 2",
 		"IFNULL(batch_no, '') REGEXP '^[0-9]+$'",
+		"IFNULL(quantity, '') LIKE '%% x %%'",
 	]
-	values = {
-		"customer": customer,
-		"shipment_type": shipment_type,
-		"quantity": derived_quantity,
-		"cargo_type": FCL_CARGO_TYPE,
-	}
+	values: dict = {"customer": customer}
 	if exclude_name:
 		conditions.append("name != %(exclude_name)s")
 		values["exclude_name"] = exclude_name
 
-	row = frappe.db.sql(
+	rows = frappe.db.sql(
 		f"""
-		SELECT MAX(CAST(batch_no AS UNSIGNED))
+		SELECT batch_no, quantity, `{cargo_type_field}` AS cargo_type
 		FROM `tab{doctype}`
 		WHERE {" AND ".join(conditions)}
 		""",
 		values,
+		as_dict=True,
 	)
-	return cint(row[0][0] if row else 0)
+
+	highest = 0
+	for row in rows or []:
+		if is_lcl_cargo_type(row.get("cargo_type")):
+			continue
+		if normalize_derived_quantity(row.get("quantity")) != target:
+			continue
+		highest = max(highest, cint(row.get("batch_no")))
+	return highest
 
 
 def next_fcl_batch_number(
 	*,
 	customer: str,
-	shipment_type: str,
 	derived_quantity: str,
 	exclude_name: str | None = None,
 ) -> int:
-	"""Next batch for Customer + Shipment Type + Derived Quantity (FCL only)."""
+	"""Next batch for Customer + Derived Quantity (FCL only)."""
 	customer = (customer or "").strip()
-	shipment_type = (shipment_type or "").strip()
-	derived_quantity = (derived_quantity or "").strip()
-	if not customer or not shipment_type or not derived_quantity:
+	derived_quantity = normalize_derived_quantity(derived_quantity)
+	if not customer or not derived_quantity:
 		frappe.throw(
 			frappe._(
-				"Customer, Shipment Type, and container quantity are required to allocate an FCL batch number."
+				"Customer and container quantity are required to allocate an FCL batch number."
 			),
 			title=frappe._("FCL Batch"),
 		)
@@ -187,7 +340,6 @@ def next_fcl_batch_number(
 		_max_batch_from_doctype(
 			"Bill of Lading",
 			customer=customer,
-			shipment_type=shipment_type,
 			derived_quantity=derived_quantity,
 			cargo_type_field="cargo_type",
 			exclude_name=exclude_name,
@@ -195,7 +347,6 @@ def next_fcl_batch_number(
 		_max_batch_from_doctype(
 			"Booking Confirmation",
 			customer=customer,
-			shipment_type=shipment_type,
 			derived_quantity=derived_quantity,
 			cargo_type_field="requested_cargo_type",
 			exclude_name=exclude_name,
@@ -209,15 +360,18 @@ def allocate_fcl_batch_for_doc(doc, *, cargo_type_field: str, derived_quantity: 
 	cargo_type = doc.get(cargo_type_field)
 	if is_lcl_cargo_type(cargo_type):
 		return None
-	if not is_fcl_cargo_type(cargo_type):
+	if cargo_type and not is_fcl_cargo_type(cargo_type):
 		return None
 
-	derived = (derived_quantity or "").strip()
+	derived = normalize_derived_quantity(derived_quantity or "")
 	if not derived:
 		return None
 
 	if doc.meta.has_field("quantity"):
 		doc.quantity = derived
+
+	if doc.meta.has_field(cargo_type_field) and not is_lcl_cargo_type(doc.get(cargo_type_field)):
+		doc.set(cargo_type_field, FCL_CARGO_TYPE)
 
 	# Prefer batch already allocated on a linked Booking Confirmation (BL path).
 	booking_name = (doc.get("booking_confirmation") or "").strip()
@@ -238,7 +392,6 @@ def allocate_fcl_batch_for_doc(doc, *, cargo_type_field: str, derived_quantity: 
 
 	batch = next_fcl_batch_number(
 		customer=doc.get("customer"),
-		shipment_type=doc.get("shipment_type"),
 		derived_quantity=derived,
 		exclude_name=doc.name if not doc.is_new() else None,
 	)

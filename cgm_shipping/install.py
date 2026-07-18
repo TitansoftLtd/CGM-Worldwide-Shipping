@@ -26,6 +26,22 @@ def after_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
 		ensure_cargo_terminology_renames,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
+		check_project_layout_export_drift,
+	)
+
+	missing_layout_fields = check_project_layout_export_drift()
+	if missing_layout_fields:
+		frappe.log_error(
+			title="CGM Project layout not exported",
+			message=(
+				"The following Project custom fields are missing from "
+				"Project-main-field_order and will not appear on forms after migrate:\n"
+				+ "\n".join(f"- {fn}" for fn in missing_layout_fields)
+				+ "\n\nExport Customize Form to custom/project.json "
+				"(bench execute cgm_shipping.install.export_cgm_customizations)."
+			),
+		)
 
 	for label, fn in (
 		("cargo terminology renames", ensure_cargo_terminology_renames),
@@ -164,6 +180,20 @@ def reinstall_supplier_shipping_line_schema() -> None:
 
 	ensure_supplier_container_charge_fields()
 	frappe.db.commit()
+
+
+def export_cgm_customizations(module: str = "CGM Worldwide Shipping") -> None:
+	"""Write desk customizations (field order, labels) into custom/*.json for git.
+
+	Run after saving Customize Form so production ``bench migrate`` matches dev::
+
+	    bench --site <site> execute cgm_shipping.install.export_cgm_customizations
+	"""
+	from frappe.modules.utils import export_customizations
+
+	export_customizations(module=module, sync_on_migrate=1)
+	frappe.db.commit()
+	print(f"Exported customizations for module: {module}")
 
 
 def run() -> None:

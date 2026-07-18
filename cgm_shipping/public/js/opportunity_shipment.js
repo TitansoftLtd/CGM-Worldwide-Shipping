@@ -51,7 +51,7 @@ cgm_shipping.opportunity_shipment.POST_BL_LAYOUT_FIELDS = [
 	"custom_draft_bl_number",
 	"custom_eta",
 	"custom_etd",
-	"custom_cargo_cut_off",
+	"custom_cargo_cutoff",
 	"custom_shipping_line",
 	"custom_delivery_destination",
 	"custom_handling_agent",
@@ -794,7 +794,7 @@ cgm_shipping.opportunity_shipment.apply_booking_payload = function (frm, pending
 	set_if("custom_port_of_loading", pending.port_of_loading);
 	set_if("custom_port_of_discharge", pending.port_of_discharge);
 	set_if("custom_voyage_number", pending.voyage_number);
-	set_if("custom_cargo_cut_off", pending.cargo_cut_off);
+	set_if("custom_cargo_cutoff", pending.cargo_cut_off);
 	set_if("custom_number_of_packages", pending.number_of_packages);
 	set_if("custom_package_type", pending.package_type);
 

@@ -703,22 +703,84 @@ def apply_opportunity_to_project_mappings(project, opp) -> None:
 REQUESTED_CARGO_ROW_FIELDS = ("cargo_size", "quantity")
 
 
-def copy_opportunity_requested_cargo_to_project(opp, project) -> bool:
-	"""Copy FCL requested-cargo rows from Opportunity when the Project table is empty."""
+def copy_opportunity_requested_cargo_to_project(opp, project, *, replace: bool = False) -> bool:
+	"""Copy FCL requested-cargo rows from Opportunity onto Project."""
 	table_field = "custom_requested_cargo_quantity"
 	if not (opp.meta.has_field(table_field) and project.meta.has_field(table_field)):
 		return False
-	if project.get(table_field):
-		return False
+
 	rows = opp.get(table_field) or []
-	if not rows:
-		return False
-	for row in rows:
-		project.append(
-			table_field,
-			{field: row.get(field) for field in REQUESTED_CARGO_ROW_FIELDS},
+	new_rows = [
+		{
+			"cargo_size": (row.get("cargo_size") or "").strip(),
+			"quantity": str(row.get("quantity") or "").strip(),
+		}
+		for row in rows
+		if (row.get("cargo_size") or "").strip() or str(row.get("quantity") or "").strip()
+	]
+	# Prefer rows that still have sizes; otherwise rebuild from Opportunity quantity.
+	if new_rows and not all(row.get("cargo_size") for row in new_rows):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+			counts_from_derived_quantity_text,
+			requested_cargo_rows_from_counts,
 		)
+
+		counts = counts_from_derived_quantity_text(opp.get("custom_quantity"))
+		if counts:
+			new_rows = requested_cargo_rows_from_counts(counts)
+
+	existing = [
+		{
+			"cargo_size": (row.get("cargo_size") or "").strip(),
+			"quantity": str(row.get("quantity") or "").strip(),
+		}
+		for row in project.get(table_field) or []
+	]
+	if not replace and existing:
+		# Keep existing Project rows unless Opportunity has better (sized) data.
+		existing_has_sizes = all(row.get("cargo_size") for row in existing) if existing else False
+		new_has_sizes = all(row.get("cargo_size") for row in new_rows) if new_rows else False
+		if existing_has_sizes or not new_has_sizes:
+			if existing == new_rows:
+				return False
+			if existing_has_sizes:
+				return False
+
+	if existing == new_rows:
+		return False
+
+	project.set(table_field, [])
+	for row in new_rows:
+		project.append(table_field, {field: row.get(field) for field in REQUESTED_CARGO_ROW_FIELDS})
 	return True
+
+
+def sync_linked_project_from_booking(booking_doc, opportunity: str) -> str | None:
+	"""Push Booking Confirmation cargo + documents onto the linked Project."""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
+	)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+
+	if project.meta.has_field("custom_booking_confirmation"):
+		if project.get("custom_booking_confirmation") != booking_doc.name:
+			project.set("custom_booking_confirmation", booking_doc.name)
+
+	copy_opportunity_scalars_to_project(project, opp, only_empty=False)
+	copy_opportunity_requested_cargo_to_project(opp, project, replace=True)
+	sync_project_documents_from_opportunity(project, opp)
+
+	project.flags.ignore_validate = True
+	project.save(ignore_permissions=True)
+	return project_name
 
 
 def sync_linked_project_from_opportunity(opp, _method=None) -> None:
@@ -735,10 +797,11 @@ def sync_linked_project_from_opportunity(opp, _method=None) -> None:
 		return
 
 	project = frappe.get_doc("Project", project_name)
-	copy_opportunity_scalars_to_project(project, opp, only_empty=True)
-	copy_opportunity_requested_cargo_to_project(opp, project)
+	changed = copy_opportunity_scalars_to_project(project, opp, only_empty=True)
+	if copy_opportunity_requested_cargo_to_project(opp, project, replace=False):
+		changed = True
 
-	if not project.has_value_changed():
+	if not changed:
 		return
 
 	project.flags.ignore_validate = True
@@ -748,6 +811,31 @@ def sync_linked_project_from_opportunity(opp, _method=None) -> None:
 def sync_predocuments_from_source(project, source_doc) -> None:
 	"""Copy Opportunity Clients Documents and Customer KRA PIN onto Project shipment documents."""
 	sync_project_documents_from_opportunity(project, source_doc)
+
+
+def sync_linked_project_documents_from_opportunity(opportunity: str) -> str | None:
+	"""Push Opportunity client documents + Customer KRA PIN onto the linked Project."""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
+	)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	sync_project_documents_from_opportunity(project, opp)
+
+	frappe.flags.cgm_syncing_shipment_documents = True
+	try:
+		project.flags.ignore_validate = True
+		project.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_shipment_documents = False
+	return project_name
 
 @frappe.whitelist()
 def get_shipment_project_for_opportunity(opportunity: str) -> str | None:
