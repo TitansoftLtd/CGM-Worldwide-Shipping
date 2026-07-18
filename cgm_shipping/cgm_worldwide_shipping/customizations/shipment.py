@@ -541,11 +541,12 @@ def apply_bl_shipping_fields_to_doc(target_doc, bl_doc) -> bool:
 		if _set_doc_field_if_changed(target_doc, dest_field, bl_doc.get(src_field)):
 			changed = True
 
-	# Project fieldnames differ slightly from Opportunity (weight_uom / net_weight).
+	# Project fieldnames differ slightly from Opportunity (weight_uom / net_weight / ETD).
 	alternates = (
 		("net_weight", "custom_net_weight"),
 		("weight_uom", "custom_weight_uom"),
 		("gross_weight", "custom_gross_weight"),
+		("etd", "custom_expected_time_of_depatureetd"),
 	)
 	for src_field, dest_field in alternates:
 		if _set_doc_field_if_changed(target_doc, dest_field, bl_doc.get(src_field)):
@@ -568,10 +569,12 @@ def apply_awb_scalar_fields_to_doc(target_doc, awb_doc) -> bool:
 	for src_field, dest_field in AWB_TO_OPPORTUNITY_FIELDS:
 		if _set_doc_field_if_changed(target_doc, dest_field, awb_doc.get(src_field)):
 			changed = True
+	# Project form shows custom_expected_time_of_depatureetd (custom_etd is hidden).
 	alternates = (
 		("net_weight", "custom_net_weight"),
 		("weight_uom", "custom_weight_uom"),
 		("gross_weight", "custom_gross_weight"),
+		("etd", "custom_expected_time_of_depatureetd"),
 	)
 	for src_field, dest_field in alternates:
 		if _set_doc_field_if_changed(target_doc, dest_field, awb_doc.get(src_field)):

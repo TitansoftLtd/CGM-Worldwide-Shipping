@@ -100,7 +100,7 @@
       {{ def(_("Mode of Transport"), shipment.custom_mode_of_transport) }}
       {{ def(_("Country of Origin"), shipment.custom_country_of_origin) }}
       {{ def(_("Final Destination"), shipment.custom_final_destination) }}
-      <div><div class="cp-def-label">{{ _("ETD") }}</div><div class="cp-def-value">{% if shipment.custom_etd %}{{ local_date(shipment.custom_etd) }}{% else %}—{% endif %}</div></div>
+      <div><div class="cp-def-label">{{ _("ETD") }}</div><div class="cp-def-value">{% if shipment.custom_expected_time_of_depatureetd or shipment.custom_etd %}{{ local_date(shipment.custom_expected_time_of_depatureetd or shipment.custom_etd) }}{% else %}—{% endif %}</div></div>
       <div><div class="cp-def-label">{{ _("ETA") }}</div><div class="cp-def-value">{% if shipment.custom_eta %}{{ local_date(shipment.custom_eta) }}{% else %}—{% endif %}</div></div>
       <div><div class="cp-def-label">{{ _("ATA") }}</div><div class="cp-def-value">{% if shipment.custom_ata %}{{ local_date(shipment.custom_ata) }}{% else %}—{% endif %}</div></div>
       {{ def(_("Vessel"), shipment.custom_vessel or shipment.custom_vessel_flight) }}

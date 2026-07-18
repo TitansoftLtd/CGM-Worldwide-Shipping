@@ -167,6 +167,8 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 	"""Scalar fields copied Opportunity → Project on create and on later sync."""
 	return (
 		("custom_eta", "custom_eta"),
+		# Project form shows custom_expected_time_of_depatureetd; custom_etd is legacy/hidden.
+		("custom_etd", "custom_expected_time_of_depatureetd"),
 		("custom_etd", "custom_etd"),
 		("custom_shipping_line", "custom_shipping_line"),
 		("custom_vessel", "custom_vessel"),
@@ -178,6 +180,7 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_port_of_loading", "custom_port_of_loading"),
 		("custom_port_of_discharge", "custom_port_of_discharge"),
 		("custom_voyage_number", "custom_voyage_number"),
+		("custom_cargo_cutoff", "custom_cargo_cutoff"),
 		("custom_booking_confirmation", "custom_booking_confirmation"),
 		("custom_bill_of_lading", "custom_bill_of_lading"),
 		("custom_air_waybill", "custom_air_waybill"),
@@ -200,6 +203,35 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 	)
 
 
+PROJECT_ETD_FIELDS = ("custom_expected_time_of_depatureetd", "custom_etd")
+
+
+def align_project_etd_fields(project) -> bool:
+	"""Keep Project visible ETD and legacy hidden ETD in sync."""
+	meta = project.meta
+	visible = "custom_expected_time_of_depatureetd"
+	legacy = "custom_etd"
+	has_visible = meta.has_field(visible)
+	has_legacy = meta.has_field(legacy)
+	if not has_visible and not has_legacy:
+		return False
+
+	visible_val = project.get(visible) if has_visible else None
+	legacy_val = project.get(legacy) if has_legacy else None
+	value = visible_val or legacy_val
+	if value in (None, ""):
+		return False
+
+	changed = False
+	if has_visible and project.get(visible) != value:
+		project.set(visible, value)
+		changed = True
+	if has_legacy and project.get(legacy) != value:
+		project.set(legacy, value)
+		changed = True
+	return changed
+
+
 def copy_opportunity_scalars_to_project(project, opp, *, only_empty: bool = True) -> bool:
 	"""Copy filled Opportunity scalars onto a linked Project."""
 	meta = project.meta
@@ -219,6 +251,9 @@ def copy_opportunity_scalars_to_project(project, opp, *, only_empty: bool = True
 		if project.get(dest_field) != value:
 			project.set(dest_field, value)
 			changed = True
+
+	if align_project_etd_fields(project):
+		changed = True
 
 	return changed
 

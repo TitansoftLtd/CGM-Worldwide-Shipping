@@ -95,40 +95,29 @@ function project_supports_container_allocation(frm) {
 
 /**
  * Append a custom item to the page Actions menu after workflow rebuilds it.
- * Do not call register_action during refresh — workflow show_actions() clears the
- * menu on render_complete and would remove items registered too early.
+ * Workflow show_actions() clears the menu on render_complete — register after it finishes.
  */
 function register_project_action_after_workflow(frm, eventKey, register_action) {
 	const schedule_register = () => {
 		const state_field = frappe.workflow.get_state_fieldname(frm.doctype);
+		const append_action = () => {
+			// Defer past workflow's clear_actions_menu + transition inserts.
+			setTimeout(register_action, 50);
+		};
 		if (state_field && !frm.doc.__islocal) {
-			frappe.workflow.get_transitions(frm.doc).then(() => {
-				setTimeout(register_action, 0);
-			});
+			frappe.workflow.get_transitions(frm.doc).then(append_action);
 			return;
 		}
 		register_action();
 	};
 
+	schedule_register();
 	$(frm.wrapper)
 		.off(`render_complete.${eventKey}`)
 		.on(`render_complete.${eventKey}`, schedule_register);
 }
 
-function setup_port_arrival_confirmation_button(frm) {
-	if (frm.is_new() || !frm.doc.name) {
-		return;
-	}
-	if (frm.doc.custom_mode_of_transport !== "Sea") {
-		return;
-	}
-	if (frm.doc.custom_port_arrival_confirmed) {
-		return;
-	}
-	if (!project_has_containers(frm)) {
-		return;
-	}
-
+function mount_port_arrival_confirmation_button(frm) {
 	const on_confirm = () => {
 		const confirmMessage = __(
 			"Confirm that the shipment has arrived at the port? Container trackers will be created for all containers on this project."
@@ -175,11 +164,44 @@ function setup_port_arrival_confirmation_button(frm) {
 	};
 
 	const register_action = () => {
-		frm.page.add_action_item(__("Confirm Shipment Arrival at the Port"), on_confirm);
+		frm.page.add_action_item(
+			__("Confirm Shipment Arrival at the Port"),
+			on_confirm,
+			true
+		);
 		frm.page.show_actions_menu();
 	};
 
 	register_project_action_after_workflow(frm, "cgm_port_arrival", register_action);
+}
+
+function setup_port_arrival_confirmation_button(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	if (frm.doc.custom_mode_of_transport !== "Sea") {
+		return;
+	}
+	if (frm.doc.custom_port_arrival_confirmed) {
+		return;
+	}
+
+	if (project_has_containers(frm)) {
+		mount_port_arrival_confirmation_button(frm);
+		return;
+	}
+
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.project_can_confirm_port_arrival",
+		args: { project: frm.doc.name },
+		callback(r) {
+			if (r.exc || !r.message?.can_confirm || frm.doc.name !== frm.docname) {
+				return;
+			}
+			mount_port_arrival_confirmation_button(frm);
+		},
+	});
 }
 
 function setup_create_container_allocation_button(frm) {
