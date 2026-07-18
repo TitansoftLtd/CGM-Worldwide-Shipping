@@ -123,7 +123,7 @@ def get_stage_requirements():
 
 # ─── Project Save Hooks ───────────────────────────────────────────────────────
 def assign_project_reference_on_insert(doc, _method=None):
-	"""Allocate LP {qty}X{size}-{batch}/{seq} on project_name and custom_project_reference."""
+	"""Allocate Client Ref / Quantity[/ Batch] on project_name and custom_project_reference."""
 	assign_lp_project_reference(doc)
 
 
@@ -892,7 +892,8 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	apply_project_tracking_defaults(proj)
 	if project_name and not is_lp_project_reference(project_name):
 		frappe.throw(
-			"Projects use the LP {qty}X{size}-{batch}/{seq} naming format. "
+			"Projects use Client Reference / Quantity / Batch (FCL) "
+			"or Client Reference / packages (LCL). "
 			"Leave project_name blank to auto-generate."
 		)
 
