@@ -71,15 +71,15 @@
    "reqd": 1
   },
   {
+   "fieldname": "column_break_basic",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "shipment_type",
    "fieldtype": "Link",
    "label": "Shipment Type",
    "options": "Shipment Type",
    "reqd": 1
-  },
-  {
-   "fieldname": "column_break_basic",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "cargo_type",
@@ -89,11 +89,18 @@
    "reqd": 1
   },
   {
-   "depends_on": "eval:doc.cargo_type!='LCL'",
-   "fieldname": "batch_no",
-   "fieldtype": "Data",
-   "label": "Batch No",
-   "read_only": 1
+   "fieldname": "etd",
+   "fieldtype": "Date",
+   "label": "ETD"
+  },
+  {
+   "fieldname": "eta",
+   "fieldtype": "Date",
+   "label": "ETA"
+  },
+  {
+   "fieldname": "column_break_xiys",
+   "fieldtype": "Column Break"
   },
   {
    "depends_on": "eval:doc.cargo_type!='LCL'",
@@ -103,8 +110,11 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_xiys",
-   "fieldtype": "Column Break"
+   "depends_on": "eval:doc.cargo_type!='LCL'",
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No",
+   "read_only": 1
   },
   {
    "fieldname": "booking_confirmation",
@@ -119,12 +129,6 @@
    "hidden": 1,
    "label": "Linked Opportunity",
    "options": "Opportunity"
-  },
-  {
-   "description": "Leave blank for next batch, or enter an existing customer batch to share.",
-   "fieldname": "batch_no",
-   "fieldtype": "Data",
-   "label": "Batch No"
   },
   {
    "fieldname": "section_shipping",
@@ -160,16 +164,6 @@
    "fieldname": "port_of_discharge",
    "fieldtype": "Data",
    "label": "Port of Discharge"
-  },
-  {
-   "fieldname": "etd",
-   "fieldtype": "Date",
-   "label": "ETD"
-  },
-  {
-   "fieldname": "eta",
-   "fieldtype": "Date",
-   "label": "ETA"
   },
   {
    "fieldname": "section_cargo_info",
@@ -255,10 +249,6 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "column_break_xiys",
-   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,

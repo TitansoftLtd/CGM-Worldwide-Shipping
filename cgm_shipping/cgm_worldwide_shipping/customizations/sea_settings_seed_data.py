@@ -88,6 +88,12 @@ DEFAULT_SEA_WORKFLOW_TASK_GATES: list[dict] = [
 	{"shipment_workflow_state": "Completed", "min_completed_task_seq": 25, "gate_rule": "All Sea Tasks Complete"},
 ]
 
+DEFAULT_SEA_IMPORT_WORKFLOW_STATES: list[str] = ["Draft"] + [
+	row["shipment_workflow_state"]
+	for row in DEFAULT_SEA_WORKFLOW_TASK_GATES
+	if row.get("shipment_workflow_state")
+]
+
 DEFAULT_DOCUMENT_CHECKPOINT_SEQS: frozenset[int] = frozenset({8})
 
 

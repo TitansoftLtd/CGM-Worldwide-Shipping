@@ -300,8 +300,10 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 		"custom_net_weightkg",
 		# Route / carrier / document fields added to Project.
 		"custom_etd",
+		"custom_expected_time_of_depatureetd",
 		"custom_country_of_origin",
 		"custom_final_destination",
+		"custom_destination_country",
 		"custom_vessel",
 		"custom_airline",
 		"custom_shipping_line",

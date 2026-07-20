@@ -1,7 +1,13 @@
-"""LP {qty}X{size}-{batch}/{seq} business reference for shipment Projects.
+"""Business project reference for shipment Projects.
 
-ERPNext keeps the internal document name (PROJ-####). The LP reference is stored on
-project_name and custom_project_reference for user-facing display.
+ERPNext keeps the internal document name (PROJ-####). The business reference is
+stored on project_name and custom_project_reference for user-facing display.
+
+Formats:
+  FCL:     {Client Reference} / {qty}X{size} / {batch}   e.g. PO-99 / 3X20 / 1
+  Packages:{Client Reference} / {qty} {type}             e.g. PO-99 / 10 Cartons
+
+Legacy LP {qty}X{size}-{batch}/{seq} names are still recognized but not allocated.
 """
 from __future__ import annotations
 
@@ -9,14 +15,28 @@ import re
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+	is_fcl_cargo_type,
+	is_lcl_cargo_type,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import container_row_cargo_size
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
 )
 
+# Legacy: LP 3X20-1/0109
 LP_PROJECT_NAME_PATTERN = re.compile(
 	r"^LP\s+(\d+)X(\d+)-(\d+)/(\d{4})$",
 	re.IGNORECASE,
+)
+# FCL: Client Ref / 3X20 / 1  (optional / N disambiguator)
+FCL_PROJECT_NAME_PATTERN = re.compile(
+	r"^.+\s/\s(\d+)X(\d+)\s/\s(\d+)(?:\s/\s(\d+))?$",
+	re.IGNORECASE,
+)
+# Package-based: Client Ref / 10 Cartons  (optional / N disambiguator)
+PACKAGE_PROJECT_NAME_PATTERN = re.compile(
+	r"^.+\s/\s.+(?:\s/\s\d+)?$",
 )
 LEGACY_CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z0-9]{2,5}\d{3}/\d{4}$", re.IGNORECASE)
 LEGACY_PROJ_PATTERN = re.compile(r"^PROJ-(\d+)$", re.IGNORECASE)
@@ -27,13 +47,23 @@ QUANTITY_SUMMARY_PATTERN = re.compile(
 
 PROJECT_REFERENCE_FIELD = "custom_project_reference"
 LEGACY_REFERENCE_FIELD = "custom_cgm_ref_no"
-PROJECT_NAME_LOCK = "cgm_lp_project_sequence"
+PROJECT_NAME_LOCK = "cgm_project_reference_lock"
+CLIENT_REFERENCE_FIELD = "custom_client_refrence_no"
 
 
 def is_lp_project_reference(value: str | None) -> bool:
+	"""True for current or legacy business project references."""
 	if not value:
 		return False
-	return bool(LP_PROJECT_NAME_PATTERN.match(str(value).strip()))
+	text = str(value).strip()
+	if LP_PROJECT_NAME_PATTERN.match(text):
+		return True
+	if FCL_PROJECT_NAME_PATTERN.match(text):
+		return True
+	# Package format: must contain " / " and not look like a free-form title.
+	if " / " in text and PACKAGE_PROJECT_NAME_PATTERN.match(text):
+		return True
+	return False
 
 
 def is_legacy_business_reference(value: str | None) -> bool:
@@ -57,7 +87,7 @@ def project_reference_field(meta=None) -> str | None:
 
 
 def get_project_reference(doc) -> str | None:
-	"""User-facing LP (or legacy) reference from a Project document."""
+	"""User-facing business (or legacy) reference from a Project document."""
 	field = project_reference_field(doc.meta)
 	if field:
 		value = (doc.get(field) or "").strip()
@@ -98,7 +128,7 @@ def get_project_reference_by_name(project_name: str | None) -> str | None:
 
 
 def should_auto_name_project(project) -> bool:
-	"""True when insert should allocate LP …/NNNN on project_name + custom reference."""
+	"""True when insert should allocate a business reference on project_name."""
 	if is_lp_project_reference(project.get("project_name")):
 		return False
 	ref_field = project_reference_field(project.meta)
@@ -160,7 +190,44 @@ def container_qty_size_segment(project) -> str:
 	)
 
 
+def package_quantity_segment(project) -> str | None:
+	"""Return e.g. '10 Cartons' from package fields or non-container quantity."""
+	pkgs = (project.get("custom_number_of_packages") or "").strip()
+	ptype = (project.get("custom_package_type") or "").strip()
+	if pkgs or ptype:
+		return f"{pkgs} {ptype}".strip()
+
+	summary = (project.get("custom_quantity") or "").strip()
+	if summary and not QUANTITY_SUMMARY_PATTERN.search(summary):
+		return summary
+	return None
+
+
+def _client_reference(project) -> str:
+	ref = (project.get(CLIENT_REFERENCE_FIELD) or "").strip()
+	if not ref:
+		frappe.throw(
+			frappe._(
+				"Client Reference No is required to name the Project "
+				"(format: Client Reference / Quantity / Batch)."
+			),
+			title=frappe._("Missing Client Reference"),
+		)
+	return ref
+
+
+def _uses_package_naming(project) -> bool:
+	cargo_type = project.get("custom_cargo_type")
+	if is_lcl_cargo_type(cargo_type):
+		return True
+	if is_fcl_cargo_type(cargo_type):
+		return False
+	# Air / other package-only shipments: prefer packages when present.
+	return bool(package_quantity_segment(project))
+
+
 def _sequence_from_reference(value: str | None) -> int | None:
+	"""Legacy helper: extract /NNNN from old LP names or PROJ-####."""
 	if not value:
 		return None
 	text = str(value).strip()
@@ -195,7 +262,7 @@ def _scan_max_project_sequence() -> int:
 
 
 def next_global_project_sequence() -> int:
-	"""Highest /NNNN suffix across LP references + 1 (global, not per customer)."""
+	"""Highest legacy /NNNN suffix across LP references + 1 (kept for compatibility)."""
 	frappe.db.sql("SELECT GET_LOCK(%s, 10)", (PROJECT_NAME_LOCK,))
 	try:
 		return _scan_max_project_sequence() + 1
@@ -204,11 +271,24 @@ def next_global_project_sequence() -> int:
 
 
 def build_lp_project_reference(project, sequence: int | None = None) -> str:
-	"""Format: LP 6X20-9/0083"""
-	segment = container_qty_size_segment(project)
-	batch = (project.get("custom_batch_no") or "0").strip() or "0"
-	seq = sequence if sequence is not None else next_global_project_sequence()
-	return f"LP {segment}-{batch}/{seq:04d}"
+	"""Build business reference.
+
+	``sequence`` is treated as an optional disambiguator (2, 3, …) when the
+	base name is already in use — not the old global /0109 counter.
+	"""
+	client = _client_reference(project)
+
+	if _uses_package_naming(project):
+		qty = package_quantity_segment(project) or "0 Packages"
+		base = f"{client} / {qty}"
+	else:
+		segment = container_qty_size_segment(project)
+		batch = (project.get("custom_batch_no") or "0").strip() or "0"
+		base = f"{client} / {segment} / {batch}"
+
+	if sequence is not None and int(sequence) > 1:
+		return f"{base} / {int(sequence)}"
+	return base
 
 
 def _lp_reference_in_use(reference: str) -> bool:
@@ -238,15 +318,19 @@ def assign_lp_project_reference(project) -> str | None:
 			sync_project_reference_fields(project, reference)
 		return reference
 
-	seq = next_global_project_sequence()
-	for _attempt in range(50):
-		reference = build_lp_project_reference(project, sequence=seq)
-		if not _lp_reference_in_use(reference):
-			sync_project_reference_fields(project, reference)
-			return reference
-		seq += 1
+	frappe.db.sql("SELECT GET_LOCK(%s, 10)", (PROJECT_NAME_LOCK,))
+	try:
+		for attempt in range(1, 51):
+			# attempt 1 → base name; 2+ → append " / N" disambiguator
+			disambiguator = attempt if attempt > 1 else None
+			reference = build_lp_project_reference(project, sequence=disambiguator)
+			if not _lp_reference_in_use(reference):
+				sync_project_reference_fields(project, reference)
+				return reference
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (PROJECT_NAME_LOCK,))
 
-	frappe.throw("Could not allocate a unique LP project reference.")
+	frappe.throw(frappe._("Could not allocate a unique project reference."))
 
 
 # Backward-compatible aliases used during refactor.

@@ -33,15 +33,22 @@ def get_gate_for_state(workflow_state: str) -> dict | None:
 @frappe.request_cache
 def get_sea_import_workflow_states() -> list[str]:
 	"""Ordered Project workflow states from CGM Sea Import Workflow metadata."""
-	if not frappe.db.exists("Workflow", SEA_IMPORT_WORKFLOW_NAME):
-		return []
-	rows = frappe.get_all(
-		"Workflow Document State",
-		filters={"parent": SEA_IMPORT_WORKFLOW_NAME, "parenttype": "Workflow"},
-		fields=["state"],
-		order_by="idx asc",
+	if frappe.db.exists("Workflow", SEA_IMPORT_WORKFLOW_NAME):
+		rows = frappe.get_all(
+			"Workflow Document State",
+			filters={"parent": SEA_IMPORT_WORKFLOW_NAME, "parenttype": "Workflow"},
+			fields=["state"],
+			order_by="idx asc",
+		)
+		states = [row.state for row in rows if row.state]
+		if states:
+			return states
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
+		DEFAULT_SEA_IMPORT_WORKFLOW_STATES,
 	)
-	return [row.state for row in rows if row.state]
+
+	return list(DEFAULT_SEA_IMPORT_WORKFLOW_STATES)
 
 
 # ============================================================

@@ -16,14 +16,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	sync_project_documents_from_opportunity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-	bootstrap_sea_task_plan_for_project,
 	enforce_workflow_task_gate,
 	get_sea_closure_blockers,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.transit_clearance import (
-	bootstrap_transit_task_plan_for_project,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
+	copy_opportunity_scalars_to_project,
 	resolve_fcl_batch_for_opportunity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
@@ -126,7 +123,7 @@ def get_stage_requirements():
 
 # ─── Project Save Hooks ───────────────────────────────────────────────────────
 def assign_project_reference_on_insert(doc, _method=None):
-	"""Allocate LP {qty}X{size}-{batch}/{seq} on project_name and custom_project_reference."""
+	"""Allocate Client Ref / Quantity[/ Batch] on project_name and custom_project_reference."""
 	assign_lp_project_reference(doc)
 
 
@@ -650,8 +647,6 @@ def insert_shipment_project(project) -> str:
 	frappe.flags.cgm_skip_task_project_sync = True
 	try:
 		project.insert(ignore_permissions=True)
-		bootstrap_sea_task_plan_for_project(project.name)
-		bootstrap_transit_task_plan_for_project(project.name)
 	finally:
 		frappe.flags.cgm_skip_task_project_sync = False
 	refresh_project_documents(project.name)
@@ -701,59 +696,91 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 
 def apply_opportunity_to_project_mappings(project, opp) -> None:
 	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""
-	meta = project.meta
-	# Edge case: older mappings used non-existent custom_*weightkg fields, so
-	# weights never copied onto Project. Use the real Project fieldnames.
-	pairs = (
-		("custom_entry_no", "custom_entry_no"),
-		("custom_consignee", "custom_consignee"),
-		("custom_quantity", "custom_quantity"),
-		("custom_gross_weight", "custom_gross_weight"),
-		("custom_weight_nw", "custom_net_weight"),
-		("custom_description_of_goods", "custom_description_of_goods"),
-		("custom_clearance_station", "custom_clearance_station"),
-		("custom_station_code", "custom_station_code"),
-		("custom_country_of_origin", "custom_country_of_origin"),
-		("custom_cargo_type", "custom_cargo_type"),
-		("custom_cargo_type_", "custom_cargo_type"),
-		("custom_number_of_packages", "custom_number_of_packages"),
-		("custom_package_type", "custom_package_type"),
-		("custom_client_refrence_no", "custom_client_refrence_no"),
-		("custom_batch_no", "custom_batch_no"),
-		("custom_weight_uom_", "custom_weight_uom"),
-	)
-	for src_field, dest_field in pairs:
-		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
-			continue
-		if dest_field == "custom_batch_no":
-			value = resolve_fcl_batch_for_opportunity(opp)
-		else:
-			value = opp.get(src_field)
-		if value not in (None, "") and not project.get(dest_field):
-			project.set(dest_field, value)
-
+	copy_opportunity_scalars_to_project(project, opp, only_empty=True)
 	copy_opportunity_requested_cargo_to_project(opp, project)
 
 
 REQUESTED_CARGO_ROW_FIELDS = ("cargo_size", "quantity")
 
 
-def copy_opportunity_requested_cargo_to_project(opp, project) -> bool:
-	"""Copy FCL requested-cargo rows from Opportunity when the Project table is empty."""
+def copy_opportunity_requested_cargo_to_project(opp, project, *, replace: bool = False) -> bool:
+	"""Copy FCL requested-cargo rows from Opportunity onto Project."""
 	table_field = "custom_requested_cargo_quantity"
 	if not (opp.meta.has_field(table_field) and project.meta.has_field(table_field)):
 		return False
-	if project.get(table_field):
-		return False
+
 	rows = opp.get(table_field) or []
-	if not rows:
-		return False
-	for row in rows:
-		project.append(
-			table_field,
-			{field: row.get(field) for field in REQUESTED_CARGO_ROW_FIELDS},
+	new_rows = [
+		{
+			"cargo_size": (row.get("cargo_size") or "").strip(),
+			"quantity": str(row.get("quantity") or "").strip(),
+		}
+		for row in rows
+		if (row.get("cargo_size") or "").strip() or str(row.get("quantity") or "").strip()
+	]
+	# Prefer rows that still have sizes; otherwise rebuild from Opportunity quantity.
+	if new_rows and not all(row.get("cargo_size") for row in new_rows):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+			counts_from_derived_quantity_text,
+			requested_cargo_rows_from_counts,
 		)
+
+		counts = counts_from_derived_quantity_text(opp.get("custom_quantity"))
+		if counts:
+			new_rows = requested_cargo_rows_from_counts(counts)
+
+	existing = [
+		{
+			"cargo_size": (row.get("cargo_size") or "").strip(),
+			"quantity": str(row.get("quantity") or "").strip(),
+		}
+		for row in project.get(table_field) or []
+	]
+	if not replace and existing:
+		# Keep existing Project rows unless Opportunity has better (sized) data.
+		existing_has_sizes = all(row.get("cargo_size") for row in existing) if existing else False
+		new_has_sizes = all(row.get("cargo_size") for row in new_rows) if new_rows else False
+		if existing_has_sizes or not new_has_sizes:
+			if existing == new_rows:
+				return False
+			if existing_has_sizes:
+				return False
+
+	if existing == new_rows:
+		return False
+
+	project.set(table_field, [])
+	for row in new_rows:
+		project.append(table_field, {field: row.get(field) for field in REQUESTED_CARGO_ROW_FIELDS})
 	return True
+
+
+def sync_linked_project_from_booking(booking_doc, opportunity: str) -> str | None:
+	"""Push Booking Confirmation cargo + documents onto the linked Project."""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
+	)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+
+	if project.meta.has_field("custom_booking_confirmation"):
+		if project.get("custom_booking_confirmation") != booking_doc.name:
+			project.set("custom_booking_confirmation", booking_doc.name)
+
+	copy_opportunity_scalars_to_project(project, opp, only_empty=False)
+	copy_opportunity_requested_cargo_to_project(opp, project, replace=True)
+	sync_project_documents_from_opportunity(project, opp)
+
+	project.flags.ignore_validate = True
+	project.save(ignore_permissions=True)
+	return project_name
 
 
 def sync_linked_project_from_opportunity(opp, _method=None) -> None:
@@ -770,20 +797,11 @@ def sync_linked_project_from_opportunity(opp, _method=None) -> None:
 		return
 
 	project = frappe.get_doc("Project", project_name)
-	apply_opportunity_to_project_mappings(project, opp)
+	changed = copy_opportunity_scalars_to_project(project, opp, only_empty=True)
+	if copy_opportunity_requested_cargo_to_project(opp, project, replace=False):
+		changed = True
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
-		opportunity_to_project_field_pairs,
-	)
-
-	for src_field, dest_field in opportunity_to_project_field_pairs():
-		if not project.meta.has_field(dest_field) or not opp.meta.has_field(src_field):
-			continue
-		value = opp.get(src_field)
-		if value not in (None, "") and not project.get(dest_field):
-			project.set(dest_field, value)
-
-	if not project.has_value_changed():
+	if not changed:
 		return
 
 	project.flags.ignore_validate = True
@@ -793,6 +811,31 @@ def sync_linked_project_from_opportunity(opp, _method=None) -> None:
 def sync_predocuments_from_source(project, source_doc) -> None:
 	"""Copy Opportunity Clients Documents and Customer KRA PIN onto Project shipment documents."""
 	sync_project_documents_from_opportunity(project, source_doc)
+
+
+def sync_linked_project_documents_from_opportunity(opportunity: str) -> str | None:
+	"""Push Opportunity client documents + Customer KRA PIN onto the linked Project."""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
+	)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	sync_project_documents_from_opportunity(project, opp)
+
+	frappe.flags.cgm_syncing_shipment_documents = True
+	try:
+		project.flags.ignore_validate = True
+		project.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_shipment_documents = False
+	return project_name
 
 @frappe.whitelist()
 def get_shipment_project_for_opportunity(opportunity: str) -> str | None:
@@ -849,7 +892,8 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	apply_project_tracking_defaults(proj)
 	if project_name and not is_lp_project_reference(project_name):
 		frappe.throw(
-			"Projects use the LP {qty}X{size}-{batch}/{seq} naming format. "
+			"Projects use Client Reference / Quantity / Batch (FCL) "
+			"or Client Reference / packages (LCL). "
 			"Leave project_name blank to auto-generate."
 		)
 
@@ -861,15 +905,7 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	apply_preshipment_transport_defaults(proj, opp)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
 		apply_project_type_from_shipment_type,
-		opportunity_to_project_field_pairs,
 	)
-
-	for src_field, dest_field in opportunity_to_project_field_pairs():
-		if not proj.meta.has_field(dest_field) or not opp.meta.has_field(src_field):
-			continue
-		value = opp.get(src_field)
-		if value not in (None, "") and not proj.get(dest_field):
-			proj.set(dest_field, value)
 
 	apply_project_type_from_shipment_type(proj, opp.get("custom_shipment_type"))
 	sync_cargo_type_from_linked_bl(proj)
