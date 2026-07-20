@@ -317,6 +317,7 @@ doc_events = {
 scheduler_events = {
     "daily": [
         "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
+        "cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.post_all_container_charge_accruals",
     ],
 }
 

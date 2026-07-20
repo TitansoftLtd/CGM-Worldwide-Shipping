@@ -1,4 +1,4 @@
-"""Shipping-line demurrage/detention rules and tiered rate lookup."""
+"""Shipping-line free days and demurrage tier lookup."""
 from __future__ import annotations
 
 from typing import Any
@@ -8,7 +8,6 @@ from frappe.utils import flt
 
 FREE_DAYS_RULES_FIELD = "custom_shipping_line_free_days_rules"
 DEMURRAGE_TIERS_FIELD = "custom_shipping_line_demurrage_tiers"
-DETENTION_TIERS_FIELD = "custom_shipping_line_detention_tiers"
 
 COUNT_FROM_BERTHING = "Berthing Date"
 COUNT_FROM_DISCHARGE = "Discharge Date"
@@ -16,8 +15,27 @@ COUNT_FROM_DISCHARGE = "Discharge Date"
 SUPPLIER_CHILD_TABLE_FIELDS = (
 	FREE_DAYS_RULES_FIELD,
 	DEMURRAGE_TIERS_FIELD,
-	DETENTION_TIERS_FIELD,
 )
+
+
+@frappe.request_cache
+def get_valid_destinations() -> list[str]:
+	"""Read destination names from Delivery Destination master (Container Tracker display)."""
+	if frappe.db.exists("DocType", "Delivery Destination"):
+		return frappe.get_all("Delivery Destination", pluck="name", order_by="name asc")
+	if frappe.db.table_exists("Delivery Destination"):
+		return frappe.db.sql_list(
+			"SELECT name FROM `tabDelivery Destination` ORDER BY name asc"
+		)
+	return []
+
+
+def default_destination_name() -> str:
+	for dest in get_valid_destinations():
+		if dest.lower() == "kenya":
+			return dest
+	destinations = get_valid_destinations()
+	return destinations[0] if destinations else "Kenya"
 
 
 def supplier_has_child_table_field(fieldname: str) -> bool:
@@ -36,31 +54,11 @@ def get_supplier_child_rows(supplier_name: str, fieldname: str) -> list:
 
 
 @frappe.request_cache
-def get_valid_destinations() -> list[str]:
-	"""Read destination names from Delivery Destination master."""
-	if frappe.db.exists("DocType", "Delivery Destination"):
-		return frappe.get_all("Delivery Destination", pluck="name", order_by="name asc")
-	if frappe.db.table_exists("Delivery Destination"):
-		return frappe.db.sql_list(
-			"SELECT name FROM `tabDelivery Destination` ORDER BY name asc"
-		)
-	return []
-
-
-@frappe.request_cache
 def get_valid_container_categories() -> list[str]:
 	"""Read category names from Container Category doctype."""
 	if not frappe.db.exists("DocType", "Container Category"):
 		return []
 	return frappe.get_all("Container Category", pluck="name", order_by="name asc")
-
-
-def default_destination_name() -> str:
-	for dest in get_valid_destinations():
-		if dest.lower() == "kenya":
-			return dest
-	destinations = get_valid_destinations()
-	return destinations[0] if destinations else "Kenya"
 
 
 def _category_name(preferred: str) -> str:
@@ -81,37 +79,50 @@ def resolve_container_category(
 	return _category_name("Standard")
 
 
-def resolve_cargo_type_key(cargo_type: str | None) -> str:
-	valid_types = (
-		frappe.get_all("Cargo Type", pluck="cargo_type", order_by="name asc")
-		if frappe.db.exists("DocType", "Cargo Type")
-		else []
+def resolve_cargo_size_match_keys(cargo_size: str | None) -> frozenset[str]:
+	"""Normalized size keys for tier lookup (20FT, link name, etc.)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+		resolve_cargo_size_link,
 	)
-	if not cargo_type:
-		return "All"
-	label = cargo_type.upper()
-	if "REEFER" in label or label.endswith("RF"):
-		for size in valid_types:
-			if size.upper() == "REEFER":
-				return size
-		return "All"
-	for size in sorted(valid_types, key=len, reverse=True):
-		key = size.upper()
-		if key.replace("FT", "") in label.replace(" ", "") or key in label:
-			return size
-	if frappe.db.exists("Cargo Type", cargo_type):
-		name = (
-			frappe.db.get_value("Cargo Type", cargo_type, "cargo_type") or ""
-		).upper()
-		for size in sorted(valid_types, key=len, reverse=True):
-			key = size.upper()
-			if key.replace("FT", "") in name or key in name:
-				return size
-		if "REEFER" in name:
-			for size in valid_types:
-				if size.upper() == "REEFER":
-					return size
-	return "All"
+
+	raw = (cargo_size or "").strip()
+	if not raw:
+		return frozenset()
+	keys: set[str] = {raw}
+	link = resolve_cargo_size_link(raw)
+	if link:
+		keys.add(link)
+		if frappe.db.exists("Cargo Size", link):
+			label = frappe.db.get_value("Cargo Size", link, "cargo_size")
+			if label:
+				keys.add(label)
+	return frozenset(_normalize_size_token(k) for k in keys if k)
+
+
+def _normalize_size_token(value: str) -> str:
+	return (value or "").strip().upper().replace(" ", "")
+
+
+def _tier_cargo_size_match_keys(tier: dict[str, Any]) -> frozenset[str]:
+	raw = tier.get("cargo_size") or tier.get("cargo_type") or ""
+	if not raw:
+		return frozenset()
+	keys: set[str] = {raw}
+	if frappe.db.exists("Cargo Size", raw):
+		label = frappe.db.get_value("Cargo Size", raw, "cargo_size")
+		if label:
+			keys.add(label)
+	return frozenset(_normalize_size_token(k) for k in keys if k)
+
+
+def _tier_matches_cargo_size(tier: dict[str, Any], cargo_size: str | None) -> bool:
+	tier_keys = _tier_cargo_size_match_keys(tier)
+	if not tier_keys:
+		return False
+	if "ALL" in tier_keys:
+		return True
+	container_keys = resolve_cargo_size_match_keys(cargo_size)
+	return bool(container_keys and tier_keys & container_keys)
 
 
 def _rule_row_dict(rule: Any) -> dict[str, Any]:
@@ -123,174 +134,84 @@ def _category_matches(rule_category: str | None, category: str) -> bool:
 	return rule_cat in (category, "All")
 
 
-def _rule_delivery_destination(rule: dict[str, Any]) -> str | None:
-	"""Read destination from rule row (supports legacy destination_region column)."""
-	dest = rule.get("delivery_destination") or rule.get("destination_region")
-	return (dest or "").strip() or None
-
-
-def _normalize_rule_destination(value: str | None) -> str | None:
-	label = (value or "").strip()
-	if not label:
-		return None
-	for dest in get_valid_destinations():
-		if dest.lower() == label.lower():
-			return dest
-	return label
-
-
-def _match_rule(
-	rules: list[Any],
-	destination: str,
-	category: str,
-) -> dict[str, Any] | None:
-	specific: list[tuple[int, dict[str, Any]]] = []
-	fallback: list[tuple[int, dict[str, Any]]] = []
-
+def _match_rule_by_category(rules: list[Any], category: str) -> dict[str, Any] | None:
+	matched: list[tuple[int, dict[str, Any]]] = []
 	for raw in rules:
 		rule = _rule_row_dict(raw)
 		if not _category_matches(rule.get("container_category"), category):
 			continue
-
-		score = 1 if rule.get("container_category") == category else 0
-
-		if rule.get("applies_to_all_destinations"):
-			fallback.append((score, rule))
-			continue
-
-		region = _normalize_rule_destination(_rule_delivery_destination(rule))
-		dest = _normalize_rule_destination(destination)
-		if region and dest and region == dest:
-			specific.append((score + 2, rule))
-
-	if specific:
-		specific.sort(key=lambda item: item[0], reverse=True)
-		return specific[0][1]
-
-	if fallback:
-		fallback.sort(key=lambda item: item[0], reverse=True)
-		return fallback[0][1]
-
-	return None
+		score = 2 if rule.get("container_category") == category else 1
+		matched.append((score, rule))
+	if not matched:
+		return None
+	matched.sort(key=lambda item: item[0], reverse=True)
+	return matched[0][1]
 
 
-def get_free_days_rule(
-	shipping_line: str,
-	destination: str,
-	category: str,
-) -> dict[str, Any] | None:
+def get_free_days_rule(shipping_line: str, category: str) -> dict[str, Any] | None:
+	"""Return the best free-days rule for a shipping line and container category."""
 	if not shipping_line:
 		return None
 	rules = get_supplier_child_rows(shipping_line, FREE_DAYS_RULES_FIELD)
 	if not rules:
-		return _legacy_supplier_rule(shipping_line)
-	normalized = _normalize_rule_destination(destination) or default_destination_name()
-	return _match_rule(rules, normalized, category)
-
-
-def _legacy_supplier_rule(shipping_line: str) -> dict[str, Any] | None:
-	meta = frappe.get_meta("Supplier")
-	if not meta.has_field("custom_demurrage_free_days"):
 		return None
-	values = frappe.db.get_value(
-		"Supplier",
-		shipping_line,
-		["custom_demurrage_free_days", "custom_detention_free_days"],
-		as_dict=True,
-	)
-	if not values or not values.get("custom_demurrage_free_days"):
-		return None
-	return {
-		"free_days": int(values.custom_demurrage_free_days),
-		"detention_free_days": values.get("custom_detention_free_days"),
-		"count_from": COUNT_FROM_DISCHARGE,
-		"applies_to_all_destinations": 1,
-		"delivery_destination": None,
-		"container_category": "All",
-	}
+	return _match_rule_by_category(rules, category)
 
 
 def build_rate_source_label(
-	shipping_line: str, destination: str, category: str, rule: dict[str, Any] | None
+	shipping_line: str, category: str, rule: dict[str, Any] | None
 ) -> str:
 	if not rule:
 		return shipping_line or ""
-	if rule.get("applies_to_all_destinations"):
-		region = "All Destinations"
-	else:
-		region = _rule_delivery_destination(rule) or destination
 	free_days = rule.get("free_days")
-	return f"{shipping_line} {region} {category} ({free_days}-day)"
+	rule_category = rule.get("container_category") or category
+	return f"{shipping_line} {rule_category} ({free_days}-day free)"
 
 
-def get_charge_tiers(
-	shipping_line: str, charge_type: str, cargo_type_key: str
+def get_demurrage_tiers(
+	shipping_line: str, cargo_size: str | None
 ) -> list[dict[str, Any]]:
 	if not shipping_line:
 		return []
-	field = DEMURRAGE_TIERS_FIELD if charge_type == "demurrage" else DETENTION_TIERS_FIELD
-	rows = get_supplier_child_rows(shipping_line, field)
-	if not rows and charge_type == "demurrage":
-		return _legacy_flat_demurrage_tier(shipping_line, cargo_type_key)
-	if not rows and charge_type == "detention":
-		return _legacy_flat_detention_tier(shipping_line, cargo_type_key)
+	rows = get_supplier_child_rows(shipping_line, DEMURRAGE_TIERS_FIELD)
 	matched = [
 		_rule_row_dict(r)
 		for r in rows
-		if _rule_row_dict(r).get("cargo_type") in (cargo_type_key, "All")
+		if _tier_matches_cargo_size(_rule_row_dict(r), cargo_size)
+		and "ALL" not in _tier_cargo_size_match_keys(_rule_row_dict(r))
 	]
 	if not matched:
 		matched = [
 			_rule_row_dict(r)
 			for r in rows
-			if _rule_row_dict(r).get("cargo_type") == "All"
+			if "ALL" in _tier_cargo_size_match_keys(_rule_row_dict(r))
 		]
 	return sorted(matched, key=lambda r: int(r.get("from_day") or 1))
 
 
-def _legacy_flat_demurrage_tier(shipping_line: str, cargo_type_key: str) -> list[dict]:
-	meta = frappe.get_meta("Supplier")
-	if not meta.has_field("custom_demurrage_daily_rate"):
-		return []
-	rate = frappe.db.get_value("Supplier", shipping_line, "custom_demurrage_daily_rate")
-	if not rate:
-		return []
-	return [
-		{
-			"cargo_type": cargo_type_key,
-			"from_day": 1,
-			"to_day": 0,
-			"daily_rate": flt(rate),
-		}
-	]
-
-
-def _legacy_flat_detention_tier(shipping_line: str, cargo_type_key: str) -> list[dict]:
-	meta = frappe.get_meta("Supplier")
-	if not meta.has_field("custom_detention_daily_rate"):
-		return []
-	rate = frappe.db.get_value("Supplier", shipping_line, "custom_detention_daily_rate")
-	if not rate:
-		return []
-	return [
-		{
-			"cargo_type": cargo_type_key,
-			"from_day": 1,
-			"to_day": 0,
-			"daily_rate": flt(rate),
-		}
-	]
-
-
-def daily_rate_for_day(day_no: int, tiers: list[dict[str, Any]]) -> float:
+def tier_for_day(day_no: int, tiers: list[dict[str, Any]]) -> dict[str, Any] | None:
 	for tier in tiers:
 		from_day = int(tier.get("from_day") or 1)
 		to_day = int(tier.get("to_day") or 0)
 		if to_day == 0 and day_no >= from_day:
-			return flt(tier.get("daily_rate"))
+			return tier
 		if to_day and from_day <= day_no <= to_day:
-			return flt(tier.get("daily_rate"))
-	return 0.0
+			return tier
+	return None
+
+
+def daily_rate_for_day(day_no: int, tiers: list[dict[str, Any]]) -> float:
+	tier = tier_for_day(day_no, tiers)
+	return flt(tier.get("daily_rate")) if tier else 0.0
+
+
+def tier_currency_for_day(
+	day_no: int, tiers: list[dict[str, Any]], fallback: str | None = None
+) -> str | None:
+	tier = tier_for_day(day_no, tiers)
+	if tier and tier.get("currency"):
+		return tier["currency"]
+	return fallback
 
 
 def calculate_tiered_charge(chargeable_days: int, tiers: list[dict[str, Any]]) -> float:
@@ -300,3 +221,10 @@ def calculate_tiered_charge(chargeable_days: int, tiers: list[dict[str, Any]]) -
 	for day_no in range(1, chargeable_days + 1):
 		total += daily_rate_for_day(day_no, tiers)
 	return flt(total)
+
+
+# Backward-compatible alias used by container_charges.
+def get_charge_tiers(
+	shipping_line: str, _charge_type: str, cargo_size: str | None
+) -> list[dict]:
+	return get_demurrage_tiers(shipping_line, cargo_size)

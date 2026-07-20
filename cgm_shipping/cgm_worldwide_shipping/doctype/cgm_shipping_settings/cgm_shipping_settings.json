@@ -13,7 +13,15 @@
   "section_container_port_settings",
   "kpa_default_free_days",
   "default_dem_currency",
-  "custom_kpa_free_days",
+  "section_kpa_port_charges",
+  "kpa_port_daily_rate",
+  "kpa_port_rate_currency",
+  "section_container_accrual_accounts",
+  "demurrage_accrual_expense_account",
+  "demurrage_accrual_payable_account",
+  "column_break_accrual_accounts",
+  "kpa_port_accrual_expense_account",
+  "kpa_port_accrual_payable_account",
   "tab_notification_settings",
   "section_notification_settings",
   "inspection_reminder_hours",
@@ -313,6 +321,58 @@
    "fieldtype": "Link",
    "label": "Default Demurrage Currency",
    "options": "Currency"
+  },
+  {
+   "description": "Daily rate after KPA free days end until gate out at Mombasa.",
+   "fieldname": "section_kpa_port_charges",
+   "fieldtype": "Section Break",
+   "label": "KPA Port Chargeable Days"
+  },
+  {
+   "fieldname": "kpa_port_daily_rate",
+   "fieldtype": "Currency",
+   "label": "KPA Port Daily Rate"
+  },
+  {
+   "default": "KES",
+   "fieldname": "kpa_port_rate_currency",
+   "fieldtype": "Link",
+   "label": "KPA Port Rate Currency",
+   "options": "Currency"
+  },
+  {
+   "description": "GL accounts used when posting container charge accrual journal entries.",
+   "fieldname": "section_container_accrual_accounts",
+   "fieldtype": "Section Break",
+   "label": "Container Charge Accrual Accounts"
+  },
+  {
+   "fieldname": "demurrage_accrual_expense_account",
+   "fieldtype": "Link",
+   "label": "Demurrage Expense Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "demurrage_accrual_payable_account",
+   "fieldtype": "Link",
+   "label": "Demurrage Accrued Payable Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "column_break_accrual_accounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "kpa_port_accrual_expense_account",
+   "fieldtype": "Link",
+   "label": "KPA Port Expense Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "kpa_port_accrual_payable_account",
+   "fieldtype": "Link",
+   "label": "KPA Port Accrued Payable Account",
+   "options": "Account"
   },
   {
    "fieldname": "tab_notification_settings",
