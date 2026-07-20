@@ -63,9 +63,11 @@ function populate_containers_from_project(frm, replace = false) {
 
 frappe.ui.form.on("Container Allocation", {
 	setup(frm) {
-		frm.set_query("transporter", () => ({
-			filters: { is_transporter: 1 },
-		}));
+		frm.set_query("transporter", () =>
+			cgm_shipping.supplier_filters?.transporter_query?.() || {
+				filters: { disabled: 0, is_transporter: 1 },
+			}
+		);
 		frm.set_query("container_tracker", "containers", () => {
 			const filters = { project: frm.doc.project || "" };
 			return { filters };

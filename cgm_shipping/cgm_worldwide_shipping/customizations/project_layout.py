@@ -33,13 +33,16 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
 MODULE = "CGM Worldwide Shipping"
 
 SUPPLIER_CONTAINER_CHARGE_FIELDS = (
+	"custom_section_shipping_line_rules",
+	"custom_shipping_line_free_days_rules",
+	"custom_shipping_line_demurrage_tiers",
+)
+
+SUPPLIER_LEGACY_CHARGE_FIELDS = (
 	"custom_demurrage_free_days",
 	"custom_demurrage_daily_rate",
 	"custom_detention_free_days",
 	"custom_detention_daily_rate",
-	"custom_section_shipping_line_rules",
-	"custom_shipping_line_free_days_rules",
-	"custom_shipping_line_demurrage_tiers",
 	"custom_shipping_line_detention_tiers",
 )
 
@@ -414,8 +417,24 @@ def ensure_supplier_field_order() -> None:
 	if not isinstance(order, list):
 		return
 
-	order = [f for f in order if f not in SUPPLIER_CONTAINER_CHARGE_FIELDS]
-	anchor = "image" if "image" in order else "supplier_group"
+	order = [
+		f
+		for f in order
+		if f not in SUPPLIER_CONTAINER_CHARGE_FIELDS
+		and f not in SUPPLIER_LEGACY_CHARGE_FIELDS
+		and f != "custom_is_shipping_line"
+	]
+
+	# Place Is Shipping Line next to Is Transporter.
+	if "is_transporter" in order:
+		idx = order.index("is_transporter") + 1
+		order.insert(idx, "custom_is_shipping_line")
+	elif "custom_is_shipping_line" not in order:
+		order.append("custom_is_shipping_line")
+
+	anchor = "custom_is_shipping_line" if "custom_is_shipping_line" in order else (
+		"image" if "image" in order else "supplier_group"
+	)
 	if anchor in order:
 		idx = order.index(anchor) + 1
 		for offset, fieldname in enumerate(SUPPLIER_CONTAINER_CHARGE_FIELDS):
@@ -429,39 +448,35 @@ def ensure_supplier_field_order() -> None:
 
 
 def ensure_supplier_container_charge_fields() -> None:
-	"""Per shipping line: legacy flat fields (fallback) and tiered rule child tables."""
-	insert_after = "image"
-	for fieldname, label in (
-		("custom_demurrage_free_days", "Demurrage Free Days (legacy)"),
-		("custom_demurrage_daily_rate", "Demurrage Daily Rate (legacy USD)"),
-		("custom_detention_free_days", "Detention Free Days (legacy)"),
-		("custom_detention_daily_rate", "Detention Daily Rate (legacy USD)"),
-	):
-		_upsert_cf(
-			"Supplier",
-			{
-				"fieldname": fieldname,
-				"label": label,
-				"fieldtype": "Int" if "days" in fieldname else "Currency",
-				"insert_after": insert_after,
-			},
-		)
-		insert_after = fieldname
+	"""Shipping-line flag + child tables. Legacy fields removed — see custom/supplier.json."""
+	for fieldname in SUPPLIER_LEGACY_CHARGE_FIELDS:
+		_remove_cf("Supplier", fieldname)
+	_upsert_cf(
+		"Supplier",
+		{
+			"fieldname": "custom_is_shipping_line",
+			"label": "Is Shipping Line",
+			"fieldtype": "Check",
+			"insert_after": "is_transporter",
+			"description": "When checked, this supplier appears in Shipping Line link fields.",
+		},
+	)
 	_upsert_cf(
 		"Supplier",
 		{
 			"fieldname": "custom_section_shipping_line_rules",
 			"label": "Container charge rules",
 			"fieldtype": "Section Break",
-			"insert_after": "custom_detention_daily_rate",
+			"insert_after": "custom_is_shipping_line",
 			"collapsible": 1,
+			"depends_on": "eval:doc.custom_is_shipping_line",
 		},
 	)
 	insert_after = "custom_section_shipping_line_rules"
 	for fieldname, label, options in (
 		(
 			"custom_shipping_line_free_days_rules",
-			"Shipping Line Free Days Rules",
+			"Shipping Line Free Days Rules (optional reference)",
 			"Shipping Line Free Days Rule",
 		),
 		(
@@ -469,22 +484,21 @@ def ensure_supplier_container_charge_fields() -> None:
 			"Shipping Line Demurrage Tiers",
 			"Shipping Line Demurrage Tier",
 		),
-		(
-			"custom_shipping_line_detention_tiers",
-			"Shipping Line Detention Tiers",
-			"Shipping Line Detention Tier",
-		),
 	):
-		_upsert_cf(
-			"Supplier",
-			{
-				"fieldname": fieldname,
-				"label": label,
-				"fieldtype": "Table",
-				"options": options,
-				"insert_after": insert_after,
-			},
-		)
+		cf_values = {
+			"fieldname": fieldname,
+			"label": label,
+			"fieldtype": "Table",
+			"options": options,
+			"insert_after": insert_after,
+			"depends_on": "eval:doc.custom_is_shipping_line",
+		}
+		if fieldname == "custom_shipping_line_free_days_rules":
+			cf_values["description"] = (
+				"Optional reference only. Container Tracker free-day start/end dates "
+				"drive demurrage day counts."
+			)
+		_upsert_cf("Supplier", cf_values)
 		insert_after = fieldname
 	ensure_supplier_field_order()
 	frappe.clear_cache(doctype="Supplier")
@@ -1312,7 +1326,12 @@ def get_project_tracking_dashboard(project: str) -> dict:
 				"Return Overdue",
 			)
 		),
+		"containers_in_demurrage": sum(1 for c in containers if (c.get("demurrage_days") or 0) > 0),
+		"containers_in_kpa_charges": sum(1 for c in containers if (c.get("kpa_days") or 0) > 0),
+		"total_demurrage_days": sum(c.get("demurrage_days") or 0 for c in containers),
+		"total_kpa_days": sum(c.get("kpa_days") or 0 for c in containers),
 		"total_demurrage_amount": sum(c.get("demurrage_amount") or 0 for c in containers),
+		"total_kpa_amount": sum(c.get("kpa_amount") or 0 for c in containers),
 		"total_detention_amount": sum(c.get("detention_amount") or 0 for c in containers),
 	}
 	if doc.meta.has_field("custom_inspection_notification_status"):

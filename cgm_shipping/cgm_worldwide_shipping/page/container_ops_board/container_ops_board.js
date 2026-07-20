@@ -307,16 +307,16 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			filter_controls[df.fieldname] = control;
 		});
 
-		// Shipping Line = carriers only (exclude transporters).
+		// Shipping Line = carriers only; Transporter = haulage suppliers only.
 		if (filter_controls.shipping_line) {
-			filter_controls.shipping_line.get_query = () => ({
-				filters: { disabled: 0, is_transporter: 0 },
-			});
+			filter_controls.shipping_line.get_query =
+				cgm_shipping.supplier_filters?.shipping_line_query ||
+				(() => ({ filters: { disabled: 0, custom_is_shipping_line: 1 } }));
 		}
 		if (filter_controls.transporter) {
-			filter_controls.transporter.get_query = () => ({
-				filters: { disabled: 0, is_transporter: 1 },
-			});
+			filter_controls.transporter.get_query =
+				cgm_shipping.supplier_filters?.transporter_query ||
+				(() => ({ filters: { disabled: 0, is_transporter: 1 } }));
 		}
 
 		syncFiltersForTab();

@@ -75,8 +75,7 @@ def _rename_standard_fields() -> None:
 		("Requested Containers", "container_size", "cargo_size"),
 		("Container", "type_of_container", "cargo_size"),
 		("Container Tracker", "type_of_container", "cargo_size"),
-		("Shipping Line Demurrage Tier", "container_type", "cargo_type"),
-		("Shipping Line Detention Tier", "container_type", "cargo_type"),
+		("Shipping Line Demurrage Tier", "cargo_type", "cargo_size"),
 		("Container Allocation Item", "type_of_container", "cargo_type"),
 		("Task Container Update", "type_of_container", "cargo_type"),
 	)

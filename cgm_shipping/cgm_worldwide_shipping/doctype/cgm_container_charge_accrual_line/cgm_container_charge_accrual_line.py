@@ -3,5 +3,5 @@
 from frappe.model.document import Document
 
 
-class ShippingLineDetentionTier(Document):
+class CGMContainerChargeAccrualLine(Document):
 	pass

@@ -8,6 +8,9 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, today
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import (
+	compute_container_charge_amounts,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	BULK_CONTAINER_TASK_SEQ_FIELDS,
 	CONTAINER_SPECIFIC_TASK_SEQ_FIELDS,
@@ -342,6 +345,7 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		ref_date=ref_date,
 		free_configured=free_configured,
 	)
+	out.update(compute_container_charge_amounts(data, out))
 	return out
 
 

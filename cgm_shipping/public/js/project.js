@@ -534,65 +534,206 @@ function container_status_dot(status, alert_status) {
 	return "⚪";
 }
 
-function container_card_detail(c) {
-	const parts = [];
+function container_card_escape(value) {
+	return frappe.utils.escape_html(value == null ? "" : String(value));
+}
+
+function container_card_format_date(value) {
+	if (!value) {
+		return "";
+	}
+	return frappe.datetime.str_to_user(value);
+}
+
+function container_card_row(label, value, options = {}) {
+	if (value == null || value === "") {
+		return "";
+	}
+	const valueClass = options.warn ? "cgm-container-card-value cgm-rag-red" : "cgm-container-card-value";
+	return `<div class="cgm-container-card-row">
+		<span class="cgm-container-card-label">${container_card_escape(label)}</span>
+		<span class="${valueClass}">${container_card_escape(value)}</span>
+	</div>`;
+}
+
+function container_card_days_label(count, suffix) {
+	if (count == null || count === "") {
+		return "";
+	}
+	const n = cint(count);
+	return n === 1 ? `1 ${suffix}` : `${n} ${suffix}`;
+}
+
+function container_card_return_countdown(expected_return) {
+	if (!expected_return) {
+		return "";
+	}
+	const today = frappe.datetime.get_today();
+	const remaining = frappe.datetime.get_diff(expected_return, today);
+	if (remaining > 0) {
+		return __("{0} days remaining", [remaining]);
+	}
+	if (remaining === 0) {
+		return __("due today");
+	}
+	return __("overdue by {0} days", [Math.abs(remaining)]);
+}
+
+function render_container_card_body(c) {
 	const status = c.status || "";
 	const today = frappe.datetime.get_today();
+	const demurrageDays = cint(c.demurrage_days);
+	const kpaDays = cint(c.kpa_days);
+	const sections = [];
 
-	if (["Vessel Berthed", "Discharged / At Port"].includes(status) && !c.gate_out_date_port) {
-		const berth_ref = c.discharging_date || c.ata;
-		if (berth_ref) {
-			const days = frappe.datetime.get_diff(today, berth_ref);
-			parts.push(
-				`${__("No movement dates yet")} — ${__(
-					"vessel berthed"
-				)} ${days} ${__("days ago")}`
-			);
-		} else {
-			parts.push(__("No movement dates recorded yet"));
-		}
-	}
-
-	if (c.discharging_date) {
-		parts.push(`${__("Discharged")}: ${frappe.datetime.str_to_user(c.discharging_date)}`);
-	}
-	if (c.gate_out_date_port) {
-		parts.push(`${__("Gate Out")}: ${frappe.datetime.str_to_user(c.gate_out_date_port)}`);
-	}
-	if (c.offloading_date) {
-		parts.push(`${__("Offloaded")}: ${frappe.datetime.str_to_user(c.offloading_date)}`);
-	}
-	if (c.free_days != null && c.discharging_date && !c.gate_out_date_port) {
-		const days_in_port = frappe.datetime.get_diff(today, c.discharging_date);
-		const remaining = (c.free_days || 0) - days_in_port;
-		parts.push(
-			`${__("Free days")}: ${c.free_days} | ${__("Days in port")}: ${days_in_port} | ${remaining} ${__("remaining")}`
+	const movementRows = [
+		container_card_row(__("Current location"), c.current_location),
+		container_card_row(__("ATA"), container_card_format_date(c.ata)),
+		container_card_row(__("Discharged"), container_card_format_date(c.discharging_date)),
+		container_card_row(__("Gate out (Mombasa)"), container_card_format_date(c.gate_out_date_port)),
+		container_card_row(__("Offloaded"), container_card_format_date(c.offloading_date)),
+		container_card_row(__("Empty return"), container_card_format_date(c.actual_empty_return)),
+		container_card_row(__("Interchange"), container_card_format_date(c.interchange_date)),
+	];
+	if (c.port_days_used != null && !c.gate_out_date_port && c.discharging_date) {
+		movementRows.push(
+			container_card_row(__("Days in port"), container_card_days_label(c.port_days_used, __("days")))
 		);
 	}
 	if (
 		c.expected_empty_return &&
-		["Released / In Transit", "At Warehouse", "Cargo Offloaded", "Empty Returned"].includes(status)
+		["Released / In Transit", "At Warehouse", "Cargo Offloaded", "Empty Returned", "Return Overdue"].includes(
+			status
+		)
 	) {
-		const remaining = frappe.datetime.get_diff(c.expected_empty_return, today);
-		const remaining_label =
-			remaining > 0
-				? `${remaining} ${__("days remaining")}`
-				: remaining === 0
-					? __("due today")
-					: `${Math.abs(remaining)} ${__("days overdue")}`;
-		parts.push(
-			`${__("Expected return")}: ${frappe.datetime.str_to_user(
-				c.expected_empty_return
-			)} (${remaining_label})`
+		movementRows.push(
+			container_card_row(
+				__("Expected empty return"),
+				`${container_card_format_date(c.expected_empty_return)} (${container_card_return_countdown(
+					c.expected_empty_return
+				)})`
+			)
 		);
 	}
-	if (parts.length) {
-		return parts.join(" | ");
+	if (c.days_outstanding > 0) {
+		movementRows.push(
+			container_card_row(
+				__("Return overdue"),
+				container_card_days_label(c.days_outstanding, __("days")),
+				{ warn: true }
+			)
+		);
 	}
-	if (!c.free_days && c.discharging_date) {
-		return __("Free days not set — enter from guarantee form");
+	const movementHtml = movementRows.filter(Boolean).join("");
+	if (movementHtml) {
+		sections.push(`
+			<div class="cgm-container-card-section">
+				<div class="cgm-container-card-section-title">${__("Movement")}</div>
+				${movementHtml}
+			</div>
+		`);
 	}
-	return __("No movement dates recorded yet");
+
+	const slFreeEnd = container_card_format_date(c.free_days_end_date);
+	let slFreeEndDisplay = slFreeEnd;
+	if (slFreeEnd && !c.gate_out_date_port && c.free_days_end_date) {
+		const slRemaining = frappe.datetime.get_diff(c.free_days_end_date, today);
+		if (slRemaining >= 0) {
+			slFreeEndDisplay = `${slFreeEnd} (${__("{0} days left", [slRemaining])})`;
+		} else if (demurrageDays <= 0) {
+			slFreeEndDisplay = `${slFreeEnd} (${__("free period ended")})`;
+		}
+	}
+
+	const shippingRows = [
+		container_card_row(__("Free start"), container_card_format_date(c.free_days_start_date)),
+		container_card_row(__("Free end"), slFreeEndDisplay),
+		container_card_row(__("Free days"), c.free_days != null ? String(c.free_days) : ""),
+		container_card_row(
+			__("Demurrage/Detention days"),
+			demurrageDays > 0 ? container_card_days_label(demurrageDays, __("days")) : demurrageDays === 0 ? "0" : "",
+			{ warn: demurrageDays > 0 }
+		),
+	];
+	if c.demurrage_amount > 0) {
+		shippingRows.push(
+			container_card_row(__("Demurrage amount"), format_currency_amount(c.demurrage_amount), {
+				warn: true,
+			})
+		);
+	} else if (demurrageDays > 0) {
+		shippingRows.push(container_card_row(__("Demurrage amount"), format_currency_amount(c.demurrage_amount || 0)));
+	}
+	if (!c.free_days_end_date && c.discharging_date) {
+		shippingRows.push(
+			container_card_row(__("Shipping line free days"), __("Not set — enter on tracker"), { warn: true })
+		);
+	}
+	sections.push(`
+		<div class="cgm-container-card-section">
+			<div class="cgm-container-card-section-title">${__("Shipping line")}${
+				c.shipping_line ? ` · ${container_card_escape(c.shipping_line)}` : ""
+			}</div>
+			${shippingRows.filter(Boolean).join("")}
+		</div>
+	`);
+
+	const kpaFreeEnd = container_card_format_date(c.kpa_free_days_end_date);
+	let kpaFreeEndDisplay = kpaFreeEnd;
+	if (kpaFreeEnd && !c.gate_out_date_port && c.kpa_free_days_end_date) {
+		const kpaRemaining = frappe.datetime.get_diff(c.kpa_free_days_end_date, today);
+		if (kpaRemaining >= 0) {
+			kpaFreeEndDisplay = `${kpaFreeEnd} (${__("{0} days left", [kpaRemaining])})`;
+		} else if (kpaDays <= 0) {
+			kpaFreeEndDisplay = `${kpaFreeEnd} (${__("free period ended")})`;
+		}
+	}
+
+	const kpaRows = [
+		container_card_row(__("KPA free start"), container_card_format_date(c.kpa_free_days_start_date)),
+		container_card_row(__("KPA free end"), kpaFreeEndDisplay),
+		container_card_row(__("KPA free days"), c.kpa_free_days != null ? String(c.kpa_free_days) : ""),
+		container_card_row(
+			__("KPA chargeable days"),
+			kpaDays > 0 ? container_card_days_label(kpaDays, __("days")) : kpaDays === 0 ? "0" : "",
+			{ warn: kpaDays > 0 }
+		),
+	];
+	if (c.kpa_amount > 0) {
+		kpaRows.push(
+			container_card_row(__("KPA port amount"), format_currency_amount(c.kpa_amount), { warn: true })
+		);
+	} else if (kpaDays > 0) {
+		kpaRows.push(container_card_row(__("KPA port amount"), format_currency_amount(c.kpa_amount || 0)));
+	}
+	sections.push(`
+		<div class="cgm-container-card-section">
+			<div class="cgm-container-card-section-title">${__("KPA port")}</div>
+			${kpaRows.filter(Boolean).join("")}
+		</div>
+	`);
+
+	if (!movementHtml && !c.discharging_date && !c.ata) {
+		return `<div class="cgm-container-card-empty">${__(
+			"Awaiting vessel arrival and discharge dates."
+		)}</div><div class="cgm-container-card-grid">${sections.join("")}</div>`;
+	}
+
+	return `<div class="cgm-container-card-grid">${sections.join("")}</div>`;
+}
+
+function render_container_card_subtitle(c) {
+	const parts = [];
+	if (c.cargo_size || c.cargo_type) {
+		parts.push(c.cargo_size || c.cargo_type);
+	}
+	if (c.seal_no) {
+		parts.push(`${__("Seal")}: ${c.seal_no}`);
+	}
+	if (c.shipping_line && !c.free_days_start_date) {
+		parts.push(c.shipping_line);
+	}
+	return parts.join(" · ");
 }
 
 function container_allocation_detail(c) {
@@ -649,6 +790,7 @@ function render_container_tracking_table(frm, dashboard) {
 		cards = rows
 			.map((c) => {
 				const dot = container_status_dot(c.status, c.alert_status);
+				const subtitle = render_container_card_subtitle(c);
 				const alert = c.alert_status
 					? `<div class="cgm-container-card-alert">${frappe.utils.escape_html(c.alert_status)}</div>`
 					: "";
@@ -664,28 +806,56 @@ function render_container_tracking_table(frm, dashboard) {
 								: ""
 						}</div>`
 					: "";
-				return `<div class="cgm-container-card">
+				const chargeBadge =
+					cint(c.demurrage_days) > 0 || cint(c.kpa_days) > 0
+						? `<span class="cgm-container-card-charge-badge">${__(
+								"Incurring charges"
+							)}</span>`
+						: "";
+				return `<div class="cgm-container-card${
+					cint(c.demurrage_days) > 0 || cint(c.kpa_days) > 0 ? " cgm-container-card--charges" : ""
+				}">
 					<div class="cgm-container-card-head">
-						<span>${dot} <b>${frappe.utils.escape_html(c.container_number || c.name)}</b>
-						<span class="text-muted">${frappe.utils.escape_html(c.cargo_size || c.cargo_type || "")}</span></span>
+						<span class="cgm-container-card-id">${dot} <b>${frappe.utils.escape_html(
+							c.container_number || c.name
+						)}</b>${
+							subtitle
+								? `<span class="text-muted cgm-container-card-subtitle">${frappe.utils.escape_html(
+										subtitle
+									)}</span>`
+								: ""
+						}${chargeBadge}</span>
 						<span class="indicator-pill ${container_status_badge_class(
 							c.status
 						)} cgm-container-card-status">${frappe.utils.escape_html(c.status || "")}</span>
 					</div>
-					<div class="cgm-container-card-body text-muted">${frappe.utils.escape_html(
-						container_card_detail(c)
-					)}</div>
+					<div class="cgm-container-card-body">${render_container_card_body(c)}</div>
 					${alert}
 					${allocationHtml}
 					<div class="cgm-container-card-actions">
 						<button type="button" class="btn btn-xs btn-default cgm-view-tracker" data-tracker="${frappe.utils.escape_html(
 							c.name
-						)}">${__("View Details")}</button>
+						)}">${__("Open Container Tracker")}</button>
 					</div>
 				</div>`;
 			})
 			.join("");
 	}
+
+	const demurrageKpiClass = dashboard.containers_in_demurrage ? "cgm-rag-red" : "";
+	const kpaKpiClass = dashboard.containers_in_kpa_charges ? "cgm-rag-red" : "";
+	const demurrageAmountKpi =
+		dashboard.total_demurrage_amount > 0
+			? `<span>${__("Demurrage accrued")}: <b>${format_currency_amount(
+					dashboard.total_demurrage_amount
+				)}</b></span>`
+			: "";
+	const kpaAmountKpi =
+		dashboard.total_kpa_amount > 0
+			? `<span>${__("KPA port accrued")}: <b>${format_currency_amount(
+					dashboard.total_kpa_amount
+				)}</b></span>`
+			: "";
 
 	field.$wrapper.html(`
 		<div class="cgm-container-dashboard">
@@ -708,9 +878,17 @@ function render_container_tracking_table(frm, dashboard) {
 				<span>${__("Released")}: <b>${dashboard.containers_released || 0}</b></span>
 				<span>${__("Warehouse")}: <b>${dashboard.containers_at_warehouse || 0}</b></span>
 				<span>${__("Returned")}: <b>${dashboard.containers_returned || 0}</b></span>
+				<span>${__("In demurrage")}: <b class="${demurrageKpiClass}">${
+					dashboard.containers_in_demurrage || 0
+				}</b> <span class="text-muted">(${dashboard.total_demurrage_days || 0} ${__("days")})</span></span>
+				<span>${__("KPA chargeable")}: <b class="${kpaKpiClass}">${
+					dashboard.containers_in_kpa_charges || 0
+				}</b> <span class="text-muted">(${dashboard.total_kpa_days || 0} ${__("days")})</span></span>
 				<span>${__("Alerts")}: <b class="${dashboard.containers_alerts ? "cgm-rag-red" : ""}">${
 					dashboard.containers_alerts || 0
 				}</b></span>
+				${demurrageAmountKpi}
+				${kpaAmountKpi}
 			</div>
 			<div class="cgm-container-cards">${cards}</div>
 		</div>
@@ -765,6 +943,40 @@ function manual_refresh_finance_costs(frm) {
 			frm.reload_doc();
 		},
 	});
+}
+
+function post_container_charge_accrual(frm) {
+	if (frm.is_new()) {
+		return;
+	}
+	frappe.confirm(
+		__(
+			"Post new demurrage and KPA port charge accruals to a Journal Entry for this project?"
+		),
+		() => {
+			frappe.call({
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.post_container_charge_accrual",
+				args: { project: frm.doc.name },
+				freeze: true,
+				freeze_message: __("Posting container charge accrual..."),
+				callback(r) {
+					const result = r.message || {};
+					if (result.journal_entry) {
+						frappe.show_alert({
+							message: __("Accrual posted: {0}", [result.journal_entry]),
+							indicator: "green",
+						});
+						frappe.set_route("Form", "Journal Entry", result.journal_entry);
+					} else {
+						frappe.msgprint(result.message || __("No new accrual amount to post."));
+					}
+					frm.reload_doc();
+					render_shipment_progress_chart(frm);
+				},
+			});
+		}
+	);
 }
 
 function open_project_finance_journal_entries(frm) {
@@ -892,6 +1104,9 @@ frappe.ui.form.on("Project", {
 				frappe.route_options = { project: frm.doc.name };
 				frappe.set_route("container-ops-board");
 			}, __("View"));
+			frm.add_custom_button(__("Post Container Charge Accrual"), () => {
+				post_container_charge_accrual(frm);
+			}, __("Shipment"));
 			frm.add_custom_button(__("View Journal Entries"), () => {
 				open_project_finance_journal_entries(frm);
 			}, __("Shipment"));
