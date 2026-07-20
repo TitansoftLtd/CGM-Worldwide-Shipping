@@ -5,6 +5,9 @@ from __future__ import annotations
 import frappe
 from frappe.model.document import Document
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import (
+	refresh_project_charge_totals,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	CLOSED_CONTAINER_STATUSES,
 	compute_container_metrics,
@@ -68,16 +71,19 @@ def _sync_project_child_row(doc) -> None:
 		if not matched:
 			continue
 
-		frappe.db.set_value(
-			"Container",
-			row.name,
-			{
-				"container_tracker": doc.name,
-				"status": doc.status or "",
-				"demurrage_days": doc.demurrage_days or 0,
-			},
-			update_modified=False,
-		)
+		child_updates = {
+			"container_tracker": doc.name,
+			"status": doc.status or "",
+			"demurrage_days": doc.demurrage_days or 0,
+		}
+		container_meta = frappe.get_meta("Container")
+		if container_meta.has_field("kpa_days"):
+			child_updates["kpa_days"] = doc.kpa_days or 0
+		if container_meta.has_field("demurrage_amount"):
+			child_updates["demurrage_amount"] = doc.demurrage_amount or 0
+		if container_meta.has_field("kpa_amount"):
+			child_updates["kpa_amount"] = doc.kpa_amount or 0
+		frappe.db.set_value("Container", row.name, child_updates, update_modified=False)
 		break
 
 
@@ -105,7 +111,6 @@ _CONTAINER_TRACKER_FIELDS = [
 	"kpa_free_days",
 	"demurrage_daily_rate",
 	"detention_daily_rate",
-	"kpa_free_days",
 	"kpa_daily_rate",
 	"free_days_count_from",
 	"deposit_amount",
@@ -128,6 +133,15 @@ _CONTAINER_TRACKER_FIELDS = [
 	"port_days_used",
 	"demurrage_days",
 	"kpa_days",
+	"demurrage_rate_currency",
+	"demurrage_amount",
+	"demurrage_amount_adjustment",
+	"demurrage_amount_posted_to_je",
+	"kpa_port_daily_rate",
+	"kpa_rate_currency",
+	"kpa_amount",
+	"kpa_amount_adjustment",
+	"kpa_amount_posted_to_je",
 	"expected_empty_return",
 	"actual_empty_return",
 	"gate_in_date_depot",
@@ -161,50 +175,50 @@ def sync_container_summary_to_project(project: str | None) -> None:
 		],
 		order_by="modified desc",
 	)
-	if not rows:
-		return
 
 	updates = {}
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
-		PROJECT_ATA_FIELDS,
-		build_project_ata_updates,
-		get_project_ata,
-	)
+	if rows:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+			PROJECT_ATA_FIELDS,
+			build_project_ata_updates,
+			get_project_ata,
+		)
 
-	project_doc = frappe.get_doc("Project", project)
-	existing_ata = get_project_ata(project_doc)
-	atas = [r.ata for r in rows if r.ata]
-	if atas and not existing_ata:
-		updates.update(build_project_ata_updates(project_doc, min(atas)))
+		project_doc = frappe.get_doc("Project", project)
+		existing_ata = get_project_ata(project_doc)
+		atas = [r.ata for r in rows if r.ata]
+		if atas and not existing_ata:
+			updates.update(build_project_ata_updates(project_doc, min(atas)))
 
-	if meta.has_field("custom_eta"):
-		etas = [r.eta for r in rows if r.eta]
-		if etas and not frappe.db.get_value("Project", project, "custom_eta"):
-			updates["custom_eta"] = min(etas)
+		if meta.has_field("custom_eta"):
+			etas = [r.eta for r in rows if r.eta]
+			if etas and not frappe.db.get_value("Project", project, "custom_eta"):
+				updates["custom_eta"] = min(etas)
 
-	if meta.has_field("custom_bl_number"):
-		for r in rows:
-			if r.bl_number:
-				updates["custom_bl_number"] = r.bl_number
-				break
+		if meta.has_field("custom_bl_number"):
+			for r in rows:
+				if r.bl_number:
+					updates["custom_bl_number"] = r.bl_number
+					break
 
-	if meta.has_field("custom_custom_release_date"):
-		releases = [r.custom_release_date for r in rows if r.custom_release_date]
-		if releases:
-			updates["custom_custom_release_date"] = max(releases)
+		if meta.has_field("custom_custom_release_date"):
+			releases = [r.custom_release_date for r in rows if r.custom_release_date]
+			if releases:
+				updates["custom_custom_release_date"] = max(releases)
 
-	if meta.has_field("custom_berth_phase"):
-		if (
-			existing_ata
-			or any(updates.get(field) for field in PROJECT_ATA_FIELDS)
-			or any(r.discharging_date for r in rows)
-		):
-			updates["custom_berth_phase"] = "After Vessel Berthed"
-		else:
-			updates["custom_berth_phase"] = "Before Vessel Berth"
+		if meta.has_field("custom_berth_phase"):
+			if (
+				existing_ata
+				or any(updates.get(field) for field in PROJECT_ATA_FIELDS)
+				or any(r.discharging_date for r in rows)
+			):
+				updates["custom_berth_phase"] = "After Vessel Berthed"
+			else:
+				updates["custom_berth_phase"] = "Before Vessel Berth"
 
 	if updates:
 		frappe.db.set_value("Project", project, updates, update_modified=False)
+	refresh_project_charge_totals(project)
 
 
 def enrich_container_row(row: dict) -> dict:
@@ -234,6 +248,10 @@ _COMPUTED_METRIC_FIELDS = (
 	"kpa_days",
 	"days_outstanding",
 	"status",
+	"demurrage_daily_rate",
+	"demurrage_amount",
+	"kpa_port_daily_rate",
+	"kpa_amount",
 )
 
 

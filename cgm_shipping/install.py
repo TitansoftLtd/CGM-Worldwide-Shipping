@@ -171,7 +171,6 @@ def reinstall_supplier_shipping_line_schema() -> None:
 	for doctype in (
 		"Shipping Line Free Days Rule",
 		"Shipping Line Demurrage Tier",
-		"Shipping Line Detention Tier",
 	):
 		if not frappe.db.exists("DocType", doctype):
 			frappe.throw(
@@ -204,6 +203,5 @@ def run() -> None:
 	for field in (
 		"custom_shipping_line_free_days_rules",
 		"custom_shipping_line_demurrage_tiers",
-		"custom_shipping_line_detention_tiers",
 	):
 		print(field, ":", meta.has_field(field))
