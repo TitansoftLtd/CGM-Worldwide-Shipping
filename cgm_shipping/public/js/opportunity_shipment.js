@@ -892,14 +892,10 @@ cgm_shipping.opportunity_shipment.setup_shipping_line_query = function (frm) {
 		return;
 	}
 	frm._cgm_shipping_line_query_setup = true;
-	const supplier_meta = frappe.get_meta("Supplier");
-	const has_flag = supplier_meta?.fields?.some((f) => f.fieldname === "is_shipping_line");
-	frm.set_query("custom_shipping_line", () => {
-		if (has_flag) {
-			return { filters: { is_shipping_line: 1 } };
-		}
-		return { filters: { supplier_group: "Shipping Line" } };
-	});
+	const query =
+		cgm_shipping.supplier_filters?.shipping_line_query ||
+		(() => ({ filters: { disabled: 0, custom_is_shipping_line: 1 } }));
+	frm.set_query("custom_shipping_line", query);
 };
 
 cgm_shipping.opportunity_shipment.setup_start_shipment_button = function (frm) {

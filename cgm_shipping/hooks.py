@@ -36,6 +36,7 @@ app_include_js = [
 	"/assets/cgm_shipping/js/cgm_container_tracking.js",
 	"/assets/cgm_shipping/js/operational_updates_ui.js",
 	"/assets/cgm_shipping/js/cgm_shipping_workspace.js",
+	"/assets/cgm_shipping/js/supplier_link_filters.js",
 ]
 
 # include js, css files in header of web template
@@ -96,6 +97,7 @@ doctype_js = {
 	"Quotation": "public/js/quotation.js",
 	"Sales Order": "public/js/quotation.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
+	"Supplier": "public/js/supplier.js",
 	# Doctype folder *.js is auto-inlined; only list extra scripts here (not the doctype file itself).
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }

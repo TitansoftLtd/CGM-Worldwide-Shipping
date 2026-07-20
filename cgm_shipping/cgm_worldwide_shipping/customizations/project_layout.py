@@ -414,8 +414,18 @@ def ensure_supplier_field_order() -> None:
 	if not isinstance(order, list):
 		return
 
-	order = [f for f in order if f not in SUPPLIER_CONTAINER_CHARGE_FIELDS]
-	anchor = "image" if "image" in order else "supplier_group"
+	order = [f for f in order if f not in SUPPLIER_CONTAINER_CHARGE_FIELDS and f != "custom_is_shipping_line"]
+
+	# Place Is Shipping Line next to Is Transporter.
+	if "is_transporter" in order:
+		idx = order.index("is_transporter") + 1
+		order.insert(idx, "custom_is_shipping_line")
+	elif "custom_is_shipping_line" not in order:
+		order.append("custom_is_shipping_line")
+
+	anchor = "custom_is_shipping_line" if "custom_is_shipping_line" in order else (
+		"image" if "image" in order else "supplier_group"
+	)
 	if anchor in order:
 		idx = order.index(anchor) + 1
 		for offset, fieldname in enumerate(SUPPLIER_CONTAINER_CHARGE_FIELDS):
@@ -429,8 +439,18 @@ def ensure_supplier_field_order() -> None:
 
 
 def ensure_supplier_container_charge_fields() -> None:
-	"""Per shipping line: legacy flat fields (fallback) and tiered rule child tables."""
-	insert_after = "image"
+	"""Per shipping line: flag, legacy flat fields (fallback), and tiered rule child tables."""
+	_upsert_cf(
+		"Supplier",
+		{
+			"fieldname": "custom_is_shipping_line",
+			"label": "Is Shipping Line",
+			"fieldtype": "Check",
+			"insert_after": "is_transporter",
+			"description": "When checked, this supplier appears in Shipping Line link fields.",
+		},
+	)
+	insert_after = "custom_is_shipping_line"
 	for fieldname, label in (
 		("custom_demurrage_free_days", "Demurrage Free Days (legacy)"),
 		("custom_demurrage_daily_rate", "Demurrage Daily Rate (legacy USD)"),
@@ -444,6 +464,7 @@ def ensure_supplier_container_charge_fields() -> None:
 				"label": label,
 				"fieldtype": "Int" if "days" in fieldname else "Currency",
 				"insert_after": insert_after,
+				"depends_on": "eval:doc.custom_is_shipping_line",
 			},
 		)
 		insert_after = fieldname
@@ -455,6 +476,7 @@ def ensure_supplier_container_charge_fields() -> None:
 			"fieldtype": "Section Break",
 			"insert_after": "custom_detention_daily_rate",
 			"collapsible": 1,
+			"depends_on": "eval:doc.custom_is_shipping_line",
 		},
 	)
 	insert_after = "custom_section_shipping_line_rules"
@@ -483,6 +505,7 @@ def ensure_supplier_container_charge_fields() -> None:
 				"fieldtype": "Table",
 				"options": options,
 				"insert_after": insert_after,
+				"depends_on": "eval:doc.custom_is_shipping_line",
 			},
 		)
 		insert_after = fieldname
