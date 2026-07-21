@@ -655,7 +655,7 @@ function render_container_card_body(c) {
 			{ warn: demurrageDays > 0 }
 		),
 	];
-	if c.demurrage_amount > 0) {
+	if (c.demurrage_amount > 0) {
 		shippingRows.push(
 			container_card_row(__("Demurrage amount"), format_currency_amount(c.demurrage_amount), {
 				warn: true,
