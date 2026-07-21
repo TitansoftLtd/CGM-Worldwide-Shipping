@@ -192,7 +192,7 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_consignee", "custom_consignee"),
 		("custom_quantity", "custom_quantity"),
 		("custom_gross_weight", "custom_gross_weight"),
-		("custom_weight_nw", "custom_net_weight"),
+		("custom_net_weight", "custom_net_weight"),
 		("custom_description_of_goods", "custom_description_of_goods"),
 		("custom_country_of_origin", "custom_country_of_origin"),
 		("custom_cargo_type", "custom_cargo_type"),

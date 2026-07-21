@@ -132,7 +132,7 @@ class TestAirWaybillSync(IntegrationTestCase):
 				class DF:
 					fieldtype = "Data"
 
-				if fieldname in {"custom_gross_weight", "custom_weight_nw"}:
+				if fieldname in {"custom_gross_weight", "custom_net_weight"}:
 					DF.fieldtype = "Float"
 				return DF
 
