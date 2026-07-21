@@ -1,8 +1,9 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "hash",
- "creation": "2026-05-19 00:00:00.000000",
+ "creation": "2026-05-19 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -13,7 +14,8 @@
   "pickup_order_date",
   "gate_pass_issued",
   "port_compliance_status",
-  "demurrage_billing_amount"
+  "demurrage_billing_amount",
+  "amended_from"
  ],
  "fields": [
   {
@@ -45,6 +47,7 @@
    "label": "Pick-up Order Date"
   },
   {
+   "default": "0",
    "fieldname": "gate_pass_issued",
    "fieldtype": "Check",
    "label": "Gate Pass Issued"
@@ -59,12 +62,23 @@
    "fieldname": "demurrage_billing_amount",
    "fieldtype": "Currency",
    "label": "Demurrage Billing Amount"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Port Charges KPA Invoice",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-19 00:00:00.000000",
+ "make_attachments_public": 1,
+ "modified": "2026-07-21 18:28:10.223630",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Port Charges KPA Invoice",
@@ -83,6 +97,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

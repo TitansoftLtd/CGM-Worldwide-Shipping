@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "creation": "2026-04-30 11:23:10.954917",
  "doctype": "DocType",
@@ -84,7 +85,8 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 21:58:38.232864",
+ "make_attachments_public": 1,
+ "modified": "2026-07-21 17:39:16.443604",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Document Type",
