@@ -8,7 +8,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PERMIT_REGISTER_FIELD,
 	PRE_CLEARANCE_STAGE,
 	POST_CLEARANCE_STAGE,
-	SEA_TASK_FLOW_KEY,
 	TASK_DOCUMENTS_FIELD,
 	TASK_FINANCE_FIELD,
 	TASK_PERMITS_FIELD,
@@ -24,11 +23,10 @@ def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 	if not project or not sequence_no:
 		return None
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		SEA_IMPORT_TEMPLATE,
+		sea_import_flow_keys,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
 
-	for flow_key in (SEA_IMPORT_TEMPLATE, SEA_TASK_FLOW_KEY):
+	for flow_key in sea_import_flow_keys():
 		name = frappe.db.get_value(
 			"Task",
 			{

@@ -122,6 +122,43 @@ def workflow_flow_keys_for_template(template_name: str | None) -> list[str]:
 	return keys
 
 
+def sea_import_flow_keys() -> list[str]:
+	"""Keys stored on sea-import Tasks (CGM Task Template name + legacy SEA_IMPORT_E2E)."""
+	return workflow_flow_keys_for_template(SEA_IMPORT_TEMPLATE)
+
+
+def stored_task_flow_key(template_name: str | None = None) -> str:
+	"""Canonical value to write on new Tasks — always the CGM Task Template name."""
+	normalized = normalize_template_name(template_name) if template_name else SEA_IMPORT_TEMPLATE
+	return normalized or SEA_IMPORT_TEMPLATE
+
+
+def task_flow_key_in_filter(template_name: str | None = None) -> list:
+	"""Frappe filter value: ``["in", [<template>, <legacy>, …]]``."""
+	return ["in", workflow_flow_keys_for_template(template_name or SEA_IMPORT_TEMPLATE)]
+
+
+def sea_import_flow_keys_js_expr(doc_var: str = "doc") -> str:
+	"""Client `depends_on` fragment matching template name or legacy key."""
+	keys = ", ".join(f"'{k}'" for k in sea_import_flow_keys())
+	return f"[{keys}].includes({doc_var}.custom_task_flow_key)"
+
+
+def sql_task_flow_key_in(
+	template_name: str | None = None,
+	*,
+	column: str = "`tabTask`.`custom_task_flow_key`",
+) -> str:
+	"""SQL ``column IN (…)`` for template name + legacy key (already escaped)."""
+	import frappe
+
+	keys = workflow_flow_keys_for_template(template_name or SEA_IMPORT_TEMPLATE)
+	if not keys:
+		return "1=0"
+	escaped = ", ".join(frappe.db.escape(k) for k in keys)
+	return f"{column} IN ({escaped})"
+
+
 def is_transit_template_name(name: str | None) -> bool:
 	normalized = normalize_template_name(name)
 	return normalized in {
