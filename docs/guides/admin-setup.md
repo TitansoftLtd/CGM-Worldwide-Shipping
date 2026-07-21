@@ -15,7 +15,8 @@ bench restart
 ```
 
 App hooks: `cgm_shipping/hooks.py`  
-Post-migrate: `cgm_shipping/install.py` → `after_migrate`
+Post-migrate: `cgm_shipping/install.py` → `after_migrate`  
+**Patches:** see [patches.md](./patches.md) (rules for adding/retiring migrate patches).
 
 ---
 
