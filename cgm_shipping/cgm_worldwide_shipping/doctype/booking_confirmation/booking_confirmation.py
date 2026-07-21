@@ -52,7 +52,7 @@ BOOKING_TO_OPPORTUNITY_FIELDS = (
 	("commodity", "custom_description_of_goods"),
 	("client_ref", "custom_client_refrence_no"),
 	("gross_weight", "custom_gross_weight"),
-	("net_weight", "custom_weight_nw"),
+	("net_weight", "custom_net_weight"),
 	("weight_uom", "custom_weight_uom_"),
 	("port_of_loading", "custom_port_of_loading"),
 	("port_of_discharge", "custom_port_of_discharge"),
@@ -119,9 +119,6 @@ def _set_opp_value(opp, fieldname: str, value) -> bool:
 	if opp.get(fieldname) == value:
 		return False
 	opp.set(fieldname, value)
-	# Keep legacy duplicate Net Weight column in sync when present.
-	if fieldname == "custom_weight_nw" and opp.meta.has_field("custom_net_weight"):
-		opp.set("custom_net_weight", value)
 	return True
 
 

@@ -414,7 +414,7 @@ BL_TO_OPPORTUNITY_SHIPPING_FIELDS = (
 	("port_of_discharge", "custom_port_of_discharge"),
 	("voyage_number", "custom_voyage_number"),
 	("gross_weight", "custom_gross_weight"),
-	("net_weight", "custom_weight_nw"),
+	("net_weight", "custom_net_weight"),
 	("weight_uom", "custom_weight_uom_"),
 )
 
@@ -433,7 +433,7 @@ AWB_TO_OPPORTUNITY_FIELDS = (
 	("eta", "custom_eta"),
 	("etd", "custom_etd"),
 	("weight_uom", "custom_weight_uom_"),
-	("net_weight", "custom_weight_nw"),
+	("net_weight", "custom_net_weight"),
 	("gross_weight", "custom_gross_weight"),
 	("port_of_loading", "custom_port_of_loading"),
 	("port_of_discharge", "custom_port_of_discharge"),
@@ -519,9 +519,6 @@ def _set_doc_field_if_changed(target_doc, fieldname: str, value) -> bool:
 	if target_doc.get(fieldname) == value:
 		return False
 	target_doc.set(fieldname, value)
-	# Keep legacy duplicate Net Weight column in sync when present.
-	if fieldname == "custom_weight_nw" and target_doc.meta.has_field("custom_net_weight"):
-		target_doc.set("custom_net_weight", value)
 	return True
 
 
