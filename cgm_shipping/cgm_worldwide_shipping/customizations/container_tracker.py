@@ -239,7 +239,11 @@ def _project_delivery_destination(project_name: str | None) -> str:
 	if not project_name:
 		return default_destination_name()
 	meta = frappe.get_meta("Project")
-	for fieldname in ("custom_final_destination", "custom_delivery_destination"):
+	for fieldname in (
+		"custom_destination_country",
+		"custom_final_destination",
+		"custom_delivery_destination",
+	):
 		if meta.has_field(fieldname):
 			val = frappe.db.get_value("Project", project_name, fieldname)
 			if val:
@@ -479,11 +483,18 @@ def _derive_alert_status(
 
 
 def _derive_container_mode(project) -> str:
-	project_type = (project.get("project_type") or "").strip()
-	if project_type:
-		return project_type
+	for fieldname in ("custom_container_tracker_mode", "project_type"):
+		value = (project.get(fieldname) or "").strip()
+		if value:
+			return value
 
-	return frappe.db.get_value("Project", project.name, "project_type") or "Mombasa Port"
+	if project.name:
+		for fieldname in ("custom_container_tracker_mode", "project_type"):
+			value = frappe.db.get_value("Project", project.name, fieldname) or ""
+			if str(value).strip():
+				return str(value).strip()
+
+	return "Mombasa Port"
 
 
 def find_tracker_by_identity(
@@ -855,8 +866,10 @@ def _apply_book_trucks_task(project, task_doc=None) -> None:
 
 
 def _apply_bulk_field_clearance(project, trackers: list) -> None:
-	location = project.get("custom_final_destination") or project.get(
-		"custom_clearance_station"
+	location = (
+		project.get("custom_destination_country")
+		or project.get("custom_final_destination")
+		or project.get("custom_clearance_station")
 	)
 	if not location or not trackers:
 		return
@@ -1160,6 +1173,23 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 		return {"level": "grey", "label": _("AWAITING"), "css": "cgm-tl-grey"}
 
 	return {"level": "grey", "label": _("AWAITING"), "css": "cgm-tl-grey"}
+
+
+@frappe.whitelist()
+def project_can_confirm_port_arrival(project: str) -> dict:
+	"""Whether the Project Actions menu should offer port arrival confirmation."""
+	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
+	if not frappe.db.exists("Project", project):
+		return {"can_confirm": False}
+
+	doc = frappe.get_doc("Project", project)
+	if (doc.get("custom_mode_of_transport") or "").strip() != "Sea":
+		return {"can_confirm": False}
+	if doc.get("custom_port_arrival_confirmed"):
+		return {"can_confirm": False}
+	if not _project_container_rows(doc):
+		return {"can_confirm": False}
+	return {"can_confirm": True}
 
 
 @frappe.whitelist()

@@ -1,7 +1,7 @@
 """
 Sea Freight Clearance - ordered task plan and workflow gates.
 
-Task plan rows: CGM Shipping Settings → custom_sea_import_task_template
+Task plan: CGM Task Template → Sea Import Workflow (via task_engine)
 Workflow states: CGM Sea Import Workflow (Project)
 Task gates: CGM Shipping Settings → custom_sea_workflow_task_gates
 """
@@ -65,15 +65,23 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 	)
 
 	for seq in sorted(auto_complete_sequences()):
-		task_name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project,
-				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-				"custom_sequence_no": seq,
-			},
-			"name",
+		task_name = None
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+			SEA_IMPORT_TEMPLATE,
 		)
+
+		for flow_key in (SEA_IMPORT_TEMPLATE, SEA_TASK_FLOW_KEY):
+			task_name = frappe.db.get_value(
+				"Task",
+				{
+					"project": project,
+					"custom_task_flow_key": flow_key,
+					"custom_sequence_no": seq,
+				},
+				"name",
+			)
+			if task_name:
+				break
 		if not task_name:
 			continue
 		if frappe.db.get_value("Task", task_name, "status") == "Completed":
@@ -152,6 +160,17 @@ def _sea_task_progress_fields() -> list[str]:
 	return fields
 
 
+def _project_workflow_flow_keys(project: str) -> tuple[str, ...]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_project_workflow_flow_keys,
+	)
+
+	keys = get_project_workflow_flow_keys(project)
+	if keys:
+		return keys
+	return (SEA_TASK_FLOW_KEY,)
+
+
 def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	"""Advance Project workflow field when sea tasks have passed the current state."""
 	if frappe.flags.get("cgm_skip_task_project_sync"):
@@ -160,7 +179,10 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 		return None
 	tasks = frappe.get_all(
 		"Task",
-		filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
+		filters={
+			"project": project,
+			"custom_task_flow_key": ["in", list(_project_workflow_flow_keys(project))],
+		},
 		fields=_sea_task_progress_fields(),
 		limit=30,
 	)

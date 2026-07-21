@@ -16,10 +16,17 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	derive_workflow_progress_from_tasks,
-	get_all_sea_tasks_for_project,
-	get_open_sea_tasks,
 	get_tracking_workflow_states,
-	sea_task_count,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+	GENERIC_WORKFLOW_STATES,
+	derive_generic_workflow_progress,
+	get_all_workflow_tasks_for_project,
+	get_open_workflow_tasks_for_project,
+	get_workflow_tasks_for_project,
+	project_has_workflow_tasks,
+	project_uses_clearance_workflow_states,
+	workflow_task_count_for_project,
 )
 
 
@@ -365,6 +372,33 @@ def _set_cf_property(fieldname: str, **kwargs) -> None:
 		return
 	for key, value in kwargs.items():
 		frappe.db.set_value("Custom Field", name, key, value, update_modified=False)
+
+
+def check_project_layout_export_drift() -> list[str]:
+	"""Return Project custom fields that exist in DB but are missing from field_order.
+
+	When non-empty, export Customize Form to ``custom/project.json`` so production
+	migrate applies the same layout (``sync_on_migrate``).
+	"""
+	ps_name = "Project-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return []
+
+	raw = frappe.db.get_value("Property Setter", ps_name, "value") or "[]"
+	try:
+		order = json.loads(raw)
+	except json.JSONDecodeError:
+		return []
+
+	if not isinstance(order, list):
+		return []
+
+	order_set = set(order)
+	return sorted(
+		fn
+		for fn in frappe.get_all("Custom Field", filters={"dt": "Project"}, pluck="fieldname")
+		if fn not in order_set
+	)
 
 
 def ensure_supplier_field_order() -> None:
@@ -1008,7 +1042,7 @@ def _ensure_tracking_fields() -> None:
 			"in_standard_filter": 1,
 			"in_global_search": 1,
 			"read_only": 1,
-			"description": "Business project reference (e.g. LP 4X40-8/0082).",
+			"description": "Business project reference (e.g. PO-99 / 3X20 / 1 or PO-99 / 10 Cartons).",
 		},
 	)
 	_create_cf(
@@ -1164,37 +1198,31 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
 	doc = frappe.get_doc("Project", project)
 	workflow_status = doc.get("custom_shipment_status") or "Draft"
-	states = get_tracking_workflow_states()
+	use_clearance_states = project_uses_clearance_workflow_states(doc)
+	states = get_tracking_workflow_states() if use_clearance_states else list(GENERIC_WORKFLOW_STATES)
 	try:
 		workflow_index = states.index(workflow_status)
 	except ValueError:
 		workflow_index = 0
 
-	tasks = []
-	if frappe.db.exists("Task", {"project": project}):
-		tasks = frappe.get_all(
-			"Task",
-			filters={"project": project, "custom_task_flow_key": "SEA_IMPORT_E2E"},
-			fields=[
-				"custom_sequence_no",
-				"status",
-				"subject",
-				"custom_permit_invoices_submitted",
-			],
-			order_by="custom_sequence_no asc",
-			limit=30,
-		)
-	completed = sum(1 for t in tasks if t.status == "Completed")
-	total = len(tasks) or sea_task_count()
-
-	progress_status, progress_index = derive_workflow_progress_from_tasks(tasks, states)
-	visible_tasks = (
-		get_all_sea_tasks_for_project(project) if doc.get("custom_mode_of_transport") == "Sea" else []
+	tasks = get_workflow_tasks_for_project(
+		doc,
+		fields=["custom_sequence_no", "status", "subject", "custom_permit_invoices_submitted"],
+		limit=100,
 	)
-	open_tasks = get_open_sea_tasks(project) if doc.get("custom_mode_of_transport") == "Sea" else []
+	completed = sum(1 for t in tasks if t.status == "Completed")
+	total = len(tasks) or workflow_task_count_for_project(doc)
+
+	if use_clearance_states:
+		progress_status, progress_index = derive_workflow_progress_from_tasks(tasks, states)
+	else:
+		progress_status, progress_index = derive_generic_workflow_progress(tasks)
+
+	visible_tasks = get_all_workflow_tasks_for_project(project) if project_has_workflow_tasks(doc) else []
+	open_tasks = get_open_workflow_tasks_for_project(project) if project_has_workflow_tasks(doc) else []
 	first_open = open_tasks[0] if open_tasks else None
 	workflow_behind = workflow_index < progress_index
-	if workflow_behind and doc.get("custom_mode_of_transport") == "Sea":
+	if workflow_behind and use_clearance_states and doc.get("custom_mode_of_transport") == "Sea":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 			sync_project_shipment_status_from_tasks,
 		)
@@ -1251,9 +1279,13 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"states": states,
 		"tasks_completed": completed,
 		"tasks_total": total,
+		"workflow_tasks": visible_tasks,
 		"sea_tasks": visible_tasks,
 		"first_open_task": first_open,
 		"mode": doc.get("custom_mode_of_transport"),
+		"uses_clearance_states": use_clearance_states,
+		"has_workflow_tasks": bool(visible_tasks or tasks),
+		"task_progress_label": "clearance tasks" if use_clearance_states else "workflow tasks",
 		"berth_phase": berth_phase,
 		"project_reference": get_project_reference(doc) or doc.name,
 		"cgm_ref_no": get_project_reference(doc) or doc.name,
@@ -1368,7 +1400,27 @@ def ensure_cargo_type_fields() -> None:
 
 
 def ensure_transit_project_fields() -> None:
-	"""Project fields for transit export destination entry and UBS permit tracking."""
+	"""Project fields for container tracker mode, transit entry, and UBS permit tracking."""
+	_ensure_cf(
+		"Project",
+		{
+			"fieldname": "custom_container_tracker_mode",
+			"label": "Container Tracker Mode",
+			"fieldtype": "Link",
+			"options": "Container Tracker Mode",
+			"insert_after": "custom_shipment_type",
+			"fetch_from": "custom_shipment_type.container_tracker_mode",
+			"fetch_if_empty": 1,
+			"in_standard_filter": 1,
+			"description": "Where containers for this shipment are tracked (Mombasa, ICD, Transit, Export). Defaults from Shipment Type.",
+		},
+	)
+	_set_cf_property(
+		"custom_container_tracker_mode",
+		hidden=0,
+		fetch_from="custom_shipment_type.container_tracker_mode",
+		fetch_if_empty=1,
+	)
 	_ensure_cf(
 		"Project",
 		{
@@ -1455,7 +1507,42 @@ def ensure_transit_project_fields() -> None:
 	if frappe.db.exists("Property Setter", "Project-project_type-hidden"):
 		frappe.db.set_value("Property Setter", "Project-project_type-hidden", "value", "0")
 
+	_backfill_project_container_tracker_modes()
 	frappe.clear_cache(doctype="Project")
+
+
+def _backfill_project_container_tracker_modes() -> None:
+	"""Copy Shipment Type container tracker mode onto projects that are still blank."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+		container_tracking_mode_for_shipment_type,
+	)
+
+	if not frappe.db.has_column("Project", "custom_container_tracker_mode"):
+		return
+
+	for row in frappe.get_all(
+		"Project",
+		filters={
+			"custom_shipment_type": ["is", "set"],
+			"custom_container_tracker_mode": ["in", ("", None)],
+		},
+		fields=["name", "custom_shipment_type"],
+		limit=500,
+	):
+		mode = container_tracking_mode_for_shipment_type(row.custom_shipment_type)
+		if not mode:
+			continue
+		frappe.db.set_value(
+			"Project",
+			row.name,
+			"custom_container_tracker_mode",
+			mode,
+			update_modified=False,
+		)
+		if frappe.db.has_column("Project", "project_type"):
+			frappe.db.set_value(
+				"Project", row.name, "project_type", mode, update_modified=False
+			)
 
 
 def ensure_opportunity_universal_fields() -> None:
