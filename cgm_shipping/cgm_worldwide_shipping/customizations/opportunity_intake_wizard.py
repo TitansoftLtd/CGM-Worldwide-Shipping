@@ -98,16 +98,9 @@ def validate_opportunity_intake(doc, _method=None) -> None:
 
 	coerce_numeric_fields(
 		doc,
-		("custom_gross_weight", "custom_weight_nw", "custom_net_weight"),
+		("custom_gross_weight", "custom_net_weight"),
 		empty_as_zero=False,
 	)
-	# Prefer the visible Net Weight field; keep legacy NOT NULL column aligned.
-	if doc.meta.has_field("custom_weight_nw") and doc.meta.has_field("custom_net_weight"):
-		nw = doc.get("custom_weight_nw")
-		if nw not in (None, ""):
-			doc.set("custom_net_weight", nw)
-		else:
-			doc.set("custom_net_weight", 0)
 
 	if not doc.opportunity_from:
 		doc.opportunity_from = "Customer"
