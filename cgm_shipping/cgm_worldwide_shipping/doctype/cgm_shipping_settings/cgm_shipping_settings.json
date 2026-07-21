@@ -12,10 +12,9 @@
   "tab_container_port_settings",
   "section_container_port_settings",
   "kpa_default_free_days",
-  "default_dem_currency",
   "section_kpa_port_charges",
-  "kpa_port_daily_rate",
   "kpa_port_rate_currency",
+  "kpa_port_daily_rate",
   "section_container_accrual_accounts",
   "demurrage_accrual_expense_account",
   "demurrage_accrual_payable_account",
@@ -61,7 +60,8 @@
   "custom_monitor_delivery_task_seq",
   "custom_offload_task_seq",
   "custom_empty_return_task_seq",
-  "custom_interchange_task_seq"
+  "custom_interchange_task_seq",
+  "custom_kpa_free_days"
  ],
  "fields": [
   {
@@ -281,7 +281,7 @@
    "label": "General"
   },
   {
-   "description": "Global shipping configuration. Task plans are maintained in CGM Task Template — not here.",
+   "description": "Global shipping configuration. Task plans are maintained in CGM Task Template \u2014 not here.",
    "fieldname": "section_task_workflow_settings",
    "fieldtype": "Section Break",
    "label": "General Settings"
@@ -315,12 +315,6 @@
    "fieldname": "kpa_default_free_days",
    "fieldtype": "Int",
    "label": "KPA Default Free Days"
-  },
-  {
-   "fieldname": "default_dem_currency",
-   "fieldtype": "Link",
-   "label": "Default Demurrage Currency",
-   "options": "Currency"
   },
   {
    "description": "Daily rate after KPA free days end until gate out at Mombasa.",
@@ -406,7 +400,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-26 01:46:52.585603",
+ "modified": "2026-07-21 10:20:40.823928",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

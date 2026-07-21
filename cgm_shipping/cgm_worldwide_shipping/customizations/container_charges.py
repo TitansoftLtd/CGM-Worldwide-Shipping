@@ -25,10 +25,7 @@ COMPUTED_CHARGE_FIELDS = (
 
 
 def get_default_demurrage_currency() -> str:
-	if frappe.db.exists("DocType", "CGM Shipping Settings"):
-		currency = frappe.db.get_single_value("CGM Shipping Settings", "default_dem_currency")
-		if currency:
-			return currency
+	"""Fallback when a demurrage tier row has no currency — use company default."""
 	company = frappe.defaults.get_global_default("company")
 	if company:
 		return frappe.db.get_value("Company", company, "default_currency") or "USD"

@@ -120,6 +120,7 @@ def _ensure_cgm_settings_charge_fields() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _remove_cf
 
 	for fieldname in (
+		"default_dem_currency",
 		"section_kpa_port_charges",
 		"kpa_port_daily_rate",
 		"kpa_port_rate_currency",
