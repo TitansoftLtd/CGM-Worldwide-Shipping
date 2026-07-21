@@ -190,8 +190,34 @@ def is_permit_application_task_doc(task) -> bool:
 
 
 def has_all_permit_invoices(task) -> bool:
+	"""True when every permit row has the attachment required for its origin.
+
+	Local rows need a payment invoice; Foreign rows need a permit certificate.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_row_ready_for_application,
+	)
+
 	rows = task.get(TASK_PERMITS_FIELD) or []
-	return bool(rows) and all(r.permit_type and r.get("payment_invoice") for r in rows)
+	return bool(rows) and all(permit_row_ready_for_application(r) for r in rows)
+
+
+def payable_permit_rows(task) -> list:
+	"""Permit rows that require the Finance payment path (Local origin)."""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
+	return [
+		r
+		for r in task.get(TASK_PERMITS_FIELD) or []
+		if r.get("permit_type") and permit_requires_payment(r)
+	]
+
+
+def has_all_payable_permit_invoices(task) -> bool:
+	payable = payable_permit_rows(task)
+	return bool(payable) and all(r.get("payment_invoice") for r in payable)
 
 
 def permit_invoices_submitted(task_name: str) -> bool:
@@ -232,18 +258,20 @@ def task_has_recorded_payment(task) -> bool:
 	)
 
 	if is_permit_finance_task_doc(task):
-		rows = [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.get("permit_type")]
-		if rows:
-			for row in rows:
-				je = row.get(PERMIT_JOURNAL_ENTRY_FIELD)
-				if je and frappe.db.exists("Journal Entry", je):
-					continue
-				pe = row.get("payment_entry")
-				if pe and frappe.db.exists("Payment Entry", pe):
-					if int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1:
-						continue
-				return False
+		rows = permit_finance_rows(task)
+		if not rows:
+			# All-foreign (or empty) finance task has nothing to pay.
 			return True
+		for row in rows:
+			je = row.get(PERMIT_JOURNAL_ENTRY_FIELD)
+			if je and frappe.db.exists("Journal Entry", je):
+				continue
+			pe = row.get("payment_entry")
+			if pe and frappe.db.exists("Payment Entry", pe):
+				if int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1:
+					continue
+			return False
+		return True
 
 	if task.get("custom_journal_entry"):
 		if frappe.db.exists("Journal Entry", task.custom_journal_entry):
@@ -255,9 +283,8 @@ def task_has_recorded_payment(task) -> bool:
 
 
 def permit_finance_rows(task) -> list:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import TASK_PERMITS_FIELD
-
-	return [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.get("permit_type")]
+	"""Payable permit rows on a finance task (Foreign origin is excluded)."""
+	return payable_permit_rows(task)
 
 
 def task_uses_permit_payment_pattern(task) -> bool:
@@ -306,6 +333,7 @@ def finance_payment_completed(project: str, application_seq: int | None = None) 
 def build_permit_row_payload(row) -> dict:
 	return {
 		"permit_type": row.get("permit_type"),
+		"origin": row.get("origin") or "Local",
 		"stage": row.get("stage") or PRE_CLEARANCE_STAGE,
 		"payment_invoice": row.get("payment_invoice"),
 		"invoice_amount": row.get("invoice_amount"),
@@ -328,6 +356,7 @@ def get_application_permit_rows(application_task_name: str) -> list[dict]:
 		},
 		fields=[
 			"permit_type",
+			"origin",
 			"stage",
 			"payment_invoice",
 			"invoice_amount",
@@ -364,6 +393,7 @@ def seed_finance_permit_rows_from_project(finance_task, *, save: bool = True) ->
 			TASK_PERMITS_FIELD,
 			{
 				"permit_type": row.permit_type,
+				"origin": row.get("origin") or "Local",
 				"stage": row.stage,
 				"payment_invoice": row.get("payment_invoice"),
 				"invoice_amount": row.get("invoice_amount"),
@@ -474,6 +504,7 @@ def merge_project_permits_into_application_task(task, *, save: bool = False) -> 
 		if not prow:
 			continue
 		for field in (
+			"origin",
 			"payment_receipt",
 			"permit_document",
 			"receipt_verified",
@@ -511,12 +542,37 @@ def prepare_finance_permit_task(application_task) -> str | None:
 
 
 def _permit_invoices_pending_finance_notification(task) -> bool:
-	"""True when all permit invoices are attached but Finance has not been notified yet."""
+	"""True when Local permit invoices are ready but Finance has not been notified yet."""
 	if not is_permit_application_task_doc(task):
 		return False
 	if task.get("custom_permit_invoices_submitted"):
 		return False
-	return has_all_permit_invoices(task)
+	if not payable_permit_rows(task):
+		return False
+	return has_all_payable_permit_invoices(task)
+
+
+def _mark_foreign_only_permits_ready(task) -> bool:
+	"""When every row is Foreign and certificates are attached, skip Finance notify."""
+	if not is_permit_application_task_doc(task):
+		return False
+	if payable_permit_rows(task):
+		return False
+	if not has_all_permit_invoices(task):
+		return False
+	if task.get("custom_permit_invoices_submitted"):
+		return False
+	if task.meta.has_field("custom_permit_invoices_submitted"):
+		frappe.db.set_value(
+			"Task",
+			task.name,
+			"custom_permit_invoices_submitted",
+			1,
+			update_modified=False,
+		)
+		task.custom_permit_invoices_submitted = 1
+	sync_task_permits_to_project(task)
+	return True
 
 
 def _notify_finance_for_permit_invoices(task) -> dict:
@@ -553,12 +609,15 @@ def _notify_finance_for_permit_invoices(task) -> dict:
 
 
 def auto_submit_permit_invoices_to_finance_if_needed(task) -> dict | None:
-	"""On save: notify Finance when all permit invoices are attached (no manual submit)."""
+	"""On save: notify Finance when Local permit invoices are attached (no manual submit)."""
 	if frappe.flags.get("cgm_auto_submitting_permit_invoices"):
+		return None
+	if _mark_foreign_only_permits_ready(task):
 		return None
 	if (
 		task.get("custom_permit_invoices_submitted")
-		and not has_all_permit_invoices(task)
+		and not has_all_payable_permit_invoices(task)
+		and payable_permit_rows(task)
 		and not finance_payment_completed(task.get("project"), task_sequence(task))
 	):
 		if task.meta.has_field("custom_permit_invoices_submitted"):
@@ -594,9 +653,25 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 	if not is_permit_application_task_doc(task):
 		frappe.throw("This action is only for permit application tasks (5 and 15).")
 
-	if not has_all_permit_invoices(task):
+	if not payable_permit_rows(task):
+		if has_all_permit_invoices(task):
+			_mark_foreign_only_permits_ready(task)
+			return {
+				"task": task.name,
+				"status": task.status,
+				"message": (
+					"All permits are <b>Foreign</b> — no Finance payment needed. "
+					"Complete the task after certificates are attached."
+				),
+			}
 		frappe.throw(
-			"Attach <b>Permit Invoice (for Finance)</b> on every row in <b>Task Permits</b> first."
+			"Attach <b>Permit Certificate</b> on every Foreign permit row before continuing."
+		)
+
+	if not has_all_payable_permit_invoices(task):
+		frappe.throw(
+			"Attach <b>Permit Invoice (for Finance)</b> on every <b>Local</b> row in "
+			"<b>Task Permits</b> first. Foreign rows only need a certificate."
 		)
 
 	result = auto_submit_permit_invoices_to_finance_if_needed(task)
@@ -720,31 +795,43 @@ def validate_permit_application_can_complete(task) -> None:
 	if not is_permit_application_task(seq):
 		return
 
-	if not task.get("custom_permit_invoices_submitted"):
-		frappe.throw(
-			"Attach all permit invoices and save — Finance is notified automatically — "
-			"before completing this task."
-		)
+	payable = payable_permit_rows(task)
+	if payable:
+		if not task.get("custom_permit_invoices_submitted"):
+			frappe.throw(
+				"Attach all <b>Local</b> permit invoices and save — Finance is notified "
+				"automatically — before completing this task."
+			)
 
-	if not finance_payment_completed(task.project, seq):
-		fin_seq = get_permit_finance_sequence_for_application(seq)
-		fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq else None
-		fin_label = (
-			frappe.db.get_value("Task", fin_name, "subject") if fin_name else "Finance permit payment"
-		)
+		if not finance_payment_completed(task.project, seq):
+			fin_seq = get_permit_finance_sequence_for_application(seq)
+			fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq else None
+			fin_label = (
+				frappe.db.get_value("Task", fin_name, "subject")
+				if fin_name
+				else "Finance permit payment"
+			)
+			frappe.throw(
+				f"Finance must record payment on <b>{fin_label}</b> before this task can be completed."
+			)
+	elif not has_all_permit_invoices(task):
 		frappe.throw(
-			f"Finance must record payment on <b>{fin_label}</b> before this task can be completed."
+			"Attach <b>Permit Certificate</b> on every <b>Foreign</b> permit row before completing."
 		)
+	elif not task.get("custom_permit_invoices_submitted"):
+		_mark_foreign_only_permits_ready(task)
 
 	merge_project_permits_into_application_task(task)
 	rows = task.get(TASK_PERMITS_FIELD) or []
 	if not rows:
 		frappe.throw("Add permit rows on <b>Task Permits</b> first.")
 
-	missing_receipts = [r.permit_type for r in rows if r.permit_type and not r.get("payment_receipt")]
+	missing_receipts = [
+		r.permit_type for r in payable if r.permit_type and not r.get("payment_receipt")
+	]
 	if missing_receipts:
 		frappe.throw(
-			"Upload <b>Payment Receipt</b> for each permit. Missing: "
+			"Upload <b>Payment Receipt</b> for each Local permit. Missing: "
 			f"<b>{', '.join(missing_receipts)}</b>."
 		)
 
@@ -755,7 +842,9 @@ def validate_permit_application_can_complete(task) -> None:
 			f"<b>{', '.join(missing_certs)}</b>."
 		)
 
-	unverified = [r.permit_type for r in rows if r.permit_type and not r.get("receipt_verified")]
+	unverified = [
+		r.permit_type for r in payable if r.permit_type and not r.get("receipt_verified")
+	]
 	if unverified:
 		fin_seq = get_permit_finance_sequence_for_application(seq)
 		fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq else None
@@ -763,7 +852,7 @@ def validate_permit_application_can_complete(task) -> None:
 			frappe.db.get_value("Task", fin_name, "subject") if fin_name else "Finance permit payment"
 		)
 		frappe.throw(
-			f"Finance must tick <b>Receipt Verified</b> on each permit (on "
+			f"Finance must tick <b>Receipt Verified</b> on each Local permit (on "
 			f"<b>{fin_label}</b>) before completing. Pending: "
 			f"<b>{', '.join(unverified)}</b>."
 		)
@@ -801,6 +890,7 @@ def can_complete_finance_permit_task(task) -> bool:
 		return False
 	rows = permit_finance_rows(task)
 	if not rows:
+		# No Local permits — nothing for Finance to pay on this task.
 		return False
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		PERMIT_JOURNAL_ENTRY_FIELD,

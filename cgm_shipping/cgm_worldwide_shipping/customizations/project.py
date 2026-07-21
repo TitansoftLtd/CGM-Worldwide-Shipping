@@ -387,6 +387,14 @@ def normalize_permit_register_rows(doc):
 
 def derive_permit_clearance_phase(row) -> str:
 	"""Map permit row finance fields to high-level clearance phase (see OPERATIONS_PROCESS.md §7)."""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
+	# Foreign origin: certificate alone completes clearance (no payment path).
+	if not permit_requires_payment(row) and row.get("permit_document"):
+		return "Post-Cleared"
+
 	if row.get("payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", row.payment_entry, "docstatus")
 		if int(pe_status or 0) == 1:

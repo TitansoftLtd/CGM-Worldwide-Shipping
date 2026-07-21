@@ -682,7 +682,9 @@ function is_permit_payment_pattern(frm) {
 }
 
 function permit_finance_rows_on_form(frm) {
-	return (frm.doc.custom_task_permits || []).filter((r) => r.permit_type);
+	return (frm.doc.custom_task_permits || []).filter(
+		(r) => r.permit_type && (r.origin || "Local") !== "Foreign"
+	);
 }
 
 function permit_rows_all_have_journal_entry(frm) {
@@ -1180,7 +1182,11 @@ function permit_rows_have_invoices(frm) {
 
 function permit_rows_pending_receipt_verification(frm) {
 	return (frm.doc.custom_task_permits || []).filter(
-		(r) => r.permit_type && r.payment_receipt && !r.receipt_verified
+		(r) =>
+			r.permit_type &&
+			(r.origin || "Local") !== "Foreign" &&
+			r.payment_receipt &&
+			!r.receipt_verified
 	);
 }
 
@@ -1582,14 +1588,20 @@ function toggle_permit_invoice_fields_for_origin(grid) {
 	if (!grid) {
 		return;
 	}
-	const invoice_fields = [
+	const payment_fields = [
 		"payment_invoice",
 		"invoice_amount",
 		"invoice_uploaded_on",
 		"invoice_uploaded_by",
 		"invoice_verified",
+		"payment_receipt",
+		"receipt_verified",
+		"journal_entry",
+		"payment_entry",
+		"payment_date",
+		"payment_reference",
 	];
-	invoice_fields.forEach((fn) => {
+	payment_fields.forEach((fn) => {
 		grid.update_docfield_property(fn, "depends_on", 'eval:doc.origin != "Foreign"');
 	});
 }
@@ -1821,10 +1833,31 @@ frappe.ui.form.on("Permit Register", {
 		}
 		const row = locals[cdt][cdn];
 		if ((row.origin || "Local") === "Foreign") {
-			["payment_invoice", "invoice_amount", "invoice_verified"].forEach((fn) => {
+			[
+				"payment_invoice",
+				"invoice_amount",
+				"invoice_verified",
+				"payment_receipt",
+				"receipt_verified",
+				"journal_entry",
+				"payment_entry",
+				"payment_date",
+				"payment_reference",
+			].forEach((fn) => {
 				if (row[fn]) {
-					frappe.model.set_value(cdt, cdn, fn, fn === "invoice_verified" ? 0 : "");
+					frappe.model.set_value(
+						cdt,
+						cdn,
+						fn,
+						fn === "invoice_verified" || fn === "receipt_verified" ? 0 : ""
+					);
 				}
+			});
+			frappe.show_alert({
+				message: __(
+					"Foreign permit — upload the Permit Certificate only (no invoice or payment)."
+				),
+				indicator: "blue",
 			});
 		}
 		configure_permit_grid(frm);

@@ -1589,13 +1589,17 @@ def validate_permit_application_task(task, seq: int) -> None:
 	if not task.meta.has_field(TASK_PERMITS_FIELD):
 		frappe.throw("Task Permits table is not available on this site. Run <b>bench migrate</b>.")
 
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
 	rows = task.get(TASK_PERMITS_FIELD) or []
 	examples = _permit_type_examples()
 	eg = f" (e.g. {examples})" if examples else ""
 	if not rows:
 		frappe.throw(
 			f"Add at least one permit on <b>Task Permits</b>{eg} "
-			"and attach the <b>Permit Invoice</b> for each before completing this task."
+			"and attach the required documents before completing this task."
 		)
 
 	missing = []
@@ -1604,13 +1608,11 @@ def validate_permit_application_task(task, seq: int) -> None:
 		if not row.permit_type:
 			missing.append(f"Permit type{eg}")
 			continue
-		origin = (row.get("origin") or "Local").strip()
-		if origin == "Foreign":
-			if not row.get("permit_document"):
-				missing.append(f"{label} - permit certificate (foreign origin)")
-			continue
-		if not row.get("payment_invoice"):
-			missing.append(f"{label} - supplier/permit invoice")
+		if permit_requires_payment(row):
+			if not row.get("payment_invoice"):
+				missing.append(f"{label} - supplier/permit invoice (Local)")
+		elif not row.get("permit_document"):
+			missing.append(f"{label} - permit certificate (Foreign)")
 
 	if missing:
 		frappe.throw(
@@ -1678,6 +1680,7 @@ def sync_task_permits_to_project(task) -> None:
 			by_type[trow.permit_type] = prow
 
 		prow.permit_type = trow.permit_type
+		prow.origin = trow.get("origin") or "Local"
 		prow.stage = trow.stage or default_stage
 		if trow.get("payment_invoice"):
 			prow.payment_invoice = trow.payment_invoice
@@ -1690,6 +1693,8 @@ def sync_task_permits_to_project(task) -> None:
 			prow.permit_document = trow.permit_document
 			prow.certificate_uploaded_on = trow.get("certificate_uploaded_on")
 			prow.certificate_uploaded_by = trow.get("certificate_uploaded_by")
+			if (trow.get("origin") or "Local") == "Foreign":
+				prow.status = prow.status or "Approved"
 		if trow.get("payment_receipt"):
 			prow.payment_receipt = trow.payment_receipt
 			prow.status = prow.status or "Receipt Submitted"
@@ -1748,7 +1753,9 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 		)
 	]
 	if not missing and task.status != "Completed":
-		frappe.throw("Task is already open, or all permit rows already have invoices attached.")
+		frappe.throw(
+			"Task is already open, or all permit rows already have the required attachments."
+		)
 
 	task.status = "Open"
 	task.progress = 0

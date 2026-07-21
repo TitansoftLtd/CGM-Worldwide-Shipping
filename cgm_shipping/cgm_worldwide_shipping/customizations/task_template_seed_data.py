@@ -300,6 +300,25 @@ def seed_container_tracker_modes() -> None:
 		)
 
 
+def ensure_project_type(name: str) -> None:
+	"""Create ERPNext Project Type when missing (Project.project_type is a Link field)."""
+	import frappe
+
+	if not name or not frappe.db.exists("DocType", "Project Type"):
+		return
+	if frappe.db.exists("Project Type", name):
+		return
+	frappe.get_doc({"doctype": "Project Type", "project_type": name}).insert(
+		ignore_permissions=True
+	)
+
+
+def seed_project_types_from_tracker_modes() -> None:
+	"""Align Project Type master with container tracker mode names used on Project."""
+	for row in CONTAINER_TRACKER_MODES:
+		ensure_project_type(row["mode_name"])
+
+
 def seed_cgm_task_templates() -> None:
 	import frappe
 
@@ -357,5 +376,6 @@ def link_shipment_types_to_templates() -> None:
 
 def seed_task_workflow_masters() -> None:
 	seed_container_tracker_modes()
+	seed_project_types_from_tracker_modes()
 	seed_cgm_task_templates()
 	link_shipment_types_to_templates()
