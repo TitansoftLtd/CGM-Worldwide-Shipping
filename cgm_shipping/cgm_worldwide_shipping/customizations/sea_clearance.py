@@ -13,10 +13,16 @@ from frappe.utils import now_datetime
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
 	POST_CLEARANCE_STAGE,
-	SEA_TASK_FLOW_KEY,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
 	sea_import_task_sequence_no,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	SEA_IMPORT_TEMPLATE,
+	sea_import_flow_keys,
+	sql_task_flow_key_in,
+	stored_task_flow_key,
+	task_flow_key_in_filter,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
 
@@ -65,23 +71,11 @@ def auto_complete_initial_sea_tasks(project: str) -> list[str]:
 	)
 
 	for seq in sorted(auto_complete_sequences()):
-		task_name = None
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-			SEA_IMPORT_TEMPLATE,
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			get_task_name_by_sequence,
 		)
 
-		for flow_key in (SEA_IMPORT_TEMPLATE, SEA_TASK_FLOW_KEY):
-			task_name = frappe.db.get_value(
-				"Task",
-				{
-					"project": project,
-					"custom_task_flow_key": flow_key,
-					"custom_sequence_no": seq,
-				},
-				"name",
-			)
-			if task_name:
-				break
+		task_name = get_task_name_by_sequence(project, seq)
 		if not task_name:
 			continue
 		if frappe.db.get_value("Task", task_name, "status") == "Completed":
@@ -168,7 +162,7 @@ def _project_workflow_flow_keys(project: str) -> tuple[str, ...]:
 	keys = get_project_workflow_flow_keys(project)
 	if keys:
 		return keys
-	return (SEA_TASK_FLOW_KEY,)
+	return tuple(sea_import_flow_keys())
 
 
 def sync_project_shipment_status_from_tasks(project: str) -> str | None:
@@ -233,18 +227,19 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 		invoice_submitted as application_invoice_submitted,
 	)
 
+	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT name, subject, custom_sequence_no AS seq, status
 		FROM `tabTask`
 		WHERE project = %s
-		  AND custom_task_flow_key = %s
+		  AND {flow_in}
 		  AND custom_sequence_no < %s
 		  AND status NOT IN ('Completed', 'Cancelled')
 		ORDER BY custom_sequence_no ASC
 		LIMIT 10
 		""",
-		(project, SEA_TASK_FLOW_KEY, before_sequence),
+		(project, before_sequence),
 		as_dict=True,
 	)
 	# UCR / pre-clearance permit application tasks stay Open while Finance pays; invoice submitted unlocks finance.
@@ -292,15 +287,16 @@ def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list
 
 	if not project:
 		return []
+	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign
 		FROM `tabTask`
 		WHERE project = %s
-		  AND custom_task_flow_key = %s
+		  AND {flow_in}
 		ORDER BY custom_sequence_no ASC
 		""",
-		(project, SEA_TASK_FLOW_KEY),
+		(project,),
 		as_dict=True,
 	)
 	return filter_sea_tasks_for_user(rows, user=user)
@@ -311,16 +307,17 @@ def get_open_sea_tasks(project: str, user: str | None = None) -> list[dict]:
 		filter_sea_tasks_for_user,
 	)
 
+	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign
 		FROM `tabTask`
 		WHERE project = %s
-		  AND custom_task_flow_key = %s
+		  AND {flow_in}
 		  AND status NOT IN ('Completed', 'Cancelled')
 		ORDER BY custom_sequence_no ASC
 		""",
-		(project, SEA_TASK_FLOW_KEY),
+		(project,),
 		as_dict=True,
 	)
 	return filter_sea_tasks_for_user(rows, user=user)
@@ -329,7 +326,7 @@ def get_open_sea_tasks(project: str, user: str | None = None) -> list[dict]:
 def enforce_sea_tasks_exist(project: str) -> None:
 	if not frappe.db.exists(
 		"Task",
-		{"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
+		{"project": project, "custom_task_flow_key": task_flow_key_in_filter()},
 	):
 		total = sea_task_count()
 		frappe.throw(
@@ -426,13 +423,14 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 def get_sea_closure_blockers(project: str) -> list[str]:
 	"""Return human-readable blockers when the sea chart is not fully complete."""
 	blockers: list[str] = []
+	flow_filter = task_flow_key_in_filter()
 	if not frappe.db.exists(
-		"Task", {"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY}
+		"Task", {"project": project, "custom_task_flow_key": flow_filter}
 	):
 		return ["Sea Task Plan not generated on this Project"]
 	total = sea_task_count()
 	created = frappe.db.count(
-		"Task", {"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY}
+		"Task", {"project": project, "custom_task_flow_key": flow_filter}
 	)
 	if created < total:
 		blockers.append(
@@ -503,7 +501,10 @@ def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
 	if not project_ready_for_documents_received(project_doc):
 		return None
 
-	if frappe.db.exists("Task", {"project": project_name, "custom_task_flow_key": SEA_TASK_FLOW_KEY}):
+	if frappe.db.exists(
+		"Task",
+		{"project": project_name, "custom_task_flow_key": task_flow_key_in_filter()},
+	):
 		done = auto_complete_initial_sea_tasks(project_name)
 		return {"auto_completed": done, "created": 0}
 
@@ -531,9 +532,10 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	if not sea_import_enabled_for_project(project_doc):
 		frappe.throw("This task plan is for sea-import shipment types only.")
 
+	flow_filter = task_flow_key_in_filter()
 	existing = frappe.get_all(
 		"Task",
-		filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
+		filters={"project": project, "custom_task_flow_key": flow_filter},
 		fields=["name"],
 		limit=1,
 	)
@@ -542,7 +544,7 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	if existing and frappe.utils.cint(reset):
 		for d in frappe.get_all(
 			"Task",
-			filters={"project": project, "custom_task_flow_key": SEA_TASK_FLOW_KEY},
+			filters={"project": project, "custom_task_flow_key": flow_filter},
 			fields=["name"],
 		):
 			frappe.delete_doc("Task", d.name, ignore_permissions=True, force=True)
@@ -550,6 +552,7 @@ def create_sea_import_task_plan_internal(project, reset=False):
 	task_template = load_sea_task_template()
 	created = []
 	prev_task = None
+	canonical_flow_key = stored_task_flow_key(SEA_IMPORT_TEMPLATE)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		TRANSPORT_TASK_SEQS,
@@ -569,7 +572,7 @@ def create_sea_import_task_plan_internal(project, reset=False):
 			task = frappe.new_doc("Task")
 			task.subject = subject
 			task.project = project
-			task.custom_task_flow_key = SEA_TASK_FLOW_KEY
+			task.custom_task_flow_key = canonical_flow_key
 			task.custom_sequence_no = seq
 			task.department = resolve_department_name(item.get("department"), company=project_doc.company)
 			task.status = "Open"

@@ -15,6 +15,14 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	get_task_flow_key_for_shipment_type,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	SEA_TRANSIT_EXPORT_TEMPLATE,
+	SEA_TRANSIT_IMPORT_TEMPLATE,
+	normalize_template_name,
+	stored_task_flow_key,
+	task_flow_key_in_filter,
+	workflow_flow_keys_for_template,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	load_sea_transit_export_task_template,
 	load_sea_transit_import_task_template,
@@ -36,15 +44,19 @@ def auto_complete_initial_transit_import_tasks(project: str) -> list[str]:
 
 	completed = []
 	for seq in sorted(auto_complete_sequences()):
-		task_name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project,
-				"custom_task_flow_key": SEA_TRANSIT_IMPORT_TASK_FLOW_KEY,
-				"custom_sequence_no": seq,
-			},
-			"name",
-		)
+		task_name = None
+		for flow_key in workflow_flow_keys_for_template(SEA_TRANSIT_IMPORT_TEMPLATE):
+			task_name = frappe.db.get_value(
+				"Task",
+				{
+					"project": project,
+					"custom_task_flow_key": flow_key,
+					"custom_sequence_no": seq,
+				},
+				"name",
+			)
+			if task_name:
+				break
 		if not task_name:
 			continue
 		if frappe.db.get_value("Task", task_name, "status") == "Completed":
@@ -75,12 +87,17 @@ def bootstrap_transit_task_plan_for_project(project_name: str) -> dict | None:
 	if not flow_key:
 		return None
 
-	if flow_key == SEA_TRANSIT_IMPORT_TASK_FLOW_KEY:
+	normalized = normalize_template_name(flow_key) or flow_key
+
+	if normalized == SEA_TRANSIT_IMPORT_TEMPLATE or flow_key == SEA_TRANSIT_IMPORT_TASK_FLOW_KEY:
 		if not project_ready_for_documents_received(project_doc):
 			return None
 		if frappe.db.exists(
 			"Task",
-			{"project": project_name, "custom_task_flow_key": flow_key},
+			{
+				"project": project_name,
+				"custom_task_flow_key": task_flow_key_in_filter(SEA_TRANSIT_IMPORT_TEMPLATE),
+			},
 		):
 			done = auto_complete_initial_transit_import_tasks(project_name)
 			return {"auto_completed": done, "created": 0}
@@ -88,10 +105,13 @@ def bootstrap_transit_task_plan_for_project(project_name: str) -> dict | None:
 		result["auto_completed"] = auto_complete_initial_transit_import_tasks(project_name)
 		return result
 
-	if flow_key == SEA_TRANSIT_EXPORT_TASK_FLOW_KEY:
+	if normalized == SEA_TRANSIT_EXPORT_TEMPLATE or flow_key == SEA_TRANSIT_EXPORT_TASK_FLOW_KEY:
 		if frappe.db.exists(
 			"Task",
-			{"project": project_name, "custom_task_flow_key": flow_key},
+			{
+				"project": project_name,
+				"custom_task_flow_key": task_flow_key_in_filter(SEA_TRANSIT_EXPORT_TEMPLATE),
+			},
 		):
 			return {"created": 0}
 		return create_sea_transit_export_task_plan_internal(project_name)
@@ -110,11 +130,12 @@ def create_sea_transit_import_task_plan_internal(project: str, reset: bool = Fal
 
 	ensure_sea_task_requirements_configured()
 	project_doc = frappe.get_doc("Project", project)
-	flow_key = SEA_TRANSIT_IMPORT_TASK_FLOW_KEY
+	flow_filter = task_flow_key_in_filter(SEA_TRANSIT_IMPORT_TEMPLATE)
+	canonical_flow_key = stored_task_flow_key(SEA_TRANSIT_IMPORT_TEMPLATE)
 
 	existing = frappe.get_all(
 		"Task",
-		filters={"project": project, "custom_task_flow_key": flow_key},
+		filters={"project": project, "custom_task_flow_key": flow_filter},
 		pluck="name",
 		limit=1,
 	)
@@ -123,7 +144,7 @@ def create_sea_transit_import_task_plan_internal(project: str, reset: bool = Fal
 	if existing and cint(reset):
 		for name in frappe.get_all(
 			"Task",
-			filters={"project": project, "custom_task_flow_key": flow_key},
+			filters={"project": project, "custom_task_flow_key": flow_filter},
 			pluck="name",
 		):
 			frappe.delete_doc("Task", name, ignore_permissions=True, force=True)
@@ -142,7 +163,7 @@ def create_sea_transit_import_task_plan_internal(project: str, reset: bool = Fal
 			task = frappe.new_doc("Task")
 			task.subject = subject
 			task.project = project
-			task.custom_task_flow_key = flow_key
+			task.custom_task_flow_key = canonical_flow_key
 			task.custom_sequence_no = int(item.get("sequence_no") or idx)
 			task.department = resolve_department_name(
 				item.get("department"), company=project_doc.company
@@ -166,11 +187,12 @@ def create_sea_transit_export_task_plan_internal(project: str, reset: bool = Fal
 	)
 
 	project_doc = frappe.get_doc("Project", project)
-	flow_key = SEA_TRANSIT_EXPORT_TASK_FLOW_KEY
+	flow_filter = task_flow_key_in_filter(SEA_TRANSIT_EXPORT_TEMPLATE)
+	canonical_flow_key = stored_task_flow_key(SEA_TRANSIT_EXPORT_TEMPLATE)
 
 	existing = frappe.get_all(
 		"Task",
-		filters={"project": project, "custom_task_flow_key": flow_key},
+		filters={"project": project, "custom_task_flow_key": flow_filter},
 		pluck="name",
 		limit=1,
 	)
@@ -179,7 +201,7 @@ def create_sea_transit_export_task_plan_internal(project: str, reset: bool = Fal
 	if existing and cint(reset):
 		for name in frappe.get_all(
 			"Task",
-			filters={"project": project, "custom_task_flow_key": flow_key},
+			filters={"project": project, "custom_task_flow_key": flow_filter},
 			pluck="name",
 		):
 			frappe.delete_doc("Task", name, ignore_permissions=True, force=True)
@@ -198,7 +220,7 @@ def create_sea_transit_export_task_plan_internal(project: str, reset: bool = Fal
 			task = frappe.new_doc("Task")
 			task.subject = subject
 			task.project = project
-			task.custom_task_flow_key = flow_key
+			task.custom_task_flow_key = canonical_flow_key
 			task.custom_sequence_no = idx
 			task.department = resolve_department_name(
 				item.get("department"), company=project_doc.company

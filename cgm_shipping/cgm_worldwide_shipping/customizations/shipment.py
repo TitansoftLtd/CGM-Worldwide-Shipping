@@ -651,10 +651,6 @@ def copy_tracking_fields_from_source(target, source) -> None:
 
 def is_sea_import_enabled(shipment_type: str | None) -> bool:
 	"""True when Shipment Type uses the sea import task template (or legacy flow key)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-		SEA_TASK_FLOW_KEY,
-		SEA_TRANSIT_IMPORT_TASK_FLOW_KEY,
-	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		SEA_IMPORT_TEMPLATE,
 		SEA_TRANSIT_IMPORT_TEMPLATE,
@@ -667,7 +663,8 @@ def is_sea_import_enabled(shipment_type: str | None) -> bool:
 		return normalized in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE)
 
 	flow = get_task_flow_key_for_shipment_type(shipment_type)
-	return flow in (SEA_TASK_FLOW_KEY, SEA_TRANSIT_IMPORT_TASK_FLOW_KEY)
+	normalized = normalize_template_name(flow)
+	return normalized in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE)
 
 
 def sea_import_enabled_for_project(project) -> bool:

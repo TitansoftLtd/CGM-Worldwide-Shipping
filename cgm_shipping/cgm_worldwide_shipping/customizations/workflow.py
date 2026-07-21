@@ -56,7 +56,6 @@ def get_sea_import_workflow_states() -> list[str]:
 """Permit invoice → Finance → Payment → Declarant receipt → Finance verify → Complete."""
 from frappe.utils import now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
 from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 	PERMIT_INVOICES_TO_FINANCE,
 	PERMIT_RECEIPTS_FOR_DECLARANT,
@@ -107,17 +106,26 @@ def task_sequence(task) -> int:
 
 
 def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
+	"""Resolve a sea-import task by sequence; accept CGM Task Template name or legacy key."""
 	if not project or not sequence_no:
 		return None
-	return frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": sequence_no,
-		},
-		"name",
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		sea_import_flow_keys,
 	)
+
+	for flow_key in sea_import_flow_keys():
+		name = frappe.db.get_value(
+			"Task",
+			{
+				"project": project,
+				"custom_task_flow_key": flow_key,
+				"custom_sequence_no": sequence_no,
+			},
+			"name",
+		)
+		if name:
+			return name
+	return None
 
 
 def get_permit_application_task_name(project: str, sequence_no: int) -> str | None:
@@ -575,17 +583,21 @@ def _mark_foreign_only_permits_ready(task) -> bool:
 	return True
 
 
-def _notify_finance_for_permit_invoices(task) -> dict:
+def _notify_finance_for_permit_invoices(task, *, strict: bool = True) -> dict | None:
 	"""Sync permit invoices to Project/Finance task and send the finance notification."""
 	sync_task_permits_to_project(task)
 
 	finance_name = prepare_finance_permit_task(task)
 	if not finance_name:
 		stage = get_permit_stage_for_sequence(task_sequence(task))
-		frappe.throw(
+		msg = (
 			f"Could not find the <b>Finance pays {stage} Permits</b> task on this project. "
 			"Generate the sea task plan on the Project first."
 		)
+		if strict:
+			frappe.throw(msg)
+		frappe.msgprint(msg, indicator="orange", alert=True)
+		return None
 	finance_task = frappe.get_doc("Task", finance_name)
 
 	notify_result = send_notification(
@@ -631,6 +643,9 @@ def auto_submit_permit_invoices_to_finance_if_needed(task) -> dict | None:
 
 	frappe.flags.cgm_auto_submitting_permit_invoices = True
 	try:
+		result = _notify_finance_for_permit_invoices(task, strict=False)
+		if not result:
+			return None
 		if task.meta.has_field("custom_permit_invoices_submitted"):
 			frappe.db.set_value(
 				"Task",
@@ -640,7 +655,7 @@ def auto_submit_permit_invoices_to_finance_if_needed(task) -> dict | None:
 				update_modified=False,
 			)
 			task.custom_permit_invoices_submitted = 1
-		return _notify_finance_for_permit_invoices(task)
+		return result
 	finally:
 		frappe.flags.cgm_auto_submitting_permit_invoices = False
 
@@ -1151,7 +1166,6 @@ from collections.abc import Callable
 
 from frappe.utils import get_url, now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
 from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 	UCR_INVOICE_TO_FINANCE,
 	UCR_RECEIPT_FOR_DECLARANT,
@@ -1381,16 +1395,21 @@ def _ucr_invoice_pending_finance_notification(task) -> bool:
 	return ucr_invoice_attached(task) or ucr_invoice_attached_legacy(task)
 
 
-def _notify_finance_for_ucr_invoice(task) -> dict:
+def _notify_finance_for_ucr_invoice(task, *, strict: bool = True) -> dict | None:
 	"""Copy invoice to Finance pays UCR and send the finance notification."""
 	if not task.project:
 		frappe.throw("This task is not linked to a project.")
 
 	finance_task_name = sync_ucr_invoice_to_finance_task(task.project)
 	if not finance_task_name:
-		frappe.throw(
-			"Could not find <b>Finance pays UCR</b> on this project. Regenerate the sea task plan."
+		msg = (
+			"Could not find <b>Finance pays UCR</b> on this project. "
+			"Regenerate the sea task plan."
 		)
+		if strict:
+			frappe.throw(msg)
+		frappe.msgprint(msg, indicator="orange", alert=True)
+		return None
 
 	finance_task = frappe.get_doc("Task", finance_task_name)
 	notify_result = send_notification(
@@ -1424,6 +1443,11 @@ def auto_submit_ucr_invoice_to_finance_if_needed(task) -> dict | None:
 	frappe.flags.cgm_auto_submitting_ucr_invoice = True
 	try:
 		seed_ucr_finance_lines(task)
+		# Do not mark submitted until Finance task is found — otherwise a missing paired
+		# task blocks save and the attachment never persists.
+		result = _notify_finance_for_ucr_invoice(task, strict=False)
+		if not result:
+			return None
 		if task.meta.has_field("custom_ucr_invoice_submitted"):
 			frappe.db.set_value(
 				"Task",
@@ -1434,7 +1458,7 @@ def auto_submit_ucr_invoice_to_finance_if_needed(task) -> dict | None:
 			)
 			task.custom_ucr_invoice_submitted = 1
 		sync_ucr_finance_lines_to_idf_record(task)
-		return _notify_finance_for_ucr_invoice(task)
+		return result
 	finally:
 		frappe.flags.cgm_auto_submitting_ucr_invoice = False
 

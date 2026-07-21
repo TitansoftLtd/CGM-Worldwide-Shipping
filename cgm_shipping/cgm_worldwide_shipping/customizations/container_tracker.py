@@ -26,7 +26,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_TASK_SEQ_DEFAULTS,
 	DEPOSIT_PAYMENT_STATUSES,
 	DEPOSIT_REFUND_STATUSES,
-	SEA_TASK_FLOW_KEY,
 	TASK_CONTAINER_NUMBER_FIELD,
 	TASK_CONTAINER_TRACKER_FIELD,
 	TASK_CARGO_TYPE_FIELD,
@@ -77,12 +76,16 @@ def project_shipping_line_finance_paid(project: str | None) -> bool:
 	finance_seqs = shipping_line_finance_payment_sequences()
 	if not finance_seqs:
 		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		task_flow_key_in_filter,
+	)
+
 	return bool(
 		frappe.db.exists(
 			"Task",
 			{
 				"project": project,
-				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+				"custom_task_flow_key": task_flow_key_in_filter(),
 				"custom_sequence_no": ("in", list(finance_seqs)),
 				"status": "Completed",
 			},

@@ -9,7 +9,11 @@ from erpnext import get_default_company
 # Map template labels or old department names -> ERPNext department_name (before company suffix).
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	DEPARTMENT_NAME_ALIASES,
-	SEA_TASK_FLOW_KEY,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	SEA_IMPORT_TEMPLATE,
+	is_sea_import_task,
+	sql_task_flow_key_in,
 )
 
 
@@ -369,23 +373,18 @@ def user_is_assigned_to_task(doc, user: str) -> bool:
 def _project_has_sea_task(project: str, sequence_no: int) -> bool:
 	if not project:
 		return False
-	return bool(
-		frappe.db.exists(
-			"Task",
-			{
-				"project": project,
-				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-				"custom_sequence_no": sequence_no,
-			},
-		)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_task_name_by_sequence,
 	)
+
+	return bool(get_task_name_by_sequence(project, sequence_no))
 
 
 def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
 	"""Cross-read for paired workflow tasks using template department stems."""
 	if not hasattr(doc, "get"):
 		return False
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
 	project = doc.get("project")
@@ -445,7 +444,7 @@ def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
 	"""Finance payment tasks - user must have Role matching that step's template department."""
 	if not hasattr(doc, "get"):
 		return False
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
@@ -478,7 +477,7 @@ def _build_department_sql_conditions(stems: set[str]) -> str:
 
 def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 	"""SQL OR-clauses for linked UCR / permit tasks in list views."""
-	flow = frappe.db.escape(SEA_TASK_FLOW_KEY)
+	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="lk.custom_task_flow_key")
 	parts: list[str] = []
 	app_stems = set(application_department_stems_for_linked_pairs(_ucr_linked_pairs()))
 	app_stems |= set(application_department_stems_for_linked_pairs(_permit_linked_pairs()))
@@ -490,7 +489,7 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
 				f"WHERE lk.project = `tabTask`.project "
-				f"AND lk.custom_task_flow_key = {flow} "
+				f"AND {flow_in} "
 				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
 			)
 		for app_seq, fin_seq in _permit_linked_pairs():
@@ -498,7 +497,7 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
 				f"WHERE lk.project = `tabTask`.project "
-				f"AND lk.custom_task_flow_key = {flow} "
+				f"AND {flow_in} "
 				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
 			)
 	if stems & fin_stems:
@@ -507,7 +506,7 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
 				f"WHERE lk.project = `tabTask`.project "
-				f"AND lk.custom_task_flow_key = {flow} "
+				f"AND {flow_in} "
 				f"AND lk.custom_sequence_no = {fin_seq} LIMIT 1))"
 			)
 	if not parts:
@@ -526,7 +525,8 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 		stems |= set(declarant_application_department_stems())
 	escaped_user = frappe.db.escape(user)
 	assign_token = frappe.db.escape(f'"{user}"')
-	non_sea = f"(IFNULL(`tabTask`.`custom_task_flow_key`, '') != {frappe.db.escape(SEA_TASK_FLOW_KEY)})"
+	sea_flow = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE)
+	non_sea = f"(NOT ({sea_flow}))"
 	assigned_or_owner = (
 		f"(`tabTask`.`owner` = {escaped_user} "
 		f"OR LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
@@ -548,10 +548,7 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}))"
 			)
 
-	sea_visible = (
-		f"(`tabTask`.`custom_task_flow_key` = {frappe.db.escape(SEA_TASK_FLOW_KEY)} "
-		f"AND ({' OR '.join(visibility_parts)}))"
-	)
+	sea_visible = f"({sea_flow} AND ({' OR '.join(visibility_parts)}))"
 
 	return f"({non_sea} OR {sea_visible})"
 
@@ -561,7 +558,7 @@ def has_permission(doc, ptype=None, user=None, **kwargs):
 	user = user or frappe.session.user
 	if user_bypasses_sea_task_department_filter(user):
 		return True
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return True
 	if user_can_access_sea_task(doc, user):
 		return True
