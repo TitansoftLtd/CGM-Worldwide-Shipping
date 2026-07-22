@@ -10,7 +10,6 @@ from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_UPDATE_TASK_SEQS,
-	SEA_TASK_FLOW_KEY,
 	TASK_CONTAINER_UPDATES_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
@@ -19,6 +18,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	tracker_cargo_size_field,
 	tracker_row_cargo_size,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	is_sea_import_task,
+	task_flow_key_in_filter,
 )
 
 TRACKER_TO_TASK_FIELDS = (
@@ -103,7 +106,7 @@ def _shipping_line_application_seqs() -> frozenset[int]:
 
 def is_shipping_line_deposit_task(doc) -> bool:
 	return (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
+		is_sea_import_task(doc)
 		and _sea_task_seq(doc) in _shipping_line_application_seqs()
 	)
 
@@ -186,7 +189,7 @@ def _sea_task_seq(doc) -> int:
 
 
 def is_container_update_task(doc) -> bool:
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return False
 	seq = _sea_task_seq(doc)
 	return seq in CONTAINER_UPDATE_TASK_SEQS or seq in _shipping_line_application_seqs()
@@ -445,7 +448,7 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 		"Task",
 		filters={
 			"project": tracker.project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"custom_task_flow_key": task_flow_key_in_filter(),
 			"status": ["not in", ["Completed", "Cancelled"]],
 			"custom_sequence_no": ["in", list(sync_seqs.keys())],
 		},
@@ -533,7 +536,7 @@ def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
 		"Task",
 		{
 			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"custom_task_flow_key": task_flow_key_in_filter(),
 			"custom_sequence_no": seq,
 			"status": ["not in", ["Completed", "Cancelled"]],
 		},
@@ -587,7 +590,7 @@ def check_task_container_completion(doc) -> None:
 
 def validate_container_step_task_completion(doc) -> None:
 	"""Manual Complete only when every container tracker has the step recorded."""
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return
 	if doc.status != "Completed":
 		return
@@ -626,7 +629,7 @@ def validate_container_step_task_completion(doc) -> None:
 
 def validate_task_19_container_updates(doc) -> None:
 	"""Book-trucks task: truck details for at least one container OR task-level reason."""
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return
 	if _sea_task_seq(doc) != get_container_task_sequence("custom_book_trucks_task_seq"):
 		return

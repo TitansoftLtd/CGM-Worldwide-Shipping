@@ -12,10 +12,9 @@
   "tab_container_port_settings",
   "section_container_port_settings",
   "kpa_default_free_days",
-  "default_dem_currency",
   "section_kpa_port_charges",
-  "kpa_port_daily_rate",
   "kpa_port_rate_currency",
+  "kpa_port_daily_rate",
   "section_container_accrual_accounts",
   "demurrage_accrual_expense_account",
   "demurrage_accrual_payable_account",
@@ -31,9 +30,9 @@
   "section_roles",
   "custom_finance_roles",
   "custom_finance_department",
-  "custom_default_purchase_item",
   "custom_operations_roles",
   "custom_declaration_roles",
+  "custom_transport_roles",
   "section_email_templates",
   "custom_default_email_template",
   "custom_permit_finance_email_template",
@@ -61,7 +60,8 @@
   "custom_monitor_delivery_task_seq",
   "custom_offload_task_seq",
   "custom_empty_return_task_seq",
-  "custom_interchange_task_seq"
+  "custom_interchange_task_seq",
+  "custom_kpa_free_days"
  ],
  "fields": [
   {
@@ -157,22 +157,24 @@
    "options": "Department"
   },
   {
-   "description": "Default Item for auto-filled permit and finance Purchase Invoice lines when no type-specific item is set.",
-   "fieldname": "custom_default_purchase_item",
-   "fieldtype": "Link",
-   "label": "Default Purchase Item",
-   "options": "Item"
-  },
-  {
+   "description": "ERPNext Roles that may open Operations / Documentation sea tasks (e.g. Operations Manager).",
    "fieldname": "custom_operations_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Operations roles",
    "options": "CGM Role Item"
   },
   {
+   "description": "ERPNext Roles that may open Declaration tasks (Create UCR, permits, Entry). Example: Declarant.",
    "fieldname": "custom_declaration_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Declaration roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "ERPNext Roles that may open Transport / Field Operations tasks (book trucks, gate out, delivery, empty return). Align with departments such as Transport - CWSCL and Field Operations - CWSCL.",
+   "fieldname": "custom_transport_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Transport roles",
    "options": "CGM Role Item"
   },
   {
@@ -281,7 +283,7 @@
    "label": "General"
   },
   {
-   "description": "Global shipping configuration. Task plans are maintained in CGM Task Template — not here.",
+   "description": "Global shipping configuration. Task plans are maintained in CGM Task Template \u2014 not here.",
    "fieldname": "section_task_workflow_settings",
    "fieldtype": "Section Break",
    "label": "General Settings"
@@ -315,12 +317,6 @@
    "fieldname": "kpa_default_free_days",
    "fieldtype": "Int",
    "label": "KPA Default Free Days"
-  },
-  {
-   "fieldname": "default_dem_currency",
-   "fieldtype": "Link",
-   "label": "Default Demurrage Currency",
-   "options": "Currency"
   },
   {
    "description": "Daily rate after KPA free days end until gate out at Mombasa.",
@@ -406,7 +402,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-26 01:46:52.585603",
+ "modified": "2026-07-21 10:20:40.823928",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
@@ -421,6 +417,15 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Desk User",
+   "select": 1,
+   "share": 0
   }
  ],
  "row_format": "Dynamic",

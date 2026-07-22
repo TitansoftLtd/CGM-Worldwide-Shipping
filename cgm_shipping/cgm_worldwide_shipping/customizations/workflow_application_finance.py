@@ -123,16 +123,20 @@ def _invoice_pending_finance_notification(task, profile: ApplicationFinanceProfi
 
 
 def _notify_finance_for_application_invoice(
-	task, profile: ApplicationFinanceProfile
-) -> dict:
+	task, profile: ApplicationFinanceProfile, *, strict: bool = True
+) -> dict | None:
 	if not task.project:
 		frappe.throw("This task is not linked to a project.")
 	finance_task_name = sync_application_invoice_to_finance_task(task.project, profile)
 	if not finance_task_name:
-		frappe.throw(
+		msg = (
 			f"Could not find the <b>{profile.finance_payment_kind}</b> finance task on this project. "
 			"Regenerate the sea task plan."
 		)
+		if strict:
+			frappe.throw(msg)
+		frappe.msgprint(msg, indicator="orange", alert=True)
+		return None
 	finance_task = frappe.get_doc("Task", finance_task_name)
 	notify_result = send_notification(
 		profile.notification_invoice,
@@ -166,6 +170,9 @@ def auto_submit_application_invoice_to_finance_if_needed(
 	frappe.flags[flag_key] = True
 	try:
 		seed_application_finance_lines(task, profile)
+		result = _notify_finance_for_application_invoice(task, profile, strict=False)
+		if not result:
+			return None
 		if profile.application_submitted_field and task.meta.has_field(
 			profile.application_submitted_field
 		):
@@ -178,7 +185,7 @@ def auto_submit_application_invoice_to_finance_if_needed(
 			)
 			setattr(task, profile.application_submitted_field, 1)
 		sync_application_finance_lines_to_idf_record(task, profile)
-		return _notify_finance_for_application_invoice(task, profile)
+		return result
 	finally:
 		frappe.flags[flag_key] = False
 

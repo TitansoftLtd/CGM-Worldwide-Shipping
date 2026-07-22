@@ -8,7 +8,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PERMIT_REGISTER_FIELD,
 	PRE_CLEARANCE_STAGE,
 	POST_CLEARANCE_STAGE,
-	SEA_TASK_FLOW_KEY,
 	TASK_DOCUMENTS_FIELD,
 	TASK_FINANCE_FIELD,
 	TASK_PERMITS_FIELD,
@@ -24,11 +23,10 @@ def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 	if not project or not sequence_no:
 		return None
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		SEA_IMPORT_TEMPLATE,
+		sea_import_flow_keys,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
 
-	for flow_key in (SEA_IMPORT_TEMPLATE, SEA_TASK_FLOW_KEY):
+	for flow_key in sea_import_flow_keys():
 		name = frappe.db.get_value(
 			"Task",
 			{
@@ -60,13 +58,18 @@ _SETTINGS_LINK = "CGM Shipping Settings → Sea clearance task requirements"
 
 def ensure_sea_task_requirements_configured() -> None:
 	"""Fail fast when sea task requirements are missing or incomplete."""
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field(_SETTINGS_REQUIREMENTS_FIELD):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
+		frappe.throw("CGM Shipping Settings is not installed. Run <b>bench migrate</b>.")
+	if not settings.meta.has_field(_SETTINGS_REQUIREMENTS_FIELD):
 		frappe.throw(
 			f"Field <b>{_SETTINGS_REQUIREMENTS_FIELD}</b> is not installed. Run <b>bench migrate</b>."
 		)
 
-	settings = frappe.get_single("CGM Shipping Settings")
 	rows = settings.get(_SETTINGS_REQUIREMENTS_FIELD) or []
 	if not rows:
 		frappe.throw(
@@ -89,10 +92,13 @@ def ensure_sea_task_requirements_configured() -> None:
 @frappe.request_cache
 def rows_by_sequence() -> dict[int, list]:
 	"""Sea task requirement rows grouped by sequence (one Settings read per request)."""
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field(_SETTINGS_REQUIREMENTS_FIELD):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field(_SETTINGS_REQUIREMENTS_FIELD):
 		return {}
-	settings = frappe.get_single("CGM Shipping Settings")
 	grouped: dict[int, list] = {}
 	for row in settings.get(_SETTINGS_REQUIREMENTS_FIELD) or []:
 		seq = int(row.sequence_no or 0)
@@ -514,7 +520,9 @@ def get_sea_task_ui_sequences() -> dict:
 		"permissions": get_task_form_permissions(),
 		"finance_department": frappe.db.get_single_value(
 			"CGM Shipping Settings", "custom_finance_department"
-		),
+		)
+		if frappe.db.exists("DocType", "CGM Shipping Settings")
+		else None,
 	}
 
 
@@ -1589,13 +1597,17 @@ def validate_permit_application_task(task, seq: int) -> None:
 	if not task.meta.has_field(TASK_PERMITS_FIELD):
 		frappe.throw("Task Permits table is not available on this site. Run <b>bench migrate</b>.")
 
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
 	rows = task.get(TASK_PERMITS_FIELD) or []
 	examples = _permit_type_examples()
 	eg = f" (e.g. {examples})" if examples else ""
 	if not rows:
 		frappe.throw(
 			f"Add at least one permit on <b>Task Permits</b>{eg} "
-			"and attach the <b>Permit Invoice</b> for each before completing this task."
+			"and attach the required documents before completing this task."
 		)
 
 	missing = []
@@ -1604,13 +1616,11 @@ def validate_permit_application_task(task, seq: int) -> None:
 		if not row.permit_type:
 			missing.append(f"Permit type{eg}")
 			continue
-		origin = (row.get("origin") or "Local").strip()
-		if origin == "Foreign":
-			if not row.get("permit_document"):
-				missing.append(f"{label} - permit certificate (foreign origin)")
-			continue
-		if not row.get("payment_invoice"):
-			missing.append(f"{label} - supplier/permit invoice")
+		if permit_requires_payment(row):
+			if not row.get("payment_invoice"):
+				missing.append(f"{label} - supplier/permit invoice (Local)")
+		elif not row.get("permit_document"):
+			missing.append(f"{label} - permit certificate (Foreign)")
 
 	if missing:
 		frappe.throw(
@@ -1678,6 +1688,7 @@ def sync_task_permits_to_project(task) -> None:
 			by_type[trow.permit_type] = prow
 
 		prow.permit_type = trow.permit_type
+		prow.origin = trow.get("origin") or "Local"
 		prow.stage = trow.stage or default_stage
 		if trow.get("payment_invoice"):
 			prow.payment_invoice = trow.payment_invoice
@@ -1690,6 +1701,8 @@ def sync_task_permits_to_project(task) -> None:
 			prow.permit_document = trow.permit_document
 			prow.certificate_uploaded_on = trow.get("certificate_uploaded_on")
 			prow.certificate_uploaded_by = trow.get("certificate_uploaded_by")
+			if (trow.get("origin") or "Local") == "Foreign":
+				prow.status = prow.status or "Approved"
 		if trow.get("payment_receipt"):
 			prow.payment_receipt = trow.payment_receipt
 			prow.status = prow.status or "Receipt Submitted"
@@ -1748,7 +1761,9 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 		)
 	]
 	if not missing and task.status != "Completed":
-		frappe.throw("Task is already open, or all permit rows already have invoices attached.")
+		frappe.throw(
+			"Task is already open, or all permit rows already have the required attachments."
+		)
 
 	task.status = "Open"
 	task.progress = 0
@@ -2024,10 +2039,11 @@ def get_purchase_item_for_payment_item(payment_item: str, company: str | None = 
 
 
 def get_default_purchase_item_code(company: str | None = None) -> str:
-	"""Default PI item for permit / clearance lines."""
+	"""Fallback Item when a payment line has no mapped item (legacy PI helpers)."""
 	settings_item = None
 	if frappe.db.exists("DocType", "CGM Shipping Settings"):
 		meta = frappe.get_meta("CGM Shipping Settings")
+		# Field removed from Settings UI; keep reading if an old column still exists.
 		if meta.has_field("custom_default_purchase_item"):
 			settings_item = frappe.db.get_single_value(
 				"CGM Shipping Settings", "custom_default_purchase_item"
@@ -2044,10 +2060,7 @@ def get_default_purchase_item_code(company: str | None = None) -> str:
 	if item:
 		return item
 
-	frappe.throw(
-		"Set <b>Default Purchase Item</b> on <b>CGM Shipping Settings</b> "
-		"(or create Item <b>CGM-CLEARANCE-CHARGE</b>) for auto-filled permit lines on Purchase Invoice."
-	)
+	return ""
 
 
 def get_permit_rows_for_purchase_invoice(task) -> list[dict]:

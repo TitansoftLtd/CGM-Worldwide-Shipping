@@ -6,6 +6,33 @@ import frappe
 
 NUMERIC_FIELDTYPES = ("Float", "Currency", "Percent", "Int")
 
+CGM_SHIPPING_SETTINGS = "CGM Shipping Settings"
+
+
+@frappe.request_cache
+def get_cgm_shipping_settings():
+	"""Load CGM Shipping Settings for runtime config without requiring user read rights.
+
+	Only System Managers edit this Single; desk users still need its role tables /
+	task sequences when opening Tasks / Projects.
+	"""
+	if not frappe.db.exists("DocType", CGM_SHIPPING_SETTINGS):
+		return None
+	return frappe.get_doc(
+		CGM_SHIPPING_SETTINGS, CGM_SHIPPING_SETTINGS, ignore_permissions=True
+	)
+
+
+def get_cgm_shipping_settings_value(fieldname: str, default=None):
+	"""Read one Settings field without requiring user read rights."""
+	settings = get_cgm_shipping_settings()
+	if not settings:
+		return default
+	if not settings.meta.has_field(fieldname):
+		return default
+	value = settings.get(fieldname)
+	return default if value in (None, "") else value
+
 
 def coerce_numeric_fields(
 	doc,

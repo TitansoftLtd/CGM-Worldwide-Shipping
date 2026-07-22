@@ -9,7 +9,11 @@ from erpnext import get_default_company
 # Map template labels or old department names -> ERPNext department_name (before company suffix).
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	DEPARTMENT_NAME_ALIASES,
-	SEA_TASK_FLOW_KEY,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	SEA_IMPORT_TEMPLATE,
+	is_sea_import_task,
+	sql_task_flow_key_in,
 )
 
 
@@ -157,23 +161,27 @@ def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
 @frappe.request_cache
 def configured_declaration_roles() -> frozenset[str]:
 	"""Declarant roles from CGM Shipping Settings → Roles tab."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field("custom_declaration_roles"):
 		return frozenset()
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("custom_declaration_roles"):
-		return frozenset()
-	rows = frappe.get_single("CGM Shipping Settings").get("custom_declaration_roles") or []
+	rows = settings.get("custom_declaration_roles") or []
 	return frozenset(row.role for row in rows if row.role)
 
 
 @frappe.request_cache
 def declarant_application_department_stems() -> frozenset[str]:
-	"""Template department stems for UCR / permit application tasks."""
+	"""Department stems Declarant users may open (Declaration application steps only).
+
+	Do not include Documentation / Operations / Finance here — those come from
+	CGM Shipping Settings role groups and matching Role↔department stems.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		entry_application_sequences,
-		kpa_application_sequences,
 		permit_application_sequences,
-		shipping_line_application_sequences,
 		ucr_application_sequences,
 	)
 
@@ -182,21 +190,61 @@ def declarant_application_department_stems() -> frozenset[str]:
 		permit_application_sequences()
 		| ucr_application_sequences()
 		| entry_application_sequences()
-		| shipping_line_application_sequences()
-		| kpa_application_sequences()
 	):
 		stem = department_stem_for_sequence(seq)
 		if stem:
 			stems.add(stem)
+	# Always include Declaration even if Settings template is incomplete.
+	stems.add("Declaration")
 	return frozenset(stems)
 
 
 def user_has_declarant_department_access(user: str | None = None) -> bool:
-	"""True when the user may upload permit/UCR proofs on declarant workflow tasks."""
+	"""True when the user may work Declaration application tasks (UCR / permits / entry)."""
 	roles = user_roles(user)
 	if roles & declarant_application_department_stems():
 		return True
 	return bool(roles & configured_declaration_roles())
+
+
+@frappe.request_cache
+def transport_department_stems() -> frozenset[str]:
+	"""Department stems for transport / empty-return container steps."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_UPDATE_TASK_SEQS,
+		TRANSPORT_TASK_SEQS,
+	)
+
+	stems: set[str] = set()
+	for seq in TRANSPORT_TASK_SEQS | CONTAINER_UPDATE_TASK_SEQS:
+		stem = department_stem_for_sequence(seq)
+		if stem and stem in {"Transport", "Field Operations"}:
+			stems.add(stem)
+	if not stems:
+		stems.update({"Transport", "Field Operations"})
+	return frozenset(stems)
+
+
+@frappe.request_cache
+def configured_transport_roles() -> frozenset[str]:
+	"""Transport roles from CGM Shipping Settings → Roles tab."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field("custom_transport_roles"):
+		return frozenset()
+	rows = settings.get("custom_transport_roles") or []
+	return frozenset(row.role for row in rows if row.role)
+
+
+def user_has_transport_department_access(user: str | None = None) -> bool:
+	"""True when the user may work Transport / Field Operations sea tasks."""
+	roles = user_roles(user)
+	if roles & transport_department_stems():
+		return True
+	return bool(roles & configured_transport_roles())
 
 
 def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool:
@@ -249,6 +297,11 @@ def operations_department_stems() -> frozenset[str]:
 	return frozenset(stems)
 
 
+def operations_visibility_department_stems() -> frozenset[str]:
+	"""Departments Operations roles may see in Task list / form (aligned)."""
+	return frozenset(set(operations_department_stems()) | {"Operations", "Documentation", "Field Operations"})
+
+
 @frappe.request_cache
 def finance_payment_department_stems() -> frozenset[str]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
@@ -266,24 +319,28 @@ def finance_payment_department_stems() -> frozenset[str]:
 @frappe.request_cache
 def configured_finance_roles() -> frozenset[str]:
 	"""Finance roles from CGM Shipping Settings → Roles tab."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field("custom_finance_roles"):
 		return frozenset()
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("custom_finance_roles"):
-		return frozenset()
-	rows = frappe.get_single("CGM Shipping Settings").get("custom_finance_roles") or []
+	rows = settings.get("custom_finance_roles") or []
 	return frozenset(row.role for row in rows if row.role)
 
 
 @frappe.request_cache
 def configured_operations_roles() -> frozenset[str]:
 	"""Operations roles from CGM Shipping Settings → Roles tab."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field("custom_operations_roles"):
 		return frozenset()
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("custom_operations_roles"):
-		return frozenset()
-	rows = frappe.get_single("CGM Shipping Settings").get("custom_operations_roles") or []
+	rows = settings.get("custom_operations_roles") or []
 	return frozenset(row.role for row in rows if row.role)
 
 
@@ -369,23 +426,20 @@ def user_is_assigned_to_task(doc, user: str) -> bool:
 def _project_has_sea_task(project: str, sequence_no: int) -> bool:
 	if not project:
 		return False
-	return bool(
-		frappe.db.exists(
-			"Task",
-			{
-				"project": project,
-				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-				"custom_sequence_no": sequence_no,
-			},
-		)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_task_name_by_sequence,
 	)
+
+	return bool(get_task_name_by_sequence(project, sequence_no))
 
 
 def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
-	"""Cross-read for paired workflow tasks using template department stems."""
+	"""Cross-read: Finance may open paired application tasks (not the reverse)."""
 	if not hasattr(doc, "get"):
 		return False
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
+		return False
+	if not user_has_finance_department_access(user):
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
 	project = doc.get("project")
@@ -393,15 +447,11 @@ def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
 		return False
 
 	for app_seq, fin_seq in _ucr_linked_pairs():
-		if seq == fin_seq and user_has_department_for_sequence(user, app_seq):
-			if _project_has_sea_task(project, app_seq):
-				return True
-		if seq == app_seq and user_has_department_for_sequence(user, fin_seq):
-			if _project_has_sea_task(project, fin_seq):
-				return True
+		if seq == app_seq and _project_has_sea_task(project, fin_seq):
+			return True
 
 	for app_seq, fin_seq in _permit_linked_pairs():
-		if seq == fin_seq and user_has_department_for_sequence(user, app_seq):
+		if seq == app_seq:
 			return True
 
 	return False
@@ -423,29 +473,40 @@ def user_can_access_sea_task(
 		department = department if department is not None else doc.get("department")
 		owner = owner if owner is not None else doc.get("owner")
 
-	if owner == user or user_is_assigned_to_task(doc, user):
+	# Sea workflow tasks are process-owned; role/department (and _assign) control access.
+	# Do not grant all steps to whoever clicked Start Shipment (document owner).
+	if user_is_assigned_to_task(doc, user):
 		return True
 
 	if department_matches_stems(department, get_user_sea_task_department_stems(user)):
 		return True
 
+	stem = normalize_department_stem(department)
 	if (
-		normalize_department_stem(department) in declarant_application_department_stems()
+		stem in declarant_application_department_stems()
 		and user_has_declarant_department_access(user)
 	):
+		return True
+
+	if stem in operations_visibility_department_stems() and user_has_operations_department_access(
+		user
+	):
+		return True
+
+	if stem in transport_department_stems() and user_has_transport_department_access(user):
 		return True
 
 	if _user_can_access_sea_payment_task_by_role(doc, user):
 		return True
 
-	return _user_can_access_linked_sea_project_task(doc, user)
+	return False
 
 
 def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
 	"""Finance payment tasks - user must have Role matching that step's template department."""
 	if not hasattr(doc, "get"):
 		return False
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
@@ -478,7 +539,7 @@ def _build_department_sql_conditions(stems: set[str]) -> str:
 
 def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 	"""SQL OR-clauses for linked UCR / permit tasks in list views."""
-	flow = frappe.db.escape(SEA_TASK_FLOW_KEY)
+	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="lk.custom_task_flow_key")
 	parts: list[str] = []
 	app_stems = set(application_department_stems_for_linked_pairs(_ucr_linked_pairs()))
 	app_stems |= set(application_department_stems_for_linked_pairs(_permit_linked_pairs()))
@@ -490,7 +551,7 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
 				f"WHERE lk.project = `tabTask`.project "
-				f"AND lk.custom_task_flow_key = {flow} "
+				f"AND {flow_in} "
 				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
 			)
 		for app_seq, fin_seq in _permit_linked_pairs():
@@ -498,7 +559,7 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
 				f"WHERE lk.project = `tabTask`.project "
-				f"AND lk.custom_task_flow_key = {flow} "
+				f"AND {flow_in} "
 				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
 			)
 	if stems & fin_stems:
@@ -507,7 +568,7 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
 				f"WHERE lk.project = `tabTask`.project "
-				f"AND lk.custom_task_flow_key = {flow} "
+				f"AND {flow_in} "
 				f"AND lk.custom_sequence_no = {fin_seq} LIMIT 1))"
 			)
 	if not parts:
@@ -522,24 +583,35 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 		return None
 
 	stems = set(get_user_sea_task_department_stems(user))
+	# Settings role groups → department stems (not the old broad app-stem dump).
 	if user_has_declarant_department_access(user):
 		stems |= set(declarant_application_department_stems())
+	if user_has_operations_department_access(user):
+		stems |= set(operations_visibility_department_stems())
+	if user_has_transport_department_access(user):
+		stems |= set(transport_department_stems())
+
 	escaped_user = frappe.db.escape(user)
 	assign_token = frappe.db.escape(f'"{user}"')
-	non_sea = f"(IFNULL(`tabTask`.`custom_task_flow_key`, '') != {frappe.db.escape(SEA_TASK_FLOW_KEY)})"
-	assigned_or_owner = (
-		f"(`tabTask`.`owner` = {escaped_user} "
-		f"OR LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
+	sea_flow = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE)
+	non_sea = f"(NOT ({sea_flow}))"
+	# Assignment only — not owner (Start Shipment used to make Declarants owner of every step).
+	assigned_only = (
+		f"(LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
 	)
 
-	visibility_parts = [assigned_or_owner]
+	visibility_parts = [assigned_only]
 	if stems:
 		visibility_parts.insert(0, _build_department_sql_conditions(stems))
-	linked = _build_linked_sea_task_sql(stems)
-	if linked:
-		visibility_parts.append(linked)
+
+	# Finance: only finance payment sequences / Finance department — not Create UCR / permits.
 	if user_has_finance_department_access(user):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
+
+		stems |= set(finance_payment_department_stems())
+		visibility_parts = [assigned_only]
+		if stems:
+			visibility_parts.insert(0, _build_department_sql_conditions(stems))
 
 		finance_seqs = sorted(finance_payment_sequences())
 		if finance_seqs:
@@ -548,10 +620,7 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}))"
 			)
 
-	sea_visible = (
-		f"(`tabTask`.`custom_task_flow_key` = {frappe.db.escape(SEA_TASK_FLOW_KEY)} "
-		f"AND ({' OR '.join(visibility_parts)}))"
-	)
+	sea_visible = f"({sea_flow} AND ({' OR '.join(visibility_parts)}))"
 
 	return f"({non_sea} OR {sea_visible})"
 
@@ -561,7 +630,7 @@ def has_permission(doc, ptype=None, user=None, **kwargs):
 	user = user or frappe.session.user
 	if user_bypasses_sea_task_department_filter(user):
 		return True
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return True
 	if user_can_access_sea_task(doc, user):
 		return True

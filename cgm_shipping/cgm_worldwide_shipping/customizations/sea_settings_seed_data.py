@@ -134,3 +134,79 @@ def build_requirement_seed_rows() -> list[dict]:
 		for code in codes:
 			rows.append({"sequence_no": seq, "requirement_type": "Document", "value": code})
 	return rows
+
+
+def _requirement_fingerprint(rows) -> frozenset[tuple]:
+	"""Comparable set of (sequence_no, requirement_type, value) for settings alignment."""
+	out: set[tuple] = set()
+	for row in rows or []:
+		if isinstance(row, dict):
+			seq = int(row.get("sequence_no") or 0)
+			rtype = (row.get("requirement_type") or "").strip()
+			value = (row.get("value") or "").strip()
+		else:
+			seq = int(row.get("sequence_no") or 0)
+			rtype = (row.get("requirement_type") or "").strip()
+			value = (row.get("value") or "").strip()
+		if seq and rtype:
+			out.add((seq, rtype, value))
+	return frozenset(out)
+
+
+def sea_clearance_requirements_need_reseed(settings) -> bool:
+	"""True when Permit Application / Finance Payment sequences drifted from defaults.
+
+	A common drift maps Post-clearance Permit Application to seq 16 (Finance) instead
+	of seq 15 (Prepare Post-Clearance Permits), which hides Task Permits on that task.
+	"""
+	current_rows = settings.get("custom_sea_clearance_task_requirements") or []
+	if not current_rows:
+		return True
+
+	current = _requirement_fingerprint(current_rows)
+	expected = _requirement_fingerprint(build_requirement_seed_rows())
+
+	current_permit_apps = {seq for seq, rtype, _ in current if rtype == "Permit Application"}
+	if current_permit_apps != set(DEFAULT_PERMIT_APPLICATION_SEQS):
+		return True
+
+	current_permit_finance = {
+		seq
+		for seq, rtype, value in current
+		if rtype == "Finance Payment" and value == "Permit"
+	}
+	expected_permit_finance = {
+		seq for seq, kind in DEFAULT_FINANCE_KIND_BY_SEQ.items() if kind == "Permit"
+	}
+	if current_permit_finance != expected_permit_finance:
+		return True
+
+	# Full fingerprint mismatch still reseeds so Entry/SL/KPA markers stay aligned.
+	return current != expected
+
+
+def reseed_sea_clearance_task_requirements(settings) -> bool:
+	"""Replace sea clearance requirements with canonical seed rows. Returns True if changed."""
+	meta = settings.meta if hasattr(settings, "meta") else None
+	if meta and not meta.has_field("custom_sea_clearance_task_requirements"):
+		return False
+	if not sea_clearance_requirements_need_reseed(settings):
+		return False
+	settings.set("custom_sea_clearance_task_requirements", [])
+	for row in build_requirement_seed_rows():
+		settings.append("custom_sea_clearance_task_requirements", row)
+	return True
+
+
+def ensure_sea_clearance_task_requirements() -> bool:
+	"""Idempotent: align CGM Shipping Settings requirement rows with seed defaults."""
+	import frappe
+
+	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+		return False
+	settings = frappe.get_doc("CGM Shipping Settings")
+	if not reseed_sea_clearance_task_requirements(settings):
+		return False
+	settings.save(ignore_permissions=True)
+	frappe.clear_cache()
+	return True

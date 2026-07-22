@@ -541,7 +541,7 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_sequence_no",
 			"collapsible": 1,
 			"depends_on": (
-				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
 				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
 			),
 		},
@@ -555,7 +555,7 @@ def ensure_task_container_fields() -> None:
 			"options": "Container Tracker",
 			"insert_after": "custom_section_container_event",
 			"depends_on": (
-				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
 				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
 			),
 		},
@@ -568,7 +568,7 @@ def ensure_task_container_fields() -> None:
 			"fieldtype": "Data",
 			"insert_after": "custom_container_tracker",
 			"depends_on": (
-				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
 				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
 			),
 		},
@@ -582,7 +582,7 @@ def ensure_task_container_fields() -> None:
 			"options": "Cargo Type",
 			"insert_after": "custom_container_number",
 			"depends_on": (
-				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
 				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
 			),
 		},
@@ -595,7 +595,7 @@ def ensure_task_container_update_fields() -> None:
 	# Include Shipping Line application (10) for deposit confirmation.
 	container_seqs = "10,12,17,19,20,21,22,23,24,25"
 	depends = (
-		f"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+		f"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
 		f"[{container_seqs}].includes(doc.custom_sequence_no)"
 	)
 	for fieldname, values in (
@@ -638,7 +638,7 @@ def ensure_task_container_update_fields() -> None:
 			"fieldtype": "Small Text",
 			"insert_after": "custom_container_updates",
 			"depends_on": (
-				"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && "
+				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
 				"doc.custom_sequence_no == 21"
 			),
 			"description": (
@@ -653,7 +653,7 @@ def ensure_task_container_update_fields() -> None:
 def ensure_field_officer_task_fields() -> None:
 	"""Task 16 field-officer clearance tracking fields."""
 	depends = (
-		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 18"
+		"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && doc.custom_sequence_no == 18"
 	)
 	_create_cf(
 		"Task",
@@ -741,7 +741,7 @@ def ensure_field_officer_task_fields() -> None:
 def ensure_client_inspection_task_fields() -> None:
 	"""Task 7 client inspection notification / confirmation fields."""
 	depends = (
-		"eval:doc.custom_task_flow_key=='SEA_IMPORT_E2E' && doc.custom_sequence_no == 7"
+		"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && doc.custom_sequence_no == 7"
 	)
 	_create_cf(
 		"Task",
@@ -1382,8 +1382,19 @@ def ensure_project_finance_cost_fields() -> None:
 		"Project",
 		{
 			"fieldname": "custom_finance_cost_total",
-			"label": "Total Billed Amount (via Journal Entry)",
+			"label": "Total Billed Amount (via Journal Entry) — numeric",
 			"fieldtype": "Currency",
+			"insert_after": "custom_section_finance_cost_summary",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_upsert_cf(
+		"Project",
+		{
+			"fieldname": "custom_finance_cost_total_display",
+			"label": "Total Billed Amount (via Journal Entry)",
+			"fieldtype": "Data",
 			"insert_after": "custom_section_finance_cost_summary",
 			"read_only": 1,
 			"bold": 1,

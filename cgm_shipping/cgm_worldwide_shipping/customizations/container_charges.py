@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
-from frappe.utils import flt, getdate, nowdate, today
+from frappe.utils import flt, fmt_money, getdate, nowdate, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates import (
 	calculate_tiered_charge,
@@ -25,29 +25,105 @@ COMPUTED_CHARGE_FIELDS = (
 
 
 def get_default_demurrage_currency() -> str:
-	if frappe.db.exists("DocType", "CGM Shipping Settings"):
-		currency = frappe.db.get_single_value("CGM Shipping Settings", "default_dem_currency")
-		if currency:
-			return currency
+	"""Fallback when a demurrage tier row has no currency — use company default."""
+	return company_default_currency()
+
+
+def company_default_currency() -> str:
 	company = frappe.defaults.get_global_default("company")
 	if company:
 		return frappe.db.get_value("Company", company, "default_currency") or "USD"
 	return "USD"
 
 
+def sum_amounts_by_currency(
+	rows: list[dict[str, Any]],
+	amount_field: str,
+	currency_field: str,
+	*,
+	default_currency: str | None = None,
+) -> dict[str, float]:
+	fallback = default_currency or company_default_currency()
+	totals: dict[str, float] = {}
+	for row in rows:
+		amount = flt(row.get(amount_field))
+		if not amount:
+			continue
+		currency = (row.get(currency_field) or fallback).strip() or fallback
+		totals[currency] = totals.get(currency, 0.0) + amount
+	return totals
+
+
+def format_currency_totals(totals: dict[str, float]) -> str:
+	parts = [
+		fmt_money(amount, currency=currency)
+		for currency, amount in sorted(totals.items())
+		if flt(amount)
+	]
+	return " · ".join(parts)
+
+
+def merge_currency_totals(*parts: dict[str, float]) -> dict[str, float]:
+	merged: dict[str, float] = {}
+	for totals in parts:
+		for currency, amount in totals.items():
+			merged[currency] = merged.get(currency, 0.0) + flt(amount)
+	return merged
+
+
+def project_posted_container_charge_totals(project: str) -> dict[str, float]:
+	rows = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project},
+		fields=[
+			"demurrage_amount_posted_to_je",
+			"demurrage_rate_currency",
+			"kpa_amount_posted_to_je",
+			"kpa_rate_currency",
+		],
+	)
+	return merge_currency_totals(
+		sum_amounts_by_currency(
+			rows, "demurrage_amount_posted_to_je", "demurrage_rate_currency"
+		),
+		sum_amounts_by_currency(rows, "kpa_amount_posted_to_je", "kpa_rate_currency"),
+	)
+
+
+def project_je_billed_display(project: str) -> str:
+	"""Labelled JE billed totals using each charge's currency (e.g. USD), not company symbol."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger import (
+		_other_je_expense_totals_for_project,
+	)
+
+	totals = merge_currency_totals(
+		project_posted_container_charge_totals(project),
+		_other_je_expense_totals_for_project(project),
+	)
+	return format_currency_totals(totals)
+
+
 def get_kpa_port_rate_settings() -> tuple[float, str]:
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
 		return 0.0, "KES"
-	settings = frappe.get_single("CGM Shipping Settings")
 	rate = flt(settings.get("kpa_port_daily_rate"))
 	currency = (settings.get("kpa_port_rate_currency") or "KES").strip()
 	return rate, currency
 
 
 def get_accrual_accounts() -> dict[str, str | None]:
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
 		return {}
-	settings = frappe.get_single("CGM Shipping Settings")
 	return {
 		"demurrage_expense": settings.get("demurrage_accrual_expense_account"),
 		"demurrage_payable": settings.get("demurrage_accrual_payable_account"),
@@ -159,6 +235,46 @@ def apply_charge_amounts_to_doc(doc, metrics: dict[str, Any] | None = None) -> N
 			doc.set(field, value)
 
 
+def refresh_project_container_charge_amounts(project: str) -> None:
+	"""Recompute and persist charge metrics on every tracker for a project."""
+	if not project:
+		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+		compute_container_metrics,
+	)
+
+	meta = frappe.get_meta("Container Tracker")
+	persist_fields = [
+		"free_days",
+		"kpa_free_days",
+		"expected_empty_return",
+		"port_days_used",
+		"demurrage_days",
+		"kpa_days",
+		"days_outstanding",
+		"status",
+		"demurrage_daily_rate",
+		"demurrage_rate_currency",
+		"demurrage_amount",
+		"kpa_port_daily_rate",
+		"kpa_rate_currency",
+		"kpa_amount",
+	]
+	persist_fields = [field for field in persist_fields if meta.has_field(field)]
+	if not persist_fields:
+		return
+
+	for name in frappe.get_all(
+		"Container Tracker", filters={"project": project}, pluck="name"
+	):
+		data = frappe.get_doc("Container Tracker", name).as_dict()
+		metrics = compute_container_metrics(data)
+		updates = {field: metrics.get(field) for field in persist_fields}
+		frappe.db.set_value("Container Tracker", name, updates, update_modified=False)
+
+	refresh_project_charge_totals(project)
+
+
 def refresh_project_charge_totals(project: str) -> None:
 	if not project or not frappe.db.exists("Project", project):
 		return
@@ -169,35 +285,76 @@ def refresh_project_charge_totals(project: str) -> None:
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=["demurrage_amount", "kpa_amount"],
+		fields=[
+			"demurrage_amount",
+			"demurrage_rate_currency",
+			"kpa_amount",
+			"kpa_rate_currency",
+			"demurrage_amount_posted_to_je",
+			"kpa_amount_posted_to_je",
+		],
 	)
-	dem_total = sum(flt(r.demurrage_amount) for r in rows)
-	kpa_total = sum(flt(r.kpa_amount) for r in rows)
+	dem_accrued = sum_amounts_by_currency(
+		rows, "demurrage_amount", "demurrage_rate_currency"
+	)
+	kpa_accrued = sum_amounts_by_currency(rows, "kpa_amount", "kpa_rate_currency")
+	dem_posted = sum_amounts_by_currency(
+		rows, "demurrage_amount_posted_to_je", "demurrage_rate_currency"
+	)
+	kpa_posted = sum_amounts_by_currency(
+		rows, "kpa_amount_posted_to_je", "kpa_rate_currency"
+	)
+	dem_accrued_label = format_currency_totals(dem_accrued)
+	kpa_accrued_label = format_currency_totals(kpa_accrued)
+	dem_posted_label = format_currency_totals(dem_posted)
+	kpa_posted_label = format_currency_totals(kpa_posted)
+	dem_accrued_numeric = sum(dem_accrued.values())
+	kpa_accrued_numeric = sum(kpa_accrued.values())
+	dem_posted_numeric = sum(dem_posted.values())
+	kpa_posted_numeric = sum(kpa_posted.values())
 	updates = {}
 	if meta.has_field("custom_demurrage_accrued_total"):
-		updates["custom_demurrage_accrued_total"] = dem_total
+		updates["custom_demurrage_accrued_total"] = dem_accrued_numeric
 	if meta.has_field("custom_kpa_port_accrued_total"):
-		updates["custom_kpa_port_accrued_total"] = kpa_total
+		updates["custom_kpa_port_accrued_total"] = kpa_accrued_numeric
 	if meta.has_field("custom_demurrage_accrued_posted_total"):
-		updates["custom_demurrage_accrued_posted_total"] = sum(
-			flt(x)
-			for x in frappe.get_all(
-				"Container Tracker",
-				filters={"project": project},
-				pluck="demurrage_amount_posted_to_je",
-			)
-		)
+		updates["custom_demurrage_accrued_posted_total"] = dem_posted_numeric
 	if meta.has_field("custom_kpa_port_accrued_posted_total"):
-		updates["custom_kpa_port_accrued_posted_total"] = sum(
-			flt(x)
-			for x in frappe.get_all(
-				"Container Tracker",
-				filters={"project": project},
-				pluck="kpa_amount_posted_to_je",
-			)
-		)
+		updates["custom_kpa_port_accrued_posted_total"] = kpa_posted_numeric
+	if meta.has_field("custom_demurrage_accrued_total_display"):
+		updates["custom_demurrage_accrued_total_display"] = dem_accrued_label
+	if meta.has_field("custom_kpa_port_accrued_total_display"):
+		updates["custom_kpa_port_accrued_total_display"] = kpa_accrued_label
+	if meta.has_field("custom_demurrage_accrued_posted_total_display"):
+		updates["custom_demurrage_accrued_posted_total_display"] = dem_posted_label
+	if meta.has_field("custom_kpa_port_accrued_posted_total_display"):
+		updates["custom_kpa_port_accrued_posted_total_display"] = kpa_posted_label
 	if updates:
 		frappe.db.set_value("Project", project, updates, update_modified=False)
+
+
+@frappe.whitelist()
+def refresh_project_costing_display(project: str) -> dict[str, str]:
+	"""Refresh currency-labelled costing summaries on a Project."""
+	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
+	refresh_project_container_charge_amounts(project)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger import (
+		rebuild_project_finance_billed_total,
+	)
+
+	rebuild_project_finance_billed_total(project)
+	doc = frappe.get_doc("Project", project)
+	out: dict[str, str] = {}
+	for fieldname in (
+		"custom_demurrage_accrued_total_display",
+		"custom_kpa_port_accrued_total_display",
+		"custom_demurrage_accrued_posted_total_display",
+		"custom_kpa_port_accrued_posted_total_display",
+		"custom_finance_cost_total_display",
+	):
+		if doc.meta.has_field(fieldname):
+			out[fieldname] = doc.get(fieldname) or ""
+	return out
 
 
 def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
@@ -216,6 +373,8 @@ def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
 			"kpa_amount",
 			"demurrage_amount_posted_to_je",
 			"kpa_amount_posted_to_je",
+			"demurrage_rate_currency",
+			"kpa_rate_currency",
 		],
 	)
 	deltas: list[dict[str, Any]] = []
@@ -231,6 +390,7 @@ def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
 					"chargeable_days": row.demurrage_days or 0,
 					"daily_rate": row.demurrage_daily_rate or 0,
 					"amount": dem_delta,
+					"currency": row.demurrage_rate_currency or company_default_currency(),
 					"posted_field": "demurrage_amount_posted_to_je",
 					"new_posted_total": flt(row.demurrage_amount),
 				}
@@ -246,6 +406,7 @@ def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
 					"chargeable_days": row.kpa_days or 0,
 					"daily_rate": row.kpa_port_daily_rate or 0,
 					"amount": kpa_delta,
+					"currency": row.kpa_rate_currency or company_default_currency(),
 					"posted_field": "kpa_amount_posted_to_je",
 					"new_posted_total": flt(row.kpa_amount),
 				}
@@ -253,18 +414,49 @@ def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
 	return deltas
 
 
-def _append_je_line(je, *, account: str, amount: float, project: str, remark: str, debit: bool) -> None:
-	if not account or amount <= 0:
+def _append_je_line(
+	je,
+	*,
+	account: str,
+	amount: float,
+	currency: str | None,
+	company: str,
+	project: str,
+	remark: str,
+	debit: bool,
+) -> None:
+	if not account or flt(amount) <= 0:
 		return
-	row = {
-		"account": account,
-		"project": project,
-		"user_remark": remark,
-	}
+
+	account_currency = frappe.db.get_value("Account", account, "account_currency")
+	company_currency = frappe.db.get_value("Company", company, "default_currency")
+	charge_currency = (currency or account_currency or company_currency or "").strip()
+	if not charge_currency:
+		charge_currency = company_default_currency()
+
+	row = {"account": account, "project": project, "user_remark": remark}
+	amount_in_account = flt(amount)
+
+	if charge_currency != account_currency:
+		from erpnext.setup.utils import get_exchange_rate
+
+		exchange_rate = flt(
+			get_exchange_rate(charge_currency, account_currency, je.posting_date)
+		)
+		if not exchange_rate:
+			frappe.throw(
+				frappe._(
+					"Missing exchange rate from {0} to {1} on {2}. Add a Currency Exchange record before posting."
+				).format(charge_currency, account_currency, je.posting_date)
+			)
+		amount_in_account = flt(amount) * exchange_rate
+		je.multi_currency = 1
+		row["exchange_rate"] = exchange_rate
+
 	if debit:
-		row["debit_in_account_currency"] = amount
+		row["debit_in_account_currency"] = amount_in_account
 	else:
-		row["credit_in_account_currency"] = amount
+		row["credit_in_account_currency"] = amount_in_account
 	je.append("accounts", row)
 
 
@@ -274,6 +466,7 @@ def post_container_charge_accrual_for_project(project: str, *, submit: bool = Tr
 	if not frappe.db.exists("Project", project):
 		frappe.throw(frappe._("Project {0} not found").format(project))
 
+	refresh_project_container_charge_amounts(project)
 	deltas = _container_charge_deltas(project)
 	if not deltas:
 		return {"ok": True, "journal_entry": None, "message": frappe._("No new accrual amount to post.")}
@@ -302,8 +495,11 @@ def post_container_charge_accrual_for_project(project: str, *, submit: bool = Tr
 	if not company:
 		frappe.throw(frappe._("Project {0} has no company.").format(project))
 
-	dem_total = sum(d["amount"] for d in deltas if d["charge_type"] == CHARGE_TYPE_DEMURRAGE)
-	kpa_total = sum(d["amount"] for d in deltas if d["charge_type"] == CHARGE_TYPE_KPA_PORT)
+	grouped: dict[tuple[str, str], float] = {}
+	for line in deltas:
+		currency = (line.get("currency") or company_default_currency()).strip()
+		key = (line["charge_type"], currency)
+		grouped[key] = grouped.get(key, 0.0) + flt(line["amount"])
 
 	je = frappe.new_doc("Journal Entry")
 	je.voucher_type = "Journal Entry"
@@ -334,38 +530,36 @@ def post_container_charge_accrual_for_project(project: str, *, submit: bool = Tr
 			)
 
 	remark_base = frappe._("Container charge accrual {0}").format(project)
-	if dem_total > 0:
+	dem_total = 0.0
+	kpa_total = 0.0
+	for (charge_type, currency), amount in grouped.items():
+		if charge_type == CHARGE_TYPE_DEMURRAGE:
+			dem_total += amount
+			expense_account = accounts["demurrage_expense"]
+			payable_account = accounts["demurrage_payable"]
+		else:
+			kpa_total += amount
+			expense_account = accounts["kpa_expense"]
+			payable_account = accounts["kpa_payable"]
+
 		_append_je_line(
 			je,
-			account=accounts["demurrage_expense"],
-			amount=dem_total,
+			account=expense_account,
+			amount=amount,
+			currency=currency,
+			company=company,
 			project=project,
-			remark=f"{remark_base} — {CHARGE_TYPE_DEMURRAGE}",
+			remark=f"{remark_base} — {charge_type} ({currency})",
 			debit=True,
 		)
 		_append_je_line(
 			je,
-			account=accounts["demurrage_payable"],
-			amount=dem_total,
+			account=payable_account,
+			amount=amount,
+			currency=currency,
+			company=company,
 			project=project,
-			remark=f"{remark_base} — {CHARGE_TYPE_DEMURRAGE}",
-			debit=False,
-		)
-	if kpa_total > 0:
-		_append_je_line(
-			je,
-			account=accounts["kpa_expense"],
-			amount=kpa_total,
-			project=project,
-			remark=f"{remark_base} — {CHARGE_TYPE_KPA_PORT}",
-			debit=True,
-		)
-		_append_je_line(
-			je,
-			account=accounts["kpa_payable"],
-			amount=kpa_total,
-			project=project,
-			remark=f"{remark_base} — {CHARGE_TYPE_KPA_PORT}",
+			remark=f"{remark_base} — {charge_type} ({currency})",
 			debit=False,
 		)
 

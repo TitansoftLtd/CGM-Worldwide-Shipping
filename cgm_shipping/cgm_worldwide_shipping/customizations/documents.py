@@ -848,9 +848,9 @@ def apply_checkpoint_task_documents_to_project(project_doc, task) -> bool:
 
 def merge_checkpoint_task_documents_into_project(project_doc) -> bool:
 	"""Pull initial/final slots from all document-checkpoint tasks on this Project."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		document_checkpoint_sequences,
+		get_task_name_by_sequence,
 	)
 
 	if not project_doc.name:
@@ -858,15 +858,7 @@ def merge_checkpoint_task_documents_into_project(project_doc) -> bool:
 
 	changed = False
 	for seq in document_checkpoint_sequences():
-		task_name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project_doc.name,
-				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-				"custom_sequence_no": seq,
-			},
-			"name",
-		)
+		task_name = get_task_name_by_sequence(project_doc.name, seq)
 		if not task_name:
 			continue
 		task = frappe.get_doc("Task", task_name)
@@ -1185,11 +1177,9 @@ def carry_project_documents_to_sea_tasks(project_name, task_sequences=None):
 	"""
 	Copy Project shipment document rows onto sea clearance tasks (audit trail on Task 1–2).
 	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-		SEA_TASK_FLOW_KEY,
-	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		auto_complete_sequences,
+		get_task_name_by_sequence,
 	)
 
 	if not project_name or not frappe.db.exists("Project", project_name):
@@ -1209,15 +1199,7 @@ def carry_project_documents_to_sea_tasks(project_name, task_sequences=None):
 
 	updated_tasks = []
 	for seq in task_sequences:
-		task_name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project_name,
-				"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-				"custom_sequence_no": seq,
-			},
-			"name",
-		)
+		task_name = get_task_name_by_sequence(project_name, seq)
 		if not task_name:
 			continue
 		task = frappe.get_doc("Task", task_name)

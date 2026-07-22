@@ -12,15 +12,17 @@
   "custom_release_date",
   "container_number",
   "cargo_size",
-  "seal_no",
-  "new_seal_number",
-  "reason_for_new_seal_number",
   "column_break_identity",
   "shipping_line",
   "container_mode",
   "status",
   "delivery_destination",
   "current_location",
+  "section_seal",
+  "seal_no",
+  "column_break_seal",
+  "new_seal_number",
+  "reason_for_new_seal_number",
   "section_dates",
   "eta",
   "column_break_whjv",
@@ -133,24 +135,53 @@
    "unique": 1
   },
   {
+   "fieldname": "cargo_size",
+   "fieldtype": "Link",
+   "label": "Cargo Size",
+   "options": "Cargo Size"
+  },
+  {
+   "fieldname": "section_seal",
+   "fieldtype": "Section Break",
+   "label": "Seal"
+  },
+  {
+   "description": "Original seal from the Bill of Lading / shipping line.",
+   "fieldname": "seal_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Seal Number"
+  },
+  {
+   "fieldname": "column_break_seal",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Replacement seal if the original was cut or changed.",
+   "fieldname": "new_seal_number",
+   "fieldtype": "Data",
+   "label": "New Seal Number"
+  },
+  {
+   "depends_on": "eval:doc.new_seal_number",
+   "fieldname": "reason_for_new_seal_number",
+   "fieldtype": "Small Text",
+   "label": "Reason for New Seal Number"
+  },
+  {
    "fieldname": "bl_number",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "B/L Number"
   },
   {
-   "fetch_from": "project.custom_container_tracker_mode",
-   "fetch_if_empty": 1,
    "fieldname": "container_mode",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Container Mode",
-   "read_only": 1
-  },
-  {
-   "fieldname": "seal_no",
-   "fieldtype": "Data",
-   "label": "Seal Number"
+   "read_only": 1,
+   "fetch_from": "project.custom_container_tracker_mode",
+   "fetch_if_empty": 1
   },
   {
    "fieldname": "column_break_identity",
@@ -683,23 +714,6 @@
    "fieldname": "get_out_mombasa",
    "fieldtype": "Date",
    "label": "Get Out Mombasa"
-  },
-  {
-   "fieldname": "cargo_size",
-   "fieldtype": "Link",
-   "label": "Cargo Size",
-   "options": "Cargo Size"
-  },
-  {
-   "fieldname": "new_seal_number",
-   "fieldtype": "Data",
-   "label": "New Seal Number"
-  },
-  {
-   "depends_on": "eval:doc.new_seal_number",
-   "fieldname": "reason_for_new_seal_number",
-   "fieldtype": "Small Text",
-   "label": "Reason for New Seal Number "
   }
  ],
  "index_web_pages_for_search": 1,
