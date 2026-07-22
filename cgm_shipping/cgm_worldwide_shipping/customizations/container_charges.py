@@ -63,6 +63,46 @@ def format_currency_totals(totals: dict[str, float]) -> str:
 	return " · ".join(parts)
 
 
+def merge_currency_totals(*parts: dict[str, float]) -> dict[str, float]:
+	merged: dict[str, float] = {}
+	for totals in parts:
+		for currency, amount in totals.items():
+			merged[currency] = merged.get(currency, 0.0) + flt(amount)
+	return merged
+
+
+def project_posted_container_charge_totals(project: str) -> dict[str, float]:
+	rows = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project},
+		fields=[
+			"demurrage_amount_posted_to_je",
+			"demurrage_rate_currency",
+			"kpa_amount_posted_to_je",
+			"kpa_rate_currency",
+		],
+	)
+	return merge_currency_totals(
+		sum_amounts_by_currency(
+			rows, "demurrage_amount_posted_to_je", "demurrage_rate_currency"
+		),
+		sum_amounts_by_currency(rows, "kpa_amount_posted_to_je", "kpa_rate_currency"),
+	)
+
+
+def project_je_billed_display(project: str) -> str:
+	"""Labelled JE billed totals using each charge's currency (e.g. USD), not company symbol."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger import (
+		_other_je_expense_totals_for_project,
+	)
+
+	totals = merge_currency_totals(
+		project_posted_container_charge_totals(project),
+		_other_je_expense_totals_for_project(project),
+	)
+	return format_currency_totals(totals)
+
+
 def get_kpa_port_rate_settings() -> tuple[float, str]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		get_cgm_shipping_settings,
@@ -333,6 +373,8 @@ def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
 			"kpa_amount",
 			"demurrage_amount_posted_to_je",
 			"kpa_amount_posted_to_je",
+			"demurrage_rate_currency",
+			"kpa_rate_currency",
 		],
 	)
 	deltas: list[dict[str, Any]] = []
@@ -348,6 +390,7 @@ def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
 					"chargeable_days": row.demurrage_days or 0,
 					"daily_rate": row.demurrage_daily_rate or 0,
 					"amount": dem_delta,
+					"currency": row.demurrage_rate_currency or company_default_currency(),
 					"posted_field": "demurrage_amount_posted_to_je",
 					"new_posted_total": flt(row.demurrage_amount),
 				}
@@ -363,6 +406,7 @@ def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
 					"chargeable_days": row.kpa_days or 0,
 					"daily_rate": row.kpa_port_daily_rate or 0,
 					"amount": kpa_delta,
+					"currency": row.kpa_rate_currency or company_default_currency(),
 					"posted_field": "kpa_amount_posted_to_je",
 					"new_posted_total": flt(row.kpa_amount),
 				}
@@ -370,18 +414,49 @@ def _container_charge_deltas(project: str) -> list[dict[str, Any]]:
 	return deltas
 
 
-def _append_je_line(je, *, account: str, amount: float, project: str, remark: str, debit: bool) -> None:
-	if not account or amount <= 0:
+def _append_je_line(
+	je,
+	*,
+	account: str,
+	amount: float,
+	currency: str | None,
+	company: str,
+	project: str,
+	remark: str,
+	debit: bool,
+) -> None:
+	if not account or flt(amount) <= 0:
 		return
-	row = {
-		"account": account,
-		"project": project,
-		"user_remark": remark,
-	}
+
+	account_currency = frappe.db.get_value("Account", account, "account_currency")
+	company_currency = frappe.db.get_value("Company", company, "default_currency")
+	charge_currency = (currency or account_currency or company_currency or "").strip()
+	if not charge_currency:
+		charge_currency = company_default_currency()
+
+	row = {"account": account, "project": project, "user_remark": remark}
+	amount_in_account = flt(amount)
+
+	if charge_currency != account_currency:
+		from erpnext.setup.utils import get_exchange_rate
+
+		exchange_rate = flt(
+			get_exchange_rate(charge_currency, account_currency, je.posting_date)
+		)
+		if not exchange_rate:
+			frappe.throw(
+				frappe._(
+					"Missing exchange rate from {0} to {1} on {2}. Add a Currency Exchange record before posting."
+				).format(charge_currency, account_currency, je.posting_date)
+			)
+		amount_in_account = flt(amount) * exchange_rate
+		je.multi_currency = 1
+		row["exchange_rate"] = exchange_rate
+
 	if debit:
-		row["debit_in_account_currency"] = amount
+		row["debit_in_account_currency"] = amount_in_account
 	else:
-		row["credit_in_account_currency"] = amount
+		row["credit_in_account_currency"] = amount_in_account
 	je.append("accounts", row)
 
 
@@ -420,8 +495,11 @@ def post_container_charge_accrual_for_project(project: str, *, submit: bool = Tr
 	if not company:
 		frappe.throw(frappe._("Project {0} has no company.").format(project))
 
-	dem_total = sum(d["amount"] for d in deltas if d["charge_type"] == CHARGE_TYPE_DEMURRAGE)
-	kpa_total = sum(d["amount"] for d in deltas if d["charge_type"] == CHARGE_TYPE_KPA_PORT)
+	grouped: dict[tuple[str, str], float] = {}
+	for line in deltas:
+		currency = (line.get("currency") or company_default_currency()).strip()
+		key = (line["charge_type"], currency)
+		grouped[key] = grouped.get(key, 0.0) + flt(line["amount"])
 
 	je = frappe.new_doc("Journal Entry")
 	je.voucher_type = "Journal Entry"
@@ -452,38 +530,36 @@ def post_container_charge_accrual_for_project(project: str, *, submit: bool = Tr
 			)
 
 	remark_base = frappe._("Container charge accrual {0}").format(project)
-	if dem_total > 0:
+	dem_total = 0.0
+	kpa_total = 0.0
+	for (charge_type, currency), amount in grouped.items():
+		if charge_type == CHARGE_TYPE_DEMURRAGE:
+			dem_total += amount
+			expense_account = accounts["demurrage_expense"]
+			payable_account = accounts["demurrage_payable"]
+		else:
+			kpa_total += amount
+			expense_account = accounts["kpa_expense"]
+			payable_account = accounts["kpa_payable"]
+
 		_append_je_line(
 			je,
-			account=accounts["demurrage_expense"],
-			amount=dem_total,
+			account=expense_account,
+			amount=amount,
+			currency=currency,
+			company=company,
 			project=project,
-			remark=f"{remark_base} — {CHARGE_TYPE_DEMURRAGE}",
+			remark=f"{remark_base} — {charge_type} ({currency})",
 			debit=True,
 		)
 		_append_je_line(
 			je,
-			account=accounts["demurrage_payable"],
-			amount=dem_total,
+			account=payable_account,
+			amount=amount,
+			currency=currency,
+			company=company,
 			project=project,
-			remark=f"{remark_base} — {CHARGE_TYPE_DEMURRAGE}",
-			debit=False,
-		)
-	if kpa_total > 0:
-		_append_je_line(
-			je,
-			account=accounts["kpa_expense"],
-			amount=kpa_total,
-			project=project,
-			remark=f"{remark_base} — {CHARGE_TYPE_KPA_PORT}",
-			debit=True,
-		)
-		_append_je_line(
-			je,
-			account=accounts["kpa_payable"],
-			amount=kpa_total,
-			project=project,
-			remark=f"{remark_base} — {CHARGE_TYPE_KPA_PORT}",
+			remark=f"{remark_base} — {charge_type} ({currency})",
 			debit=False,
 		)
 

@@ -1382,8 +1382,19 @@ def ensure_project_finance_cost_fields() -> None:
 		"Project",
 		{
 			"fieldname": "custom_finance_cost_total",
-			"label": "Total Billed Amount (via Journal Entry)",
+			"label": "Total Billed Amount (via Journal Entry) — numeric",
 			"fieldtype": "Currency",
+			"insert_after": "custom_section_finance_cost_summary",
+			"read_only": 1,
+			"hidden": 1,
+		},
+	)
+	_upsert_cf(
+		"Project",
+		{
+			"fieldname": "custom_finance_cost_total_display",
+			"label": "Total Billed Amount (via Journal Entry)",
+			"fieldtype": "Data",
 			"insert_after": "custom_section_finance_cost_summary",
 			"read_only": 1,
 			"bold": 1,

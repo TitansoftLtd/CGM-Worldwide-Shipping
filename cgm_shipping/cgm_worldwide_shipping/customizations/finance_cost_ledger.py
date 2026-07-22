@@ -5,7 +5,8 @@ import frappe
 from frappe.utils import flt
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import (
-	format_currency_totals,
+	company_default_currency,
+	project_je_billed_display,
 )
 
 TOTAL_FIELD = "custom_finance_cost_total"
@@ -129,6 +130,45 @@ def _journal_entry_names_for_project(project: str) -> set[str]:
 	return names
 
 
+def _other_je_expense_totals_for_project(project: str) -> dict[str, float]:
+	"""Non-container-accrual journal expenses grouped by account currency."""
+	totals: dict[str, float] = {}
+	for je_name in _journal_entry_names_for_project(project):
+		if not frappe.db.exists("Journal Entry", je_name):
+			continue
+		je = frappe.get_doc("Journal Entry", je_name)
+		if int(je.docstatus or 0) != 1:
+			continue
+		if je.get("custom_cgm_accrual_kind") == "Container Charge Accrual":
+			continue
+		for line in _expense_lines_for_project(je, project):
+			currency = (line.get("currency") or company_default_currency()).strip()
+			totals[currency] = totals.get(currency, 0.0) + flt(line["amount"])
+	return totals
+
+
+def _company_currency_expense_total(project: str) -> float:
+	"""Sum submitted JE expense debits in company currency (KES)."""
+	total = 0.0
+	for je_name in _journal_entry_names_for_project(project):
+		if not frappe.db.exists("Journal Entry", je_name):
+			continue
+		je = frappe.get_doc("Journal Entry", je_name)
+		if int(je.docstatus or 0) != 1:
+			continue
+		for row in je.get("accounts") or []:
+			if row.project and row.project != project:
+				continue
+			debit = flt(row.debit)
+			if debit <= 0:
+				continue
+			account_type = frappe.db.get_value("Account", row.account, "account_type")
+			if account_type in ("Bank", "Cash"):
+				continue
+			total += debit
+	return total
+
+
 def _amount_for_journal_entry(je, project: str) -> float:
 	if int(je.docstatus or 0) == 2:
 		return 0.0
@@ -140,29 +180,18 @@ def rebuild_project_finance_billed_total(project: str) -> None:
 	"""Recompute Total Billed Amount (via Journal Entry) on Project."""
 	if not project or not frappe.db.exists("Project", project):
 		return
-	if not frappe.get_meta("Project").has_field(TOTAL_FIELD):
+	meta = frappe.get_meta("Project")
+	if not meta.has_field(TOTAL_FIELD):
 		return
 
-	total = 0.0
-	totals_by_currency: dict[str, float] = {}
-	for je_name in _journal_entry_names_for_project(project):
-		if not frappe.db.exists("Journal Entry", je_name):
-			continue
-		je = frappe.get_doc("Journal Entry", je_name)
-		if int(je.docstatus or 0) not in (0, 1, 2):
-			continue
-		for line in _expense_lines_for_project(je, project):
-			amount = flt(line["amount"])
-			total += amount
-			currency = (line.get("currency") or "").strip()
-			if currency:
-				totals_by_currency[currency] = totals_by_currency.get(currency, 0.0) + amount
+	company_total = _company_currency_expense_total(project)
+	display_label = project_je_billed_display(project)
 
 	frappe.flags.cgm_syncing_finance_cost_ledger = True
 	try:
-		updates = {TOTAL_FIELD: total}
-		if frappe.get_meta("Project").has_field(DISPLAY_FIELD):
-			updates[DISPLAY_FIELD] = format_currency_totals(totals_by_currency)
+		updates = {TOTAL_FIELD: company_total}
+		if meta.has_field(DISPLAY_FIELD):
+			updates[DISPLAY_FIELD] = display_label
 		frappe.db.set_value("Project", project, updates, update_modified=False)
 	finally:
 		frappe.flags.cgm_syncing_finance_cost_ledger = False
