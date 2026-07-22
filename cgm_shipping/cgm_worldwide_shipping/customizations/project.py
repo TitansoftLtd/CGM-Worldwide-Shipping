@@ -106,7 +106,13 @@ def get_documents(doc):
 # ─── Workflow Stage Requirements ─────────────────────────────────────────────
 def get_stage_requirements():
 	"""Map Project shipment status to required Document Type stages (from CGM Shipping Settings)."""
-	settings = frappe.get_single("CGM Shipping Settings")
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
+		return {}
 	rows = sorted(
 		settings.get("custom_workflow_stage_requirements") or [],
 		key=lambda r: ((r.shipment_workflow_state or "").strip(), r.idx or 0),

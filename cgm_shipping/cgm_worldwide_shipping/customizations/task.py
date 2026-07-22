@@ -58,13 +58,18 @@ _SETTINGS_LINK = "CGM Shipping Settings → Sea clearance task requirements"
 
 def ensure_sea_task_requirements_configured() -> None:
 	"""Fail fast when sea task requirements are missing or incomplete."""
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field(_SETTINGS_REQUIREMENTS_FIELD):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
+		frappe.throw("CGM Shipping Settings is not installed. Run <b>bench migrate</b>.")
+	if not settings.meta.has_field(_SETTINGS_REQUIREMENTS_FIELD):
 		frappe.throw(
 			f"Field <b>{_SETTINGS_REQUIREMENTS_FIELD}</b> is not installed. Run <b>bench migrate</b>."
 		)
 
-	settings = frappe.get_single("CGM Shipping Settings")
 	rows = settings.get(_SETTINGS_REQUIREMENTS_FIELD) or []
 	if not rows:
 		frappe.throw(
@@ -87,10 +92,13 @@ def ensure_sea_task_requirements_configured() -> None:
 @frappe.request_cache
 def rows_by_sequence() -> dict[int, list]:
 	"""Sea task requirement rows grouped by sequence (one Settings read per request)."""
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field(_SETTINGS_REQUIREMENTS_FIELD):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field(_SETTINGS_REQUIREMENTS_FIELD):
 		return {}
-	settings = frappe.get_single("CGM Shipping Settings")
 	grouped: dict[int, list] = {}
 	for row in settings.get(_SETTINGS_REQUIREMENTS_FIELD) or []:
 		seq = int(row.sequence_no or 0)
@@ -512,7 +520,9 @@ def get_sea_task_ui_sequences() -> dict:
 		"permissions": get_task_form_permissions(),
 		"finance_department": frappe.db.get_single_value(
 			"CGM Shipping Settings", "custom_finance_department"
-		),
+		)
+		if frappe.db.exists("DocType", "CGM Shipping Settings")
+		else None,
 	}
 
 
