@@ -115,6 +115,51 @@ class TestBillOfLadingBookingPrefill(IntegrationTestCase):
 		self.assertEqual([s["cargo_size"] for s in stubs], ["40FT", "40FT", "20FT"])
 		self.assertTrue(all(not s["container_number"] and not s["seal_no"] for s in stubs))
 
+	def test_fill_missing_container_sizes_from_single_size_quantity(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+			fill_missing_container_row_cargo_sizes,
+		)
+
+		rows = [
+			{"container_number": "C1", "cargo_size": ""},
+			{"container_number": "C2", "cargo_size": ""},
+			{"container_number": "C3", "cargo_size": ""},
+		]
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch.resolve_cargo_size_link",
+			side_effect=lambda size: size,
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch.normalize_cargo_size",
+			side_effect=lambda size: (size or "").replace(" ", "").upper(),
+		):
+			changed = fill_missing_container_row_cargo_sizes(rows, "3 x 20FT")
+		self.assertTrue(changed)
+		self.assertEqual([r["cargo_size"] for r in rows], ["20FT", "20FT", "20FT"])
+
+	def test_fill_missing_container_sizes_mixed_only_when_all_blank(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+			fill_missing_container_row_cargo_sizes,
+		)
+
+		rows = [
+			{"container_number": "C1", "cargo_size": "20FT"},
+			{"container_number": "C2", "cargo_size": ""},
+			{"container_number": "C3", "cargo_size": ""},
+		]
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch.resolve_cargo_size_link",
+			side_effect=lambda size: size,
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch.normalize_cargo_size",
+			side_effect=lambda size: (size or "").replace(" ", "").upper(),
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch._cargo_size_display_order",
+			return_value=["20FT", "40FT"],
+		):
+			changed = fill_missing_container_row_cargo_sizes(rows, "2 x 20FT, 1 x 40FT")
+		self.assertFalse(changed)
+		self.assertEqual(rows[1]["cargo_size"], "")
+
 	def test_bl_opportunity_maps_commodity_not_description(self):
 		src_fields = {src for src, _dest in BL_TO_OPPORTUNITY_DETAIL_FIELDS}
 		self.assertIn("commodity", src_fields)

@@ -7,9 +7,11 @@ import frappe
 from frappe import _
 from frappe.utils import get_url, now_datetime
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.constants import SEA_TASK_FLOW_KEY
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	display_ref_from_values,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	is_sea_import_task,
 )
 
 INSPECTION_TASK_SEQ = 7
@@ -23,7 +25,7 @@ def sea_import_task_sequence_no(template_index: int) -> int:
 
 def _get_inspection_task(task_name: str):
 	task = frappe.get_doc("Task", task_name)
-	if task.custom_task_flow_key != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(task):
 		frappe.throw(_("This action is only available on sea import clearance tasks."))
 	if int(task.custom_sequence_no or 0) != INSPECTION_TASK_SEQ:
 		frappe.throw(_("This action is only available on the Client conducts inspection task."))
@@ -35,13 +37,16 @@ def _get_inspection_task(task_name: str):
 def get_inspection_task_for_project(project_name: str) -> dict | None:
 	if not project_name:
 		return None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_task_name_by_sequence,
+	)
+
+	task_name = get_task_name_by_sequence(project_name, INSPECTION_TASK_SEQ)
+	if not task_name:
+		return None
 	return frappe.db.get_value(
 		"Task",
-		{
-			"project": project_name,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
-			"custom_sequence_no": INSPECTION_TASK_SEQ,
-		},
+		task_name,
 		[
 			"name",
 			"custom_client_notified_on",

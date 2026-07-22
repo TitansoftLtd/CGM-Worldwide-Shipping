@@ -106,7 +106,13 @@ def get_documents(doc):
 # ─── Workflow Stage Requirements ─────────────────────────────────────────────
 def get_stage_requirements():
 	"""Map Project shipment status to required Document Type stages (from CGM Shipping Settings)."""
-	settings = frappe.get_single("CGM Shipping Settings")
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
+		return {}
 	rows = sorted(
 		settings.get("custom_workflow_stage_requirements") or [],
 		key=lambda r: ((r.shipment_workflow_state or "").strip(), r.idx or 0),
@@ -387,6 +393,14 @@ def normalize_permit_register_rows(doc):
 
 def derive_permit_clearance_phase(row) -> str:
 	"""Map permit row finance fields to high-level clearance phase (see OPERATIONS_PROCESS.md §7)."""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
+	# Foreign origin: certificate alone completes clearance (no payment path).
+	if not permit_requires_payment(row) and row.get("permit_document"):
+		return "Post-Cleared"
+
 	if row.get("payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", row.payment_entry, "docstatus")
 		if int(pe_status or 0) == 1:

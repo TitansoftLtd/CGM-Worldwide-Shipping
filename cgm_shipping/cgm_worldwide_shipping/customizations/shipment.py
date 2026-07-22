@@ -651,10 +651,6 @@ def copy_tracking_fields_from_source(target, source) -> None:
 
 def is_sea_import_enabled(shipment_type: str | None) -> bool:
 	"""True when Shipment Type uses the sea import task template (or legacy flow key)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-		SEA_TASK_FLOW_KEY,
-		SEA_TRANSIT_IMPORT_TASK_FLOW_KEY,
-	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		SEA_IMPORT_TEMPLATE,
 		SEA_TRANSIT_IMPORT_TEMPLATE,
@@ -667,7 +663,8 @@ def is_sea_import_enabled(shipment_type: str | None) -> bool:
 		return normalized in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE)
 
 	flow = get_task_flow_key_for_shipment_type(shipment_type)
-	return flow in (SEA_TASK_FLOW_KEY, SEA_TRANSIT_IMPORT_TASK_FLOW_KEY)
+	normalized = normalize_template_name(flow)
+	return normalized in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE)
 
 
 def sea_import_enabled_for_project(project) -> bool:
@@ -979,6 +976,19 @@ def sync_preshipment_containers_from_bl(doc, method=None) -> None:
 	doc.set(container_field, [])
 	for row in rows:
 		doc.append(container_field, normalize_container_row(row))
+
+	# Recover sizes when BL rows lacked cargo_size but quantity encodes them.
+	from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+		fill_missing_container_row_cargo_sizes,
+	)
+
+	qty = ""
+	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+		qty = str(frappe.db.get_value("Bill of Lading", bl_name, "quantity") or "").strip()
+	quantity_field = config.get("opportunity_quantity_field")
+	if not qty and quantity_field and doc.meta.has_field(quantity_field):
+		qty = str(doc.get(quantity_field) or "").strip()
+	fill_missing_container_row_cargo_sizes(doc.get(container_field), qty)
 
 def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 	"""Copy Bill of Lading link and container rows from source onto target doc."""

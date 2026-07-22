@@ -238,6 +238,82 @@ def counts_from_container_rows(rows: Iterable | None) -> dict[str, int]:
 	return counts
 
 
+def size_sequence_from_counts(counts: Mapping[str, int]) -> list[str]:
+	"""Expand size→qty counts into an ordered list of sizes (display order)."""
+	text = format_derived_quantity(counts)
+	parsed = counts_from_derived_quantity_text(text) if text else dict(counts or {})
+	if not parsed:
+		return []
+
+	display_order = _cargo_size_display_order()
+	ordered = [size for size in display_order if size in parsed]
+	for size in sorted(parsed):
+		if size not in ordered:
+			ordered.append(size)
+
+	sequence: list[str] = []
+	for size in ordered:
+		sequence.extend([size] * cint(parsed[size]))
+	return sequence
+
+
+def _set_container_row_cargo_size(row, size: str) -> bool:
+	"""Set cargo_size on a child row dict/doc; return True when the value changed."""
+	link = resolve_cargo_size_link(size) or normalize_cargo_size(size) or size
+	if not link:
+		return False
+	current = container_row_cargo_size(row)
+	if current == link:
+		return False
+	if isinstance(row, dict):
+		row["cargo_size"] = link
+	else:
+		row.cargo_size = link
+	return True
+
+
+def fill_missing_container_row_cargo_sizes(rows, derived_quantity: str | None) -> bool:
+	"""Stamp cargo_size onto container rows that lack it, using parent derived quantity.
+
+	- Single size in derived qty (e.g. ``3 x 20FT``): fill every empty row with that size.
+	- Multiple sizes: only when *all* rows are missing size and the expanded sequence
+	  length matches the row count (same order as booking stubs).
+	Never overwrites an existing cargo_size.
+	"""
+	rows = list(rows or [])
+	if not rows:
+		return False
+
+	counts = counts_from_derived_quantity_text(derived_quantity)
+	if not counts:
+		return False
+
+	missing = [row for row in rows if not normalize_cargo_size(container_row_cargo_size(row))]
+	if not missing:
+		return False
+
+	if len(counts) == 1:
+		size = next(iter(counts.keys()))
+		changed = False
+		for row in missing:
+			if _set_container_row_cargo_size(row, size):
+				changed = True
+		return changed
+
+	# Mixed sizes: only auto-assign when every row is blank and counts match.
+	if len(missing) != len(rows):
+		return False
+	sequence = size_sequence_from_counts(counts)
+	if len(sequence) != len(rows):
+		return False
+
+	changed = False
+	for row, size in zip(rows, sequence, strict=True):
+		if _set_container_row_cargo_size(row, size):
+			changed = True
+	return changed
+
+
 def derived_quantity_from_booking(doc) -> str:
 	"""FCL derived quantity from Booking Confirmation request rows."""
 	if is_lcl_cargo_type(doc.get("requested_cargo_type")):

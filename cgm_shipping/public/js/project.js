@@ -501,14 +501,38 @@ function render_shipment_progress_chart(frm) {
 	});
 }
 
-function format_currency_amount(value) {
+function format_currency_amount(value, currency) {
 	if (value == null || value === "") {
 		return "";
 	}
-	return frappe.format(value, {
-		fieldtype: "Currency",
-		options: frappe.defaults.get_default("currency"),
+	const resolvedCurrency =
+		currency ||
+		frappe.defaults.get_default("currency") ||
+		frappe.boot.sysdefaults.currency;
+	return format_currency(flt(value), resolvedCurrency);
+}
+
+function sum_amounts_by_currency(rows, amountField, currencyField) {
+	const totals = {};
+	(rows || []).forEach((row) => {
+		const amount = flt(row[amountField]);
+		if (!amount) {
+			return;
+		}
+		const currency =
+			row[currencyField] ||
+			frappe.defaults.get_default("currency") ||
+			frappe.boot.sysdefaults.currency;
+		totals[currency] = (totals[currency] || 0) + amount;
 	});
+	return totals;
+}
+
+function format_currency_totals_label(totals) {
+	return Object.entries(totals || {})
+		.filter(([, amount]) => flt(amount) > 0)
+		.map(([currency, amount]) => format_currency_amount(amount, currency))
+		.join(" · ");
 }
 
 function container_status_dot(status, alert_status) {
@@ -657,12 +681,19 @@ function render_container_card_body(c) {
 	];
 	if (c.demurrage_amount > 0) {
 		shippingRows.push(
-			container_card_row(__("Demurrage amount"), format_currency_amount(c.demurrage_amount), {
-				warn: true,
-			})
+			container_card_row(
+				__("Demurrage amount"),
+				format_currency_amount(c.demurrage_amount, c.demurrage_rate_currency),
+				{ warn: true }
+			)
 		);
 	} else if (demurrageDays > 0) {
-		shippingRows.push(container_card_row(__("Demurrage amount"), format_currency_amount(c.demurrage_amount || 0)));
+		shippingRows.push(
+			container_card_row(
+				__("Demurrage amount"),
+				format_currency_amount(c.demurrage_amount || 0, c.demurrage_rate_currency)
+			)
+		);
 	}
 	if (!c.free_days_end_date && c.discharging_date) {
 		shippingRows.push(
@@ -701,10 +732,19 @@ function render_container_card_body(c) {
 	];
 	if (c.kpa_amount > 0) {
 		kpaRows.push(
-			container_card_row(__("KPA port amount"), format_currency_amount(c.kpa_amount), { warn: true })
+			container_card_row(
+				__("KPA port amount"),
+				format_currency_amount(c.kpa_amount, c.kpa_rate_currency),
+				{ warn: true }
+			)
 		);
 	} else if (kpaDays > 0) {
-		kpaRows.push(container_card_row(__("KPA port amount"), format_currency_amount(c.kpa_amount || 0)));
+		kpaRows.push(
+			container_card_row(
+				__("KPA port amount"),
+				format_currency_amount(c.kpa_amount || 0, c.kpa_rate_currency)
+			)
+		);
 	}
 	sections.push(`
 		<div class="cgm-container-card-section">
@@ -844,18 +884,18 @@ function render_container_tracking_table(frm, dashboard) {
 
 	const demurrageKpiClass = dashboard.containers_in_demurrage ? "cgm-rag-red" : "";
 	const kpaKpiClass = dashboard.containers_in_kpa_charges ? "cgm-rag-red" : "";
-	const demurrageAmountKpi =
-		dashboard.total_demurrage_amount > 0
-			? `<span>${__("Demurrage accrued")}: <b>${format_currency_amount(
-					dashboard.total_demurrage_amount
-				)}</b></span>`
-			: "";
-	const kpaAmountKpi =
-		dashboard.total_kpa_amount > 0
-			? `<span>${__("KPA port accrued")}: <b>${format_currency_amount(
-					dashboard.total_kpa_amount
-				)}</b></span>`
-			: "";
+	const demurrageAmountLabel = format_currency_totals_label(
+		sum_amounts_by_currency(rows, "demurrage_amount", "demurrage_rate_currency")
+	);
+	const kpaAmountLabel = format_currency_totals_label(
+		sum_amounts_by_currency(rows, "kpa_amount", "kpa_rate_currency")
+	);
+	const demurrageAmountKpi = demurrageAmountLabel
+		? `<span>${__("Demurrage accrued")}: <b>${demurrageAmountLabel}</b></span>`
+		: "";
+	const kpaAmountKpi = kpaAmountLabel
+		? `<span>${__("KPA port accrued")}: <b>${kpaAmountLabel}</b></span>`
+		: "";
 
 	field.$wrapper.html(`
 		<div class="cgm-container-dashboard">
@@ -925,22 +965,61 @@ function render_container_tracking_table(frm, dashboard) {
 	});
 }
 
-function manual_refresh_finance_costs(frm) {
-	if (!frm.fields_dict.custom_finance_cost_total || frm.is_new()) {
+function apply_project_costing_display_fields(frm, values) {
+	Object.entries(values || {}).forEach(([fieldname, value]) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.set_value(fieldname, value || "");
+		}
+	});
+}
+
+function refresh_project_costing_currency_display(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	if (
+		!frm.fields_dict.custom_demurrage_accrued_total_display &&
+		!frm.fields_dict.custom_finance_cost_total_display
+	) {
+		return;
+	}
+	if (frm._cgm_costing_display_loaded === frm.doc.name) {
 		return;
 	}
 	frappe.call({
 		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.refresh_finance_cost_for_project",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.refresh_project_costing_display",
+		args: { project: frm.doc.name },
+		callback(r) {
+			if (r.exc || frm.doc.name !== frm.docname) {
+				return;
+			}
+			frm._cgm_costing_display_loaded = frm.doc.name;
+			apply_project_costing_display_fields(frm, r.message || {});
+		},
+	});
+}
+
+function manual_refresh_finance_costs(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.refresh_project_costing_display",
 		args: { project: frm.doc.name },
 		freeze: true,
 		freeze_message: __("Refreshing billed amount..."),
-		callback() {
+		callback(r) {
+			if (r.exc) {
+				return;
+			}
+			frm._cgm_costing_display_loaded = frm.doc.name;
+			apply_project_costing_display_fields(frm, r.message || {});
 			frappe.show_alert({
 				message: __("Billed amount refreshed from journal entries."),
 				indicator: "green",
 			});
-			frm.reload_doc();
 		},
 	});
 }
@@ -971,7 +1050,8 @@ function post_container_charge_accrual(frm) {
 					} else {
 						frappe.msgprint(result.message || __("No new accrual amount to post."));
 					}
-					frm.reload_doc();
+					frm._cgm_costing_display_loaded = null;
+					refresh_project_costing_currency_display(frm);
 					render_shipment_progress_chart(frm);
 				},
 			});
@@ -1082,6 +1162,7 @@ frappe.ui.form.on("Project", {
 		}
 
 		render_shipment_progress_chart(frm);
+		refresh_project_costing_currency_display(frm);
 		configure_project_document_grid(frm);
 		configure_project_status_fields(frm);
 		configure_project_container_grid(frm);

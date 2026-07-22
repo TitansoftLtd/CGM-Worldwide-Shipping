@@ -204,6 +204,11 @@ def _create_single_task(
 				task.append("depends_on", {"task": parent_task})
 
 	task.insert(ignore_permissions=True)
+	# Workflow tasks belong to the process, not the user who clicked Start Shipment —
+	# otherwise Declarants who create the plan become owner of every step and see all tasks.
+	if task.owner != "Administrator" and frappe.db.exists("User", "Administrator"):
+		frappe.db.set_value("Task", task.name, "owner", "Administrator", update_modified=False)
+		task.owner = "Administrator"
 	return task.name
 
 
