@@ -172,6 +172,11 @@ def create_sea_transit_import_task_plan_internal(project: str, reset: bool = Fal
 			if prev_task:
 				task.append("depends_on", {"task": prev_task.name})
 			task.insert(ignore_permissions=True)
+			if task.owner != "Administrator" and frappe.db.exists("User", "Administrator"):
+				frappe.db.set_value(
+					"Task", task.name, "owner", "Administrator", update_modified=False
+				)
+				task.owner = "Administrator"
 			prev_task = task
 			created.append(task.name)
 	finally:
@@ -229,6 +234,11 @@ def create_sea_transit_export_task_plan_internal(project: str, reset: bool = Fal
 			if prev_task:
 				task.append("depends_on", {"task": prev_task.name})
 			task.insert(ignore_permissions=True)
+			if task.owner != "Administrator" and frappe.db.exists("User", "Administrator"):
+				frappe.db.set_value(
+					"Task", task.name, "owner", "Administrator", update_modified=False
+				)
+				task.owner = "Administrator"
 			prev_task = task
 			created.append(task.name)
 	finally:

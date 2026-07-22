@@ -2029,10 +2029,11 @@ def get_purchase_item_for_payment_item(payment_item: str, company: str | None = 
 
 
 def get_default_purchase_item_code(company: str | None = None) -> str:
-	"""Default PI item for permit / clearance lines."""
+	"""Fallback Item when a payment line has no mapped item (legacy PI helpers)."""
 	settings_item = None
 	if frappe.db.exists("DocType", "CGM Shipping Settings"):
 		meta = frappe.get_meta("CGM Shipping Settings")
+		# Field removed from Settings UI; keep reading if an old column still exists.
 		if meta.has_field("custom_default_purchase_item"):
 			settings_item = frappe.db.get_single_value(
 				"CGM Shipping Settings", "custom_default_purchase_item"
@@ -2049,10 +2050,7 @@ def get_default_purchase_item_code(company: str | None = None) -> str:
 	if item:
 		return item
 
-	frappe.throw(
-		"Set <b>Default Purchase Item</b> on <b>CGM Shipping Settings</b> "
-		"(or create Item <b>CGM-CLEARANCE-CHARGE</b>) for auto-filled permit lines on Purchase Invoice."
-	)
+	return ""
 
 
 def get_permit_rows_for_purchase_invoice(task) -> list[dict]:

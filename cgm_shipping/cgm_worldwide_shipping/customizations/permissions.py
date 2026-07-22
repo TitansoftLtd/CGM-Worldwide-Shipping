@@ -172,12 +172,14 @@ def configured_declaration_roles() -> frozenset[str]:
 
 @frappe.request_cache
 def declarant_application_department_stems() -> frozenset[str]:
-	"""Template department stems for UCR / permit application tasks."""
+	"""Department stems Declarant users may open (Declaration application steps only).
+
+	Do not include Documentation / Operations / Finance here — those come from
+	CGM Shipping Settings role groups and matching Role↔department stems.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		entry_application_sequences,
-		kpa_application_sequences,
 		permit_application_sequences,
-		shipping_line_application_sequences,
 		ucr_application_sequences,
 	)
 
@@ -186,21 +188,59 @@ def declarant_application_department_stems() -> frozenset[str]:
 		permit_application_sequences()
 		| ucr_application_sequences()
 		| entry_application_sequences()
-		| shipping_line_application_sequences()
-		| kpa_application_sequences()
 	):
 		stem = department_stem_for_sequence(seq)
 		if stem:
 			stems.add(stem)
+	# Always include Declaration even if Settings template is incomplete.
+	stems.add("Declaration")
 	return frozenset(stems)
 
 
 def user_has_declarant_department_access(user: str | None = None) -> bool:
-	"""True when the user may upload permit/UCR proofs on declarant workflow tasks."""
+	"""True when the user may work Declaration application tasks (UCR / permits / entry)."""
 	roles = user_roles(user)
 	if roles & declarant_application_department_stems():
 		return True
 	return bool(roles & configured_declaration_roles())
+
+
+@frappe.request_cache
+def transport_department_stems() -> frozenset[str]:
+	"""Department stems for transport / empty-return container steps."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_UPDATE_TASK_SEQS,
+		TRANSPORT_TASK_SEQS,
+	)
+
+	stems: set[str] = set()
+	for seq in TRANSPORT_TASK_SEQS | CONTAINER_UPDATE_TASK_SEQS:
+		stem = department_stem_for_sequence(seq)
+		if stem and stem in {"Transport", "Field Operations"}:
+			stems.add(stem)
+	if not stems:
+		stems.update({"Transport", "Field Operations"})
+	return frozenset(stems)
+
+
+@frappe.request_cache
+def configured_transport_roles() -> frozenset[str]:
+	"""Transport roles from CGM Shipping Settings → Roles tab."""
+	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+		return frozenset()
+	meta = frappe.get_meta("CGM Shipping Settings")
+	if not meta.has_field("custom_transport_roles"):
+		return frozenset()
+	rows = frappe.get_single("CGM Shipping Settings").get("custom_transport_roles") or []
+	return frozenset(row.role for row in rows if row.role)
+
+
+def user_has_transport_department_access(user: str | None = None) -> bool:
+	"""True when the user may work Transport / Field Operations sea tasks."""
+	roles = user_roles(user)
+	if roles & transport_department_stems():
+		return True
+	return bool(roles & configured_transport_roles())
 
 
 def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool:
@@ -381,10 +421,12 @@ def _project_has_sea_task(project: str, sequence_no: int) -> bool:
 
 
 def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
-	"""Cross-read for paired workflow tasks using template department stems."""
+	"""Cross-read: Finance may open paired application tasks (not the reverse)."""
 	if not hasattr(doc, "get"):
 		return False
 	if not is_sea_import_task(doc):
+		return False
+	if not user_has_finance_department_access(user):
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
 	project = doc.get("project")
@@ -392,15 +434,11 @@ def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
 		return False
 
 	for app_seq, fin_seq in _ucr_linked_pairs():
-		if seq == fin_seq and user_has_department_for_sequence(user, app_seq):
-			if _project_has_sea_task(project, app_seq):
-				return True
-		if seq == app_seq and user_has_department_for_sequence(user, fin_seq):
-			if _project_has_sea_task(project, fin_seq):
-				return True
+		if seq == app_seq and _project_has_sea_task(project, fin_seq):
+			return True
 
 	for app_seq, fin_seq in _permit_linked_pairs():
-		if seq == fin_seq and user_has_department_for_sequence(user, app_seq):
+		if seq == app_seq:
 			return True
 
 	return False
@@ -428,10 +466,17 @@ def user_can_access_sea_task(
 	if department_matches_stems(department, get_user_sea_task_department_stems(user)):
 		return True
 
+	stem = normalize_department_stem(department)
 	if (
-		normalize_department_stem(department) in declarant_application_department_stems()
+		stem in declarant_application_department_stems()
 		and user_has_declarant_department_access(user)
 	):
+		return True
+
+	if stem in operations_department_stems() and user_has_operations_department_access(user):
+		return True
+
+	if stem in transport_department_stems() and user_has_transport_department_access(user):
 		return True
 
 	if _user_can_access_sea_payment_task_by_role(doc, user):
@@ -521,8 +566,16 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 		return None
 
 	stems = set(get_user_sea_task_department_stems(user))
+	# Settings role groups → department stems (not the old broad app-stem dump).
 	if user_has_declarant_department_access(user):
 		stems |= set(declarant_application_department_stems())
+	if user_has_operations_department_access(user):
+		stems |= set(operations_department_stems())
+		# Ops often also covers Documentation / Field Ops checklist steps.
+		stems.update({"Operations", "Documentation", "Field Operations"})
+	if user_has_transport_department_access(user):
+		stems |= set(transport_department_stems())
+
 	escaped_user = frappe.db.escape(user)
 	assign_token = frappe.db.escape(f'"{user}"')
 	sea_flow = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE)
@@ -535,9 +588,9 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	visibility_parts = [assigned_or_owner]
 	if stems:
 		visibility_parts.insert(0, _build_department_sql_conditions(stems))
-	linked = _build_linked_sea_task_sql(stems)
-	if linked:
-		visibility_parts.append(linked)
+
+	# Linked UCR/permit pairs: Finance may see application tasks; do not give
+	# Declarants automatic visibility of Finance payment tasks.
 	if user_has_finance_department_access(user):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
 
@@ -547,6 +600,9 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 			visibility_parts.append(
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}))"
 			)
+		linked = _build_linked_sea_task_sql(stems | set(finance_payment_department_stems()))
+		if linked:
+			visibility_parts.append(linked)
 
 	sea_visible = f"({sea_flow} AND ({' OR '.join(visibility_parts)}))"
 

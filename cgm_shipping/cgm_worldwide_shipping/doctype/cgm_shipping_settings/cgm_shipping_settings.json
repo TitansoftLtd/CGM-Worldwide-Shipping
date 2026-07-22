@@ -30,9 +30,9 @@
   "section_roles",
   "custom_finance_roles",
   "custom_finance_department",
-  "custom_default_purchase_item",
   "custom_operations_roles",
   "custom_declaration_roles",
+  "custom_transport_roles",
   "section_email_templates",
   "custom_default_email_template",
   "custom_permit_finance_email_template",
@@ -157,22 +157,24 @@
    "options": "Department"
   },
   {
-   "description": "Default Item for auto-filled permit and finance Purchase Invoice lines when no type-specific item is set.",
-   "fieldname": "custom_default_purchase_item",
-   "fieldtype": "Link",
-   "label": "Default Purchase Item",
-   "options": "Item"
-  },
-  {
+   "description": "ERPNext Roles that may open Operations / Documentation sea tasks (e.g. Operations Manager).",
    "fieldname": "custom_operations_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Operations roles",
    "options": "CGM Role Item"
   },
   {
+   "description": "ERPNext Roles that may open Declaration tasks (Create UCR, permits, Entry). Example: Declarant.",
    "fieldname": "custom_declaration_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Declaration roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "ERPNext Roles that may open Transport / Field Operations tasks (book trucks, gate out, delivery, empty return). Align with departments such as Transport - CWSCL and Field Operations - CWSCL.",
+   "fieldname": "custom_transport_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Transport roles",
    "options": "CGM Role Item"
   },
   {
