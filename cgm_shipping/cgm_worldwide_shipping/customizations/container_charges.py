@@ -33,18 +33,26 @@ def get_default_demurrage_currency() -> str:
 
 
 def get_kpa_port_rate_settings() -> tuple[float, str]:
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
 		return 0.0, "KES"
-	settings = frappe.get_single("CGM Shipping Settings")
 	rate = flt(settings.get("kpa_port_daily_rate"))
 	currency = (settings.get("kpa_port_rate_currency") or "KES").strip()
 	return rate, currency
 
 
 def get_accrual_accounts() -> dict[str, str | None]:
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
 		return {}
-	settings = frappe.get_single("CGM Shipping Settings")
 	return {
 		"demurrage_expense": settings.get("demurrage_accrual_expense_account"),
 		"demurrage_payable": settings.get("demurrage_accrual_payable_account"),

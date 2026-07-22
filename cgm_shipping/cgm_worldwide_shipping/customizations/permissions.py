@@ -161,12 +161,14 @@ def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
 @frappe.request_cache
 def configured_declaration_roles() -> frozenset[str]:
 	"""Declarant roles from CGM Shipping Settings → Roles tab."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field("custom_declaration_roles"):
 		return frozenset()
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("custom_declaration_roles"):
-		return frozenset()
-	rows = frappe.get_single("CGM Shipping Settings").get("custom_declaration_roles") or []
+	rows = settings.get("custom_declaration_roles") or []
 	return frozenset(row.role for row in rows if row.role)
 
 
@@ -226,12 +228,14 @@ def transport_department_stems() -> frozenset[str]:
 @frappe.request_cache
 def configured_transport_roles() -> frozenset[str]:
 	"""Transport roles from CGM Shipping Settings → Roles tab."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field("custom_transport_roles"):
 		return frozenset()
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("custom_transport_roles"):
-		return frozenset()
-	rows = frappe.get_single("CGM Shipping Settings").get("custom_transport_roles") or []
+	rows = settings.get("custom_transport_roles") or []
 	return frozenset(row.role for row in rows if row.role)
 
 
@@ -315,24 +319,28 @@ def finance_payment_department_stems() -> frozenset[str]:
 @frappe.request_cache
 def configured_finance_roles() -> frozenset[str]:
 	"""Finance roles from CGM Shipping Settings → Roles tab."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field("custom_finance_roles"):
 		return frozenset()
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("custom_finance_roles"):
-		return frozenset()
-	rows = frappe.get_single("CGM Shipping Settings").get("custom_finance_roles") or []
+	rows = settings.get("custom_finance_roles") or []
 	return frozenset(row.role for row in rows if row.role)
 
 
 @frappe.request_cache
 def configured_operations_roles() -> frozenset[str]:
 	"""Operations roles from CGM Shipping Settings → Roles tab."""
-	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings or not settings.meta.has_field("custom_operations_roles"):
 		return frozenset()
-	meta = frappe.get_meta("CGM Shipping Settings")
-	if not meta.has_field("custom_operations_roles"):
-		return frozenset()
-	rows = frappe.get_single("CGM Shipping Settings").get("custom_operations_roles") or []
+	rows = settings.get("custom_operations_roles") or []
 	return frozenset(row.role for row in rows if row.role)
 
 

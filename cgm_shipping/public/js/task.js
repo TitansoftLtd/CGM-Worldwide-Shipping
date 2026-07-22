@@ -370,9 +370,7 @@ function load_cgm_sea_ui_sequences(frm) {
 			frm._cgm_sea_seq_loading = false;
 			frm._cgm_sea_seq_load_failed = false;
 			frm._cgm_sea_seq_config = r.message || CGM_SEA_UI_SEQUENCES_EMPTY;
-			if (r.message?.finance_department) {
-				frm._cgm_finance_department = r.message.finance_department;
-			}
+			frm._cgm_finance_department = r.message?.finance_department || null;
 			frm._cgm_sea_layout_ready = false;
 			frm._cgm_finance_grid_ready = false;
 			frm.trigger("refresh");
@@ -1255,23 +1253,19 @@ function reset_cgm_task_sea_ui_state_if_needed(frm) {
 }
 
 function ensure_cgm_finance_department_loaded(frm) {
-	if (frm._cgm_finance_department !== undefined || frm._cgm_finance_department_loading) {
+	if (frm._cgm_finance_department !== undefined) {
 		return;
 	}
-	frm._cgm_finance_department_loading = true;
-	frappe.db
-		.get_single_value("CGM Shipping Settings", "custom_finance_department")
-		.then((dept) => {
-			frm._cgm_finance_department_loading = false;
-			frm._cgm_finance_department = dept || null;
-			if (frm.doc.name === frm.docname) {
-				schedule_cgm_task_toolbar_buttons(frm);
-			}
-		})
-		.catch(() => {
-			frm._cgm_finance_department_loading = false;
-			frm._cgm_finance_department = null;
-		});
+	if (frm._cgm_sea_seq_config) {
+		frm._cgm_finance_department =
+			get_cgm_sea_seq_config(frm).finance_department || null;
+		return;
+	}
+	if (is_sea_clearance_task(frm)) {
+		load_cgm_sea_ui_sequences(frm);
+		return;
+	}
+	frm._cgm_finance_department = null;
 }
 
 function register_task_toolbar_after_render(frm, eventKey, register_action) {
@@ -1485,12 +1479,92 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		});
 		openProjectBtn?.addClass?.("btn-primary");
 	}
+
+	if (ui.is_entry_application && frm.doc.project) {
+		setup_entry_port_arrival_confirmation_button(frm);
+	}
 }
 
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
 	const btn = frm.add_custom_button(label, fn, CGM_ACTION_GROUP);
 	frm.page.set_inner_btn_group_as_primary(CGM_ACTION_GROUP);
 	return btn;
+}
+
+function prompt_confirm_port_arrival(frm, projectName, defaultAta) {
+	const confirmMessage = __(
+		"Confirm that the shipment has arrived at the port? Container trackers will be created for all containers on this project."
+	);
+	const submit = (ata) => {
+		frappe.call({
+			method:
+				"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.confirm_shipment_arrival_at_port",
+			args: { project_name: projectName, ata: ata || null },
+			freeze: true,
+			freeze_message: __("Creating container trackers..."),
+			callback(r) {
+				if (r.exc) {
+					return;
+				}
+				frm.reload_doc();
+				const count = r.message?.tracker_count || 0;
+				frappe.show_alert({
+					message: __(
+						"Port arrival confirmed — {0} container tracker(s) created.",
+						[count]
+					),
+					indicator: "green",
+				});
+			},
+		});
+	};
+
+	frappe.prompt(
+		[
+			{
+				fieldname: "ata",
+				fieldtype: "Date",
+				label: __("Actual Time of Arrival (ATA)"),
+				default: defaultAta || frappe.datetime.get_today(),
+				reqd: 1,
+			},
+		],
+		(values) => {
+			frappe.confirm(confirmMessage, () => submit(values.ata));
+		},
+		__("Confirm Port Arrival")
+	);
+}
+
+function setup_entry_port_arrival_confirmation_button(frm) {
+	if (!frm.doc.project || frm._cgm_port_arrival_button_loading) {
+		return;
+	}
+
+	frm._cgm_port_arrival_button_loading = true;
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.project_can_confirm_port_arrival",
+		args: { project: frm.doc.project },
+		callback(r) {
+			frm._cgm_port_arrival_button_loading = false;
+			if (r.exc || !r.message?.can_confirm || frm.doc.name !== frm.docname) {
+				return;
+			}
+			if (!is_entry_application_step(frm)) {
+				return;
+			}
+			add_cgm_toolbar_button(
+				frm,
+				__("Confirm Shipment Arrival at the Port"),
+				() => prompt_confirm_port_arrival(frm, frm.doc.project, r.message.ata),
+				{ primary: true }
+			);
+		},
+		error() {
+			frm._cgm_port_arrival_button_loading = false;
+		},
+	});
 }
 
 function hide_ucr_legacy_fields(frm) {
@@ -2165,7 +2239,9 @@ function apply_entry_application_intro(frm, status) {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>{0}</b>, enter the <b>Amount</b>, and save on " +
 				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, attach the " +
-				"supplier <b>{1}</b> and the ENTRY document under <b>Clearance Documents</b> when issued.",
+				"supplier <b>{1}</b> and the ENTRY document under <b>Clearance Documents</b> when issued. " +
+				"When the vessel arrives, use <b>Actions → Confirm Shipment Arrival at the Port</b> to enter ATA " +
+				"(if not already confirmed on the Project).",
 			[invoiceLabel, receiptLabel]
 		);
 	}

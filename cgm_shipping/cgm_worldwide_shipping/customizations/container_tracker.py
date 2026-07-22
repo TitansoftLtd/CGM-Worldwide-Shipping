@@ -56,12 +56,15 @@ def get_container_task_sequence(fieldname: str) -> int:
 	default = CONTAINER_TASK_SEQ_DEFAULTS.get(fieldname)
 	if default is None:
 		frappe.throw(f"Unknown container task sequence field: {fieldname}")
-	if frappe.db.exists("DocType", "CGM Shipping Settings"):
-		settings = frappe.get_single("CGM Shipping Settings")
-		if settings.meta.has_field(fieldname):
-			configured = cint(settings.get(fieldname) or 0)
-			if configured:
-				return configured
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if settings and settings.meta.has_field(fieldname):
+		configured = cint(settings.get(fieldname) or 0)
+		if configured:
+			return configured
 	return default
 
 
@@ -1211,19 +1214,20 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 
 @frappe.whitelist()
 def project_can_confirm_port_arrival(project: str) -> dict:
-	"""Whether the Project Actions menu should offer port arrival confirmation."""
+	"""Whether the Project / Create Entry Actions menu should offer port arrival confirmation."""
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
 	if not frappe.db.exists("Project", project):
-		return {"can_confirm": False}
+		return {"can_confirm": False, "ata": ""}
 
 	doc = frappe.get_doc("Project", project)
+	ata = str(get_project_ata(doc) or "")
 	if (doc.get("custom_mode_of_transport") or "").strip() != "Sea":
-		return {"can_confirm": False}
+		return {"can_confirm": False, "ata": ata}
 	if doc.get("custom_port_arrival_confirmed"):
-		return {"can_confirm": False}
+		return {"can_confirm": False, "ata": ata}
 	if not _project_container_rows(doc):
-		return {"can_confirm": False}
-	return {"can_confirm": True}
+		return {"can_confirm": False, "ata": ata}
+	return {"can_confirm": True, "ata": ata}
 
 
 @frappe.whitelist()
