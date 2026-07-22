@@ -293,6 +293,11 @@ def operations_department_stems() -> frozenset[str]:
 	return frozenset(stems)
 
 
+def operations_visibility_department_stems() -> frozenset[str]:
+	"""Departments Operations roles may see in Task list / form (aligned)."""
+	return frozenset(set(operations_department_stems()) | {"Operations", "Documentation", "Field Operations"})
+
+
 @frappe.request_cache
 def finance_payment_department_stems() -> frozenset[str]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
@@ -460,7 +465,9 @@ def user_can_access_sea_task(
 		department = department if department is not None else doc.get("department")
 		owner = owner if owner is not None else doc.get("owner")
 
-	if owner == user or user_is_assigned_to_task(doc, user):
+	# Sea workflow tasks are process-owned; role/department (and _assign) control access.
+	# Do not grant all steps to whoever clicked Start Shipment (document owner).
+	if user_is_assigned_to_task(doc, user):
 		return True
 
 	if department_matches_stems(department, get_user_sea_task_department_stems(user)):
@@ -473,7 +480,9 @@ def user_can_access_sea_task(
 	):
 		return True
 
-	if stem in operations_department_stems() and user_has_operations_department_access(user):
+	if stem in operations_visibility_department_stems() and user_has_operations_department_access(
+		user
+	):
 		return True
 
 	if stem in transport_department_stems() and user_has_transport_department_access(user):
@@ -570,9 +579,7 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	if user_has_declarant_department_access(user):
 		stems |= set(declarant_application_department_stems())
 	if user_has_operations_department_access(user):
-		stems |= set(operations_department_stems())
-		# Ops often also covers Documentation / Field Ops checklist steps.
-		stems.update({"Operations", "Documentation", "Field Operations"})
+		stems |= set(operations_visibility_department_stems())
 	if user_has_transport_department_access(user):
 		stems |= set(transport_department_stems())
 
@@ -580,12 +587,12 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	assign_token = frappe.db.escape(f'"{user}"')
 	sea_flow = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE)
 	non_sea = f"(NOT ({sea_flow}))"
-	assigned_or_owner = (
-		f"(`tabTask`.`owner` = {escaped_user} "
-		f"OR LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
+	# Assignment only — not owner (Start Shipment used to make Declarants owner of every step).
+	assigned_only = (
+		f"(LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
 	)
 
-	visibility_parts = [assigned_or_owner]
+	visibility_parts = [assigned_only]
 	if stems:
 		visibility_parts.insert(0, _build_department_sql_conditions(stems))
 
@@ -594,8 +601,7 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
 
 		stems |= set(finance_payment_department_stems())
-		# Rebuild dept clause with Finance stem included.
-		visibility_parts = [assigned_or_owner]
+		visibility_parts = [assigned_only]
 		if stems:
 			visibility_parts.insert(0, _build_department_sql_conditions(stems))
 
