@@ -160,7 +160,10 @@ _CONTAINER_TRACKER_FIELDS = [
 def container_tracker_query_fields() -> list[str]:
 	"""Return Container Tracker fields that exist in the current site schema."""
 	meta = frappe.get_meta("Container Tracker")
-	return [field for field in _CONTAINER_TRACKER_FIELDS if meta.has_field(field)]
+	fields = [field for field in _CONTAINER_TRACKER_FIELDS if meta.has_field(field)]
+	if "name" not in fields:
+		fields.insert(0, "name")
+	return fields
 
 
 def sync_container_summary_to_project(project: str | None) -> None:
@@ -254,8 +257,10 @@ _COMPUTED_METRIC_FIELDS = (
 	"days_outstanding",
 	"status",
 	"demurrage_daily_rate",
+	"demurrage_rate_currency",
 	"demurrage_amount",
 	"kpa_port_daily_rate",
+	"kpa_rate_currency",
 	"kpa_amount",
 )
 

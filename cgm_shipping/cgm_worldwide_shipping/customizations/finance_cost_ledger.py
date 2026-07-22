@@ -4,7 +4,12 @@ from __future__ import annotations
 import frappe
 from frappe.utils import flt
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import (
+	format_currency_totals,
+)
+
 TOTAL_FIELD = "custom_finance_cost_total"
+DISPLAY_FIELD = "custom_finance_cost_total_display"
 
 
 def _task_for_journal_entry(je) -> frappe.model.document.Document | None:
@@ -47,7 +52,10 @@ def _expense_lines_for_project(je, project: str) -> list[dict]:
 		account_type = frappe.db.get_value("Account", row.account, "account_type")
 		if account_type in ("Bank", "Cash"):
 			continue
-		lines.append({"account": row.account, "amount": debit})
+		currency = row.account_currency or frappe.db.get_value(
+			"Account", row.account, "account_currency"
+		)
+		lines.append({"account": row.account, "amount": debit, "currency": currency})
 	return lines
 
 
@@ -136,19 +144,26 @@ def rebuild_project_finance_billed_total(project: str) -> None:
 		return
 
 	total = 0.0
+	totals_by_currency: dict[str, float] = {}
 	for je_name in _journal_entry_names_for_project(project):
 		if not frappe.db.exists("Journal Entry", je_name):
 			continue
 		je = frappe.get_doc("Journal Entry", je_name)
 		if int(je.docstatus or 0) not in (0, 1, 2):
 			continue
-		total += _amount_for_journal_entry(je, project)
+		for line in _expense_lines_for_project(je, project):
+			amount = flt(line["amount"])
+			total += amount
+			currency = (line.get("currency") or "").strip()
+			if currency:
+				totals_by_currency[currency] = totals_by_currency.get(currency, 0.0) + amount
 
 	frappe.flags.cgm_syncing_finance_cost_ledger = True
 	try:
-		frappe.db.set_value(
-			"Project", project, TOTAL_FIELD, total, update_modified=False
-		)
+		updates = {TOTAL_FIELD: total}
+		if frappe.get_meta("Project").has_field(DISPLAY_FIELD):
+			updates[DISPLAY_FIELD] = format_currency_totals(totals_by_currency)
+		frappe.db.set_value("Project", project, updates, update_modified=False)
 	finally:
 		frappe.flags.cgm_syncing_finance_cost_ledger = False
 

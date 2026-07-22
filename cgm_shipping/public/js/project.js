@@ -965,22 +965,61 @@ function render_container_tracking_table(frm, dashboard) {
 	});
 }
 
-function manual_refresh_finance_costs(frm) {
-	if (!frm.fields_dict.custom_finance_cost_total || frm.is_new()) {
+function apply_project_costing_display_fields(frm, values) {
+	Object.entries(values || {}).forEach(([fieldname, value]) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.set_value(fieldname, value || "");
+		}
+	});
+}
+
+function refresh_project_costing_currency_display(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	if (
+		!frm.fields_dict.custom_demurrage_accrued_total_display &&
+		!frm.fields_dict.custom_finance_cost_total_display
+	) {
+		return;
+	}
+	if (frm._cgm_costing_display_loaded === frm.doc.name) {
 		return;
 	}
 	frappe.call({
 		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.refresh_finance_cost_for_project",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.refresh_project_costing_display",
+		args: { project: frm.doc.name },
+		callback(r) {
+			if (r.exc || frm.doc.name !== frm.docname) {
+				return;
+			}
+			frm._cgm_costing_display_loaded = frm.doc.name;
+			apply_project_costing_display_fields(frm, r.message || {});
+		},
+	});
+}
+
+function manual_refresh_finance_costs(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.refresh_project_costing_display",
 		args: { project: frm.doc.name },
 		freeze: true,
 		freeze_message: __("Refreshing billed amount..."),
-		callback() {
+		callback(r) {
+			if (r.exc) {
+				return;
+			}
+			frm._cgm_costing_display_loaded = frm.doc.name;
+			apply_project_costing_display_fields(frm, r.message || {});
 			frappe.show_alert({
 				message: __("Billed amount refreshed from journal entries."),
 				indicator: "green",
 			});
-			frm.reload_doc();
 		},
 	});
 }
@@ -1011,7 +1050,8 @@ function post_container_charge_accrual(frm) {
 					} else {
 						frappe.msgprint(result.message || __("No new accrual amount to post."));
 					}
-					frm.reload_doc();
+					frm._cgm_costing_display_loaded = null;
+					refresh_project_costing_currency_display(frm);
 					render_shipment_progress_chart(frm);
 				},
 			});
@@ -1122,6 +1162,7 @@ frappe.ui.form.on("Project", {
 		}
 
 		render_shipment_progress_chart(frm);
+		refresh_project_costing_currency_display(frm);
 		configure_project_document_grid(frm);
 		configure_project_status_fields(frm);
 		configure_project_container_grid(frm);
