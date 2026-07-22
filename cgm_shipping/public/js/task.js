@@ -260,7 +260,10 @@ frappe.ui.form.on("Task", {
 			ensure_checkpoint_task_documents_on_form(frm);
 		}
 
-		schedule_cgm_task_toolbar_buttons(frm);
+		mount_cgm_task_toolbar_buttons(frm);
+		if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config && !frm._cgm_sea_seq_loading) {
+			load_cgm_sea_ui_sequences(frm);
+		}
 	},
 
 	validate(frm) {
@@ -385,6 +388,7 @@ function load_cgm_sea_ui_sequences(frm) {
 				),
 				indicator: "red",
 			});
+			mount_cgm_task_toolbar_buttons(frm);
 		},
 	});
 }
@@ -1256,46 +1260,41 @@ function ensure_cgm_finance_department_loaded(frm) {
 	if (frm._cgm_finance_department !== undefined) {
 		return;
 	}
-	if (frm._cgm_sea_seq_config) {
-		frm._cgm_finance_department =
-			get_cgm_sea_seq_config(frm).finance_department || null;
+	if (frm._cgm_sea_seq_config?.finance_department) {
+		frm._cgm_finance_department = frm._cgm_sea_seq_config.finance_department;
 		return;
 	}
-	if (is_sea_clearance_task(frm)) {
-		load_cgm_sea_ui_sequences(frm);
+	if (frm._cgm_finance_department_loading) {
 		return;
 	}
-	frm._cgm_finance_department = null;
-}
-
-function register_task_toolbar_after_render(frm, eventKey, register_action) {
-	const schedule_register = () => {
-		setTimeout(register_action, 50);
-	};
-	schedule_register();
-	$(frm.wrapper)
-		.off(`render_complete.${eventKey}`)
-		.on(`render_complete.${eventKey}`, schedule_register);
-}
-
-function schedule_cgm_task_toolbar_buttons(frm) {
-	if (frm.is_new() || !frm.doc.name) {
-		return;
-	}
-	const mount = () => {
-		if (frm.is_new() || frm.doc.name !== frm.docname) {
-			return;
-		}
-		if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config && !frm._cgm_sea_seq_loading) {
-			load_cgm_sea_ui_sequences(frm);
-		}
-		mount_cgm_task_toolbar_buttons(frm);
-	};
-	register_task_toolbar_after_render(frm, "cgm_task_toolbar", mount);
+	frm._cgm_finance_department_loading = true;
+	frappe.db
+		.get_single_value("CGM Shipping Settings", "custom_finance_department")
+		.then((dept) => {
+			frm._cgm_finance_department_loading = false;
+			frm._cgm_finance_department = dept || null;
+			if (frm.doc.name === frm.docname && !frm.is_new()) {
+				frm.refresh();
+			}
+		})
+		.catch(() => {
+			frm._cgm_finance_department_loading = false;
+			frm._cgm_finance_department = null;
+		});
 }
 
 function mount_cgm_task_toolbar_buttons(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
 	const ui = get_sea_task_ui(frm);
+
+	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
+		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
+			frappe.set_route("Form", "Project", frm.doc.project);
+		});
+		openProjectBtn?.addClass?.("btn-primary");
+	}
 
 	if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
 		if (user_can_make_payment(frm)) {
@@ -1473,13 +1472,6 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		);
 	}
 
-	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
-		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
-			frappe.set_route("Form", "Project", frm.doc.project);
-		});
-		openProjectBtn?.addClass?.("btn-primary");
-	}
-
 	if ((ui.is_entry_application || is_entry_application_step(frm)) && frm.doc.project) {
 		setup_entry_port_arrival_confirmation_button(frm);
 	}
@@ -1487,7 +1479,9 @@ function mount_cgm_task_toolbar_buttons(frm) {
 
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
 	const btn = frm.add_custom_button(label, fn, CGM_ACTION_GROUP);
-	frm.page.set_inner_btn_group_as_primary(CGM_ACTION_GROUP);
+	if (btn) {
+		frm.page.set_inner_btn_group_as_primary(CGM_ACTION_GROUP);
+	}
 	return btn;
 }
 
