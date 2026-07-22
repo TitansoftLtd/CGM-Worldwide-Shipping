@@ -482,7 +482,7 @@ def user_can_access_sea_task(
 	if _user_can_access_sea_payment_task_by_role(doc, user):
 		return True
 
-	return _user_can_access_linked_sea_project_task(doc, user)
+	return False
 
 
 def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
@@ -589,10 +589,15 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	if stems:
 		visibility_parts.insert(0, _build_department_sql_conditions(stems))
 
-	# Linked UCR/permit pairs: Finance may see application tasks; do not give
-	# Declarants automatic visibility of Finance payment tasks.
+	# Finance: only finance payment sequences / Finance department — not Create UCR / permits.
 	if user_has_finance_department_access(user):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
+
+		stems |= set(finance_payment_department_stems())
+		# Rebuild dept clause with Finance stem included.
+		visibility_parts = [assigned_or_owner]
+		if stems:
+			visibility_parts.insert(0, _build_department_sql_conditions(stems))
 
 		finance_seqs = sorted(finance_payment_sequences())
 		if finance_seqs:
@@ -600,9 +605,6 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 			visibility_parts.append(
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}))"
 			)
-		linked = _build_linked_sea_task_sql(stems | set(finance_payment_department_stems()))
-		if linked:
-			visibility_parts.append(linked)
 
 	sea_visible = f"({sea_flow} AND ({' OR '.join(visibility_parts)}))"
 
