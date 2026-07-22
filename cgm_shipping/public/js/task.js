@@ -36,10 +36,7 @@ function strip_legacy_invoice_clearance_rows(frm) {
 frappe.ui.form.on("Task", {
 	onload(frm) {
 		frm.__loaded_status = frm.doc.status;
-		frm._cgm_sea_seq_config = null;
-		load_cgm_sea_ui_sequences(frm);
-		frm._cgm_sea_layout_ready = false;
-		frm._cgm_finance_grid_ready = false;
+		reset_cgm_task_sea_ui_state_if_needed(frm);
 		frm._cgm_declarant_status = null;
 		frm._cgm_declarant_status_loading = false;
 		frm._cgm_declarant_status_loaded = false;
@@ -48,17 +45,7 @@ frappe.ui.form.on("Task", {
 		frm.set_query("department", () => ({
 			filters: { parent_department: ["like", "Operations%"] },
 		}));
-		if (frm._cgm_finance_department === undefined) {
-			frm._cgm_finance_department = null;
-			frappe.db
-				.get_single_value("CGM Shipping Settings", "custom_finance_department")
-				.then((dept) => {
-					frm._cgm_finance_department = dept || null;
-					if (dept) {
-						frm.trigger("refresh");
-					}
-				});
-		}
+		ensure_cgm_finance_department_loaded(frm);
 	},
 
 	before_save(frm) {
@@ -66,6 +53,8 @@ frappe.ui.form.on("Task", {
 	},
 
 	refresh(frm) {
+		reset_cgm_task_sea_ui_state_if_needed(frm);
+		ensure_cgm_finance_department_loaded(frm);
 		const ui = get_sea_task_ui(frm);
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
@@ -271,187 +260,7 @@ frappe.ui.form.on("Task", {
 			ensure_checkpoint_task_documents_on_form(frm);
 		}
 
-		if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
-			if (user_can_make_payment(frm)) {
-				const inv = get_finance_line(frm, "Invoice");
-				const rec = get_finance_line(frm, "Receipt");
-				if (inv?.attachment && !inv?.verified) {
-					add_cgm_toolbar_button(frm, __("Verify UCR Invoice"), () => {
-						verify_ucr_finance_line(frm, "Invoice");
-					}, { primary: true });
-				}
-				if (rec && rec.attachment && !rec.verified) {
-					add_cgm_toolbar_button(frm, __("Verify UCR Receipt"), () => {
-						verify_ucr_finance_line(frm, "Receipt");
-					});
-				}
-			}
-		}
-
-		if (ui.is_entry_finance && frm.doc.status !== "Completed") {
-			if (user_can_make_payment(frm)) {
-				const inv = get_finance_line(frm, "Invoice");
-				const rec = get_finance_line(frm, "Receipt");
-				if (inv?.attachment && !inv?.verified) {
-					add_cgm_toolbar_button(frm, __("Verify Entry Slip Invoice"), () => {
-						verify_entry_finance_line(frm, "Invoice");
-					}, { primary: true });
-				}
-				if (rec && rec.attachment && !rec.verified) {
-					add_cgm_toolbar_button(frm, __("Verify Entry Slip Receipt"), () => {
-						verify_entry_finance_line(frm, "Receipt");
-					});
-				}
-			}
-		}
-
-		if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
-			if (user_can_make_payment(frm)) {
-				const inv = get_finance_line(frm, "Invoice");
-				const rec = get_finance_line(frm, "Receipt");
-				if (inv?.attachment && !inv?.verified) {
-					add_cgm_toolbar_button(frm, __("Verify Shipping Line Invoice"), () => {
-						verify_app_finance_line(frm, "shipping_line", "Invoice");
-					}, { primary: true });
-				}
-				if (rec && rec.attachment && !rec.verified) {
-					add_cgm_toolbar_button(frm, __("Verify Shipping Line Receipt"), () => {
-						verify_app_finance_line(frm, "shipping_line", "Receipt");
-					});
-				}
-			}
-		}
-
-		if (ui.is_kpa_finance && frm.doc.status !== "Completed") {
-			if (user_can_make_payment(frm)) {
-				const inv = get_finance_line(frm, "Invoice");
-				const rec = get_finance_line(frm, "Receipt");
-				if (inv?.attachment && !inv?.verified) {
-					add_cgm_toolbar_button(frm, __("Verify KPA Invoice"), () => {
-						verify_app_finance_line(frm, "kpa", "Invoice");
-					}, { primary: true });
-				}
-				if (rec && rec.attachment && !rec.verified) {
-					add_cgm_toolbar_button(frm, __("Verify KPA Receipt"), () => {
-						verify_app_finance_line(frm, "kpa", "Receipt");
-					});
-				}
-			}
-		}
-
-		if (
-			frm.doc.docstatus === 0 &&
-			frm.doc.status !== "Completed" &&
-			frm.doc.status !== "Cancelled" &&
-			!ui.hide_mark_complete &&
-			!ui.show_payments &&
-			!ui.show_permits
-		) {
-			frm.add_custom_button(__("Mark Completed"), async () => {
-				await frm.set_value("completed_by", frappe.session.user);
-				await frm.set_value("completed_on", frappe.datetime.now_datetime());
-				await frm.set_value("status", "Completed");
-				await frm.save();
-			}).addClass("btn-primary");
-		}
-
-		if (
-			is_pre_clearance_permit_application_step(frm) &&
-			frm.doc.status !== "Completed" &&
-			frm.doc.custom_permit_invoices_submitted &&
-			user_can_upload_receipt(frm)
-		) {
-			frm.add_custom_button(__("Complete Pre-Clearance Permits Task"), async () => {
-				await frm.set_value("completed_by", frappe.session.user);
-				await frm.set_value("completed_on", frappe.datetime.now_datetime());
-				await frm.set_value("status", "Completed");
-				await frm.save();
-			}).addClass("btn-primary");
-		}
-
-		if (
-			is_post_clearance_permit_application_step(frm) &&
-			frm.doc.status !== "Completed" &&
-			frm.doc.custom_permit_invoices_submitted &&
-			user_can_upload_receipt(frm)
-		) {
-			frm.add_custom_button(__("Complete Post-Clearance Permits Task"), async () => {
-				await frm.set_value("completed_by", frappe.session.user);
-				await frm.set_value("completed_on", frappe.datetime.now_datetime());
-				await frm.set_value("status", "Completed");
-				await frm.save();
-			}).addClass("btn-primary");
-		}
-
-		if (ui.show_permits && frm.doc.status === "Completed" && !permit_rows_have_invoices(frm)) {
-			frm.add_custom_button(__("Re-open to attach invoices"), () => {
-				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.reopen_task_for_permit_attachments",
-					args: { task_name: frm.doc.name },
-					callback(r) {
-						if (!r.exc) {
-							frappe.show_alert({
-								message: __("Task re-opened - attach Permit Invoice on each row, then save."),
-								indicator: "orange",
-							});
-							frm.reload_doc();
-						}
-					},
-				});
-			});
-		}
-
-		// Linked journal entries — always available for navigation.
-		if (is_permit_payment_pattern(frm)) {
-			show_permit_finance_journal_entry_view_buttons(frm);
-		} else if (frm.doc.custom_journal_entry) {
-			add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
-				frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
-			});
-		}
-
-		// Finance department: Make Payment via draft Journal Entry. Department-driven
-		// (configured in CGM Shipping Settings), independent of the sea-flow sequence.
-		if (
-			is_finance_department_task(frm) &&
-			user_can_make_payment(frm) &&
-			frm.doc.status !== "Completed" &&
-			frm.doc.status !== "Cancelled"
-		) {
-			if (is_permit_payment_pattern(frm)) {
-				setup_permit_finance_make_payment_buttons(frm);
-			} else if (!frm.doc.custom_journal_entry) {
-				add_cgm_toolbar_button(
-					frm,
-					__("Make Payment"),
-					() => open_journal_entry_payment_dialog(frm),
-					{ primary: true }
-				);
-			}
-		}
-
-		setup_client_inspection_buttons(frm);
-
-		if (
-			is_permit_finance_step(frm) &&
-			frm.doc.status !== "Completed" &&
-			task_has_recorded_payment_on_form(frm) &&
-			user_can_make_payment(frm) &&
-			permit_rows_pending_receipt_verification(frm).length
-		) {
-			add_cgm_toolbar_button(
-				frm,
-				__("Verify Receipt"),
-				() => verify_all_permit_receipts_from_form(frm),
-				{ primary: true }
-			);
-		}
-
-		if (ui.is_sea_task && frm.doc.project) {
-			frm.add_custom_button(__("Open Shipment Project"), () => {
-				frappe.set_route("Form", "Project", frm.doc.project);
-			}).addClass("btn-primary");
-		}
+		schedule_cgm_task_toolbar_buttons(frm);
 	},
 
 	validate(frm) {
@@ -481,7 +290,12 @@ const SEA_IMPORT_TEMPLATE = "Sea Import Workflow";
 const SEA_FLOW_KEYS_EXPR = "['SEA_IMPORT_E2E','Sea Import Workflow'].includes(doc.custom_task_flow_key)";
 
 function isSeaImportFlowKey(flowKey) {
-	return flowKey === SEA_FLOW_KEY || flowKey === SEA_IMPORT_TEMPLATE;
+	const key = (flowKey || "").trim();
+	return key === SEA_FLOW_KEY || key === SEA_IMPORT_TEMPLATE;
+}
+
+function get_task_flow_key(frm) {
+	return (frm.doc.custom_task_flow_key || "").trim();
 }
 
 /** Empty shell until get_sea_task_ui_sequences returns (no hardcoded business rules). */
@@ -542,7 +356,10 @@ const CGM_TASK_PERMISSIONS_FALLBACK = {
 };
 
 function load_cgm_sea_ui_sequences(frm) {
-	if (!is_sea_clearance_task(frm) || frm._cgm_sea_seq_loading || frm._cgm_sea_seq_config) {
+	if (!is_sea_clearance_task(frm) || frm._cgm_sea_seq_loading) {
+		return;
+	}
+	if (frm._cgm_sea_seq_config && !frm._cgm_sea_seq_load_failed) {
 		return;
 	}
 	frm._cgm_sea_seq_loading = true;
@@ -551,12 +368,18 @@ function load_cgm_sea_ui_sequences(frm) {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.get_sea_task_ui_sequences",
 		callback(r) {
 			frm._cgm_sea_seq_loading = false;
+			frm._cgm_sea_seq_load_failed = false;
 			frm._cgm_sea_seq_config = r.message || CGM_SEA_UI_SEQUENCES_EMPTY;
+			if (r.message?.finance_department) {
+				frm._cgm_finance_department = r.message.finance_department;
+			}
+			frm._cgm_sea_layout_ready = false;
+			frm._cgm_finance_grid_ready = false;
 			frm.trigger("refresh");
 		},
 		error() {
 			frm._cgm_sea_seq_loading = false;
-			frm._cgm_sea_seq_config = CGM_SEA_UI_SEQUENCES_EMPTY;
+			frm._cgm_sea_seq_load_failed = true;
 			frappe.msgprint({
 				title: __("CGM Settings"),
 				message: __(
@@ -779,7 +602,7 @@ const SEA_TASK_HIDDEN_FIELDS = [
 ];
 
 function is_sea_clearance_task(frm) {
-	return isSeaImportFlowKey(frm.doc.custom_task_flow_key);
+	return isSeaImportFlowKey(get_task_flow_key(frm));
 }
 
 function sea_task_sequence(frm) {
@@ -1412,6 +1235,255 @@ function configure_finance_line_grid(frm, ui) {
 			"verified",
 			(value) => cgm_shipping.status_field.tone_for_verified(value)
 		);
+	}
+}
+
+function reset_cgm_task_sea_ui_state_if_needed(frm) {
+	if (!frm.doc?.name || frm._cgm_sea_ui_task === frm.docname) {
+		return;
+	}
+	frm._cgm_sea_ui_task = frm.docname;
+	frm._cgm_sea_seq_config = null;
+	frm._cgm_sea_seq_loading = false;
+	frm._cgm_sea_seq_load_failed = false;
+	frm._cgm_sea_layout_ready = false;
+	frm._cgm_finance_grid_ready = false;
+	frm._cgm_finance_department = undefined;
+	if (is_sea_clearance_task(frm)) {
+		load_cgm_sea_ui_sequences(frm);
+	}
+}
+
+function ensure_cgm_finance_department_loaded(frm) {
+	if (frm._cgm_finance_department !== undefined || frm._cgm_finance_department_loading) {
+		return;
+	}
+	frm._cgm_finance_department_loading = true;
+	frappe.db
+		.get_single_value("CGM Shipping Settings", "custom_finance_department")
+		.then((dept) => {
+			frm._cgm_finance_department_loading = false;
+			frm._cgm_finance_department = dept || null;
+			if (frm.doc.name === frm.docname) {
+				schedule_cgm_task_toolbar_buttons(frm);
+			}
+		})
+		.catch(() => {
+			frm._cgm_finance_department_loading = false;
+			frm._cgm_finance_department = null;
+		});
+}
+
+function register_task_toolbar_after_render(frm, eventKey, register_action) {
+	const schedule_register = () => {
+		setTimeout(register_action, 50);
+	};
+	schedule_register();
+	$(frm.wrapper)
+		.off(`render_complete.${eventKey}`)
+		.on(`render_complete.${eventKey}`, schedule_register);
+}
+
+function schedule_cgm_task_toolbar_buttons(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	const mount = () => {
+		if (frm.is_new() || frm.doc.name !== frm.docname) {
+			return;
+		}
+		if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config && !frm._cgm_sea_seq_loading) {
+			load_cgm_sea_ui_sequences(frm);
+		}
+		mount_cgm_task_toolbar_buttons(frm);
+	};
+	register_task_toolbar_after_render(frm, "cgm_task_toolbar", mount);
+}
+
+function mount_cgm_task_toolbar_buttons(frm) {
+	const ui = get_sea_task_ui(frm);
+
+	if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
+		if (user_can_make_payment(frm)) {
+			const inv = get_finance_line(frm, "Invoice");
+			const rec = get_finance_line(frm, "Receipt");
+			if (inv?.attachment && !inv?.verified) {
+				add_cgm_toolbar_button(frm, __("Verify UCR Invoice"), () => {
+					verify_ucr_finance_line(frm, "Invoice");
+				}, { primary: true });
+			}
+			if (rec && rec.attachment && !rec.verified) {
+				add_cgm_toolbar_button(frm, __("Verify UCR Receipt"), () => {
+					verify_ucr_finance_line(frm, "Receipt");
+				});
+			}
+		}
+	}
+
+	if (ui.is_entry_finance && frm.doc.status !== "Completed") {
+		if (user_can_make_payment(frm)) {
+			const inv = get_finance_line(frm, "Invoice");
+			const rec = get_finance_line(frm, "Receipt");
+			if (inv?.attachment && !inv?.verified) {
+				add_cgm_toolbar_button(frm, __("Verify Entry Slip Invoice"), () => {
+					verify_entry_finance_line(frm, "Invoice");
+				}, { primary: true });
+			}
+			if (rec && rec.attachment && !rec.verified) {
+				add_cgm_toolbar_button(frm, __("Verify Entry Slip Receipt"), () => {
+					verify_entry_finance_line(frm, "Receipt");
+				});
+			}
+		}
+	}
+
+	if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
+		if (user_can_make_payment(frm)) {
+			const inv = get_finance_line(frm, "Invoice");
+			const rec = get_finance_line(frm, "Receipt");
+			if (inv?.attachment && !inv?.verified) {
+				add_cgm_toolbar_button(frm, __("Verify Shipping Line Invoice"), () => {
+					verify_app_finance_line(frm, "shipping_line", "Invoice");
+				}, { primary: true });
+			}
+			if (rec && rec.attachment && !rec.verified) {
+				add_cgm_toolbar_button(frm, __("Verify Shipping Line Receipt"), () => {
+					verify_app_finance_line(frm, "shipping_line", "Receipt");
+				});
+			}
+		}
+	}
+
+	if (ui.is_kpa_finance && frm.doc.status !== "Completed") {
+		if (user_can_make_payment(frm)) {
+			const inv = get_finance_line(frm, "Invoice");
+			const rec = get_finance_line(frm, "Receipt");
+			if (inv?.attachment && !inv?.verified) {
+				add_cgm_toolbar_button(frm, __("Verify KPA Invoice"), () => {
+					verify_app_finance_line(frm, "kpa", "Invoice");
+				}, { primary: true });
+			}
+			if (rec && rec.attachment && !rec.verified) {
+				add_cgm_toolbar_button(frm, __("Verify KPA Receipt"), () => {
+					verify_app_finance_line(frm, "kpa", "Receipt");
+				});
+			}
+		}
+	}
+
+	if (
+		frm.doc.docstatus === 0 &&
+		frm.doc.status !== "Completed" &&
+		frm.doc.status !== "Cancelled" &&
+		!ui.hide_mark_complete &&
+		!ui.show_payments &&
+		!ui.show_permits
+	) {
+		const markCompleteBtn = frm.add_custom_button(__("Mark Completed"), async () => {
+			await frm.set_value("completed_by", frappe.session.user);
+			await frm.set_value("completed_on", frappe.datetime.now_datetime());
+			await frm.set_value("status", "Completed");
+			await frm.save();
+		});
+		markCompleteBtn?.addClass?.("btn-primary");
+	}
+
+	if (
+		is_pre_clearance_permit_application_step(frm) &&
+		frm.doc.status !== "Completed" &&
+		frm.doc.custom_permit_invoices_submitted &&
+		user_can_upload_receipt(frm)
+	) {
+		const btn = frm.add_custom_button(__("Complete Pre-Clearance Permits Task"), async () => {
+			await frm.set_value("completed_by", frappe.session.user);
+			await frm.set_value("completed_on", frappe.datetime.now_datetime());
+			await frm.set_value("status", "Completed");
+			await frm.save();
+		});
+		btn?.addClass?.("btn-primary");
+	}
+
+	if (
+		is_post_clearance_permit_application_step(frm) &&
+		frm.doc.status !== "Completed" &&
+		frm.doc.custom_permit_invoices_submitted &&
+		user_can_upload_receipt(frm)
+	) {
+		const btn = frm.add_custom_button(__("Complete Post-Clearance Permits Task"), async () => {
+			await frm.set_value("completed_by", frappe.session.user);
+			await frm.set_value("completed_on", frappe.datetime.now_datetime());
+			await frm.set_value("status", "Completed");
+			await frm.save();
+		});
+		btn?.addClass?.("btn-primary");
+	}
+
+	if (ui.show_permits && frm.doc.status === "Completed" && !permit_rows_have_invoices(frm)) {
+		frm.add_custom_button(__("Re-open to attach invoices"), () => {
+			frappe.call({
+				method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.reopen_task_for_permit_attachments",
+				args: { task_name: frm.doc.name },
+				callback(r) {
+					if (!r.exc) {
+						frappe.show_alert({
+							message: __("Task re-opened - attach Permit Invoice on each row, then save."),
+							indicator: "orange",
+						});
+						frm.reload_doc();
+					}
+				},
+			});
+		});
+	}
+
+	if (is_permit_payment_pattern(frm)) {
+		show_permit_finance_journal_entry_view_buttons(frm);
+	} else if (frm.doc.custom_journal_entry) {
+		add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
+			frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
+		});
+	}
+
+	if (
+		is_finance_department_task(frm) &&
+		user_can_make_payment(frm) &&
+		frm.doc.status !== "Completed" &&
+		frm.doc.status !== "Cancelled"
+	) {
+		if (is_permit_payment_pattern(frm)) {
+			setup_permit_finance_make_payment_buttons(frm);
+		} else if (!frm.doc.custom_journal_entry) {
+			add_cgm_toolbar_button(
+				frm,
+				__("Make Payment"),
+				() => open_journal_entry_payment_dialog(frm),
+				{ primary: true }
+			);
+		}
+	}
+
+	setup_client_inspection_buttons(frm);
+
+	if (
+		is_permit_finance_step(frm) &&
+		frm.doc.status !== "Completed" &&
+		task_has_recorded_payment_on_form(frm) &&
+		user_can_make_payment(frm) &&
+		permit_rows_pending_receipt_verification(frm).length
+	) {
+		add_cgm_toolbar_button(
+			frm,
+			__("Verify Receipt"),
+			() => verify_all_permit_receipts_from_form(frm),
+			{ primary: true }
+		);
+	}
+
+	if (ui.is_sea_task && frm.doc.project) {
+		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
+			frappe.set_route("Form", "Project", frm.doc.project);
+		});
+		openProjectBtn?.addClass?.("btn-primary");
 	}
 }
 
