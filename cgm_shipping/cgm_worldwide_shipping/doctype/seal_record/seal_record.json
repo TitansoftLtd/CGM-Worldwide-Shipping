@@ -29,8 +29,11 @@
    "reqd": 1
   },
   {
+   "description": "Original seal applied to the container (from B/L). Document name is this value.",
    "fieldname": "seal_number",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Seal Number",
    "reqd": 1,
    "unique": 1
@@ -75,6 +78,7 @@
    "label": "Seal Replacement"
   },
   {
+   "description": "Fill only when the original seal is replaced.",
    "fieldname": "new_seal_number",
    "fieldtype": "Data",
    "label": "New Seal Number"

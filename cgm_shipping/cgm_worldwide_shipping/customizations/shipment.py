@@ -977,6 +977,19 @@ def sync_preshipment_containers_from_bl(doc, method=None) -> None:
 	for row in rows:
 		doc.append(container_field, normalize_container_row(row))
 
+	# Recover sizes when BL rows lacked cargo_size but quantity encodes them.
+	from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+		fill_missing_container_row_cargo_sizes,
+	)
+
+	qty = ""
+	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+		qty = str(frappe.db.get_value("Bill of Lading", bl_name, "quantity") or "").strip()
+	quantity_field = config.get("opportunity_quantity_field")
+	if not qty and quantity_field and doc.meta.has_field(quantity_field):
+		qty = str(doc.get(quantity_field) or "").strip()
+	fill_missing_container_row_cargo_sizes(doc.get(container_field), qty)
+
 def apply_bill_of_lading_from_source(target_doc, source_doc) -> None:
 	"""Copy Bill of Lading link and container rows from source onto target doc."""
 	config = get_bl_config()

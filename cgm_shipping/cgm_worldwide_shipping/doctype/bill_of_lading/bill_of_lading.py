@@ -21,9 +21,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	allocate_fcl_batch_for_doc,
 	counts_from_container_rows,
 	derived_quantity_from_bl,
+	fill_missing_container_row_cargo_sizes,
 	format_derived_quantity,
 	is_fcl_cargo_type,
 	is_lcl_cargo_type,
+	normalize_derived_quantity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bl_fields_to_doc,
@@ -150,7 +152,12 @@ def apply_bl_quantity_and_batch(doc) -> None:
 		_clear_empty_container_rows(doc)
 		return
 
-	derived = derived_quantity_from_bl(doc)
+	# Recover cargo_size onto container rows when users filled numbers/seals but
+	# left size blank while parent quantity already encodes the size profile.
+	parent_qty = (doc.get("quantity") or "").strip()
+	fill_missing_container_row_cargo_sizes(doc.get("container_information"), parent_qty)
+
+	derived = derived_quantity_from_bl(doc) or normalize_derived_quantity(parent_qty)
 	if not derived:
 		if doc.meta.has_field("batch_no"):
 			doc.batch_no = None
@@ -391,20 +398,25 @@ def expand_requested_cargo_to_container_stubs(rows) -> list[dict]:
 
 	User only fills container_number and seal_no; quantity is derived from the rows.
 	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+		request_row_cargo_size,
+		request_row_quantity,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+		resolve_cargo_size_link,
+	)
+
 	stubs: list[dict] = []
 	for row in rows or []:
-		if isinstance(row, dict):
-			size = (row.get("cargo_size") or "").strip()
-			qty = cint(row.get("quantity") or 0)
-		else:
-			size = (getattr(row, "cargo_size", None) or "").strip()
-			qty = cint(getattr(row, "quantity", None) or 0)
+		size = request_row_cargo_size(row)
+		qty = request_row_quantity(row)
 		if not size or qty <= 0:
 			continue
+		link = resolve_cargo_size_link(size) or size
 		for _ in range(qty):
 			stubs.append(
 				{
-					"cargo_size": size,
+					"cargo_size": link,
 					"container_number": "",
 					"seal_no": "",
 				}

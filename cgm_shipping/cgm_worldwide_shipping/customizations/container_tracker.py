@@ -43,6 +43,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	tracker_cargo_size_field,
 	tracker_row_cargo_size,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+	fill_missing_container_row_cargo_sizes,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
 )
@@ -638,12 +641,14 @@ def _resolve_tracker_from_row_link(project_name: str, row) -> frappe.Document | 
 	ct = frappe.get_doc("Container Tracker", tracker_name)
 	if ct.project != project_name:
 		return None
-	if (
-		ct.container_number == row.container_number
-		and tracker_row_cargo_size(ct) == container_row_cargo_size(row)
-	):
-		return ct
-	return None
+	if ct.container_number != row.container_number:
+		return None
+	ct_size = tracker_row_cargo_size(ct)
+	row_size = container_row_cargo_size(row)
+	# Allow reuse when the tracker was created before cargo_size was known.
+	if ct_size and row_size and ct_size != row_size:
+		return None
+	return ct
 
 
 def _link_container_row(row, tracker_name: str) -> None:
@@ -663,9 +668,14 @@ def _link_bl_container_trackers(project) -> None:
 	):
 		if not row.container_number:
 			continue
+		row_size = container_row_cargo_size(row)
 		tracker_name = find_tracker_by_identity(
-			project.name, row.container_number, container_row_cargo_size(row)
+			project.name, row.container_number, row_size
 		)
+		if not tracker_name and row_size:
+			tracker_name = _find_tracker_allowing_empty_size(
+				project.name, row.container_number, row_size
+			)
 		if tracker_name and row.get("container_tracker") != tracker_name:
 			frappe.db.set_value(
 				"Container",
@@ -708,6 +718,31 @@ def _default_kpa_free_end_from_settings(doc) -> None:
 	doc.kpa_free_days_end_date = start + timedelta(days=allowance - 1)
 
 
+def _find_tracker_allowing_empty_size(
+	project_name: str,
+	container_number: str,
+	cargo_size: str | None,
+) -> str | None:
+	"""Find tracker by number when size was filled after tracker creation."""
+	if not cargo_size:
+		return find_tracker_by_identity(project_name, container_number, None)
+
+	size_field = tracker_cargo_size_field()
+	candidates = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project_name, "container_number": container_number},
+		fields=["name", size_field],
+		limit=5,
+	)
+	exact = [c for c in candidates if (c.get(size_field) or "") == cargo_size]
+	if len(exact) == 1:
+		return exact[0].name
+	empty = [c for c in candidates if not (c.get(size_field) or "").strip()]
+	if len(empty) == 1 and (len(candidates) == 1 or not exact):
+		return empty[0].name
+	return None
+
+
 def create_or_sync_tracker_for_row(project, row) -> str:
 	"""Create or reuse tracker by (project, container_number, cargo_size)."""
 	row_size = container_row_cargo_size(row)
@@ -716,6 +751,10 @@ def create_or_sync_tracker_for_row(project, row) -> str:
 		row.container_number,
 		row_size,
 	)
+	if not existing_name and row_size:
+		existing_name = _find_tracker_allowing_empty_size(
+			project.name, row.container_number, row_size
+		)
 	if existing_name:
 		ct = frappe.get_doc("Container Tracker", existing_name)
 		_populate_tracker_from_project_and_row(ct, project, row)
@@ -773,8 +812,14 @@ def create_container_trackers_for_project(project_name: str) -> list[str]:
 	if not container_field:
 		return []
 
+	rows = list(project.get(container_field) or [])
+	qty = (project.get("custom_quantity") or "").strip()
+	if fill_missing_container_row_cargo_sizes(rows, qty):
+		_persist_container_row_cargo_sizes(rows)
+		_backfill_bl_container_cargo_sizes(project, rows)
+
 	touched: list[str] = []
-	for row in project.get(container_field) or []:
+	for row in rows:
 		if not row.get("container_number"):
 			continue
 		touched.append(create_or_sync_tracker_for_row(project, row))
@@ -783,6 +828,43 @@ def create_container_trackers_for_project(project_name: str) -> list[str]:
 		_link_bl_container_trackers(project)
 		frappe.db.commit()
 	return touched
+
+
+def _persist_container_row_cargo_sizes(rows) -> None:
+	"""Write recovered cargo_size values onto Container child rows."""
+	for row in rows or []:
+		name = row.get("name") if hasattr(row, "get") else getattr(row, "name", None)
+		size = container_row_cargo_size(row)
+		if not name or not size:
+			continue
+		frappe.db.set_value("Container", name, "cargo_size", size, update_modified=False)
+
+
+def _backfill_bl_container_cargo_sizes(project, project_rows) -> None:
+	"""Mirror recovered sizes onto the linked Bill of Lading container rows."""
+	bl_name = (project.get("custom_bill_of_lading") or "").strip()
+	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
+		return
+
+	by_number = {}
+	for row in project_rows or []:
+		number = (row.get("container_number") or "").strip()
+		size = container_row_cargo_size(row)
+		if number and size:
+			by_number[number] = size
+	if not by_number:
+		return
+
+	for row in frappe.get_all(
+		"Container",
+		filters={"parent": bl_name, "parenttype": "Bill of Lading"},
+		fields=["name", "container_number", "cargo_size"],
+	):
+		number = (row.container_number or "").strip()
+		size = by_number.get(number)
+		if not number or not size or (row.cargo_size or "").strip():
+			continue
+		frappe.db.set_value("Container", row.name, "cargo_size", size, update_modified=False)
 
 
 def _trackers_for_project(project_name: str) -> list:
