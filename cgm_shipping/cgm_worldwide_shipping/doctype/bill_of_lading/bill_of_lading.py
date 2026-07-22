@@ -116,10 +116,25 @@ class BillofLading(Document):
 		opportunity = sync_opportunity_from_submitted_bl(self)
 		if opportunity:
 			sync_linked_project_from_bl(self, opportunity)
+		_sync_seal_records_for_bl(self)
+
+	def on_update(self):
+		_sync_seal_records_for_bl(self)
+
+	def on_update_after_submit(self):
+		_sync_seal_records_for_bl(self)
 
 	def _summarize_container_quantities(self) -> str:
 		"""Return e.g. '6 x 40FT, 7 x 20FT' from this document's container rows."""
 		return format_derived_quantity(counts_from_container_rows(self.container_information))
+
+
+def _sync_seal_records_for_bl(bl) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.doctype.seal_record.seal_record import (
+		sync_seal_records_from_bill_of_lading,
+	)
+
+	sync_seal_records_from_bill_of_lading(bl)
 
 
 def apply_bl_quantity_and_batch(doc) -> None:

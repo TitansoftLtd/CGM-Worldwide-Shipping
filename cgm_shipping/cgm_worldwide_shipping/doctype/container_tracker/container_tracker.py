@@ -40,6 +40,11 @@ class ContainerTracker(Document):
 
 		sync_tracker_fields_to_open_task_rows(self)
 		check_all_container_tasks_for_project(self.project)
+		from cgm_shipping.cgm_worldwide_shipping.doctype.seal_record.seal_record import (
+			sync_seal_record_from_tracker,
+		)
+
+		sync_seal_record_from_tracker(self)
 
 
 def _sync_project_child_row(doc) -> None:

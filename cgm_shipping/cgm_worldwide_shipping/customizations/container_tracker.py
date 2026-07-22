@@ -718,6 +718,7 @@ def create_or_sync_tracker_for_row(project, row) -> str:
 		_populate_tracker_from_project_and_row(ct, project, row)
 		ct.save(ignore_permissions=True)
 		_link_container_row(row, existing_name)
+		_ensure_seal_record_for_tracker_row(project.name, row, existing_name)
 		return existing_name
 
 	linked = _resolve_tracker_from_row_link(project.name, row)
@@ -725,13 +726,39 @@ def create_or_sync_tracker_for_row(project, row) -> str:
 		_populate_tracker_from_project_and_row(linked, project, row)
 		linked.save(ignore_permissions=True)
 		_link_container_row(row, linked.name)
+		_ensure_seal_record_for_tracker_row(project.name, row, linked.name)
 		return linked.name
 
 	ct = frappe.new_doc("Container Tracker")
 	_populate_tracker_from_project_and_row(ct, project, row, at_creation=True)
 	ct.insert(ignore_permissions=True)
 	_link_container_row(row, ct.name)
+	_ensure_seal_record_for_tracker_row(project.name, row, ct.name)
 	return ct.name
+
+
+def _ensure_seal_record_for_tracker_row(project_name: str, row, tracker_name: str) -> None:
+	"""Create/update Seal Record when a container row carries a seal number."""
+	seal_no = (row.get("seal_no") or "").strip()
+	if not seal_no:
+		return
+	from cgm_shipping.cgm_worldwide_shipping.doctype.seal_record.seal_record import (
+		ensure_seal_record_for_container,
+	)
+
+	tracker = frappe.db.get_value(
+		"Container Tracker",
+		tracker_name,
+		["new_seal_number", "reason_for_new_seal_number"],
+		as_dict=True,
+	)
+	ensure_seal_record_for_container(
+		project_name,
+		seal_no,
+		tracker_name,
+		new_seal_number=(tracker.new_seal_number if tracker else "") or "",
+		reason_for_new_seal_number=(tracker.reason_for_new_seal_number if tracker else "") or "",
+	)
 
 
 def create_container_trackers_for_project(project_name: str) -> list[str]:
