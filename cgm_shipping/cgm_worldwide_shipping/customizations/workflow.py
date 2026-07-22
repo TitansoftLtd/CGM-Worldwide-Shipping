@@ -397,9 +397,15 @@ def seed_finance_permit_rows_from_project(finance_task, *, save: bool = True) ->
 
 	project = frappe.get_doc("Project", finance_task.project)
 	stage = permit_stage_for_finance_task(finance_task)
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
 	added = False
 	for row in project.get(PERMIT_REGISTER_FIELD) or []:
 		if row.stage != stage or not row.permit_type or not row.get("payment_invoice"):
+			continue
+		if not permit_requires_payment(row):
 			continue
 		finance_task.append(
 			TASK_PERMITS_FIELD,
@@ -445,7 +451,16 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 		return False
 
 	app_rows = get_application_permit_rows(app_name)
-	app_rows = [r for r in app_rows if r.get("permit_type") and r.get("payment_invoice")]
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
+	# Finance only tracks Local payable invoices; Foreign stays on the application task.
+	app_rows = [
+		r
+		for r in app_rows
+		if r.get("permit_type") and r.get("payment_invoice") and permit_requires_payment(r)
+	]
 	if not app_rows:
 		return seed_finance_permit_rows_from_project(finance_task, save=save)
 
@@ -453,6 +468,13 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 		r.permit_type: r for r in finance_task.get(TASK_PERMITS_FIELD) or [] if r.permit_type
 	}
 	changed = False
+	# Drop Foreign / non-payable rows left on the finance task from earlier syncs.
+	for fin_row in list(finance_task.get(TASK_PERMITS_FIELD) or []):
+		if fin_row.permit_type and not permit_requires_payment(fin_row):
+			finance_task.remove(fin_row)
+			changed = True
+			existing.pop(fin_row.permit_type, None)
+
 	for row in app_rows:
 		data = build_permit_row_payload(row)
 		fin_row = existing.get(row.permit_type)
@@ -1079,9 +1101,13 @@ def verify_all_permit_receipts(task_name: str) -> dict:
 	sync_permit_invoices_to_finance_task(task, save=True)
 	task.reload()
 
-	rows = [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.permit_type]
+	# Only Local (payable) permits need payment receipts — Foreign uses certificate only.
+	rows = permit_finance_rows(task)
 	if not rows:
-		frappe.throw("No permit rows on this task. Refresh the page.")
+		frappe.throw(
+			"No Local permit rows need receipt verification on this task "
+			"(Foreign permits skip payment)."
+		)
 
 	missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
 	if missing_receipts:
@@ -1137,7 +1163,7 @@ def get_permit_finance_workflow_status(task_name: str) -> dict:
 		frappe.throw("Task not found.")
 	frappe.has_permission("Task", ptype="read", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
-	rows = [r for r in task.get(TASK_PERMITS_FIELD) or [] if r.permit_type]
+	rows = permit_finance_rows(task)
 	pending_verify = [
 		r.permit_type for r in rows if r.get("payment_receipt") and not r.get("receipt_verified")
 	]
