@@ -1097,9 +1097,13 @@ def ensure_container_trackers_at_port_arrival(
 	mark_confirmed: bool = False,
 	user: str | None = None,
 	ata=None,
+	require_project_write: bool = True,
 ) -> dict:
 	"""Create/sync container trackers when shipment arrives at port (early or on Entry task)."""
-	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	if require_project_write:
+		frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	elif not frappe.has_permission("Project", ptype="read", doc=project_name):
+		frappe.throw(_("Not permitted to read Project {0}").format(project_name))
 	if not frappe.db.exists("Project", project_name):
 		frappe.throw(_("Project not found"))
 
@@ -1126,6 +1130,7 @@ def ensure_container_trackers_at_port_arrival(
 		updates["custom_berth_phase"] = "After Vessel Berthed"
 
 	if updates:
+		# Declarants confirm arrival from Create Entry without Project write.
 		frappe.db.set_value("Project", project_name, updates, update_modified=True)
 		frappe.clear_document_cache("Project", project_name)
 		project = frappe.get_doc("Project", project_name)
@@ -1167,6 +1172,7 @@ def ensure_container_trackers_on_entry_task_complete(task_doc) -> dict | None:
 		project_name,
 		task_doc=task_doc,
 		mark_confirmed=False,
+		require_project_write=False,
 	)
 
 
@@ -1231,15 +1237,42 @@ def project_can_confirm_port_arrival(project: str) -> dict:
 
 
 @frappe.whitelist()
-def confirm_shipment_arrival_at_port(project_name: str, ata: str | None = None) -> dict:
-	"""Confirm shipment arrival at port and create container trackers before Entry is paid."""
+def confirm_shipment_arrival_at_port(
+	project_name: str, ata: str | None = None, task_name: str | None = None
+) -> dict:
+	"""Confirm shipment arrival at port and create container trackers before Entry is paid.
+
+	From Project: requires Project write.
+	From Create Entry task: requires Task write on that entry task (Declarants).
+	"""
 	project = frappe.get_doc("Project", project_name)
 	if project.get("custom_port_arrival_confirmed"):
 		frappe.throw(_("Port arrival has already been confirmed for this project."))
+
+	task_doc = None
+	require_project_write = True
+	if task_name:
+		frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+		task_doc = frappe.get_doc("Task", task_name)
+		if (task_doc.get("project") or "") != project_name:
+			frappe.throw(_("Task does not belong to this project."))
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			is_entry_application_task,
+		)
+
+		seq = int(task_doc.get("custom_sequence_no") or 0)
+		if not is_entry_application_task(seq):
+			frappe.throw(_("Port arrival can only be confirmed from the Create Entry task."))
+		require_project_write = False
+	else:
+		frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+
 	return ensure_container_trackers_at_port_arrival(
 		project_name,
+		task_doc=task_doc,
 		mark_confirmed=True,
 		ata=ata,
+		require_project_write=require_project_write,
 	)
 
 

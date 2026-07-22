@@ -1473,14 +1473,14 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		);
 	}
 
-	if (ui.is_sea_task && frm.doc.project) {
+	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
 		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
 			frappe.set_route("Form", "Project", frm.doc.project);
 		});
 		openProjectBtn?.addClass?.("btn-primary");
 	}
 
-	if (ui.is_entry_application && frm.doc.project) {
+	if ((ui.is_entry_application || is_entry_application_step(frm)) && frm.doc.project) {
 		setup_entry_port_arrival_confirmation_button(frm);
 	}
 }
@@ -1499,7 +1499,11 @@ function prompt_confirm_port_arrival(frm, projectName, defaultAta) {
 		frappe.call({
 			method:
 				"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.confirm_shipment_arrival_at_port",
-			args: { project_name: projectName, ata: ata || null },
+			args: {
+				project_name: projectName,
+				ata: ata || null,
+				task_name: frm.doc.name,
+			},
 			freeze: true,
 			freeze_message: __("Creating container trackers..."),
 			callback(r) {
@@ -1537,32 +1541,36 @@ function prompt_confirm_port_arrival(frm, projectName, defaultAta) {
 }
 
 function setup_entry_port_arrival_confirmation_button(frm) {
-	if (!frm.doc.project || frm._cgm_port_arrival_button_loading) {
+	if (!frm.doc.project) {
+		return;
+	}
+	if (!is_entry_application_step(frm) && !get_sea_task_ui(frm).is_entry_application) {
 		return;
 	}
 
-	frm._cgm_port_arrival_button_loading = true;
+	const requestId = (frm._cgm_port_arrival_button_request_id || 0) + 1;
+	frm._cgm_port_arrival_button_request_id = requestId;
+
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.project_can_confirm_port_arrival",
 		args: { project: frm.doc.project },
 		callback(r) {
-			frm._cgm_port_arrival_button_loading = false;
+			if (frm._cgm_port_arrival_button_request_id !== requestId) {
+				return;
+			}
 			if (r.exc || !r.message?.can_confirm || frm.doc.name !== frm.docname) {
 				return;
 			}
-			if (!is_entry_application_step(frm)) {
+			if (!is_entry_application_step(frm) && !get_sea_task_ui(frm).is_entry_application) {
 				return;
 			}
-			add_cgm_toolbar_button(
-				frm,
+			// Visible primary button (not only buried under Actions).
+			const btn = frm.add_custom_button(
 				__("Confirm Shipment Arrival at the Port"),
-				() => prompt_confirm_port_arrival(frm, frm.doc.project, r.message.ata),
-				{ primary: true }
+				() => prompt_confirm_port_arrival(frm, frm.doc.project, r.message.ata)
 			);
-		},
-		error() {
-			frm._cgm_port_arrival_button_loading = false;
+			btn?.addClass?.("btn-primary");
 		},
 	});
 }
