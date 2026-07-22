@@ -47,6 +47,7 @@
   {
    "columns": 3,
    "depends_on": "eval:doc.origin != \"Foreign\"",
+   "description": "Required for Local (Finance payment). Hidden for Foreign — attach the Permit Certificate instead.",
    "fieldname": "payment_invoice",
    "fieldtype": "Attach",
    "in_list_view": 1,
