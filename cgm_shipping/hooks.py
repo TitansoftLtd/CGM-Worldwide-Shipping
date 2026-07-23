@@ -438,19 +438,11 @@ before_request = [
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
-# Fixtures loaded on migrate (master data for workflows and container modes).
+# Fixtures loaded on migrate.
+# CGM Task Template is intentionally NOT listed: company admins edit templates in
+# the browser; seeding only creates missing defaults (see task_template_seed_data).
 fixtures = [
 	"Container Tracker Mode",
-	{"dt": "CGM Task Template", "filters": [["template_name", "in", [
-		"Sea Import Workflow",
-		"Sea Export Workflow",
-		"Air Import Workflow",
-		"Air Export Workflow",
-		"Sea Transit Import Workflow",
-		"Sea Transit Export Workflow",
-		"Road Transit Outbound Workflow",
-		"Road Transit Inbound Workflow",
-	]]]},
 ]
 
 # Translation
