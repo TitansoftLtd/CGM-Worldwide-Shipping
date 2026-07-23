@@ -121,7 +121,7 @@ Before deleting a file or line from `patches.txt`:
 | Migrate installers | `cgm_shipping/install.py` |
 | Default masters / settings seed | `cgm_shipping/default_seed_data.py`, `…/sea_settings_seed_data.py` |
 | Desk customizations | `cgm_shipping/cgm_worldwide_shipping/custom/*.json` |
-| Fixtures | `cgm_shipping/fixtures/` (e.g. CGM Task Template, Container Tracker Mode) |
+| Fixtures | `cgm_shipping/fixtures/` (e.g. Container Tracker Mode). CGM Task Template is seed-only so site edits are not overwritten on migrate. |
 | Admin deploy notes | [admin-setup.md](./admin-setup.md) |
 
 ---

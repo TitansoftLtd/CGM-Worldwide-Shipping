@@ -22,10 +22,13 @@
   "port_of_loading",
   "port_of_discharge",
   "section_break_rpnc",
-  "description",
+  "number_of_packages",
+  "package_type",
   "attach_airwaybill",
   "linked_opportunity",
-  "amended_from"
+  "amended_from",
+  "column_break_vtoc",
+  "description"
  ],
  "fields": [
   {
@@ -146,13 +149,28 @@
    "fieldname": "etd",
    "fieldtype": "Date",
    "label": "ETD"
+  },
+  {
+   "fieldname": "number_of_packages",
+   "fieldtype": "Int",
+   "label": " Number of Packages "
+  },
+  {
+   "fieldname": "package_type",
+   "fieldtype": "Link",
+   "label": " Package Type ",
+   "options": "Package Type"
+  },
+  {
+   "fieldname": "column_break_vtoc",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-17 13:33:17.865382",
+ "modified": "2026-07-23 14:09:06.361058",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Air Waybill",

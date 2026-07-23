@@ -36,6 +36,12 @@ function strip_legacy_invoice_clearance_rows(frm) {
 frappe.ui.form.on("Task", {
 	onload(frm) {
 		frm.__loaded_status = frm.doc.status;
+		if (
+			localStorage.getItem("cgm_pe_for_task") !== "1" &&
+			localStorage.getItem("cgm_pi_for_task") !== "1"
+		) {
+			localStorage.removeItem("cgm_return_task");
+		}
 		reset_cgm_task_sea_ui_state_if_needed(frm);
 		frm._cgm_declarant_status = null;
 		frm._cgm_declarant_status_loading = false;
