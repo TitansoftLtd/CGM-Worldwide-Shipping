@@ -322,6 +322,7 @@
    "label": "Offloading Date"
   },
   {
+   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "warehouse_loading_date",
    "fieldtype": "Date",
    "label": "Warehouse Loading Date"
