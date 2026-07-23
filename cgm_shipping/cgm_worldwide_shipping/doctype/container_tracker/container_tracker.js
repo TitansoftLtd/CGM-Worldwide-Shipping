@@ -68,6 +68,12 @@ const TAB_SECTIONS = {
 	free_days_tab: ["section_shipping_line_free_days", "section_kpa_free_days"],
 };
 
+const TRANSIT_ONLY_FIELDS = ["warehouse_loading_date"];
+
+function is_transit_container_mode(mode) {
+	return (mode || "").includes("Transit");
+}
+
 function resolve_mode_sections(mode) {
 	const normalized = (mode || "").trim();
 	if (MODE_SECTIONS[normalized]) {
@@ -116,6 +122,13 @@ function apply_container_mode_layout(frm) {
 		}
 		const tab_visible = section_fields.some((section) => show.has(section));
 		frm.set_df_property(tab_field, "hidden", tab_visible ? 0 : 1);
+	});
+
+	const show_transit_fields = is_transit_container_mode(frm.doc.container_mode);
+	TRANSIT_ONLY_FIELDS.forEach((fieldname) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.set_df_property(fieldname, "hidden", show_transit_fields ? 0 : 1);
+		}
 	});
 }
 

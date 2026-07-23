@@ -260,7 +260,7 @@ frappe.ui.form.on("Task", {
 			ensure_checkpoint_task_documents_on_form(frm);
 		}
 
-		mount_cgm_task_toolbar_buttons(frm);
+		schedule_cgm_task_toolbar_buttons(frm);
 		if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config && !frm._cgm_sea_seq_loading) {
 			load_cgm_sea_ui_sequences(frm);
 		}
@@ -388,7 +388,7 @@ function load_cgm_sea_ui_sequences(frm) {
 				),
 				indicator: "red",
 			});
-			mount_cgm_task_toolbar_buttons(frm);
+			schedule_cgm_task_toolbar_buttons(frm);
 		},
 	});
 }
@@ -1274,13 +1274,46 @@ function ensure_cgm_finance_department_loaded(frm) {
 			frm._cgm_finance_department_loading = false;
 			frm._cgm_finance_department = dept || null;
 			if (frm.doc.name === frm.docname && !frm.is_new()) {
-				frm.refresh();
+				schedule_cgm_task_toolbar_buttons(frm);
 			}
 		})
 		.catch(() => {
 			frm._cgm_finance_department_loading = false;
 			frm._cgm_finance_department = null;
 		});
+}
+
+function get_finance_department(frm) {
+	if (frm._cgm_finance_department) {
+		return frm._cgm_finance_department;
+	}
+	return get_cgm_sea_seq_config(frm).finance_department || null;
+}
+
+function register_task_toolbar_after_render(frm, eventKey, register_action) {
+	const schedule_register = () => {
+		setTimeout(register_action, 50);
+	};
+	schedule_register();
+	$(frm.wrapper)
+		.off(`render_complete.${eventKey}`)
+		.on(`render_complete.${eventKey}`, schedule_register);
+}
+
+function schedule_cgm_task_toolbar_buttons(frm) {
+	if (frm.is_new() || !frm.doc.name) {
+		return;
+	}
+	const mount = () => {
+		if (frm.is_new() || frm.doc.name !== frm.docname) {
+			return;
+		}
+		if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config && !frm._cgm_sea_seq_loading) {
+			load_cgm_sea_ui_sequences(frm);
+		}
+		mount_cgm_task_toolbar_buttons(frm);
+	};
+	register_task_toolbar_after_render(frm, "cgm_task_toolbar", mount);
 }
 
 function mount_cgm_task_toolbar_buttons(frm) {
@@ -2576,8 +2609,7 @@ function user_can_upload_receipt(frm) {
 // ─── Make Payment → draft Journal Entry (Finance department) ──────────────────
 
 function is_finance_department_task(frm) {
-	const finance_dept =
-		frm._cgm_finance_department || get_cgm_sea_seq_config(frm).finance_department;
+	const finance_dept = get_finance_department(frm);
 	return Boolean(finance_dept && frm.doc.department && frm.doc.department === finance_dept);
 }
 
