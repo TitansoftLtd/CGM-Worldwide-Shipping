@@ -467,8 +467,19 @@ frappe.ui.form.on("Container Tracker", {
 			}).addClass("btn-primary");
 		}
 		const task_name = localStorage.getItem(CGM_CONTAINER_TRACKING_TASK_KEY);
-		if (task_name) {
+		const tracking_project = localStorage.getItem(CGM_CONTAINER_TRACKING_PROJECT_KEY);
+		if (
+			task_name &&
+			tracking_project &&
+			frm.doc.project &&
+			frm.doc.project !== tracking_project
+		) {
+			localStorage.removeItem(CGM_CONTAINER_TRACKING_TASK_KEY);
+			localStorage.removeItem(CGM_CONTAINER_TRACKING_PROJECT_KEY);
+		} else if (task_name && (!tracking_project || frm.doc.project === tracking_project)) {
 			frm.add_custom_button(__("Back to Task"), () => {
+				localStorage.removeItem(CGM_CONTAINER_TRACKING_TASK_KEY);
+				localStorage.removeItem(CGM_CONTAINER_TRACKING_PROJECT_KEY);
 				frappe.set_route("Form", "Task", task_name);
 			}, __("CGM"));
 			frm.page.set_inner_btn_group_as_primary(__("CGM"));

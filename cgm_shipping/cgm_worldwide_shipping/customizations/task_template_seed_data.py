@@ -320,6 +320,7 @@ def seed_project_types_from_tracker_modes() -> None:
 
 
 def seed_cgm_task_templates() -> None:
+	"""Insert default templates when missing only — never overwrite site edits."""
 	import frappe
 
 	if not frappe.db.exists("DocType", "CGM Task Template"):
