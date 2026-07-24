@@ -17,10 +17,11 @@ class ContainerAllocation(Document):
 	def validate(self):
 		validate_transporter_supplier(self.transporter)
 		validate_active_allocation_uniqueness(self)
-		if not self.containers:
+		# Draft must have containers; submitted docs may be empty after reallocation (kept for records).
+		if self.docstatus == 0 and not self.containers:
 			frappe.throw(_("Add at least one container to allocate."))
 		# Default truck booking count to containers when not set yet.
-		if cint(self.trucks_booked) <= 0:
+		if self.containers and cint(self.trucks_booked) <= 0:
 			self.trucks_booked = len(self.containers)
 
 	def on_submit(self):
