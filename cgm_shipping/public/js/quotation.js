@@ -541,13 +541,22 @@ const CGM = (() => {
         return calculation_type === CALCULATION_FIXED ? RULE_TYPE_FIXED : CALCULATION_PERCENTAGE;
     }
 
-    function calculateItemPricingForItem(custom_value, rules, frm) {
+    function calculateItemPricingForItem(custom_value, rules, frm, selected_rule_name) {
         if (!rules?.length) return null;
+
+        let candidates = rules;
+        const selected = (selected_rule_name || "").trim();
+        if (selected) {
+            const matched = rules.filter((rule) => rule.name === selected);
+            if (matched.length) {
+                candidates = matched;
+            }
+        }
 
         let winning_rule = null;
         let winning_amount = null;
 
-        for (const rule of rules) {
+        for (const rule of candidates) {
             const amount = calculateRuleAmount(custom_value, rule, frm);
             if (winning_amount === null || amount > winning_amount) {
                 winning_amount = amount;
@@ -572,6 +581,7 @@ const CGM = (() => {
                 final_applied_rate: winning_amount,
             },
             item_rate: winning_amount,
+            pricing_rule: winning_rule.name || "",
         };
     }
 
@@ -586,7 +596,12 @@ const CGM = (() => {
             const item_rules = rules[item.item_code];
             if (!item_rules?.length) continue;
 
-            const result = calculateItemPricingForItem(custom_value, item_rules, frm);
+            const result = calculateItemPricingForItem(
+                custom_value,
+                item_rules,
+                frm,
+                item.custom_selected_item_pricing_rule
+            );
             if (!result) continue;
 
             pricing_rows.push({ item: item.item_code, ...result.audit_row });
@@ -599,6 +614,162 @@ const CGM = (() => {
 
         applyItemPricingResult(frm, { pricing_rows, item_updates }, opts);
         refreshItemRateEditability(frm);
+    }
+
+    function pricingRuleOptionLabel(rule, amount, currency) {
+        const type = ruleTypeLabel(rule.calculation_type || CALCULATION_PERCENTAGE);
+        let detail = "";
+        if ((rule.calculation_type || CALCULATION_PERCENTAGE) === CALCULATION_FIXED) {
+            detail = `${flt(rule.fixed_rate)} ${rule.currency || ""}`.trim();
+        } else {
+            detail = `${flt(rule.percentage_rate)}%`;
+        }
+        return `${type}: ${detail} → ${format_currency(flt(amount), currency)}`;
+    }
+
+    function quotationItemHasSelectedRuleField(frm) {
+        const df = frappe.meta.get_docfield("Quotation Item", "custom_selected_item_pricing_rule");
+        return Boolean(df);
+    }
+
+    function openItemPricingRulePicker(frm, cdt, cdn, rules) {
+        const row = locals[cdt]?.[cdn];
+        if (!row?.item_code || !rules?.length) {
+            return Promise.resolve();
+        }
+
+        const custom_value = flt(frm.doc.custom_custom_value);
+        const currency = frm.doc.currency;
+        const options = rules.map((rule) => {
+            const amount = calculateRuleAmount(custom_value, rule, frm);
+            return {
+                value: rule.name,
+                label: pricingRuleOptionLabel(rule, amount, currency),
+                amount,
+            };
+        });
+
+        // Prefer currently selected, else the highest amount.
+        let default_value = row.custom_selected_item_pricing_rule;
+        if (!default_value || !options.some((opt) => opt.value === default_value)) {
+            default_value = options.reduce((best, opt) =>
+                !best || opt.amount > best.amount ? opt : best
+            ).value;
+        }
+
+        return new Promise((resolve) => {
+            const dialog = new frappe.ui.Dialog({
+                title: __("Select Item Pricing Rule"),
+                fields: [
+                    {
+                        fieldname: "help",
+                        fieldtype: "HTML",
+                        options: `<div class="text-muted" style="margin-bottom: var(--margin-sm);">
+							${__("Item {0} has multiple pricing rules. Choose which rule to use for the rate.", [
+								frappe.utils.escape_html(row.item_code),
+							])}
+						</div>`,
+                    },
+                    {
+                        fieldname: "pricing_rule",
+                        fieldtype: "Select",
+                        label: __("Pricing Rule"),
+                        reqd: 1,
+                        options: options.map((opt) => opt.value).join("\n"),
+                        default: default_value,
+                    },
+                ],
+                primary_action_label: __("Apply Rule"),
+                primary_action(values) {
+                    const selected = values.pricing_rule;
+                    dialog.hide();
+                    frappe.model.set_value(cdt, cdn, "custom_selected_item_pricing_rule", selected).then(() => {
+                        calculateItemPricing(frm);
+                        resolve(selected);
+                    });
+                },
+                secondary_action_label: __("Use highest amount"),
+                secondary_action() {
+                    dialog.hide();
+                    frappe.model.set_value(cdt, cdn, "custom_selected_item_pricing_rule", "").then(() => {
+                        calculateItemPricing(frm);
+                        resolve("");
+                    });
+                },
+            });
+
+            const $select = dialog.fields_dict.pricing_rule.$wrapper.find("select");
+            $select.empty();
+            options.forEach((opt) => {
+                $select.append(
+                    `<option value="${frappe.utils.escape_html(opt.value)}">${frappe.utils.escape_html(
+                        opt.label
+                    )}</option>`
+                );
+            });
+            $select.val(default_value);
+            dialog.show();
+        });
+    }
+
+    /**
+     * After ERPNext get_item_details fills a selling/price-list rate:
+     * - rule-driven items keep/get the pricing-rule rate (read-only)
+     * - items without rules get an empty rate for the user to fill (editable)
+     * - multiple rules → user picks which rule to apply
+     */
+    function syncItemRateAfterItemSelect(frm, cdt, cdn) {
+        const row = locals[cdt]?.[cdn];
+        if (!row?.item_code) {
+            refreshItemRateEditability(frm);
+            return;
+        }
+
+        ensureItemPricingRules([row.item_code], frm).then(() => {
+            const rules = ITEM_PRICING_RULES[row.item_code] || [];
+            if (!rules.length) {
+                if (quotationItemHasSelectedRuleField(frm) && row.custom_selected_item_pricing_rule) {
+                    frappe.model.set_value(cdt, cdn, "custom_selected_item_pricing_rule", "");
+                }
+                clearManualItemSellingPrice(frm, row);
+                refreshItemRateEditability(frm);
+                calculateItemPricing(frm);
+                updateGrandTotals(frm);
+
+                setTimeout(() => {
+                    const current = locals[cdt]?.[cdn];
+                    if (
+                        current?.item_code === row.item_code &&
+                        !itemHasPricingRules(current.item_code) &&
+                        flt(current.price_list_rate)
+                    ) {
+                        clearManualItemSellingPrice(frm, current);
+                        updateGrandTotals(frm);
+                    }
+                }, 250);
+                return;
+            }
+
+            if (!quotationItemHasSelectedRuleField(frm)) {
+                calculateItemPricing(frm);
+                return;
+            }
+
+            if (rules.length === 1) {
+                frappe.model
+                    .set_value(cdt, cdn, "custom_selected_item_pricing_rule", rules[0].name || "")
+                    .then(() => calculateItemPricing(frm));
+                return;
+            }
+
+            const selected = (row.custom_selected_item_pricing_rule || "").trim();
+            if (selected && rules.some((rule) => rule.name === selected)) {
+                calculateItemPricing(frm);
+                return;
+            }
+
+            openItemPricingRulePicker(frm, cdt, cdn, rules);
+        });
     }
 
     function findQuotationItem(frm, upd) {
@@ -705,45 +876,6 @@ const CGM = (() => {
         for (const key of Object.keys(ITEM_PRICING_RULES)) {
             delete ITEM_PRICING_RULES[key];
         }
-    }
-
-    /**
-     * After ERPNext get_item_details fills a selling/price-list rate:
-     * - rule-driven items keep/get the pricing-rule rate (read-only)
-     * - items without rules get an empty rate for the user to fill (editable)
-     */
-    function syncItemRateAfterItemSelect(frm, cdt, cdn) {
-        const row = locals[cdt]?.[cdn];
-        if (!row?.item_code) {
-            refreshItemRateEditability(frm);
-            return;
-        }
-
-        ensureItemPricingRules([row.item_code], frm).then(() => {
-            if (itemHasPricingRules(row.item_code)) {
-                calculateItemPricing(frm);
-                return;
-            }
-
-            clearManualItemSellingPrice(frm, row);
-            refreshItemRateEditability(frm);
-            calculateItemPricing(frm);
-            updateGrandTotals(frm);
-
-            // ERPNext may re-apply price list slightly later; strip it again if needed.
-            // Only clear when a price-list rate is present — do not wipe a user-typed rate.
-            setTimeout(() => {
-                const current = locals[cdt]?.[cdn];
-                if (
-                    current?.item_code === row.item_code &&
-                    !itemHasPricingRules(current.item_code) &&
-                    flt(current.price_list_rate)
-                ) {
-                    clearManualItemSellingPrice(frm, current);
-                    updateGrandTotals(frm);
-                }
-            }, 250);
-        });
     }
 
     function applyItemPricingRates(frm, updates) {
@@ -1079,6 +1211,19 @@ const CGM = (() => {
             items_grid.refresh();
         }
 
+        if (frappe.meta.get_docfield("Quotation Item", "custom_selected_item_pricing_rule")) {
+            frm.set_query("custom_selected_item_pricing_rule", "items", (doc, cdt, cdn) => {
+                const row = locals[cdt]?.[cdn];
+                return {
+                    filters: {
+                        parent: row?.item_code || "",
+                        parenttype: "Item",
+                        parentfield: "custom_item_pricing_rules",
+                    },
+                };
+            });
+        }
+
         const item_codes = (frm.doc.items || []).map((row) => row.item_code).filter(Boolean);
         ensureItemPricingRules(item_codes, frm).then(() => refreshItemRateEditability(frm));
     }
@@ -1300,6 +1445,10 @@ frappe.ui.form.on("Quotation Item", {
         frappe.after_ajax(() => {
             setTimeout(() => CGM.syncItemRateAfterItemSelect(frm, cdt, cdn), 80);
         });
+    },
+
+    custom_selected_item_pricing_rule(frm, cdt, cdn) {
+        CGM.scheduleItemPricingRecalc(frm);
     },
 
     form_render(frm) {

@@ -29,7 +29,6 @@ UPDATE_SOURCES = (
 TRANSPORTER_SUBJECTS = (
 	"En Route",
 	"Delayed",
-	"Truck Changed",
 	"At Port Gate",
 	"Delivered",
 	"Offloaded",
@@ -265,8 +264,11 @@ def post_truck_update(
 	message = (message or "").strip()
 
 	if subject == "Truck Changed":
-		if not (truck_number or "").strip():
-			frappe.throw(_("Enter the new truck number for a truck change update."))
+		frappe.throw(
+			_(
+				"Truck changes are handled by CGM. Ask CGM to reassign the container to another offered truck."
+			)
+		)
 	elif subject in ("Delayed", "Other") and not message:
 		frappe.throw(_("Please add a short message for this update."))
 
@@ -1090,3 +1092,6 @@ def get_update_detail(name: str, include_source: int | str | None = 1) -> dict:
 		doc, include_source=show_source, portal=portal or not show_source
 	)
 	return payload
+
+
+
