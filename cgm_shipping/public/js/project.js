@@ -211,12 +211,114 @@ function setup_create_container_allocation_button(frm) {
 
 	frm.add_custom_button(
 		__("Create Container Allocation"),
-		() => {
-			frappe.route_options = { project: frm.doc.name };
-			frappe.new_doc("Container Allocation");
-		},
+		() => open_project_create_allocation_dialog(frm.doc.name),
 		__("Actions")
 	);
+}
+
+function open_project_create_allocation_dialog(project) {
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation.get_container_allocation_defaults",
+		args: { project },
+		freeze: true,
+		callback(r) {
+			if (r.exc) {
+				return;
+			}
+			const payload = r.message || {};
+			const containers = payload.containers || [];
+			if (!containers.length) {
+				frappe.msgprint(
+					__(
+						"No unallocated containers on this project. Containers already on an allocation stay there until you move them from Container Allocation (Allocate Remaining / Move Containers)."
+					)
+				);
+				return;
+			}
+
+			const dialog = new frappe.ui.Dialog({
+				title: __("Create Container Allocation"),
+				fields: [
+					{
+						fieldname: "help",
+						fieldtype: "HTML",
+						options: `<div class="text-muted" style="margin-bottom: var(--margin-sm);">
+							${__("Unallocated containers")}: <b>${containers.length}</b>
+							${
+								payload.bill_of_lading
+									? " · " + __("BL") + ": " + frappe.utils.escape_html(payload.bill_of_lading)
+									: ""
+							}
+						</div>`,
+					},
+					{
+						fieldname: "container_trackers",
+						fieldtype: "MultiCheck",
+						label: __("Containers"),
+						reqd: 1,
+						columns: 1,
+						options: containers.map((c) => ({
+							label: `${c.container_number || c.container_tracker}${
+								c.cargo_size ? " · " + c.cargo_size : ""
+							}`,
+							value: c.container_tracker,
+							checked: 1,
+						})),
+					},
+					{
+						fieldname: "transporter",
+						fieldtype: "Link",
+						label: __("Transporter"),
+						options: "Supplier",
+						reqd: 1,
+						get_query: () => ({ filters: { is_transporter: 1 } }),
+					},
+					{
+						fieldname: "trucks_booked",
+						fieldtype: "Int",
+						label: __("Number of Trucks Booked"),
+						default: containers.length,
+					},
+				],
+				primary_action_label: __("Create & Submit"),
+				primary_action(values) {
+					const trackers = values.container_trackers || [];
+					if (!trackers.length) {
+						frappe.msgprint(__("Select at least one container."));
+						return;
+					}
+					frappe.call({
+						method:
+							"cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation.create_allocation_for_containers",
+						args: {
+							project,
+							transporter: values.transporter,
+							container_trackers: trackers,
+							trucks_booked: values.trucks_booked || trackers.length,
+							submit: 1,
+						},
+						freeze: true,
+						freeze_message: __("Creating allocation…"),
+						callback(res) {
+							if (res.exc) {
+								return;
+							}
+							dialog.hide();
+							frappe.show_alert({
+								message: res.message?.message || __("Allocation created."),
+								indicator: "green",
+							});
+							if (res.message?.name) {
+								frappe.set_route("Form", "Container Allocation", res.message.name);
+							}
+						},
+					});
+				},
+			});
+			dialog.show();
+		},
+	});
 }
 
 function is_clearance_project(frm) {
@@ -356,6 +458,7 @@ function toggle_project_document_stage_fields(frm, category) {
 
 function setup_add_bill_of_lading_button(frm) {
 	frm.remove_custom_button(__("Add Bill of Lading"), __("Shipment"));
+	frm.remove_custom_button(__("Add Bill of Lading"), __("Actions"));
 	if (frm.is_new() || !frm.doc.name) {
 		return;
 	}
@@ -370,7 +473,7 @@ function setup_add_bill_of_lading_button(frm) {
 	frm.add_custom_button(
 		__("Add Bill of Lading"),
 		() => open_bill_of_lading_from_project(frm),
-		__("Shipment")
+		__("Actions")
 	);
 }
 
@@ -1190,10 +1293,7 @@ frappe.ui.form.on("Project", {
 			}, __("Shipment"));
 			frm.add_custom_button(__("View Journal Entries"), () => {
 				open_project_finance_journal_entries(frm);
-			}, __("Shipment"));
-			frm.add_custom_button(__("Refresh Billed Amount"), () => {
-				manual_refresh_finance_costs(frm);
-			}, __("Shipment"));
+			}, __("View"));
 			frm.add_custom_button(__("Daily Status"), () => {
 				frappe.new_doc("Daily Status Update");
 			}, __("View"));
