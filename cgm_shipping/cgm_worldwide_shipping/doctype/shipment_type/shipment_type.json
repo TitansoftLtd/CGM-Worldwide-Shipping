@@ -15,6 +15,7 @@
   "uses_unit_tracking",
   "amended_from",
   "section_break_integration",
+  "task_template",
   "task_flow_key",
   "container_tracker_mode",
   "cgm_ref_prefix",
@@ -96,7 +97,15 @@
    "label": "Integration"
   },
   {
-   "description": "Matches a task plan in CGM Shipping Settings (e.g. SEA_IMPORT_E2E, SEA_TRANSIT_IMPORT_E2E). Create a new Shipment Type row and point this at your Settings template \u2014 no code change needed.",
+   "description": "CGM Task Template used when Start Shipment creates Project tasks. Preferred over Task Flow Key.",
+   "fieldname": "task_template",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Task Template",
+   "options": "CGM Task Template"
+  },
+  {
+   "description": "Legacy fallback when Task Template is empty. Matches a seeded template via flow key (e.g. SEA_IMPORT_E2E).",
    "fieldname": "task_flow_key",
    "fieldtype": "Data",
    "label": "Task Flow Key"
