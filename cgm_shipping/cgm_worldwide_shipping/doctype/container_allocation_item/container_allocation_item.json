@@ -9,6 +9,7 @@
   "container_number",
   "cargo_size",
   "column_break_assign",
+  "offered_truck",
   "truck_number",
   "driver_name",
   "driver_contact",
@@ -48,23 +49,34 @@
   },
   {
    "allow_on_submit": 1,
+   "fieldname": "offered_truck",
+   "fieldtype": "Link",
+   "label": "Offered Truck",
+   "options": "Container Allocation Truck",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
    "fieldname": "truck_number",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Truck Number"
+   "label": "Truck Number",
+   "read_only": 1
   },
   {
    "allow_on_submit": 1,
    "fieldname": "driver_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Driver Name"
+   "label": "Driver Name",
+   "read_only": 1
   },
   {
    "allow_on_submit": 1,
    "fieldname": "driver_contact",
    "fieldtype": "Data",
-   "label": "Driver Contact"
+   "label": "Driver Contact",
+   "read_only": 1
   },
   {
    "allow_on_submit": 1,
