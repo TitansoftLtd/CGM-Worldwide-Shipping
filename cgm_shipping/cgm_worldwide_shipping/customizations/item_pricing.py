@@ -12,7 +12,7 @@ from typing import Any
 
 import frappe
 from erpnext import get_company_currency
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 ITEM_PRICING_RULE_CHILD = "custom_item_pricing_rules"
 QUOTATION_ITEM_PRICING_TABLE = "custom_item_pricing"
@@ -33,6 +33,8 @@ PRICING_ROW_FIELDS = (
 )
 
 RULE_FIELDS = (
+	"name",
+	"idx",
 	"currency",
 	"calculation_type",
 	"percentage_rate",
@@ -107,6 +109,8 @@ def get_active_item_pricing_rules(item_codes: list[str]) -> dict[str, list[dict[
 
 def _normalize_rule_row(row) -> dict[str, Any]:
 	return {
+		"name": row.name,
+		"idx": cint(row.idx) if row.get("idx") is not None else None,
 		"currency": row.currency,
 		"calculation_type": row.calculation_type or CALCULATION_PERCENTAGE,
 		"percentage_rate": flt(row.percentage_rate),
@@ -196,16 +200,24 @@ def calculate_item_pricing_for_item(
 	company_currency: str,
 	conversion_rate: float,
 	transaction_date: str | None = None,
+	selected_rule_name: str | None = None,
 ) -> tuple[dict[str, Any] | None, float]:
 	"""
-	Evaluate every rule for one item and return the winning audit row plus the final rate.
+	Evaluate pricing rules for one item and return the winning audit row plus the final rate.
 
-	The winning rate is the highest calculated amount in quotation currency.
-	When every rule evaluates to zero (e.g. no customs value yet), the first rule is
-	still returned so the Item Pricing table shows that the item is rule-driven.
+	Default: highest calculated amount in quotation currency wins.
+	When selected_rule_name is set and still present on the Item, only that rule is used.
+	When every rule evaluates to zero (e.g. no customs value yet), the first evaluated rule
+	is still returned so the Item Pricing table shows that the item is rule-driven.
 	"""
 	if not rules:
 		return None, 0.0
+
+	selected = (selected_rule_name or "").strip()
+	if selected:
+		matched = [rule for rule in rules if (rule.get("name") or "") == selected]
+		if matched:
+			rules = matched
 
 	winning_rule = None
 	winning_amount: float | None = None
@@ -253,6 +265,7 @@ def calculate_quotation_item_pricing(
 	Build pricing-table rows and quotation-item rate updates for a selling document.
 
 	Rates are derived solely from Item pricing rules — never from price lists or standard rates.
+	Per-line custom_selected_item_pricing_rule (when present) overrides highest-wins.
 	"""
 	custom_value = flt(_get_value(doc, "custom_custom_value"))
 	quotation_currency = _get_value(doc, "currency")
@@ -284,6 +297,8 @@ def calculate_quotation_item_pricing(
 		if not item_rules:
 			continue
 
+		selected_rule = _get_value(item, "custom_selected_item_pricing_rule")
+
 		audit_row, item_rate = calculate_item_pricing_for_item(
 			custom_value,
 			item_rules,
@@ -291,6 +306,7 @@ def calculate_quotation_item_pricing(
 			company_currency=company_currency,
 			conversion_rate=conversion_rate,
 			transaction_date=transaction_date,
+			selected_rule_name=selected_rule,
 		)
 		if not audit_row:
 			continue
