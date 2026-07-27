@@ -96,7 +96,6 @@ class BillofLading(Document):
 		coerce_numeric_fields(self, ("gross_weight", "net_weight"), empty_as_zero=True)
 		sanitize_bill_of_lading_linked_opportunity(self)
 		ensure_bl_cargo_type(self)
-		apply_bl_quantity_and_batch(self)
 		if is_lcl_cargo_type(self.get("cargo_type")):
 			if self.meta.has_field("quantity"):
 				self.quantity = None
@@ -104,11 +103,9 @@ class BillofLading(Document):
 				self.batch_no = None
 			return
 
-		summary = (self.get("quantity") or "").strip() or self._summarize_container_quantities()
-		if self.meta.has_field("container_summary"):
-			self.container_summary = summary
-		if self.meta.has_field("quantity") and summary:
-			self.quantity = summary
+		sync_bl_quantity_summary(self)
+		apply_bl_quantity_and_batch(self)
+		sync_bl_quantity_summary(self)
 
 	def before_submit(self):
 		ensure_bl_cargo_type(self)
@@ -139,6 +136,17 @@ def _sync_seal_records_for_bl(bl) -> None:
 	sync_seal_records_from_bill_of_lading(bl)
 
 
+def sync_bl_quantity_summary(doc) -> None:
+	"""Keep BL quantity / container_summary aligned with container rows."""
+	summary = (doc.get("quantity") or "").strip() or format_derived_quantity(
+		counts_from_container_rows(doc.get("container_information"))
+	)
+	if doc.meta.has_field("container_summary"):
+		doc.container_summary = summary
+	if doc.meta.has_field("quantity") and summary:
+		doc.quantity = summary
+
+
 def apply_bl_quantity_and_batch(doc) -> None:
 	"""Set derived quantity and batch on Bill of Lading (FCL only for batch)."""
 	ensure_bl_cargo_type(doc)
@@ -155,6 +163,10 @@ def apply_bl_quantity_and_batch(doc) -> None:
 	# Recover cargo_size onto container rows when users filled numbers/seals but
 	# left size blank while parent quantity already encodes the size profile.
 	parent_qty = (doc.get("quantity") or "").strip()
+	if not parent_qty and doc.get("booking_confirmation"):
+		parent_qty = (
+			frappe.db.get_value("Booking Confirmation", doc.booking_confirmation, "quantity") or ""
+		).strip()
 	fill_missing_container_row_cargo_sizes(doc.get("container_information"), parent_qty)
 
 	derived = derived_quantity_from_bl(doc) or normalize_derived_quantity(parent_qty)

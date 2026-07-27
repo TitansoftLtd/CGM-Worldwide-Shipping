@@ -190,6 +190,32 @@ class TestBillOfLadingBookingPrefill(IntegrationTestCase):
 		self.assertIn("commodity", src_fields)
 		self.assertNotIn("description", src_fields)
 
+	def test_fetch_container_rows_backfills_cargo_size_from_bl_quantity(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import fetch_container_rows
+
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.frappe.db.exists",
+			return_value=True,
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment._derived_quantity_for_bl_containers",
+			return_value="2 x 20FT",
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.frappe.get_all",
+			return_value=[
+				{"container_number": "C1", "cargo_size": "", "seal_no": "S1"},
+				{"container_number": "C2", "cargo_size": "", "seal_no": "S2"},
+			],
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_container_fields",
+			return_value=["container_number", "cargo_size", "seal_no"],
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.resolve_cargo_size_link",
+			side_effect=lambda size: size,
+		):
+			rows = fetch_container_rows("BL-TEST")
+
+		self.assertEqual([row["cargo_size"] for row in rows], ["20FT", "20FT"])
+
 
 class TestBillOfLadingCargoType(IntegrationTestCase):
 	def test_ensure_bl_cargo_type_from_quantity(self):
