@@ -376,6 +376,11 @@ function setup_customer_batch_autocomplete(frm) {
 			}
 			frm.set_df_property(fieldname, "read_only", 0);
 			frm.refresh_field(fieldname);
+		},
+	});
+}
+
+function toggle_project_transport_reference_fields(frm) {
 	const transportToggle = cgm_shipping.transport_reference.toggle(frm, {
 		air_waybill: "custom_awb_number",
 		bill_of_lading: "custom_bill_of_lading",
@@ -507,6 +512,41 @@ function project_clearance_indicator(doc) {
 	return [__(status), colour];
 }
 
+function ensure_project_form_layout_visible(frm) {
+	if (!frm?.layout?.wrapper || frm.is_new()) {
+		return;
+	}
+	const visible_controls = frm.layout.wrapper.find(".frappe-control:not(.hide-control)").length;
+	if (visible_controls > 0) {
+		return;
+	}
+	frm.layout.doc = frm.doc;
+	if (typeof frm.layout.refresh === "function") {
+		frm.layout.refresh(frm.doc);
+	}
+	frm.layout.wrapper.find(".form-section").each(function () {
+		const $section = $(this);
+		if ($section.find(".frappe-control").length) {
+			$section.removeClass("empty-section").addClass("visible-section");
+		}
+	});
+	(frm.layout.tabs || []).forEach((tab) => {
+		if (tab.toggle) {
+			tab.toggle(true);
+		}
+	});
+	const tabs = frm.layout.tabs || [];
+	const has_active = tabs.some((tab) => tab.is_active?.());
+	if (!has_active) {
+		const first_visible = tabs.find((tab) => !tab.is_hidden?.());
+		first_visible?.set_active?.();
+	}
+	const after_fix = frm.layout.wrapper.find(".frappe-control:not(.hide-control)").length;
+	if (!after_fix) {
+		console.warn("CGM Project form still has no visible fields after layout recovery", frm.doc.name);
+	}
+}
+
 function render_shipment_progress_chart(frm) {
 	const field = frm.get_field("custom_shipment_progress_html");
 	if (!field || !frm.doc.name) {
@@ -588,9 +628,16 @@ function render_shipment_progress_chart(frm) {
 					${legendLine}
 				</div>
 			`);
-			if (d.workflow_behind && frm.doc.custom_shipment_status !== d.current_status) {
+			if (
+				d.workflow_behind &&
+				d.uses_clearance_states &&
+				d.current_status &&
+				frm.doc.custom_shipment_status !== d.current_status
+			) {
 				frm.set_value("custom_shipment_status", d.current_status);
-				const indicator = project_clearance_indicator({ custom_shipment_status: d.current_status });
+				const indicator = project_clearance_indicator({
+					custom_shipment_status: d.current_status,
+				});
 				if (indicator) {
 					frm.page.set_indicator(indicator[0], indicator[1]);
 				}
@@ -1235,13 +1282,21 @@ function render_project_operational_updates(frm) {
 
 frappe.ui.form.on("Project", {
 	onload(frm) {
-		if (frm.is_new() && frm.fields_dict.custom_opened_date && !frm.doc.custom_opened_date) {
-			frm.set_value("custom_opened_date", frappe.datetime.get_today());
+		try {
+			if (frm.is_new() && frm.fields_dict.custom_opened_date && !frm.doc.custom_opened_date) {
+				frm.set_value("custom_opened_date", frappe.datetime.get_today());
+			}
+			if (frm.doc.customer && !frm.doc.custom_consignee) {
+				sync_consignee_from_customer(frm);
+			}
+		} catch (err) {
+			console.error("CGM Project onload failed", err);
 		}
-		if (frm.doc.customer && !frm.doc.custom_consignee) {
-			sync_consignee_from_customer(frm);
-		}
-		toggle_project_transport_reference_fields(frm);
+	},
+
+	onload_post_render(frm) {
+		ensure_project_form_layout_visible(frm);
+		setTimeout(() => ensure_project_form_layout_visible(frm), 0);
 	},
 
 	customer(frm) {
@@ -1250,64 +1305,73 @@ frappe.ui.form.on("Project", {
 	},
 
 	refresh(frm) {
-		toggle_project_transport_reference_fields(frm);
-		setup_customer_batch_autocomplete(frm);
+		try {
+			toggle_project_transport_reference_fields(frm);
+			setup_customer_batch_autocomplete(frm);
 
-		if (frm.doc.custom_shipment_status) {
-			const indicator = project_clearance_indicator(frm.doc);
-			if (indicator) {
-				frm.page.set_indicator(indicator[0], indicator[1]);
+			if (frm.doc.custom_shipment_status) {
+				const indicator = project_clearance_indicator(frm.doc);
+				if (indicator) {
+					frm.page.set_indicator(indicator[0], indicator[1]);
+				}
 			}
-		}
 
-		render_shipment_progress_chart(frm);
-		refresh_project_costing_currency_display(frm);
-		configure_project_document_grid(frm);
-		configure_project_status_fields(frm);
-		configure_project_container_grid(frm);
+			render_shipment_progress_chart(frm);
+			refresh_project_costing_currency_display(frm);
+			configure_project_document_grid(frm);
+			configure_project_status_fields(frm);
+			configure_project_container_grid(frm);
 
-		setup_port_arrival_confirmation_button(frm);
-		setup_create_container_allocation_button(frm);
-		setup_add_bill_of_lading_button(frm);
+			setup_port_arrival_confirmation_button(frm);
+			setup_create_container_allocation_button(frm);
+			setup_add_bill_of_lading_button(frm);
 
-		if (frm.doc.name && !frm.is_new()) {
-			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass("btn-primary");
-			frm.add_custom_button(__("Container Tracker"), () => {
-				frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
-			}, __("View"));
-			frm.add_custom_button(__("Container Tracking Report"), () => {
-				frappe.set_route("query-report", "Container Tracking Detail", {
-					project: frm.doc.name,
-				});
-			}, __("View"));
-			frm.add_custom_button(__("Container Ops Board"), () => {
-				frappe.route_options = { project: frm.doc.name };
-				frappe.set_route("container-ops-board");
-			}, __("View"));
-			frm.add_custom_button(__("Post Container Charge Accrual"), () => {
-				post_container_charge_accrual(frm);
-			}, __("Shipment"));
-			frm.add_custom_button(__("View Journal Entries"), () => {
-				open_project_finance_journal_entries(frm);
-			}, __("View"));
-			frm.add_custom_button(__("Daily Status"), () => {
-				frappe.new_doc("Daily Status Update");
-			}, __("View"));
-			frm.add_custom_button(__("Seal Record"), () => {
-				frappe.new_doc("Seal Record", { project: frm.doc.name });
-			}, __("View"));
-			frm.page.set_inner_btn_group_as_primary(__("View"));
-		}
-
-		const refField =
-			frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
-		if (frm.is_new() && frm.doc.project_name && refField) {
-			const refValue = frm.doc.custom_project_reference || frm.doc.custom_cgm_ref_no;
-			if (!refValue) {
-				frm.set_value(refField.df.fieldname, frm.doc.project_name);
+			if (frm.doc.name && !frm.is_new()) {
+				frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass(
+					"btn-primary"
+				);
+				frm.add_custom_button(__("Container Tracker"), () => {
+					frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
+				}, __("View"));
+				frm.add_custom_button(__("Container Tracking Report"), () => {
+					frappe.set_route("query-report", "Container Tracking Detail", {
+						project: frm.doc.name,
+					});
+				}, __("View"));
+				frm.add_custom_button(__("Container Ops Board"), () => {
+					frappe.route_options = { project: frm.doc.name };
+					frappe.set_route("container-ops-board");
+				}, __("View"));
+				frm.add_custom_button(__("Post Container Charge Accrual"), () => {
+					post_container_charge_accrual(frm);
+				}, __("Shipment"));
+				frm.add_custom_button(__("View Journal Entries"), () => {
+					open_project_finance_journal_entries(frm);
+				}, __("View"));
+				frm.add_custom_button(__("Daily Status"), () => {
+					frappe.new_doc("Daily Status Update");
+				}, __("View"));
+				frm.add_custom_button(__("Seal Record"), () => {
+					frappe.new_doc("Seal Record", { project: frm.doc.name });
+				}, __("View"));
+				frm.page.set_inner_btn_group_as_primary(__("View"));
 			}
-		}
 
+			const refField =
+				frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
+			if (frm.is_new() && frm.doc.project_name && refField) {
+				const refValue = frm.doc.custom_project_reference || frm.doc.custom_cgm_ref_no;
+				if (!refValue) {
+					frm.set_value(refField.df.fieldname, frm.doc.project_name);
+				}
+			}
+
+			ensure_project_form_layout_visible(frm);
+			setTimeout(() => ensure_project_form_layout_visible(frm), 0);
+		} catch (err) {
+			console.error("CGM Project refresh failed", err);
+			ensure_project_form_layout_visible(frm);
+		}
 	},
 
 	project_name(frm) {

@@ -71,7 +71,6 @@ doctype_js = {
 	],
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Project": [
-		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
 		"public/js/attachment_approval_workflow.js",
 		"public/js/cgm_transport_reference.js",
