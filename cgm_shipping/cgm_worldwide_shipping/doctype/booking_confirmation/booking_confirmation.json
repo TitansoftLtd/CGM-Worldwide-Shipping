@@ -203,10 +203,11 @@
    "read_only": 1
   },
   {
+   "description": "Enter the client batch for this shipment. Required during onboarding; auto-allocation can be enabled later.",
    "fieldname": "batch_no",
    "fieldtype": "Data",
    "label": "Batch No",
-   "read_only": 1
+   "read_only": 0
   }
  ],
  "index_web_pages_for_search": 1,

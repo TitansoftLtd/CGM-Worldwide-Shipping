@@ -163,8 +163,6 @@ def apply_booking_quantity_and_batch(doc) -> None:
 
 	derived = derived_quantity_from_booking(doc)
 	if not derived:
-		if doc.meta.has_field("batch_no"):
-			doc.batch_no = None
 		return
 
 	allocate_fcl_batch_for_doc(

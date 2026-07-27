@@ -469,6 +469,13 @@ def prepare_shipment_documents_for_form(doc, table_field: str) -> None:
 	normalize_shipment_documents_table(doc.get(table_field))
 
 
+def on_opportunity_onload(doc, _method=None) -> None:
+	"""Expose legacy client document files in draft/final attach columns on load."""
+	field = get_opportunity_documents_field()
+	if field:
+		prepare_shipment_documents_for_form(doc, field)
+
+
 def _copy_version_slots_to_row(target_row, source_row) -> bool:
 	"""Copy normalized initial/final slots from source → target. Returns True if changed."""
 	if not target_row or not source_row:

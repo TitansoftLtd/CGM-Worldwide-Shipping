@@ -26,6 +26,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment imp
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	assign_lp_project_reference,
 	is_lp_project_reference,
+	refresh_project_reference_from_fields,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_bill_of_lading_from_source,
@@ -131,6 +132,11 @@ def get_stage_requirements():
 def assign_project_reference_on_insert(doc, _method=None):
 	"""Allocate Client Ref / Quantity[/ Batch] on project_name and custom_project_reference."""
 	assign_lp_project_reference(doc)
+
+
+def sync_project_reference_on_save(doc, _method=None):
+	"""Keep project_name aligned when batch or quantity fields are edited manually."""
+	refresh_project_reference_from_fields(doc)
 
 
 def on_project_onload(doc, _method=None):

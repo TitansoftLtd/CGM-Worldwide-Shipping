@@ -111,10 +111,11 @@
   },
   {
    "depends_on": "eval:doc.cargo_type!='LCL'",
+   "description": "Enter the client batch for this shipment. Prefilled from Booking when linked; otherwise type manually.",
    "fieldname": "batch_no",
    "fieldtype": "Data",
    "label": "Batch No",
-   "read_only": 1
+   "read_only": 0
   },
   {
    "fieldname": "booking_confirmation",

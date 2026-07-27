@@ -859,10 +859,23 @@ def get_bl_quantity_summary(bl_doc) -> str:
 	return summarize_bl_container_quantities(bl_doc.name)
 
 # ─── Container row fetching ───────────────────────────────────────────────────
-def fetch_container_rows(bill_of_lading: str | None) -> list[dict]:
+def _derived_quantity_for_bl_containers(bill_of_lading: str) -> str:
+	"""Quantity text used to backfill missing container cargo sizes from a BL."""
+	qty = (frappe.db.get_value("Bill of Lading", bill_of_lading, "quantity") or "").strip()
+	if qty:
+		return qty
+	booking = frappe.db.get_value("Bill of Lading", bill_of_lading, "booking_confirmation")
+	if booking:
+		return (frappe.db.get_value("Booking Confirmation", booking, "quantity") or "").strip()
+	return ""
+
+
+def fetch_container_rows(
+	bill_of_lading: str | None, *, fill_missing_cargo_sizes: bool = True
+) -> list[dict]:
 	if not bill_of_lading or not frappe.db.exists("Bill of Lading", bill_of_lading):
 		return []
-	return [
+	rows = [
 		normalize_container_row(row)
 		for row in frappe.get_all(
 			"Container",
@@ -871,6 +884,13 @@ def fetch_container_rows(bill_of_lading: str | None) -> list[dict]:
 			order_by="idx asc",
 		)
 	]
+	if fill_missing_cargo_sizes and rows:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+			fill_missing_container_row_cargo_sizes,
+		)
+
+		fill_missing_container_row_cargo_sizes(rows, _derived_quantity_for_bl_containers(bill_of_lading))
+	return rows
 
 def resolve_bill_of_lading_name(attachment: str) -> str | None:
 	"""Resolve a Bill of Lading name from its docname or attachment file path."""

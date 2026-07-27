@@ -71,7 +71,6 @@ doctype_js = {
 	],
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Project": [
-		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
 		"public/js/attachment_approval_workflow.js",
 		"public/js/cgm_transport_reference.js",
@@ -231,6 +230,7 @@ doc_events = {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_update",
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_reference_on_save",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_ata_fields",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
@@ -278,6 +278,7 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
 	},
 	"Opportunity": {
+		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.documents.on_opportunity_onload",
 		"before_insert": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.prepare_opportunity_intake",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.assign_opportunity_batch_on_insert",

@@ -2932,7 +2932,7 @@ def on_task_onload(doc, _method=None):
 
 	on_task_onload_container_updates(doc)
 
-	if _is_sea_task(doc) and doc.meta.has_field(TASK_DOCUMENTS_FIELD):
+	if doc.meta.has_field(TASK_DOCUMENTS_FIELD):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 			prepare_shipment_documents_for_form,
 		)

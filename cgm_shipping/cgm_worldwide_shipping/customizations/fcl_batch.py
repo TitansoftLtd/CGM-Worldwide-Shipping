@@ -431,8 +431,28 @@ def next_fcl_batch_number(
 	return highest + 1
 
 
+# Sequential FCL batch allocation (Customer + derived quantity). Off while CGM
+# onboard in-flight shipments with manually typed batch numbers.
+AUTO_ALLOCATE_FCL_BATCH = False
+
+
+def _stored_batch_no(doc) -> str:
+	return str(doc.get("batch_no") or "").strip()
+
+
+def _batch_return_value(batch_text: str) -> int | None:
+	if batch_text.isdigit():
+		return int(batch_text)
+	return None
+
+
 def allocate_fcl_batch_for_doc(doc, *, cargo_type_field: str, derived_quantity: str) -> int | None:
-	"""Set ``quantity`` + ``batch_no`` on an FCL Booking/BL. Returns batch or None for LCL/incomplete."""
+	"""Set ``quantity`` + ``batch_no`` on an FCL Booking/BL.
+
+	Manual ``batch_no`` is always preserved. A linked Booking may fill an empty
+	Bill of Lading batch. Sequential auto-allocation runs only when
+	``AUTO_ALLOCATE_FCL_BATCH`` is enabled.
+	"""
 	cargo_type = doc.get(cargo_type_field)
 	if is_lcl_cargo_type(cargo_type):
 		return None
@@ -441,7 +461,7 @@ def allocate_fcl_batch_for_doc(doc, *, cargo_type_field: str, derived_quantity: 
 
 	derived = normalize_derived_quantity(derived_quantity or "")
 	if not derived:
-		return None
+		return _batch_return_value(_stored_batch_no(doc))
 
 	if doc.meta.has_field("quantity"):
 		doc.quantity = derived
@@ -449,22 +469,23 @@ def allocate_fcl_batch_for_doc(doc, *, cargo_type_field: str, derived_quantity: 
 	if doc.meta.has_field(cargo_type_field) and not is_lcl_cargo_type(doc.get(cargo_type_field)):
 		doc.set(cargo_type_field, FCL_CARGO_TYPE)
 
-	# Prefer batch already allocated on a linked Booking Confirmation (BL path).
+	manual = _stored_batch_no(doc)
+	if manual:
+		if doc.meta.has_field("batch_no"):
+			doc.batch_no = manual
+		return _batch_return_value(manual)
+
+	# Empty BL: inherit batch from linked Booking Confirmation when present.
 	booking_name = (doc.get("booking_confirmation") or "").strip()
 	if booking_name and frappe.db.exists("Booking Confirmation", booking_name):
-		booking_batch = frappe.db.get_value("Booking Confirmation", booking_name, "batch_no")
-		if booking_batch and str(booking_batch).strip().isdigit():
-			batch = int(str(booking_batch).strip())
+		booking_batch = str(frappe.db.get_value("Booking Confirmation", booking_name, "batch_no") or "").strip()
+		if booking_batch:
 			if doc.meta.has_field("batch_no"):
-				doc.batch_no = str(batch)
-			return batch
+				doc.batch_no = booking_batch
+			return _batch_return_value(booking_batch)
 
-	existing = str(doc.get("batch_no") or "").strip()
-	# Ignore pre-seeded batch on new docs (e.g. stale Opportunity global counter).
-	if existing.isdigit() and not doc.is_new():
-		return int(existing)
-	if doc.meta.has_field("batch_no"):
-		doc.batch_no = None
+	if not AUTO_ALLOCATE_FCL_BATCH:
+		return None
 
 	batch = next_fcl_batch_number(
 		customer=doc.get("customer"),
