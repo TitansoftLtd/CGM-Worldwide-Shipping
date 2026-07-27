@@ -4,7 +4,7 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	AUTO_ALLOCATE_FCL_BATCH,
@@ -12,10 +12,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	counts_from_container_rows,
 	counts_from_request_rows,
 	format_derived_quantity,
+	hydrate_preshipment_requested_cargo_rows,
 	is_fcl_cargo_type,
 	is_lcl_cargo_type,
 	next_fcl_batch_number,
 	normalize_derived_quantity,
+	requested_cargo_rows_from_preshipment_doc,
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
 	build_bill_of_lading_name,
@@ -126,6 +128,34 @@ class TestBillOfLadingNaming(IntegrationTestCase):
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ 2 x 20FT-10"), 10)
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ"), None)
 		self.assertEqual(parse_batch_number_from_bl_name("MB-0ONUJ-7"), 7)
+
+
+class TestRequestedCargoFromPreshipmentQuantity(UnitTestCase):
+	def _mock_doc(self, **values):
+		meta = frappe._dict(
+			has_field=lambda field: field
+			in {
+				"custom_requested_cargo_quantity",
+				"custom_quantity",
+				"quantity",
+			}
+		)
+		doc = frappe._dict(meta=meta, custom_requested_cargo_quantity=[], **values)
+		return doc
+
+	def test_build_rows_from_custom_quantity_when_table_empty(self):
+		doc = self._mock_doc(custom_quantity="1 x 40FT")
+		rows = requested_cargo_rows_from_preshipment_doc(doc)
+		self.assertEqual(rows, [{"cargo_size": "40FT", "quantity": "1"}])
+
+	def test_hydrate_preshipment_requested_cargo_rows(self):
+		doc = self._mock_doc(custom_quantity="2 x 20FT")
+		changed = hydrate_preshipment_requested_cargo_rows(doc)
+		self.assertTrue(changed)
+		self.assertEqual(
+			doc.custom_requested_cargo_quantity,
+			[{"cargo_size": "20FT", "quantity": "2"}],
+		)
 
 
 class TestBillOfLadingBookingPrefill(IntegrationTestCase):
