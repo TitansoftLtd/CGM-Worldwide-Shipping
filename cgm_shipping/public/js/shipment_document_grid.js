@@ -32,16 +32,94 @@ function cgm_row_attachment_url(row) {
 	return (row.final_attachment || draft || row.attachment || "").trim();
 }
 
+function cgm_open_attachment_file(file_url) {
+	if (!file_url) {
+		return;
+	}
+	window.open(frappe.urllib.get_full_url(file_url), "_blank", "noopener,noreferrer");
+}
+
+function cgm_download_attachment_file(file_url) {
+	if (!file_url) {
+		return;
+	}
+	open_url_post(frappe.request.url, {
+		cmd: "frappe.core.doctype.file.file.download_file",
+		file_url,
+	});
+}
+
+function cgm_clear_attach_click_timer($link) {
+	const timer = $link.data("cgm-click-timer");
+	if (timer) {
+		clearTimeout(timer);
+		$link.removeData("cgm-click-timer");
+	}
+}
+
+function cgm_schedule_attach_preview($link, file_url) {
+	cgm_clear_attach_click_timer($link);
+	const timer = setTimeout(() => {
+		$link.removeData("cgm-click-timer");
+		cgm_open_attachment_file(file_url);
+	}, 250);
+	$link.data("cgm-click-timer", timer);
+}
+
+function cgm_bind_single_attach_link($link, file_url) {
+	$link.off("mousedown.cgm_attach click.cgm_attach dblclick.cgm_attach");
+	$link.on("mousedown.cgm_attach", (e) => e.stopPropagation());
+	$link.on("click.cgm_attach", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		cgm_schedule_attach_preview($link, file_url);
+		return false;
+	});
+	$link.on("dblclick.cgm_attach", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		cgm_clear_attach_click_timer($link);
+		cgm_download_attachment_file(file_url);
+		return false;
+	});
+}
+
 function cgm_attach_view_formatter(value, df, doc) {
 	const file_url = ((value || "").trim() || cgm_row_attachment_url(doc) || "").trim();
 	if (!file_url) {
 		return "";
 	}
-	const url = frappe.urllib.get_full_url(file_url);
 	const label = file_url.split("/").pop() || __("View");
-	return `<a class="attached-file-link" href="${frappe.utils.escape_html(
-		url
-	)}" target="_blank" rel="noopener">${frappe.utils.escape_html(label)}</a>`;
+	const title = __("Click to view, double-click to download");
+	return `<a href="#" class="cgm-grid-attach-link attached-file-link" data-file-url="${frappe.utils.escape_html(
+		file_url
+	)}" title="${frappe.utils.escape_html(title)}">${frappe.utils.escape_html(label)}</a>`;
+}
+
+function cgm_bind_attach_grid_clicks(grid) {
+	if (!grid?.wrapper) {
+		return;
+	}
+	const $wrapper = $(grid.wrapper);
+	$wrapper.off("mousedown.cgm_attach click.cgm_attach dblclick.cgm_attach");
+	$wrapper.on("mousedown.cgm_attach", ".cgm-grid-attach-link", (e) => {
+		e.stopPropagation();
+	});
+	$wrapper.on("click.cgm_attach", ".cgm-grid-attach-link", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const $link = $(e.currentTarget);
+		cgm_schedule_attach_preview($link, $link.data("file-url"));
+		return false;
+	});
+	$wrapper.on("dblclick.cgm_attach", ".cgm-grid-attach-link", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const $link = $(e.currentTarget);
+		cgm_clear_attach_click_timer($link);
+		cgm_download_attachment_file($link.data("file-url"));
+		return false;
+	});
 }
 
 function cgm_fix_attach_control_links(grid_row, fieldnames) {
@@ -53,9 +131,12 @@ function cgm_fix_attach_control_links(grid_row, fieldnames) {
 		if (!field?.value) {
 			continue;
 		}
-		const url = frappe.urllib.get_full_url(field.value);
-		field.$value?.find(".attached-file-link").attr("href", url);
-		field.$wrapper?.find("a").attr("href", url);
+		const $link = field.$value?.find(".attached-file-link");
+		if (!$link?.length) {
+			continue;
+		}
+		$link.off("mousedown.cgm_attach click.cgm_attach dblclick.cgm_attach");
+		cgm_bind_single_attach_link($link, field.value);
 	}
 }
 
@@ -95,6 +176,7 @@ function cgm_apply_attach_view_formatters(grid, fieldnames) {
 		}
 		cgm_patch_attach_grid_row_form_render(grid_row, fieldnames);
 	}
+	cgm_bind_attach_grid_clicks(grid);
 }
 
 const CGM_PERMIT_ATTACH_FIELDS = ["permit_document", "payment_invoice", "payment_receipt"];
