@@ -52,8 +52,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Bill of Lading Number",
-   "reqd": 1,
-   "unique": 1
+   "reqd": 1
   },
   {
    "fieldname": "customer",

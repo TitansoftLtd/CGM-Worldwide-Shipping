@@ -20,6 +20,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	requested_cargo_rows_from_preshipment_doc,
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+	amended_bill_of_lading_name,
 	build_bill_of_lading_name,
 	ensure_bl_cargo_type,
 	expand_requested_cargo_to_container_stubs,
@@ -113,6 +114,30 @@ class TestFclBatchQuantity(IntegrationTestCase):
 		self.assertIsNone(result)
 		self.assertEqual(doc.batch_no, "2123")
 		self.assertEqual(doc.quantity, "2 x 20FT")
+
+
+class TestBillOfLadingAmendedNaming(UnitTestCase):
+	def test_amended_bill_of_lading_name_first_revision(self):
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.frappe.db.get_value",
+			return_value=None,
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.frappe.db.exists",
+			return_value=False,
+		):
+			name = amended_bill_of_lading_name("MB-0ONUJ", "MB-0ONUJ")
+		self.assertEqual(name, "MB-0ONUJ-1")
+
+	def test_amended_bill_of_lading_name_second_revision(self):
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.frappe.db.get_value",
+			side_effect=["MB-0ONUJ", None],
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.frappe.db.exists",
+			return_value=False,
+		):
+			name = amended_bill_of_lading_name("MB-0ONUJ", "MB-0ONUJ-1")
+		self.assertEqual(name, "MB-0ONUJ-2")
 
 
 class TestBillOfLadingNaming(IntegrationTestCase):
