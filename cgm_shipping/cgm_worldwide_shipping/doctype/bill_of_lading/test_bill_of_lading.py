@@ -7,6 +7,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+	AUTO_ALLOCATE_FCL_BATCH,
+	allocate_fcl_batch_for_doc,
 	counts_from_container_rows,
 	counts_from_request_rows,
 	format_derived_quantity,
@@ -86,6 +88,29 @@ class TestFclBatchQuantity(IntegrationTestCase):
 			right = normalize_derived_quantity("2 x 40FT")
 			self.assertEqual(left, right)
 			self.assertEqual(left, "2 x 40FT")
+
+	def test_allocate_fcl_batch_preserves_manual_entry(self):
+		self.assertFalse(AUTO_ALLOCATE_FCL_BATCH)
+		doc = frappe._dict(
+			name="BK-TEST",
+			customer="CUST-A",
+			requested_cargo_type="FCL",
+			batch_no="2123",
+			quantity=None,
+			meta=frappe._dict(
+				has_field=lambda field, *_a, **_k: field
+				in {"quantity", "batch_no", "requested_cargo_type"}
+			),
+		)
+		doc.is_new = lambda: True
+		result = allocate_fcl_batch_for_doc(
+			doc,
+			cargo_type_field="requested_cargo_type",
+			derived_quantity="2 x 20FT",
+		)
+		self.assertIsNone(result)
+		self.assertEqual(doc.batch_no, "2123")
+		self.assertEqual(doc.quantity, "2 x 20FT")
 
 
 class TestBillOfLadingNaming(IntegrationTestCase):

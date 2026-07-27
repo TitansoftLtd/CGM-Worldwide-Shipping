@@ -79,13 +79,19 @@ def has_primary_transport_document(opportunity) -> bool:
 
 
 def assign_opportunity_batch_on_insert(doc, _method=None) -> None:
-	"""FCL batch is allocated on Booking Confirmation / Bill of Lading only."""
-	if doc.meta.has_field("custom_batch_no"):
-		doc.custom_batch_no = None
+	"""Preserve manual batch on intake; Booking/BL may fill it on later saves."""
+	if not doc.meta.has_field("custom_batch_no"):
+		return
+	if (doc.get("custom_batch_no") or "").strip():
+		return
 
 
 def resolve_fcl_batch_for_opportunity(opp) -> str | None:
-	"""Batch from linked FCL transport docs — not the legacy global Settings counter."""
+	"""Manual Opportunity batch, else batch from linked Booking/BL."""
+	manual = (opp.get("custom_batch_no") or "").strip()
+	if manual:
+		return manual
+
 	booking = (opp.get("custom_booking_confirmation") or "").strip()
 	if booking and frappe.db.exists("Booking Confirmation", booking):
 		batch = frappe.db.get_value("Booking Confirmation", booking, "batch_no")
@@ -242,7 +248,7 @@ def copy_opportunity_scalars_to_project(project, opp, *, only_empty: bool = True
 		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
 			continue
 		if dest_field == "custom_batch_no":
-			value = resolve_fcl_batch_for_opportunity(opp)
+			value = (opp.get("custom_batch_no") or "").strip() or resolve_fcl_batch_for_opportunity(opp)
 		else:
 			value = opp.get(src_field)
 		if value in (None, ""):

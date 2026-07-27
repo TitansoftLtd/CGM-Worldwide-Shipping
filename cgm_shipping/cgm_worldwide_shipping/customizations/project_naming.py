@@ -49,6 +49,14 @@ PROJECT_REFERENCE_FIELD = "custom_project_reference"
 LEGACY_REFERENCE_FIELD = "custom_cgm_ref_no"
 PROJECT_NAME_LOCK = "cgm_project_reference_lock"
 CLIENT_REFERENCE_FIELD = "custom_client_refrence_no"
+PROJECT_REFERENCE_INPUT_FIELDS = (
+	CLIENT_REFERENCE_FIELD,
+	"custom_batch_no",
+	"custom_cargo_type",
+	"custom_quantity",
+	"custom_number_of_packages",
+	"custom_package_type",
+)
 
 
 def is_lp_project_reference(value: str | None) -> bool:
@@ -291,23 +299,87 @@ def build_lp_project_reference(project, sequence: int | None = None) -> str:
 	return base
 
 
-def _lp_reference_in_use(reference: str) -> bool:
-	if frappe.db.exists("Project", {"project_name": reference}):
+def _project_name_for_reference(reference: str, exclude_name: str | None = None) -> str | None:
+	"""Return the Project ``name`` using ``reference`` as project_name, if any."""
+	if not reference:
+		return None
+	filters: dict = {"project_name": reference}
+	if exclude_name:
+		filters["name"] = ["!=", exclude_name]
+	match = frappe.db.get_value("Project", filters, "name")
+	if match:
+		return match
+	return None
+
+
+def _reference_field_owner(reference: str, field: str, exclude_name: str | None = None) -> str | None:
+	if not reference or not frappe.db.has_column("Project", field):
+		return None
+	filters: dict = {field: reference}
+	if exclude_name:
+		filters["name"] = ["!=", exclude_name]
+	return frappe.db.get_value("Project", filters, "name")
+
+
+def _lp_reference_in_use(reference: str, exclude_name: str | None = None) -> bool:
+	if _project_name_for_reference(reference, exclude_name):
 		return True
-	if frappe.db.has_column("Project", PROJECT_REFERENCE_FIELD):
-		if frappe.db.exists("Project", {PROJECT_REFERENCE_FIELD: reference}):
-			return True
-	if frappe.db.has_column("Project", LEGACY_REFERENCE_FIELD):
-		if frappe.db.exists("Project", {LEGACY_REFERENCE_FIELD: reference}):
+	if _reference_field_owner(reference, PROJECT_REFERENCE_FIELD, exclude_name):
+		return True
+	if _reference_field_owner(reference, LEGACY_REFERENCE_FIELD, exclude_name):
+		return True
+	return False
+
+
+def project_reference_inputs_changed(project) -> bool:
+	"""True when shipment fields that feed project_name were edited on save."""
+	if project.is_new():
+		return False
+	prev = project.get_doc_before_save()
+	if not prev:
+		return False
+	for fieldname in PROJECT_REFERENCE_INPUT_FIELDS:
+		if project.meta.has_field(fieldname) and project.has_value_changed(fieldname):
 			return True
 	return False
+
+
+def allocate_unique_lp_project_reference(
+	project, *, exclude_name: str | None = None
+) -> str:
+	"""Build a unique Client Ref / Quantity[/ Batch] reference for ``project``."""
+	frappe.db.sql("SELECT GET_LOCK(%s, 10)", (PROJECT_NAME_LOCK,))
+	try:
+		for attempt in range(1, 51):
+			disambiguator = attempt if attempt > 1 else None
+			reference = build_lp_project_reference(project, sequence=disambiguator)
+			if not _lp_reference_in_use(reference, exclude_name=exclude_name):
+				return reference
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (PROJECT_NAME_LOCK,))
+
+	frappe.throw(frappe._("Could not allocate a unique project reference."))
 
 
 def sync_project_reference_fields(project, reference: str) -> None:
 	project.project_name = reference
 	ref_field = project_reference_field(project.meta)
 	if ref_field:
-		project.set(ref_field, reference)
+		setattr(project, ref_field, reference)
+
+
+def refresh_project_reference_from_fields(project) -> str | None:
+	"""Rebuild project_name when Client Ref, batch, or quantity fields change on save."""
+	if project.is_new():
+		return None
+	if not (project.get(CLIENT_REFERENCE_FIELD) or "").strip():
+		return None
+	if not project_reference_inputs_changed(project):
+		return get_project_reference(project)
+
+	reference = allocate_unique_lp_project_reference(project, exclude_name=project.name)
+	sync_project_reference_fields(project, reference)
+	return reference
 
 
 def assign_lp_project_reference(project) -> str | None:
@@ -318,19 +390,11 @@ def assign_lp_project_reference(project) -> str | None:
 			sync_project_reference_fields(project, reference)
 		return reference
 
-	frappe.db.sql("SELECT GET_LOCK(%s, 10)", (PROJECT_NAME_LOCK,))
-	try:
-		for attempt in range(1, 51):
-			# attempt 1 → base name; 2+ → append " / N" disambiguator
-			disambiguator = attempt if attempt > 1 else None
-			reference = build_lp_project_reference(project, sequence=disambiguator)
-			if not _lp_reference_in_use(reference):
-				sync_project_reference_fields(project, reference)
-				return reference
-	finally:
-		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (PROJECT_NAME_LOCK,))
-
-	frappe.throw(frappe._("Could not allocate a unique project reference."))
+	reference = allocate_unique_lp_project_reference(
+		project, exclude_name=project.name if not project.is_new() else None
+	)
+	sync_project_reference_fields(project, reference)
+	return reference
 
 
 # Backward-compatible aliases used during refactor.

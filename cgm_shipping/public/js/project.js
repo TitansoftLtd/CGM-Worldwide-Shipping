@@ -374,12 +374,8 @@ function setup_customer_batch_autocomplete(frm) {
 			if (df && df.fieldtype === "Data") {
 				frm.set_df_property(fieldname, "fieldtype", "Autocomplete");
 			}
+			frm.set_df_property(fieldname, "read_only", 0);
 			frm.refresh_field(fieldname);
-		},
-	});
-}
-
-function toggle_project_transport_reference_fields(frm) {
 	const transportToggle = cgm_shipping.transport_reference.toggle(frm, {
 		air_waybill: "custom_awb_number",
 		bill_of_lading: "custom_bill_of_lading",

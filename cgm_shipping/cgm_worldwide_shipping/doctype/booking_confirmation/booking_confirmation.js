@@ -21,6 +21,8 @@ function toggle_cargo_fields(frm) {
 	frm.set_df_property(REQUESTED_CONTAINERS_FIELD, "hidden", show_table ? 0 : 1);
 	frm.set_df_property("number_of_packages", "hidden", show_packages ? 0 : 1);
 	frm.set_df_property("package_type", "hidden", show_packages ? 0 : 1);
+	frm.set_df_property("quantity", "hidden", show_table ? 0 : 1);
+	frm.set_df_property("batch_no", "hidden", show_table ? 0 : 1);
 
 	if (show_table) {
 		frm.refresh_field(REQUESTED_CONTAINERS_FIELD);
@@ -31,9 +33,32 @@ function toggle_cargo_fields(frm) {
 	}
 }
 
+function setup_booking_batch_autocomplete(frm) {
+	const fieldname = "batch_no";
+	if (!frm.fields_dict[fieldname] || !frm.doc.customer) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_customer_batch_numbers",
+		args: { customer: frm.doc.customer },
+		callback(r) {
+			const options = (r.message || []).join("\n");
+			frm.set_df_property(fieldname, "options", options);
+			const df = frm.get_field(fieldname)?.df;
+			if (df && df.fieldtype === "Data") {
+				frm.set_df_property(fieldname, "fieldtype", "Autocomplete");
+			}
+			frm.set_df_property(fieldname, "read_only", 0);
+			frm.refresh_field(fieldname);
+		},
+	});
+}
+
 frappe.ui.form.on("Booking Confirmation", {
 	onload(frm) {
 		toggle_cargo_fields(frm);
+		setup_booking_batch_autocomplete(frm);
 
 		if (frm.is_new()) {
 			if (frappe.route_options?.linked_opportunity) {
@@ -50,6 +75,7 @@ frappe.ui.form.on("Booking Confirmation", {
 
 	refresh(frm) {
 		toggle_cargo_fields(frm);
+		setup_booking_batch_autocomplete(frm);
 
 		if (frm.doc.docstatus === 1) {
 			add_create_opportunity_button(frm);
@@ -63,6 +89,10 @@ frappe.ui.form.on("Booking Confirmation", {
 
 	requested_cargo_type(frm) {
 		toggle_cargo_fields(frm);
+	},
+
+	customer(frm) {
+		setup_booking_batch_autocomplete(frm);
 	},
 
 	validate(frm) {

@@ -681,6 +681,7 @@ function cgm_configure_permit_status_grids(frm) {
 			grid.update_docfield_property("status", "in_list_view", 1);
 		}
 		sf.configure_grid(grid, "status", tone);
+		cgm_configure_permit_attach_grid(grid);
 	}
 }
 

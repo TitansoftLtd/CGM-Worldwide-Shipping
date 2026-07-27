@@ -23,6 +23,86 @@ function cgm_shipment_document_slot_fields() {
 	return fields;
 }
 
+function cgm_row_attachment_url(row) {
+	if (!row) {
+		return "";
+	}
+	const draft_field = cgm_draft_document_field();
+	const draft = draft_field ? row[draft_field] : null;
+	return (row.final_attachment || draft || row.attachment || "").trim();
+}
+
+function cgm_attach_view_formatter(value, df, doc) {
+	const file_url = ((value || "").trim() || cgm_row_attachment_url(doc) || "").trim();
+	if (!file_url) {
+		return "";
+	}
+	const url = frappe.urllib.get_full_url(file_url);
+	const label = file_url.split("/").pop() || __("View");
+	return `<a class="attached-file-link" href="${frappe.utils.escape_html(
+		url
+	)}" target="_blank" rel="noopener">${frappe.utils.escape_html(label)}</a>`;
+}
+
+function cgm_fix_attach_control_links(grid_row, fieldnames) {
+	if (!grid_row?.grid_form?.fields_dict) {
+		return;
+	}
+	for (const fieldname of fieldnames || []) {
+		const field = grid_row.grid_form.fields_dict[fieldname];
+		if (!field?.value) {
+			continue;
+		}
+		const url = frappe.urllib.get_full_url(field.value);
+		field.$value?.find(".attached-file-link").attr("href", url);
+		field.$wrapper?.find("a").attr("href", url);
+	}
+}
+
+function cgm_patch_attach_grid_row_form_render(grid_row, fieldnames) {
+	if (!grid_row || grid_row._cgm_attach_form_render_patched) {
+		return;
+	}
+	grid_row._cgm_attach_form_render_patched = true;
+	const orig_show_form = grid_row.show_form.bind(grid_row);
+	grid_row.show_form = function (...args) {
+		const result = orig_show_form(...args);
+		setTimeout(() => cgm_fix_attach_control_links(grid_row, fieldnames), 0);
+		return result;
+	};
+}
+
+function cgm_apply_attach_view_formatters(grid, fieldnames) {
+	if (!grid) {
+		return;
+	}
+	const allowed = new Set(fieldnames || []);
+	const apply = (df) => {
+		if (!df || df.fieldtype !== "Attach") {
+			return;
+		}
+		if (allowed.size && !allowed.has(df.fieldname)) {
+			return;
+		}
+		df.formatter = cgm_attach_view_formatter;
+	};
+	for (const df of grid.docfields || []) {
+		apply(df);
+	}
+	for (const grid_row of grid.grid_rows || []) {
+		for (const df of grid_row.docfields || []) {
+			apply(df);
+		}
+		cgm_patch_attach_grid_row_form_render(grid_row, fieldnames);
+	}
+}
+
+const CGM_PERMIT_ATTACH_FIELDS = ["permit_document", "payment_invoice", "payment_receipt"];
+
+function cgm_configure_permit_attach_grid(grid) {
+	cgm_apply_attach_view_formatters(grid, CGM_PERMIT_ATTACH_FIELDS);
+}
+
 function cgm_configure_shipment_document_grid(grid, { initial_read_only = false } = {}) {
 	if (!grid) {
 		return;
@@ -36,6 +116,7 @@ function cgm_configure_shipment_document_grid(grid, { initial_read_only = false 
 		slot_fields.forEach((fieldname) => {
 			grid.update_docfield_property(fieldname, "hidden", 1);
 		});
+		cgm_apply_attach_view_formatters(grid, ["attachment"]);
 		return;
 	}
 
@@ -59,6 +140,7 @@ function cgm_configure_shipment_document_grid(grid, { initial_read_only = false 
 		grid.update_docfield_property("final_attachment", "read_only", 0);
 		grid.update_docfield_property("document_type", "read_only", 1);
 	}
+	cgm_apply_attach_view_formatters(grid, slot_fields);
 }
 
 function cgm_on_shipment_document_slot_change(frm, cdt, cdn) {
@@ -107,6 +189,18 @@ function cgm_sync_shipment_document_rows_on_refresh(frm, table_field) {
 }
 
 frappe.ui.form.on("Shipment Document", {
+	form_render(frm, cdt, cdn) {
+		const grid_row = frm.cur_grid;
+		if (grid_row?.doc?.name !== cdn) {
+			return;
+		}
+		cgm_fix_attach_control_links(
+			grid_row,
+			cgm_has_shipment_document_versioning()
+				? cgm_shipment_document_slot_fields()
+				: ["attachment"]
+		);
+	},
 	draft_documents(frm, cdt, cdn) {
 		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
 	},
@@ -145,6 +239,16 @@ frappe.ui.form.on("Shipment Document", {
 			frappe.model.set_value(cdt, cdn, "verified_by", "");
 			frappe.model.set_value(cdt, cdn, "verified_on", "");
 		}
+	},
+});
+
+frappe.ui.form.on("Permit Register", {
+	form_render(frm, cdt, cdn) {
+		const grid_row = frm.cur_grid;
+		if (grid_row?.doc?.name !== cdn) {
+			return;
+		}
+		cgm_fix_attach_control_links(grid_row, CGM_PERMIT_ATTACH_FIELDS);
 	},
 });
 

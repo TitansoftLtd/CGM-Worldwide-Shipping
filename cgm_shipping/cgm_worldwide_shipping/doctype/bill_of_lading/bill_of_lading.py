@@ -159,8 +159,6 @@ def apply_bl_quantity_and_batch(doc) -> None:
 
 	derived = derived_quantity_from_bl(doc) or normalize_derived_quantity(parent_qty)
 	if not derived:
-		if doc.meta.has_field("batch_no"):
-			doc.batch_no = None
 		return
 
 	allocate_fcl_batch_for_doc(
@@ -276,6 +274,16 @@ def get_customer_batch_numbers(customer: str) -> list[str]:
 	if frappe.get_meta("Bill of Lading").has_field("batch_no"):
 		for value in frappe.get_all(
 			"Bill of Lading",
+			filters={"customer": customer, "batch_no": ["is", "set"]},
+			pluck="batch_no",
+		):
+			text = str(value or "").strip()
+			if text:
+				batches.add(text)
+
+	if frappe.get_meta("Booking Confirmation").has_field("batch_no"):
+		for value in frappe.get_all(
+			"Booking Confirmation",
 			filters={"customer": customer, "batch_no": ["is", "set"]},
 			pluck="batch_no",
 		):
