@@ -86,15 +86,20 @@ class BillofLading(Document):
 			frappe.throw(frappe._("Bill of Lading Number is required"))
 		if not self.customer:
 			frappe.throw(frappe._("Customer is required"))
-		# Quantity / batch stay on their own fields — name is always the BL number.
 		ensure_bl_cargo_type(self)
 		apply_bl_quantity_and_batch(self)
 		resolve_batch_number_for_bl(self)
-		self.name = (self.bl_number or "").strip()
+		bl_number = (self.bl_number or "").strip()
+		if self.amended_from:
+			# Cancelled originals keep the business number as their document name.
+			self.name = amended_bill_of_lading_name(bl_number, self.amended_from)
+		else:
+			self.name = bl_number
 
 	def validate(self):
 		coerce_numeric_fields(self, ("gross_weight", "net_weight"), empty_as_zero=True)
 		sanitize_bill_of_lading_linked_opportunity(self)
+		validate_unique_active_bl_number(self)
 		ensure_bl_cargo_type(self)
 		if is_lcl_cargo_type(self.get("cargo_type")):
 			if self.meta.has_field("quantity"):
@@ -109,6 +114,10 @@ class BillofLading(Document):
 
 	def before_submit(self):
 		ensure_bl_cargo_type(self)
+		validate_unique_active_bl_number(self)
+
+	def before_cancel(self):
+		release_preshipment_bl_links(self.name)
 
 	def on_submit(self):
 		"""Link this submitted BL back to its source Opportunity (and Project if any)."""
@@ -214,12 +223,68 @@ def _clear_empty_container_rows(doc) -> None:
 def build_bill_of_lading_name(
 	bl_number: str, quantity: str | None = None, batch_number: int | None = None
 ) -> str:
-	"""Document name is always the Bill of Lading number (FCL and LCL).
+	"""Document name is the Bill of Lading number for first-version BLs.
 
-	``quantity`` / ``batch_number`` are ignored; kept for call-site compatibility.
+	Amended BLs use ``amended_bill_of_lading_name`` instead. ``quantity`` /
+	``batch_number`` are ignored; kept for call-site compatibility.
 	"""
 	_ = (quantity, batch_number)
 	return (bl_number or "").strip()
+
+
+def amended_bill_of_lading_name(bl_number: str, amended_from: str) -> str:
+	"""Unique document name for an amended Bill of Lading (``{bl_number}-1``, …)."""
+	bl_number = (bl_number or "").strip()
+	if not bl_number or not amended_from:
+		return bl_number
+
+	version = 0
+	current = amended_from
+	while current:
+		version += 1
+		current = frappe.db.get_value("Bill of Lading", current, "amended_from")
+
+	candidate = f"{bl_number}-{version}"
+	while frappe.db.exists("Bill of Lading", candidate):
+		version += 1
+		candidate = f"{bl_number}-{version}"
+	return candidate
+
+
+def validate_unique_active_bl_number(doc) -> None:
+	"""Only one submitted Bill of Lading may use a given B/L number."""
+	bl_number = (doc.get("bl_number") or "").strip()
+	if not bl_number:
+		return
+
+	duplicate = frappe.db.get_value(
+		"Bill of Lading",
+		{
+			"bl_number": bl_number,
+			"docstatus": 1,
+			"name": ["!=", doc.name or ""],
+		},
+		"name",
+	)
+	if duplicate:
+		frappe.throw(
+			frappe._(
+				"Bill of Lading Number {0} is already used by submitted record {1}"
+			).format(bl_number, duplicate)
+		)
+
+
+def release_preshipment_bl_links(bl_name: str) -> None:
+	"""Clear Opportunity/Project/Lead links that block cancel/amend of a Bill of Lading."""
+	if not bl_name:
+		return
+
+	bl_field = get_bl_config().get("opportunity_bl_field") or "custom_bill_of_lading"
+	for doctype in ("Opportunity", "Project", "Lead"):
+		if not frappe.get_meta(doctype).has_field(bl_field):
+			continue
+		for docname in frappe.get_all(doctype, filters={bl_field: bl_name}, pluck="name"):
+			frappe.db.set_value(doctype, docname, bl_field, None, update_modified=False)
 
 
 def parse_batch_number_from_bl_name(name: str | None) -> int | None:

@@ -158,7 +158,12 @@ def requested_cargo_rows_from_counts(counts: Mapping[str, int]) -> list[dict]:
 	]
 
 
-def hydrate_requested_cargo_rows(doc, table_field: str = "requested_cargo_quantity") -> bool:
+def hydrate_requested_cargo_rows(
+	doc,
+	table_field: str = "requested_cargo_quantity",
+	*,
+	parent_quantity_field: str | None = None,
+) -> bool:
 	"""Ensure Requested Containers rows have cargo_size (+ numeric quantity).
 
 	Recovers size from legacy ``container_size``, from a derived string pasted into
@@ -172,10 +177,11 @@ def hydrate_requested_cargo_rows(doc, table_field: str = "requested_cargo_quanti
 	changed = False
 	counts = counts_from_request_rows(rows)
 
-	if not counts:
-		parent_qty = ""
-		if doc.meta.has_field("quantity"):
-			parent_qty = str(doc.get("quantity") or "").strip()
+	if not counts and parent_quantity_field and doc.meta.has_field(parent_quantity_field):
+		parent_qty = str(doc.get(parent_quantity_field) or "").strip()
+		counts = counts_from_derived_quantity_text(parent_qty)
+	elif not counts and doc.meta.has_field("quantity"):
+		parent_qty = str(doc.get("quantity") or "").strip()
 		counts = counts_from_derived_quantity_text(parent_qty)
 
 	if not counts:

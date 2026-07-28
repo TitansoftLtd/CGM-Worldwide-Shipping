@@ -729,25 +729,13 @@ def copy_opportunity_requested_cargo_to_project(opp, project, *, replace: bool =
 	if not (opp.meta.has_field(table_field) and project.meta.has_field(table_field)):
 		return False
 
-	rows = opp.get(table_field) or []
 	new_rows = [
 		{
 			"cargo_size": (row.get("cargo_size") or "").strip(),
 			"quantity": str(row.get("quantity") or "").strip(),
 		}
-		for row in rows
-		if (row.get("cargo_size") or "").strip() or str(row.get("quantity") or "").strip()
+		for row in opp.get(table_field) or []
 	]
-	# Prefer rows that still have sizes; otherwise rebuild from Opportunity quantity.
-	if new_rows and not all(row.get("cargo_size") for row in new_rows):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
-			counts_from_derived_quantity_text,
-			requested_cargo_rows_from_counts,
-		)
-
-		counts = counts_from_derived_quantity_text(opp.get("custom_quantity"))
-		if counts:
-			new_rows = requested_cargo_rows_from_counts(counts)
 
 	existing = [
 		{
