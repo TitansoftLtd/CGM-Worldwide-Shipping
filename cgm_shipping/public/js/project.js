@@ -634,7 +634,8 @@ function render_shipment_progress_chart(frm) {
 				d.current_status &&
 				frm.doc.custom_shipment_status !== d.current_status
 			) {
-				frm.set_value("custom_shipment_status", d.current_status);
+				// Keep UI in sync without dirtying — unsaved docs hide workflow Actions.
+				frm.set_value("custom_shipment_status", d.current_status, false, true);
 				const indicator = project_clearance_indicator({
 					custom_shipment_status: d.current_status,
 				});
@@ -1112,10 +1113,16 @@ function render_container_tracking_table(frm, dashboard) {
 }
 
 function apply_project_costing_display_fields(frm, values) {
+	// Display-only rollups — never mark the form dirty (that hides workflow Actions).
 	Object.entries(values || {}).forEach(([fieldname, value]) => {
-		if (frm.fields_dict[fieldname]) {
-			frm.set_value(fieldname, value || "");
+		if (!frm.fields_dict[fieldname]) {
+			return;
 		}
+		const next = value || "";
+		if ((frm.doc[fieldname] || "") === next) {
+			return;
+		}
+		frm.set_value(fieldname, next, false, true);
 	});
 }
 
@@ -1280,6 +1287,45 @@ function render_project_operational_updates(frm) {
 	});
 }
 
+function setup_project_toolbar_buttons(frm) {
+	if (!frm.doc.name || frm.is_new()) {
+		return;
+	}
+
+	setup_port_arrival_confirmation_button(frm);
+	setup_create_container_allocation_button(frm);
+	setup_add_bill_of_lading_button(frm);
+
+	frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass(
+		"btn-primary"
+	);
+	frm.add_custom_button(__("Container Tracker"), () => {
+		frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
+	}, __("View"));
+	frm.add_custom_button(__("Container Tracking Report"), () => {
+		frappe.set_route("query-report", "Container Tracking Detail", {
+			project: frm.doc.name,
+		});
+	}, __("View"));
+	frm.add_custom_button(__("Container Ops Board"), () => {
+		frappe.route_options = { project: frm.doc.name };
+		frappe.set_route("container-ops-board");
+	}, __("View"));
+	frm.add_custom_button(__("Post Container Charge Accrual"), () => {
+		post_container_charge_accrual(frm);
+	}, __("Shipment"));
+	frm.add_custom_button(__("View Journal Entries"), () => {
+		open_project_finance_journal_entries(frm);
+	}, __("View"));
+	frm.add_custom_button(__("Daily Status"), () => {
+		frappe.new_doc("Daily Status Update");
+	}, __("View"));
+	frm.add_custom_button(__("Seal Record"), () => {
+		frappe.new_doc("Seal Record", { project: frm.doc.name });
+	}, __("View"));
+	frm.page.set_inner_btn_group_as_primary(__("View"));
+}
+
 frappe.ui.form.on("Project", {
 	onload(frm) {
 		try {
@@ -1305,6 +1351,13 @@ frappe.ui.form.on("Project", {
 	},
 
 	refresh(frm) {
+		// Toolbar buttons first — other setup must not prevent these from appearing.
+		try {
+			setup_project_toolbar_buttons(frm);
+		} catch (err) {
+			console.error("CGM Project toolbar setup failed", err);
+		}
+
 		try {
 			toggle_project_transport_reference_fields(frm);
 			setup_customer_batch_autocomplete(frm);
@@ -1321,41 +1374,6 @@ frappe.ui.form.on("Project", {
 			configure_project_document_grid(frm);
 			configure_project_status_fields(frm);
 			configure_project_container_grid(frm);
-
-			setup_port_arrival_confirmation_button(frm);
-			setup_create_container_allocation_button(frm);
-			setup_add_bill_of_lading_button(frm);
-
-			if (frm.doc.name && !frm.is_new()) {
-				frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass(
-					"btn-primary"
-				);
-				frm.add_custom_button(__("Container Tracker"), () => {
-					frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
-				}, __("View"));
-				frm.add_custom_button(__("Container Tracking Report"), () => {
-					frappe.set_route("query-report", "Container Tracking Detail", {
-						project: frm.doc.name,
-					});
-				}, __("View"));
-				frm.add_custom_button(__("Container Ops Board"), () => {
-					frappe.route_options = { project: frm.doc.name };
-					frappe.set_route("container-ops-board");
-				}, __("View"));
-				frm.add_custom_button(__("Post Container Charge Accrual"), () => {
-					post_container_charge_accrual(frm);
-				}, __("Shipment"));
-				frm.add_custom_button(__("View Journal Entries"), () => {
-					open_project_finance_journal_entries(frm);
-				}, __("View"));
-				frm.add_custom_button(__("Daily Status"), () => {
-					frappe.new_doc("Daily Status Update");
-				}, __("View"));
-				frm.add_custom_button(__("Seal Record"), () => {
-					frappe.new_doc("Seal Record", { project: frm.doc.name });
-				}, __("View"));
-				frm.page.set_inner_btn_group_as_primary(__("View"));
-			}
 
 			const refField =
 				frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
