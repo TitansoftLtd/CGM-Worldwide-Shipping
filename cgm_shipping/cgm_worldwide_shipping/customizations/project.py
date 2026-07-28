@@ -729,11 +729,13 @@ def copy_opportunity_requested_cargo_to_project(opp, project, *, replace: bool =
 	if not (opp.meta.has_field(table_field) and project.meta.has_field(table_field)):
 		return False
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
-		requested_cargo_rows_from_preshipment_doc,
-	)
-
-	new_rows = requested_cargo_rows_from_preshipment_doc(opp)
+	new_rows = [
+		{
+			"cargo_size": (row.get("cargo_size") or "").strip(),
+			"quantity": str(row.get("quantity") or "").strip(),
+		}
+		for row in opp.get(table_field) or []
+	]
 
 	existing = [
 		{

@@ -158,66 +158,6 @@ def requested_cargo_rows_from_counts(counts: Mapping[str, int]) -> list[dict]:
 	]
 
 
-PRESHIPMENT_REQUESTED_CARGO_FIELD = "custom_requested_cargo_quantity"
-PRESHIPMENT_QUANTITY_FIELD = "custom_quantity"
-
-
-def parent_derived_quantity(doc, parent_quantity_field: str | None = None) -> str:
-	"""Return derived quantity text from parent Opportunity/Project/Booking fields."""
-	candidate_fields: list[str] = []
-	if parent_quantity_field:
-		candidate_fields.append(parent_quantity_field)
-	for name in (PRESHIPMENT_QUANTITY_FIELD, "quantity"):
-		if name not in candidate_fields:
-			candidate_fields.append(name)
-	for field in candidate_fields:
-		if doc.meta.has_field(field):
-			text = str(doc.get(field) or "").strip()
-			if text:
-				return text
-	return ""
-
-
-def requested_cargo_rows_from_preshipment_doc(
-	doc,
-	*,
-	table_field: str = PRESHIPMENT_REQUESTED_CARGO_FIELD,
-	quantity_field: str = PRESHIPMENT_QUANTITY_FIELD,
-) -> list[dict]:
-	"""Build Requested Containers rows from child table or parent derived quantity."""
-	if not doc.meta.has_field(table_field):
-		return []
-
-	rows = doc.get(table_field) or []
-	new_rows = [
-		{
-			"cargo_size": (row.get("cargo_size") or "").strip(),
-			"quantity": str(row.get("quantity") or "").strip(),
-		}
-		for row in rows
-		if (row.get("cargo_size") or "").strip() or str(row.get("quantity") or "").strip()
-	]
-	if new_rows and all(row.get("cargo_size") for row in new_rows):
-		return new_rows
-
-	counts = counts_from_derived_quantity_text(parent_derived_quantity(doc, quantity_field))
-	if counts:
-		return requested_cargo_rows_from_counts(counts)
-	return new_rows
-
-
-def hydrate_preshipment_requested_cargo_rows(doc, _method=None) -> bool:
-	"""Ensure Opportunity/Project requested-cargo rows match custom_quantity."""
-	table_field = PRESHIPMENT_REQUESTED_CARGO_FIELD
-	if not doc.meta.has_field(table_field):
-		return False
-	return hydrate_requested_cargo_rows(
-		doc,
-		table_field=table_field,
-		parent_quantity_field=PRESHIPMENT_QUANTITY_FIELD,
-	)
-
-
 def hydrate_requested_cargo_rows(
 	doc,
 	table_field: str = "requested_cargo_quantity",
@@ -237,8 +177,11 @@ def hydrate_requested_cargo_rows(
 	changed = False
 	counts = counts_from_request_rows(rows)
 
-	if not counts:
-		parent_qty = parent_derived_quantity(doc, parent_quantity_field)
+	if not counts and parent_quantity_field and doc.meta.has_field(parent_quantity_field):
+		parent_qty = str(doc.get(parent_quantity_field) or "").strip()
+		counts = counts_from_derived_quantity_text(parent_qty)
+	elif not counts and doc.meta.has_field("quantity"):
+		parent_qty = str(doc.get("quantity") or "").strip()
 		counts = counts_from_derived_quantity_text(parent_qty)
 
 	if not counts:
