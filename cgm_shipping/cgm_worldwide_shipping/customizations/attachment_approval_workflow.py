@@ -113,7 +113,17 @@ def row_status(row, profile: AttachmentApprovalProfile) -> str:
 
 
 def row_has_attachment(row, profile: AttachmentApprovalProfile) -> bool:
-	return bool((row.get(profile.attach_field) or "").strip())
+	return bool(_row_attachment_for_review(row, profile))
+
+
+def _row_attachment_for_review(row, profile: AttachmentApprovalProfile) -> str:
+	if getattr(row, "doctype", None) == "Shipment Document":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+			primary_attachment,
+		)
+
+		return (primary_attachment(row) or "").strip()
+	return (row.get(profile.attach_field) or "").strip()
 
 
 def row_label(row, profile: AttachmentApprovalProfile) -> str:
@@ -304,7 +314,7 @@ def _serialize_row(
 		"child_doctype": binding.child_doctype,
 		"row_name": row.name,
 		"label": row_label(row, profile),
-		"attachment": row.get(profile.attach_field),
+		"attachment": _row_attachment_for_review(row, profile),
 		"status": row_status(row, profile),
 		"approved_by": approved_by,
 		"approved_by_name": get_fullname(approved_by) if approved_by else None,

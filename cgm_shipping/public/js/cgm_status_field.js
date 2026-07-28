@@ -600,14 +600,19 @@ function cgm_schedule_status_field_setup(frm) {
 		return;
 	}
 	const run = () => {
-		cgm_register_global_status_formatters();
-		cgm_configure_document_status_grids(frm);
-		cgm_configure_permit_status_grids(frm);
-		if (frm.doctype === "Project") {
-			cgm_configure_project_status_fields(frm);
-		}
-		if (frm.doctype === "Task") {
-			cgm_configure_task_status_fields(frm);
+		try {
+			cgm_register_global_status_formatters();
+			cgm_configure_document_status_grids(frm);
+			cgm_configure_permit_status_grids(frm);
+			if (frm.doctype === "Project") {
+				cgm_configure_project_status_fields(frm);
+			}
+			if (frm.doctype === "Task") {
+				cgm_configure_task_status_fields(frm);
+			}
+		} catch (err) {
+			// Never block other form refresh handlers (e.g. Project toolbar buttons).
+			console.error("CGM status field setup failed", err);
 		}
 	};
 	run();
@@ -681,6 +686,10 @@ function cgm_configure_permit_status_grids(frm) {
 			grid.update_docfield_property("status", "in_list_view", 1);
 		}
 		sf.configure_grid(grid, "status", tone);
+		// Defined in shipment_document_grid.js (app_include / doctype_js). Guard for load order.
+		if (typeof cgm_configure_permit_attach_grid === "function") {
+			cgm_configure_permit_attach_grid(grid);
+		}
 	}
 }
 

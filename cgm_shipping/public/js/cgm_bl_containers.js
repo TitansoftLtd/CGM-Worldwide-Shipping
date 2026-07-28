@@ -10,19 +10,23 @@ const BL_CONTAINER_SYNC_FIELDS = [
 	"seal_no",
 ];
 
-function bl_container_rows(rows) {
-	return (rows || []).map((row) => {
+function bl_container_rows(rows, existing) {
+	return (rows || []).map((row, index) => {
 		const out = {};
 		BL_CONTAINER_SYNC_FIELDS.forEach((field) => {
 			out[field] = row[field] ?? "";
 		});
+		const previous = existing?.[index];
+		if (!out.cargo_size && previous?.cargo_size) {
+			out.cargo_size = previous.cargo_size;
+		}
 		return out;
 	});
 }
 
 function container_rows_match(existing, from_bl) {
 	const current = bl_container_rows(existing);
-	const next = bl_container_rows(from_bl);
+	const next = bl_container_rows(from_bl, existing);
 	if (current.length !== next.length) {
 		return false;
 	}
@@ -168,13 +172,14 @@ cgm_shipping.bl_containers.sync_from_bl = function (frm, opts = {}) {
 			if (cur_frm !== frm) {
 				return;
 			}
-			if (container_rows_match(existing, bl_rows)) {
+			const merged_rows = bl_container_rows(bl_rows, existing);
+			if (container_rows_match(existing, merged_rows)) {
 				if (silent) {
 					restore_clean_form_state(frm);
 				}
 				return;
 			}
-			apply_bl_containers(frm, bl_rows);
+			apply_bl_containers(frm, merged_rows);
 			if (silent) {
 				restore_clean_form_state(frm);
 			} else if (!bl_rows.length) {

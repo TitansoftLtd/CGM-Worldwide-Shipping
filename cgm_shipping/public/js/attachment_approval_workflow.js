@@ -175,9 +175,9 @@ cgm_shipping.attachment_approval = {
 
 		rows.forEach((row, index) => {
 			const attachment = row.attachment
-				? `<a href="${frappe.urllib.get_full_url(row.attachment)}" target="_blank">${__(
-						"View"
-				  )}</a>`
+				? `<a href="#" class="cgm-grid-attach-link" data-file-url="${frappe.utils.escape_html(
+						row.attachment
+				  )}">${__("View")}</a>`
 				: "";
 			$tbody.append(`
 				<tr data-index="${index}">
@@ -292,6 +292,26 @@ cgm_shipping.attachment_approval = {
 		dialog.show();
 		const $content = dialog.fields_dict.review_html.$wrapper;
 		$content.empty().append(wrapper);
+
+		$content.on("click.cgm_review", ".cgm-grid-attach-link", function (e) {
+			e.preventDefault();
+			const $link = $(this);
+			if (typeof cgm_schedule_attach_preview === "function") {
+				cgm_schedule_attach_preview($link, $link.data("file-url"));
+			} else if (typeof cgm_open_attachment_file === "function") {
+				cgm_open_attachment_file($link.data("file-url"));
+			}
+		});
+		$content.on("dblclick.cgm_review", ".cgm-grid-attach-link", function (e) {
+			e.preventDefault();
+			const $link = $(this);
+			if (typeof cgm_clear_attach_click_timer === "function") {
+				cgm_clear_attach_click_timer($link);
+			}
+			if (typeof cgm_download_attachment_file === "function") {
+				cgm_download_attachment_file($link.data("file-url"));
+			}
+		});
 
 		$content.on("click.cgm_review", ".cgm-review-approve", function () {
 			const index = $(this).closest("tr").data("index");

@@ -24,6 +24,28 @@ function bl_is_lcl_cargo(frm) {
 	return false;
 }
 
+function setup_bl_batch_autocomplete(frm) {
+	const fieldname = "batch_no";
+	if (!frm.fields_dict[fieldname] || !frm.doc.customer) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_customer_batch_numbers",
+		args: { customer: frm.doc.customer },
+		callback(r) {
+			const options = (r.message || []).join("\n");
+			frm.set_df_property(fieldname, "options", options);
+			const df = frm.get_field(fieldname)?.df;
+			if (df && df.fieldtype === "Data") {
+				frm.set_df_property(fieldname, "fieldtype", "Autocomplete");
+			}
+			frm.set_df_property(fieldname, "read_only", 0);
+			frm.refresh_field(fieldname);
+		},
+	});
+}
+
 function toggle_cargo_fields(frm) {
 	const is_lcl = bl_is_lcl_cargo(frm);
 	const show_fcl = !is_lcl;
@@ -60,6 +82,7 @@ frappe.ui.form.on("Bill of Lading", {
 	onload(frm) {
 		setup_bill_of_lading_cargo_type_query(frm);
 		toggle_cargo_fields(frm);
+		setup_bl_batch_autocomplete(frm);
 		defer_opportunity_link_on_create(frm);
 		if (frm.is_new()) {
 			if (frappe.route_options?.custom_linked_opportunity) {
@@ -84,6 +107,7 @@ frappe.ui.form.on("Bill of Lading", {
 
 	refresh(frm) {
 		toggle_cargo_fields(frm);
+		setup_bl_batch_autocomplete(frm);
 		clear_draft_linked_opportunity_link(frm);
 		hide_linked_opportunity_field(frm);
 		if (!frm.is_new()) {
@@ -94,6 +118,10 @@ frappe.ui.form.on("Bill of Lading", {
 
 	cargo_type(frm) {
 		toggle_cargo_fields(frm);
+	},
+
+	customer(frm) {
+		setup_bl_batch_autocomplete(frm);
 	},
 
 	booking_confirmation(frm) {

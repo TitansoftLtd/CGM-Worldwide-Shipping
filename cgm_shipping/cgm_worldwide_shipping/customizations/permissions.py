@@ -403,6 +403,24 @@ def user_bypasses_sea_task_department_filter(user: str | None = None) -> bool:
 	return (user or frappe.session.user) == "Administrator"
 
 
+def is_clearance_department_restricted_task(doc) -> bool:
+	"""True when Task must pass department/role checks.
+
+	Sea-import flow keys are the primary signal. Also treat any Task whose
+	department stem is a sea-template department as restricted — otherwise a
+	mismatched/blank ``custom_task_flow_key`` would leak every clearance task
+	to users who only have Task read (e.g. Projects User on Assistant Finance Manager).
+	"""
+	if is_sea_import_task(doc):
+		return True
+	if not hasattr(doc, "get"):
+		return False
+	stem = normalize_department_stem(doc.get("department"))
+	if not stem:
+		return False
+	return stem in get_sea_task_template_department_stems()
+
+
 def department_matches_stems(department: str | None, stems: set[str]) -> bool:
 	if not stems:
 		return False
@@ -496,6 +514,11 @@ def user_can_access_sea_task(
 	if stem in transport_department_stems() and user_has_transport_department_access(user):
 		return True
 
+	# Finance Settings roles (e.g. Finance User on Assistant Finance Manager) — department stem
+	# is enough; do not require a perfect custom_task_flow_key match.
+	if stem in finance_payment_department_stems() and user_has_finance_department_access(user):
+		return True
+
 	if _user_can_access_sea_payment_task_by_role(doc, user):
 		return True
 
@@ -503,15 +526,16 @@ def user_can_access_sea_task(
 
 
 def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
-	"""Finance payment tasks - user must have Role matching that step's template department."""
+	"""Finance payment tasks — Settings finance roles / Finance department stem."""
 	if not hasattr(doc, "get"):
-		return False
-	if not is_sea_import_task(doc):
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
 
 	if seq not in finance_payment_sequences():
+		return False
+	stem = normalize_department_stem(doc.get("department"))
+	if stem and stem not in finance_payment_department_stems():
 		return False
 	return user_has_finance_department_access(user)
 
@@ -576,6 +600,15 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 	return "(" + " OR ".join(parts) + ")"
 
 
+def _finance_only_visibility(user: str) -> bool:
+	"""True when user is Finance Settings/role only (not Ops/Declarant/Transport)."""
+	return user_has_finance_department_access(user) and not (
+		user_has_operations_department_access(user)
+		or user_has_declarant_department_access(user)
+		or user_has_transport_department_access(user)
+	)
+
+
 def get_permission_query_conditions(user: str | None = None) -> str | None:
 	"""List view / report SQL filter for Task."""
 	user = user or frappe.session.user
@@ -591,24 +624,30 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	if user_has_transport_department_access(user):
 		stems |= set(transport_department_stems())
 
-	escaped_user = frappe.db.escape(user)
 	assign_token = frappe.db.escape(f'"{user}"')
 	sea_flow = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE)
-	non_sea = f"(NOT ({sea_flow}))"
-	# Assignment only — not owner (Start Shipment used to make Declarants owner of every step).
-	assigned_only = (
-		f"(LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
+	# Also restrict by clearance department stem so a wrong/blank flow key cannot leak tasks.
+	clearance_dept = _build_department_sql_conditions(
+		set(get_sea_task_template_department_stems())
 	)
+	restricted = f"(({sea_flow}) OR {clearance_dept})"
+	# Assignment only — not owner (Start Shipment used to make Declarants owner of every step).
+	assigned_only = f"(LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
 
 	visibility_parts = [assigned_only]
 	if stems:
 		visibility_parts.insert(0, _build_department_sql_conditions(stems))
 
-	# Finance: only finance payment sequences / Finance department — not Create UCR / permits.
+	# Finance-only (e.g. Assistant Finance Manager → Finance User): Finance dept / payment
+	# sequences only — never Create UCR / Operations / Transport steps.
 	if user_has_finance_department_access(user):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
 
-		stems |= set(finance_payment_department_stems())
+		if _finance_only_visibility(user):
+			stems = set(finance_payment_department_stems()) or {"Finance"}
+		else:
+			stems |= set(finance_payment_department_stems())
+
 		visibility_parts = [assigned_only]
 		if stems:
 			visibility_parts.insert(0, _build_department_sql_conditions(stems))
@@ -616,21 +655,26 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 		finance_seqs = sorted(finance_payment_sequences())
 		if finance_seqs:
 			seq_list = ", ".join(str(s) for s in finance_seqs)
-			visibility_parts.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}))"
+			# Sequence alone is not enough — require Finance department (or assignment)
+			# so mis-numbered tasks in other departments cannot leak.
+			finance_seq_clause = (
+				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}) "
+				f"AND {_build_department_sql_conditions(set(finance_payment_department_stems()) or {'Finance'})})"
 			)
+			visibility_parts.append(finance_seq_clause)
 
-	sea_visible = f"({sea_flow} AND ({' OR '.join(visibility_parts)}))"
+	restricted_visible = f"({restricted} AND ({' OR '.join(visibility_parts)}))"
+	unrestricted = f"(NOT ({restricted}))"
 
-	return f"({non_sea} OR {sea_visible})"
+	return f"({unrestricted} OR {restricted_visible})"
 
 
 def has_permission(doc, ptype=None, user=None, **kwargs):
-	"""Deny access to sea clearance tasks outside the user's departments."""
+	"""Deny access to clearance tasks outside the user's departments."""
 	user = user or frappe.session.user
 	if user_bypasses_sea_task_department_filter(user):
 		return True
-	if not is_sea_import_task(doc):
+	if not is_clearance_department_restricted_task(doc):
 		return True
 	if user_can_access_sea_task(doc, user):
 		return True
@@ -644,6 +688,9 @@ def filter_sea_tasks_for_user(tasks: list[dict], user: str | None = None) -> lis
 		return tasks
 	out: list[dict] = []
 	for row in tasks:
+		if not is_clearance_department_restricted_task(row):
+			out.append(row)
+			continue
 		if user_can_access_sea_task(
 			row,
 			user,

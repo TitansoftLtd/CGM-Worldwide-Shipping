@@ -4,9 +4,11 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+	AUTO_ALLOCATE_FCL_BATCH,
+	allocate_fcl_batch_for_doc,
 	counts_from_container_rows,
 	counts_from_request_rows,
 	format_derived_quantity,
@@ -16,6 +18,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	normalize_derived_quantity,
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+	amended_bill_of_lading_name,
 	build_bill_of_lading_name,
 	ensure_bl_cargo_type,
 	expand_requested_cargo_to_container_stubs,
@@ -86,6 +89,53 @@ class TestFclBatchQuantity(IntegrationTestCase):
 			right = normalize_derived_quantity("2 x 40FT")
 			self.assertEqual(left, right)
 			self.assertEqual(left, "2 x 40FT")
+
+	def test_allocate_fcl_batch_preserves_manual_entry(self):
+		self.assertFalse(AUTO_ALLOCATE_FCL_BATCH)
+		doc = frappe._dict(
+			name="BK-TEST",
+			customer="CUST-A",
+			requested_cargo_type="FCL",
+			batch_no="2123",
+			quantity=None,
+			meta=frappe._dict(
+				has_field=lambda field, *_a, **_k: field
+				in {"quantity", "batch_no", "requested_cargo_type"}
+			),
+		)
+		doc.is_new = lambda: True
+		result = allocate_fcl_batch_for_doc(
+			doc,
+			cargo_type_field="requested_cargo_type",
+			derived_quantity="2 x 20FT",
+		)
+		self.assertIsNone(result)
+		self.assertEqual(doc.batch_no, "2123")
+		self.assertEqual(doc.quantity, "2 x 20FT")
+
+
+class TestBillOfLadingAmendedNaming(UnitTestCase):
+	def test_amended_bill_of_lading_name_first_revision(self):
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.frappe.db.get_value",
+			return_value=None,
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.frappe.db.exists",
+			return_value=False,
+		):
+			name = amended_bill_of_lading_name("MB-0ONUJ", "MB-0ONUJ")
+		self.assertEqual(name, "MB-0ONUJ-1")
+
+	def test_amended_bill_of_lading_name_second_revision(self):
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.frappe.db.get_value",
+			side_effect=["MB-0ONUJ", None],
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.frappe.db.exists",
+			return_value=False,
+		):
+			name = amended_bill_of_lading_name("MB-0ONUJ", "MB-0ONUJ-1")
+		self.assertEqual(name, "MB-0ONUJ-2")
 
 
 class TestBillOfLadingNaming(IntegrationTestCase):
@@ -164,6 +214,32 @@ class TestBillOfLadingBookingPrefill(IntegrationTestCase):
 		src_fields = {src for src, _dest in BL_TO_OPPORTUNITY_DETAIL_FIELDS}
 		self.assertIn("commodity", src_fields)
 		self.assertNotIn("description", src_fields)
+
+	def test_fetch_container_rows_backfills_cargo_size_from_bl_quantity(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import fetch_container_rows
+
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.frappe.db.exists",
+			return_value=True,
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment._derived_quantity_for_bl_containers",
+			return_value="2 x 20FT",
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.frappe.get_all",
+			return_value=[
+				{"container_number": "C1", "cargo_size": "", "seal_no": "S1"},
+				{"container_number": "C2", "cargo_size": "", "seal_no": "S2"},
+			],
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_container_fields",
+			return_value=["container_number", "cargo_size", "seal_no"],
+		), patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.resolve_cargo_size_link",
+			side_effect=lambda size: size,
+		):
+			rows = fetch_container_rows("BL-TEST")
+
+		self.assertEqual([row["cargo_size"] for row in rows], ["20FT", "20FT"])
 
 
 class TestBillOfLadingCargoType(IntegrationTestCase):
