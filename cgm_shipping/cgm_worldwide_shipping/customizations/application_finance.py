@@ -443,19 +443,15 @@ def ensure_application_receipt_on_finance_task(
 def application_payment_made_for_project(
 	project: str, profile: ApplicationFinanceProfile
 ) -> bool:
+	"""True when the paired finance task has a Journal Entry or submitted Payment Entry."""
 	if not project:
 		return False
 	finance_name = get_application_finance_task(project, profile)
 	if not finance_name:
 		return False
-	pe_name, je_name = frappe.db.get_value(
-		"Task", finance_name, ("custom_payment_entry", "custom_journal_entry")
-	)
-	if je_name:
-		return True
-	if not pe_name:
-		return False
-	return int(frappe.db.get_value("Payment Entry", pe_name, "docstatus") or 0) == 1
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import task_has_recorded_payment
+
+	return task_has_recorded_payment(frappe.get_doc("Task", finance_name))
 
 
 def ensure_certificate_document_row(task, profile: ApplicationFinanceProfile) -> None:
