@@ -584,7 +584,9 @@ function render_shipment_progress_chart(frm) {
 			const wfNote =
 				d.workflow_behind && d.workflow_status
 					? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
-					: "";
+					: d.workflow_ahead && d.workflow_status
+						? ` · ${__("Workflow field was ahead — correcting to tasks")}`
+						: "";
 			const legendLine = d.uses_clearance_states
 				? `<div class="cgm-tracking-legend">
 						${__("Berth phase")}: <b>${berth}</b> ·
@@ -629,7 +631,6 @@ function render_shipment_progress_chart(frm) {
 				</div>
 			`);
 			if (
-				d.workflow_behind &&
 				d.uses_clearance_states &&
 				d.current_status &&
 				frm.doc.custom_shipment_status !== d.current_status
@@ -1375,13 +1376,15 @@ frappe.ui.form.on("Project", {
 			configure_project_status_fields(frm);
 			configure_project_container_grid(frm);
 
-			const refField =
-				frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
-			if (frm.is_new() && frm.doc.project_name && refField) {
-				const refValue = frm.doc.custom_project_reference || frm.doc.custom_cgm_ref_no;
-				if (!refValue) {
-					frm.set_value(refField.df.fieldname, frm.doc.project_name);
-				}
+			// Sync auto business name to Project Reference only — never CGM Ref No
+			// (company-entered, independent of project_name).
+			if (
+				frm.is_new() &&
+				frm.doc.project_name &&
+				frm.fields_dict.custom_project_reference &&
+				!frm.doc.custom_project_reference
+			) {
+				frm.set_value("custom_project_reference", frm.doc.project_name);
 			}
 
 			ensure_project_form_layout_visible(frm);
@@ -1393,13 +1396,12 @@ frappe.ui.form.on("Project", {
 	},
 
 	project_name(frm) {
-		const refField =
-			frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
-		if (refField) {
-			const refValue = frm.doc.custom_project_reference || frm.doc.custom_cgm_ref_no;
-			if (!refValue) {
-				frm.set_value(refField.df.fieldname, frm.doc.project_name);
-			}
+		if (
+			frm.fields_dict.custom_project_reference &&
+			frm.doc.project_name &&
+			!frm.doc.custom_project_reference
+		) {
+			frm.set_value("custom_project_reference", frm.doc.project_name);
 		}
 	},
 
