@@ -40,6 +40,22 @@ OPEN_RETURN_STATUSES = frozenset(
 
 _TRAFFIC_SORT = {"red": 0, "amber": 1, "grey": 2, "green": 3}
 
+# Far-future ordinal so blank ETAs sort after every real date.
+_MISSING_ETA_ORDINAL = 10**9
+
+
+def _eta_sort_key(row: dict) -> tuple:
+	"""Soonest ETA first; blank ETA last; traffic urgency as tiebreaker."""
+	eta = row.get("eta")
+	if eta:
+		try:
+			ordinal = getdate(eta).toordinal()
+		except Exception:
+			ordinal = _MISSING_ETA_ORDINAL
+	else:
+		ordinal = _MISSING_ETA_ORDINAL
+	return (ordinal, row.get("sort_key", 9))
+
 _STATUS_PILL = {
 	"Pending Arrival": "muted",
 	"Vessel Berthed": "info",
@@ -403,7 +419,7 @@ def _fetch_shipment_rows(filters) -> list[dict]:
 		"Project",
 		filters=_project_filters(filters),
 		fields=_project_header_fields(),
-		order_by="modified desc",
+		order_by="custom_eta asc",
 		limit_page_length=0,
 	)
 
@@ -581,7 +597,7 @@ def get_shipment_tracker(filters=None) -> dict:
 	for project in projects:
 		rows.append(_build_shipment_row(project, project_map, all_tracker_rows))
 	rows = _apply_shipment_kpi_filter(rows, filters.get("kpi_filter"))
-	rows.sort(key=lambda r: (r.get("sort_key", 9), -(r.get("deposit_amount") or 0)))
+	rows.sort(key=_eta_sort_key)
 	page_rows, total_count, start, page_length = _paginate_rows(rows, filters)
 	return {
 		"kpis": kpis,
@@ -752,7 +768,7 @@ def get_container_ops_board(filters=None) -> dict:
 		rows = [r for r in rows if r.get("traffic_light") == filters.traffic_light]
 	rows = _apply_kpi_filter(rows, filters.get("kpi_filter"), getdate(today()))
 
-	rows.sort(key=lambda r: (r.get("sort_key", 9), -(r.get("days_display") or 0)))
+	rows.sort(key=_eta_sort_key)
 	page_rows, total_count, start, page_length = _paginate_rows(rows, filters)
 	return {
 		"kpis": kpis,
