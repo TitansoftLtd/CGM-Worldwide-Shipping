@@ -1,9 +1,12 @@
 """Business project reference for shipment Projects.
 
-ERPNext keeps the internal document name (PROJ-####). The business reference is
-stored on project_name and custom_project_reference for user-facing display.
+ERPNext keeps the internal document name (PROJ-####). The auto business name is
+stored on ``project_name`` (and ``custom_project_reference`` when that field exists).
 
-Formats:
+``custom_cgm_ref_no`` (CGM Ref No) is a separate company-entered reference and is
+never overwritten by auto-naming.
+
+Formats (project_name):
   FCL:     {Client Reference} / {qty}X{size} / {batch}   e.g. PO-99 / 3X20 / 1
   Packages:{Client Reference} / {qty} {type}             e.g. PO-99 / 10 Cartons
 
@@ -86,16 +89,15 @@ def is_legacy_business_reference(value: str | None) -> bool:
 
 
 def project_reference_field(meta=None) -> str | None:
+	"""Auto-synced business-name field only — never CGM Ref No (manual)."""
 	meta = meta or frappe.get_meta("Project")
 	if meta.has_field(PROJECT_REFERENCE_FIELD):
 		return PROJECT_REFERENCE_FIELD
-	if meta.has_field(LEGACY_REFERENCE_FIELD):
-		return LEGACY_REFERENCE_FIELD
 	return None
 
 
 def get_project_reference(doc) -> str | None:
-	"""User-facing business (or legacy) reference from a Project document."""
+	"""Auto business name from Project (not the manual CGM Ref No)."""
 	field = project_reference_field(doc.meta)
 	if field:
 		value = (doc.get(field) or "").strip()
@@ -114,14 +116,12 @@ def display_ref_from_values(row: dict) -> str:
 
 
 def get_project_reference_from_values(row: dict) -> str | None:
+	"""Auto business name from a get_all / get_value row (not manual CGM Ref No)."""
 	field = project_reference_field()
 	if field:
 		value = (row.get(field) or "").strip()
 		if value:
 			return value
-	legacy = (row.get(LEGACY_REFERENCE_FIELD) or "").strip()
-	if legacy:
-		return legacy
 	project_name = (row.get("project_name") or "").strip()
 	if is_lp_project_reference(project_name) or is_legacy_business_reference(project_name):
 		return project_name
@@ -252,8 +252,6 @@ def _project_reference_query_fields() -> list[str]:
 	fields = ["project_name"]
 	if frappe.db.has_column("Project", PROJECT_REFERENCE_FIELD):
 		fields.append(PROJECT_REFERENCE_FIELD)
-	if frappe.db.has_column("Project", LEGACY_REFERENCE_FIELD):
-		fields.append(LEGACY_REFERENCE_FIELD)
 	return fields
 
 
@@ -326,8 +324,6 @@ def _lp_reference_in_use(reference: str, exclude_name: str | None = None) -> boo
 		return True
 	if _reference_field_owner(reference, PROJECT_REFERENCE_FIELD, exclude_name):
 		return True
-	if _reference_field_owner(reference, LEGACY_REFERENCE_FIELD, exclude_name):
-		return True
 	return False
 
 
@@ -362,6 +358,7 @@ def allocate_unique_lp_project_reference(
 
 
 def sync_project_reference_fields(project, reference: str) -> None:
+	"""Write auto business name to project_name (+ Project Reference). Never CGM Ref No."""
 	project.project_name = reference
 	ref_field = project_reference_field(project.meta)
 	if ref_field:
@@ -383,7 +380,7 @@ def refresh_project_reference_from_fields(project) -> str | None:
 
 
 def assign_lp_project_reference(project) -> str | None:
-	"""Set project_name + custom_project_reference; leave ERPNext name (PROJ-####) unchanged."""
+	"""Set project_name (+ Project Reference). Leave CGM Ref No and PROJ-#### unchanged."""
 	if not should_auto_name_project(project):
 		reference = get_project_reference(project)
 		if reference:

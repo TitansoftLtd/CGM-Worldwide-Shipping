@@ -1059,16 +1059,17 @@ def _ensure_tracking_fields() -> None:
 			"description": "Business project reference (e.g. PO-99 / 3X20 / 1 or PO-99 / 10 Cartons).",
 		},
 	)
-	_create_cf(
+	_ensure_cf(
 		"Project",
 		{
 			"fieldname": "custom_cgm_ref_no",
 			"label": "CGM Ref No",
 			"fieldtype": "Data",
-			"hidden": 1,
 			"insert_after": "custom_project_reference",
-			"read_only": 1,
-			"description": "Legacy CGM reference (superseded by Project Reference).",
+			"in_list_view": 1,
+			"hidden": 0,
+			"read_only": 0,
+			"description": "Company CGM reference — enter manually; not the same as Project Name.",
 		},
 	)
 	_create_cf(
@@ -1302,7 +1303,9 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"task_progress_label": "clearance tasks" if use_clearance_states else "workflow tasks",
 		"berth_phase": berth_phase,
 		"project_reference": get_project_reference(doc) or doc.name,
-		"cgm_ref_no": get_project_reference(doc) or doc.name,
+		"cgm_ref_no": (doc.get("custom_cgm_ref_no") or "").strip()
+		or get_project_reference(doc)
+		or doc.name,
 		"containers": containers,
 		"container_total": len(containers),
 		"containers_released": released,

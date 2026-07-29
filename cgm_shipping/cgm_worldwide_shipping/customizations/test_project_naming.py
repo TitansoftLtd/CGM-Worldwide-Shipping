@@ -13,6 +13,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	package_quantity_segment,
 	project_reference_inputs_changed,
 	refresh_project_reference_from_fields,
+	sync_project_reference_fields,
 )
 
 
@@ -107,3 +108,18 @@ class TestProjectNaming(unittest.TestCase):
 		self.assertEqual(reference, "PO-99 / 3X20 / 5")
 		self.assertEqual(project.project_name, "PO-99 / 3X20 / 5")
 		self.assertEqual(project.custom_project_reference, "PO-99 / 3X20 / 5")
+
+	def test_sync_does_not_overwrite_cgm_ref_no(self):
+		project = frappe._dict(
+			project_name="old",
+			custom_project_reference="old",
+			custom_cgm_ref_no="CGM-MANUAL-001",
+			meta=frappe._dict(
+				has_field=lambda field, *_a, **_k: field
+				in {"custom_project_reference", "custom_cgm_ref_no"}
+			),
+		)
+		sync_project_reference_fields(project, "PO-99 / 3X20 / 1")
+		self.assertEqual(project.project_name, "PO-99 / 3X20 / 1")
+		self.assertEqual(project.custom_project_reference, "PO-99 / 3X20 / 1")
+		self.assertEqual(project.custom_cgm_ref_no, "CGM-MANUAL-001")
