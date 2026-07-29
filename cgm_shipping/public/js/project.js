@@ -584,7 +584,9 @@ function render_shipment_progress_chart(frm) {
 			const wfNote =
 				d.workflow_behind && d.workflow_status
 					? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
-					: "";
+					: d.workflow_ahead && d.workflow_status
+						? ` · ${__("Workflow field was ahead — correcting to tasks")}`
+						: "";
 			const legendLine = d.uses_clearance_states
 				? `<div class="cgm-tracking-legend">
 						${__("Berth phase")}: <b>${berth}</b> ·
@@ -629,7 +631,6 @@ function render_shipment_progress_chart(frm) {
 				</div>
 			`);
 			if (
-				d.workflow_behind &&
 				d.uses_clearance_states &&
 				d.current_status &&
 				frm.doc.custom_shipment_status !== d.current_status

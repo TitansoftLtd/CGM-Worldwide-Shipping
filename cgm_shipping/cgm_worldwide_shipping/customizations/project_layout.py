@@ -1237,7 +1237,13 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	open_tasks = get_open_workflow_tasks_for_project(project) if project_has_workflow_tasks(doc) else []
 	first_open = open_tasks[0] if open_tasks else None
 	workflow_behind = workflow_index < progress_index
-	if workflow_behind and use_clearance_states and doc.get("custom_mode_of_transport") == "Sea":
+	workflow_ahead = workflow_index > progress_index
+	# Keep the shipment status field aligned with tasks — advance OR rewind.
+	if (
+		(workflow_behind or workflow_ahead)
+		and use_clearance_states
+		and doc.get("custom_mode_of_transport") == "Sea"
+	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 			sync_project_shipment_status_from_tasks,
 		)
@@ -1250,6 +1256,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 			except ValueError:
 				workflow_index = progress_index
 			workflow_behind = False
+			workflow_ahead = False
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 		get_containers_for_project,
@@ -1291,6 +1298,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"workflow_status": workflow_status,
 		"workflow_index": workflow_index,
 		"workflow_behind": workflow_behind,
+		"workflow_ahead": workflow_ahead,
 		"states": states,
 		"tasks_completed": completed,
 		"tasks_total": total,

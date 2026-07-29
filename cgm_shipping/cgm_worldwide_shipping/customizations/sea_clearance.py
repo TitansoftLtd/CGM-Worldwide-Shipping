@@ -118,6 +118,18 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 	return completed
 
 
+def furthest_contiguous_completed_seq(completed_seqs: set[int]) -> int:
+	"""Highest sequence reachable without gaps from seq 1.
+
+	Prevents a later completed task (or drifted sequence) from unlocking
+	workflow stages that earlier open tasks still block.
+	"""
+	seq = 0
+	while (seq + 1) in completed_seqs:
+		seq += 1
+	return seq
+
+
 def derive_workflow_progress_from_tasks(
 	tasks: list,
 	states: list[str] | None = None,
@@ -129,7 +141,8 @@ def derive_workflow_progress_from_tasks(
 	completed_seqs = effective_completed_task_seqs(tasks)
 	if not completed_seqs:
 		return states[0], 0
-	max_seq = max(completed_seqs)
+	# Contiguous progress — not max(seq) — so the chart cannot jump past open tasks.
+	progress_seq = furthest_contiguous_completed_seq(completed_seqs)
 	progress_status = states[0]
 	progress_index = 0
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -139,7 +152,7 @@ def derive_workflow_progress_from_tasks(
 	for state in states:
 		gate_row = get_workflow_task_gates().get(state)
 		gate = gate_row.get("min_completed_task_seq") if gate_row else None
-		if gate and max_seq >= gate:
+		if gate and progress_seq >= gate:
 			progress_status = state
 			progress_index = states.index(state)
 	return progress_status, progress_index
@@ -166,7 +179,7 @@ def _project_workflow_flow_keys(project: str) -> tuple[str, ...]:
 
 
 def sync_project_shipment_status_from_tasks(project: str) -> str | None:
-	"""Advance Project workflow field when sea tasks have passed the current state."""
+	"""Align Project shipment status with completed sea tasks (advance or rewind)."""
 	if frappe.flags.get("cgm_skip_task_project_sync"):
 		return None
 	if frappe.db.get_value("Project", project, "custom_mode_of_transport") != "Sea":
@@ -178,7 +191,7 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 			"custom_task_flow_key": ["in", list(_project_workflow_flow_keys(project))],
 		},
 		fields=_sea_task_progress_fields(),
-		limit=30,
+		limit=100,
 	)
 	progress_status, _ = derive_workflow_progress_from_tasks(tasks)
 	current = frappe.db.get_value("Project", project, "custom_shipment_status") or "Draft"
@@ -186,10 +199,11 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	if not states:
 		return None
 	try:
-		if states.index(progress_status) <= states.index(current):
+		if states.index(progress_status) == states.index(current):
 			return None
 	except ValueError:
-		return None
+		# Unknown current status — still snap to task-derived progress.
+		pass
 	frappe.db.set_value(
 		"Project",
 		project,
@@ -197,6 +211,14 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 		progress_status,
 		update_modified=False,
 	)
+	if frappe.get_meta("Project").has_field("workflow_state"):
+		frappe.db.set_value(
+			"Project",
+			project,
+			"workflow_state",
+			progress_status,
+			update_modified=False,
+		)
 	frappe.publish_realtime(
 		"cgm_project_tracking_refresh",
 		{"project": project},
