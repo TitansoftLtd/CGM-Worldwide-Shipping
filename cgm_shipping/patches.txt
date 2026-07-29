@@ -29,3 +29,4 @@ cgm_shipping.patches.enable_manual_batch_no_fields
 cgm_shipping.patches.enable_manual_batch_on_transport_docs
 cgm_shipping.patches.allow_bill_of_lading_amendment
 cgm_shipping.patches.ensure_quotation_item_pricing_rule_field
+cgm_shipping.patches.realign_shipment_status_to_tasks
