@@ -81,8 +81,7 @@
   {
    "fieldname": "attach_booking",
    "fieldtype": "Attach",
-   "label": "Booking Attachment",
-   "reqd": 1
+   "label": "Booking Attachment"
   },
   {
    "fieldname": "section_vessel",
@@ -203,16 +202,16 @@
    "read_only": 1
   },
   {
+   "description": "Enter the client batch for this shipment. Required during onboarding; auto-allocation can be enabled later.",
    "fieldname": "batch_no",
    "fieldtype": "Data",
-   "label": "Batch No",
-   "read_only": 1
+   "label": "Batch No"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-16 05:05:43.708643",
+ "modified": "2026-07-28 14:43:29.336766",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",

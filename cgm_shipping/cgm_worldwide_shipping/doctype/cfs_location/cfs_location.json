@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "creation": "2026-06-09 00:00:00",
  "doctype": "DocType",
@@ -25,7 +26,8 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 19:12:47.889029",
+ "make_attachments_public": 1,
+ "modified": "2026-07-21 18:11:36.858750",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CFS Location",

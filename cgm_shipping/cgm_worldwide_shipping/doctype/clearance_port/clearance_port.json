@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
+ "allow_import": 1,
  "allow_rename": 1,
  "creation": "2026-06-18 23:18:36.383307",
  "doctype": "DocType",
@@ -25,7 +26,8 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-18 23:39:26.100082",
+ "make_attachments_public": 1,
+ "modified": "2026-07-21 17:54:00.106212",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Clearance Port",

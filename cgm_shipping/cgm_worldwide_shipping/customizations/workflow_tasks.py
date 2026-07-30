@@ -23,11 +23,14 @@ GENERIC_WORKFLOW_STATES = ("Draft", "In Progress", "Completed")
 def get_project_workflow_flow_keys(project) -> tuple[str, ...]:
 	"""All custom_task_flow_key values that belong to this project's workflow."""
 	project_name = project if isinstance(project, str) else project.name
-	keys: list[str] = []
+	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
+	return _workflow_flow_keys(project_name, shipment_type)
 
-	shipment_type = None
-	if not isinstance(project, str):
-		shipment_type = project.get("custom_shipment_type")
+
+@frappe.request_cache
+def _workflow_flow_keys(project_name: str, shipment_type: str | None) -> tuple[str, ...]:
+	"""Cached per request — a single dashboard load asks for these half a dozen times."""
+	keys: list[str] = []
 
 	if shipment_type:
 		template = get_task_template_for_shipment_type(shipment_type)
@@ -93,11 +96,12 @@ def project_uses_clearance_workflow_states(project) -> bool:
 
 
 def get_workflow_template_name(project) -> str | None:
-	for key in get_project_workflow_flow_keys(project):
+	flow_keys = get_project_workflow_flow_keys(project)
+	for key in flow_keys:
 		normalized = normalize_template_name(key)
 		if normalized in ALL_TEMPLATE_NAMES:
 			return normalized
-	return normalize_template_name(get_project_workflow_flow_keys(project)[0]) if get_project_workflow_flow_keys(project) else None
+	return normalize_template_name(flow_keys[0]) if flow_keys else None
 
 
 def get_workflow_tasks_for_project(

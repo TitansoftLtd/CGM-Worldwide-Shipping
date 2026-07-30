@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:cargo_size",
  "creation": "2026-06-16 19:12:29.792177",
@@ -20,7 +21,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-16 19:13:38.823808",
+ "modified": "2026-07-21 17:38:07.193179",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Cargo Size",

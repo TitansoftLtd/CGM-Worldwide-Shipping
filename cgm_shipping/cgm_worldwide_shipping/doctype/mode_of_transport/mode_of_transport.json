@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "creation": "2026-06-09 00:00:00",
  "doctype": "DocType",
@@ -26,7 +27,8 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 10:44:35.671196",
+ "make_attachments_public": 1,
+ "modified": "2026-07-21 18:12:09.550541",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Mode of Transport",

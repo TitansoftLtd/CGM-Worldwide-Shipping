@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import unittest
+import unittest.mock
 
 import frappe
 
@@ -10,6 +11,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	container_qty_size_segment,
 	is_lp_project_reference,
 	package_quantity_segment,
+	project_reference_inputs_changed,
+	refresh_project_reference_from_fields,
+	sync_project_reference_fields,
 )
 
 
@@ -58,3 +62,64 @@ class TestProjectNaming(unittest.TestCase):
 		)
 		with self.assertRaises(frappe.ValidationError):
 			build_lp_project_reference(project)
+
+	def test_refresh_reference_when_batch_changes(self):
+		project = frappe._dict(
+			name="PROJ-TEST-1",
+			is_new=lambda: False,
+			custom_client_refrence_no="PO-99",
+			custom_cargo_type="FCL",
+			custom_quantity="3 x 20FT",
+			custom_batch_no="5",
+			custom_number_of_packages=None,
+			custom_package_type=None,
+			project_name="PO-99 / 3X20 / 1",
+			custom_project_reference="PO-99 / 3X20 / 1",
+			meta=frappe._dict(
+				has_field=lambda field, *_a, **_k: field
+				in {
+					"custom_client_refrence_no",
+					"custom_batch_no",
+					"custom_cargo_type",
+					"custom_quantity",
+					"custom_number_of_packages",
+					"custom_package_type",
+					"custom_project_reference",
+				}
+			),
+		)
+		prev = frappe._dict(
+			custom_client_refrence_no="PO-99",
+			custom_batch_no="1",
+			custom_cargo_type="FCL",
+			custom_quantity="3 x 20FT",
+			custom_number_of_packages=None,
+			custom_package_type=None,
+		)
+		project.get_doc_before_save = lambda: prev
+		project.has_value_changed = lambda field: field == "custom_batch_no"
+
+		self.assertTrue(project_reference_inputs_changed(project))
+		with unittest.mock.patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project_naming.allocate_unique_lp_project_reference",
+			return_value="PO-99 / 3X20 / 5",
+		):
+			reference = refresh_project_reference_from_fields(project)
+		self.assertEqual(reference, "PO-99 / 3X20 / 5")
+		self.assertEqual(project.project_name, "PO-99 / 3X20 / 5")
+		self.assertEqual(project.custom_project_reference, "PO-99 / 3X20 / 5")
+
+	def test_sync_does_not_overwrite_cgm_ref_no(self):
+		project = frappe._dict(
+			project_name="old",
+			custom_project_reference="old",
+			custom_cgm_ref_no="CGM-MANUAL-001",
+			meta=frappe._dict(
+				has_field=lambda field, *_a, **_k: field
+				in {"custom_project_reference", "custom_cgm_ref_no"}
+			),
+		)
+		sync_project_reference_fields(project, "PO-99 / 3X20 / 1")
+		self.assertEqual(project.project_name, "PO-99 / 3X20 / 1")
+		self.assertEqual(project.custom_project_reference, "PO-99 / 3X20 / 1")
+		self.assertEqual(project.custom_cgm_ref_no, "CGM-MANUAL-001")

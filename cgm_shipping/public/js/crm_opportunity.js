@@ -2,6 +2,7 @@ frappe.ui.form.on("Opportunity", {
 	onload(frm) {
 		cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
 		run_opportunity_form_syncs(frm, { apply_pending_bl: true });
+		configure_opportunity_clients_documents_grid(frm);
 	},
 
 	before_save(frm) {
@@ -24,6 +25,10 @@ frappe.ui.form.on("Opportunity", {
 			// Submitted Opportunity — show fields only; never run BL sync / clear logic.
 			sync_opportunity_transport_and_containers(frm);
 			cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+			configure_opportunity_clients_documents_grid(frm);
+			if (cgm_shipping?.attachment_approval?.refresh) {
+				cgm_shipping.attachment_approval.refresh(frm);
+			}
 			setup_opportunity_batch_autocomplete(frm);
 			schedule_shipment_project_create_menu(frm);
 			hide_procurement_create_buttons(frm);

@@ -10,6 +10,9 @@ import json
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+	filter_sea_tasks_for_user,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	display_ref_from_values,
 	get_project_reference,
@@ -21,10 +24,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
 	GENERIC_WORKFLOW_STATES,
 	derive_generic_workflow_progress,
-	get_all_workflow_tasks_for_project,
-	get_open_workflow_tasks_for_project,
 	get_workflow_tasks_for_project,
-	project_has_workflow_tasks,
 	project_uses_clearance_workflow_states,
 	workflow_task_count_for_project,
 )
@@ -1059,16 +1059,17 @@ def _ensure_tracking_fields() -> None:
 			"description": "Business project reference (e.g. PO-99 / 3X20 / 1 or PO-99 / 10 Cartons).",
 		},
 	)
-	_create_cf(
+	_ensure_cf(
 		"Project",
 		{
 			"fieldname": "custom_cgm_ref_no",
 			"label": "CGM Ref No",
 			"fieldtype": "Data",
-			"hidden": 1,
 			"insert_after": "custom_project_reference",
-			"read_only": 1,
-			"description": "Legacy CGM reference (superseded by Project Reference).",
+			"in_list_view": 1,
+			"hidden": 0,
+			"read_only": 0,
+			"description": "Company CGM reference — enter manually; not the same as Project Name.",
 		},
 	)
 	_create_cf(
@@ -1219,11 +1220,8 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	except ValueError:
 		workflow_index = 0
 
-	tasks = get_workflow_tasks_for_project(
-		doc,
-		fields=["custom_sequence_no", "status", "subject", "custom_permit_invoices_submitted"],
-		limit=100,
-	)
+	# One Task query feeds the counters, the progress derivation and both task lists.
+	tasks = get_workflow_tasks_for_project(doc, limit=100)
 	completed = sum(1 for t in tasks if t.status == "Completed")
 	total = len(tasks) or workflow_task_count_for_project(doc)
 
@@ -1232,11 +1230,17 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	else:
 		progress_status, progress_index = derive_generic_workflow_progress(tasks)
 
-	visible_tasks = get_all_workflow_tasks_for_project(project) if project_has_workflow_tasks(doc) else []
-	open_tasks = get_open_workflow_tasks_for_project(project) if project_has_workflow_tasks(doc) else []
+	visible_tasks = filter_sea_tasks_for_user(tasks)
+	open_tasks = [t for t in visible_tasks if t.get("status") not in ("Completed", "Cancelled")]
 	first_open = open_tasks[0] if open_tasks else None
 	workflow_behind = workflow_index < progress_index
-	if workflow_behind and use_clearance_states and doc.get("custom_mode_of_transport") == "Sea":
+	workflow_ahead = workflow_index > progress_index
+	# Keep the shipment status field aligned with tasks — advance OR rewind.
+	if (
+		(workflow_behind or workflow_ahead)
+		and use_clearance_states
+		and doc.get("custom_mode_of_transport") == "Sea"
+	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 			sync_project_shipment_status_from_tasks,
 		)
@@ -1249,6 +1253,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 			except ValueError:
 				workflow_index = progress_index
 			workflow_behind = False
+			workflow_ahead = False
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 		get_containers_for_project,
@@ -1290,6 +1295,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"workflow_status": workflow_status,
 		"workflow_index": workflow_index,
 		"workflow_behind": workflow_behind,
+		"workflow_ahead": workflow_ahead,
 		"states": states,
 		"tasks_completed": completed,
 		"tasks_total": total,
@@ -1302,7 +1308,9 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"task_progress_label": "clearance tasks" if use_clearance_states else "workflow tasks",
 		"berth_phase": berth_phase,
 		"project_reference": get_project_reference(doc) or doc.name,
-		"cgm_ref_no": get_project_reference(doc) or doc.name,
+		"cgm_ref_no": (doc.get("custom_cgm_ref_no") or "").strip()
+		or get_project_reference(doc)
+		or doc.name,
 		"containers": containers,
 		"container_total": len(containers),
 		"containers_released": released,

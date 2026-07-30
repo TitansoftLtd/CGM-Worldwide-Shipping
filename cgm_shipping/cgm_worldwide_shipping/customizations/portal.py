@@ -192,8 +192,9 @@ def status_tone(status: str | None) -> str:
 
 # Fields pulled for the list / dashboard. Kept in one place so the list
 # page, dashboard and detail header stay consistent. Some sites still have
-# the legacy custom_cgm_ref_no column but not custom_project_reference yet;
-# filter through Project meta so get_all never selects a missing column.
+# CGM Ref No is company-entered; Project Reference / project_name are auto.
+# Prefer CGM Ref when set. Filter through Project meta so get_all never
+# selects a missing column.
 _SHIPMENT_LIST_FIELD_CANDIDATES = [
 	"name",
 	"project_name",
@@ -225,10 +226,10 @@ def shipment_list_fields() -> list[str]:
 def _project_ref_sql_coalesce(alias: str = "p") -> str:
 	meta = frappe.get_meta("Project")
 	parts = []
-	if meta.has_field("custom_project_reference"):
-		parts.append(f"NULLIF({alias}.custom_project_reference, '')")
 	if meta.has_field("custom_cgm_ref_no"):
 		parts.append(f"NULLIF({alias}.custom_cgm_ref_no, '')")
+	if meta.has_field("custom_project_reference"):
+		parts.append(f"NULLIF({alias}.custom_project_reference, '')")
 	parts.extend([f"NULLIF({alias}.project_name, '')", f"{alias}.name"])
 	return "COALESCE(" + ", ".join(parts) + ")"
 

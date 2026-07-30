@@ -1,8 +1,9 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "hash",
- "creation": "2026-05-19 00:00:00.000000",
+ "creation": "2026-05-19 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -14,7 +15,8 @@
   "border_clearance_date",
   "ecmd_device_number",
   "loading_warehouse",
-  "delivery_warehouse"
+  "delivery_warehouse",
+  "amended_from"
  ],
  "fields": [
   {
@@ -64,12 +66,23 @@
    "fieldname": "delivery_warehouse",
    "fieldtype": "Data",
    "label": "Delivery Warehouse"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Export Shipment",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-19 00:00:00.000000",
+ "make_attachments_public": 1,
+ "modified": "2026-07-21 18:34:25.375100",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Export Shipment",
@@ -88,6 +101,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

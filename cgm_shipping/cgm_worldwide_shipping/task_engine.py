@@ -51,26 +51,24 @@ def _resolve_template(shipment_type_name: str) -> str | None:
 	1. task_template Link field on Shipment Type (preferred)
 	2. Legacy task_flow_key mapping
 	3. None — no tasks created, no error
+
+	Uses shipment.py helpers so missing optional columns never break Start Shipment.
 	"""
-	fields = ["task_template"]
-	if frappe.get_meta("Shipment Type").has_field("task_flow_key"):
-		fields.append("task_flow_key")
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+		get_task_flow_key_for_shipment_type,
+		get_task_template_for_shipment_type,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		LEGACY_FLOW_KEY_TO_TEMPLATE,
+	)
 
-	st = frappe.db.get_value("Shipment Type", shipment_type_name, fields, as_dict=True)
+	template = get_task_template_for_shipment_type(shipment_type_name)
+	if template:
+		return template
 
-	if not st:
-		return None
-
-	if st.get("task_template"):
-		return st.task_template
-
-	# Legacy task_flow_key → template name
-	if st.get("task_flow_key"):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-			LEGACY_FLOW_KEY_TO_TEMPLATE,
-		)
-
-		mapped = LEGACY_FLOW_KEY_TO_TEMPLATE.get(str(st.task_flow_key).strip())
+	flow_key = get_task_flow_key_for_shipment_type(shipment_type_name)
+	if flow_key:
+		mapped = LEGACY_FLOW_KEY_TO_TEMPLATE.get(str(flow_key).strip())
 		if mapped and frappe.db.exists("CGM Task Template", mapped):
 			return mapped
 

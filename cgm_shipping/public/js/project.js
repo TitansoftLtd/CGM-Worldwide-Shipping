@@ -211,12 +211,114 @@ function setup_create_container_allocation_button(frm) {
 
 	frm.add_custom_button(
 		__("Create Container Allocation"),
-		() => {
-			frappe.route_options = { project: frm.doc.name };
-			frappe.new_doc("Container Allocation");
-		},
+		() => open_project_create_allocation_dialog(frm.doc.name),
 		__("Actions")
 	);
+}
+
+function open_project_create_allocation_dialog(project) {
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation.get_container_allocation_defaults",
+		args: { project },
+		freeze: true,
+		callback(r) {
+			if (r.exc) {
+				return;
+			}
+			const payload = r.message || {};
+			const containers = payload.containers || [];
+			if (!containers.length) {
+				frappe.msgprint(
+					__(
+						"No unallocated containers on this project. Containers already on an allocation stay there until you move them from Container Allocation (Allocate Remaining / Move Containers)."
+					)
+				);
+				return;
+			}
+
+			const dialog = new frappe.ui.Dialog({
+				title: __("Create Container Allocation"),
+				fields: [
+					{
+						fieldname: "help",
+						fieldtype: "HTML",
+						options: `<div class="text-muted" style="margin-bottom: var(--margin-sm);">
+							${__("Unallocated containers")}: <b>${containers.length}</b>
+							${
+								payload.bill_of_lading
+									? " · " + __("BL") + ": " + frappe.utils.escape_html(payload.bill_of_lading)
+									: ""
+							}
+						</div>`,
+					},
+					{
+						fieldname: "container_trackers",
+						fieldtype: "MultiCheck",
+						label: __("Containers"),
+						reqd: 1,
+						columns: 1,
+						options: containers.map((c) => ({
+							label: `${c.container_number || c.container_tracker}${
+								c.cargo_size ? " · " + c.cargo_size : ""
+							}`,
+							value: c.container_tracker,
+							checked: 1,
+						})),
+					},
+					{
+						fieldname: "transporter",
+						fieldtype: "Link",
+						label: __("Transporter"),
+						options: "Supplier",
+						reqd: 1,
+						get_query: () => ({ filters: { is_transporter: 1 } }),
+					},
+					{
+						fieldname: "trucks_booked",
+						fieldtype: "Int",
+						label: __("Number of Trucks Booked"),
+						default: containers.length,
+					},
+				],
+				primary_action_label: __("Create & Submit"),
+				primary_action(values) {
+					const trackers = values.container_trackers || [];
+					if (!trackers.length) {
+						frappe.msgprint(__("Select at least one container."));
+						return;
+					}
+					frappe.call({
+						method:
+							"cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation.create_allocation_for_containers",
+						args: {
+							project,
+							transporter: values.transporter,
+							container_trackers: trackers,
+							trucks_booked: values.trucks_booked || trackers.length,
+							submit: 1,
+						},
+						freeze: true,
+						freeze_message: __("Creating allocation…"),
+						callback(res) {
+							if (res.exc) {
+								return;
+							}
+							dialog.hide();
+							frappe.show_alert({
+								message: res.message?.message || __("Allocation created."),
+								indicator: "green",
+							});
+							if (res.message?.name) {
+								frappe.set_route("Form", "Container Allocation", res.message.name);
+							}
+						},
+					});
+				},
+			});
+			dialog.show();
+		},
+	});
 }
 
 function is_clearance_project(frm) {
@@ -272,6 +374,7 @@ function setup_customer_batch_autocomplete(frm) {
 			if (df && df.fieldtype === "Data") {
 				frm.set_df_property(fieldname, "fieldtype", "Autocomplete");
 			}
+			frm.set_df_property(fieldname, "read_only", 0);
 			frm.refresh_field(fieldname);
 		},
 	});
@@ -356,6 +459,7 @@ function toggle_project_document_stage_fields(frm, category) {
 
 function setup_add_bill_of_lading_button(frm) {
 	frm.remove_custom_button(__("Add Bill of Lading"), __("Shipment"));
+	frm.remove_custom_button(__("Add Bill of Lading"), __("Actions"));
 	if (frm.is_new() || !frm.doc.name) {
 		return;
 	}
@@ -370,7 +474,7 @@ function setup_add_bill_of_lading_button(frm) {
 	frm.add_custom_button(
 		__("Add Bill of Lading"),
 		() => open_bill_of_lading_from_project(frm),
-		__("Shipment")
+		__("Actions")
 	);
 }
 
@@ -408,97 +512,180 @@ function project_clearance_indicator(doc) {
 	return [__(status), colour];
 }
 
-function render_shipment_progress_chart(frm) {
+function ensure_project_form_layout_visible(frm) {
+	if (!frm?.layout?.wrapper || frm.is_new()) {
+		return;
+	}
+	const visible_controls = frm.layout.wrapper.find(".frappe-control:not(.hide-control)").length;
+	if (visible_controls > 0) {
+		return;
+	}
+	frm.layout.doc = frm.doc;
+	if (typeof frm.layout.refresh === "function") {
+		frm.layout.refresh(frm.doc);
+	}
+	frm.layout.wrapper.find(".form-section").each(function () {
+		const $section = $(this);
+		if ($section.find(".frappe-control").length) {
+			$section.removeClass("empty-section").addClass("visible-section");
+		}
+	});
+	(frm.layout.tabs || []).forEach((tab) => {
+		if (tab.toggle) {
+			tab.toggle(true);
+		}
+	});
+	const tabs = frm.layout.tabs || [];
+	const has_active = tabs.some((tab) => tab.is_active?.());
+	if (!has_active) {
+		const first_visible = tabs.find((tab) => !tab.is_hidden?.());
+		first_visible?.set_active?.();
+	}
+	const after_fix = frm.layout.wrapper.find(".frappe-control:not(.hide-control)").length;
+	if (!after_fix) {
+		console.warn("CGM Project form still has no visible fields after layout recovery", frm.doc.name);
+	}
+}
+
+// Collapse the burst of `refresh` events a single form load produces. Tasks and
+// container trackers change independently of the Project, so this is a short
+// staleness window rather than a revision key — anything that knows the data moved
+// (realtime event, post-action callbacks) passes force to bypass it.
+const TRACKING_DASHBOARD_MIN_INTERVAL_MS = 5000;
+
+function render_shipment_progress_chart(frm, { force = false } = {}) {
 	const field = frm.get_field("custom_shipment_progress_html");
 	if (!field || !frm.doc.name) {
 		return;
 	}
 	frappe.require("/assets/cgm_shipping/css/project_tracking.css");
+
+	const now = new Date().getTime();
+	if (frm.__cgm_tracking_project !== frm.doc.name) {
+		frm.__cgm_tracking_project = frm.doc.name;
+		frm.__cgm_tracking_fetched_at = 0;
+		frm.__cgm_tracking_payload = null;
+	}
+
+	const skip_fetch =
+		!force &&
+		(frm.__cgm_tracking_inflight ||
+			now - (frm.__cgm_tracking_fetched_at || 0) < TRACKING_DASHBOARD_MIN_INTERVAL_MS);
+	if (skip_fetch) {
+		// A form refresh repaints the HTML field, so always redraw — just from the
+		// payload we already have instead of hitting the server again.
+		if (frm.__cgm_tracking_payload) {
+			paint_shipment_progress_chart(frm, field, frm.__cgm_tracking_payload);
+		}
+		return;
+	}
+
+	frm.__cgm_tracking_inflight = true;
+	frm.__cgm_tracking_fetched_at = now;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.project_layout.get_project_tracking_dashboard",
 		args: { project: frm.doc.name },
+		always() {
+			frm.__cgm_tracking_inflight = false;
+		},
 		callback(r) {
 			if (r.exc || !r.message) {
+				// Allow an immediate retry rather than sitting on a failed render.
+				frm.__cgm_tracking_fetched_at = 0;
 				return;
 			}
-			const d = r.message;
-			const steps = (d.states || [])
-				.map((state, i) => {
-					let cls = "cgm-progress-step";
-					if (i < d.current_index) cls += " is-done";
-					if (state === d.current_status) cls += " is-current";
-					return `<span class="${cls}" title="${frappe.utils.escape_html(state)}">${frappe.utils.escape_html(state)}</span>`;
-				})
-				.join("");
-			let taskLine = `<div class="cgm-progress-meta">${__(
-				"No clearance tasks on this project yet."
-			)}</div>`;
-			if (d.tasks_total > 0) {
-				let nextHint = __("Next open task");
-				if (d.first_open_task) {
-					nextHint = `Task ${d.first_open_task.seq}: ${d.first_open_task.subject}`;
-				}
-				const taskLabel = d.task_progress_label || __("workflow tasks");
-				taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> ${frappe.utils.escape_html(taskLabel)} completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
-			}
-			const berth = frappe.utils.escape_html(d.berth_phase || "Before Vessel Berth");
-			const wfNote =
-				d.workflow_behind && d.workflow_status
-					? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
-					: "";
-			const legendLine = d.uses_clearance_states
-				? `<div class="cgm-tracking-legend">
-						${__("Berth phase")}: <b>${berth}</b> ·
-						${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
-					</div>`
-				: `<div class="cgm-tracking-legend">
-						${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current
-					</div>`;
-			let inspectionLine = "";
-			if (d.inspection_notification_status === "Notified" && d.inspection_notified_on) {
-				inspectionLine = `<div class="cgm-inspection-notified">${__(
-					"Client notified for inspection"
-				)} · ${frappe.datetime.str_to_user(d.inspection_notified_on)}</div>`;
-			} else if (d.inspection_notification_status === "Confirmed" && d.inspection_confirmed_on) {
-				const by = d.inspection_confirmed_by
-					? ` · ${frappe.utils.escape_html(d.inspection_confirmed_by)}`
-					: "";
-				inspectionLine = `<div class="cgm-inspection-confirmed">${__(
-					"Inspection confirmed"
-				)} · ${frappe.datetime.str_to_user(d.inspection_confirmed_on)}${by}</div>`;
-			}
-			let portArrivalLine = "";
-			if (d.port_arrival_confirmed && d.port_arrival_confirmed_on) {
-				const by = d.port_arrival_confirmed_by
-					? ` · ${frappe.utils.escape_html(d.port_arrival_confirmed_by)}`
-					: "";
-				portArrivalLine = `<div class="cgm-port-arrival-confirmed">${__(
-					"Port arrival confirmed"
-				)} · ${frappe.datetime.str_to_user(d.port_arrival_confirmed_on)}${by}</div>`;
-			}
-			field.$wrapper
-				.closest('[data-fieldname="custom_shipment_progress_html"]')
-				.addClass("cgm-shipment-progress-field");
-			field.$wrapper.html(`
-				<div class="cgm-shipment-progress">
-					<h4>${__("Shipment clearance workflow")}</h4>
-					<div class="cgm-progress-steps">${steps}</div>
-					${taskLine}
-					${inspectionLine}
-					${portArrivalLine}
-					${legendLine}
-				</div>
-			`);
-			if (d.workflow_behind && frm.doc.custom_shipment_status !== d.current_status) {
-				frm.set_value("custom_shipment_status", d.current_status);
-				const indicator = project_clearance_indicator({ custom_shipment_status: d.current_status });
-				if (indicator) {
-					frm.page.set_indicator(indicator[0], indicator[1]);
-				}
-			}
-			render_container_tracking_table(frm, d);
+			frm.__cgm_tracking_payload = r.message;
+			paint_shipment_progress_chart(frm, field, r.message);
 		},
 	});
+}
+
+function paint_shipment_progress_chart(frm, field, payload) {
+	const d = payload;
+	const steps = (d.states || [])
+		.map((state, i) => {
+			let cls = "cgm-progress-step";
+			if (i < d.current_index) cls += " is-done";
+			if (state === d.current_status) cls += " is-current";
+			return `<span class="${cls}" title="${frappe.utils.escape_html(state)}">${frappe.utils.escape_html(state)}</span>`;
+		})
+		.join("");
+	let taskLine = `<div class="cgm-progress-meta">${__(
+		"No clearance tasks on this project yet."
+	)}</div>`;
+	if (d.tasks_total > 0) {
+		let nextHint = __("Next open task");
+		if (d.first_open_task) {
+			nextHint = `Task ${d.first_open_task.seq}: ${d.first_open_task.subject}`;
+		}
+		const taskLabel = d.task_progress_label || __("workflow tasks");
+		taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> ${frappe.utils.escape_html(taskLabel)} completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
+	}
+	const berth = frappe.utils.escape_html(d.berth_phase || "Before Vessel Berth");
+	const wfNote =
+		d.workflow_behind && d.workflow_status
+			? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
+			: d.workflow_ahead && d.workflow_status
+				? ` · ${__("Workflow field was ahead — correcting to tasks")}`
+				: "";
+	const legendLine = d.uses_clearance_states
+		? `<div class="cgm-tracking-legend">
+				${__("Berth phase")}: <b>${berth}</b> ·
+				${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
+			</div>`
+		: `<div class="cgm-tracking-legend">
+				${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current
+			</div>`;
+	let inspectionLine = "";
+	if (d.inspection_notification_status === "Notified" && d.inspection_notified_on) {
+		inspectionLine = `<div class="cgm-inspection-notified">${__(
+			"Client notified for inspection"
+		)} · ${frappe.datetime.str_to_user(d.inspection_notified_on)}</div>`;
+	} else if (d.inspection_notification_status === "Confirmed" && d.inspection_confirmed_on) {
+		const by = d.inspection_confirmed_by
+			? ` · ${frappe.utils.escape_html(d.inspection_confirmed_by)}`
+			: "";
+		inspectionLine = `<div class="cgm-inspection-confirmed">${__(
+			"Inspection confirmed"
+		)} · ${frappe.datetime.str_to_user(d.inspection_confirmed_on)}${by}</div>`;
+	}
+	let portArrivalLine = "";
+	if (d.port_arrival_confirmed && d.port_arrival_confirmed_on) {
+		const by = d.port_arrival_confirmed_by
+			? ` · ${frappe.utils.escape_html(d.port_arrival_confirmed_by)}`
+			: "";
+		portArrivalLine = `<div class="cgm-port-arrival-confirmed">${__(
+			"Port arrival confirmed"
+		)} · ${frappe.datetime.str_to_user(d.port_arrival_confirmed_on)}${by}</div>`;
+	}
+	field.$wrapper
+		.closest('[data-fieldname="custom_shipment_progress_html"]')
+		.addClass("cgm-shipment-progress-field");
+	field.$wrapper.html(`
+		<div class="cgm-shipment-progress">
+			<h4>${__("Shipment clearance workflow")}</h4>
+			<div class="cgm-progress-steps">${steps}</div>
+			${taskLine}
+			${inspectionLine}
+			${portArrivalLine}
+			${legendLine}
+		</div>
+	`);
+	if (
+		d.uses_clearance_states &&
+		d.current_status &&
+		frm.doc.custom_shipment_status !== d.current_status
+	) {
+		// Keep UI in sync without dirtying — unsaved docs hide workflow Actions.
+		frm.set_value("custom_shipment_status", d.current_status, false, true);
+		const indicator = project_clearance_indicator({
+			custom_shipment_status: d.current_status,
+		});
+		if (indicator) {
+			frm.page.set_indicator(indicator[0], indicator[1]);
+		}
+	}
+	render_container_tracking_table(frm, d);
 }
 
 function format_currency_amount(value, currency) {
@@ -954,7 +1141,7 @@ function render_container_tracking_table(frm, dashboard) {
 				"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.resync_project_container_child_rows",
 			args: { project: frm.doc.name },
 			callback() {
-				render_shipment_progress_chart(frm);
+				render_shipment_progress_chart(frm, { force: true });
 				frappe.show_alert({ message: __("Container statuses resynced"), indicator: "green" });
 			},
 		});
@@ -966,10 +1153,16 @@ function render_container_tracking_table(frm, dashboard) {
 }
 
 function apply_project_costing_display_fields(frm, values) {
+	// Display-only rollups — never mark the form dirty (that hides workflow Actions).
 	Object.entries(values || {}).forEach(([fieldname, value]) => {
-		if (frm.fields_dict[fieldname]) {
-			frm.set_value(fieldname, value || "");
+		if (!frm.fields_dict[fieldname]) {
+			return;
 		}
+		const next = value || "";
+		if ((frm.doc[fieldname] || "") === next) {
+			return;
+		}
+		frm.set_value(fieldname, next, false, true);
 	});
 }
 
@@ -1052,7 +1245,7 @@ function post_container_charge_accrual(frm) {
 					}
 					frm._cgm_costing_display_loaded = null;
 					refresh_project_costing_currency_display(frm);
-					render_shipment_progress_chart(frm);
+					render_shipment_progress_chart(frm, { force: true });
 				},
 			});
 		}
@@ -1083,7 +1276,7 @@ frappe.realtime.on("cgm_project_tracking_refresh", (data) => {
 		cur_frm.doc.name === data.project &&
 		!cur_frm.is_new()
 	) {
-		render_shipment_progress_chart(cur_frm);
+		render_shipment_progress_chart(cur_frm, { force: true });
 	}
 });
 
@@ -1134,15 +1327,62 @@ function render_project_operational_updates(frm) {
 	});
 }
 
+function setup_project_toolbar_buttons(frm) {
+	if (!frm.doc.name || frm.is_new()) {
+		return;
+	}
+
+	setup_port_arrival_confirmation_button(frm);
+	setup_create_container_allocation_button(frm);
+	setup_add_bill_of_lading_button(frm);
+
+	frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass(
+		"btn-primary"
+	);
+	frm.add_custom_button(__("Container Tracker"), () => {
+		frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
+	}, __("View"));
+	frm.add_custom_button(__("Container Tracking Report"), () => {
+		frappe.set_route("query-report", "Container Tracking Detail", {
+			project: frm.doc.name,
+		});
+	}, __("View"));
+	frm.add_custom_button(__("Container Ops Board"), () => {
+		frappe.route_options = { project: frm.doc.name };
+		frappe.set_route("container-ops-board");
+	}, __("View"));
+	frm.add_custom_button(__("Post Container Charge Accrual"), () => {
+		post_container_charge_accrual(frm);
+	}, __("Shipment"));
+	frm.add_custom_button(__("View Journal Entries"), () => {
+		open_project_finance_journal_entries(frm);
+	}, __("View"));
+	frm.add_custom_button(__("Daily Status"), () => {
+		frappe.new_doc("Daily Status Update");
+	}, __("View"));
+	frm.add_custom_button(__("Seal Record"), () => {
+		frappe.new_doc("Seal Record", { project: frm.doc.name });
+	}, __("View"));
+	frm.page.set_inner_btn_group_as_primary(__("View"));
+}
+
 frappe.ui.form.on("Project", {
 	onload(frm) {
-		if (frm.is_new() && frm.fields_dict.custom_opened_date && !frm.doc.custom_opened_date) {
-			frm.set_value("custom_opened_date", frappe.datetime.get_today());
+		try {
+			if (frm.is_new() && frm.fields_dict.custom_opened_date && !frm.doc.custom_opened_date) {
+				frm.set_value("custom_opened_date", frappe.datetime.get_today());
+			}
+			if (frm.doc.customer && !frm.doc.custom_consignee) {
+				sync_consignee_from_customer(frm);
+			}
+		} catch (err) {
+			console.error("CGM Project onload failed", err);
 		}
-		if (frm.doc.customer && !frm.doc.custom_consignee) {
-			sync_consignee_from_customer(frm);
-		}
-		toggle_project_transport_reference_fields(frm);
+	},
+
+	onload_post_render(frm) {
+		ensure_project_form_layout_visible(frm);
+		setTimeout(() => ensure_project_form_layout_visible(frm), 0);
 	},
 
 	customer(frm) {
@@ -1151,77 +1391,56 @@ frappe.ui.form.on("Project", {
 	},
 
 	refresh(frm) {
-		toggle_project_transport_reference_fields(frm);
-		setup_customer_batch_autocomplete(frm);
+		// Toolbar buttons first — other setup must not prevent these from appearing.
+		try {
+			setup_project_toolbar_buttons(frm);
+		} catch (err) {
+			console.error("CGM Project toolbar setup failed", err);
+		}
 
-		if (frm.doc.custom_shipment_status) {
-			const indicator = project_clearance_indicator(frm.doc);
-			if (indicator) {
-				frm.page.set_indicator(indicator[0], indicator[1]);
+		try {
+			toggle_project_transport_reference_fields(frm);
+			setup_customer_batch_autocomplete(frm);
+
+			if (frm.doc.custom_shipment_status) {
+				const indicator = project_clearance_indicator(frm.doc);
+				if (indicator) {
+					frm.page.set_indicator(indicator[0], indicator[1]);
+				}
 			}
-		}
 
-		render_shipment_progress_chart(frm);
-		refresh_project_costing_currency_display(frm);
-		configure_project_document_grid(frm);
-		configure_project_status_fields(frm);
-		configure_project_container_grid(frm);
+			render_shipment_progress_chart(frm);
+			refresh_project_costing_currency_display(frm);
+			configure_project_document_grid(frm);
+			configure_project_status_fields(frm);
+			configure_project_container_grid(frm);
 
-		setup_port_arrival_confirmation_button(frm);
-		setup_create_container_allocation_button(frm);
-		setup_add_bill_of_lading_button(frm);
-
-		if (frm.doc.name && !frm.is_new()) {
-			frm.add_custom_button(__("Clearance Tasks"), () => open_project_clearance_tasks(frm)).addClass("btn-primary");
-			frm.add_custom_button(__("Container Tracker"), () => {
-				frappe.set_route("List", "Container Tracker", { project: frm.doc.name });
-			}, __("View"));
-			frm.add_custom_button(__("Container Tracking Report"), () => {
-				frappe.set_route("query-report", "Container Tracking Detail", {
-					project: frm.doc.name,
-				});
-			}, __("View"));
-			frm.add_custom_button(__("Container Ops Board"), () => {
-				frappe.route_options = { project: frm.doc.name };
-				frappe.set_route("container-ops-board");
-			}, __("View"));
-			frm.add_custom_button(__("Post Container Charge Accrual"), () => {
-				post_container_charge_accrual(frm);
-			}, __("Shipment"));
-			frm.add_custom_button(__("View Journal Entries"), () => {
-				open_project_finance_journal_entries(frm);
-			}, __("Shipment"));
-			frm.add_custom_button(__("Refresh Billed Amount"), () => {
-				manual_refresh_finance_costs(frm);
-			}, __("Shipment"));
-			frm.add_custom_button(__("Daily Status"), () => {
-				frappe.new_doc("Daily Status Update");
-			}, __("View"));
-			frm.add_custom_button(__("Seal Record"), () => {
-				frappe.new_doc("Seal Record", { project: frm.doc.name });
-			}, __("View"));
-			frm.page.set_inner_btn_group_as_primary(__("View"));
-		}
-
-		const refField =
-			frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
-		if (frm.is_new() && frm.doc.project_name && refField) {
-			const refValue = frm.doc.custom_project_reference || frm.doc.custom_cgm_ref_no;
-			if (!refValue) {
-				frm.set_value(refField.df.fieldname, frm.doc.project_name);
+			// Sync auto business name to Project Reference only — never CGM Ref No
+			// (company-entered, independent of project_name).
+			if (
+				frm.is_new() &&
+				frm.doc.project_name &&
+				frm.fields_dict.custom_project_reference &&
+				!frm.doc.custom_project_reference
+			) {
+				frm.set_value("custom_project_reference", frm.doc.project_name);
 			}
-		}
 
+			ensure_project_form_layout_visible(frm);
+			setTimeout(() => ensure_project_form_layout_visible(frm), 0);
+		} catch (err) {
+			console.error("CGM Project refresh failed", err);
+			ensure_project_form_layout_visible(frm);
+		}
 	},
 
 	project_name(frm) {
-		const refField =
-			frm.fields_dict.custom_project_reference || frm.fields_dict.custom_cgm_ref_no;
-		if (refField) {
-			const refValue = frm.doc.custom_project_reference || frm.doc.custom_cgm_ref_no;
-			if (!refValue) {
-				frm.set_value(refField.df.fieldname, frm.doc.project_name);
-			}
+		if (
+			frm.fields_dict.custom_project_reference &&
+			frm.doc.project_name &&
+			!frm.doc.custom_project_reference
+		) {
+			frm.set_value("custom_project_reference", frm.doc.project_name);
 		}
 	},
 

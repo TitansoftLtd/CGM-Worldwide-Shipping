@@ -1,9 +1,12 @@
 """Business project reference for shipment Projects.
 
-ERPNext keeps the internal document name (PROJ-####). The business reference is
-stored on project_name and custom_project_reference for user-facing display.
+ERPNext keeps the internal document name (PROJ-####). The auto business name is
+stored on ``project_name`` (and ``custom_project_reference`` when that field exists).
 
-Formats:
+``custom_cgm_ref_no`` (CGM Ref No) is a separate company-entered reference and is
+never overwritten by auto-naming.
+
+Formats (project_name):
   FCL:     {Client Reference} / {qty}X{size} / {batch}   e.g. PO-99 / 3X20 / 1
   Packages:{Client Reference} / {qty} {type}             e.g. PO-99 / 10 Cartons
 
@@ -49,6 +52,14 @@ PROJECT_REFERENCE_FIELD = "custom_project_reference"
 LEGACY_REFERENCE_FIELD = "custom_cgm_ref_no"
 PROJECT_NAME_LOCK = "cgm_project_reference_lock"
 CLIENT_REFERENCE_FIELD = "custom_client_refrence_no"
+PROJECT_REFERENCE_INPUT_FIELDS = (
+	CLIENT_REFERENCE_FIELD,
+	"custom_batch_no",
+	"custom_cargo_type",
+	"custom_quantity",
+	"custom_number_of_packages",
+	"custom_package_type",
+)
 
 
 def is_lp_project_reference(value: str | None) -> bool:
@@ -78,16 +89,15 @@ def is_legacy_business_reference(value: str | None) -> bool:
 
 
 def project_reference_field(meta=None) -> str | None:
+	"""Auto-synced business-name field only — never CGM Ref No (manual)."""
 	meta = meta or frappe.get_meta("Project")
 	if meta.has_field(PROJECT_REFERENCE_FIELD):
 		return PROJECT_REFERENCE_FIELD
-	if meta.has_field(LEGACY_REFERENCE_FIELD):
-		return LEGACY_REFERENCE_FIELD
 	return None
 
 
 def get_project_reference(doc) -> str | None:
-	"""User-facing business (or legacy) reference from a Project document."""
+	"""Auto business name from Project (not the manual CGM Ref No)."""
 	field = project_reference_field(doc.meta)
 	if field:
 		value = (doc.get(field) or "").strip()
@@ -106,14 +116,12 @@ def display_ref_from_values(row: dict) -> str:
 
 
 def get_project_reference_from_values(row: dict) -> str | None:
+	"""Auto business name from a get_all / get_value row (not manual CGM Ref No)."""
 	field = project_reference_field()
 	if field:
 		value = (row.get(field) or "").strip()
 		if value:
 			return value
-	legacy = (row.get(LEGACY_REFERENCE_FIELD) or "").strip()
-	if legacy:
-		return legacy
 	project_name = (row.get("project_name") or "").strip()
 	if is_lp_project_reference(project_name) or is_legacy_business_reference(project_name):
 		return project_name
@@ -244,8 +252,6 @@ def _project_reference_query_fields() -> list[str]:
 	fields = ["project_name"]
 	if frappe.db.has_column("Project", PROJECT_REFERENCE_FIELD):
 		fields.append(PROJECT_REFERENCE_FIELD)
-	if frappe.db.has_column("Project", LEGACY_REFERENCE_FIELD):
-		fields.append(LEGACY_REFERENCE_FIELD)
 	return fields
 
 
@@ -291,46 +297,101 @@ def build_lp_project_reference(project, sequence: int | None = None) -> str:
 	return base
 
 
-def _lp_reference_in_use(reference: str) -> bool:
-	if frappe.db.exists("Project", {"project_name": reference}):
+def _project_name_for_reference(reference: str, exclude_name: str | None = None) -> str | None:
+	"""Return the Project ``name`` using ``reference`` as project_name, if any."""
+	if not reference:
+		return None
+	filters: dict = {"project_name": reference}
+	if exclude_name:
+		filters["name"] = ["!=", exclude_name]
+	match = frappe.db.get_value("Project", filters, "name")
+	if match:
+		return match
+	return None
+
+
+def _reference_field_owner(reference: str, field: str, exclude_name: str | None = None) -> str | None:
+	if not reference or not frappe.db.has_column("Project", field):
+		return None
+	filters: dict = {field: reference}
+	if exclude_name:
+		filters["name"] = ["!=", exclude_name]
+	return frappe.db.get_value("Project", filters, "name")
+
+
+def _lp_reference_in_use(reference: str, exclude_name: str | None = None) -> bool:
+	if _project_name_for_reference(reference, exclude_name):
 		return True
-	if frappe.db.has_column("Project", PROJECT_REFERENCE_FIELD):
-		if frappe.db.exists("Project", {PROJECT_REFERENCE_FIELD: reference}):
-			return True
-	if frappe.db.has_column("Project", LEGACY_REFERENCE_FIELD):
-		if frappe.db.exists("Project", {LEGACY_REFERENCE_FIELD: reference}):
+	if _reference_field_owner(reference, PROJECT_REFERENCE_FIELD, exclude_name):
+		return True
+	return False
+
+
+def project_reference_inputs_changed(project) -> bool:
+	"""True when shipment fields that feed project_name were edited on save."""
+	if project.is_new():
+		return False
+	prev = project.get_doc_before_save()
+	if not prev:
+		return False
+	for fieldname in PROJECT_REFERENCE_INPUT_FIELDS:
+		if project.meta.has_field(fieldname) and project.has_value_changed(fieldname):
 			return True
 	return False
 
 
+def allocate_unique_lp_project_reference(
+	project, *, exclude_name: str | None = None
+) -> str:
+	"""Build a unique Client Ref / Quantity[/ Batch] reference for ``project``."""
+	frappe.db.sql("SELECT GET_LOCK(%s, 10)", (PROJECT_NAME_LOCK,))
+	try:
+		for attempt in range(1, 51):
+			disambiguator = attempt if attempt > 1 else None
+			reference = build_lp_project_reference(project, sequence=disambiguator)
+			if not _lp_reference_in_use(reference, exclude_name=exclude_name):
+				return reference
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (PROJECT_NAME_LOCK,))
+
+	frappe.throw(frappe._("Could not allocate a unique project reference."))
+
+
 def sync_project_reference_fields(project, reference: str) -> None:
+	"""Write auto business name to project_name (+ Project Reference). Never CGM Ref No."""
 	project.project_name = reference
 	ref_field = project_reference_field(project.meta)
 	if ref_field:
-		project.set(ref_field, reference)
+		setattr(project, ref_field, reference)
+
+
+def refresh_project_reference_from_fields(project) -> str | None:
+	"""Rebuild project_name when Client Ref, batch, or quantity fields change on save."""
+	if project.is_new():
+		return None
+	if not (project.get(CLIENT_REFERENCE_FIELD) or "").strip():
+		return None
+	if not project_reference_inputs_changed(project):
+		return get_project_reference(project)
+
+	reference = allocate_unique_lp_project_reference(project, exclude_name=project.name)
+	sync_project_reference_fields(project, reference)
+	return reference
 
 
 def assign_lp_project_reference(project) -> str | None:
-	"""Set project_name + custom_project_reference; leave ERPNext name (PROJ-####) unchanged."""
+	"""Set project_name (+ Project Reference). Leave CGM Ref No and PROJ-#### unchanged."""
 	if not should_auto_name_project(project):
 		reference = get_project_reference(project)
 		if reference:
 			sync_project_reference_fields(project, reference)
 		return reference
 
-	frappe.db.sql("SELECT GET_LOCK(%s, 10)", (PROJECT_NAME_LOCK,))
-	try:
-		for attempt in range(1, 51):
-			# attempt 1 → base name; 2+ → append " / N" disambiguator
-			disambiguator = attempt if attempt > 1 else None
-			reference = build_lp_project_reference(project, sequence=disambiguator)
-			if not _lp_reference_in_use(reference):
-				sync_project_reference_fields(project, reference)
-				return reference
-	finally:
-		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (PROJECT_NAME_LOCK,))
-
-	frappe.throw(frappe._("Could not allocate a unique project reference."))
+	reference = allocate_unique_lp_project_reference(
+		project, exclude_name=project.name if not project.is_new() else None
+	)
+	sync_project_reference_fields(project, reference)
+	return reference
 
 
 # Backward-compatible aliases used during refactor.

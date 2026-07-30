@@ -1846,6 +1846,7 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property("receipt_verified", "hidden", 0);
 		grid.update_docfield_property("receipt_verified", "read_only", user_can_make_payment(frm) ? 0 : 1);
 	}
+	cgm_configure_permit_attach_grid(grid);
 }
 
 frappe.ui.form.on("Task Finance Line", {

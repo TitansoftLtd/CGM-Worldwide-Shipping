@@ -17,10 +17,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation imp
 	ASSIGNMENT_INTERCHANGE,
 	ASSIGNMENT_PENDING,
 	ASSIGNMENT_TRUCK,
+	OFFERED_TRUCK_OFFERED,
+	OFFERED_TRUCK_WITHDRAWN,
 	acknowledge_allocation,
-	save_assignment_draft,
-	submit_truck_assignment,
+	submit_offered_trucks,
 	sync_interchange_from_item,
+	withdraw_offered_truck,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	compute_container_metrics,
@@ -285,13 +287,15 @@ def get_allocation_detail(allocation_name: str) -> dict:
 				"name": row.name,
 				"container_tracker": row.container_tracker,
 				"container_number": row.container_number or tracker_data.get("container_number"),
-				"cargo_size": row.cargo_size or row.cargo_type or tracker_data.get("cargo_size") or tracker_data.get("cargo_type"),
+				"cargo_size": row.cargo_size
+				or getattr(row, "cargo_type", None)
+				or tracker_data.get("cargo_size")
+				or tracker_data.get("cargo_type"),
+				"offered_truck": getattr(row, "offered_truck", None) or "",
 				"truck_number": truck_number,
 				"driver_name": driver_name,
 				"driver_contact": driver_contact,
 				"assignment_status": assignment_status,
-				"has_draft": assignment_status == ASSIGNMENT_PENDING
-				and bool(truck_number or driver_name or driver_contact),
 				"has_interchange_draft": assignment_status == ASSIGNMENT_TRUCK and bool(row_interchange),
 				"tracker_status": tracker_data.get("status") or "",
 				"tracker_alert": tracker_data.get("alert_status") or "",
@@ -309,7 +313,30 @@ def get_allocation_detail(allocation_name: str) -> dict:
 			"container_number": c.get("container_number") or c["name"],
 		}
 		for c in containers
+		if c.get("assignment_status") in (ASSIGNMENT_TRUCK, ASSIGNMENT_INTERCHANGE)
 	]
+
+	offered_trucks = []
+	for truck in allocation.get("offered_trucks") or []:
+		if truck.status == OFFERED_TRUCK_WITHDRAWN:
+			continue
+		offered_trucks.append(
+			{
+				"name": truck.name,
+				"truck_number": truck.truck_number,
+				"driver_name": truck.driver_name,
+				"driver_contact": truck.driver_contact or "",
+				"status": truck.status or OFFERED_TRUCK_OFFERED,
+				"offered_on": truck.offered_on,
+			}
+		)
+
+	pending_containers = sum(
+		1 for c in containers if c.get("assignment_status") == ASSIGNMENT_PENDING
+	)
+	assigned_containers = sum(
+		1 for c in containers if c.get("assignment_status") == ASSIGNMENT_TRUCK
+	)
 
 	return {
 		"name": allocation.name,
@@ -321,7 +348,11 @@ def get_allocation_detail(allocation_name: str) -> dict:
 		"is_completed": allocation.status == ALLOCATION_STATUS_COMPLETED,
 		"trucks_booked": cint(allocation.get("trucks_booked")) or len(containers),
 		"container_total": len(containers),
+		"pending_containers": pending_containers,
+		"assigned_containers": assigned_containers,
+		"offered_truck_count": len(offered_trucks),
 		"containers": containers,
+		"offered_trucks": offered_trucks,
 		"my_updates": my_updates,
 		"my_updates_html": render_updates_list_html(my_updates, show_source=False),
 		"my_updates_json": frappe.as_json(my_updates),
@@ -333,6 +364,22 @@ def get_allocation_detail(allocation_name: str) -> dict:
 
 
 @frappe.whitelist()
+def submit_offered_trucks_portal(allocation_name: str, trucks) -> dict:
+	"""Transporter batch-offers trucks + drivers for CGM to assign."""
+	transporter = require_transporter_portal_access()
+	_get_allocation_for_transporter(allocation_name, transporter)
+	return submit_offered_trucks(allocation_name, trucks)
+
+
+@frappe.whitelist()
+def withdraw_offered_truck_portal(allocation_name: str, offered_truck_name: str) -> dict:
+	"""Transporter withdraws an unassigned offered truck."""
+	transporter = require_transporter_portal_access()
+	_get_allocation_for_transporter(allocation_name, transporter)
+	return withdraw_offered_truck(allocation_name, offered_truck_name)
+
+
+@frappe.whitelist()
 def save_truck_assignment(
 	allocation_name: str,
 	item_name: str,
@@ -340,15 +387,14 @@ def save_truck_assignment(
 	driver_name: str,
 	driver_contact: str = "",
 ) -> dict:
-	"""Save truck/driver draft on the allocation row (status stays Pending)."""
+	"""Deprecated: transporters offer trucks in batch; CGM assigns containers."""
 	transporter = require_transporter_portal_access()
 	_get_allocation_for_transporter(allocation_name, transporter)
-	return save_assignment_draft(
-		allocation_name,
-		item_name,
-		truck_number,
-		driver_name,
-		driver_contact,
+	frappe.throw(
+		_(
+			"Offer trucks in the Offered Trucks section. CGM assigns each container to a truck."
+		),
+		title=_("Use Offered Trucks"),
 	)
 
 
@@ -360,15 +406,14 @@ def submit_truck_assignment_portal(
 	driver_name: str,
 	driver_contact: str = "",
 ) -> dict:
-	"""Confirm truck assignment and sync to Container Tracker."""
+	"""Deprecated: transporters offer trucks in batch; CGM assigns containers."""
 	transporter = require_transporter_portal_access()
 	_get_allocation_for_transporter(allocation_name, transporter)
-	return submit_truck_assignment(
-		allocation_name,
-		item_name,
-		truck_number,
-		driver_name,
-		driver_contact,
+	frappe.throw(
+		_(
+			"Offer trucks in the Offered Trucks section. CGM assigns each container to a truck."
+		),
+		title=_("Use Offered Trucks"),
 	)
 
 

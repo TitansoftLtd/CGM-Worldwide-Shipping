@@ -23,6 +23,168 @@ function cgm_shipment_document_slot_fields() {
 	return fields;
 }
 
+function cgm_row_attachment_url(row) {
+	if (!row) {
+		return "";
+	}
+	const draft_field = cgm_draft_document_field();
+	const draft = draft_field ? row[draft_field] : null;
+	return (row.final_attachment || draft || row.attachment || "").trim();
+}
+
+function cgm_open_attachment_file(file_url) {
+	if (!file_url) {
+		return;
+	}
+	window.open(frappe.urllib.get_full_url(file_url), "_blank", "noopener,noreferrer");
+}
+
+function cgm_download_attachment_file(file_url) {
+	if (!file_url) {
+		return;
+	}
+	open_url_post(frappe.request.url, {
+		cmd: "frappe.core.doctype.file.file.download_file",
+		file_url,
+	});
+}
+
+function cgm_clear_attach_click_timer($link) {
+	const timer = $link.data("cgm-click-timer");
+	if (timer) {
+		clearTimeout(timer);
+		$link.removeData("cgm-click-timer");
+	}
+}
+
+function cgm_schedule_attach_preview($link, file_url) {
+	cgm_clear_attach_click_timer($link);
+	const timer = setTimeout(() => {
+		$link.removeData("cgm-click-timer");
+		cgm_open_attachment_file(file_url);
+	}, 250);
+	$link.data("cgm-click-timer", timer);
+}
+
+function cgm_bind_single_attach_link($link, file_url) {
+	$link.off("mousedown.cgm_attach click.cgm_attach dblclick.cgm_attach");
+	$link.on("mousedown.cgm_attach", (e) => e.stopPropagation());
+	$link.on("click.cgm_attach", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		cgm_schedule_attach_preview($link, file_url);
+		return false;
+	});
+	$link.on("dblclick.cgm_attach", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		cgm_clear_attach_click_timer($link);
+		cgm_download_attachment_file(file_url);
+		return false;
+	});
+}
+
+function cgm_attach_view_formatter(value, df, doc) {
+	const file_url = ((value || "").trim() || cgm_row_attachment_url(doc) || "").trim();
+	if (!file_url) {
+		return "";
+	}
+	const label = file_url.split("/").pop() || __("View");
+	const title = __("Click to view, double-click to download");
+	return `<a href="#" class="cgm-grid-attach-link attached-file-link" data-file-url="${frappe.utils.escape_html(
+		file_url
+	)}" title="${frappe.utils.escape_html(title)}">${frappe.utils.escape_html(label)}</a>`;
+}
+
+function cgm_bind_attach_grid_clicks(grid) {
+	if (!grid?.wrapper) {
+		return;
+	}
+	const $wrapper = $(grid.wrapper);
+	$wrapper.off("mousedown.cgm_attach click.cgm_attach dblclick.cgm_attach");
+	$wrapper.on("mousedown.cgm_attach", ".cgm-grid-attach-link", (e) => {
+		e.stopPropagation();
+	});
+	$wrapper.on("click.cgm_attach", ".cgm-grid-attach-link", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const $link = $(e.currentTarget);
+		cgm_schedule_attach_preview($link, $link.data("file-url"));
+		return false;
+	});
+	$wrapper.on("dblclick.cgm_attach", ".cgm-grid-attach-link", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const $link = $(e.currentTarget);
+		cgm_clear_attach_click_timer($link);
+		cgm_download_attachment_file($link.data("file-url"));
+		return false;
+	});
+}
+
+function cgm_fix_attach_control_links(grid_row, fieldnames) {
+	if (!grid_row?.grid_form?.fields_dict) {
+		return;
+	}
+	for (const fieldname of fieldnames || []) {
+		const field = grid_row.grid_form.fields_dict[fieldname];
+		if (!field?.value) {
+			continue;
+		}
+		const $link = field.$value?.find(".attached-file-link");
+		if (!$link?.length) {
+			continue;
+		}
+		$link.off("mousedown.cgm_attach click.cgm_attach dblclick.cgm_attach");
+		cgm_bind_single_attach_link($link, field.value);
+	}
+}
+
+function cgm_patch_attach_grid_row_form_render(grid_row, fieldnames) {
+	if (!grid_row || grid_row._cgm_attach_form_render_patched) {
+		return;
+	}
+	grid_row._cgm_attach_form_render_patched = true;
+	const orig_show_form = grid_row.show_form.bind(grid_row);
+	grid_row.show_form = function (...args) {
+		const result = orig_show_form(...args);
+		setTimeout(() => cgm_fix_attach_control_links(grid_row, fieldnames), 0);
+		return result;
+	};
+}
+
+function cgm_apply_attach_view_formatters(grid, fieldnames) {
+	if (!grid) {
+		return;
+	}
+	const allowed = new Set(fieldnames || []);
+	const apply = (df) => {
+		if (!df || df.fieldtype !== "Attach") {
+			return;
+		}
+		if (allowed.size && !allowed.has(df.fieldname)) {
+			return;
+		}
+		df.formatter = cgm_attach_view_formatter;
+	};
+	for (const df of grid.docfields || []) {
+		apply(df);
+	}
+	for (const grid_row of grid.grid_rows || []) {
+		for (const df of grid_row.docfields || []) {
+			apply(df);
+		}
+		cgm_patch_attach_grid_row_form_render(grid_row, fieldnames);
+	}
+	cgm_bind_attach_grid_clicks(grid);
+}
+
+const CGM_PERMIT_ATTACH_FIELDS = ["permit_document", "payment_invoice", "payment_receipt"];
+
+function cgm_configure_permit_attach_grid(grid) {
+	cgm_apply_attach_view_formatters(grid, CGM_PERMIT_ATTACH_FIELDS);
+}
+
 function cgm_configure_shipment_document_grid(grid, { initial_read_only = false } = {}) {
 	if (!grid) {
 		return;
@@ -36,6 +198,7 @@ function cgm_configure_shipment_document_grid(grid, { initial_read_only = false 
 		slot_fields.forEach((fieldname) => {
 			grid.update_docfield_property(fieldname, "hidden", 1);
 		});
+		cgm_apply_attach_view_formatters(grid, ["attachment"]);
 		return;
 	}
 
@@ -59,6 +222,7 @@ function cgm_configure_shipment_document_grid(grid, { initial_read_only = false 
 		grid.update_docfield_property("final_attachment", "read_only", 0);
 		grid.update_docfield_property("document_type", "read_only", 1);
 	}
+	cgm_apply_attach_view_formatters(grid, slot_fields);
 }
 
 function cgm_on_shipment_document_slot_change(frm, cdt, cdn) {
@@ -107,6 +271,18 @@ function cgm_sync_shipment_document_rows_on_refresh(frm, table_field) {
 }
 
 frappe.ui.form.on("Shipment Document", {
+	form_render(frm, cdt, cdn) {
+		const grid_row = frm.cur_grid;
+		if (grid_row?.doc?.name !== cdn) {
+			return;
+		}
+		cgm_fix_attach_control_links(
+			grid_row,
+			cgm_has_shipment_document_versioning()
+				? cgm_shipment_document_slot_fields()
+				: ["attachment"]
+		);
+	},
 	draft_documents(frm, cdt, cdn) {
 		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
 	},
@@ -145,6 +321,16 @@ frappe.ui.form.on("Shipment Document", {
 			frappe.model.set_value(cdt, cdn, "verified_by", "");
 			frappe.model.set_value(cdt, cdn, "verified_on", "");
 		}
+	},
+});
+
+frappe.ui.form.on("Permit Register", {
+	form_render(frm, cdt, cdn) {
+		const grid_row = frm.cur_grid;
+		if (grid_row?.doc?.name !== cdn) {
+			return;
+		}
+		cgm_fix_attach_control_links(grid_row, CGM_PERMIT_ATTACH_FIELDS);
 	},
 });
 

@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "creation": "2026-05-31 17:34:14.307718",
  "doctype": "DocType",
@@ -10,24 +11,25 @@
   "default_mode_of_transport",
   "column_break_st_cfg",
   "is_active",
+  "use_sea_import_workflow",
   "uses_unit_tracking",
   "amended_from",
-  "section_workflow_configuration",
+  "section_break_integration",
   "task_template",
+  "task_flow_key",
   "container_tracker_mode",
-  "column_break_wf_cfg",
+  "cgm_ref_prefix",
+  "container_tracking_mode",
+  "column_break_st_flags",
   "uses_container_tracking",
   "uses_transit_documents",
   "uses_destination_entry",
   "uses_export_documents",
   "is_outbound",
-  "section_break_integration",
-  "task_flow_key",
-  "cgm_ref_prefix",
-  "container_tracking_mode",
   "primary_transport_document",
   "section_transport_documents",
   "transport_documents",
+  "legacy_crm_labels",
   "section_required_documents",
   "required_documents",
   "section_break_newf",
@@ -83,39 +85,29 @@
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "section_workflow_configuration",
-   "fieldtype": "Section Break",
-   "label": "Workflow Configuration"
-  },
-  {
-   "description": "Which task plan to create when a project is opened for this shipment type. Leave blank for shipment types that do not use the task system.",
-   "fieldname": "task_template",
-   "fieldtype": "Link",
-   "label": "Task Workflow Template",
-   "options": "CGM Task Template"
-  },
-  {
-   "description": "Where containers for this shipment type are tracked (Mombasa, ICD, Transit, Export). Copied to Project on create.",
+   "description": "Default Project Type for new projects using this shipment type. Container Tracker sections match Project.project_type. Add new types in the Project Type list (Setup) \u2014 names containing Mombasa, ICD, Transit, or Export control which tracker sections appear.",
    "fieldname": "container_tracker_mode",
    "fieldtype": "Link",
    "label": "Container Tracker Mode",
-   "options": "Container Tracker Mode"
+   "options": "Project Type"
   },
   {
-   "fieldname": "column_break_wf_cfg",
-   "fieldtype": "Column Break"
-  },
-  {
-   "collapsible": 1,
    "fieldname": "section_break_integration",
    "fieldtype": "Section Break",
-   "label": "Integration (Legacy)"
+   "label": "Integration"
   },
   {
-   "description": "Deprecated \u2014 use Task Workflow Template. Kept for records not yet migrated.",
+   "description": "CGM Task Template used when Start Shipment creates Project tasks. Preferred over Task Flow Key.",
+   "fieldname": "task_template",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Task Template",
+   "options": "CGM Task Template"
+  },
+  {
+   "description": "Legacy fallback when Task Template is empty. Matches a seeded template via flow key (e.g. SEA_IMPORT_E2E).",
    "fieldname": "task_flow_key",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "Task Flow Key"
   },
   {
@@ -140,28 +132,24 @@
   },
   {
    "default": "0",
-   "description": "Default transport docs for transit shipments (Release Order + BL/Booking). Used when Transport Documents table is empty.",
    "fieldname": "uses_transit_documents",
    "fieldtype": "Check",
    "label": "Uses Transit Documents"
   },
   {
    "default": "0",
-   "description": "Show Uganda/transit destination entry fields on Project (fetched to custom_uses_destination_entry).",
    "fieldname": "uses_destination_entry",
    "fieldtype": "Check",
    "label": "Uses Destination Entry"
   },
   {
    "default": "0",
-   "description": "Export document behaviour; with is_outbound, defaults transport docs to Booking + BL.",
    "fieldname": "uses_export_documents",
    "fieldtype": "Check",
    "label": "Uses Export Documents"
   },
   {
    "default": "0",
-   "description": "Export/outbound direction. Defaults transport docs to Booking Confirmation + Bill of Lading.",
    "fieldname": "is_outbound",
    "fieldtype": "Check",
    "label": "Is Outbound"
@@ -210,11 +198,27 @@
   {
    "fieldname": "section_break_2k6q",
    "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "use_sea_import_workflow",
+   "fieldtype": "Check",
+   "label": "Use Sea Import Workflow"
+  },
+  {
+   "fieldname": "column_break_st_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",
+   "fieldname": "legacy_crm_labels",
+   "fieldtype": "Small Text",
+   "label": "Legacy CRM Labels"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-17 13:09:41.127283",
+ "modified": "2026-07-21 17:26:13.598936",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Type",
