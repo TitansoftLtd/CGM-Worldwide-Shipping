@@ -673,7 +673,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("Shipping Line")}</th>
 				<th>${__("Country of Origin")}</th>
 				<th>${__("ETA")}</th>
-				<th>${__("Clearing Station")}</th>
+				<th>${__("Clearance Station")}</th>
 				<th>${__("Remarks")}</th>
 				<th>${__("Container")}</th>
 				<th>${__("ATA")}</th>
@@ -793,7 +793,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("Shipping Line")}</th>
 				<th>${__("Country of Origin")}</th>
 				<th>${__("ETA")}</th>
-				<th>${__("Clearing Station")}</th>
+				<th>${__("Clearance Station")}</th>
 				<th>${__("Remarks")}</th>
 				<th>${__("Containers")}</th>
 				<th>${__("ATA")}</th>
