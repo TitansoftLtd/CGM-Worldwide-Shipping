@@ -38,19 +38,37 @@ def default_destination_name() -> str:
 	return destinations[0] if destinations else "Kenya"
 
 
+@frappe.request_cache
 def supplier_has_child_table_field(fieldname: str) -> bool:
 	if not frappe.db.exists("DocType", "Supplier"):
 		return False
 	return frappe.get_meta("Supplier").has_field(fieldname)
 
 
+@frappe.request_cache
 def get_supplier_child_rows(supplier_name: str, fieldname: str) -> list:
-	"""Safely read a Supplier child table; returns [] when the field is not on the DocType."""
+	"""Safely read a Supplier child table; returns [] when the field is not on the DocType.
+
+	Cached per request: rate lookups run once per container per charge type, and each
+	miss was a full Supplier document load (all child tables) for the same few
+	shipping lines. Treat the returned rows as read-only.
+	"""
 	if not supplier_name or not frappe.db.exists("Supplier", supplier_name):
 		return []
 	if not supplier_has_child_table_field(fieldname):
 		return []
-	return frappe.get_doc("Supplier", supplier_name).get(fieldname) or []
+	child_doctype = (frappe.get_meta("Supplier").get_field(fieldname).options or "").strip()
+	if not child_doctype:
+		return []
+	return (
+		frappe.get_all(
+			child_doctype,
+			filters={"parent": supplier_name, "parenttype": "Supplier", "parentfield": fieldname},
+			fields=["*"],
+			order_by="idx asc",
+		)
+		or []
+	)
 
 
 @frappe.request_cache
