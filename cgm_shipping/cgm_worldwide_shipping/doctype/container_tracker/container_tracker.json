@@ -175,13 +175,13 @@
    "label": "B/L Number"
   },
   {
+   "fetch_from": "project.custom_container_tracker_mode",
+   "fetch_if_empty": 1,
    "fieldname": "container_mode",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Container Mode",
-   "read_only": 1,
-   "fetch_from": "project.custom_container_tracker_mode",
-   "fetch_if_empty": 1
+   "read_only": 1
   },
   {
    "fieldname": "column_break_identity",
@@ -210,7 +210,7 @@
    "fieldname": "delivery_location",
    "fieldtype": "Link",
    "label": "Delivery Location (Warehouse Clearance Station)",
-   "options": "Clearance Station"
+   "options": "Warehouse Station"
   },
   {
    "fieldname": "section_dates",
@@ -719,7 +719,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-18 08:01:09.415763",
+ "modified": "2026-07-30 12:42:07.345262",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",
