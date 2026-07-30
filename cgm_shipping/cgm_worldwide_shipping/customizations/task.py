@@ -473,6 +473,43 @@ def is_sea_finance_payment_task(task) -> bool:
 	)
 
 
+def enforce_client_paid_confirmation(task) -> None:
+	"""Only Finance may confirm a client-paid fee; stamp who confirmed it and when."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CLIENT_PAID_BY_FIELD,
+		CLIENT_PAID_FIELD,
+		CLIENT_PAID_ON_FIELD,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		user_has_finance_department_access,
+	)
+
+	if not task.meta.has_field(CLIENT_PAID_FIELD):
+		return
+	prev = task.get_doc_before_save()
+	was_set = bool(prev.get(CLIENT_PAID_FIELD)) if prev else False
+	is_set = bool(task.get(CLIENT_PAID_FIELD))
+	if was_set == is_set:
+		return
+
+	if is_set and not is_sea_finance_payment_task(task):
+		frappe.throw(
+			"<b>Paid directly by client</b> applies only to finance payment tasks."
+		)
+	if not user_has_finance_department_access():
+		frappe.throw("Only <b>Finance</b> can confirm that the client paid directly.")
+
+	if is_set:
+		if task.meta.has_field(CLIENT_PAID_BY_FIELD):
+			task.set(CLIENT_PAID_BY_FIELD, frappe.session.user)
+		if task.meta.has_field(CLIENT_PAID_ON_FIELD):
+			task.set(CLIENT_PAID_ON_FIELD, now_datetime())
+		return
+	for field in (CLIENT_PAID_BY_FIELD, CLIENT_PAID_ON_FIELD):
+		if task.meta.has_field(field):
+			task.set(field, None)
+
+
 def is_sea_auto_complete_task(task) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		is_sea_import_task,
@@ -1076,10 +1113,14 @@ def sync_idf_certificate_to_project(task) -> None:
 	if not task.project:
 		return
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		IDF_CERTIFICATE_CODES,
+	)
+
 	cert_url = None
 	for row in task.get("custom_task_documents") or []:
 		code = get_document_type_code(row.document_type)
-		if code in ("IDF_CERT", "UCR_CERT", "IDF") and row.attachment:
+		if code in IDF_CERTIFICATE_CODES and row.attachment:
 			cert_url = row.attachment
 			break
 
@@ -2953,6 +2994,7 @@ def before_task_save(doc, _method=None):
 	stamp_shipment_document_upload_metadata(doc, TASK_DOCUMENTS_FIELD)
 	if not _is_sea_task(doc):
 		return
+	enforce_client_paid_confirmation(doc)
 	if doc.status in ("Completed", "Cancelled"):
 		return
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (

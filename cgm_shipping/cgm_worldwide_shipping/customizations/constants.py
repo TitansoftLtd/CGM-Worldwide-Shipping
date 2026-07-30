@@ -27,8 +27,19 @@ TASK_PERMITS_FIELD = "custom_task_permits"
 TASK_FINANCE_FIELD = "custom_task_finance_lines"
 PERMIT_JOURNAL_ENTRY_FIELD = "journal_entry"
 
+# Finance confirms the client settled a payment directly (no CGM disbursement,
+# so no Journal Entry / Payment Entry exists on the finance task).
+CLIENT_PAID_FIELD = "custom_client_paid_directly"
+CLIENT_PAID_BY_FIELD = "custom_client_paid_confirmed_by"
+CLIENT_PAID_ON_FIELD = "custom_client_paid_confirmed_on"
+
 # Intake documents required before Documents Received workflow state.
 INTAKE_DOCUMENT_CODES = ("CI", "PKL")
+
+# IDF/UCR certificate document codes. The "IDF CERT" Document Type carries the
+# code "IDF Certificate" on live sites, so it must be accepted alongside the
+# short codes or Create UCR (IDF) never auto-completes.
+IDF_CERTIFICATE_CODES = frozenset({"IDF_CERT", "UCR_CERT", "IDF", "IDF Certificate"})
 
 # Sea task completion requirement labels (Settings-driven; defaults for throws).
 PRE_CLEARANCE_STAGE = "Pre-clearance"

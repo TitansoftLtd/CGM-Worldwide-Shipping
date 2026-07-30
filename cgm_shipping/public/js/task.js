@@ -83,6 +83,7 @@ frappe.ui.form.on("Task", {
 				is_permit_finance_step(frm) ? 1 : 0
 			);
 		}
+		configure_client_paid_field(frm, ui);
 		if (ui.show_documents) {
 			configure_task_document_version_grid(frm, ui);
 		}
@@ -199,7 +200,8 @@ frappe.ui.form.on("Task", {
 				intro_set = true;
 			} else if (ui.show_payments) {
 				intro = __(
-					"Use <b>Make Payment</b> to record this payment as a Journal Entry (Finance department)."
+					"Use <b>Make Payment</b> to record a Journal Entry, or tick <b>Paid directly by client</b> " +
+						"if the client settled this fee — no invoice/receipt verification needed then."
 				);
 			}
 			if (!intro_set) {
@@ -1025,7 +1027,11 @@ function task_has_recorded_payment_on_form(frm) {
 	if (is_permit_payment_pattern(frm)) {
 		return permit_rows_all_have_journal_entry(frm);
 	}
-	return Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
+	return Boolean(
+		frm.doc.custom_client_paid_directly ||
+			frm.doc.custom_journal_entry ||
+			frm.doc.custom_payment_entry
+	);
 }
 
 function verify_all_permit_receipts_from_form(frm) {
@@ -2444,6 +2450,30 @@ function load_app_finance_declarant_status(frm, profileKey) {
 			);
 		},
 	});
+}
+
+const CLIENT_PAID_FIELDS = [
+	"custom_client_paid_directly",
+	"custom_client_paid_confirmed_by",
+	"custom_client_paid_confirmed_on",
+];
+
+function configure_client_paid_field(frm, ui) {
+	// Finance-only confirmation that the client settled the fee itself; permit
+	// payments keep their per-row journal entries.
+	const show = Boolean(ui.show_payments) && !is_permit_finance_step(frm);
+	CLIENT_PAID_FIELDS.forEach((fieldname) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
+		}
+	});
+	if (show && frm.fields_dict.custom_client_paid_directly) {
+		frm.set_df_property(
+			"custom_client_paid_directly",
+			"read_only",
+			user_can_make_payment(frm) && frm.doc.status !== "Completed" ? 0 : 1
+		);
+	}
 }
 
 function configure_shipping_line_deposit_grid(frm) {

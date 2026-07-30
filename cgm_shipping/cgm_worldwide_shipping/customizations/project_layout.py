@@ -650,6 +650,55 @@ def ensure_task_container_update_fields() -> None:
 	frappe.clear_cache(doctype="Task")
 
 
+def ensure_client_paid_task_fields() -> None:
+	"""Finance confirmation that the client paid a fee directly (no CGM disbursement)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CLIENT_PAID_BY_FIELD,
+		CLIENT_PAID_FIELD,
+		CLIENT_PAID_ON_FIELD,
+	)
+
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_FIELD,
+			"label": "Paid directly by client",
+			"fieldtype": "Check",
+			"insert_after": "custom_journal_entry",
+			"description": (
+				"Finance confirms the client settled this fee directly. "
+				"No Journal Entry, invoice verification, or receipt upload is required — "
+				"ticking this completes the payment step."
+			),
+			"allow_on_submit": 0,
+		},
+	)
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_BY_FIELD,
+			"label": "Client Payment Confirmed By",
+			"fieldtype": "Link",
+			"options": "User",
+			"insert_after": CLIENT_PAID_FIELD,
+			"read_only": 1,
+			"depends_on": f"eval:doc.{CLIENT_PAID_FIELD}",
+		},
+	)
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_ON_FIELD,
+			"label": "Client Payment Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": CLIENT_PAID_BY_FIELD,
+			"read_only": 1,
+			"depends_on": f"eval:doc.{CLIENT_PAID_FIELD}",
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
 def ensure_field_officer_task_fields() -> None:
 	"""Task 16 field-officer clearance tracking fields."""
 	depends = (

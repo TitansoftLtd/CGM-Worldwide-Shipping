@@ -15,6 +15,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	ENTRY_INVOICE_TO_FINANCE,
 	ENTRY_RECEIPT_FOR_DECLARANT,
 	ENTRY_RECEIPT_VERIFY_FINANCE,
+	IDF_CERTIFICATE_CODES,
 	SHIPPING_LINE_INVOICE_TO_FINANCE,
 	SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
 	SHIPPING_LINE_RECEIPT_VERIFY_FINANCE,
@@ -76,7 +77,7 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		application_invoice_verified_field="custom_ucr_invoice_verified",
 		application_receipt_verified_field="custom_ucr_receipt_verified",
 		sync_to_idf_record=True,
-		legacy_certificate_codes=frozenset({"IDF_CERT", "UCR_CERT", "IDF"}),
+		legacy_certificate_codes=IDF_CERTIFICATE_CODES,
 	),
 	"Entry Application": ApplicationFinanceProfile(
 		key="entry",
@@ -738,6 +739,17 @@ def can_complete_application_task(
 ) -> bool:
 	if not is_application_task(int(task.get("custom_sequence_no") or 0), profile):
 		return False
+	# Client paid directly — Finance confirmation alone closes this pair; no
+	# invoice / receipt / certificate handoff is required on either task.
+	if finance_task is None and task.project:
+		finance_name = get_application_finance_task(task.project, profile)
+		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+	)
+
+	if finance_task and task_client_paid_directly(finance_task):
+		return True
 	submitted = invoice_attached(task, profile)
 	if profile.application_submitted_field and task.meta.has_field(profile.application_submitted_field):
 		submitted = submitted or bool(task.get(profile.application_submitted_field))
@@ -753,12 +765,23 @@ def can_complete_application_task(
 def can_complete_application_finance_task(task, profile: ApplicationFinanceProfile) -> bool:
 	if not is_application_finance_task(int(task.get("custom_sequence_no") or 0), profile):
 		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+		task_has_recorded_payment,
+	)
+
+	# Finance tick alone is enough when the client settled the fee itself.
+	if task_client_paid_directly(task):
+		return True
 	if task.project and not project_has_submitted_invoice(task.project, profile):
 		return False
 	inv_ok = invoice_verified(task, profile)
 	if profile.application_invoice_verified_field:
 		inv_ok = inv_ok or bool(task.get(profile.application_invoice_verified_field))
 	if not inv_ok:
+		return False
+	# JE / submitted PE required for the normal CGM-paid path.
+	if not task_has_recorded_payment(task):
 		return False
 	rec_ok = receipt_verified(task, profile)
 	if profile.application_receipt_verified_field:

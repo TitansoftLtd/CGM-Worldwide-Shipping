@@ -297,6 +297,15 @@ def validate_finance_application_payment_task(
 ) -> None:
 	if not is_application_payment_task_doc(task, profile):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+		task_has_recorded_payment,
+	)
+
+	# Client paid — Finance confirmation alone; skip invoice/receipt/PI checks.
+	if task_client_paid_directly(task):
+		return
+
 	app_task = get_application_task(task.project, profile) if task.project else None
 	if app_task and not invoice_submitted(app_task, profile):
 		frappe.throw("The declarant must submit the application invoice first.")
@@ -311,11 +320,10 @@ def validate_finance_application_payment_task(
 	task_fields = frappe.get_meta("Task")
 	if task_fields.has_field("custom_purchase_invoice") and not task.get("custom_purchase_invoice"):
 		frappe.throw("Create and submit a <b>Purchase Invoice</b> from this task before completion.")
-	has_payment = task.get("custom_payment_entry") or task.get("custom_journal_entry")
-	if not has_payment:
+	if not task_has_recorded_payment(task):
 		frappe.throw(
 			"Record payment via <b>Make Payment</b> (Journal Entry) or <b>Payment Entry</b> "
-			"before completion."
+			"before completion, or tick <b>Paid directly by client</b> if the client settled it."
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
@@ -743,7 +751,8 @@ def enforce_entry_finance_gate(project: str) -> None:
 	):
 		frappe.throw(
 			"Cannot move to <b>Entry Paid</b> until <b>Finance Pays Entry Slip</b> is completed: "
-			"Entry Slip invoice verified, payment recorded, receipt verified, and ENTRY document uploaded."
+			"either Finance records payment and verifies the Entry Slip invoice/receipt, "
+			"or Finance ticks <b>Paid directly by client</b>."
 		)
 
 
@@ -760,5 +769,6 @@ def enforce_kpa_finance_gate(project: str) -> None:
 	):
 		frappe.throw(
 			"Cannot move to <b>KPA Paid</b> until <b>Finance pays KPA Invoice</b> is completed: "
-			"KPA invoice verified, payment recorded, and KPA receipt verified."
+			"either Finance records payment and verifies the KPA invoice/receipt, "
+			"or Finance ticks <b>Paid directly by client</b>."
 		)

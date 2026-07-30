@@ -262,8 +262,17 @@ def project_has_submitted_permit_invoices(
 	return False
 
 
+def task_client_paid_directly(task) -> bool:
+	"""Finance confirmed the client settled this fee itself — no CGM disbursement."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CLIENT_PAID_FIELD,
+	)
+
+	return bool(task.get(CLIENT_PAID_FIELD))
+
+
 def task_has_recorded_payment(task) -> bool:
-	"""Finance recorded payment via Journal Entry or a submitted Payment Entry."""
+	"""Finance recorded payment via Journal Entry, submitted Payment Entry, or client-paid confirmation."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		PERMIT_JOURNAL_ENTRY_FIELD,
 		TASK_PERMITS_FIELD,
@@ -285,6 +294,8 @@ def task_has_recorded_payment(task) -> bool:
 			return False
 		return True
 
+	if task_client_paid_directly(task):
+		return True
 	if task.get("custom_journal_entry"):
 		if frappe.db.exists("Journal Entry", task.custom_journal_entry):
 			return True
@@ -1299,12 +1310,15 @@ def project_has_submitted_ucr_invoice(project: str) -> bool:
 
 
 def idf_certificate_uploaded(task) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		IDF_CERTIFICATE_CODES,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_document_type_code,
 	)
 
 	for row in task.get("custom_task_documents") or []:
-		if get_document_type_code(row.document_type) == "IDF_CERT" and row.attachment:
+		if get_document_type_code(row.document_type) in IDF_CERTIFICATE_CODES and row.attachment:
 			return True
 	return False
 
@@ -1339,6 +1353,11 @@ def ucr_receipt_attached_for_payment_workflow(task) -> bool:
 def can_complete_ucr_create_task(task, finance_task=None) -> bool:
 	if not is_ucr_create_task(task):
 		return False
+	if finance_task is None and task.project:
+		finance_name = get_ucr_finance_task(task.project)
+		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
+	if finance_task and task_client_paid_directly(finance_task):
+		return True
 	if not ucr_invoice_attached(task) and not task.get("custom_ucr_invoice_submitted"):
 		return False
 	if not ucr_invoice_verified_for_create_task(task, finance_task):
@@ -1351,6 +1370,8 @@ def can_complete_ucr_create_task(task, finance_task=None) -> bool:
 def can_complete_ucr_payment_task(task) -> bool:
 	if not is_ucr_payment_task_doc(task):
 		return False
+	if task_client_paid_directly(task):
+		return True
 	if task.project and not project_has_submitted_ucr_invoice(task.project):
 		return False
 
@@ -1634,6 +1655,10 @@ def validate_finance_ucr_payment_task(task) -> None:
 	if not is_ucr_payment_task_doc(task):
 		return
 
+	# Client paid — Finance confirmation alone; skip invoice/receipt/PI checks.
+	if task_client_paid_directly(task):
+		return
+
 	app_task = get_ucr_create_task(task.project) if task.project else None
 	if app_task and not ucr_invoice_submitted(app_task):
 		frappe.throw(
@@ -1652,7 +1677,8 @@ def validate_finance_ucr_payment_task(task) -> None:
 		frappe.throw("Create and submit a <b>Purchase Invoice</b> from this task before completion.")
 	if not task_has_recorded_payment(task):
 		frappe.throw(
-			"Record payment via <b>Make Payment</b> (Journal Entry) before completion."
+			"Record payment via <b>Make Payment</b> (Journal Entry) before completion, "
+			"or tick <b>Paid directly by client</b> if the client settled it."
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
