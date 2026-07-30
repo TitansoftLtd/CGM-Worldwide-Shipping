@@ -401,6 +401,10 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			return frappe.utils.escape_html(row.batch_no || "—");
 		}
 
+		function cgmReferenceCell(row) {
+			return frappe.utils.escape_html(row.cgm_ref_no || "—");
+		}
+
 		function clientReferenceCell(row) {
 			return frappe.utils.escape_html(row.client_reference_no || "—");
 		}
@@ -661,10 +665,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			return `
 				${selectAllHeader()}
 				<th class="cgm-ops-sticky-col">${__("Client Name")}</th>
-				<th>${__("B/L Number")}</th>
-				<th>${__("Client Batch No")}</th>
 				<th>${__("Client Reference No")}</th>
+				<th>${__("CGM Ref No")}</th>
+				<th>${__("B/L Number")}</th>
 				<th>${__("Shipment")}</th>
+				<th>${__("CGM Batch No")}</th>
 				<th>${__("Shipping Line")}</th>
 				<th>${__("Country of Origin")}</th>
 				<th>${__("ETA")}</th>
@@ -713,10 +718,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			return `<tr class="${frappe.utils.escape_html(row.traffic_css || "")}${selectedCls}" data-name="${frappe.utils.escape_html(row.name || "")}">
 				${checkboxCell(row)}
 				<td class="cgm-ops-sticky-col">${clientCell(row)}</td>
-				<td>${blCell(row)}</td>
-				<td>${batchCell(row)}</td>
 				<td>${clientReferenceCell(row)}</td>
+				<td>${cgmReferenceCell(row)}</td>
+				<td>${blCell(row)}</td>
 				<td>${shipmentCell(row)}</td>
+				<td>${batchCell(row)}</td>
 				<td>${frappe.utils.escape_html(row.shipping_line || "—")}</td>
 				<td>${frappe.utils.escape_html(row.country_of_origin || "—")}</td>
 				<td>${fmtDate(row.eta)}</td>
@@ -779,10 +785,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			return `
 				${selectAllHeader()}
 				<th class="cgm-ops-sticky-col">${__("Client Name")}</th>
-				<th>${__("B/L Number")}</th>
-				<th>${__("Client Batch No")}</th>
 				<th>${__("Client Reference No")}</th>
+				<th>${__("CGM Ref No")}</th>
+				<th>${__("B/L Number")}</th>
 				<th>${__("Shipment")}</th>
+				<th>${__("CGM Batch No")}</th>
 				<th>${__("Shipping Line")}</th>
 				<th>${__("Country of Origin")}</th>
 				<th>${__("ETA")}</th>
@@ -810,10 +817,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			return `<tr class="cgm-ops-clickable${selectedCls}" data-project="${frappe.utils.escape_html(row.name)}" data-name="${frappe.utils.escape_html(row.name || "")}">
 				${checkboxCell(row)}
 				<td class="cgm-ops-sticky-col">${frappe.utils.escape_html(row.customer || "—")}</td>
-				<td>${frappe.utils.escape_html(row.bl_number || "—")}</td>
-				<td>${frappe.utils.escape_html(row.batch_no || "—")}</td>
 				<td>${frappe.utils.escape_html(row.client_reference_no || "—")}</td>
+				<td>${cgmReferenceCell(row)}</td>
+				<td>${frappe.utils.escape_html(row.bl_number || "—")}</td>
 				<td>${projectLink(row)}</td>
+				<td>${frappe.utils.escape_html(row.batch_no || "—")}</td>
 				<td>${frappe.utils.escape_html(row.shipping_line || "—")}</td>
 				<td>${frappe.utils.escape_html(row.country_of_origin || "—")}</td>
 				<td>${fmtDate(row.eta)}</td>
