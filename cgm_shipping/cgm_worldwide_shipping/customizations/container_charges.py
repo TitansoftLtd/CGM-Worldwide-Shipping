@@ -29,6 +29,7 @@ def get_default_demurrage_currency() -> str:
 	return company_default_currency()
 
 
+@frappe.request_cache
 def company_default_currency() -> str:
 	company = frappe.defaults.get_global_default("company")
 	if company:

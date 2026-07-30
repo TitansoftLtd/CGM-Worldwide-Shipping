@@ -9,16 +9,33 @@ cgm_shipping.attachment_approval = {
 		if (!frm.doc.name || frm.doc.__islocal) {
 			return;
 		}
-		frappe.call({
-			method:
-				"cgm_shipping.cgm_worldwide_shipping.customizations.attachment_approval_workflow.get_parent_attachment_approval_state",
-			args: {
-				parent_doctype: frm.doctype,
-				parent_name: frm.doc.name,
-			},
-			callback(r) {
-				cgm_shipping.attachment_approval.configure_buttons(frm, r.message || {});
-			},
+		// Frappe fires `refresh` many times per form load and clears custom buttons each
+		// time, so the buttons must always be rebuilt — but the server state only changes
+		// when the document does. Fetch once per revision and replay the cached state.
+		const key = `${frm.doctype}:${frm.doc.name}:${frm.doc.modified}`;
+		if (frm.__cgm_attachment_state_key !== key) {
+			frm.__cgm_attachment_state_key = key;
+			frm.__cgm_attachment_state_promise = frappe
+				.call({
+					method:
+						"cgm_shipping.cgm_worldwide_shipping.customizations.attachment_approval_workflow.get_parent_attachment_approval_state",
+					args: {
+						parent_doctype: frm.doctype,
+						parent_name: frm.doc.name,
+					},
+				})
+				.then((r) => r.message || {})
+				.catch(() => {
+					// Let the next refresh retry rather than caching a failure.
+					frm.__cgm_attachment_state_key = null;
+					return {};
+				});
+		}
+		frm.__cgm_attachment_state_promise.then((state) => {
+			// Ignore a response that a newer revision has already superseded.
+			if (frm.__cgm_attachment_state_key === key) {
+				cgm_shipping.attachment_approval.configure_buttons(frm, state);
+			}
 		});
 	},
 
