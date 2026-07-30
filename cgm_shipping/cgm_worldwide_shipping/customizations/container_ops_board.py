@@ -160,6 +160,7 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 		"container_number": enriched.get("container_number"),
 		"project": enriched.get("project"),
 		"project_ref": display_ref_from_values(project_doc),
+		"cgm_ref_no": project_doc.get("custom_cgm_ref_no") or "",
 		"batch_no": project_doc.get("custom_batch_no") or "",
 		"client_reference_no": project_doc.get("custom_client_refrence_no") or "",
 		"customer": _customer_name(project_doc.get("customer")),
@@ -494,6 +495,7 @@ def _build_shipment_row(project: dict, projects: dict[str, dict], container_rows
 	return {
 		"name": project.get("name"),
 		"project_ref": display_ref_from_values(project),
+		"cgm_ref_no": project.get("custom_cgm_ref_no") or "",
 		"customer": _customer_name(project.get("customer")),
 		"bl_number": project.get("custom_bill_of_lading") or "",
 		"batch_no": project.get("custom_batch_no") or "",
