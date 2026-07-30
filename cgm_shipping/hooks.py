@@ -247,7 +247,7 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
 	},
 	"Sales Invoice": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice_workflow",
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
 	},
