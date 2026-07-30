@@ -10,6 +10,9 @@ import json
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+	filter_sea_tasks_for_user,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	display_ref_from_values,
 	get_project_reference,
@@ -21,10 +24,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
 	GENERIC_WORKFLOW_STATES,
 	derive_generic_workflow_progress,
-	get_all_workflow_tasks_for_project,
-	get_open_workflow_tasks_for_project,
 	get_workflow_tasks_for_project,
-	project_has_workflow_tasks,
 	project_uses_clearance_workflow_states,
 	workflow_task_count_for_project,
 )
@@ -1269,11 +1269,8 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	except ValueError:
 		workflow_index = 0
 
-	tasks = get_workflow_tasks_for_project(
-		doc,
-		fields=["custom_sequence_no", "status", "subject", "custom_permit_invoices_submitted"],
-		limit=100,
-	)
+	# One Task query feeds the counters, the progress derivation and both task lists.
+	tasks = get_workflow_tasks_for_project(doc, limit=100)
 	completed = sum(1 for t in tasks if t.status == "Completed")
 	total = len(tasks) or workflow_task_count_for_project(doc)
 
@@ -1282,8 +1279,8 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	else:
 		progress_status, progress_index = derive_generic_workflow_progress(tasks)
 
-	visible_tasks = get_all_workflow_tasks_for_project(project) if project_has_workflow_tasks(doc) else []
-	open_tasks = get_open_workflow_tasks_for_project(project) if project_has_workflow_tasks(doc) else []
+	visible_tasks = filter_sea_tasks_for_user(tasks)
+	open_tasks = [t for t in visible_tasks if t.get("status") not in ("Completed", "Cancelled")]
 	first_open = open_tasks[0] if open_tasks else None
 	workflow_behind = workflow_index < progress_index
 	workflow_ahead = workflow_index > progress_index

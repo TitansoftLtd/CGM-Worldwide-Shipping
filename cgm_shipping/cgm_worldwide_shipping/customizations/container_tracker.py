@@ -1362,14 +1362,17 @@ def get_containers_for_project(project_name: str) -> list[dict]:
 	frappe.has_permission("Project", ptype="read", doc=project_name, throw=True)
 	if not frappe.db.exists("DocType", "Container Tracker"):
 		return []
+	# One SELECT for every column — Container Tracker has no child tables, so a
+	# per-row frappe.get_doc() only bought us N extra queries.
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project_name},
+		fields=["*"],
 		order_by="container_number asc",
 	)
 	out: list[dict] = []
-	for row in rows:
-		data = frappe.get_doc("Container Tracker", row.name).as_dict()
+	for data in rows:
+		data["doctype"] = "Container Tracker"
 		data.update(compute_container_metrics(data))
 		out.append(data)
 	return out
