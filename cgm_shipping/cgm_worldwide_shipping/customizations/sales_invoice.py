@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
+from frappe.utils import cstr
 from frappe.utils.user import get_users_with_role
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
@@ -17,13 +18,28 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 FINANCE_REVIEW_ROLES = ("Accounts Manager", "Accounts User")
 
 
-def validate_sales_invoice_workflow(doc, method=None) -> None:
+def validate_sales_invoice(doc, method=None) -> None:
+	validate_sales_invoice_project_reference(doc)
+	validate_sales_invoice_workflow(doc)
+
+
+def validate_sales_invoice_workflow(doc) -> None:
 	if not doc.meta.has_field("workflow_state"):
 		return
 	if doc.docstatus != 0:
 		return
 	if not doc.workflow_state:
 		doc.workflow_state = SALES_INVOICE_WORKFLOW_STATE_DRAFT
+
+
+def validate_sales_invoice_project_reference(doc) -> None:
+	if not doc.meta.has_field("custom_project_name"):
+		return
+
+	project = (cstr(doc.get("project")) or "").strip()
+	project_name = (cstr(doc.get("custom_project_name")) or "").strip()
+	if not project and not project_name:
+		frappe.throw(_("Please select a Project or enter a Project Name."))
 
 
 def before_submit_sales_invoice(doc, method=None) -> None:
