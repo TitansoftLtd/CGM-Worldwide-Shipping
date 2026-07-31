@@ -31,9 +31,10 @@ COMPONENT_PERSONAL_RELIEF = "Personal Relief"
 # Statutory monthly personal relief (KES). Kenya Finance Act rate.
 MONTHLY_PERSONAL_RELIEF = 2400.0
 
-# DTB branch codes, as seen on the supplied DTB template. Finance can extend
-# this map as more branches are used; an unmapped branch exports blank rather
-# than guessing a code, since a wrong code misroutes the payment.
+# Fallback DTB branch codes, as seen on the supplied DTB template. The Employee's
+# own Bank Branch Code field wins; this map only covers employees whose field is
+# still blank. An unmapped branch exports blank rather than a guessed code, since
+# a wrong code misroutes the payment.
 DTB_BRANCH_CODES = {
 	"koinange street": "069",
 	"thika": "012",
@@ -112,6 +113,7 @@ def get_salary_slips(filters) -> list[frappe._dict]:
 				"custom_shif_no",
 				"bank_name",
 				"custom_bank_branch",
+				"custom_bank_branch_code",
 				"bank_ac_no",
 			],
 		)
@@ -170,8 +172,17 @@ def period_narrative(from_date) -> str:
 	return f"Salary {getdate(from_date).strftime('%B %Y')}"
 
 
-def dtb_branch_code(branch: str | None) -> str:
-	return DTB_BRANCH_CODES.get((branch or "").strip().lower(), "")
+def dtb_branch_code(employee) -> str:
+	"""Branch code for the DTB schedule.
+
+	Prefers the Employee's own Bank Branch Code, so finance maintains it as data
+	rather than in code. Falls back to the known-branch map for records where the
+	field has not been filled in yet.
+	"""
+	code = (employee.get("custom_bank_branch_code") or "").strip()
+	if code:
+		return code
+	return DTB_BRANCH_CODES.get((employee.get("custom_bank_branch") or "").strip().lower(), "")
 
 
 def no_slips_message(filters) -> str:

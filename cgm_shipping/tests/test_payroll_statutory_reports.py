@@ -106,6 +106,7 @@ def sample_slips() -> list[frappe._dict]:
 				custom_shif_no="CR1546435462",
 				bank_name="DTB",
 				custom_bank_branch="Koinange Street",
+				custom_bank_branch_code="042",
 				bank_ac_no="0112255335",
 			),
 			components={
@@ -137,6 +138,7 @@ def sample_slips() -> list[frappe._dict]:
 				custom_shif_no="",
 				bank_name="Equity Bank",
 				custom_bank_branch="Westlands",
+				custom_bank_branch_code="",
 				bank_ac_no="",
 			),
 			components={"PAYE": 5200.0, "NSSF": 2160.0, "SHIF": 1375.0},
@@ -251,10 +253,31 @@ class TestStatutoryReportValues(unittest.TestCase):
 		"""DTB accounts settle internally; other banks go out by EFT."""
 		_columns, rows = run_with_sample_slips(load_report("dtb_salary_payment_schedule"))
 		self.assertEqual(rows[0]["payment_method"], "Internal funds transfer")
-		self.assertEqual(rows[0]["dtb_branch_code"], "069")
 		self.assertEqual(rows[1]["payment_method"], "EFT")
-		# An unmapped branch exports blank rather than a guessed code that would misroute.
+		# An unmapped branch with no branch code on the record exports blank rather
+		# than a guessed code that would misroute the payment.
 		self.assertEqual(rows[1]["dtb_branch_code"], "")
+
+	def test_branch_code_field_beats_the_fallback_map(self):
+		"""The Employee's Bank Branch Code wins; the map only fills a blank field."""
+		from cgm_shipping.cgm_worldwide_shipping.services.payroll_statutory import dtb_branch_code
+
+		# Record says 042 even though the map would say 069 for Koinange Street.
+		_columns, rows = run_with_sample_slips(load_report("dtb_salary_payment_schedule"))
+		self.assertEqual(rows[0]["dtb_branch_code"], "042")
+
+		# Blank field on a mapped branch falls back to the map.
+		self.assertEqual(
+			dtb_branch_code(
+				frappe._dict(custom_bank_branch_code="", custom_bank_branch="Koinange Street")
+			),
+			"069",
+		)
+		# Blank field on an unmapped branch stays blank.
+		self.assertEqual(
+			dtb_branch_code(frappe._dict(custom_bank_branch_code="", custom_bank_branch="Nowhere")),
+			"",
+		)
 
 	def test_dtb_pays_net_pay(self):
 		_columns, rows = run_with_sample_slips(load_report("dtb_salary_payment_schedule"))
