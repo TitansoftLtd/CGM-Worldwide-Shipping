@@ -50,7 +50,7 @@ def execute(filters=None):
 				"bic_swift_code": "",
 				"branch": employee.get("custom_bank_branch") or "",
 				"beneficiary_bank_name": bank,
-				"dtb_branch_code": dtb_branch_code(employee.get("custom_bank_branch")),
+				"dtb_branch_code": dtb_branch_code(employee),
 				"beneficiary_account": employee.get("bank_ac_no") or "",
 				"payable_amount": slip.net_pay,
 				"payment_method": "Internal funds transfer" if is_internal else "EFT",
