@@ -51,52 +51,53 @@ def _row(
 
 
 def sea_import_tasks() -> list[dict]:
-	"""25-step sea import plan (matches legacy Settings template and automation seqs)."""
+	"""25-step sea import plan (matches legacy Settings template and automation seqs).
+
+	Only application ↔ finance payment pairs keep depends_on links so ops can work
+	non-finance steps (inspection, Lodge DO, field clearance, …) independently.
+	"""
 	return [
 		_row(1, "Receive shipment documents from Client", "Operations", auto=1),
-		_row(2, "Share documents with Declarants", "Operations", depends=1, auto=1),
-		_row(3, "Create UCR (IDF)", "Declaration", depends=2),
+		_row(2, "Share documents with Declarants", "Operations", auto=1),
+		_row(3, "Create UCR (IDF)", "Declaration"),
 		_row(4, "Finance pays UCR", "Finance", depends=3, finance=1),
 		_row(
 			5,
 			"Apply for Pre-Clearance Permits (DVS, NBA, VMD, ACA)",
 			"Declaration",
-			depends=4,
 			permit=1,
 		),
 		_row(6, "Finance pays Pre-Clearance Permits", "Finance", depends=5, finance=1),
-		_row(7, "Client conducts inspection", "Operations", depends=6),
+		_row(7, "Client conducts inspection", "Operations"),
 		_row(
 			8,
 			"Receive Final Clearance Documents (B/L, Invoice, PKL, COC)",
 			"Documentation",
-			depends=7,
 			doc=1,
 		),
-		_row(9, "Request Manifest and Local Import Charges", "Documentation", depends=8, doc=1),
-		_row(10, "Attach Shipping Line Invoice", "Documentation", depends=9, doc=1),
+		_row(9, "Request Manifest and Local Import Charges", "Documentation", doc=1),
+		_row(10, "Attach Shipping Line Invoice", "Documentation", doc=1),
 		_row(11, "Finance pays Shipping Line Charges", "Finance", depends=10, finance=1),
 		_row(
 			12,
 			"Create Entry (after vessel arrival confirmation)",
 			"Declaration",
-			depends=11,
 			auto=1,
 			condition="project.custom_actual_time_of_arrival_ata",
 		),
 		_row(13, "Finance Pays Entry Slip", "Finance", depends=12, finance=1),
-		_row(14, "Lodge Delivery Order", "Operations", depends=13, doc=1),
-		_row(15, "Prepare Post-Clearance Permits", "Declaration", depends=14, permit=1),
+		_row(14, "Lodge Delivery Order", "Operations", doc=1),
+		_row(15, "Prepare Post-Clearance Permits", "Declaration", permit=1),
 		_row(16, "Finance pays for Post-Clearance Permits", "Finance", depends=15, finance=1),
-		_row(17, "Field Officers conduct clearance", "Field Operations", depends=16),
-		_row(18, "Supervisor obtains KPA Invoice", "Operations", depends=17),
+		_row(17, "Field Officers conduct clearance", "Field Operations"),
+		_row(18, "Supervisor obtains KPA Invoice", "Operations"),
 		_row(19, "Finance pays KPA Invoice", "Finance", depends=18, finance=1),
-		_row(20, "Book trucks and notify warehouse", "Transport", depends=19, container=1),
-		_row(21, "Load trucks and exit port", "Transport", depends=20, container=1),
-		_row(22, "Monitor delivery to destination", "Transport", depends=21, container=1),
-		_row(23, "Offload cargo", "Transport", depends=22, container=1),
-		_row(24, "Return empty container to depot", "Transport", depends=23, container=1),
-		_row(25, "Receive interchange confirmation", "Transport", depends=24, container=1),
+		_row(20, "Book trucks and notify warehouse", "Transport", container=1),
+		_row(21, "Load trucks and exit port", "Transport", container=1),
+		_row(22, "Monitor delivery to destination", "Transport", container=1),
+		_row(23, "Offload cargo", "Transport", container=1),
+		_row(24, "Return empty container to depot", "Transport", container=1),
+		_row(25, "Receive interchange confirmation", "Transport", container=1),
 	]
 
 

@@ -15,6 +15,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	ENTRY_INVOICE_TO_FINANCE,
 	ENTRY_RECEIPT_FOR_DECLARANT,
 	ENTRY_RECEIPT_VERIFY_FINANCE,
+	IDF_CERTIFICATE_CODES,
 	SHIPPING_LINE_INVOICE_TO_FINANCE,
 	SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
 	SHIPPING_LINE_RECEIPT_VERIFY_FINANCE,
@@ -76,7 +77,7 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		application_invoice_verified_field="custom_ucr_invoice_verified",
 		application_receipt_verified_field="custom_ucr_receipt_verified",
 		sync_to_idf_record=True,
-		legacy_certificate_codes=frozenset({"IDF_CERT", "UCR_CERT", "IDF"}),
+		legacy_certificate_codes=IDF_CERTIFICATE_CODES,
 	),
 	"Entry Application": ApplicationFinanceProfile(
 		key="entry",
@@ -322,22 +323,32 @@ def seed_application_finance_lines(task, profile: ApplicationFinanceProfile) -> 
 		copy_application_invoice_to_finance_task(task, profile)
 
 
+def _finance_lines_snapshot(task, profile: ApplicationFinanceProfile) -> tuple:
+	"""Detect row add/remove and invoice Purchase Item / attachment / amount drift."""
+	rows = []
+	for r in task.get(TASK_FINANCE_FIELD) or []:
+		rows.append(
+			(
+				r.line_type,
+				r.payment_item or profile.payment_item,
+				(r.get("item_code") or "").strip(),
+				r.attachment or "",
+				flt(r.amount or 0),
+			)
+		)
+	return tuple(rows)
+
+
 def ensure_application_finance_lines_saved(task, profile: ApplicationFinanceProfile) -> bool:
 	if not task_has_finance_table(task):
 		return False
 	seq = int(task.get("custom_sequence_no") or 0)
 	if not is_application_workflow_task(seq, profile):
 		return False
-	before = {
-		(r.line_type, r.payment_item or profile.payment_item)
-		for r in task.get(TASK_FINANCE_FIELD) or []
-	}
+	before = _finance_lines_snapshot(task, profile)
 	seed_application_finance_lines(task, profile)
-	after = {
-		(r.line_type, r.payment_item or profile.payment_item)
-		for r in task.get(TASK_FINANCE_FIELD) or []
-	}
-	if after - before:
+	after = _finance_lines_snapshot(task, profile)
+	if after != before:
 		frappe.flags.cgm_ensuring_application_finance_lines = True
 		try:
 			task.save(ignore_permissions=True)
@@ -366,20 +377,100 @@ def copy_application_invoice_to_finance_task(
 		fin_line.attachment = app_line.attachment
 	if app_line.amount and not fin_line.amount:
 		fin_line.amount = app_line.amount
+	_sync_purchase_item_from_application_line(fin_line, app_line, finance_task, profile.payment_item)
+
+
+def _sync_purchase_item_from_application_line(
+	fin_line, app_line, finance_task, payment_item: str
+) -> bool:
+	"""Keep finance Purchase Item aligned with the application task.
+
+	Returns True when fin_line.item_code changed. Stops once Finance has recorded
+	payment so a posted Purchase Invoice is not silently retargeted.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_purchase_item_for_payment_item,
 		task_finance_line_has_item_code,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_has_recorded_payment,
+	)
 
-	if task_finance_line_has_item_code():
-			app_item = app_line.get("item_code")
-			fin_item = fin_line.get("item_code")
-			if app_item and not fin_item:
-				fin_line.item_code = app_item
-			elif not fin_item:
-				fin_line.item_code = get_purchase_item_for_payment_item(
-					profile.payment_item, finance_task.company
-				)
+	if not task_finance_line_has_item_code():
+		return False
+	if task_has_recorded_payment(finance_task):
+		return False
+
+	app_item = (app_line.get("item_code") or "").strip()
+	fin_item = (fin_line.get("item_code") or "").strip()
+	if app_item:
+		if fin_item == app_item:
+			return False
+		fin_line.item_code = app_item
+		return True
+	if fin_item:
+		return False
+	fin_line.item_code = get_purchase_item_for_payment_item(
+		payment_item, finance_task.company
+	)
+	return bool(fin_line.item_code)
+
+
+def sync_application_purchase_item_to_finance(
+	application_task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""Push Purchase Item (and missing invoice fields) from Create/Attach task → Finance."""
+	if not is_application_task(int(application_task.get("custom_sequence_no") or 0), profile):
+		return False
+	if not application_task.project:
+		return False
+	app_line = get_invoice_line(application_task, profile)
+	if not app_line:
+		return False
+	finance_name = get_application_finance_task(application_task.project, profile)
+	if not finance_name:
+		return False
+	finance_task = frappe.get_doc("Task", finance_name)
+	if finance_task.status == "Completed":
+		return False
+	fin_line = _ensure_line(finance_task, LINE_INVOICE, profile)
+	changed = False
+	if app_line.attachment and fin_line.attachment != app_line.attachment and not fin_line.verified:
+		fin_line.attachment = app_line.attachment
+		changed = True
+	if app_line.amount and fin_line.amount != app_line.amount and not fin_line.verified:
+		fin_line.amount = app_line.amount
+		changed = True
+	if _sync_purchase_item_from_application_line(
+		fin_line, app_line, finance_task, profile.payment_item
+	):
+		changed = True
+	if not changed:
+		return False
+	if fin_line.name:
+		updates = {"item_code": fin_line.item_code}
+		if fin_line.attachment:
+			updates["attachment"] = fin_line.attachment
+		if fin_line.amount:
+			updates["amount"] = fin_line.amount
+		frappe.db.set_value("Task Finance Line", fin_line.name, updates, update_modified=False)
+		frappe.clear_document_cache("Task", finance_name)
+	else:
+		finance_task.flags.ignore_links = True
+		try:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+				preserve_completed_status_against_stale_save,
+			)
+
+			preserve_completed_status_against_stale_save(finance_task)
+			finance_task.save(ignore_permissions=True)
+		finally:
+			finance_task.flags.ignore_links = False
+	frappe.publish_realtime(
+		"cgm_task_status_changed",
+		{"task": finance_name, "project": application_task.project},
+	)
+	return True
 
 
 def copy_application_receipt_to_finance_task(
@@ -738,6 +829,20 @@ def can_complete_application_task(
 ) -> bool:
 	if not is_application_task(int(task.get("custom_sequence_no") or 0), profile):
 		return False
+	# Client-paid bypasses invoice/receipt handoff, but the application task
+	# still owns its required certificate. Profiles without a certificate stay
+	# open for explicit manual completion.
+	if finance_task is None and task.project:
+		finance_name = get_application_finance_task(task.project, profile)
+		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+	)
+
+	if finance_task and task_client_paid_directly(finance_task):
+		if not profile.certificate_document_code and not profile.legacy_certificate_codes:
+			return False
+		return certificate_uploaded(task, profile)
 	submitted = invoice_attached(task, profile)
 	if profile.application_submitted_field and task.meta.has_field(profile.application_submitted_field):
 		submitted = submitted or bool(task.get(profile.application_submitted_field))
@@ -753,12 +858,23 @@ def can_complete_application_task(
 def can_complete_application_finance_task(task, profile: ApplicationFinanceProfile) -> bool:
 	if not is_application_finance_task(int(task.get("custom_sequence_no") or 0), profile):
 		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+		task_has_recorded_payment,
+	)
+
+	# Finance tick alone is enough when the client settled the fee itself.
+	if task_client_paid_directly(task):
+		return True
 	if task.project and not project_has_submitted_invoice(task.project, profile):
 		return False
 	inv_ok = invoice_verified(task, profile)
 	if profile.application_invoice_verified_field:
 		inv_ok = inv_ok or bool(task.get(profile.application_invoice_verified_field))
 	if not inv_ok:
+		return False
+	# JE / submitted PE required for the normal CGM-paid path.
+	if not task_has_recorded_payment(task):
 		return False
 	rec_ok = receipt_verified(task, profile)
 	if profile.application_receipt_verified_field:
