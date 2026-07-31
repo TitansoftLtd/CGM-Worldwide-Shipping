@@ -229,7 +229,11 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 
 
 def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
-	"""Tasks with sequence < before_sequence that are not Completed/Cancelled."""
+	"""Tasks with sequence < before_sequence that are not Completed/Cancelled.
+
+	Used for Project status / closure gates (chart progress), not for everyday
+	task completion — non-finance steps may finish out of order.
+	"""
 	if before_sequence <= 1:
 		return []
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
@@ -299,6 +303,89 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 			r for r in filtered if not (21 <= r.seq < before_sequence)
 		]
 	return filtered
+
+
+def _application_invoice_ready_for_finance(app_name: str, app_seq: int) -> bool:
+	"""True when the paired application has submitted its invoice (finance may proceed)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		invoice_submitted as application_invoice_submitted,
+		profile_by_requirement_type,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_entry_application_task,
+		is_kpa_application_task,
+		is_permit_application_task,
+		is_shipping_line_application_task,
+		is_ucr_application_task,
+		rows_by_sequence,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		permit_invoices_ready,
+		ucr_invoice_ready,
+	)
+
+	if is_ucr_application_task(app_seq) and ucr_invoice_ready(app_name):
+		return True
+	if is_permit_application_task(app_seq) and permit_invoices_ready(app_name):
+		return True
+	if is_entry_application_task(app_seq) and application_invoice_submitted(
+		app_name, APPLICATION_FINANCE_PROFILES["Entry Application"]
+	):
+		return True
+	if is_shipping_line_application_task(app_seq) and application_invoice_submitted(
+		app_name, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
+	):
+		return True
+	if is_kpa_application_task(app_seq) and application_invoice_submitted(
+		app_name, APPLICATION_FINANCE_PROFILES["KPA Application"]
+	):
+		return True
+	for row in rows_by_sequence().get(app_seq, []):
+		profile = profile_by_requirement_type(row.requirement_type)
+		if profile and application_invoice_submitted(app_name, profile):
+			return True
+	return False
+
+
+def get_incomplete_finance_pair_blockers(project: str, finance_sequence: int) -> list[dict]:
+	"""For finance payment steps only: block if the paired application is not ready.
+
+	Non-finance sequences return [] so inspection / Lodge DO / field clearance can
+	complete without waiting on earlier chart steps.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		application_sequence_for_finance_sequence,
+		is_finance_payment_task,
+	)
+
+	if not project or not is_finance_payment_task(finance_sequence):
+		return []
+	app_seq = application_sequence_for_finance_sequence(finance_sequence)
+	if not app_seq:
+		return []
+
+	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
+	rows = frappe.db.sql(
+		f"""
+		SELECT name, subject, custom_sequence_no AS seq, status
+		FROM `tabTask`
+		WHERE project = %s
+		  AND {flow_in}
+		  AND custom_sequence_no = %s
+		LIMIT 1
+		""",
+		(project, app_seq),
+		as_dict=True,
+	)
+	if not rows:
+		return []
+	app = rows[0]
+	if app.status in ("Completed", "Cancelled"):
+		return []
+	if _application_invoice_ready_for_finance(app.name, app.seq):
+		return []
+	return [app]
 
 
 def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
@@ -566,15 +653,17 @@ def create_sea_import_task_plan_internal(project, reset=False):
 
 	task_template = load_sea_task_template()
 	created = []
-	prev_task = None
+	created_by_seq: dict[int, str] = {}
 	canonical_flow_key = stored_task_flow_key(SEA_IMPORT_TEMPLATE)
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-		TRANSPORT_TASK_SEQS,
-	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		resolve_department_name,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		sea_finance_dependency_pairs,
+	)
+
+	finance_depends_on_app = {fin: app for app, fin in sea_finance_dependency_pairs()}
 
 	frappe.flags.cgm_skip_task_project_sync = True
 	try:
@@ -592,11 +681,10 @@ def create_sea_import_task_plan_internal(project, reset=False):
 			task.department = resolve_department_name(item.get("department"), company=project_doc.company)
 			task.status = "Open"
 
-			if prev_task:
-				# Transport tasks (20–25) are independent; only the first transport step chains from KPA paid.
-				book_trucks_seq = min(TRANSPORT_TASK_SEQS)
-				if seq not in TRANSPORT_TASK_SEQS or seq == book_trucks_seq:
-					task.append("depends_on", {"task": prev_task.name})
+			# Only link finance payment tasks to their application counterpart.
+			app_seq = finance_depends_on_app.get(seq)
+			if app_seq and app_seq in created_by_seq:
+				task.append("depends_on", {"task": created_by_seq[app_seq]})
 
 			task.insert(ignore_permissions=True)
 			if task.owner != "Administrator" and frappe.db.exists("User", "Administrator"):
@@ -605,7 +693,7 @@ def create_sea_import_task_plan_internal(project, reset=False):
 				)
 				task.owner = "Administrator"
 
-			prev_task = task
+			created_by_seq[seq] = task.name
 			created.append(task.name)
 	finally:
 		frappe.flags.cgm_skip_task_project_sync = False
@@ -622,6 +710,6 @@ def create_sea_import_task_plan_internal(project, reset=False):
 
 @frappe.whitelist()
 def create_sea_import_task_plan(project, reset=False):
-	"""Generate ordered sea-import tasks and link them via a depends_on chain."""
+	"""Generate sea-import tasks; only application↔finance pairs get depends_on links."""
 	frappe.has_permission("Task", ptype="create", throw=True)
 	return create_sea_import_task_plan_internal(project, reset=reset)

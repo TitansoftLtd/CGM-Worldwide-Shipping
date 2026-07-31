@@ -453,6 +453,36 @@ def permit_linked_task_pairs() -> tuple[tuple[int, int], ...]:
 	)
 
 
+@frappe.request_cache
+def sea_finance_dependency_pairs() -> tuple[tuple[int, int], ...]:
+	"""(application_seq, finance_seq) pairs that keep Task depends_on links.
+
+	All other sea steps stay independent so ops can work them in parallel.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		linked_application_finance_pairs,
+	)
+
+	pairs: dict[int, int] = {}
+	for app, fin in linked_application_finance_pairs():
+		if app and fin:
+			pairs[int(fin)] = int(app)
+	for app, fin in permit_linked_task_pairs():
+		if app and fin:
+			pairs[int(fin)] = int(app)
+	for app, fin in ucr_linked_task_pairs():
+		if app and fin:
+			pairs[int(fin)] = int(app)
+	return tuple(sorted((app, fin) for fin, app in pairs.items()))
+
+
+def application_sequence_for_finance_sequence(finance_seq: int) -> int | None:
+	for app, fin in sea_finance_dependency_pairs():
+		if fin == finance_seq:
+			return app
+	return None
+
+
 def finance_payment_with_supplier_invoice_sequences() -> frozenset[int]:
 	"""Finance steps that require supplier invoice on Task Documents (not UCR/permit payment)."""
 	return frozenset(
@@ -3414,18 +3444,19 @@ def validate_task_completion_requirements(doc, _method=None):
 		return
 
 	if _is_sea_task(doc):
-		if seq > 1:
-			from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-				get_incomplete_sea_tasks,
-			)
+		# Sea steps are independent except application ↔ finance pairs (depends_on +
+		# invoice-ready rules). Do not force full chart order on task completion.
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+			get_incomplete_finance_pair_blockers,
+		)
 
-			incomplete = get_incomplete_sea_tasks(doc.project, seq)
-			if incomplete:
-				prev_task = incomplete[0]
-				frappe.throw(
-					f"Complete prior sea tasks in order first. Next open: "
-					f"<b>Task {prev_task.seq}: {prev_task.subject}</b> ({prev_task.status or 'Open'})."
-				)
+		incomplete = get_incomplete_finance_pair_blockers(doc.project, seq)
+		if incomplete:
+			prev_task = incomplete[0]
+			frappe.throw(
+				f"Complete the linked application task first. Waiting on: "
+				f"<b>Task {prev_task.seq}: {prev_task.subject}</b> ({prev_task.status or 'Open'})."
+			)
 		validate_sea_task_can_complete(doc)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
@@ -3443,6 +3474,48 @@ from erpnext.projects.doctype.task.task import Task
 
 
 class CGMTask(Task):
+	def validate_status(self):
+		"""ERPNext blocks Completed when depends_on parents are open.
+
+		Sea finance payment tasks intentionally stay linked to their application
+		task while that application remains Open (invoice submitted). Allow
+		completion in that case; other depends_on rules stay strict.
+		"""
+		from frappe import _
+		from frappe.desk.form.assign_to import close_all_assignments
+
+		if self.is_template and self.status != "Template":
+			self.status = "Template"
+		if self.status == "Template" and not self.is_template:
+			self.status = "Open"
+		if self.status != self.get_db_value("status") and self.status == "Completed":
+			from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+				_application_invoice_ready_for_finance,
+			)
+			from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+				is_sea_import_task,
+			)
+
+			for d in self.depends_on:
+				parent_status = frappe.db.get_value("Task", d.task, "status")
+				if parent_status in ("Completed", "Cancelled"):
+					continue
+				if is_sea_import_task(self):
+					parent_seq = int(
+						frappe.db.get_value("Task", d.task, "custom_sequence_no") or 0
+					)
+					if parent_seq and _application_invoice_ready_for_finance(
+						d.task, parent_seq
+					):
+						continue
+				frappe.throw(
+					_(
+						"Cannot complete task {0} as its dependant task {1} are not completed / cancelled."
+					).format(frappe.bold(self.name), frappe.bold(d.task))
+				)
+
+			close_all_assignments(self.doctype, self.name)
+
 	def _save(self, ignore_permissions=None, ignore_version=None):
 		self._strip_legacy_invoice_clearance_documents()
 		return super()._save(
