@@ -944,14 +944,13 @@ def copy_ucr_invoice_to_finance_task(finance_task) -> None:
 	if app_line.amount and not fin_line.amount:
 		fin_line.amount = app_line.amount
 	if task_finance_line_has_item_code():
-		app_item = app_line.get("item_code")
-		fin_item = fin_line.get("item_code")
-		if app_item and not fin_item:
-			fin_line.item_code = app_item
-		elif not fin_item:
-			fin_line.item_code = get_purchase_item_for_payment_item(
-				PAYMENT_UCR, finance_task.company
-			)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			_sync_purchase_item_from_application_line,
+		)
+
+		_sync_purchase_item_from_application_line(
+			fin_line, app_line, finance_task, PAYMENT_UCR
+		)
 
 
 def ucr_payment_made_for_project(project: str) -> bool:
@@ -3278,6 +3277,13 @@ def on_task_update(doc, _method=None):
 		)
 
 		auto_submit_ucr_invoice_to_finance_if_needed(doc)
+		# Keep Finance Purchase Item in sync after the first submit (item edits).
+		if doc.project:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+				sync_ucr_invoice_to_finance_task,
+			)
+
+			sync_ucr_invoice_to_finance_task(doc.project)
 		handle_ucr_application_receipt_upload(doc)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			try_auto_complete_ucr_application_task,

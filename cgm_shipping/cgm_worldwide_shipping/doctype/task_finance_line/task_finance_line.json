@@ -38,13 +38,13 @@
    "options": "UCR\nENTRY_SLIP\nShipping Line\nCustoms Entry\nKPA"
   },
   {
-   "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line.",
+   "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line. Editable on the application/finance task so the correct purchase item can be selected.",
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Purchase Item",
    "options": "Item",
-   "read_only": 1
+   "read_only": 0
   },
   {
    "fieldname": "attachment",

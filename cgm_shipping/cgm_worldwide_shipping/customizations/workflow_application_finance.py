@@ -710,6 +710,11 @@ def process_application_workflow_on_update(task) -> None:
 	seq = task_sequence(task)
 	if is_application_task(seq, profile) and task.status not in ("Completed", "Cancelled"):
 		auto_submit_application_invoice_to_finance_if_needed(task, profile)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			sync_application_purchase_item_to_finance,
+		)
+
+		sync_application_purchase_item_to_finance(task, profile)
 		handle_application_receipt_upload(task, profile)
 		try_auto_complete_application_task(task, profile)
 	elif is_application_finance_task(seq, profile) and task.status not in (

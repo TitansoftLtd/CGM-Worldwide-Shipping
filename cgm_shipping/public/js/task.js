@@ -1225,43 +1225,44 @@ function configure_finance_line_grid(frm, ui) {
 	if (is_ucr_application_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("amount", "read_only", 0);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		// Declarant may correct the purchase item before Finance creates the PI.
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_entry_application_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("amount", "read_only", 0);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_shipping_line_application_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("amount", "read_only", 0);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_kpa_application_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("amount", "read_only", 0);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_ucr_finance_step(frm, seq)) {
 		// Invoice and receipt are copied from Create UCR (IDF); Finance verifies only.
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_entry_finance_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_shipping_line_finance_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_kpa_finance_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	}
 

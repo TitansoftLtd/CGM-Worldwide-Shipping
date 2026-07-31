@@ -323,22 +323,32 @@ def seed_application_finance_lines(task, profile: ApplicationFinanceProfile) -> 
 		copy_application_invoice_to_finance_task(task, profile)
 
 
+def _finance_lines_snapshot(task, profile: ApplicationFinanceProfile) -> tuple:
+	"""Detect row add/remove and invoice Purchase Item / attachment / amount drift."""
+	rows = []
+	for r in task.get(TASK_FINANCE_FIELD) or []:
+		rows.append(
+			(
+				r.line_type,
+				r.payment_item or profile.payment_item,
+				(r.get("item_code") or "").strip(),
+				r.attachment or "",
+				flt(r.amount or 0),
+			)
+		)
+	return tuple(rows)
+
+
 def ensure_application_finance_lines_saved(task, profile: ApplicationFinanceProfile) -> bool:
 	if not task_has_finance_table(task):
 		return False
 	seq = int(task.get("custom_sequence_no") or 0)
 	if not is_application_workflow_task(seq, profile):
 		return False
-	before = {
-		(r.line_type, r.payment_item or profile.payment_item)
-		for r in task.get(TASK_FINANCE_FIELD) or []
-	}
+	before = _finance_lines_snapshot(task, profile)
 	seed_application_finance_lines(task, profile)
-	after = {
-		(r.line_type, r.payment_item or profile.payment_item)
-		for r in task.get(TASK_FINANCE_FIELD) or []
-	}
-	if after - before:
+	after = _finance_lines_snapshot(task, profile)
+	if after != before:
 		frappe.flags.cgm_ensuring_application_finance_lines = True
 		try:
 			task.save(ignore_permissions=True)
@@ -367,20 +377,100 @@ def copy_application_invoice_to_finance_task(
 		fin_line.attachment = app_line.attachment
 	if app_line.amount and not fin_line.amount:
 		fin_line.amount = app_line.amount
+	_sync_purchase_item_from_application_line(fin_line, app_line, finance_task, profile.payment_item)
+
+
+def _sync_purchase_item_from_application_line(
+	fin_line, app_line, finance_task, payment_item: str
+) -> bool:
+	"""Keep finance Purchase Item aligned with the application task.
+
+	Returns True when fin_line.item_code changed. Stops once Finance has recorded
+	payment so a posted Purchase Invoice is not silently retargeted.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_purchase_item_for_payment_item,
 		task_finance_line_has_item_code,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_has_recorded_payment,
+	)
 
-	if task_finance_line_has_item_code():
-			app_item = app_line.get("item_code")
-			fin_item = fin_line.get("item_code")
-			if app_item and not fin_item:
-				fin_line.item_code = app_item
-			elif not fin_item:
-				fin_line.item_code = get_purchase_item_for_payment_item(
-					profile.payment_item, finance_task.company
-				)
+	if not task_finance_line_has_item_code():
+		return False
+	if task_has_recorded_payment(finance_task):
+		return False
+
+	app_item = (app_line.get("item_code") or "").strip()
+	fin_item = (fin_line.get("item_code") or "").strip()
+	if app_item:
+		if fin_item == app_item:
+			return False
+		fin_line.item_code = app_item
+		return True
+	if fin_item:
+		return False
+	fin_line.item_code = get_purchase_item_for_payment_item(
+		payment_item, finance_task.company
+	)
+	return bool(fin_line.item_code)
+
+
+def sync_application_purchase_item_to_finance(
+	application_task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""Push Purchase Item (and missing invoice fields) from Create/Attach task → Finance."""
+	if not is_application_task(int(application_task.get("custom_sequence_no") or 0), profile):
+		return False
+	if not application_task.project:
+		return False
+	app_line = get_invoice_line(application_task, profile)
+	if not app_line:
+		return False
+	finance_name = get_application_finance_task(application_task.project, profile)
+	if not finance_name:
+		return False
+	finance_task = frappe.get_doc("Task", finance_name)
+	if finance_task.status == "Completed":
+		return False
+	fin_line = _ensure_line(finance_task, LINE_INVOICE, profile)
+	changed = False
+	if app_line.attachment and fin_line.attachment != app_line.attachment and not fin_line.verified:
+		fin_line.attachment = app_line.attachment
+		changed = True
+	if app_line.amount and fin_line.amount != app_line.amount and not fin_line.verified:
+		fin_line.amount = app_line.amount
+		changed = True
+	if _sync_purchase_item_from_application_line(
+		fin_line, app_line, finance_task, profile.payment_item
+	):
+		changed = True
+	if not changed:
+		return False
+	if fin_line.name:
+		updates = {"item_code": fin_line.item_code}
+		if fin_line.attachment:
+			updates["attachment"] = fin_line.attachment
+		if fin_line.amount:
+			updates["amount"] = fin_line.amount
+		frappe.db.set_value("Task Finance Line", fin_line.name, updates, update_modified=False)
+		frappe.clear_document_cache("Task", finance_name)
+	else:
+		finance_task.flags.ignore_links = True
+		try:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+				preserve_completed_status_against_stale_save,
+			)
+
+			preserve_completed_status_against_stale_save(finance_task)
+			finance_task.save(ignore_permissions=True)
+		finally:
+			finance_task.flags.ignore_links = False
+	frappe.publish_realtime(
+		"cgm_task_status_changed",
+		{"task": finance_name, "project": application_task.project},
+	)
+	return True
 
 
 def copy_application_receipt_to_finance_task(
