@@ -1,8 +1,25 @@
 const CGM_SI_APPROVED_STATE = "Approved";
 
 frappe.ui.form.on("Sales Invoice", {
+	setup(frm) {
+		cgm_toggle_sales_invoice_project_name(frm);
+	},
+
+	onload(frm) {
+		cgm_toggle_sales_invoice_project_name(frm);
+	},
+
 	refresh(frm) {
+		cgm_toggle_sales_invoice_project_name(frm);
 		cgm_configure_sales_invoice_workflow_ui(frm);
+	},
+
+	project(frm) {
+		cgm_toggle_sales_invoice_project_name(frm);
+	},
+
+	validate(frm) {
+		cgm_validate_sales_invoice_project_reference(frm);
 	},
 
 	after_workflow_action(frm) {
@@ -15,6 +32,25 @@ frappe.ui.form.on("Sales Invoice", {
 		}
 	},
 });
+
+function cgm_toggle_sales_invoice_project_name(frm) {
+	if (!frm.fields_dict.custom_project_name) {
+		return;
+	}
+
+	const has_project = Boolean(cstr(frm.doc.project).trim());
+	// Use display toggle only. Do not set df.hidden or depends_on —
+	// those conflict and can leave the field stuck visible.
+	frm.toggle_display("custom_project_name", !has_project);
+}
+
+function cgm_validate_sales_invoice_project_reference(frm) {
+	const project = cstr(frm.doc.project).trim();
+	const project_name = cstr(frm.doc.custom_project_name).trim();
+	if (!project && !project_name) {
+		frappe.throw(__("Please select a Project or enter a Project Name."));
+	}
+}
 
 function cgm_set_sales_invoice_workflow_alert(frm, text, tone = "brand") {
 	frm.dashboard.clear_headline();

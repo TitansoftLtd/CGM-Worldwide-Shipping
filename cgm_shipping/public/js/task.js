@@ -83,6 +83,7 @@ frappe.ui.form.on("Task", {
 				is_permit_finance_step(frm) ? 1 : 0
 			);
 		}
+		configure_client_paid_field(frm, ui);
 		if (ui.show_documents) {
 			configure_task_document_version_grid(frm, ui);
 		}
@@ -110,15 +111,28 @@ frappe.ui.form.on("Task", {
 			if (ui.show_permits) {
 				const seq = sea_task_sequence(frm);
 				if (is_permit_finance_step(frm, seq)) {
-					const appLabel = permit_application_task_label(
-						frm,
-						get_paired_permit_application_seq(frm, seq)
-					);
+					if (frm.doc.custom_client_paid_directly) {
+						intro = __(
+							"<b>Paid directly by client</b> is confirmed — no Journal Entry or receipt verification is required. " +
+								"This payment step completes automatically."
+						);
+					} else {
+						const appLabel = permit_application_task_label(
+							frm,
+							get_paired_permit_application_seq(frm, seq)
+						);
+						intro = __(
+							"<b>1 Finance:</b> Use <b>Make Payment</b> on each permit row (one Journal Entry per permit) · " +
+								"<b>2 Declarant:</b> Upload receipts on <b>{0}</b> · " +
+								"<b>3 Finance:</b> Use <b>Actions → Verify Receipt</b> — both tasks complete automatically.",
+							[appLabel]
+						);
+					}
+				} else if (frm.doc.custom_client_paid_directly) {
 					intro = __(
-						"<b>1 Finance:</b> Use <b>Make Payment</b> on each permit row (one Journal Entry per permit) · " +
-							"<b>2 Declarant:</b> Upload receipts on <b>{0}</b> · " +
-							"<b>3 Finance:</b> Use <b>Actions → Verify Receipt</b> — both tasks complete automatically.",
-						[appLabel]
+						"<b>Finance confirmed: Paid directly by client.</b> No permit invoice or receipt handoff is required. " +
+							"Attach <b>Permit Certificate</b> on each row under <b>Task Permits</b> (if any), then click <b>Mark Completed</b>. " +
+							"If nothing needs attaching, mark the task complete now."
 					);
 				} else if (frm.doc.custom_permit_invoices_submitted) {
 					const finLabel = permit_finance_task_label(
@@ -199,7 +213,8 @@ frappe.ui.form.on("Task", {
 				intro_set = true;
 			} else if (ui.show_payments) {
 				intro = __(
-					"Use <b>Make Payment</b> to record this payment as a Journal Entry (Finance department)."
+					"Use <b>Make Payment</b> to record a Journal Entry, or tick <b>Paid directly by client</b> " +
+						"if the client settled this fee — no invoice/receipt verification needed then."
 				);
 			}
 			if (!intro_set) {
@@ -364,11 +379,28 @@ const CGM_TASK_PERMISSIONS_FALLBACK = {
 	],
 };
 
+// Desk-session cache: sequence lists are settings, not per-task. Avoid re-hitting
+// get_sea_task_ui_sequences on every Task open (that endpoint walks CGM Settings).
+let CGM_SEA_UI_SEQUENCES_CACHE = null;
+
+function apply_cached_sea_ui_sequences(frm, config) {
+	frm._cgm_sea_seq_config = config;
+	frm._cgm_finance_department = config?.finance_department || null;
+	frm._cgm_sea_seq_load_failed = false;
+	frm._cgm_sea_layout_ready = false;
+	frm._cgm_finance_grid_ready = false;
+	frm.trigger("refresh");
+}
+
 function load_cgm_sea_ui_sequences(frm) {
 	if (!is_sea_clearance_task(frm) || frm._cgm_sea_seq_loading) {
 		return;
 	}
 	if (frm._cgm_sea_seq_config && !frm._cgm_sea_seq_load_failed) {
+		return;
+	}
+	if (CGM_SEA_UI_SEQUENCES_CACHE) {
+		apply_cached_sea_ui_sequences(frm, CGM_SEA_UI_SEQUENCES_CACHE);
 		return;
 	}
 	frm._cgm_sea_seq_loading = true;
@@ -377,12 +409,8 @@ function load_cgm_sea_ui_sequences(frm) {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.get_sea_task_ui_sequences",
 		callback(r) {
 			frm._cgm_sea_seq_loading = false;
-			frm._cgm_sea_seq_load_failed = false;
-			frm._cgm_sea_seq_config = r.message || CGM_SEA_UI_SEQUENCES_EMPTY;
-			frm._cgm_finance_department = r.message?.finance_department || null;
-			frm._cgm_sea_layout_ready = false;
-			frm._cgm_finance_grid_ready = false;
-			frm.trigger("refresh");
+			CGM_SEA_UI_SEQUENCES_CACHE = r.message || CGM_SEA_UI_SEQUENCES_EMPTY;
+			apply_cached_sea_ui_sequences(frm, CGM_SEA_UI_SEQUENCES_CACHE);
 		},
 		error() {
 			frm._cgm_sea_seq_loading = false;
@@ -394,6 +422,8 @@ function load_cgm_sea_ui_sequences(frm) {
 				),
 				indicator: "red",
 			});
+			// Still keep any already-confirmed client-paid fields visible from the doc.
+			configure_client_paid_field(frm, get_sea_task_ui(frm));
 			schedule_cgm_task_toolbar_buttons(frm);
 		},
 	});
@@ -1022,10 +1052,14 @@ function permit_rows_pending_receipt_verification(frm) {
 }
 
 function task_has_recorded_payment_on_form(frm) {
-	if (is_permit_payment_pattern(frm)) {
+	if (is_permit_payment_pattern(frm) && !frm.doc.custom_client_paid_directly) {
 		return permit_rows_all_have_journal_entry(frm);
 	}
-	return Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
+	return Boolean(
+		frm.doc.custom_client_paid_directly ||
+			frm.doc.custom_journal_entry ||
+			frm.doc.custom_payment_entry
+	);
 }
 
 function verify_all_permit_receipts_from_form(frm) {
@@ -1191,43 +1225,44 @@ function configure_finance_line_grid(frm, ui) {
 	if (is_ucr_application_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("amount", "read_only", 0);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		// Declarant may correct the purchase item before Finance creates the PI.
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_entry_application_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("amount", "read_only", 0);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_shipping_line_application_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("amount", "read_only", 0);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_kpa_application_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("amount", "read_only", 0);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_ucr_finance_step(frm, seq)) {
 		// Invoice and receipt are copied from Create UCR (IDF); Finance verifies only.
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_entry_finance_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_shipping_line_finance_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_kpa_finance_step(frm, seq)) {
 		grid.update_docfield_property("attachment", "read_only", 1);
 		grid.update_docfield_property("amount", "read_only", 1);
-		grid.update_docfield_property("item_code", "read_only", 1);
+		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	}
 
@@ -1251,13 +1286,14 @@ function reset_cgm_task_sea_ui_state_if_needed(frm) {
 		return;
 	}
 	frm._cgm_sea_ui_task = frm.docname;
-	frm._cgm_sea_seq_config = null;
+	// Reuse desk-session cache instead of nulling and re-fetching from the server.
+	frm._cgm_sea_seq_config = CGM_SEA_UI_SEQUENCES_CACHE || null;
 	frm._cgm_sea_seq_loading = false;
 	frm._cgm_sea_seq_load_failed = false;
 	frm._cgm_sea_layout_ready = false;
 	frm._cgm_finance_grid_ready = false;
-	frm._cgm_finance_department = undefined;
-	if (is_sea_clearance_task(frm)) {
+	frm._cgm_finance_department = CGM_SEA_UI_SEQUENCES_CACHE?.finance_department;
+	if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config) {
 		load_cgm_sea_ui_sequences(frm);
 	}
 }
@@ -1420,9 +1456,26 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		markCompleteBtn?.addClass?.("btn-primary");
 	}
 
+	add_client_paid_application_mark_complete_button(frm, ui);
+
+	if (
+		is_permit_application_step(frm) &&
+		frm.doc.status !== "Completed" &&
+		frm.doc.custom_client_paid_directly
+	) {
+		const btn = frm.add_custom_button(__("Mark Completed"), async () => {
+			await frm.set_value("completed_by", frappe.session.user);
+			await frm.set_value("completed_on", frappe.datetime.now_datetime());
+			await frm.set_value("status", "Completed");
+			await frm.save();
+		});
+		btn?.addClass?.("btn-primary");
+	}
+
 	if (
 		is_pre_clearance_permit_application_step(frm) &&
 		frm.doc.status !== "Completed" &&
+		!frm.doc.custom_client_paid_directly &&
 		frm.doc.custom_permit_invoices_submitted &&
 		user_can_upload_receipt(frm)
 	) {
@@ -1438,6 +1491,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	if (
 		is_post_clearance_permit_application_step(frm) &&
 		frm.doc.status !== "Completed" &&
+		!frm.doc.custom_client_paid_directly &&
 		frm.doc.custom_permit_invoices_submitted &&
 		user_can_upload_receipt(frm)
 	) {
@@ -1735,6 +1789,11 @@ function apply_ucr_application_intro(frm, status) {
 	let intro;
 	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
+	} else if (status.client_paid_directly && !status.idf_certificate_attached) {
+		intro = __(
+			"<b>Finance confirmed: Paid directly by client.</b> No UCR invoice or receipt verification is required. " +
+				"Attach the <b>IDF/UCR certificate</b> under <b>Clearance Documents</b> to complete this task."
+		);
 	} else if (status.application_ready_to_complete) {
 		intro = __("<b>All declarant documents are in place.</b> Completing this task…");
 	} else if (status.receipt_attached && !status.idf_certificate_attached) {
@@ -1824,14 +1883,24 @@ function configure_permit_grid(frm) {
 		frappe.session.user === "Administrator";
 
 	if (is_permit_application_step(frm, seq)) {
-		grid.update_docfield_property("origin", "read_only", lock_invoices ? 1 : 0);
-		grid.update_docfield_property("payment_invoice", "read_only", lock_invoices ? 1 : can_upload_proof ? 0 : 1);
-		grid.update_docfield_property("invoice_amount", "read_only", lock_invoices ? 1 : can_upload_proof ? 0 : 1);
-		grid.update_docfield_property("payment_receipt", "hidden", invoices_ready ? 0 : 1);
+		const client_paid = Boolean(frm.doc.custom_client_paid_directly);
+		grid.update_docfield_property("origin", "read_only", lock_invoices && !client_paid ? 1 : 0);
+		grid.update_docfield_property(
+			"payment_invoice",
+			"read_only",
+			client_paid || lock_invoices ? 1 : can_upload_proof ? 0 : 1
+		);
+		grid.update_docfield_property(
+			"invoice_amount",
+			"read_only",
+			client_paid || lock_invoices ? 1 : can_upload_proof ? 0 : 1
+		);
+		// Client-paid skips receipt handoff — hide those columns.
+		grid.update_docfield_property("payment_receipt", "hidden", client_paid || !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("payment_receipt", "read_only", can_upload_proof ? 0 : 1);
 		grid.update_docfield_property("permit_document", "hidden", 0);
 		grid.update_docfield_property("permit_document", "read_only", can_upload_proof ? 0 : 1);
-		grid.update_docfield_property("receipt_verified", "hidden", invoices_ready ? 0 : 1);
+		grid.update_docfield_property("receipt_verified", "hidden", client_paid || !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("receipt_verified", "read_only", 1);
 		toggle_permit_invoice_fields_for_origin(grid);
 	} else if (is_permit_finance_step(frm, seq)) {
@@ -2248,6 +2317,11 @@ function apply_entry_application_intro(frm, status) {
 	let intro;
 	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
+	} else if (status.client_paid_directly && !status.certificate_attached) {
+		intro = __(
+			"<b>Finance confirmed: Paid directly by client.</b> No Entry Slip invoice or receipt verification is required. " +
+				"Attach the <b>ENTRY customs document</b> under <b>Clearance Documents</b> to complete this task."
+		);
 	} else if (status.application_ready_to_complete) {
 		intro = __("<b>All declarant documents are in place.</b> Completing this task…");
 	} else if (status.receipt_attached && !status.certificate_attached) {
@@ -2446,6 +2520,81 @@ function load_app_finance_declarant_status(frm, profileKey) {
 	});
 }
 
+const CLIENT_PAID_FIELDS = [
+	"custom_client_paid_directly",
+	"custom_client_paid_confirmed_by",
+	"custom_client_paid_confirmed_on",
+];
+
+function is_client_paid_application_step(frm) {
+	const seq = sea_task_sequence(frm);
+	return (
+		is_ucr_application_step(frm, seq) ||
+		is_entry_application_step(frm, seq) ||
+		is_app_finance_application_step(frm, seq, "shipping_line") ||
+		is_app_finance_application_step(frm, seq, "kpa") ||
+		is_permit_application_step(frm, seq)
+	);
+}
+
+function set_client_paid_fields_hidden(frm, hidden) {
+	CLIENT_PAID_FIELDS.forEach((fieldname) => {
+		if (!frm.fields_dict[fieldname]) {
+			return;
+		}
+		const df = frm.get_docfield(fieldname);
+		// Skip no-op writes — set_df_property refreshes the control and layout deps.
+		if (df && cint(df.hidden) === cint(hidden)) {
+			return;
+		}
+		frm.set_df_property(fieldname, "hidden", hidden ? 1 : 0);
+	});
+}
+
+function configure_client_paid_field(frm, ui) {
+	// Finance confirms this on the payment task; the paired application task
+	// mirrors it read-only so the owner knows no invoice handoff is coming.
+	//
+	// Sea seq lists load async. Until they arrive, ui.show_payments is false for
+	// every sea task (empty fallback). Do not hide against that — it blanks
+	// already-confirmed fields. Once confirmed, keep them visible from the doc
+	// alone (no extra server call).
+	const confirmed = Boolean(frm.doc.custom_client_paid_directly);
+	if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config) {
+		if (confirmed) {
+			set_client_paid_fields_hidden(frm, 0);
+			if (frm.fields_dict.custom_client_paid_directly) {
+				frm.set_df_property("custom_client_paid_directly", "read_only", 1);
+			}
+		} else {
+			// Not confirmed yet — keep hidden until seq config classifies this step.
+			set_client_paid_fields_hidden(frm, 1);
+		}
+		return;
+	}
+
+	const finance_step = Boolean(ui.show_payments);
+	const mirrored = is_client_paid_application_step(frm) && confirmed;
+	const show = finance_step || mirrored;
+	set_client_paid_fields_hidden(frm, show ? 0 : 1);
+	if (show && frm.fields_dict.custom_client_paid_directly) {
+		const editable =
+			finance_step && user_can_make_payment(frm) && frm.doc.status !== "Completed";
+		frm.set_df_property("custom_client_paid_directly", "read_only", editable ? 0 : 1);
+		frm.set_df_property(
+			"custom_client_paid_directly",
+			"description",
+			finance_step
+				? __(
+						"Finance confirms the client settled this fee directly. No Journal Entry, invoice verification, or receipt upload is required — ticking this completes the payment step."
+					)
+				: __(
+						"Finance confirmed the client settled this fee directly. No invoice or receipt handoff is required for this task."
+					)
+		);
+	}
+}
+
 function configure_shipping_line_deposit_grid(frm) {
 	const grid = frm.fields_dict.custom_container_updates?.grid;
 	if (!grid) {
@@ -2462,6 +2611,58 @@ function configure_shipping_line_deposit_grid(frm) {
 	}
 }
 
+function application_status_for_client_paid(frm, ui) {
+	if (ui.is_kpa_application) {
+		return frm._cgm_kpa_declarant_status;
+	}
+	if (ui.is_shipping_line_application) {
+		return frm._cgm_shipping_line_declarant_status;
+	}
+	if (ui.is_entry_application) {
+		return frm._cgm_entry_declarant_status;
+	}
+	if (ui.is_ucr_application) {
+		return frm._cgm_declarant_status;
+	}
+	return null;
+}
+
+function client_paid_application_needs_mark_complete(frm, ui) {
+	/** KPA / Shipping Line (no certificate) need an explicit Mark Completed after client-paid. */
+	if (frm.doc.status === "Completed" || frm.doc.status === "Cancelled") {
+		return false;
+	}
+	if (!(ui.is_kpa_application || ui.is_shipping_line_application)) {
+		return false;
+	}
+	const status = application_status_for_client_paid(frm, ui) || {};
+	const clientPaid =
+		Boolean(frm.doc.custom_client_paid_directly) || Boolean(status.client_paid_directly);
+	if (!clientPaid) {
+		return false;
+	}
+	// Profiles with a certificate auto-complete once it is attached.
+	if (status.certificate_required) {
+		return false;
+	}
+	return true;
+}
+
+async function mark_application_task_completed(frm) {
+	await frm.set_value("completed_by", frappe.session.user);
+	await frm.set_value("completed_on", frappe.datetime.now_datetime());
+	await frm.set_value("status", "Completed");
+	await frm.save();
+}
+
+function add_client_paid_application_mark_complete_button(frm, ui) {
+	if (!client_paid_application_needs_mark_complete(frm, ui)) {
+		return;
+	}
+	const btn = frm.add_custom_button(__("Mark Completed"), () => mark_application_task_completed(frm));
+	btn?.addClass?.("btn-primary");
+}
+
 function apply_app_finance_application_intro(frm, status, profileKey) {
 	if (!is_app_finance_application_step(frm, undefined, profileKey) || !frm.doc.project) {
 		return;
@@ -2474,6 +2675,18 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 	let intro;
 	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
 		intro = __("<b>All documents are in place.</b> This task is <b>Completed</b>.");
+	} else if (status.client_paid_directly && !status.certificate_required) {
+		intro = __(
+			"<b>Finance confirmed: Paid directly by client.</b> No invoice or receipt verification is required. " +
+				"Click <b>Mark Completed</b> when this application step is finished."
+		);
+		// Remount toolbar so Mark Completed survives form.refresh clearing custom buttons.
+		schedule_cgm_task_toolbar_buttons(frm);
+	} else if (status.client_paid_directly && status.certificate_required) {
+		intro = __(
+			"<b>Finance confirmed: Paid directly by client.</b> Invoice and receipt verification are skipped. " +
+				"Attach the required certificate under <b>Clearance Documents</b> to complete this task."
+		);
 	} else if (status.application_ready_to_complete) {
 		intro = __("<b>All documents are in place.</b> Completing this task…");
 	} else if (status.receipt_attached) {

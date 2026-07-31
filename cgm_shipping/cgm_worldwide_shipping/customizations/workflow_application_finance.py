@@ -12,6 +12,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	all_profiles,
 	can_complete_application_finance_task,
 	can_complete_application_task,
+	certificate_uploaded,
 	copy_application_receipt_to_finance_task,
 	ensure_application_finance_lines_saved,
 	ensure_application_receipt_on_finance_task,
@@ -277,6 +278,24 @@ def validate_application_not_manually_completed(
 		return
 	if not is_application_create_task(task, profile):
 		return
+	finance_name = get_application_finance_task(task.project, profile) if task.project else None
+	finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
+	if finance_task:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			task_client_paid_directly,
+		)
+
+		if task_client_paid_directly(finance_task):
+			if (
+				profile.certificate_document_code or profile.legacy_certificate_codes
+			) and not certificate_uploaded(task, profile):
+				frappe.throw(
+					f"Attach the required <b>{profile.certificate_document_code}</b> "
+					"certificate before completing this task."
+				)
+			# Client-paid tasks with no certificate requirement may be completed
+			# manually; no invoice or receipt verification is required.
+			return
 	if task.status == "Completed" and can_complete_application_task(task, profile):
 		return
 	cert_hint = (
@@ -297,6 +316,15 @@ def validate_finance_application_payment_task(
 ) -> None:
 	if not is_application_payment_task_doc(task, profile):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+		task_has_recorded_payment,
+	)
+
+	# Client paid — Finance confirmation alone; skip invoice/receipt/PI checks.
+	if task_client_paid_directly(task):
+		return
+
 	app_task = get_application_task(task.project, profile) if task.project else None
 	if app_task and not invoice_submitted(app_task, profile):
 		frappe.throw("The declarant must submit the application invoice first.")
@@ -311,11 +339,10 @@ def validate_finance_application_payment_task(
 	task_fields = frappe.get_meta("Task")
 	if task_fields.has_field("custom_purchase_invoice") and not task.get("custom_purchase_invoice"):
 		frappe.throw("Create and submit a <b>Purchase Invoice</b> from this task before completion.")
-	has_payment = task.get("custom_payment_entry") or task.get("custom_journal_entry")
-	if not has_payment:
+	if not task_has_recorded_payment(task):
 		frappe.throw(
 			"Record payment via <b>Make Payment</b> (Journal Entry) or <b>Payment Entry</b> "
-			"before completion."
+			"before completion, or tick <b>Paid directly by client</b> if the client settled it."
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
@@ -346,18 +373,11 @@ def receipt_attached_for_payment_workflow(
 
 
 def mark_task_completed(task) -> None:
-	frappe.db.set_value(
-		"Task",
-		task.name,
-		{
-			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
-			"progress": 100,
-		},
-		update_modified=True,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		mark_task_completed as _mark,
 	)
-	frappe.clear_document_cache("Task", task.name)
+
+	_mark(task)
 
 
 def publish_task_completed_event(task) -> None:
@@ -531,22 +551,13 @@ def get_application_declarant_workflow_status(
 	fin_inv = get_invoice_line(finance_task, profile) if finance_task else None
 	fin_rec = get_receipt_line(finance_task, profile) if finance_task else None
 
-	payment_made = bool(
-		finance_task
-		and (
-			(
-				finance_task.get("custom_payment_entry")
-				and int(
-					frappe.db.get_value(
-						"Payment Entry", finance_task.custom_payment_entry, "docstatus"
-					)
-					or 0
-				)
-				== 1
-			)
-			or finance_task.get("custom_journal_entry")
-		)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+		task_has_recorded_payment,
 	)
+
+	client_paid = bool(finance_task and task_client_paid_directly(finance_task))
+	payment_made = bool(finance_task and task_has_recorded_payment(finance_task))
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 		certificate_uploaded,
@@ -578,6 +589,10 @@ def get_application_declarant_workflow_status(
 			or (fin_rec and fin_rec.verified)
 		),
 		"finance_task_completed": bool(finance_task and finance_task.status == "Completed"),
+		"client_paid_directly": client_paid,
+		"certificate_required": bool(
+			profile.certificate_document_code or profile.legacy_certificate_codes
+		),
 		"certificate_attached": certificate_uploaded(task, profile),
 		"application_ready_to_complete": can_complete_application_task(
 			task, profile, finance_task
@@ -695,6 +710,11 @@ def process_application_workflow_on_update(task) -> None:
 	seq = task_sequence(task)
 	if is_application_task(seq, profile) and task.status not in ("Completed", "Cancelled"):
 		auto_submit_application_invoice_to_finance_if_needed(task, profile)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			sync_application_purchase_item_to_finance,
+		)
+
+		sync_application_purchase_item_to_finance(task, profile)
 		handle_application_receipt_upload(task, profile)
 		try_auto_complete_application_task(task, profile)
 	elif is_application_finance_task(seq, profile) and task.status not in (
@@ -743,7 +763,8 @@ def enforce_entry_finance_gate(project: str) -> None:
 	):
 		frappe.throw(
 			"Cannot move to <b>Entry Paid</b> until <b>Finance Pays Entry Slip</b> is completed: "
-			"Entry Slip invoice verified, payment recorded, receipt verified, and ENTRY document uploaded."
+			"either Finance records payment and verifies the Entry Slip invoice/receipt, "
+			"or Finance ticks <b>Paid directly by client</b>."
 		)
 
 
@@ -760,5 +781,6 @@ def enforce_kpa_finance_gate(project: str) -> None:
 	):
 		frappe.throw(
 			"Cannot move to <b>KPA Paid</b> until <b>Finance pays KPA Invoice</b> is completed: "
-			"KPA invoice verified, payment recorded, and KPA receipt verified."
+			"either Finance records payment and verifies the KPA invoice/receipt, "
+			"or Finance ticks <b>Paid directly by client</b>."
 		)
