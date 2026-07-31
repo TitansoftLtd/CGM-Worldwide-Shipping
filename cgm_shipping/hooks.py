@@ -99,7 +99,7 @@ doctype_js = {
 	"Sales Order": "public/js/quotation.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
 	"Supplier": "public/js/supplier.js",
-	# Doctype folder *.js is auto-inlined; only list extra scripts here (not the doctype file itself).
+	"Leave Application": "public/js/leave_application.js",
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
