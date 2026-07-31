@@ -279,6 +279,8 @@ def task_has_recorded_payment(task) -> bool:
 	)
 
 	if is_permit_finance_task_doc(task):
+		if task_client_paid_directly(task):
+			return True
 		rows = permit_finance_rows(task)
 		if not rows:
 			# All-foreign (or empty) finance task has nothing to pay.
@@ -317,6 +319,8 @@ def task_uses_permit_payment_pattern(task) -> bool:
 def validate_permit_finance_task_completion(task) -> None:
 	"""Each permit row needs its own journal entry and verified receipt before completion."""
 	if not is_permit_finance_task_doc(task):
+		return
+	if task_client_paid_directly(task):
 		return
 	rows = permit_finance_rows(task)
 	if not rows:
@@ -840,11 +844,35 @@ def validate_finance_permit_payment_task(task) -> None:
 		)
 
 
+def permit_application_client_paid(task) -> bool:
+	"""True when Finance confirmed the client settled the paired permit payment."""
+	if task_client_paid_directly(task):
+		return True
+	if not task.project:
+		return False
+	fin_name = get_finance_permit_task_name(task.project, task_sequence(task))
+	if not fin_name:
+		return False
+	return task_client_paid_directly(frappe.get_doc("Task", fin_name))
+
+
 def validate_permit_application_can_complete(task) -> None:
 	if frappe.flags.get("cgm_auto_completing_sea_task"):
 		return
 	seq = task_sequence(task)
 	if not is_permit_application_task(seq):
+		return
+
+	# Client paid: skip invoice / Finance / receipt handoff. Declarant attaches
+	# certificates on any existing rows (or marks complete if nothing to attach).
+	if permit_application_client_paid(task):
+		rows = [r for r in (task.get(TASK_PERMITS_FIELD) or []) if r.get("permit_type")]
+		missing_certs = [r.permit_type for r in rows if not r.get("permit_document")]
+		if missing_certs:
+			frappe.throw(
+				"Upload <b>Permit Certificate</b> for each permit. Missing: "
+				f"<b>{', '.join(missing_certs)}</b>."
+			)
 		return
 
 	payable = payable_permit_rows(task)
@@ -940,6 +968,8 @@ def can_complete_finance_permit_task(task) -> bool:
 		return False
 	if task.status in ("Completed", "Cancelled"):
 		return False
+	if task_client_paid_directly(task):
+		return True
 	rows = permit_finance_rows(task)
 	if not rows:
 		# No Local permits — nothing for Finance to pay on this task.
@@ -957,18 +987,7 @@ def can_complete_finance_permit_task(task) -> bool:
 
 
 def mark_permit_task_completed(task) -> None:
-	frappe.db.set_value(
-		"Task",
-		task.name,
-		{
-			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
-			"progress": 100,
-		},
-		update_modified=True,
-	)
-	frappe.clear_document_cache("Task", task.name)
+	mark_task_completed(task)
 
 
 def run_finance_permit_completion_hooks(task) -> None:
@@ -1056,6 +1075,10 @@ def auto_complete_finance_permit_task(task) -> bool:
 
 def close_permit_application_when_finance_done(task) -> None:
 	if not is_permit_finance_task_doc(task) or task.status != "Completed":
+		return
+	# Client-paid: leave the application task open so the declarant can attach
+	# certificates (if any) and mark it complete themselves.
+	if task_client_paid_directly(task):
 		return
 	app_name = get_permit_application_task_for_finance(task)
 	if not app_name:
@@ -1357,7 +1380,9 @@ def can_complete_ucr_create_task(task, finance_task=None) -> bool:
 		finance_name = get_ucr_finance_task(task.project)
 		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
 	if finance_task and task_client_paid_directly(finance_task):
-		return True
+		# Client-paid skips invoice/receipt verification, but Create UCR still
+		# requires the IDF certificate before it can complete.
+		return idf_certificate_uploaded(task)
 	if not ucr_invoice_attached(task) and not task.get("custom_ucr_invoice_submitted"):
 		return False
 	if not ucr_invoice_verified_for_create_task(task, finance_task):
@@ -1709,18 +1734,25 @@ def enforce_ucr_finance_field_permissions(task) -> None:
 
 
 def mark_task_completed(task) -> None:
-	frappe.db.set_value(
-		"Task",
-		task.name,
-		{
-			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
-			"progress": 100,
-		},
-		update_modified=True,
-	)
-	frappe.clear_document_cache("Task", task.name)
+	"""Persist Completed and keep the in-memory doc in sync.
+
+	Only updating via set_value left callers holding status=Open; a later
+	task.save() then overwrote Completed and made List View show Open while
+	the form (after reload) still looked Completed.
+	"""
+	completed_by = task.completed_by or frappe.session.user
+	completed_on = task.completed_on or now_datetime()
+	values = {
+		"status": "Completed",
+		"completed_by": completed_by,
+		"completed_on": completed_on,
+		"progress": 100,
+	}
+	if task.name and frappe.db.exists("Task", task.name):
+		frappe.db.set_value("Task", task.name, values, update_modified=True)
+		frappe.clear_document_cache("Task", task.name)
+	for field, value in values.items():
+		task.set(field, value)
 
 
 def publish_task_completed_event(task) -> None:
@@ -1860,6 +1892,9 @@ def get_ucr_declarant_workflow_status(task_name: str) -> dict:
 	return {
 		"finance_task": finance_name,
 		"finance_task_url": get_url(f"/app/task/{finance_name}") if finance_name else None,
+		"client_paid_directly": bool(
+			finance_task and task_client_paid_directly(finance_task)
+		),
 		"invoice_submitted": bool(task.get("custom_ucr_invoice_submitted")),
 		"invoice_verified": bool(
 			(inv and inv.verified)

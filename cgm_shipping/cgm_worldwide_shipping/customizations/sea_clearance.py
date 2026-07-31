@@ -477,19 +477,12 @@ def enforce_all_sea_tasks_complete(project: str) -> None:
 
 # ─── Sea Task Template & Plan (moved from utils.py) ───────────────────────────
 def mark_task_completed(task) -> None:
-	"""Write Completed straight to the DB (a nested doc.save can leave list views stale)."""
-	frappe.db.set_value(
-		"Task",
-		task.name,
-		{
-			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
-			"progress": 100,
-		},
-		update_modified=True,
+	"""Persist Completed and keep the in-memory doc aligned (see workflow.mark_task_completed)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		mark_task_completed as _mark,
 	)
-	frappe.clear_document_cache("Task", task.name)
+
+	_mark(task)
 
 
 @frappe.whitelist()

@@ -510,6 +510,70 @@ def enforce_client_paid_confirmation(task) -> None:
 			task.set(field, None)
 
 
+def paired_application_task_for_finance_task(task) -> str | None:
+	"""Application/declarant task that pairs with a finance payment task."""
+	if not task.project:
+		return None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		get_application_task,
+		profile_for_task,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		get_permit_application_task_for_finance,
+	)
+
+	seq = int(task.get("custom_sequence_no") or 0)
+	if is_permit_finance_payment_task(seq):
+		return get_permit_application_task_for_finance(task)
+	profile = profile_for_task(task)
+	if profile:
+		return get_application_task(task.project, profile)
+	return None
+
+
+def sync_client_paid_to_application_task(task) -> str | None:
+	"""Mirror Finance's client-paid confirmation onto the paired application task.
+
+	Read-only there — it only tells the declarant that Finance confirmed the
+	client settled this fee, so no invoice or receipt handoff is coming.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CLIENT_PAID_BY_FIELD,
+		CLIENT_PAID_FIELD,
+		CLIENT_PAID_ON_FIELD,
+	)
+
+	if not task.meta.has_field(CLIENT_PAID_FIELD):
+		return None
+	if not is_sea_finance_payment_task(task):
+		return None
+	app_name = paired_application_task_for_finance_task(task)
+	if not app_name:
+		return None
+
+	values = {CLIENT_PAID_FIELD: 1 if task.get(CLIENT_PAID_FIELD) else 0}
+	meta = frappe.get_meta("Task")
+	for field in (CLIENT_PAID_BY_FIELD, CLIENT_PAID_ON_FIELD):
+		if meta.has_field(field):
+			values[field] = task.get(field) if values[CLIENT_PAID_FIELD] else None
+	current = frappe.db.get_value("Task", app_name, list(values), as_dict=True) or {}
+
+	def _same(a, b) -> bool:
+		# Datetime stamps come back typed from the DB but as strings off the form.
+		return (str(a) if a is not None else None) == (str(b) if b is not None else None)
+
+	if all(_same(current.get(field), value) for field, value in values.items()):
+		return None
+
+	frappe.db.set_value("Task", app_name, values, update_modified=False)
+	frappe.clear_document_cache("Task", app_name)
+	frappe.publish_realtime(
+		"cgm_task_status_changed",
+		{"task": app_name, "project": task.project},
+	)
+	return app_name
+
+
 def is_sea_auto_complete_task(task) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		is_sea_import_task,
@@ -522,12 +586,28 @@ def is_sea_auto_complete_task(task) -> bool:
 
 @frappe.whitelist()
 def get_sea_task_ui_sequences() -> dict:
-	"""Sequence lists and role flags for Task form UI (from CGM Shipping Settings)."""
+	"""Sequence lists and role flags for Task form UI (from CGM Shipping Settings).
+
+	Sequence lists are settings-scoped and Redis-cached briefly so opening many
+	Task forms does not recompute them on every request. Permissions stay
+	per-user and are not cached here.
+	"""
 	ensure_sea_task_requirements_configured()
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 		get_task_form_permissions,
 	)
+
+	payload = dict(_cached_sea_task_ui_sequence_lists())
+	payload["permissions"] = get_task_form_permissions()
+	return payload
+
+
+def _cached_sea_task_ui_sequence_lists() -> dict:
+	cache_key = "cgm:sea_task_ui_sequence_lists"
+	cached = frappe.cache.get_value(cache_key)
+	if isinstance(cached, dict) and cached.get("payment_seqs") is not None:
+		return cached
 
 	permit_finance = sorted(s for s in finance_payment_sequences() if is_permit_finance_payment_task(s))
 	ucr_finance = sorted(s for s in finance_payment_sequences() if is_ucr_finance_payment_task(s))
@@ -537,7 +617,7 @@ def get_sea_task_ui_sequences() -> dict:
 	)
 	kpa_finance = sorted(s for s in finance_payment_sequences() if is_kpa_finance_payment_task(s))
 	stage_by_seq = permit_stage_by_sequence()
-	return {
+	payload = {
 		"payment_seqs": sorted(finance_payment_sequences()),
 		"auto_complete_seqs": sorted(auto_complete_sequences()),
 		"permit_application_seqs": sorted(permit_application_sequences()),
@@ -554,13 +634,15 @@ def get_sea_task_ui_sequences() -> dict:
 		"shipping_line_finance_seqs": shipping_line_finance,
 		"kpa_finance_seqs": kpa_finance,
 		"permit_stage_by_seq": {str(k): v for k, v in stage_by_seq.items()},
-		"permissions": get_task_form_permissions(),
 		"finance_department": frappe.db.get_single_value(
 			"CGM Shipping Settings", "custom_finance_department"
 		)
 		if frappe.db.exists("DocType", "CGM Shipping Settings")
 		else None,
 	}
+	# Short TTL: settings change rarely; desk keeps its own session copy too.
+	frappe.cache.set_value(cache_key, payload, expires_in_sec=300)
+	return payload
 
 
 # ==================== Task finance lines ====================
@@ -1638,6 +1720,9 @@ def validate_permit_application_task(task, seq: int) -> None:
 	if not task.meta.has_field(TASK_PERMITS_FIELD):
 		frappe.throw("Task Permits table is not available on this site. Run <b>bench migrate</b>.")
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		permit_application_client_paid,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
 		permit_requires_payment,
 	)
@@ -1645,6 +1730,24 @@ def validate_permit_application_task(task, seq: int) -> None:
 	rows = task.get(TASK_PERMITS_FIELD) or []
 	examples = _permit_type_examples()
 	eg = f" (e.g. {examples})" if examples else ""
+
+	# Finance confirmed client paid — no invoice handoff. Empty rows are fine
+	# (nothing to attach); existing rows still need their certificates.
+	if permit_application_client_paid(task):
+		missing = [
+			f"{(r.permit_type or 'Permit')} - permit certificate"
+			for r in rows
+			if r.get("permit_type") and not r.get("permit_document")
+		]
+		if missing:
+			frappe.throw(
+				"Complete <b>Task Permits</b> before finishing this task:<ul>"
+				+ "".join(f"<li>{m}</li>" for m in missing)
+				+ "</ul>",
+				title="Permit documents required",
+			)
+		return
+
 	if not rows:
 		frappe.throw(
 			f"Add at least one permit on <b>Task Permits</b>{eg} "
@@ -2981,6 +3084,90 @@ def on_task_onload(doc, _method=None):
 		prepare_shipment_documents_for_form(doc, TASK_DOCUMENTS_FIELD)
 
 
+def preserve_completed_status_against_stale_save(doc) -> None:
+	"""Keep Completed when an incidental save still carries status=Open in memory.
+
+	Finance auto-complete writes Completed via db.set_value. Seeding finance lines
+	or receipt sync can then save the older in-memory Open doc and make List View
+	show Open while the form (after a reload) still shows Completed.
+	"""
+	if doc.is_new() or doc.status in ("Completed", "Cancelled"):
+		return
+	if frappe.flags.get("cgm_reopening_task"):
+		return
+	if not is_sea_finance_payment_task(doc) and not is_permit_finance_payment_task(
+		int(doc.get("custom_sequence_no") or 0)
+	):
+		# Also protect paired application finance profiles and UCR create when
+		# they were completed by set_value and a later sync save is stale.
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			is_application_finance_task,
+			is_application_task,
+			profile_for_task,
+		)
+
+		seq = int(doc.get("custom_sequence_no") or 0)
+		profile = profile_for_task(doc)
+		if not (
+			is_ucr_application_task(seq)
+			or (profile and (is_application_task(seq, profile) or is_application_finance_task(seq, profile)))
+			or is_permit_application_task(seq)
+		):
+			return
+
+	db_status = frappe.db.get_value("Task", doc.name, "status")
+	if db_status != "Completed":
+		return
+	doc.status = "Completed"
+	if flt(doc.progress or 0) < 100:
+		doc.progress = 100
+	if not doc.completed_by:
+		doc.completed_by = frappe.session.user
+	if not doc.completed_on:
+		doc.completed_on = now_datetime()
+
+
+def promote_ready_finance_task_before_save(doc) -> None:
+	"""Write Completed on the same save that finishes payment verification.
+
+	Avoids the set_value-then-stale-save race that desyncs form vs list status.
+	"""
+	if doc.status in ("Completed", "Cancelled") or not _is_sea_task(doc):
+		return
+	seq = _sea_task_seq(doc)
+	ready = False
+	if is_ucr_finance_payment_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			can_complete_ucr_payment_task,
+		)
+
+		ready = can_complete_ucr_payment_task(doc)
+	elif is_permit_finance_payment_task(seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			can_complete_finance_permit_task,
+		)
+
+		ready = can_complete_finance_permit_task(doc)
+	else:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			can_complete_application_finance_task,
+			is_application_finance_task,
+			profile_for_task,
+		)
+
+		profile = profile_for_task(doc)
+		if profile and is_application_finance_task(seq, profile):
+			ready = can_complete_application_finance_task(doc, profile)
+
+	if not ready:
+		return
+	doc.status = "Completed"
+	doc.completed_by = doc.completed_by or frappe.session.user
+	doc.completed_on = doc.completed_on or now_datetime()
+	doc.progress = 100
+	frappe.flags.cgm_auto_completing_sea_task = True
+
+
 def before_task_save(doc, _method=None):
 	"""Pre-fill required document rows while the task is still open."""
 	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
@@ -2994,7 +3181,9 @@ def before_task_save(doc, _method=None):
 	stamp_shipment_document_upload_metadata(doc, TASK_DOCUMENTS_FIELD)
 	if not _is_sea_task(doc):
 		return
+	preserve_completed_status_against_stale_save(doc)
 	enforce_client_paid_confirmation(doc)
+	promote_ready_finance_task_before_save(doc)
 	if doc.status in ("Completed", "Cancelled"):
 		return
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -3068,6 +3257,7 @@ def on_task_update(doc, _method=None):
 		)
 
 		check_task_container_completion(doc)
+		sync_client_paid_to_application_task(doc)
 
 	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status not in (
 		"Completed",

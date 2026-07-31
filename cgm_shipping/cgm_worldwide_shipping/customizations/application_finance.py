@@ -739,8 +739,9 @@ def can_complete_application_task(
 ) -> bool:
 	if not is_application_task(int(task.get("custom_sequence_no") or 0), profile):
 		return False
-	# Client paid directly — Finance confirmation alone closes this pair; no
-	# invoice / receipt / certificate handoff is required on either task.
+	# Client-paid bypasses invoice/receipt handoff, but the application task
+	# still owns its required certificate. Profiles without a certificate stay
+	# open for explicit manual completion.
 	if finance_task is None and task.project:
 		finance_name = get_application_finance_task(task.project, profile)
 		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
@@ -749,7 +750,9 @@ def can_complete_application_task(
 	)
 
 	if finance_task and task_client_paid_directly(finance_task):
-		return True
+		if not profile.certificate_document_code and not profile.legacy_certificate_codes:
+			return False
+		return certificate_uploaded(task, profile)
 	submitted = invoice_attached(task, profile)
 	if profile.application_submitted_field and task.meta.has_field(profile.application_submitted_field):
 		submitted = submitted or bool(task.get(profile.application_submitted_field))
