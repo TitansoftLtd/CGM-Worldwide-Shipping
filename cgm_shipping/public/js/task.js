@@ -1456,6 +1456,8 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		markCompleteBtn?.addClass?.("btn-primary");
 	}
 
+	add_client_paid_application_mark_complete_button(frm, ui);
+
 	if (
 		is_permit_application_step(frm) &&
 		frm.doc.status !== "Completed" &&
@@ -2609,6 +2611,58 @@ function configure_shipping_line_deposit_grid(frm) {
 	}
 }
 
+function application_status_for_client_paid(frm, ui) {
+	if (ui.is_kpa_application) {
+		return frm._cgm_kpa_declarant_status;
+	}
+	if (ui.is_shipping_line_application) {
+		return frm._cgm_shipping_line_declarant_status;
+	}
+	if (ui.is_entry_application) {
+		return frm._cgm_entry_declarant_status;
+	}
+	if (ui.is_ucr_application) {
+		return frm._cgm_declarant_status;
+	}
+	return null;
+}
+
+function client_paid_application_needs_mark_complete(frm, ui) {
+	/** KPA / Shipping Line (no certificate) need an explicit Mark Completed after client-paid. */
+	if (frm.doc.status === "Completed" || frm.doc.status === "Cancelled") {
+		return false;
+	}
+	if (!(ui.is_kpa_application || ui.is_shipping_line_application)) {
+		return false;
+	}
+	const status = application_status_for_client_paid(frm, ui) || {};
+	const clientPaid =
+		Boolean(frm.doc.custom_client_paid_directly) || Boolean(status.client_paid_directly);
+	if (!clientPaid) {
+		return false;
+	}
+	// Profiles with a certificate auto-complete once it is attached.
+	if (status.certificate_required) {
+		return false;
+	}
+	return true;
+}
+
+async function mark_application_task_completed(frm) {
+	await frm.set_value("completed_by", frappe.session.user);
+	await frm.set_value("completed_on", frappe.datetime.now_datetime());
+	await frm.set_value("status", "Completed");
+	await frm.save();
+}
+
+function add_client_paid_application_mark_complete_button(frm, ui) {
+	if (!client_paid_application_needs_mark_complete(frm, ui)) {
+		return;
+	}
+	const btn = frm.add_custom_button(__("Mark Completed"), () => mark_application_task_completed(frm));
+	btn?.addClass?.("btn-primary");
+}
+
 function apply_app_finance_application_intro(frm, status, profileKey) {
 	if (!is_app_finance_application_step(frm, undefined, profileKey) || !frm.doc.project) {
 		return;
@@ -2626,15 +2680,8 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 			"<b>Finance confirmed: Paid directly by client.</b> No invoice or receipt verification is required. " +
 				"Click <b>Mark Completed</b> when this application step is finished."
 		);
-		if (!frm._cgm_client_paid_complete_button_added) {
-			frm._cgm_client_paid_complete_button_added = true;
-			add_cgm_toolbar_button(frm, __("Mark Completed"), async () => {
-				await frm.set_value("completed_by", frappe.session.user);
-				await frm.set_value("completed_on", frappe.datetime.now_datetime());
-				await frm.set_value("status", "Completed");
-				await frm.save();
-			});
-		}
+		// Remount toolbar so Mark Completed survives form.refresh clearing custom buttons.
+		schedule_cgm_task_toolbar_buttons(frm);
 	} else if (status.client_paid_directly && status.certificate_required) {
 		intro = __(
 			"<b>Finance confirmed: Paid directly by client.</b> Invoice and receipt verification are skipped. " +
