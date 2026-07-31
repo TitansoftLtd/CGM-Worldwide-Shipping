@@ -892,6 +892,7 @@ def ensure_ucr_finance_lines_saved(task) -> bool:
 	if after - before:
 		frappe.flags.cgm_ensuring_ucr_finance_lines = True
 		try:
+			preserve_completed_status_against_stale_save(task)
 			task.save(ignore_permissions=True)
 		finally:
 			frappe.flags.cgm_ensuring_ucr_finance_lines = False
@@ -1913,7 +1914,11 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 	task.progress = 0
 	task.completed_by = None
 	task.completed_on = None
-	task.save(ignore_permissions=True)
+	frappe.flags.cgm_reopening_task = True
+	try:
+		task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_reopening_task = False
 	sync_task_permits_to_project(task)
 	return {"task": task.name, "status": task.status, "missing_invoices": missing}
 
@@ -3119,7 +3124,7 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 	if db_status != "Completed":
 		return
 	doc.status = "Completed"
-	if flt(doc.progress or 0) < 100:
+	if not doc.progress or float(doc.progress or 0) < 100:
 		doc.progress = 100
 	if not doc.completed_by:
 		doc.completed_by = frappe.session.user
@@ -3183,69 +3188,70 @@ def before_task_save(doc, _method=None):
 		return
 	preserve_completed_status_against_stale_save(doc)
 	enforce_client_paid_confirmation(doc)
-	promote_ready_finance_task_before_save(doc)
-	if doc.status in ("Completed", "Cancelled"):
-		return
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		enforce_receipt_verified_permission,
-		seed_finance_task_permits_from_project,
-	)
+	if doc.status not in ("Completed", "Cancelled"):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			enforce_receipt_verified_permission,
+			seed_finance_task_permits_from_project,
+		)
 
-	migrate_invoice_attachments_from_documents(doc)
-	prepare_ucr_task_tables(doc)
-	prepare_application_finance_task_tables(doc)
-	seed_required_task_document_rows(doc)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		enforce_ucr_finance_field_permissions,
-		sync_ucr_payment_to_idf_record,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
-		enforce_application_finance_line_permissions,
-		normalize_application_finance_verification,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
-		sync_application_payment_hooks,
-	)
+		migrate_invoice_attachments_from_documents(doc)
+		prepare_ucr_task_tables(doc)
+		prepare_application_finance_task_tables(doc)
+		seed_required_task_document_rows(doc)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			enforce_ucr_finance_field_permissions,
+			sync_ucr_payment_to_idf_record,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			APPLICATION_FINANCE_PROFILES,
+			enforce_application_finance_line_permissions,
+			normalize_application_finance_verification,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+			sync_application_payment_hooks,
+		)
 
-	seed_finance_task_permits_from_project(doc)
-	normalize_finance_line_verification(doc)
-	enforce_receipt_verified_permission(doc)
-	enforce_ucr_finance_field_permissions(doc)
-	for profile in APPLICATION_FINANCE_PROFILES.values():
-		normalize_application_finance_verification(doc, profile)
-		enforce_application_finance_line_permissions(doc, profile)
-	if doc.status != "Cancelled":
-		sync_ucr_payment_to_idf_record(doc)
+		seed_finance_task_permits_from_project(doc)
+		normalize_finance_line_verification(doc)
+		enforce_receipt_verified_permission(doc)
+		enforce_ucr_finance_field_permissions(doc)
 		for profile in APPLICATION_FINANCE_PROFILES.values():
-			sync_application_payment_hooks(doc, profile)
+			normalize_application_finance_verification(doc, profile)
+			enforce_application_finance_line_permissions(doc, profile)
+		if doc.status != "Cancelled":
+			sync_ucr_payment_to_idf_record(doc)
+			for profile in APPLICATION_FINANCE_PROFILES.values():
+				sync_application_payment_hooks(doc, profile)
 
-	seq = _sea_task_seq(doc)
-	if _is_sea_task(doc) and is_document_checkpoint_task(seq):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-			normalize_shipment_documents_table,
-			promote_checkpoint_task_final_uploads,
-			sync_checkpoint_finals_to_project,
-		)
+		seq = _sea_task_seq(doc)
+		if _is_sea_task(doc) and is_document_checkpoint_task(seq):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+				normalize_shipment_documents_table,
+				promote_checkpoint_task_final_uploads,
+				sync_checkpoint_finals_to_project,
+			)
 
-		promote_checkpoint_task_final_uploads(doc)
-		normalize_shipment_documents_table(doc.get(TASK_DOCUMENTS_FIELD))
-		sync_checkpoint_finals_to_project(doc)
-	elif _is_sea_task(doc) and doc.get(TASK_DOCUMENTS_FIELD):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-			sync_single_task_documents_to_project,
-		)
+			promote_checkpoint_task_final_uploads(doc)
+			normalize_shipment_documents_table(doc.get(TASK_DOCUMENTS_FIELD))
+			sync_checkpoint_finals_to_project(doc)
+		elif _is_sea_task(doc) and doc.get(TASK_DOCUMENTS_FIELD):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+				sync_single_task_documents_to_project,
+			)
 
-		sync_single_task_documents_to_project(doc)
+			sync_single_task_documents_to_project(doc)
 
-	if _is_sea_task(doc):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
-			apply_container_updates_from_task,
-			validate_shipping_line_deposit_declarations,
-		)
+		if _is_sea_task(doc):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+				apply_container_updates_from_task,
+				validate_shipping_line_deposit_declarations,
+			)
 
-		apply_container_updates_from_task(doc)
-		validate_shipping_line_deposit_declarations(doc)
+			apply_container_updates_from_task(doc)
+			validate_shipping_line_deposit_declarations(doc)
+
+	# After line verification is normalized so this save can write Completed once.
+	promote_ready_finance_task_before_save(doc)
 
 
 def on_task_update(doc, _method=None):
