@@ -1431,7 +1431,8 @@ def attached_document_codes(task) -> set[str]:
 	for row in task.get(TASK_DOCUMENTS_FIELD) or []:
 		code = get_document_type_code(row.document_type)
 		if code and primary_attachment(row):
-			codes.add(code)
+			# Required codes are uppercased in settings; normalize so "Inspect" matches "INSPECT".
+			codes.add(code.strip().upper())
 	return codes
 
 
@@ -1648,10 +1649,12 @@ def validate_required_documents(task, seq: int) -> None:
 			f"<b>{', '.join(missing)}</b>."
 		)
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
+
 	empty_rows = [
 		row.document_type or "Document"
 		for row in task.get(TASK_DOCUMENTS_FIELD) or []
-		if row.document_type and not row.attachment
+		if row.document_type and not primary_attachment(row)
 	]
 	if empty_rows:
 		frappe.throw(

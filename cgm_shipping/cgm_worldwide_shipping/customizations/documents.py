@@ -1471,7 +1471,15 @@ def get_document_type_link_name(code):
 	if name:
 		return name
 
-	# 2. Fall back to using the code directly as the document name.
+	# 2. Case-insensitive code match (settings may store INSPECT, master Inspect).
+	matched = frappe.db.sql(
+		"select name from `tabDocument Type` where upper(ifnull(code, '')) = %s limit 1",
+		(code.strip().upper(),),
+	)
+	if matched:
+		return matched[0][0]
+
+	# 3. Fall back to using the code directly as the document name.
 	if frappe.db.exists("Document Type", code):
 		return code
 
