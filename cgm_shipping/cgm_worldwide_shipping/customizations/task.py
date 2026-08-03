@@ -1035,12 +1035,72 @@ def copy_ucr_receipt_to_finance_task(application_task) -> str | None:
 	if fin_rec.attachment == app_rec.attachment:
 		return finance_name
 
+	# Do not overwrite a receipt Finance already uploaded on the finance task.
+	if fin_rec.attachment:
+		return finance_name
+
 	updates = {"attachment": app_rec.attachment}
 	if app_rec.amount and not fin_rec.amount:
 		updates["amount"] = app_rec.amount
 	frappe.db.set_value("Task Finance Line", fin_rec.name, updates, update_modified=False)
 
 	return finance_name
+
+
+def copy_ucr_receipt_to_application_task(finance_task) -> str | None:
+	"""Mirror Finance-uploaded UCR receipt onto Create UCR for visibility."""
+	if not is_ucr_finance_payment_task(_task_seq(finance_task)) or not finance_task.project:
+		return None
+
+	fin_rec = _find_line(finance_task, LINE_RECEIPT)
+	if not fin_rec or not fin_rec.attachment:
+		return None
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		get_ucr_create_task,
+	)
+
+	app_name = get_ucr_create_task(finance_task.project)
+	if not app_name:
+		return None
+
+	app = frappe.get_doc("Task", app_name)
+	seed_ucr_finance_lines(app)
+	app_rec = _find_line(app, LINE_RECEIPT)
+	if not app_rec:
+		return None
+
+	if not app_rec.name:
+		frappe.flags.cgm_syncing_ucr_receipt = True
+		try:
+			app.save(ignore_permissions=True)
+		finally:
+			frappe.flags.cgm_syncing_ucr_receipt = False
+		app_rec = _find_line(frappe.get_doc("Task", app_name), LINE_RECEIPT)
+		if not app_rec:
+			return None
+
+	if app_rec.attachment == fin_rec.attachment and cint(app_rec.verified) == cint(fin_rec.verified):
+		return app_name
+
+	updates = {"attachment": fin_rec.attachment}
+	if fin_rec.amount:
+		updates["amount"] = fin_rec.amount
+	if cint(fin_rec.verified):
+		updates["verified"] = 1
+		if fin_rec.verified_by:
+			updates["verified_by"] = fin_rec.verified_by
+		if fin_rec.verified_on:
+			updates["verified_on"] = fin_rec.verified_on
+	frappe.db.set_value("Task Finance Line", app_rec.name, updates, update_modified=False)
+	if cint(fin_rec.verified) and frappe.get_meta("Task").has_field("custom_ucr_receipt_verified"):
+		frappe.db.set_value("Task", app_name, "custom_ucr_receipt_verified", 1, update_modified=False)
+	frappe.clear_document_cache("Task", app_name)
+	frappe.publish_realtime(
+		"cgm_task_status_changed",
+		{"task": app_name, "project": finance_task.project, "receipt_synced": 1},
+	)
+	return app_name
 
 
 def get_ucr_invoice_line(task):
@@ -1075,6 +1135,14 @@ def normalize_finance_line_verification(task) -> None:
 	"""Set verified_by / verified_on when Finance ticks Verified."""
 	if not task_has_finance_table(task):
 		return
+	seq = _task_seq(task)
+	# Finance upload of the UCR receipt is confirmation — auto-stamp verified.
+	if is_ucr_finance_payment_task(seq):
+		rec = get_ucr_receipt_line(task)
+		if rec and rec.attachment and not cint(rec.verified):
+			rec.verified = 1
+			rec.verified_by = rec.verified_by or frappe.session.user
+			rec.verified_on = rec.verified_on or now_datetime()
 	for row in task.get(TASK_FINANCE_FIELD) or []:
 		if row.verified:
 			if not row.verified_by:
@@ -1085,7 +1153,6 @@ def normalize_finance_line_verification(task) -> None:
 			row.verified_by = None
 			row.verified_on = None
 
-	seq = _task_seq(task)
 	if is_ucr_finance_payment_task(seq):
 		inv = get_ucr_invoice_line(task)
 		rec = get_ucr_receipt_line(task)
@@ -1115,7 +1182,6 @@ def _finance_line_verified_changed(task, row) -> bool:
 def enforce_finance_line_permissions(task) -> None:
 	"""Only users with finance-payment template department roles may verify finance lines."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		user_has_department_for_sequence,
 		user_has_finance_department_access,
 	)
 
@@ -1129,7 +1195,6 @@ def enforce_finance_line_permissions(task) -> None:
 		return
 
 	is_finance = user_has_finance_department_access()
-	can_attach_receipt = user_has_department_for_sequence(frappe.session.user, seq)
 
 	for row in task.get(TASK_FINANCE_FIELD) or []:
 		if row.verified and not is_finance and _finance_line_verified_changed(task, row):
@@ -1144,33 +1209,28 @@ def enforce_finance_line_permissions(task) -> None:
 				frappe.throw(
 					f"<b>{row.line_label or 'Finance line'}</b> is verified by Finance and cannot be changed here."
 				)
-		if row.line_type == LINE_RECEIPT and is_ucr_application_task(seq) and row.attachment:
-			if not can_attach_receipt:
-				frappe.throw(
-					f"Only <b>Declarant</b> or <b>Operations</b> can attach <b>{row.line_label}</b>."
-				)
+		if row.line_type != LINE_RECEIPT or not row.attachment:
+			continue
+		if frappe.flags.get("cgm_syncing_ucr_receipt"):
+			continue
+		prev = task.get_doc_before_save()
+		prev_rec = get_ucr_receipt_line(prev) if prev else None
+		prev_attachment = prev_rec.attachment if prev_rec else None
+		# Keep existing attachments (open projects that used the old handoff).
+		if row.attachment == prev_attachment:
+			continue
+		if is_ucr_application_task(seq):
+			frappe.throw(
+				"Finance uploads the <b>UCR Receipt</b> on <b>Finance pays UCR</b> after recording payment. "
+				"Attach only the invoice (and IDF certificate) here."
+			)
+		if is_ucr_finance_payment_task(seq):
+			if not is_finance:
+				frappe.throw("Only <b>Finance</b> can attach the <b>UCR Receipt</b>.")
 			if task.project and not ucr_payment_made_for_project(task.project):
 				frappe.throw(
-					"Finance must record UCR payment before uploading the <b>UCR Receipt</b>."
+					"Record payment before uploading the <b>UCR Receipt</b>."
 				)
-		if row.line_type == LINE_RECEIPT and is_ucr_finance_payment_task(seq) and row.attachment:
-			if frappe.flags.get("cgm_syncing_ucr_receipt"):
-				continue
-			prev = task.get_doc_before_save()
-			prev_rec = get_ucr_receipt_line(prev) if prev else None
-			prev_attachment = prev_rec.attachment if prev_rec else None
-			if row.attachment != prev_attachment:
-				frappe.throw(
-					"Declarant uploads the <b>UCR Receipt</b> on <b>Create UCR (IDF)</b>. "
-					"Finance verifies it here."
-				)
-		if (
-			row.line_type == LINE_INVOICE
-			and is_ucr_finance_payment_task(seq)
-			and row.attachment
-			and row.verified is None
-		):
-			pass
 
 
 def sync_ucr_finance_lines_to_idf_record(task) -> None:
@@ -1453,16 +1513,52 @@ def get_document_type_code(document_type_link: str | None) -> str | None:
 	return frappe.db.get_value("Document Type", document_type_link, "code")
 
 
+def document_type_match_tokens(document_type_link: str | None) -> set[str]:
+	"""Normalized identifiers for a Document Type (link name + code).
+
+	Settings often store short codes like DO while the master may use a longer
+	code (e.g. Delivery Order) with name DO — both must count as the same type.
+	"""
+	tokens: set[str] = set()
+	if not document_type_link:
+		return tokens
+	link = str(document_type_link).strip()
+	if not link:
+		return tokens
+	tokens.add(link.upper())
+	code = get_document_type_code(link)
+	if code and str(code).strip():
+		tokens.add(str(code).strip().upper())
+	return tokens
+
+
 def attached_document_codes(task) -> set[str]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
 
-	codes = set()
+	codes: set[str] = set()
 	for row in task.get(TASK_DOCUMENTS_FIELD) or []:
-		code = get_document_type_code(row.document_type)
-		if code and primary_attachment(row):
-			# Required codes are uppercased in settings; normalize so "Inspect" matches "INSPECT".
-			codes.add(code.strip().upper())
+		if not primary_attachment(row):
+			continue
+		# Include name and code so settings "DO" matches Document Type code "Delivery Order".
+		codes |= document_type_match_tokens(row.document_type)
 	return codes
+
+
+def required_document_code_is_attached(required_code: str, attached: set[str]) -> bool:
+	"""True when an attached Task Document satisfies a settings Document requirement."""
+	req = (required_code or "").strip().upper()
+	if not req:
+		return True
+	if req in attached:
+		return True
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		get_document_type_link_name,
+	)
+
+	dt_name = get_document_type_link_name(required_code)
+	if not dt_name:
+		return False
+	return bool(document_type_match_tokens(dt_name) & attached)
 
 
 def strip_task_documents_for_checkpoint(task) -> bool:
@@ -1668,9 +1764,10 @@ def validate_required_documents(task, seq: int) -> None:
 	attached = attached_document_codes(task)
 	missing = []
 	for code in required_codes:
-		if code not in attached:
-			label = frappe.db.get_value("Document Type", {"code": code}, "name") or code
-			missing.append(label)
+		if required_document_code_is_attached(code, attached):
+			continue
+		label = frappe.db.get_value("Document Type", {"code": code}, "name") or code
+		missing.append(label)
 
 	if missing:
 		frappe.throw(
@@ -1884,6 +1981,10 @@ def sync_task_permits_to_project(task) -> None:
 			prow.payment_receipt = trow.payment_receipt
 			prow.status = prow.status or "Receipt Submitted"
 
+		if is_finance_permit_payment and trow.get("invoice_verified"):
+			prow.invoice_verified = 1
+			if prow.status in (None, "", "Invoice Submitted"):
+				prow.status = "Invoice Verified"
 		if is_finance_permit_payment and task.get("custom_purchase_invoice"):
 			prow.purchase_invoice = task.custom_purchase_invoice
 			prow.invoice_verified = 1
@@ -1938,6 +2039,18 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 		)
 	]
 	if not missing and task.status != "Completed":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			handle_additional_permit_work_on_application,
+		)
+
+		result = handle_additional_permit_work_on_application(task)
+		if result and result.get("reopened"):
+			return {
+				"task": task.name,
+				"status": frappe.db.get_value("Task", task.name, "status"),
+				"missing_invoices": missing,
+				**result,
+			}
 		frappe.throw(
 			"Task is already open, or all permit rows already have the required attachments."
 		)
@@ -1952,7 +2065,17 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 	finally:
 		frappe.flags.cgm_reopening_task = False
 	sync_task_permits_to_project(task)
-	return {"task": task.name, "status": task.status, "missing_invoices": missing}
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		handle_additional_permit_work_on_application,
+	)
+
+	extra = handle_additional_permit_work_on_application(frappe.get_doc("Task", task.name)) or {}
+	return {
+		"task": task.name,
+		"status": frappe.db.get_value("Task", task.name, "status"),
+		"missing_invoices": missing,
+		**extra,
+	}
 
 
 # ==================== Finance document linking ====================
@@ -2041,7 +2164,7 @@ def create_journal_payment_from_task(
 	or payable being settled) and ``pay_from_account`` (Bank/Cash) is credited.
 	A Party is attached to whichever account is a Payable/Receivable account.
 	"""
-	from frappe.utils import flt, getdate, today
+	from frappe.utils import cint, flt, getdate, today
 
 	if not task_name or not frappe.db.exists("Task", task_name):
 		frappe.throw("Task not found.")
@@ -2093,6 +2216,11 @@ def create_journal_payment_from_task(
 		if permit_row.get("journal_entry"):
 			frappe.throw(
 				f"A Journal Entry is already linked for <b>{permit_row.permit_type}</b>."
+			)
+		if permit_row.get("payment_invoice") and not cint(permit_row.get("invoice_verified")):
+			frappe.throw(
+				f"Verify the <b>{permit_row.permit_type}</b> invoice first "
+				"(tick <b>Invoice Verified</b> or use <b>Verify Invoices</b>) before Make Payment."
 			)
 
 	remark = user_remark or f"{task.subject} ({task.name})"
@@ -2821,9 +2949,9 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 				sync_task_permits_to_project(task)
 				notify_declarant_upload_permit_receipts(task)
 				message = (
-					"Payment recorded. Declarant must upload payment receipts and permit "
-					"certificates on Apply for Pre-Clearance Permits; Finance must verify "
-					"receipts before completing this task."
+					"Payment recorded. Attach payment receipts on each Local permit row on this "
+					"finance task. Declarant will see them on the application task and attaches "
+					"permit certificates there."
 				)
 			elif is_entry_finance_payment_task(seq):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
@@ -2838,8 +2966,8 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 				sync_application_payment_hooks(task, entry_profile)
 				notify_declarant_upload_application_receipt(task, entry_profile)
 				message = (
-					"Payment recorded. Declarant must upload the Entry Slip receipt on "
-					"<b>Create Entry</b>; Finance verifies the receipt before completing this task."
+					"Payment recorded. Attach the <b>Entry Slip Receipt</b> on this finance task. "
+					"The declarant will see it on <b>Create Entry</b>."
 				)
 			else:
 				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -2850,8 +2978,8 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 				sync_ucr_payment_to_idf_record(task)
 				notify_operations_upload_ucr_receipt(task)
 				message = (
-					"Payment recorded. Declarant must upload the UCR payment receipt on "
-					"<b>Create UCR (IDF)</b>; Finance verifies the receipt before completing this task."
+					"Payment recorded. Attach the <b>UCR Receipt</b> on this finance task. "
+					"The declarant will see it on <b>Create UCR (IDF)</b>."
 				)
 		finally:
 			frappe.flags.cgm_skip_task_project_sync = False
@@ -3297,29 +3425,38 @@ def on_task_update(doc, _method=None):
 		check_task_container_completion(doc)
 		sync_client_paid_to_application_task(doc)
 
-	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status not in (
-		"Completed",
-		"Cancelled",
-	):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-			auto_submit_ucr_invoice_to_finance_if_needed,
-			handle_ucr_application_receipt_upload,
+	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status != "Cancelled":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			APPLICATION_FINANCE_PROFILES,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+			handle_additional_application_work_on_application,
 		)
 
-		auto_submit_ucr_invoice_to_finance_if_needed(doc)
-		# Keep Finance Purchase Item in sync after the first submit (item edits).
-		if doc.project:
+		# Even when Completed: new/changed UCR invoice reopens Finance.
+		handle_additional_application_work_on_application(
+			doc, APPLICATION_FINANCE_PROFILES["UCR Application"]
+		)
+		if doc.status not in ("Completed", "Cancelled"):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-				sync_ucr_invoice_to_finance_task,
+				auto_submit_ucr_invoice_to_finance_if_needed,
+				handle_ucr_application_receipt_upload,
 			)
 
-			sync_ucr_invoice_to_finance_task(doc.project)
-		handle_ucr_application_receipt_upload(doc)
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-			try_auto_complete_ucr_application_task,
-		)
+			auto_submit_ucr_invoice_to_finance_if_needed(doc)
+			# Keep Finance Purchase Item in sync after the first submit (item edits).
+			if doc.project:
+				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+					sync_ucr_invoice_to_finance_task,
+				)
 
-		try_auto_complete_ucr_application_task(doc)
+				sync_ucr_invoice_to_finance_task(doc.project)
+			handle_ucr_application_receipt_upload(doc)
+			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+				try_auto_complete_ucr_application_task,
+			)
+
+			try_auto_complete_ucr_application_task(doc)
 
 	if (
 		_is_sea_task(doc)
@@ -3327,19 +3464,19 @@ def on_task_update(doc, _method=None):
 		and doc.status not in ("Completed", "Cancelled")
 	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			handle_ucr_finance_receipt_upload,
 			try_auto_complete_ucr_finance_task,
 		)
 
+		handle_ucr_finance_receipt_upload(doc)
 		try_auto_complete_ucr_finance_task(doc)
 
-	if _is_sea_task(doc) and is_configured_application_workflow_task(seq) and doc.status not in (
-		"Completed",
-		"Cancelled",
-	):
+	if _is_sea_task(doc) and is_configured_application_workflow_task(seq) and doc.status != "Cancelled":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
 			process_application_workflow_on_update,
 		)
 
+		# Even when Completed: new/changed invoices reopen Finance for verify + pay.
 		process_application_workflow_on_update(doc)
 
 	if (
@@ -3349,21 +3486,25 @@ def on_task_update(doc, _method=None):
 		and not frappe.flags.get("cgm_permit_finance_completing")
 	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			handle_finance_permit_receipt_upload,
+			sync_permit_invoice_verification_to_application,
 			try_auto_complete_permit_finance_task,
 		)
 
+		handle_finance_permit_receipt_upload(doc)
+		sync_permit_invoice_verification_to_application(doc)
 		try_auto_complete_permit_finance_task(doc)
 
-	if (
-		_is_sea_task(doc)
-		and is_permit_application_task(seq)
-		and doc.status not in ("Completed", "Cancelled")
-	):
+	if _is_sea_task(doc) and is_permit_application_task(seq) and doc.status != "Cancelled":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			auto_submit_permit_invoices_to_finance_if_needed,
+			handle_additional_permit_work_on_application,
 		)
 
-		auto_submit_permit_invoices_to_finance_if_needed(doc)
+		# Even when Completed: new permits/invoices reopen finance for verify + pay.
+		handle_additional_permit_work_on_application(doc)
+		if doc.status not in ("Completed", "Cancelled"):
+			auto_submit_permit_invoices_to_finance_if_needed(doc)
 
 	if frappe.flags.get("cgm_skip_task_project_sync"):
 		return
