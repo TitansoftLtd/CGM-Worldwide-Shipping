@@ -476,6 +476,7 @@ def sync_application_purchase_item_to_finance(
 def copy_application_receipt_to_finance_task(
 	application_task, profile: ApplicationFinanceProfile
 ) -> str | None:
+	"""Copy legacy application-task receipt onto finance (open projects / old handoff)."""
 	if not is_application_task(int(application_task.get("custom_sequence_no") or 0), profile):
 		return None
 	if not application_task.project:
@@ -502,6 +503,9 @@ def copy_application_receipt_to_finance_task(
 			return None
 	if fin_rec.attachment == app_rec.attachment:
 		return finance_name
+	# Do not overwrite a receipt Finance already uploaded on the finance task.
+	if fin_rec.attachment:
+		return finance_name
 	updates = {"attachment": app_rec.attachment}
 	if app_rec.amount and not fin_rec.amount:
 		updates["amount"] = app_rec.amount
@@ -509,10 +513,91 @@ def copy_application_receipt_to_finance_task(
 	return finance_name
 
 
+def copy_finance_receipt_to_application_task(
+	finance_task, profile: ApplicationFinanceProfile
+) -> str | None:
+	"""Mirror Finance-uploaded receipt onto the application task so Declarant can view it."""
+	if not is_application_finance_task(int(finance_task.get("custom_sequence_no") or 0), profile):
+		return None
+	if not finance_task.project:
+		return None
+	fin_rec = get_receipt_line(finance_task, profile)
+	if not fin_rec or not fin_rec.attachment:
+		return None
+	app_name = get_application_task(finance_task.project, profile)
+	if not app_name:
+		return None
+	app = frappe.get_doc("Task", app_name)
+	seed_application_finance_lines(app, profile)
+	app_rec = get_receipt_line(app, profile)
+	if not app_rec:
+		return None
+	if not app_rec.name:
+		frappe.flags.cgm_syncing_application_receipt = True
+		try:
+			app.save(ignore_permissions=True)
+		finally:
+			frappe.flags.cgm_syncing_application_receipt = False
+		app_rec = get_receipt_line(frappe.get_doc("Task", app_name), profile)
+		if not app_rec:
+			return None
+
+	updates = {"attachment": fin_rec.attachment}
+	if fin_rec.amount:
+		updates["amount"] = fin_rec.amount
+	# Mirror verification when Finance marks / auto-stamps the receipt.
+	if cint(fin_rec.verified):
+		updates["verified"] = 1
+		if fin_rec.verified_by:
+			updates["verified_by"] = fin_rec.verified_by
+		if fin_rec.verified_on:
+			updates["verified_on"] = fin_rec.verified_on
+	needs_update = any(app_rec.get(k) != v for k, v in updates.items())
+	if needs_update:
+		frappe.db.set_value("Task Finance Line", app_rec.name, updates, update_modified=False)
+		if (
+			profile.application_receipt_verified_field
+			and cint(fin_rec.verified)
+			and frappe.get_meta("Task").has_field(profile.application_receipt_verified_field)
+		):
+			frappe.db.set_value(
+				"Task",
+				app_name,
+				profile.application_receipt_verified_field,
+				1,
+				update_modified=False,
+			)
+		frappe.clear_document_cache("Task", app_name)
+		frappe.publish_realtime(
+			"cgm_task_status_changed",
+			{"task": app_name, "project": finance_task.project, "receipt_synced": 1},
+		)
+	return app_name
+
+
+def ensure_finance_receipt_visible_on_application_task(
+	application_task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""On application open: pull Finance receipt if Declarant does not have it yet."""
+	if not is_application_task(int(application_task.get("custom_sequence_no") or 0), profile):
+		return False
+	if not application_task.project:
+		return False
+	if receipt_attached(application_task, profile):
+		return True
+	finance_name = get_application_finance_task(application_task.project, profile)
+	if not finance_name:
+		return False
+	finance_task = frappe.get_doc("Task", finance_name)
+	if not receipt_attached(finance_task, profile):
+		return False
+	return bool(copy_finance_receipt_to_application_task(finance_task, profile))
+
+
 def ensure_application_receipt_on_finance_task(
 	finance_task, profile: ApplicationFinanceProfile
 ) -> bool:
-	"""Copy the application-task receipt onto the finance task when missing."""
+	"""Ensure finance has a receipt: prefer local, else copy legacy app receipt."""
 	seq = int(finance_task.get("custom_sequence_no") or 0)
 	if not is_application_finance_task(seq, profile):
 		return False
@@ -850,8 +935,8 @@ def can_complete_application_task(
 		return False
 	if not invoice_verified_for_application_task(task, profile, finance_task):
 		return False
-	if not receipt_attached(task, profile):
-		return False
+	# Receipts are uploaded by Finance on the finance task; application owns
+	# invoice + certificate only.
 	return certificate_uploaded(task, profile)
 
 
@@ -876,11 +961,7 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 	# JE / submitted PE required for the normal CGM-paid path.
 	if not task_has_recorded_payment(task):
 		return False
-	rec_ok = receipt_verified(task, profile)
-	if profile.application_receipt_verified_field:
-		rec_ok = rec_ok or bool(task.get(profile.application_receipt_verified_field))
-	if not rec_ok:
-		return False
+	# Finance uploads the receipt (no separate verify step). Invoice verify + payment + receipt.
 	if not receipt_attached_for_payment_workflow(task, profile):
 		return False
 	return True
@@ -927,6 +1008,13 @@ def normalize_application_finance_verification(task, profile: ApplicationFinance
 	seq = int(task.get("custom_sequence_no") or 0)
 	if not is_application_workflow_task(seq, profile):
 		return
+	# Finance upload of the receipt is confirmation — auto-stamp verified.
+	if is_application_finance_task(seq, profile):
+		rec = get_receipt_line(task, profile)
+		if rec and rec.attachment and not cint(rec.verified):
+			rec.verified = 1
+			rec.verified_by = rec.verified_by or frappe.session.user
+			rec.verified_on = rec.verified_on or now_datetime()
 	for row in task.get(TASK_FINANCE_FIELD) or []:
 		if (row.payment_item or profile.payment_item) != profile.payment_item:
 			continue
@@ -961,7 +1049,6 @@ def enforce_application_finance_line_permissions(
 	task, profile: ApplicationFinanceProfile
 ) -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		user_has_department_for_sequence,
 		user_has_finance_department_access,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import _finance_line_verified_changed
@@ -976,7 +1063,6 @@ def enforce_application_finance_line_permissions(
 	if not is_application_workflow_task(seq, profile) or not task_has_finance_table(task):
 		return
 	is_finance = user_has_finance_department_access()
-	can_attach_receipt = user_has_department_for_sequence(frappe.session.user, seq)
 	for row in task.get(TASK_FINANCE_FIELD) or []:
 		if (row.payment_item or profile.payment_item) != profile.payment_item:
 			continue
@@ -991,28 +1077,27 @@ def enforce_application_finance_line_permissions(
 				frappe.throw(
 					f"<b>{row.line_label or 'Finance line'}</b> is verified by Finance and cannot be changed here."
 				)
-		if row.line_type == LINE_RECEIPT and is_application_task(seq, profile) and row.attachment:
-			if not can_attach_receipt:
+		if row.line_type != LINE_RECEIPT or not row.attachment:
+			continue
+		prev = task.get_doc_before_save()
+		prev_rec = get_receipt_line(prev, profile) if prev else None
+		prev_attachment = prev_rec.attachment if prev_rec else None
+		# Keep existing attachments (open projects that used the old handoff).
+		if row.attachment == prev_attachment:
+			continue
+		if is_application_task(seq, profile):
+			frappe.throw(
+				f"Finance uploads the <b>{profile.receipt_label}</b> on the finance payment task "
+				"after recording payment. Attach only the invoice (and certificate) here."
+			)
+		if is_application_finance_task(seq, profile):
+			if not is_finance:
 				frappe.throw(
-					f"Only <b>Declarant</b> or <b>Operations</b> can attach <b>{row.line_label}</b>."
+					f"Only <b>Finance</b> can attach the <b>{profile.receipt_label}</b>."
 				)
 			if task.project and not application_payment_made_for_project(task.project, profile):
 				frappe.throw(
-					f"Finance must record payment before uploading the <b>{profile.receipt_label}</b>."
-				)
-		if (
-			row.line_type == LINE_RECEIPT
-			and is_application_finance_task(seq, profile)
-			and row.attachment
-			and not frappe.flags.get("cgm_syncing_application_receipt")
-		):
-			prev = task.get_doc_before_save()
-			prev_rec = get_receipt_line(prev, profile) if prev else None
-			prev_attachment = prev_rec.attachment if prev_rec else None
-			if row.attachment != prev_attachment:
-				frappe.throw(
-					f"Declarant uploads the <b>{profile.receipt_label}</b> on the application task. "
-					"Finance verifies it here."
+					f"Record payment before uploading the <b>{profile.receipt_label}</b>."
 				)
 
 

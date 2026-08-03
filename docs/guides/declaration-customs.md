@@ -25,7 +25,7 @@ For **Declaration** teams handling UCR, permits, customs entry, and regulatory d
 | 10 | Create Entry | After vessel arrival confirmation |
 | 15 | Prepare Post-Clearance Permits | After DO lodged |
 
-Finance pays on tasks **4, 6, 11, 16** (not your submit, but you upload receipts). See [Finance Guide](finance.md).
+Finance pays on tasks **4, 6, 11, 16**. You upload invoices (and certificates); Finance uploads payment receipts after paying. See [Finance Guide](finance.md).
 
 ---
 
@@ -33,11 +33,10 @@ Finance pays on tasks **4, 6, 11, 16** (not your submit, but you upload receipts
 
 ```
 Task 3: Create UCR (IDF)
-  → Attach UCR application / certificate documents on Task
+  → Attach UCR invoice on Task; attach IDF certificate when issued
   → Finance notified (UCR Invoice to Finance)
 Task 4: Finance pays UCR
-  → Upload payment receipt
-  → Finance verifies
+  → Finance records payment, uploads payment receipt, and verifies
   → Project may advance to UCR Paid
 ```
 

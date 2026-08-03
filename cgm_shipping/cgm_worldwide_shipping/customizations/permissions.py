@@ -260,8 +260,7 @@ def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool
 	)
 
 	if is_kpa_application_task(sequence_no):
-		# KPA receipt is on the Operations supervisor task; Declarant roles are also allowed
-		# (error message: "Only Declarant or Operations can attach KPA Receipt").
+		# KPA application task: Operations/Declarant attach the invoice (receipt is Finance-owned).
 		return (
 			user_has_operations_department_access(user)
 			or user_has_declarant_department_access(user)

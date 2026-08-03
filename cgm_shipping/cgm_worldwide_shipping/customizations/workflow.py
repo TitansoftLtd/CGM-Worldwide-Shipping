@@ -58,7 +58,7 @@ def get_sea_import_workflow_states() -> list[str]:
 # ============================================================
 
 """Permit invoice → Finance → Payment → Declarant receipt → Finance verify → Complete."""
-from frappe.utils import now_datetime
+from frappe.utils import cint, get_url, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 	PERMIT_INVOICES_TO_FINANCE,
@@ -317,7 +317,7 @@ def task_uses_permit_payment_pattern(task) -> bool:
 
 
 def validate_permit_finance_task_completion(task) -> None:
-	"""Each permit row needs its own journal entry and verified receipt before completion."""
+	"""Each permit row needs its own journal entry and payment receipt before completion."""
 	if not is_permit_finance_task_doc(task):
 		return
 	if task_client_paid_directly(task):
@@ -331,13 +331,11 @@ def validate_permit_finance_task_completion(task) -> None:
 			"Record a <b>Journal Entry</b> for each permit before completing. Missing: "
 			f"<b>{', '.join(missing_je)}</b>."
 		)
-	unverified = [
-		r.permit_type for r in rows if not r.get("receipt_verified") or not r.get("payment_receipt")
-	]
-	if unverified:
+	missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
+	if missing_receipts:
 		frappe.throw(
-			"Each permit needs a <b>Payment Receipt</b> and <b>Receipt Verified</b> before completing. "
-			f"Pending: <b>{', '.join(unverified)}</b>."
+			"Attach a <b>Payment Receipt</b> for each permit before completing. "
+			f"Missing: <b>{', '.join(missing_receipts)}</b>."
 		)
 
 
@@ -364,6 +362,7 @@ def build_permit_row_payload(row) -> dict:
 		"stage": row.get("stage") or PRE_CLEARANCE_STAGE,
 		"payment_invoice": row.get("payment_invoice"),
 		"invoice_amount": row.get("invoice_amount"),
+		"invoice_verified": row.get("invoice_verified"),
 		"journal_entry": row.get("journal_entry"),
 		"payment_receipt": row.get("payment_receipt"),
 		"permit_document": row.get("permit_document"),
@@ -387,6 +386,7 @@ def get_application_permit_rows(application_task_name: str) -> list[dict]:
 			"stage",
 			"payment_invoice",
 			"invoice_amount",
+			"invoice_verified",
 			"journal_entry",
 			"payment_receipt",
 			"permit_document",
@@ -447,6 +447,78 @@ def seed_finance_permit_rows_from_project(finance_task, *, save: bool = True) ->
 		finally:
 			frappe.flags.cgm_syncing_permit_finance_rows = False
 	return added
+
+
+def sync_permit_receipts_to_application_task(finance_task) -> bool:
+	"""Mirror Finance-uploaded permit receipts onto the application task for Declarant."""
+	if not is_permit_finance_task_doc(finance_task) or not finance_task.project:
+		return False
+	app_name = get_permit_application_task_for_finance(finance_task)
+	if not app_name:
+		return False
+	app = frappe.get_doc("Task", app_name)
+	if not app.meta.has_field(TASK_PERMITS_FIELD):
+		return False
+	fin_by_type = {
+		r.permit_type: r
+		for r in (finance_task.get(TASK_PERMITS_FIELD) or [])
+		if r.get("permit_type") and r.get("payment_receipt")
+	}
+	if not fin_by_type:
+		return False
+	changed = False
+	for row in app.get(TASK_PERMITS_FIELD) or []:
+		fin_row = fin_by_type.get(row.permit_type)
+		if not fin_row:
+			continue
+		if row.get("payment_receipt") != fin_row.payment_receipt:
+			row.payment_receipt = fin_row.payment_receipt
+			changed = True
+		if cint(fin_row.get("receipt_verified")) and not cint(row.get("receipt_verified")):
+			row.receipt_verified = 1
+			changed = True
+	if not changed:
+		return False
+	frappe.flags.cgm_syncing_permit_finance_rows = True
+	try:
+		app.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_permit_finance_rows = False
+	frappe.publish_realtime(
+		"cgm_task_status_changed",
+		{"task": app_name, "project": finance_task.project, "receipt_synced": 1},
+	)
+	return True
+
+
+def stamp_finance_permit_receipts_on_upload(task) -> bool:
+	"""Finance upload of a permit receipt is confirmation — auto-stamp verified."""
+	if not is_permit_finance_task_doc(task):
+		return False
+	changed = False
+	for row in task.get(TASK_PERMITS_FIELD) or []:
+		if row.get("payment_receipt") and not cint(row.get("receipt_verified")):
+			row.receipt_verified = 1
+			changed = True
+	return changed
+
+
+def handle_finance_permit_receipt_upload(finance_task) -> None:
+	"""After Finance attaches permit receipts: stamp verified + show on application task."""
+	if not is_permit_finance_task_doc(finance_task):
+		return
+	stamped = stamp_finance_permit_receipts_on_upload(finance_task)
+	if stamped and not frappe.flags.get("cgm_syncing_permit_finance_rows"):
+		# Persist stamp without re-entering sync loops.
+		for row in finance_task.get(TASK_PERMITS_FIELD) or []:
+			if row.name and row.get("payment_receipt") and cint(row.get("receipt_verified")):
+				frappe.db.set_value(
+					"Permit Register",
+					row.name,
+					{"receipt_verified": 1},
+					update_modified=False,
+				)
+	sync_permit_receipts_to_application_task(finance_task)
 
 
 def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> bool:
@@ -583,6 +655,132 @@ def prepare_finance_permit_task(application_task) -> str | None:
 	finance_task = frappe.get_doc("Task", finance_name)
 	sync_permit_invoices_to_finance_task(finance_task, save=True)
 	return finance_name
+
+
+def _reopen_sea_task(task, *, reason: str | None = None) -> bool:
+	"""Set a completed sea task back to Open so additional work can continue."""
+	if not task or task.status != "Completed":
+		return False
+	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_permit_finance_completing"):
+		return False
+	values = {
+		"status": "Open",
+		"progress": 0,
+		"completed_by": None,
+		"completed_on": None,
+	}
+	frappe.db.set_value("Task", task.name, values, update_modified=True)
+	for field, value in values.items():
+		task.set(field, value)
+	frappe.clear_document_cache("Task", task.name)
+	frappe.publish_realtime(
+		"cgm_task_status_changed",
+		{
+			"task": task.name,
+			"status": "Open",
+			"project": task.project,
+			"reopened": 1,
+			"reason": reason or "",
+		},
+	)
+	return True
+
+
+def permit_finance_rows_needing_work(finance_task) -> list:
+	"""Local permit rows that still need invoice verify, payment, or receipt."""
+	pending = []
+	for row in permit_finance_rows(finance_task):
+		if not row.get("payment_invoice"):
+			continue
+		if (
+			not cint(row.get("invoice_verified"))
+			or not row.get("journal_entry")
+			or not row.get("payment_receipt")
+		):
+			pending.append(row)
+	return pending
+
+
+def handle_additional_permit_work_on_application(application_task) -> dict | None:
+	"""When Declarant adds more permit invoices (even after completion), reopen finance.
+
+	Also reopens the application task so certificates / further permits can continue.
+	"""
+	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_permit_finance_completing"):
+		return None
+	if not is_permit_application_task_doc(application_task) or not application_task.project:
+		return None
+
+	finance_name = get_finance_permit_task_name(
+		application_task.project, task_sequence(application_task)
+	)
+	if not finance_name:
+		return None
+
+	finance_task = frappe.get_doc("Task", finance_name)
+	sync_permit_invoices_to_finance_task(finance_task, save=True)
+	finance_task.reload()
+
+	pending = permit_finance_rows_needing_work(finance_task)
+	if not pending:
+		return None
+
+	reopened: list[str] = []
+	frappe.flags.cgm_reopening_task = True
+	try:
+		if _reopen_sea_task(
+			finance_task,
+			reason="Additional permit invoices need verification and payment",
+		):
+			reopened.append(finance_name)
+			finance_task.reload()
+		if application_task.status == "Completed" and _reopen_sea_task(
+			application_task,
+			reason="Additional permits / documents added after prior completion",
+		):
+			reopened.append(application_task.name)
+			application_task.status = "Open"
+			application_task.progress = 0
+			application_task.completed_by = None
+			application_task.completed_on = None
+	finally:
+		frappe.flags.cgm_reopening_task = False
+
+	unverified = [
+		r.permit_type for r in pending if r.permit_type and not cint(r.get("invoice_verified"))
+	]
+	notify_result = {"notified": 0}
+	if unverified:
+		notify_result = send_notification(
+			PERMIT_INVOICES_TO_FINANCE,
+			finance_task,
+			audience=FINANCE_AUDIENCE,
+		)
+		if application_task.meta.has_field("custom_permit_invoices_submitted"):
+			frappe.db.set_value(
+				"Task",
+				application_task.name,
+				"custom_permit_invoices_submitted",
+				1,
+				update_modified=False,
+			)
+			application_task.custom_permit_invoices_submitted = 1
+
+	return {
+		"reopened": reopened,
+		"pending_permits": [r.permit_type for r in pending if r.permit_type],
+		"finance_task": finance_name,
+		"finance_task_url": get_url(f"/app/task/{finance_name}"),
+		**notify_result,
+		"message": workflow_notify_message(
+			(
+				f"Additional permit work reopened <b>{', '.join(reopened) or finance_name}</b>. "
+				f"Pending: <b>{', '.join(r.permit_type for r in pending if r.permit_type)}</b>."
+			),
+			notify_result,
+			audience=FINANCE_AUDIENCE,
+		),
+	}
 
 
 # ------------------------------------------------------------------
@@ -740,30 +938,25 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 	return _notify_finance_for_permit_invoices(task)
 
 
-def notify_declarant_upload_permit_receipts(task) -> dict:
-	if not is_permit_finance_task_doc(task):
+def notify_finance_upload_permit_receipts(task) -> dict:
+	"""After payment: prompt Finance to attach permit receipts on this finance task."""
+	if not is_permit_finance_payment_task(task_sequence(task)):
 		return {"notified": 0}
-	if not task_has_recorded_payment(task) or not task.project:
+	if not task_has_recorded_payment(task):
 		return {"notified": 0}
-
-	app_name = get_permit_application_task_for_finance(task)
-	if not app_name:
-		return {"notified": 0}
-	app_task = frappe.get_doc("Task", app_name)
-
-	result = send_notification(
-		PERMIT_RECEIPTS_FOR_DECLARANT,
-		app_task,
-		audience=DECLARANT_AUDIENCE,
-	)
 	return {
-		**result,
-		"message": workflow_notify_message(
-			"Declarant notified to upload permit receipts and certificates.",
-			result,
-			audience=DECLARANT_AUDIENCE,
+		"notified": 0,
+		"task": task.name,
+		"task_url": get_url(f"/app/task/{task.name}"),
+		"message": (
+			"Payment recorded. Attach <b>Payment Receipt</b> on each Local permit row on this "
+			"finance task. The declarant will see receipts on the application task automatically."
 		),
 	}
+
+
+# Backward-compatible alias — receipt upload is now Finance-owned.
+notify_declarant_upload_permit_receipts = notify_finance_upload_permit_receipts
 
 
 def notify_finance_verify_receipts_for_task(task) -> dict:
@@ -909,10 +1102,34 @@ def validate_permit_application_can_complete(task) -> None:
 	missing_receipts = [
 		r.permit_type for r in payable if r.permit_type and not r.get("payment_receipt")
 	]
+	# Receipts are uploaded by Finance on the finance task. Accept legacy
+	# receipts still sitting on the application task for open projects.
+	if missing_receipts and task.project:
+		fin_seq = get_permit_finance_sequence_for_application(seq)
+		fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq else None
+		if fin_name:
+			fin_task = frappe.get_doc("Task", fin_name)
+			fin_by_type = {
+				r.permit_type: r
+				for r in (fin_task.get(TASK_PERMITS_FIELD) or [])
+				if r.get("permit_type")
+			}
+			missing_receipts = [
+				pt
+				for pt in missing_receipts
+				if not (fin_by_type.get(pt) and fin_by_type[pt].get("payment_receipt"))
+			]
 	if missing_receipts:
+		fin_seq = get_permit_finance_sequence_for_application(seq)
+		fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq and task.project else None
+		fin_label = (
+			frappe.db.get_value("Task", fin_name, "subject")
+			if fin_name
+			else "Finance permit payment"
+		)
 		frappe.throw(
-			"Upload <b>Payment Receipt</b> for each Local permit. Missing: "
-			f"<b>{', '.join(missing_receipts)}</b>."
+			f"Finance must upload <b>Payment Receipt</b> on <b>{fin_label}</b> for each Local permit. "
+			f"Missing: <b>{', '.join(missing_receipts)}</b>."
 		)
 
 	missing_certs = [r.permit_type for r in rows if r.permit_type and not r.get("permit_document")]
@@ -948,6 +1165,11 @@ def enforce_receipt_verified_permission(task) -> None:
 					"Only <b>Finance</b> can mark <b>Receipt Verified</b>. "
 					"Use the paired finance permit payment task."
 				)
+			if _permit_invoice_verified_changed(task, row):
+				frappe.throw(
+					"Only <b>Finance</b> can mark <b>Invoice Verified</b>. "
+					"Use the paired finance permit payment task."
+				)
 		return
 	if not is_permit_finance_task_doc(task):
 		return
@@ -956,6 +1178,25 @@ def enforce_receipt_verified_permission(task) -> None:
 	for row in task.get(TASK_PERMITS_FIELD) or []:
 		if row.get("receipt_verified"):
 			frappe.throw("Only <b>Finance</b> can mark <b>Receipt Verified</b> on permit rows.")
+		if _permit_invoice_verified_changed(task, row):
+			frappe.throw("Only <b>Finance</b> can mark <b>Invoice Verified</b> on permit rows.")
+
+
+def _permit_invoice_verified_changed(task, row) -> bool:
+	"""True when Invoice Verified was newly ticked on this save."""
+	if not cint(row.get("invoice_verified")):
+		return False
+	prev = task.get_doc_before_save()
+	if not prev:
+		return True
+	prev_row = None
+	for candidate in prev.get(TASK_PERMITS_FIELD) or []:
+		if candidate.name == row.name or (
+			candidate.get("permit_type") and candidate.permit_type == row.get("permit_type")
+		):
+			prev_row = candidate
+			break
+	return not cint(prev_row.get("invoice_verified") if prev_row else 0)
 
 
 # ------------------------------------------------------------------
@@ -979,10 +1220,7 @@ def can_complete_finance_permit_task(task) -> bool:
 	)
 
 	return all(
-		r.get(PERMIT_JOURNAL_ENTRY_FIELD)
-		and r.get("payment_receipt")
-		and r.get("receipt_verified")
-		for r in rows
+		r.get(PERMIT_JOURNAL_ENTRY_FIELD) and r.get("payment_receipt") for r in rows
 	)
 
 
@@ -1085,8 +1323,14 @@ def close_permit_application_when_finance_done(task) -> None:
 		return
 	if frappe.db.get_value("Task", app_name, "status") == "Completed":
 		return
+	# Do not force-complete while Local permits still lack certificates / receipts,
+	# or while Finance still has unpaid rows (should not happen when finance is Completed).
 	app = frappe.get_doc("Task", app_name)
 	merge_project_permits_into_application_task(app)
+	try:
+		validate_permit_application_can_complete(app)
+	except frappe.ValidationError:
+		return
 	frappe.db.set_value(
 		"Task",
 		app_name,
@@ -1103,6 +1347,110 @@ def close_permit_application_when_finance_done(task) -> None:
 		update_modified=True,
 	)
 	frappe.clear_document_cache("Task", app_name)
+
+
+@frappe.whitelist()
+def verify_all_permit_invoices(task_name: str) -> dict:
+	"""Finance: mark all Local permit invoices verified on the finance payment task."""
+	if not task_name or not frappe.db.exists("Task", task_name):
+		frappe.throw("Task not found.")
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	if not user_has_finance_department_access() and frappe.session.user != "Administrator":
+		frappe.throw("Only <b>Finance</b> can verify permit invoices.")
+
+	task = frappe.get_doc("Task", task_name)
+	if not is_permit_finance_task_doc(task):
+		frappe.throw("This action is only for permit finance payment tasks.")
+
+	sync_permit_invoices_to_finance_task(task, save=True)
+	task.reload()
+
+	rows = permit_finance_rows(task)
+	if not rows:
+		frappe.throw(
+			"No Local permit invoices to verify on this task (Foreign permits skip payment)."
+		)
+
+	missing_invoices = [r.permit_type for r in rows if not r.get("payment_invoice")]
+	if missing_invoices:
+		frappe.throw(
+			"Declarant must attach <b>Permit Invoice</b> first. Missing: "
+			f"<b>{', '.join(missing_invoices)}</b>."
+		)
+
+	verified = 0
+	for row in rows:
+		if not cint(row.get("invoice_verified")):
+			frappe.db.set_value(
+				"Permit Register",
+				row.name,
+				{"invoice_verified": 1, "status": "Invoice Verified"},
+				update_modified=False,
+			)
+			verified += 1
+		elif row.name:
+			frappe.db.set_value(
+				"Permit Register",
+				row.name,
+				{"status": "Invoice Verified"},
+				update_modified=False,
+			)
+
+	task.reload()
+	sync_permit_invoice_verification_to_application(task)
+	sync_task_permits_to_project(task)
+
+	return {
+		"task": task.name,
+		"verified": verified,
+		"message": (
+			f"Verified <b>{verified}</b> permit invoice(s). You can now use <b>Make Payment</b>."
+			if verified
+			else "All permit invoices are already verified. You can use <b>Make Payment</b>."
+		),
+	}
+
+
+def sync_permit_invoice_verification_to_application(finance_task) -> bool:
+	"""Mirror Finance invoice_verified onto the application task for Declarant visibility."""
+	if not is_permit_finance_task_doc(finance_task) or not finance_task.project:
+		return False
+	app_name = get_permit_application_task_for_finance(finance_task)
+	if not app_name:
+		return False
+	app = frappe.get_doc("Task", app_name)
+	if not app.meta.has_field(TASK_PERMITS_FIELD):
+		return False
+	fin_by_type = {
+		r.permit_type: r
+		for r in (finance_task.get(TASK_PERMITS_FIELD) or [])
+		if r.get("permit_type") and cint(r.get("invoice_verified"))
+	}
+	if not fin_by_type:
+		return False
+	changed = False
+	for row in app.get(TASK_PERMITS_FIELD) or []:
+		fin_row = fin_by_type.get(row.permit_type)
+		if not fin_row:
+			continue
+		if not cint(row.get("invoice_verified")):
+			row.invoice_verified = 1
+			changed = True
+		if row.get("status") in (None, "", "Invoice Submitted"):
+			row.status = "Invoice Verified"
+			changed = True
+	if not changed:
+		return False
+	frappe.flags.cgm_syncing_permit_finance_rows = True
+	try:
+		app.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_permit_finance_rows = False
+	frappe.publish_realtime(
+		"cgm_task_status_changed",
+		{"task": app_name, "project": finance_task.project},
+	)
+	return True
 
 
 @frappe.whitelist()
@@ -1145,10 +1493,8 @@ def verify_all_permit_receipts(task_name: str) -> dict:
 
 	missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
 	if missing_receipts:
-		app_name = get_permit_application_task_for_finance(task)
-		app_label = frappe.db.get_value("Task", app_name, "subject") if app_name else "permit application"
 		frappe.throw(
-			f"Declarant must upload <b>Payment Receipt</b> on <b>{app_label}</b> first. Missing: "
+			"Finance must upload <b>Payment Receipt</b> on this finance task first. Missing: "
 			f"<b>{', '.join(missing_receipts)}</b>."
 		)
 
@@ -1387,8 +1733,8 @@ def can_complete_ucr_create_task(task, finance_task=None) -> bool:
 		return False
 	if not ucr_invoice_verified_for_create_task(task, finance_task):
 		return False
-	if not ucr_receipt_attached(task):
-		return False
+	# Receipts are uploaded by Finance on Finance pays UCR; Create UCR owns
+	# invoice + IDF certificate only.
 	return idf_certificate_uploaded(task)
 
 
@@ -1404,9 +1750,7 @@ def can_complete_ucr_payment_task(task) -> bool:
 	if not inv_ok:
 		return False
 
-	rec_ok = ucr_receipt_verified(task) or task.get("custom_ucr_receipt_verified")
-	if not rec_ok:
-		return False
+	# Finance upload of the receipt is confirmation — no separate verify step.
 	return ucr_receipt_attached_for_payment_workflow(task)
 
 
@@ -1564,41 +1908,38 @@ def submit_ucr_invoice_to_finance(task_name: str) -> dict:
 	return _notify_finance_for_ucr_invoice(task)
 
 
-def notify_declarant_upload_ucr_receipt(task) -> dict:
+def notify_finance_upload_ucr_receipt(task) -> dict:
+	"""After payment: prompt Finance to attach the UCR receipt on this finance task."""
 	if not is_ucr_payment_task_doc(task):
 		return {"notified": 0}
-	if not task_has_recorded_payment(task) or not task.project:
+	if not task_has_recorded_payment(task):
 		return {"notified": 0}
 
-	app_name = get_ucr_create_task(task.project)
-	if not app_name:
-		return {"notified": 0}
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import seed_ucr_finance_lines
 
-	app = frappe.get_doc("Task", app_name)
-	seed_ucr_finance_lines(app)
+	seed_ucr_finance_lines(task)
 	try:
-		app.save(ignore_permissions=True)
+		task.save(ignore_permissions=True)
 	except Exception:
 		frappe.log_error(
 			title="UCR receipt seeding failed",
-			message=f"Could not seed UCR finance lines on {app_name}: {frappe.get_traceback()}",
+			message=f"Could not seed UCR finance lines on {task.name}: {frappe.get_traceback()}",
 		)
 
-	result = send_notification(
-		UCR_RECEIPT_FOR_DECLARANT,
-		app,
-		audience=DECLARANT_AUDIENCE,
-	)
 	return {
-		**result,
-		"application_task": app_name,
-		"application_task_url": get_url(f"/app/task/{app_name}"),
-		"message": workflow_notify_message(
-			"Declarant notified to upload the UCR payment receipt on Create UCR (IDF).",
-			result,
-			audience=DECLARANT_AUDIENCE,
+		"notified": 0,
+		"task": task.name,
+		"task_url": get_url(f"/app/task/{task.name}"),
+		"message": (
+			"Payment recorded. Attach the <b>UCR Receipt</b> on this finance task. "
+			"The declarant will see it on Create UCR (IDF) automatically."
 		),
 	}
+
+
+# Backward-compatible aliases — receipt upload is now Finance-owned.
+notify_declarant_upload_ucr_receipt = notify_finance_upload_ucr_receipt
+notify_operations_upload_ucr_receipt = notify_finance_upload_ucr_receipt
 
 
 def notify_finance_verify_ucr_receipt_for_task(task) -> dict:
@@ -1631,6 +1972,7 @@ def notify_finance_verify_ucr_receipt(task_name: str) -> dict:
 
 
 def handle_ucr_application_receipt_upload(application_task) -> dict | None:
+	"""Legacy path: sync an existing Create UCR receipt onto Finance pays UCR."""
 	if not is_ucr_create_task(application_task) or not application_task.project:
 		return None
 
@@ -1657,6 +1999,55 @@ def handle_ucr_application_receipt_upload(application_task) -> dict | None:
 	return notify_finance_verify_ucr_receipt_for_task(finance_task)
 
 
+def handle_ucr_finance_receipt_upload(finance_task) -> dict | None:
+	"""When Finance attaches a UCR receipt: auto-confirm, mirror to Declarant, sync IDF."""
+	if not is_ucr_payment_task_doc(finance_task) or not finance_task.project:
+		return None
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		copy_ucr_receipt_to_application_task,
+		get_ucr_receipt_line,
+	)
+	from frappe.utils import cint
+
+	fin_rec = get_ucr_receipt_line(finance_task)
+	if not fin_rec or not fin_rec.attachment:
+		return None
+
+	prev = finance_task.get_doc_before_save()
+	prev_rec = get_ucr_receipt_line(prev) if prev else None
+	attachment_changed = not (prev_rec and prev_rec.attachment == fin_rec.attachment)
+
+	# Upload itself confirms the receipt — no separate verify step.
+	if fin_rec.name and not cint(fin_rec.verified):
+		frappe.db.set_value(
+			"Task Finance Line",
+			fin_rec.name,
+			{
+				"verified": 1,
+				"verified_by": frappe.session.user,
+				"verified_on": now_datetime(),
+			},
+			update_modified=False,
+		)
+		if finance_task.meta.has_field("custom_ucr_receipt_verified"):
+			frappe.db.set_value(
+				"Task", finance_task.name, "custom_ucr_receipt_verified", 1, update_modified=False
+			)
+		finance_task.reload()
+
+	copy_ucr_receipt_to_application_task(finance_task)
+	sync_ucr_finance_lines_to_idf_record(finance_task)
+	if attachment_changed:
+		app_name = get_ucr_create_task(finance_task.project)
+		if app_name:
+			frappe.publish_realtime(
+				"cgm_task_status_changed",
+				{"task": app_name, "project": finance_task.project, "receipt_synced": 1},
+			)
+	return None
+
+
 # ------------------------------------------------------------------
 # Validation
 # ------------------------------------------------------------------
@@ -1670,9 +2061,10 @@ def validate_ucr_application_not_manually_completed(task) -> None:
 	if task.status == "Completed" and can_complete_ucr_create_task(task):
 		return
 	frappe.throw(
-		"Complete this task by attaching a verified <b>UCR Invoice</b>, the supplier "
-		"<b>UCR Receipt</b>, and the <b>IDF/UCR certificate</b> on this form. "
-		"The task will mark itself <b>Completed</b> automatically when all three are in place."
+		"Complete this task by attaching a verified <b>UCR Invoice</b> and the "
+		"<b>IDF/UCR certificate</b> on this form. Finance uploads the <b>UCR Receipt</b> "
+		"after payment. The task will mark itself <b>Completed</b> automatically when "
+		"requirements are in place."
 	)
 
 
@@ -1711,13 +2103,12 @@ def validate_finance_ucr_payment_task(task) -> None:
 			frappe.throw("Payment Entry must be <b>submitted</b> before completing this task.")
 
 	if not (ucr_receipt_attached(task) or task.get("custom_ucr_payment_receipt")):
-		frappe.throw(
-			"The declarant must attach the <b>UCR Receipt</b> on <b>Create UCR (IDF)</b> before completion."
-		)
-	if not (ucr_receipt_verified(task) or task.get("custom_ucr_receipt_verified")):
-		frappe.throw(
-			"Finance must tick <b>Verified by Finance</b> on the <b>UCR Receipt</b> row."
-		)
+		# Still accept a legacy receipt mirrored from Create UCR.
+		if not ucr_receipt_attached_for_payment_workflow(task):
+			frappe.throw(
+				"Finance must attach the <b>UCR Receipt</b> on this finance task "
+				"after recording payment, before completion."
+			)
 
 
 def enforce_ucr_finance_field_permissions(task) -> None:

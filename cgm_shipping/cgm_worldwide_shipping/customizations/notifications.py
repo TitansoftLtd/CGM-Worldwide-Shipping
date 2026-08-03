@@ -14,7 +14,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	UCR_RECEIPT_VERIFY_FINANCE,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-	user_has_declarant_department_access,
 	user_has_finance_department_access,
 )
 
@@ -34,7 +33,7 @@ def get_task_form_permissions() -> dict[str, bool]:
 
 	return {
 		"can_make_payment": can_finance,
-		"can_upload_receipt": user_has_declarant_department_access(user),
+		"can_upload_receipt": can_finance,
 		"can_record_purchase_invoice": can_finance
 		or frappe.has_permission("Purchase Invoice", ptype="create"),
 	}

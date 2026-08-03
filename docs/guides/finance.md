@@ -32,14 +32,15 @@ For the **Finance** team: task payments, quotation approval, sales invoice appro
 Each finance task follows the same pattern:
 
 ```
-1. Ops/Declaration attaches invoice on the Task (finance lines / documents)
-2. Finance creates Journal Entry or Payment Entry
-3. Declarant uploads payment receipt
-4. Finance verifies receipt on Task
-5. Task can be marked complete → Project status may advance
+1. Ops/Declaration attaches invoice on the application Task (finance lines / documents)
+2. Finance verifies the invoice and creates Journal Entry or Payment Entry
+3. Finance uploads payment receipt on the finance Task (Declarant can view it on the application Task)
+4. Task can be marked complete → Project status may advance
 ```
 
 **Task Finance Line** child table holds line items (UCR, permits, entry slip, shipping line, KPA).
+
+Declarants attach invoices (and certificates where required). Finance verifies invoices and uploads payment receipts after payment — no separate receipt-verify step.
 
 ### Notifications you receive
 
