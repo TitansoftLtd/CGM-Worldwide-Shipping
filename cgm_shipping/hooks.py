@@ -96,7 +96,6 @@ doctype_js = {
 		"public/js/opportunity.js",
 	],
 	"Quotation": "public/js/quotation.js",
-	"Sales Order": "public/js/quotation.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
 	"Supplier": "public/js/supplier.js",
 	"Leave Application": "public/js/leave_application.js",
@@ -216,8 +215,6 @@ override_doctype_class = {
     ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
     "Quotation":
     "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
-    "Sales Order":
-    "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMSalesOrder",
 }
 
 # Document Events
@@ -365,9 +362,6 @@ scheduler_events = {
 # ------------------------------
 #
 override_whitelisted_methods = {
-    "erpnext.selling.doctype.quotation.quotation.make_sales_order":
-    ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_order"
-     ),
     "erpnext.selling.doctype.quotation.quotation.make_sales_invoice":
     ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_invoice"
      ),
