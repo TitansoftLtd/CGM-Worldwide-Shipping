@@ -279,6 +279,9 @@ doc_events = {
 	"Item": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
 	},
+	"Leave Application": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
+	},
 	"Opportunity": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.documents.on_opportunity_onload",
 		"before_insert": [
