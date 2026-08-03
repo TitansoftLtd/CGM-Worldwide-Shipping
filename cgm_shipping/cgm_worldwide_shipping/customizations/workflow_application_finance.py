@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Callable
 
 import frappe
-from frappe.utils import cint, get_url, now_datetime
+from frappe.utils import cint, flt, get_url, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 	APPLICATION_FINANCE_PROFILES,
@@ -764,6 +764,121 @@ def application_finance_needs_work(finance_task, profile: ApplicationFinanceProf
 	return False
 
 
+def application_invoice_fingerprint(task, profile: ApplicationFinanceProfile) -> tuple:
+	inv = get_invoice_line(task, profile)
+	rec = get_receipt_line(task, profile)
+	return (
+		(inv.get("attachment") if inv else "") or "",
+		flt(inv.get("amount") if inv else 0),
+		cint(inv.get("verified") if inv else 0),
+		(rec.get("attachment") if rec else "") or "",
+		cint(rec.get("verified") if rec else 0),
+		(task.get("custom_journal_entry") or ""),
+		(task.get("custom_payment_entry") or ""),
+		cint(task.get("custom_client_paid_directly")),
+	)
+
+
+def application_invoice_work_changed(task, profile: ApplicationFinanceProfile) -> bool:
+	prev = task.get_doc_before_save()
+	if not prev:
+		return True
+	return application_invoice_fingerprint(task, profile) != application_invoice_fingerprint(
+		prev, profile
+	)
+
+
+def reopen_application_finance_if_pending_work(
+	finance_task, profile: ApplicationFinanceProfile
+) -> dict | None:
+	"""Reopen Completed finance (and app) when invoice still needs verify/pay/receipt."""
+	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_auto_completing_sea_task"):
+		return None
+	if not is_application_payment_task_doc(finance_task, profile):
+		return None
+	if finance_task.status == "Cancelled":
+		return None
+	if not application_finance_needs_work(finance_task, profile):
+		return None
+	if finance_task.status != "Completed":
+		return {
+			"reopened": [],
+			"finance_task": finance_task.name,
+		}
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import _reopen_sea_task
+
+	reopened: list[str] = []
+	frappe.flags.cgm_reopening_task = True
+	try:
+		if _reopen_sea_task(
+			finance_task,
+			reason=f"Additional {profile.invoice_label} needs verification and payment",
+		):
+			reopened.append(finance_task.name)
+			finance_task.status = "Open"
+			finance_task.progress = 0
+			finance_task.completed_by = None
+			finance_task.completed_on = None
+		app_name = get_application_task(finance_task.project, profile) if finance_task.project else None
+		if app_name:
+			app = frappe.get_doc("Task", app_name)
+			if app.status == "Completed" and _reopen_sea_task(
+				app,
+				reason=f"Additional {profile.invoice_label} pending Finance payment",
+			):
+				reopened.append(app_name)
+	finally:
+		frappe.flags.cgm_reopening_task = False
+
+	return {
+		"reopened": reopened,
+		"finance_task": finance_task.name,
+		"finance_task_url": get_url(f"/app/task/{finance_task.name}"),
+	}
+
+
+@frappe.whitelist()
+def reopen_application_task_for_more_documents(task_name: str) -> dict:
+	"""Declarant: reopen a completed application task so more invoices/docs can be attached."""
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	task = frappe.get_doc("Task", task_name)
+	profile = profile_for_task(task)
+	if not profile or not is_application_create_task(task, profile):
+		frappe.throw("This action is only for application tasks paired with Finance.")
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import _reopen_sea_task
+
+	reopened: list[str] = []
+	frappe.flags.cgm_reopening_task = True
+	try:
+		if task.status == "Completed" and _reopen_sea_task(
+			task,
+			reason=f"Additional {profile.invoice_label} / documents after prior completion",
+		):
+			reopened.append(task.name)
+		finance_name = get_application_finance_task(task.project, profile) if task.project else None
+		if finance_name:
+			finance_task = frappe.get_doc("Task", finance_name)
+			# Only reopen Finance when it still has unfinished payment work, or when
+			# the application is being opened for a replacement invoice.
+			if finance_task.status == "Completed":
+				if _reopen_sea_task(
+					finance_task,
+					reason=f"Application reopened for additional {profile.invoice_label}",
+				):
+					reopened.append(finance_name)
+	finally:
+		frappe.flags.cgm_reopening_task = False
+
+	return {
+		"task": task_name,
+		"status": frappe.db.get_value("Task", task_name, "status"),
+		"reopened": reopened,
+		"profile": profile.key,
+	}
+
+
 def _sync_changed_application_invoice_onto_finance(
 	application_task, finance_task, profile: ApplicationFinanceProfile
 ) -> bool:
@@ -830,6 +945,11 @@ def handle_additional_application_work_on_application(
 	if application_task.status == "Cancelled":
 		return None
 	if not invoice_attached(application_task, profile):
+		return None
+	# Skip when invoice/receipt state did not change on this save.
+	if application_task.get_doc_before_save() and not application_invoice_work_changed(
+		application_task, profile
+	):
 		return None
 
 	finance_name = get_application_finance_task(application_task.project, profile)
@@ -935,12 +1055,16 @@ def process_application_workflow_on_update(task) -> None:
 			sync_application_purchase_item_to_finance(task, profile)
 			handle_application_receipt_upload(task, profile)
 			try_auto_complete_application_task(task, profile)
-	elif is_application_finance_task(seq, profile) and task.status not in (
-		"Completed",
-		"Cancelled",
-	):
-		handle_finance_receipt_upload(task, profile)
-		try_auto_complete_application_finance_task(task, profile)
+	elif is_application_finance_task(seq, profile) and task.status != "Cancelled":
+		work_changed = application_invoice_work_changed(task, profile)
+		# Receipt mirror only when finance lines actually changed.
+		if work_changed:
+			handle_finance_receipt_upload(task, profile)
+		# Reopen Completed finance when verify/pay/receipt still outstanding.
+		if task.status == "Completed":
+			reopen_application_finance_if_pending_work(task, profile)
+		else:
+			try_auto_complete_application_finance_task(task, profile)
 
 
 def process_application_workflow_onload(task) -> bool:
@@ -962,11 +1086,13 @@ def process_application_workflow_onload(task) -> bool:
 		if task.status not in ("Completed", "Cancelled"):
 			if try_auto_complete_application_task(task, profile):
 				changed = True
-	elif is_application_finance_task(seq, profile) and task.status not in (
-		"Completed",
-		"Cancelled",
-	):
-		if task.project:
+	elif is_application_finance_task(seq, profile):
+		# Completed + unfinished invoice work → reopen so Make Payment shows.
+		result = reopen_application_finance_if_pending_work(task, profile)
+		if result and result.get("reopened"):
+			task.reload()
+			changed = True
+		if task.status not in ("Completed", "Cancelled") and task.project:
 			had_receipt = receipt_attached(task, profile)
 			if ensure_application_receipt_on_finance_task(task, profile) and not had_receipt:
 				task.reload()

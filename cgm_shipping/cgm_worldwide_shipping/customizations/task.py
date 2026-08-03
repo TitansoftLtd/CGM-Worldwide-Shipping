@@ -3221,18 +3221,35 @@ def on_task_onload(doc, _method=None):
 
 	if _is_sea_task(doc) and is_permit_finance_payment_task(_sea_task_seq(doc)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			application_missing_finance_permit_receipts,
 			ensure_finance_permit_rows_saved,
+			get_permit_application_task_for_finance,
+			handle_finance_permit_receipt_upload,
+			reopen_permit_finance_if_pending_work,
 		)
 
 		if ensure_finance_permit_rows_saved(doc):
 			doc.reload()
+		# Completed + unpaid additional permits → reopen so Make Payment shows.
+		result = reopen_permit_finance_if_pending_work(doc)
+		if result and result.get("reopened"):
+			doc.reload()
+		# Sync receipts only when Declarant is missing them (cheap SQL gate).
+		app_name = get_permit_application_task_for_finance(doc)
+		if app_name and application_missing_finance_permit_receipts(app_name, doc.name):
+			handle_finance_permit_receipt_upload(doc)
 
 	if _is_sea_task(doc) and is_permit_application_task(_sea_task_seq(doc)):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			ensure_finance_permit_receipts_visible_on_application,
 			merge_project_permits_into_application_task,
 		)
 
-		if merge_project_permits_into_application_task(doc):
+		changed = merge_project_permits_into_application_task(doc)
+		# Always pull Finance-uploaded receipts onto Declarant form.
+		if ensure_finance_permit_receipts_visible_on_application(doc):
+			changed = True
+		if changed:
 			doc.reload()
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
@@ -3425,38 +3442,26 @@ def on_task_update(doc, _method=None):
 		check_task_container_completion(doc)
 		sync_client_paid_to_application_task(doc)
 
-	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status != "Cancelled":
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			APPLICATION_FINANCE_PROFILES,
-		)
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
-			handle_additional_application_work_on_application,
+	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status not in (
+		"Completed",
+		"Cancelled",
+	):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			auto_submit_ucr_invoice_to_finance_if_needed,
+			handle_ucr_application_receipt_upload,
+			try_auto_complete_ucr_application_task,
 		)
 
-		# Even when Completed: new/changed UCR invoice reopens Finance.
-		handle_additional_application_work_on_application(
-			doc, APPLICATION_FINANCE_PROFILES["UCR Application"]
-		)
-		if doc.status not in ("Completed", "Cancelled"):
+		auto_submit_ucr_invoice_to_finance_if_needed(doc)
+		# Keep Finance Purchase Item in sync after the first submit (item edits).
+		if doc.project:
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-				auto_submit_ucr_invoice_to_finance_if_needed,
-				handle_ucr_application_receipt_upload,
+				sync_ucr_invoice_to_finance_task,
 			)
 
-			auto_submit_ucr_invoice_to_finance_if_needed(doc)
-			# Keep Finance Purchase Item in sync after the first submit (item edits).
-			if doc.project:
-				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-					sync_ucr_invoice_to_finance_task,
-				)
-
-				sync_ucr_invoice_to_finance_task(doc.project)
-			handle_ucr_application_receipt_upload(doc)
-			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-				try_auto_complete_ucr_application_task,
-			)
-
-			try_auto_complete_ucr_application_task(doc)
+			sync_ucr_invoice_to_finance_task(doc.project)
+		handle_ucr_application_receipt_upload(doc)
+		try_auto_complete_ucr_application_task(doc)
 
 	if (
 		_is_sea_task(doc)
@@ -3476,58 +3481,110 @@ def on_task_update(doc, _method=None):
 			process_application_workflow_on_update,
 		)
 
-		# Even when Completed: new/changed invoices reopen Finance for verify + pay.
+		# Shared path for UCR / Entry / Shipping Line / KPA — including Completed reopen.
 		process_application_workflow_on_update(doc)
 
-	if (
-		_is_sea_task(doc)
-		and is_permit_finance_payment_task(seq)
-		and doc.status not in ("Completed", "Cancelled")
-		and not frappe.flags.get("cgm_permit_finance_completing")
-	):
+	if _is_sea_task(doc) and is_permit_finance_payment_task(seq) and doc.status != "Cancelled":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			handle_finance_permit_receipt_upload,
+			permit_work_changed,
+			reopen_permit_finance_if_pending_work,
 			sync_permit_invoice_verification_to_application,
 			try_auto_complete_permit_finance_task,
 		)
 
-		handle_finance_permit_receipt_upload(doc)
-		sync_permit_invoice_verification_to_application(doc)
-		try_auto_complete_permit_finance_task(doc)
+		work_changed = permit_work_changed(doc)
+		if work_changed or doc.status == "Completed":
+			reopen_permit_finance_if_pending_work(doc)
+		# Mirror receipts only when permit rows changed (or first save).
+		if work_changed and not frappe.flags.get("cgm_permit_finance_completing"):
+			handle_finance_permit_receipt_upload(doc)
+			sync_permit_invoice_verification_to_application(doc)
+		if doc.status not in ("Completed", "Cancelled") and not frappe.flags.get(
+			"cgm_permit_finance_completing"
+		):
+			try_auto_complete_permit_finance_task(doc)
 
 	if _is_sea_task(doc) and is_permit_application_task(seq) and doc.status != "Cancelled":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			auto_submit_permit_invoices_to_finance_if_needed,
 			handle_additional_permit_work_on_application,
+			permit_work_changed,
 		)
 
-		# Even when Completed: new permits/invoices reopen finance for verify + pay.
-		handle_additional_permit_work_on_application(doc)
+		# Change-gated: skip reopen/sync when permit table untouched.
+		if permit_work_changed(doc) or doc.status == "Completed":
+			handle_additional_permit_work_on_application(doc)
 		if doc.status not in ("Completed", "Cancelled"):
 			auto_submit_permit_invoices_to_finance_if_needed(doc)
 
 	if frappe.flags.get("cgm_skip_task_project_sync"):
 		return
 	if doc.get("project"):
-		refresh_project_documents(doc.project)
-		sync_task_permits_to_project(doc)
+		# Only rebuild Project documents when this task's document table changed.
+		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+			refresh_project_documents,
+		)
+
+		prev = doc.get_doc_before_save()
+		docs_changed = False
+		if doc.meta.has_field(TASK_DOCUMENTS_FIELD):
+			if not prev:
+				docs_changed = bool(doc.get(TASK_DOCUMENTS_FIELD))
+			else:
+				prev_fp = tuple(
+					sorted(
+						(
+							(r.get("document_type") or ""),
+							(r.get("attachment") or ""),
+							(r.get("draft_attachment") or ""),
+						)
+						for r in (prev.get(TASK_DOCUMENTS_FIELD) or [])
+					)
+				)
+				cur_fp = tuple(
+					sorted(
+						(
+							(r.get("document_type") or ""),
+							(r.get("attachment") or ""),
+							(r.get("draft_attachment") or ""),
+						)
+						for r in (doc.get(TASK_DOCUMENTS_FIELD) or [])
+					)
+				)
+				docs_changed = prev_fp != cur_fp
+		if docs_changed:
+			refresh_project_documents(doc.project)
+
+		# Permit project register sync only for permit tasks when rows changed.
+		if is_permit_application_task(seq) or is_permit_finance_payment_task(seq):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+				permit_work_changed,
+			)
+
+			if permit_work_changed(doc) or not prev:
+				sync_task_permits_to_project(doc)
 		if _is_sea_task(doc):
 			if is_permit_application_task(seq):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 					get_permit_finance_task,
+					permit_work_changed as _permit_rows_changed,
 					sync_permit_invoices_to_finance_task,
 				)
 
-				fin_name = get_permit_finance_task(doc.project, seq)
-				if fin_name and not frappe.flags.get("cgm_permit_finance_completing"):
-					sync_permit_invoices_to_finance_task(
-						frappe.get_doc("Task", fin_name), save=True
-					)
+				if _permit_rows_changed(doc):
+					fin_name = get_permit_finance_task(doc.project, seq)
+					if fin_name and not frappe.flags.get("cgm_permit_finance_completing"):
+						sync_permit_invoices_to_finance_task(
+							frappe.get_doc("Task", fin_name), save=True
+						)
 			from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 				sync_project_shipment_status_from_tasks,
 			)
 
-			sync_project_shipment_status_from_tasks(doc.project)
+			# Shipment status only when task status itself changed.
+			if not prev or prev.status != doc.status:
+				sync_project_shipment_status_from_tasks(doc.project)
 	prev = doc.get_doc_before_save()
 	if doc.status == "Completed" and (not prev or prev.status != "Completed"):
 		apply_finance_payment_to_project_permits(doc)

@@ -453,23 +453,34 @@ def sync_permit_receipts_to_application_task(finance_task) -> bool:
 	"""Mirror Finance-uploaded permit receipts onto the application task for Declarant."""
 	if not is_permit_finance_task_doc(finance_task) or not finance_task.project:
 		return False
+	if frappe.flags.get("cgm_syncing_permit_finance_rows"):
+		return False
 	app_name = get_permit_application_task_for_finance(finance_task)
 	if not app_name:
 		return False
 	app = frappe.get_doc("Task", app_name)
 	if not app.meta.has_field(TASK_PERMITS_FIELD):
 		return False
-	fin_by_type = {
-		r.permit_type: r
+	fin_rows = [
+		r
 		for r in (finance_task.get(TASK_PERMITS_FIELD) or [])
 		if r.get("permit_type") and r.get("payment_receipt")
-	}
-	if not fin_by_type:
+	]
+	if not fin_rows:
 		return False
+
+	app_by_type = {
+		r.permit_type: r for r in (app.get(TASK_PERMITS_FIELD) or []) if r.get("permit_type")
+	}
 	changed = False
-	for row in app.get(TASK_PERMITS_FIELD) or []:
-		fin_row = fin_by_type.get(row.permit_type)
-		if not fin_row:
+	for fin_row in fin_rows:
+		row = app_by_type.get(fin_row.permit_type)
+		if not row:
+			# Permit may have been paid on Finance after being added there —
+			# create the matching Declarant row so the receipt is visible.
+			row = app.append(TASK_PERMITS_FIELD, build_permit_row_payload(fin_row))
+			app_by_type[fin_row.permit_type] = row
+			changed = True
 			continue
 		if row.get("payment_receipt") != fin_row.payment_receipt:
 			row.payment_receipt = fin_row.payment_receipt
@@ -477,18 +488,46 @@ def sync_permit_receipts_to_application_task(finance_task) -> bool:
 		if cint(fin_row.get("receipt_verified")) and not cint(row.get("receipt_verified")):
 			row.receipt_verified = 1
 			changed = True
+		if fin_row.get("journal_entry") and row.get("journal_entry") != fin_row.journal_entry:
+			row.journal_entry = fin_row.journal_entry
+			changed = True
+		if cint(fin_row.get("invoice_verified")) and not cint(row.get("invoice_verified")):
+			row.invoice_verified = 1
+			changed = True
 	if not changed:
 		return False
 	frappe.flags.cgm_syncing_permit_finance_rows = True
 	try:
+		app.flags.ignore_links = True
 		app.save(ignore_permissions=True)
 	finally:
+		app.flags.ignore_links = False
 		frappe.flags.cgm_syncing_permit_finance_rows = False
 	frappe.publish_realtime(
 		"cgm_task_status_changed",
-		{"task": app_name, "project": finance_task.project, "receipt_synced": 1},
+		{
+			"task": app_name,
+			"project": finance_task.project,
+			"receipt_synced": 1,
+			"status": app.status,
+		},
 	)
 	return True
+
+
+def ensure_finance_permit_receipts_visible_on_application(application_task) -> bool:
+	"""On form open: pull Finance receipts onto the Declarant permit application task."""
+	if not is_permit_application_task_doc(application_task) or not application_task.project:
+		return False
+	finance_name = get_finance_permit_task_name(
+		application_task.project, task_sequence(application_task)
+	)
+	if not finance_name:
+		return False
+	# Cheap SQL gate — avoid loading/saving both tasks when already in sync.
+	if not application_missing_finance_permit_receipts(application_task.name, finance_name):
+		return False
+	return sync_permit_receipts_to_application_task(frappe.get_doc("Task", finance_name))
 
 
 def stamp_finance_permit_receipts_on_upload(task) -> bool:
@@ -686,6 +725,75 @@ def _reopen_sea_task(task, *, reason: str | None = None) -> bool:
 	return True
 
 
+def permit_work_fingerprint(task) -> tuple:
+	"""Cheap stable fingerprint of permit invoice/payment/receipt state."""
+	rows = task.get(TASK_PERMITS_FIELD) or []
+	return tuple(
+		sorted(
+			(
+				(r.get("permit_type") or "").strip(),
+				(r.get("payment_invoice") or "").strip(),
+				(r.get("payment_receipt") or "").strip(),
+				cint(r.get("invoice_verified")),
+				(r.get("journal_entry") or "").strip(),
+				cint(r.get("receipt_verified")),
+			)
+			for r in rows
+			if r.get("permit_type")
+		)
+	)
+
+
+def permit_work_changed(task) -> bool:
+	"""True when permit rows changed on this save (or there is no prior doc)."""
+	prev = task.get_doc_before_save()
+	if not prev:
+		return True
+	return permit_work_fingerprint(task) != permit_work_fingerprint(prev)
+
+
+def application_missing_finance_permit_receipts(app_name: str, finance_name: str) -> bool:
+	"""SQL-only check: Finance has a receipt the application task does not yet mirror."""
+	if not app_name or not finance_name:
+		return False
+	fin_rows = frappe.get_all(
+		"Permit Register",
+		filters={
+			"parent": finance_name,
+			"parenttype": "Task",
+			"parentfield": TASK_PERMITS_FIELD,
+		},
+		fields=["permit_type", "payment_receipt"],
+		limit_page_length=50,
+	)
+	fin_receipts = {
+		(r.permit_type or "").strip(): (r.payment_receipt or "").strip()
+		for r in fin_rows
+		if r.permit_type and r.payment_receipt
+	}
+	if not fin_receipts:
+		return False
+	app_rows = frappe.get_all(
+		"Permit Register",
+		filters={
+			"parent": app_name,
+			"parenttype": "Task",
+			"parentfield": TASK_PERMITS_FIELD,
+		},
+		fields=["permit_type", "payment_receipt"],
+		limit_page_length=50,
+	)
+	app_receipts = {
+		(r.permit_type or "").strip(): (r.payment_receipt or "").strip()
+		for r in app_rows
+		if r.permit_type
+	}
+	for permit_type, receipt in fin_receipts.items():
+		if app_receipts.get(permit_type) != receipt:
+			return True
+	return False
+
+
 def permit_finance_rows_needing_work(finance_task) -> list:
 	"""Local permit rows that still need invoice verify, payment, or receipt."""
 	pending = []
@@ -701,6 +809,84 @@ def permit_finance_rows_needing_work(finance_task) -> list:
 	return pending
 
 
+def reopen_permit_finance_if_pending_work(finance_task) -> dict | None:
+	"""Reopen a Completed finance permit task when unpaid / unverified rows exist.
+
+	Covers the case where additional permits were synced onto Finance after it
+	was already completed (Make Payment is hidden while status is Completed).
+	"""
+	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_permit_finance_completing"):
+		return None
+	if not is_permit_finance_task_doc(finance_task):
+		return None
+	if finance_task.status == "Cancelled":
+		return None
+
+	pending = permit_finance_rows_needing_work(finance_task)
+	if not pending:
+		return None
+	if finance_task.status != "Completed":
+		return {
+			"reopened": [],
+			"pending_permits": [r.permit_type for r in pending if r.permit_type],
+			"finance_task": finance_task.name,
+		}
+
+	reopened: list[str] = []
+	frappe.flags.cgm_reopening_task = True
+	try:
+		if _reopen_sea_task(
+			finance_task,
+			reason="Additional permit invoices need verification and payment",
+		):
+			reopened.append(finance_task.name)
+			finance_task.status = "Open"
+			finance_task.progress = 0
+			finance_task.completed_by = None
+			finance_task.completed_on = None
+		app_name = get_permit_application_task_for_finance(finance_task)
+		if app_name:
+			app = frappe.get_doc("Task", app_name)
+			if app.status == "Completed" and _reopen_sea_task(
+				app,
+				reason="Additional permits pending Finance payment",
+			):
+				reopened.append(app_name)
+	finally:
+		frappe.flags.cgm_reopening_task = False
+
+	return {
+		"reopened": reopened,
+		"pending_permits": [r.permit_type for r in pending if r.permit_type],
+		"finance_task": finance_task.name,
+		"finance_task_url": get_url(f"/app/task/{finance_task.name}"),
+		"message": (
+			f"Reopened for unpaid permits: "
+			f"<b>{', '.join(r.permit_type for r in pending if r.permit_type)}</b>."
+		),
+	}
+
+
+@frappe.whitelist()
+def reopen_permit_finance_for_pending_payments(task_name: str) -> dict:
+	"""Reopen Finance pays … Permits when unpaid/unverified rows exist after completion."""
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	task = frappe.get_doc("Task", task_name)
+	if not is_permit_finance_task_doc(task):
+		frappe.throw("This action is only for Finance permit payment tasks.")
+	sync_permit_invoices_to_finance_task(task, save=True)
+	task.reload()
+	result = reopen_permit_finance_if_pending_work(task) or {}
+	task.reload()
+	pending = permit_finance_rows_needing_work(task)
+	return {
+		"task": task.name,
+		"status": task.status,
+		"pending_permits": [r.permit_type for r in pending if r.permit_type],
+		**result,
+	}
+
+
 def handle_additional_permit_work_on_application(application_task) -> dict | None:
 	"""When Declarant adds more permit invoices (even after completion), reopen finance.
 
@@ -709,6 +895,9 @@ def handle_additional_permit_work_on_application(application_task) -> dict | Non
 	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_permit_finance_completing"):
 		return None
 	if not is_permit_application_task_doc(application_task) or not application_task.project:
+		return None
+	# Skip heavy sync/reopen when permit rows did not change on this save.
+	if application_task.get_doc_before_save() and not permit_work_changed(application_task):
 		return None
 
 	finance_name = get_finance_permit_task_name(
@@ -750,7 +939,8 @@ def handle_additional_permit_work_on_application(application_task) -> dict | Non
 		r.permit_type for r in pending if r.permit_type and not cint(r.get("invoice_verified"))
 	]
 	notify_result = {"notified": 0}
-	if unverified:
+	# Notify only when we actually reopened (avoid spam on every incidental save).
+	if unverified and reopened:
 		notify_result = send_notification(
 			PERMIT_INVOICES_TO_FINANCE,
 			finance_task,
