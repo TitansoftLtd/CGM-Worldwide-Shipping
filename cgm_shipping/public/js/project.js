@@ -9,12 +9,21 @@ function configure_project_document_grid(frm) {
 		const draft_field = cgm_draft_document_field();
 		for (const row of frm.doc.custom_shipment_documents || []) {
 			const draft = draft_field ? row[draft_field] : null;
-			if (draft_field && !draft && row.attachment) {
+			if (draft_field && !draft && !row.final_attachment && row.attachment) {
+				if (row.status === "Missing") {
+					row.attachment = "";
+					changed = true;
+					continue;
+				}
 				row[draft_field] = row.attachment;
 				changed = true;
 			}
-			if (draft || row.final_attachment) {
-				row.attachment = row.final_attachment || draft || row.attachment;
+			const next_draft = draft_field ? row[draft_field] : null;
+			if (next_draft || row.final_attachment) {
+				row.attachment = row.final_attachment || next_draft || row.attachment;
+			} else if (row.attachment) {
+				row.attachment = "";
+				changed = true;
 			}
 		}
 		if (changed) {

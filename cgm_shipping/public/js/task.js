@@ -1081,6 +1081,53 @@ function task_has_recorded_payment_on_form(frm) {
 	);
 }
 
+function complete_permit_application_task_from_form(frm) {
+	if (frm._cgm_completing_permit_application || frm.is_new()) {
+		return;
+	}
+	if (frm.is_dirty()) {
+		frappe.msgprint({
+			title: __("Unsaved changes"),
+			message: __(
+				"Save your changes first, then click Complete again. " +
+					"Completing from an unsaved form causes conflicts."
+			),
+			indicator: "orange",
+		});
+		return;
+	}
+	frm._cgm_completing_permit_application = true;
+	frm._cgm_task_action_busy = true;
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow.complete_permit_application_task",
+		args: { task_name: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Completing permit task…"),
+		callback(r) {
+			if (r.exc || !r.message) {
+				frm._cgm_completing_permit_application = false;
+				frm._cgm_task_action_busy = false;
+				schedule_cgm_task_toolbar_buttons(frm);
+				return;
+			}
+			frappe.show_alert({
+				message: __(r.message.message || "Permit application task completed."),
+				indicator: "green",
+			});
+			frm.reload_doc().always(() => {
+				frm._cgm_completing_permit_application = false;
+				frm._cgm_task_action_busy = false;
+			});
+		},
+		error() {
+			frm._cgm_completing_permit_application = false;
+			frm._cgm_task_action_busy = false;
+			schedule_cgm_task_toolbar_buttons(frm);
+		},
+	});
+}
+
 function verify_all_permit_invoices_from_form(frm) {
 	if (frm._cgm_verifying_permit_invoices) {
 		return;
@@ -1218,7 +1265,7 @@ function ensure_finance_permit_task_completed_on_form(frm) {
 	const rows = permit_finance_rows_on_form(frm);
 	if (
 		!rows.length ||
-		rows.some((r) => !r.journal_entry || !r.payment_receipt || !r.receipt_verified)
+		rows.some((r) => !r.journal_entry || !r.payment_receipt)
 	) {
 		return;
 	}
@@ -1234,7 +1281,7 @@ function ensure_finance_permit_task_completed_on_form(frm) {
 			}
 			frappe.show_alert({
 				message: __(
-					"Permit receipts verified — Finance and declarant pre-clearance tasks completed."
+					"Permit receipts uploaded — Finance and declarant pre-clearance tasks completed."
 				),
 				indicator: "green",
 			});
@@ -1409,21 +1456,32 @@ function get_finance_department(frm) {
 }
 
 function register_task_toolbar_after_render(frm, eventKey, register_action) {
-	const schedule_register = () => {
-		setTimeout(register_action, 50);
-	};
-	schedule_register();
+	// Keep a single render_complete binding — rebinding on every schedule caused
+	// stacked timeouts and visible button flicker.
+	if (frm[`_cgm_${eventKey}_bound`]) {
+		return;
+	}
+	frm[`_cgm_${eventKey}_bound`] = true;
 	$(frm.wrapper)
 		.off(`render_complete.${eventKey}`)
-		.on(`render_complete.${eventKey}`, schedule_register);
+		.on(`render_complete.${eventKey}`, () => {
+			register_action();
+		});
 }
 
 function schedule_cgm_task_toolbar_buttons(frm) {
 	if (frm.is_new() || !frm.doc.name) {
 		return;
 	}
+	if (frm._cgm_task_action_busy || frm._cgm_completing_permit_application) {
+		return;
+	}
+	clearTimeout(frm._cgm_toolbar_timer);
 	const mount = () => {
 		if (frm.is_new() || frm.doc.name !== frm.docname) {
+			return;
+		}
+		if (frm._cgm_task_action_busy || frm._cgm_completing_permit_application) {
 			return;
 		}
 		if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config && !frm._cgm_sea_seq_loading) {
@@ -1431,14 +1489,22 @@ function schedule_cgm_task_toolbar_buttons(frm) {
 		}
 		mount_cgm_task_toolbar_buttons(frm);
 	};
-	register_task_toolbar_after_render(frm, "cgm_task_toolbar", mount);
+	// Debounce stacked refresh/realtime remounts that made Complete flicker.
+	frm._cgm_toolbar_timer = setTimeout(mount, 150);
+	register_task_toolbar_after_render(frm, "cgm_task_toolbar", () => {
+		schedule_cgm_task_toolbar_buttons(frm);
+	});
 }
 
 function mount_cgm_task_toolbar_buttons(frm) {
 	if (frm.is_new() || !frm.doc.name) {
 		return;
 	}
+	if (frm._cgm_task_action_busy || frm._cgm_completing_permit_application) {
+		return;
+	}
 	const ui = get_sea_task_ui(frm);
+	frm.clear_custom_buttons();
 
 	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
 		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
@@ -1510,10 +1576,20 @@ function mount_cgm_task_toolbar_buttons(frm) {
 
 	add_client_paid_application_mark_complete_button(frm, ui);
 
+	// On completed permit / app↔finance application tasks the dedicated
+	// "Add more…" buttons already reopen and unlock docs — skip generic Re-open.
+	const has_dedicated_add_more =
+		(ui.show_permits && is_permit_application_step(frm)) ||
+		ui.is_ucr_application ||
+		ui.is_entry_application ||
+		ui.is_shipping_line_application ||
+		ui.is_kpa_application;
+
 	if (
 		frm.doc.status === "Completed" &&
 		!frm.is_new() &&
-		(is_sea_clearance_task(frm) || frm.doc.custom_sequence_no)
+		(is_sea_clearance_task(frm) || frm.doc.custom_sequence_no) &&
+		!has_dedicated_add_more
 	) {
 		frm.add_custom_button(__("Re-open Task"), () => {
 			frappe.confirm(
@@ -1567,11 +1643,8 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		!frm.doc.custom_client_paid_directly &&
 		frm.doc.custom_permit_invoices_submitted
 	) {
-		const btn = frm.add_custom_button(__("Complete Pre-Clearance Permits Task"), async () => {
-			await frm.set_value("completed_by", frappe.session.user);
-			await frm.set_value("completed_on", frappe.datetime.now_datetime());
-			await frm.set_value("status", "Completed");
-			await frm.save();
+		const btn = frm.add_custom_button(__("Complete Pre-Clearance Permits Task"), () => {
+			complete_permit_application_task_from_form(frm);
 		});
 		btn?.addClass?.("btn-primary");
 	}
@@ -1582,11 +1655,8 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		!frm.doc.custom_client_paid_directly &&
 		frm.doc.custom_permit_invoices_submitted
 	) {
-		const btn = frm.add_custom_button(__("Complete Post-Clearance Permits Task"), async () => {
-			await frm.set_value("completed_by", frappe.session.user);
-			await frm.set_value("completed_on", frappe.datetime.now_datetime());
-			await frm.set_value("status", "Completed");
-			await frm.save();
+		const btn = frm.add_custom_button(__("Complete Post-Clearance Permits Task"), () => {
+			complete_permit_application_task_from_form(frm);
 		});
 		btn?.addClass?.("btn-primary");
 	}
@@ -1695,21 +1765,6 @@ function mount_cgm_task_toolbar_buttons(frm) {
 			frm,
 			__("Verify Invoices"),
 			() => verify_all_permit_invoices_from_form(frm),
-			{ primary: true }
-		);
-	}
-
-	if (
-		is_permit_finance_step(frm) &&
-		frm.doc.status !== "Completed" &&
-		task_has_recorded_payment_on_form(frm) &&
-		user_can_make_payment(frm) &&
-		permit_rows_pending_receipt_verification(frm).length
-	) {
-		add_cgm_toolbar_button(
-			frm,
-			__("Complete after receipts"),
-			() => verify_all_permit_receipts_from_form(frm),
 			{ primary: true }
 		);
 	}
@@ -2059,6 +2114,7 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property("payment_receipt", "read_only", 1);
 		grid.update_docfield_property("permit_document", "hidden", 0);
 		grid.update_docfield_property("permit_document", "read_only", can_upload_proof ? 0 : 1);
+		// Receipt verified is auto-stamped on Finance upload — show as read-only only.
 		grid.update_docfield_property("receipt_verified", "hidden", client_paid || !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("receipt_verified", "read_only", 1);
 		toggle_permit_invoice_fields_for_origin(grid);
@@ -2074,8 +2130,9 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property("journal_entry", "in_list_view", 1);
 		grid.update_docfield_property("payment_receipt", "hidden", 0);
 		grid.update_docfield_property("payment_receipt", "read_only", user_can_upload_receipt(frm) ? 0 : 1);
-		grid.update_docfield_property("receipt_verified", "hidden", 0);
-		grid.update_docfield_property("receipt_verified", "read_only", user_can_make_payment(frm) ? 0 : 1);
+		// Auto-stamped when Finance uploads the receipt — no separate verify step.
+		grid.update_docfield_property("receipt_verified", "hidden", 1);
+		grid.update_docfield_property("receipt_verified", "read_only", 1);
 	}
 	cgm_configure_permit_attach_grid(grid);
 }
@@ -3284,6 +3341,26 @@ frappe.realtime.on("cgm_task_status_changed", (data) => {
 		cur_list.refresh();
 	}
 	if (cur_frm && cur_frm.doctype === "Task" && cur_frm.doc.name === data.task) {
-		cur_frm.reload_doc();
+		// Never interrupt an in-flight complete / payment action.
+		if (cur_frm._cgm_task_action_busy || cur_frm._cgm_completing_permit_application) {
+			return;
+		}
+		// Soft finance→declarant mirrors must not full-reload (causes button flicker
+		// and concurrent save conflicts). User already sees local rows / can refresh.
+		if (data.soft_sync) {
+			return;
+		}
+		clearTimeout(cur_frm._cgm_status_reload_timer);
+		cur_frm._cgm_status_reload_timer = setTimeout(() => {
+			if (
+				!cur_frm ||
+				cur_frm.doc.name !== data.task ||
+				cur_frm._cgm_task_action_busy ||
+				cur_frm._cgm_completing_permit_application
+			) {
+				return;
+			}
+			cur_frm.reload_doc();
+		}, 250);
 	}
 });

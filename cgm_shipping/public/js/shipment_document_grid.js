@@ -228,13 +228,15 @@ function cgm_configure_shipment_document_grid(grid, { initial_read_only = false 
 function cgm_on_shipment_document_slot_change(frm, cdt, cdn) {
 	const row = locals[cdt][cdn];
 	const draft_field = cgm_draft_document_field();
-	const draft = draft_field ? row[draft_field] : null;
-	const has_file = row.final_attachment || draft || row.attachment;
-	if (has_file) {
+	const draft = (draft_field ? row[draft_field] : null) || "";
+	const final_file = row.final_attachment || "";
+	const has_slot_file = Boolean(final_file || draft);
+
+	if (has_slot_file) {
 		if (!row.status || row.status === "Missing") {
 			frappe.model.set_value(cdt, cdn, "status", "Uploaded");
 		}
-		if (row.final_attachment) {
+		if (final_file) {
 			frappe.model.set_value(cdt, cdn, "version_status", "Final Received");
 			if (
 				frappe.meta.get_docfield("Shipment Document", "final_document_status") &&
@@ -245,13 +247,22 @@ function cgm_on_shipment_document_slot_change(frm, cdt, cdn) {
 		} else if (draft) {
 			frappe.model.set_value(cdt, cdn, "version_status", "Awaiting Final");
 		}
-		frappe.model.set_value(cdt, cdn, "attachment", row.final_attachment || draft || row.attachment);
-	} else if (!draft && !row.final_attachment && !row.attachment) {
-		frappe.model.set_value(cdt, cdn, "status", "Missing");
-		frappe.model.set_value(cdt, cdn, "verified_by", "");
-		frappe.model.set_value(cdt, cdn, "verified_on", "");
-		frappe.model.set_value(cdt, cdn, "version_status", "");
+		const primary = final_file || draft;
+		if (row.attachment !== primary) {
+			frappe.model.set_value(cdt, cdn, "attachment", primary);
+		}
+		return;
 	}
+
+	// Both draft and final cleared — also clear the legacy attachment mirror so
+	// refresh/save cannot resurrect the file into Draft Document.
+	if (row.attachment) {
+		frappe.model.set_value(cdt, cdn, "attachment", "");
+	}
+	frappe.model.set_value(cdt, cdn, "status", "Missing");
+	frappe.model.set_value(cdt, cdn, "verified_by", "");
+	frappe.model.set_value(cdt, cdn, "verified_on", "");
+	frappe.model.set_value(cdt, cdn, "version_status", "");
 }
 
 function cgm_sync_shipment_document_rows_on_refresh(frm, table_field) {
@@ -342,12 +353,23 @@ function cgm_hydrate_legacy_document_rows(frm, table_field) {
 	let changed = false;
 	for (const row of frm.doc[table_field]) {
 		const draft = draft_field ? row[draft_field] : null;
-		if (draft_field && !draft && row.attachment) {
+		// Only migrate true legacy rows (file in attachment, no draft/final yet).
+		// Never resurrect a cleared draft from the attachment mirror.
+		if (draft_field && !draft && !row.final_attachment && row.attachment) {
+			if (row.status === "Missing") {
+				row.attachment = "";
+				changed = true;
+				continue;
+			}
 			row[draft_field] = row.attachment;
 			changed = true;
 		}
-		if (draft || row.final_attachment) {
-			row.attachment = row.final_attachment || draft || row.attachment;
+		const next_draft = draft_field ? row[draft_field] : null;
+		if (next_draft || row.final_attachment) {
+			row.attachment = row.final_attachment || next_draft || row.attachment;
+		} else if (row.attachment) {
+			row.attachment = "";
+			changed = true;
 		}
 	}
 	return changed;

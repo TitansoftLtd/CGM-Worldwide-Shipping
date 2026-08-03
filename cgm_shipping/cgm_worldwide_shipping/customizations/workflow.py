@@ -449,6 +449,19 @@ def seed_finance_permit_rows_from_project(finance_task, *, save: bool = True) ->
 	return added
 
 
+def _apply_permit_row_updates_without_touching_task(
+	row_name: str, updates: dict
+) -> bool:
+	"""Update a Permit Register child row without bumping the parent Task.modified.
+
+	Background finance→declarant mirrors must not invalidate an open form's timestamp.
+	"""
+	if not row_name or not updates:
+		return False
+	frappe.db.set_value("Permit Register", row_name, updates, update_modified=False)
+	return True
+
+
 def sync_permit_receipts_to_application_task(finance_task) -> bool:
 	"""Mirror Finance-uploaded permit receipts onto the application task for Declarant."""
 	if not is_permit_finance_task_doc(finance_task) or not finance_task.project:
@@ -457,6 +470,9 @@ def sync_permit_receipts_to_application_task(finance_task) -> bool:
 		return False
 	app_name = get_permit_application_task_for_finance(finance_task)
 	if not app_name:
+		return False
+	# Do not touch the application task while Complete is in flight (avoids TimestampMismatch).
+	if frappe.cache().get_value(f"cgm_complete_permit_app:{app_name}"):
 		return False
 	app = frappe.get_doc("Task", app_name)
 	if not app.meta.has_field(TASK_PERMITS_FIELD):
@@ -473,43 +489,59 @@ def sync_permit_receipts_to_application_task(finance_task) -> bool:
 		r.permit_type: r for r in (app.get(TASK_PERMITS_FIELD) or []) if r.get("permit_type")
 	}
 	changed = False
+	needs_insert = False
 	for fin_row in fin_rows:
 		row = app_by_type.get(fin_row.permit_type)
 		if not row:
-			# Permit may have been paid on Finance after being added there —
-			# create the matching Declarant row so the receipt is visible.
-			row = app.append(TASK_PERMITS_FIELD, build_permit_row_payload(fin_row))
-			app_by_type[fin_row.permit_type] = row
+			app.append(TASK_PERMITS_FIELD, build_permit_row_payload(fin_row))
+			app_by_type[fin_row.permit_type] = True
+			needs_insert = True
 			changed = True
 			continue
+		updates = {}
 		if row.get("payment_receipt") != fin_row.payment_receipt:
-			row.payment_receipt = fin_row.payment_receipt
-			changed = True
+			updates["payment_receipt"] = fin_row.payment_receipt
 		if cint(fin_row.get("receipt_verified")) and not cint(row.get("receipt_verified")):
-			row.receipt_verified = 1
-			changed = True
+			updates["receipt_verified"] = 1
 		if fin_row.get("journal_entry") and row.get("journal_entry") != fin_row.journal_entry:
-			row.journal_entry = fin_row.journal_entry
-			changed = True
+			updates["journal_entry"] = fin_row.journal_entry
 		if cint(fin_row.get("invoice_verified")) and not cint(row.get("invoice_verified")):
-			row.invoice_verified = 1
+			updates["invoice_verified"] = 1
+		if row.name and _apply_permit_row_updates_without_touching_task(row.name, updates):
 			changed = True
+	if needs_insert:
+		# New rows require a save; avoid bumping modified so open Declarant forms stay savable.
+		frappe.flags.cgm_syncing_permit_finance_rows = True
+		try:
+			app.flags.ignore_links = True
+			app.flags.ignore_version = True
+			# Persist children then restore the prior modified timestamp.
+			prior_modified = frappe.db.get_value("Task", app_name, "modified")
+			app.save(ignore_permissions=True)
+			if prior_modified:
+				frappe.db.set_value(
+					"Task",
+					app_name,
+					"modified",
+					prior_modified,
+					update_modified=False,
+				)
+		finally:
+			app.flags.ignore_links = False
+			frappe.flags.cgm_syncing_permit_finance_rows = False
+	elif changed:
+		frappe.clear_document_cache("Task", app_name)
 	if not changed:
 		return False
-	frappe.flags.cgm_syncing_permit_finance_rows = True
-	try:
-		app.flags.ignore_links = True
-		app.save(ignore_permissions=True)
-	finally:
-		app.flags.ignore_links = False
-		frappe.flags.cgm_syncing_permit_finance_rows = False
 	frappe.publish_realtime(
 		"cgm_task_status_changed",
 		{
 			"task": app_name,
 			"project": finance_task.project,
 			"receipt_synced": 1,
-			"status": app.status,
+			"status": frappe.db.get_value("Task", app_name, "status"),
+			# Soft sync: client may refresh fields without treating as hard lock conflict.
+			"soft_sync": 1,
 		},
 	)
 	return True
@@ -1333,21 +1365,8 @@ def validate_permit_application_can_complete(task) -> None:
 			"Upload <b>Permit Certificate</b> for each permit. Missing: "
 			f"<b>{', '.join(missing_certs)}</b>."
 		)
-
-	unverified = [
-		r.permit_type for r in payable if r.permit_type and not r.get("receipt_verified")
-	]
-	if unverified:
-		fin_seq = get_permit_finance_sequence_for_application(seq)
-		fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq else None
-		fin_label = (
-			frappe.db.get_value("Task", fin_name, "subject") if fin_name else "Finance permit payment"
-		)
-		frappe.throw(
-			f"Finance must tick <b>Receipt Verified</b> on each Local permit (on "
-			f"<b>{fin_label}</b>) before completing. Pending: "
-			f"<b>{', '.join(unverified)}</b>."
-		)
+	# Receipt Verified is not required: Finance upload of the receipt is confirmation.
+	# Finance only manually verifies invoices.
 
 
 def enforce_receipt_verified_permission(task) -> None:
@@ -1626,26 +1645,83 @@ def sync_permit_invoice_verification_to_application(finance_task) -> bool:
 	changed = False
 	for row in app.get(TASK_PERMITS_FIELD) or []:
 		fin_row = fin_by_type.get(row.permit_type)
-		if not fin_row:
+		if not fin_row or not row.name:
 			continue
+		updates = {}
 		if not cint(row.get("invoice_verified")):
-			row.invoice_verified = 1
-			changed = True
+			updates["invoice_verified"] = 1
 		if row.get("status") in (None, "", "Invoice Submitted"):
-			row.status = "Invoice Verified"
+			updates["status"] = "Invoice Verified"
+		if _apply_permit_row_updates_without_touching_task(row.name, updates):
 			changed = True
 	if not changed:
 		return False
-	frappe.flags.cgm_syncing_permit_finance_rows = True
-	try:
-		app.save(ignore_permissions=True)
-	finally:
-		frappe.flags.cgm_syncing_permit_finance_rows = False
+	frappe.clear_document_cache("Task", app_name)
 	frappe.publish_realtime(
 		"cgm_task_status_changed",
-		{"task": app_name, "project": finance_task.project},
+		{"task": app_name, "project": finance_task.project, "soft_sync": 1},
 	)
 	return True
+
+
+@frappe.whitelist()
+def complete_permit_application_task(task_name: str) -> dict:
+	"""Complete a permit application task from a fresh DB load (avoids stale-form timestamp conflicts)."""
+	if not task_name or not frappe.db.exists("Task", task_name):
+		frappe.throw("Task not found.")
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+
+	# Serialize completion so a form save / soft-sync cannot collide mid-request.
+	lock_key = f"cgm_complete_permit_app:{task_name}"
+	if frappe.cache().get_value(lock_key):
+		frappe.throw(
+			"This task is already being completed. Wait a moment, then refresh.",
+			title="Please wait",
+		)
+	frappe.cache().set_value(lock_key, 1, expires_in_sec=30)
+	try:
+		task = frappe.get_doc("Task", task_name)
+		if not is_permit_application_task_doc(task):
+			frappe.throw("This action is only for pre-/post-clearance permit application tasks.")
+		if task.status == "Cancelled":
+			frappe.throw("Cancelled tasks cannot be completed.")
+		if task.status == "Completed":
+			return {"task": task.name, "status": "Completed", "already_completed": 1}
+
+		# In-memory only — do not nested-save before the completion save (avoids concurrent locks).
+		merge_project_permits_into_application_task(task, save=False)
+
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			validate_permit_application_task,
+		)
+
+		seq = task_sequence(task)
+		validate_permit_application_task(task, seq)
+		validate_permit_application_can_complete(task)
+
+		task.status = "Completed"
+		task.completed_by = frappe.session.user
+		task.completed_on = now_datetime()
+		task.progress = 100
+		frappe.flags.cgm_auto_completing_sea_task = True
+		try:
+			task.save(ignore_permissions=True)
+		finally:
+			frappe.flags.cgm_auto_completing_sea_task = False
+
+		# Defer realtime so the client is not mid-reload while this request finishes.
+		frappe.publish_realtime(
+			"cgm_task_status_changed",
+			{"task": task.name, "status": "Completed", "project": task.project},
+			after_commit=True,
+		)
+		return {
+			"task": task.name,
+			"status": "Completed",
+			"message": "Permit application task completed.",
+		}
+	finally:
+		frappe.cache().delete_value(lock_key)
 
 
 @frappe.whitelist()
@@ -1740,7 +1816,7 @@ def get_permit_finance_workflow_status(task_name: str) -> dict:
 	task = frappe.get_doc("Task", task_name)
 	rows = permit_finance_rows(task)
 	pending_verify = [
-		r.permit_type for r in rows if r.get("payment_receipt") and not r.get("receipt_verified")
+		r.permit_type for r in rows if r.get("payment_invoice") and not cint(r.get("invoice_verified"))
 	]
 	missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
 	missing_payments = [r.permit_type for r in rows if not r.get("journal_entry")]
