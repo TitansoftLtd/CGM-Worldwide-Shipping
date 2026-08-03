@@ -671,16 +671,18 @@ function get_sea_task_ui(frm) {
 		};
 	}
 	if (seq_in_list(seq, cfg.auto_complete_seqs)) {
+		const completed = frm.doc.status === "Completed";
 		return {
 			is_sea_task: true,
 			show_documents: true,
-			documents_read_only: true,
+			// Allow correcting intake docs after an explicit Re-open.
+			documents_read_only: completed,
 			show_permits: false,
 			show_payments: false,
 			show_external_ref: false,
 			show_description: true,
-			auto_intake_intro: true,
-			hide_mark_complete: true,
+			auto_intake_intro: completed,
+			hide_mark_complete: completed,
 		};
 	}
 	if (seq_in_list(seq, cfg.ucr_application_seqs)) {
@@ -1507,6 +1509,43 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	}
 
 	add_client_paid_application_mark_complete_button(frm, ui);
+
+	if (
+		frm.doc.status === "Completed" &&
+		!frm.is_new() &&
+		(is_sea_clearance_task(frm) || frm.doc.custom_sequence_no)
+	) {
+		frm.add_custom_button(__("Re-open Task"), () => {
+			frappe.confirm(
+				__(
+					"Re-open this completed task so you can attach or replace documents? " +
+						"You will need to mark it complete again when finished."
+				),
+				() => {
+					frappe.call({
+						method:
+							"cgm_shipping.cgm_worldwide_shipping.customizations.task.reopen_completed_task",
+						args: {
+							task_name: frm.doc.name,
+							reason: "Reopened to correct or replace attachments",
+						},
+						freeze: true,
+						freeze_message: __("Re-opening task…"),
+						callback(r) {
+							if (r.exc || !r.message) {
+								return;
+							}
+							frappe.show_alert({
+								message: __(r.message.message || "Task reopened."),
+								indicator: r.message.reopened ? "orange" : "blue",
+							});
+							frm.reload_doc();
+						},
+					});
+				}
+			);
+		});
+	}
 
 	if (
 		is_permit_application_step(frm) &&

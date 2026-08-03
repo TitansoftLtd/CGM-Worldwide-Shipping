@@ -2022,6 +2022,56 @@ def apply_finance_payment_to_project_permits(task) -> None:
 
 
 @frappe.whitelist()
+def reopen_completed_task(task_name: str, reason: str | None = None) -> dict:
+	"""Re-open any completed sea clearance task so documents can be corrected mid-project.
+
+	Finance-paired tasks keep their existing verify → pay → receipt flow when new
+	invoices are attached after reopen. This endpoint only reopens the selected task.
+	"""
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	task = frappe.get_doc("Task", task_name)
+	if task.status == "Cancelled":
+		frappe.throw("Cancelled tasks cannot be reopened.")
+	if task.status != "Completed":
+		return {
+			"task": task.name,
+			"status": task.status,
+			"reopened": False,
+			"message": "Task is already open.",
+		}
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_task,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import _reopen_sea_task
+
+	if not is_sea_import_task(task) and not task.get("custom_task_flow_key"):
+		# Still allow Project workflow tasks that carry CGM custom fields.
+		if not task.meta.has_field("custom_sequence_no"):
+			frappe.throw("This reopen action is only for clearance workflow tasks.")
+
+	frappe.flags.cgm_reopening_task = True
+	try:
+		opened = _reopen_sea_task(
+			task,
+			reason=(reason or "").strip() or "Reopened to correct or replace attachments",
+		)
+	finally:
+		frappe.flags.cgm_reopening_task = False
+
+	return {
+		"task": task.name,
+		"status": frappe.db.get_value("Task", task.name, "status") or "Open",
+		"reopened": bool(opened),
+		"message": (
+			"Task reopened. Attach or replace documents, then mark complete again when ready."
+			if opened
+			else "Task was not reopened."
+		),
+	}
+
+
+@frappe.whitelist()
 def reopen_task_for_permit_attachments(task_name: str) -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)

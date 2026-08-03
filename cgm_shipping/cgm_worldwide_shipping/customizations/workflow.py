@@ -697,10 +697,15 @@ def prepare_finance_permit_task(application_task) -> str | None:
 
 
 def _reopen_sea_task(task, *, reason: str | None = None) -> bool:
-	"""Set a completed sea task back to Open so additional work can continue."""
+	"""Set a completed sea task back to Open so additional work can continue.
+
+	``cgm_reopening_task`` is set by callers *around* this call to protect later
+	saves from flipping status back to Completed — it must not block the reopen
+	itself.
+	"""
 	if not task or task.status != "Completed":
 		return False
-	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_permit_finance_completing"):
+	if frappe.flags.get("cgm_permit_finance_completing"):
 		return False
 	values = {
 		"status": "Open",
