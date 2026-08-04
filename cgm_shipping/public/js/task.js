@@ -113,8 +113,10 @@ frappe.ui.form.on("Task", {
 				if (is_permit_finance_step(frm, seq)) {
 					if (frm.doc.custom_client_paid_directly) {
 						intro = __(
-							"<b>Paid directly by client</b> is confirmed — no Journal Entry or receipt verification is required. " +
-								"This payment step completes automatically."
+							"<b>Client will pay</b> is selected — no company Journal Entry. " +
+								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> · " +
+								"<b>3</b> Upload the client's payment receipt(s). " +
+								"Both tasks complete when receipts are in."
 						);
 					} else {
 						const appLabel = permit_application_task_label(
@@ -123,17 +125,18 @@ frappe.ui.form.on("Task", {
 						);
 						intro = __(
 							"<b>1 Finance:</b> Verify permit invoices (tick <b>Invoice Verified</b> or <b>Verify Invoices</b>) · " +
-								"<b>2</b> Use <b>Make Payment</b> on each permit row · " +
-								"<b>3</b> Upload receipts on this finance task — both tasks complete automatically. " +
+								"<b>2</b> Use <b>Make Payment</b> on each permit row (or tick <b>Client will pay</b>) · " +
+								"<b>3</b> Declaration uploads receipts on this finance task — both tasks complete automatically. " +
 								"Declarant sees receipts and attaches certificates on <b>{0}</b>.",
 							[appLabel]
 						);
 					}
 				} else if (frm.doc.custom_client_paid_directly) {
 					intro = __(
-						"<b>Finance confirmed: Paid directly by client.</b> No permit invoice or receipt handoff is required. " +
-							"Attach <b>Permit Certificate</b> on each row under <b>Task Permits</b> (if any), then click <b>Mark Completed</b>. " +
-							"If nothing needs attaching, mark the task complete now."
+						"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
+							"Attach invoices as usual; Finance verifies. After the client pays, upload their receipt " +
+							"on the finance task (same department that attached the invoices). " +
+							"Attach <b>Permit Certificate</b> on each row; this task completes when receipts and certificates are in."
 					);
 				} else if (frm.doc.custom_permit_invoices_submitted) {
 					const finLabel = permit_finance_task_label(
@@ -141,8 +144,9 @@ frappe.ui.form.on("Task", {
 						get_paired_permit_finance_seq(frm, seq)
 					);
 					intro = __(
-						"<b>After invoices go to Finance:</b> Finance verifies invoices and pays on <b>{0}</b>, then uploads receipts. " +
-							"Attach <b>Permit Certificate</b> on each row; this task completes when Finance finishes. " +
+						"<b>After invoices go to Finance:</b> Finance verifies invoices and pays on <b>{0}</b>. " +
+							"Then upload payment receipts on that finance task (same department that attached the invoices). " +
+							"Attach <b>Permit Certificate</b> on each row; this task completes when receipts and certificates are in. " +
 							"You can still add more permits later — Finance will reopen to verify and pay.",
 						[finLabel]
 					);
@@ -176,36 +180,59 @@ frappe.ui.form.on("Task", {
 					intro_set = true;
 				}
 			} else if (ui.is_ucr_finance) {
-				intro = __(
-					"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
-						"<b>2</b> Use <b>Actions → Make Payment</b> · " +
-						"<b>3</b> Upload <b>UCR Receipt</b> on this task — completes automatically. " +
-						"Declarant sees the receipt and attaches the IDF certificate on <b>Create UCR (IDF)</b>."
-				);
+				intro = frm.doc.custom_client_paid_directly
+					? __(
+							"<b>Client will pay</b> — no company Journal Entry. " +
+								"<b>1</b> Verify <b>UCR Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> · " +
+								"<b>3</b> Upload the client's <b>UCR Receipt</b>. " +
+								"Declarant attaches the IDF certificate on <b>Create UCR (IDF)</b>."
+						)
+					: __(
+							"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>) · " +
+								"<b>3</b> Declaration uploads <b>UCR Receipt</b> on this task — completes automatically. " +
+								"Declarant attaches the IDF certificate on <b>Create UCR (IDF)</b>."
+						);
 				intro_set = true;
 			} else if (ui.is_entry_finance) {
-				intro = __(
-					"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> · " +
-						"<b>2</b> Use <b>Actions → Make Payment</b> · " +
-						"<b>3</b> Upload <b>Entry Slip Receipt</b> on this task — completes automatically. " +
-						"Declarant sees the receipt and attaches the ENTRY document on <b>Create Entry</b>."
-				);
+				intro = frm.doc.custom_client_paid_directly
+					? __(
+							"<b>Client will pay</b> — no company Journal Entry. " +
+								"<b>1</b> Verify <b>Entry Slip Invoice</b> · <b>2</b> Upload the client's <b>Entry Slip Receipt</b>. " +
+								"Declarant attaches the ENTRY document on <b>Create Entry</b>."
+						)
+					: __(
+							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> · " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>) · " +
+								"<b>3</b> Upload <b>Entry Slip Receipt</b> on this task — completes automatically. " +
+								"Declarant sees the receipt and attaches the ENTRY document on <b>Create Entry</b>."
+						);
 				intro_set = true;
 			} else if (ui.is_shipping_line_finance) {
-				intro = __(
-					"<b>1 Finance:</b> Verify <b>Shipping Line Invoice</b> · " +
-						"<b>2</b> Use <b>Actions → Make Payment</b> · " +
-						"<b>3</b> Upload <b>Shipping Line Receipt</b> on this task — completes automatically. " +
-						"Declarant can view the receipt on the application task."
-				);
+				intro = frm.doc.custom_client_paid_directly
+					? __(
+							"<b>Client will pay</b> — no company Journal Entry. " +
+								"<b>1</b> Verify <b>Shipping Line Invoice</b> · <b>2</b> Upload the client's <b>Shipping Line Receipt</b>."
+						)
+					: __(
+							"<b>1 Finance:</b> Verify <b>Shipping Line Invoice</b> · " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>) · " +
+								"<b>3</b> Upload <b>Shipping Line Receipt</b> on this task — completes automatically. " +
+								"Declarant can view the receipt on the application task."
+						);
 				intro_set = true;
 			} else if (ui.is_kpa_finance) {
-				intro = __(
-					"<b>1 Finance:</b> Verify <b>KPA Invoice</b> · " +
-						"<b>2</b> Use <b>Actions → Make Payment</b> · " +
-						"<b>3</b> Upload <b>KPA Receipt</b> on this task — completes automatically. " +
-						"Supervisor can view the receipt on the application task."
-				);
+				intro = frm.doc.custom_client_paid_directly
+					? __(
+							"<b>Client will pay</b> — no company Journal Entry. " +
+								"<b>1</b> Verify <b>KPA Invoice</b> · <b>2</b> Upload the client's <b>KPA Receipt</b>."
+						)
+					: __(
+							"<b>1 Finance:</b> Verify <b>KPA Invoice</b> · " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>) · " +
+								"<b>3</b> Upload <b>KPA Receipt</b> on this task — completes automatically. " +
+								"Supervisor can view the receipt on the application task."
+						);
 				intro_set = true;
 			} else if (ui.is_document_checkpoint) {
 				intro = __(
@@ -215,8 +242,8 @@ frappe.ui.form.on("Task", {
 				intro_set = true;
 			} else if (ui.show_payments) {
 				intro = __(
-					"Use <b>Make Payment</b> to record a Journal Entry, or tick <b>Paid directly by client</b> " +
-						"if the client settled this fee — no invoice/receipt verification needed then."
+					"Use <b>Make Payment</b> to record a Journal Entry, or tick <b>Client will pay</b> " +
+						"if the client settles this fee — then verify the invoice and upload their receipt (no JE)."
 				);
 			}
 			if (!intro_set) {
@@ -318,6 +345,11 @@ frappe.ui.form.on("Task", {
 		}
 		open_next_task_prompt(frm);
 	},
+
+	custom_client_paid_directly(frm) {
+		// Share Invoice with Client only shows on the client-pays path.
+		schedule_cgm_task_toolbar_buttons(frm);
+	},
 });
 
 const SEA_FLOW_KEY = "SEA_IMPORT_E2E";
@@ -374,6 +406,29 @@ const CGM_TASK_PERMISSIONS_FALLBACK = {
 		"Finance User",
 		"Accounts User",
 		"Accounts Manager",
+		"System Manager",
+	],
+	can_verify_invoice: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
+	can_upload_invoice: [
+		"Declaration User",
+		"Declarant",
+		"Operations Manager",
+		"Operations User",
+		"System Manager",
+	],
+	can_upload_certificate: [
+		"Declaration User",
+		"Declarant",
+		"Operations Manager",
+		"Operations User",
+		"System Manager",
+	],
+	can_confirm_client_paid: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
+	can_upload_document: [
+		"Declaration User",
+		"Declarant",
+		"Operations Manager",
+		"Operations User",
 		"System Manager",
 	],
 	can_record_purchase_invoice: [
@@ -446,16 +501,17 @@ function get_cgm_permissions(frm) {
 		return perms;
 	}
 	const roles = frappe.user_roles || [];
+	const from_fallback = (key) =>
+		(CGM_TASK_PERMISSIONS_FALLBACK[key] || []).some((r) => roles.includes(r));
 	return {
-		can_make_payment: CGM_TASK_PERMISSIONS_FALLBACK.can_make_payment.some((r) =>
-			roles.includes(r)
-		),
-		can_upload_receipt: CGM_TASK_PERMISSIONS_FALLBACK.can_upload_receipt.some((r) =>
-			roles.includes(r)
-		),
-		can_record_purchase_invoice: CGM_TASK_PERMISSIONS_FALLBACK.can_record_purchase_invoice.some(
-			(r) => roles.includes(r)
-		),
+		can_make_payment: from_fallback("can_make_payment"),
+		can_upload_receipt: from_fallback("can_upload_receipt"),
+		can_verify_invoice: from_fallback("can_verify_invoice"),
+		can_upload_invoice: from_fallback("can_upload_invoice"),
+		can_upload_certificate: from_fallback("can_upload_certificate"),
+		can_confirm_client_paid: from_fallback("can_confirm_client_paid"),
+		can_upload_document: from_fallback("can_upload_document"),
+		can_record_purchase_invoice: from_fallback("can_record_purchase_invoice"),
 	};
 }
 
@@ -989,6 +1045,80 @@ function setup_client_inspection_buttons(frm) {
 	);
 }
 
+function finance_task_has_shareable_invoice(frm) {
+	return (
+		finance_task_has_unshared_verified_invoice(frm) ||
+		finance_task_has_already_shared_invoice(frm)
+	);
+}
+
+function finance_task_has_unshared_verified_invoice(frm) {
+	const lines = frm.doc.custom_task_finance_lines || [];
+	const has_fin = lines.some(
+		(r) =>
+			(r.line_type || "Invoice") === "Invoice" &&
+			r.attachment &&
+			cint(r.verified) &&
+			!cint(r.shared_with_client)
+	);
+	if (has_fin) {
+		return true;
+	}
+	return (frm.doc.custom_task_permits || []).some(
+		(r) =>
+			r.permit_type &&
+			(r.origin || "Local") !== "Foreign" &&
+			r.payment_invoice &&
+			cint(r.invoice_verified) &&
+			!cint(r.shared_with_client)
+	);
+}
+
+function finance_task_has_already_shared_invoice(frm) {
+	const lines = frm.doc.custom_task_finance_lines || [];
+	if (
+		lines.some(
+			(r) =>
+				(r.line_type || "Invoice") === "Invoice" &&
+				r.attachment &&
+				cint(r.shared_with_client)
+		)
+	) {
+		return true;
+	}
+	return (frm.doc.custom_task_permits || []).some(
+		(r) => r.payment_invoice && cint(r.shared_with_client)
+	);
+}
+
+function share_invoices_with_client_from_form(frm) {
+	if (frm.is_dirty()) {
+		frappe.msgprint({
+			title: __("Save first"),
+			message: __("Save the task, then share the invoice with the client."),
+			indicator: "orange",
+		});
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.client_invoice_share.share_invoices_with_client",
+		args: { task_name: frm.doc.name, notify: 1 },
+		freeze: true,
+		freeze_message: __("Sharing invoice…"),
+		callback(r) {
+			if (r.exc || !r.message) {
+				return;
+			}
+			frappe.show_alert({
+				message: r.message.message || __("Shared with client."),
+				indicator: "green",
+			});
+			frm.reload_doc();
+		},
+	});
+}
+
 function notify_client_for_inspection_from_form(frm) {
 	if (frm.is_dirty()) {
 		frappe.msgprint({
@@ -1070,15 +1200,29 @@ function permit_rows_pending_receipt_verification(frm) {
 	);
 }
 
+function client_paid_settlement_ready_on_form(frm) {
+	if (!frm.doc.custom_client_paid_directly) {
+		return false;
+	}
+	if (is_permit_payment_pattern(frm)) {
+		const rows = permit_finance_rows_on_form(frm);
+		if (!rows.length) {
+			return true;
+		}
+		return rows.every((r) => cint(r.invoice_verified) && r.payment_receipt);
+	}
+	// App-finance settlement is confirmed server-side; client-pays alone is not enough.
+	return false;
+}
+
 function task_has_recorded_payment_on_form(frm) {
-	if (is_permit_payment_pattern(frm) && !frm.doc.custom_client_paid_directly) {
+	if (frm.doc.custom_client_paid_directly) {
+		return client_paid_settlement_ready_on_form(frm);
+	}
+	if (is_permit_payment_pattern(frm)) {
 		return permit_rows_all_have_journal_entry(frm);
 	}
-	return Boolean(
-		frm.doc.custom_client_paid_directly ||
-			frm.doc.custom_journal_entry ||
-			frm.doc.custom_payment_entry
-	);
+	return Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
 }
 
 function complete_permit_application_task_from_form(frm) {
@@ -1215,7 +1359,9 @@ function ensure_permit_finance_reopened_for_pending(frm) {
 			r.permit_type &&
 			(r.origin || "Local") !== "Foreign" &&
 			r.payment_invoice &&
-			(!cint(r.invoice_verified) || !r.journal_entry || !r.payment_receipt)
+			(!cint(r.invoice_verified) ||
+				(!frm.doc.custom_client_paid_directly && !r.journal_entry) ||
+				!r.payment_receipt)
 	);
 	if (!pending.length) {
 		return;
@@ -1263,9 +1409,15 @@ function ensure_finance_permit_task_completed_on_form(frm) {
 		return;
 	}
 	const rows = permit_finance_rows_on_form(frm);
+	const client_paid = Boolean(frm.doc.custom_client_paid_directly);
 	if (
 		!rows.length ||
-		rows.some((r) => !r.journal_entry || !r.payment_receipt)
+		rows.some(
+			(r) =>
+				!cint(r.invoice_verified) ||
+				!r.payment_receipt ||
+				(!client_paid && !r.journal_entry)
+		)
 	) {
 		return;
 	}
@@ -1737,6 +1889,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	if (
 		is_finance_department_task(frm) &&
 		user_can_make_payment(frm) &&
+		!frm.doc.custom_client_paid_directly &&
 		frm.doc.status !== "Cancelled" &&
 		(frm.doc.status !== "Completed" || permit_finance_has_unpaid || app_finance_needs_payment)
 	) {
@@ -1755,18 +1908,37 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	setup_client_inspection_buttons(frm);
 
 	if (
+		is_finance_department_task(frm) &&
+		frm.doc.project &&
+		frm.doc.status !== "Cancelled" &&
+		cint(frm.doc.custom_client_paid_directly) &&
+		(user_can_verify_invoice(frm) ||
+			user_can_make_payment(frm) ||
+			user_can_confirm_client_paid(frm)) &&
+		finance_task_has_shareable_invoice(frm)
+	) {
+		const already =
+			finance_task_has_already_shared_invoice(frm) &&
+			!finance_task_has_unshared_verified_invoice(frm);
+		const btn = frm.add_custom_button(
+			already ? __("Notify Client Again") : __("Share Invoice with Client"),
+			() => share_invoices_with_client_from_form(frm)
+		);
+		btn?.addClass?.("btn-primary");
+	}
+
+	if (
 		is_permit_finance_step(frm) &&
 		frm.doc.status !== "Cancelled" &&
 		(frm.doc.status !== "Completed" || permit_rows_pending_invoice_verification(frm).length) &&
-		user_can_make_payment(frm) &&
+		user_can_verify_invoice(frm) &&
 		permit_rows_pending_invoice_verification(frm).length
 	) {
-		add_cgm_toolbar_button(
-			frm,
-			__("Verify Invoices"),
-			() => verify_all_permit_invoices_from_form(frm),
-			{ primary: true }
-		);
+		// Top-level (not Actions menu) so Pre-/Post-Clearance Finance always see it.
+		const btn = frm.add_custom_button(__("Verify Invoices"), () => {
+			verify_all_permit_invoices_from_form(frm);
+		});
+		btn?.addClass?.("btn-primary");
 	}
 
 	if ((ui.is_entry_application || is_entry_application_step(frm)) && frm.doc.project) {
@@ -1995,7 +2167,8 @@ function apply_ucr_application_intro(frm, status) {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
 	} else if (status.client_paid_directly && !status.idf_certificate_attached) {
 		intro = __(
-			"<b>Finance confirmed: Paid directly by client.</b> No UCR invoice or receipt verification is required. " +
+			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
+				"Finance verifies the invoice and uploads the client's receipt. " +
 				"Attach the <b>IDF/UCR certificate</b> under <b>Clearance Documents</b> to complete this task."
 		);
 	} else if (status.application_ready_to_complete) {
@@ -2010,7 +2183,8 @@ function apply_ucr_application_intro(frm, status) {
 		);
 	} else if (status.payment_made) {
 		intro = __(
-			"<b>Finance has paid the UCR invoice.</b> Finance will upload the supplier <b>UCR Receipt</b> on the finance task. " +
+			"<b>Finance has paid the UCR invoice.</b> Upload the supplier <b>UCR Receipt</b> on the finance payment task " +
+				"(same department that attached the invoice). " +
 				"When the certificate is issued, attach it under <b>Clearance Documents</b>."
 		);
 	} else if (status.invoice_verified) {
@@ -2080,42 +2254,32 @@ function configure_permit_grid(frm) {
 	const invoices_ready = invoices_sent || has_invoices;
 	// Never lock the whole column — new rows (additional permits) must stay editable
 	// even after earlier invoices were submitted / the task was completed.
-	const can_upload_invoice =
-		frappe.user.has_role("Declaration User") ||
-		frappe.user.has_role("Declarant") ||
-		frappe.user.has_role("Operations Manager") ||
-		frappe.user.has_role("Operations User") ||
-		frm.doc.owner === frappe.session.user ||
-		frappe.session.user === "Administrator" ||
-		frappe.user.has_role("System Manager");
-	const can_upload_proof = can_upload_invoice;
+	const can_upload_invoice = user_can_upload_invoice(frm);
+	const can_upload_proof = can_upload_invoice || user_can_upload_certificate(frm);
 
 	if (is_permit_application_step(frm, seq)) {
-		const client_paid = Boolean(frm.doc.custom_client_paid_directly);
 		frm.set_df_property("custom_task_permits", "read_only", 0);
 		grid.cannot_add_rows = !can_upload_proof;
-		grid.update_docfield_property("origin", "read_only", client_paid ? 1 : 0);
+		grid.update_docfield_property("origin", "read_only", 0);
 		grid.update_docfield_property(
 			"payment_invoice",
 			"read_only",
-			client_paid ? 1 : can_upload_proof ? 0 : 1
+			can_upload_proof ? 0 : 1
 		);
 		grid.update_docfield_property(
 			"invoice_amount",
 			"read_only",
-			client_paid ? 1 : can_upload_proof ? 0 : 1
+			can_upload_proof ? 0 : 1
 		);
 		// Declarant can see when Finance has verified; cannot tick it here.
-		grid.update_docfield_property("invoice_verified", "hidden", client_paid || !invoices_ready ? 1 : 0);
+		grid.update_docfield_property("invoice_verified", "hidden", !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("invoice_verified", "read_only", 1);
 		grid.update_docfield_property("invoice_verified", "in_list_view", 1);
-		// Client-paid skips receipt handoff — hide those columns.
-		grid.update_docfield_property("payment_receipt", "hidden", client_paid || !invoices_ready ? 1 : 0);
+		grid.update_docfield_property("payment_receipt", "hidden", !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("payment_receipt", "read_only", 1);
 		grid.update_docfield_property("permit_document", "hidden", 0);
 		grid.update_docfield_property("permit_document", "read_only", can_upload_proof ? 0 : 1);
-		// Receipt verified is auto-stamped on Finance upload — show as read-only only.
-		grid.update_docfield_property("receipt_verified", "hidden", client_paid || !invoices_ready ? 1 : 0);
+		grid.update_docfield_property("receipt_verified", "hidden", !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("receipt_verified", "read_only", 1);
 		toggle_permit_invoice_fields_for_origin(grid);
 	} else if (is_permit_finance_step(frm, seq)) {
@@ -2123,7 +2287,7 @@ function configure_permit_grid(frm) {
 			grid.update_docfield_property(fn, "read_only", 1);
 		});
 		grid.update_docfield_property("invoice_verified", "hidden", 0);
-		grid.update_docfield_property("invoice_verified", "read_only", user_can_make_payment(frm) ? 0 : 1);
+		grid.update_docfield_property("invoice_verified", "read_only", user_can_verify_invoice(frm) ? 0 : 1);
 		grid.update_docfield_property("invoice_verified", "in_list_view", 1);
 		grid.update_docfield_property("journal_entry", "hidden", 0);
 		grid.update_docfield_property("journal_entry", "read_only", 1);
@@ -2319,24 +2483,19 @@ frappe.ui.form.on("Permit Register", {
 		if (!grid_row || !row) {
 			return;
 		}
-		const client_paid = Boolean(frm.doc.custom_client_paid_directly);
 		const can_upload =
-			frappe.user.has_role("Declaration User") ||
-			frappe.user.has_role("Declarant") ||
-			frappe.user.has_role("Operations Manager") ||
-			frappe.user.has_role("Operations User") ||
-			frm.doc.owner === frappe.session.user ||
-			frappe.session.user === "Administrator" ||
-			frappe.user.has_role("System Manager");
+			user_can_upload_invoice(frm) ||
+			user_can_upload_certificate(frm) ||
+			frm.doc.owner === frappe.session.user;
 		// Lock invoice fields only on rows Finance has already verified or paid;
 		// new additional permit rows stay editable (including on Completed tasks).
+		// Client-pays still allows invoice upload until verified.
 		const row_locked =
-			client_paid ||
 			Boolean(cint(row.invoice_verified)) ||
 			Boolean(row.journal_entry) ||
 			Boolean(row.payment_entry);
 		const invoice_editable = can_upload && !row_locked;
-		grid_row.toggle_editable("origin", !client_paid && !row_locked);
+		grid_row.toggle_editable("origin", !row_locked);
 		grid_row.toggle_editable("payment_invoice", invoice_editable);
 		grid_row.toggle_editable("invoice_amount", invoice_editable);
 		grid_row.toggle_editable("permit_document", can_upload);
@@ -2431,9 +2590,9 @@ frappe.ui.form.on("Permit Register", {
 		if (!is_permit_finance_step(frm, seq)) {
 			return;
 		}
-		if (!user_can_make_payment(frm)) {
+		if (!user_can_verify_invoice(frm)) {
 			frappe.show_alert({
-				message: __("Only Finance can verify permit invoices."),
+				message: __("Only the configured Verify Invoice role group can verify permit invoices."),
 				indicator: "orange",
 			});
 			frappe.model.set_value(cdt, cdn, "invoice_verified", 0);
@@ -2638,7 +2797,8 @@ function apply_entry_application_intro(frm, status) {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
 	} else if (status.client_paid_directly && !status.certificate_attached) {
 		intro = __(
-			"<b>Finance confirmed: Paid directly by client.</b> No Entry Slip invoice or receipt verification is required. " +
+			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
+				"Finance verifies the invoice and uploads the client's receipt. " +
 				"Attach the <b>ENTRY customs document</b> under <b>Clearance Documents</b> to complete this task."
 		);
 	} else if (status.application_ready_to_complete) {
@@ -2897,17 +3057,19 @@ function configure_client_paid_field(frm, ui) {
 	set_client_paid_fields_hidden(frm, show ? 0 : 1);
 	if (show && frm.fields_dict.custom_client_paid_directly) {
 		const editable =
-			finance_step && user_can_make_payment(frm) && frm.doc.status !== "Completed";
+			finance_step && user_can_confirm_client_paid(frm) && frm.doc.status !== "Completed";
 		frm.set_df_property("custom_client_paid_directly", "read_only", editable ? 0 : 1);
 		frm.set_df_property(
 			"custom_client_paid_directly",
 			"description",
 			finance_step
 				? __(
-						"Finance confirms the client settled this fee directly. No Journal Entry, invoice verification, or receipt upload is required — ticking this completes the payment step."
+						"Tick when the client settles this fee (no company Journal Entry). " +
+							"Still verify the invoice, then upload the client's payment receipt."
 					)
 				: __(
-						"Finance confirmed the client settled this fee directly. No invoice or receipt handoff is required for this task."
+						"Finance selected the client-pays path (no company Journal Entry). " +
+							"They will verify your invoice and share the client's receipt here."
 					)
 		);
 	}
@@ -2995,14 +3157,16 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 		intro = __("<b>All documents are in place.</b> This task is <b>Completed</b>.");
 	} else if (status.client_paid_directly && !status.certificate_required) {
 		intro = __(
-			"<b>Finance confirmed: Paid directly by client.</b> No invoice or receipt verification is required. " +
+			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
+				"Attach/replace the invoice as usual; Finance verifies and uploads the client's receipt. " +
 				"Click <b>Mark Completed</b> when this application step is finished."
 		);
 		// Remount toolbar so Mark Completed survives form.refresh clearing custom buttons.
 		schedule_cgm_task_toolbar_buttons(frm);
 	} else if (status.client_paid_directly && status.certificate_required) {
 		intro = __(
-			"<b>Finance confirmed: Paid directly by client.</b> Invoice and receipt verification are skipped. " +
+			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
+				"Finance verifies the invoice and uploads the client's receipt. " +
 				"Attach the required certificate under <b>Clearance Documents</b> to complete this task."
 		);
 	} else if (status.application_ready_to_complete) {
@@ -3143,6 +3307,40 @@ function user_can_upload_receipt(frm) {
 	);
 }
 
+function user_can_verify_invoice(frm) {
+	const perms = frm ? get_cgm_permissions(frm) : null;
+	if (perms && perms.can_verify_invoice !== undefined) {
+		return !!perms.can_verify_invoice;
+	}
+	return user_can_make_payment(frm);
+}
+
+function user_can_upload_invoice(frm) {
+	const perms = frm ? get_cgm_permissions(frm) : null;
+	if (perms && perms.can_upload_invoice !== undefined) {
+		return !!perms.can_upload_invoice;
+	}
+	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_invoice.some((role) =>
+		(frappe.user_roles || []).includes(role)
+	) || frm?.doc?.owner === frappe.session.user;
+}
+
+function user_can_upload_certificate(frm) {
+	const perms = frm ? get_cgm_permissions(frm) : null;
+	if (perms && perms.can_upload_certificate !== undefined) {
+		return !!perms.can_upload_certificate;
+	}
+	return user_can_upload_invoice(frm);
+}
+
+function user_can_confirm_client_paid(frm) {
+	const perms = frm ? get_cgm_permissions(frm) : null;
+	if (perms && perms.can_confirm_client_paid !== undefined) {
+		return !!perms.can_confirm_client_paid;
+	}
+	return user_can_make_payment(frm);
+}
+
 // ─── Make Payment → draft Journal Entry (Finance department) ──────────────────
 
 function is_finance_department_task(frm) {
@@ -3180,17 +3378,15 @@ function setup_permit_finance_make_payment_buttons(frm) {
 		if (row.payment_invoice && !cint(row.invoice_verified)) {
 			return;
 		}
-		add_cgm_toolbar_button(
-			frm,
-			__("Make Payment — {0}", [row.permit_type]),
-			() =>
-				open_journal_entry_payment_dialog(frm, {
-					permit_row_name: row.name,
-					default_amount: row.invoice_amount,
-					title_suffix: row.permit_type,
-				}),
-			{ primary: true }
+		// Top-level primary — same visibility as Verify Invoices.
+		const btn = frm.add_custom_button(__("Make Payment — {0}", [row.permit_type]), () =>
+			open_journal_entry_payment_dialog(frm, {
+				permit_row_name: row.name,
+				default_amount: row.invoice_amount,
+				title_suffix: row.permit_type,
+			})
 		);
+		btn?.addClass?.("btn-primary");
 	});
 }
 

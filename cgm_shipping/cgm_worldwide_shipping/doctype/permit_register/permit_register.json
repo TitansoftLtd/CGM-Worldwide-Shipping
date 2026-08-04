@@ -17,6 +17,11 @@
   "certificate_uploaded_on",
   "certificate_uploaded_by",
   "invoice_verified",
+  "shared_with_client",
+  "shared_by",
+  "shared_on",
+  "client_reported_paid",
+  "client_reported_on",
   "column_break_sfrq",
   "clearance_phase",
   "application_date",
@@ -99,6 +104,46 @@
    "fieldname": "invoice_verified",
    "fieldtype": "Check",
    "label": "Invoice Verified"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.origin != \"Foreign\"",
+   "description": "Finance shared this permit invoice on the customer portal for the client to pay.",
+   "fieldname": "shared_with_client",
+   "fieldtype": "Check",
+   "label": "Shared with Client",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.shared_with_client",
+   "fieldname": "shared_by",
+   "fieldtype": "Link",
+   "label": "Shared By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.shared_with_client",
+   "fieldname": "shared_on",
+   "fieldtype": "Datetime",
+   "label": "Shared On",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.shared_with_client",
+   "description": "Client uploaded a payment receipt on the portal.",
+   "fieldname": "client_reported_paid",
+   "fieldtype": "Check",
+   "label": "Client Reported Paid",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.client_reported_paid",
+   "fieldname": "client_reported_on",
+   "fieldtype": "Datetime",
+   "label": "Client Reported On",
+   "read_only": 1
   },
   {
    "fieldname": "payment_entry",
