@@ -1,0 +1,68 @@
+{# Shared JS for clearance-fee "I have paid" receipt upload. #}
+<script>
+frappe.ready(function () {
+	const SUBMIT =
+		"cgm_shipping.cgm_worldwide_shipping.customizations.client_invoice_share.submit_client_fee_payment_receipt";
+
+	document.querySelectorAll(".cgm-fee-receipt-input").forEach(function (input) {
+		input.addEventListener("change", function () {
+			const file = input.files && input.files[0];
+			if (!file) return;
+			const project = input.dataset.project;
+			const source = input.dataset.source;
+			const row = input.dataset.row;
+			if (!project || !source || !row) {
+				frappe.msgprint(__("Missing invoice details. Please refresh and try again."));
+				return;
+			}
+			const formData = new FormData();
+			formData.append("file", file);
+			formData.append("is_private", "1");
+			formData.append("folder", "Home/Attachments");
+			formData.append("doctype", "Project");
+			formData.append("docname", project);
+			frappe.freeze(__("Uploading receipt…"));
+			fetch("/api/method/upload_file", {
+				method: "POST",
+				body: formData,
+				headers: { "X-Frappe-CSRF-Token": frappe.csrf_token },
+			})
+				.then(function (response) {
+					return response.json();
+				})
+				.then(function (data) {
+					if (data.exc || !(data.message && data.message.file_url)) {
+						throw new Error(__("Upload failed. Please try again."));
+					}
+					return frappe.call({
+						method: SUBMIT,
+						args: {
+							project: project,
+							source: source,
+							row: row,
+							file_url: data.message.file_url,
+						},
+					});
+				})
+				.then(function (r) {
+					frappe.unfreeze();
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Receipt submitted."),
+						indicator: "green",
+					});
+					window.location.reload();
+				})
+				.catch(function (err) {
+					frappe.unfreeze();
+					frappe.msgprint({
+						title: __("Could not submit receipt"),
+						message: (err && err.message) || __("Please try again."),
+						indicator: "red",
+					});
+					input.value = "";
+				});
+		});
+	});
+});
+</script>
