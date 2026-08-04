@@ -333,35 +333,43 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 
 def get_containers_for_shipment(project_name: str) -> list[dict]:
 	"""Container Tracker rows for a shipment, ordered by container number."""
-	if not project_name:
+	if not project_name or not frappe.db.exists("DocType", "Container Tracker"):
 		return []
+
+	wanted = [
+		"name",
+		"container_number",
+		"container_mode",
+		"status",
+		"current_location",
+		"delivery_location",
+		"eta",
+		"ata",
+		"discharging_date",
+		"custom_release_date",
+		"gate_out_date_port",
+		"icd_gate_out_date",
+		"gate_in_date_warehouse",
+		"offloading_date",
+		"delivery_date",
+		"border_clearance_date",
+		"truck_number",
+		"actual_empty_return",
+		"demurrage_days",
+		"demurrage_amount",
+		"days_outstanding",
+	]
+	meta = frappe.get_meta("Container Tracker")
+	fields = [f for f in wanted if meta.has_field(f)]
+	if "name" not in fields:
+		fields.insert(0, "name")
+
 	return frappe.get_all(
 		"Container Tracker",
 		filters={"project": project_name},
-		fields=[
-			"name",
-			"container_number",
-			"container_mode",
-			"status",
-			"current_location",
-			"delivery_location",
-			"eta",
-			"ata",
-			"discharging_date",
-			"custom_release_date",
-			"gate_out_date_port",
-			"icd_gate_out_date",
-			"gate_in_date_warehouse",
-			"offloading_date",
-			"delivery_date",
-			"border_clearance_date",
-			"truck_number",
-			"actual_empty_return",
-			"demurrage_days",
-			"demurrage_amount",
-			"days_outstanding",
-		],
+		fields=fields,
 		order_by="container_number asc",
+		ignore_permissions=True,
 	)
 
 
@@ -379,7 +387,6 @@ CONTAINER_CHECKPOINTS = [
 	("border_clearance_date", "Border Cleared"),
 	("gate_in_date_warehouse", "Arrived at Warehouse"),
 	("offloading_date", "Offloaded"),
-	("delivery_date", "Delivered"),
 	("actual_empty_return", "Empty Returned"),
 ]
 
@@ -873,6 +880,265 @@ def download_shipment_permit(project: str, row: str):
 
 	file_doc = frappe.get_doc("File", {"file_url": file_url})
 	frappe.local.response.filename = file_doc.file_name or "permit"
+	frappe.local.response.filecontent = file_doc.get_content()
+	frappe.local.response.type = "download"
+
+
+# ─── Shared fee invoices (client pays) ────────────────────────────────────────
+
+
+def get_shipment_shared_fee_invoices(project_name: str) -> list[dict]:
+	"""Invoices Finance explicitly shared for the client to pay.
+
+	Two cheap queries (indexed filters) — no Task/Project document loads.
+	"""
+	if not project_name:
+		return []
+	return _shared_fee_invoices_for_projects([project_name])
+
+
+def get_customer_shared_fee_invoices(customer: str, limit: int = 100) -> list[dict]:
+	"""All Finance-shared fee invoices across this customer's shipments."""
+	if not customer:
+		return []
+	projects = frappe.get_all(
+		"Project",
+		filters={"customer": customer},
+		pluck="name",
+		limit=limit,
+	)
+	if not projects:
+		return []
+	return _shared_fee_invoices_for_projects(projects)
+
+
+def _project_refs(project_names: list[str]) -> dict[str, str]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+		display_ref_from_values,
+	)
+
+	if not project_names:
+		return {}
+	meta = frappe.get_meta("Project")
+	fields = ["name", "project_name"]
+	for field in ("custom_batch_no", "custom_bill_of_lading", "custom_bl_number"):
+		if meta.has_field(field):
+			fields.append(field)
+	rows = frappe.get_all("Project", filters={"name": ["in", project_names]}, fields=fields)
+	return {r.name: display_ref_from_values(r) or r.name for r in rows}
+
+
+def _shared_fee_invoices_for_projects(project_names: list[str]) -> list[dict]:
+	if not project_names:
+		return []
+
+	out: list[dict] = []
+	api = (
+		"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal"
+		".download_shared_fee_invoice"
+	)
+	refs = _project_refs(project_names)
+	has_client_paid = frappe.get_meta("Task Finance Line").has_field("client_reported_paid")
+	has_permit_client_paid = frappe.get_meta("Permit Register").has_field("client_reported_paid")
+
+	# Permit fee invoices on the Project register.
+	if (
+		frappe.get_meta("Project").has_field("custom_permit_register")
+		and frappe.get_meta("Permit Register").has_field("shared_with_client")
+	):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+			PERMIT_REGISTER_FIELD,
+		)
+
+		fields = ["name", "permit_type", "payment_invoice", "shared_on", "parent", "payment_receipt"]
+		if has_permit_client_paid:
+			fields.extend(["client_reported_paid", "client_reported_on"])
+
+		for row in frappe.get_all(
+			"Permit Register",
+			filters={
+				"parent": ["in", project_names],
+				"parenttype": "Project",
+				"parentfield": PERMIT_REGISTER_FIELD,
+				"shared_with_client": 1,
+				"payment_invoice": ["is", "set"],
+			},
+			fields=fields,
+			order_by="shared_on desc",
+		):
+			project = row.parent
+			label = _permit_label(row.get("permit_type"))
+			reported = bool(cint(row.get("client_reported_paid"))) or bool(row.get("payment_receipt"))
+			out.append(
+				_fee_invoice_row(
+					source="permit",
+					row_name=row.name,
+					project=project,
+					ref=refs.get(project) or project,
+					label=_("{0} Invoice").format(label),
+					shared_on=row.get("shared_on"),
+					reported=reported,
+					reported_on=row.get("client_reported_on"),
+					api=api,
+				)
+			)
+
+	# UCR / Entry / Shipping Line / KPA invoices on Task Finance Lines.
+	if (
+		frappe.db.table_exists("Task Finance Line")
+		and frappe.get_meta("Task Finance Line").has_field("shared_with_client")
+	):
+		client_cols = (
+			", tfl.client_reported_paid, tfl.client_reported_on" if has_client_paid else ""
+		)
+		rows = frappe.db.sql(
+			f"""
+			SELECT
+				tfl.name,
+				tfl.line_label,
+				tfl.payment_item,
+				tfl.attachment,
+				tfl.shared_on,
+				t.project,
+				t.name AS task_name
+				{client_cols}
+			FROM `tabTask Finance Line` tfl
+			INNER JOIN `tabTask` t ON t.name = tfl.parent AND tfl.parenttype = 'Task'
+			WHERE t.project IN %(projects)s
+				AND tfl.line_type = 'Invoice'
+				AND tfl.shared_with_client = 1
+				AND IFNULL(tfl.attachment, '') != ''
+			ORDER BY tfl.shared_on DESC
+			""",
+			{"projects": tuple(project_names)},
+			as_dict=True,
+		)
+
+		# Batch-check receipt lines for payment status (one query).
+		task_names = list({r.task_name for r in rows if r.task_name})
+		receipt_by_task_item: dict[tuple[str, str], str] = {}
+		if task_names:
+			for rec in frappe.get_all(
+				"Task Finance Line",
+				filters={
+					"parent": ["in", task_names],
+					"parenttype": "Task",
+					"line_type": "Receipt",
+					"attachment": ["is", "set"],
+				},
+				fields=["parent", "payment_item", "attachment"],
+			):
+				receipt_by_task_item[(rec.parent, rec.payment_item or "")] = rec.attachment
+
+		for row in rows:
+			project = row.project
+			label = row.get("line_label") or row.get("payment_item") or _("Fee Invoice")
+			has_receipt = bool(
+				receipt_by_task_item.get((row.task_name, row.get("payment_item") or ""))
+			)
+			reported = bool(cint(row.get("client_reported_paid"))) or has_receipt
+			out.append(
+				_fee_invoice_row(
+					source="finance_line",
+					row_name=row.name,
+					project=project,
+					ref=refs.get(project) or project,
+					label=label,
+					shared_on=row.get("shared_on"),
+					reported=reported,
+					reported_on=row.get("client_reported_on"),
+					api=api,
+				)
+			)
+
+	return out
+
+
+def _fee_invoice_row(
+	*,
+	source: str,
+	row_name: str,
+	project: str,
+	ref: str,
+	label: str,
+	shared_on,
+	reported: bool,
+	reported_on,
+	api: str,
+) -> dict:
+	status = "receipt_submitted" if reported else "awaiting_payment"
+	status_label = _("Receipt submitted") if reported else _("Awaiting your payment")
+	return {
+		"source": source,
+		"row": row_name,
+		"project": project,
+		"ref": ref,
+		"label": label,
+		"shared_on": shared_on,
+		"payment_status": status,
+		"status_label": status_label,
+		"client_reported_paid": 1 if reported else 0,
+		"client_reported_on": reported_on,
+		"shipment_url": f"/shipment?name={quote(project, safe='')}",
+		"download_url": (
+			f"{api}?project={quote(project, safe='')}"
+			f"&source={quote(source, safe='')}"
+			f"&row={quote(row_name, safe='')}"
+		),
+	}
+
+
+@frappe.whitelist()
+def download_shared_fee_invoice(project: str, source: str, row: str):
+	"""Stream a Finance-shared fee invoice to the owning customer only."""
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+
+	owner = frappe.db.get_value("Project", project, "customer")
+	if not owner or owner != customer:
+		raise frappe.PermissionError(_("You can only download invoices for your own shipments."))
+
+	file_url = None
+	if source == "permit":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+			PERMIT_REGISTER_FIELD,
+		)
+
+		file_url = frappe.db.get_value(
+			"Permit Register",
+			{
+				"name": row,
+				"parent": project,
+				"parenttype": "Project",
+				"parentfield": PERMIT_REGISTER_FIELD,
+				"shared_with_client": 1,
+			},
+			"payment_invoice",
+		)
+	elif source == "finance_line":
+		matched = frappe.db.sql(
+			"""
+			SELECT tfl.attachment
+			FROM `tabTask Finance Line` tfl
+			INNER JOIN `tabTask` t ON t.name = tfl.parent AND tfl.parenttype = 'Task'
+			WHERE tfl.name = %(row)s
+				AND t.project = %(project)s
+				AND tfl.line_type = 'Invoice'
+				AND tfl.shared_with_client = 1
+			LIMIT 1
+			""",
+			{"row": row, "project": project},
+		)
+		file_url = matched[0][0] if matched else None
+	else:
+		raise frappe.ValidationError(_("Unknown invoice source."))
+
+	if not file_url:
+		raise frappe.PermissionError(_("Invoice is not available for download."))
+
+	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	frappe.local.response.filename = file_doc.file_name or "invoice"
 	frappe.local.response.filecontent = file_doc.get_content()
 	frappe.local.response.type = "download"
 

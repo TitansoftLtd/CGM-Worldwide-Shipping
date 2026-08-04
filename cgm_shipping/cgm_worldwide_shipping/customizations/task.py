@@ -504,14 +504,16 @@ def is_sea_finance_payment_task(task) -> bool:
 
 
 def enforce_client_paid_confirmation(task) -> None:
-	"""Only Finance may confirm a client-paid fee; stamp who confirmed it and when."""
+	"""Only the configured role group may confirm a client-paid fee; stamp who confirmed it."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		CLIENT_PAID_BY_FIELD,
 		CLIENT_PAID_FIELD,
 		CLIENT_PAID_ON_FIELD,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		user_has_finance_department_access,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_CONFIRM_CLIENT_PAID,
+		flow_for_task,
+		throw_unless_responsibility,
 	)
 
 	if not task.meta.has_field(CLIENT_PAID_FIELD):
@@ -524,10 +526,12 @@ def enforce_client_paid_confirmation(task) -> None:
 
 	if is_set and not is_sea_finance_payment_task(task):
 		frappe.throw(
-			"<b>Paid directly by client</b> applies only to finance payment tasks."
+			"<b>Client will pay</b> applies only to finance payment tasks."
 		)
-	if not user_has_finance_department_access():
-		frappe.throw("Only <b>Finance</b> can confirm that the client paid directly.")
+	flow = flow_for_task(task) or "Permit"
+	throw_unless_responsibility(
+		flow, ACTION_CONFIRM_CLIENT_PAID, label="select Client will pay"
+	)
 
 	if is_set:
 		if task.meta.has_field(CLIENT_PAID_BY_FIELD):
@@ -562,10 +566,10 @@ def paired_application_task_for_finance_task(task) -> str | None:
 
 
 def sync_client_paid_to_application_task(task) -> str | None:
-	"""Mirror Finance's client-paid confirmation onto the paired application task.
+	"""Mirror Finance's Client will pay flag onto the paired application task.
 
-	Read-only there — it only tells the declarant that Finance confirmed the
-	client settled this fee, so no invoice or receipt handoff is coming.
+	Read-only there — it tells the declarant that Finance chose the client-pays
+	path (no company Journal Entry); verify + client receipt still happen on Finance.
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		CLIENT_PAID_BY_FIELD,
@@ -774,7 +778,7 @@ def purge_all_invoice_clearance_document_rows() -> int:
 
 def migrate_invoice_attachments_to_finance_lines_sql() -> None:
 	"""Copy invoice attachments to Task Finance Lines without loading/saving Task."""
-	if not frappe.db.table_exists("tabTask Finance Line"):
+	if not frappe.db.table_exists("Task Finance Line"):
 		return
 	legacy = tuple(LEGACY_INVOICE_DOCUMENT_TYPE_LINKS)
 	placeholders = ", ".join(["%s"] * len(legacy))
@@ -1180,9 +1184,12 @@ def _finance_line_verified_changed(task, row) -> bool:
 
 
 def enforce_finance_line_permissions(task) -> None:
-	"""Only users with finance-payment template department roles may verify finance lines."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		user_has_finance_department_access,
+	"""Only the configured role group may verify / attach UCR finance lines."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_UPLOAD_RECEIPT,
+		ACTION_VERIFY_INVOICE,
+		FLOW_UCR,
+		user_has_responsibility,
 	)
 
 	if frappe.session.user == "Administrator":
@@ -1194,20 +1201,23 @@ def enforce_finance_line_permissions(task) -> None:
 	if not is_ucr_workflow_task(seq) or not task_has_finance_table(task):
 		return
 
-	is_finance = user_has_finance_department_access()
+	can_verify = user_has_responsibility(FLOW_UCR, ACTION_VERIFY_INVOICE)
+	can_receipt = user_has_responsibility(FLOW_UCR, ACTION_UPLOAD_RECEIPT)
 
 	for row in task.get(TASK_FINANCE_FIELD) or []:
-		if row.verified and not is_finance and _finance_line_verified_changed(task, row):
+		if row.verified and not can_verify and _finance_line_verified_changed(task, row):
 			frappe.throw(
-				f"Only <b>Finance</b> can verify <b>{row.line_label or 'finance line'}</b>."
+				f"Only the configured <b>Verify Invoice</b> role group can verify "
+				f"<b>{row.line_label or 'finance line'}</b> "
+				"(CGM Shipping Settings → Document responsibilities)."
 			)
-		if not row.verified and not is_finance and _finance_line_verified_changed(task, row):
+		if not row.verified and not can_verify and _finance_line_verified_changed(task, row):
 			# Declarant must not uncheck Finance verification synced from Finance pays UCR.
 			prev = task.get_doc_before_save()
 			prev_row = _find_line_in_task(prev, row.line_type, row.payment_item or PAYMENT_UCR)
 			if prev_row and cint(prev_row.verified):
 				frappe.throw(
-					f"<b>{row.line_label or 'Finance line'}</b> is verified by Finance and cannot be changed here."
+					f"<b>{row.line_label or 'Finance line'}</b> is verified and cannot be changed here."
 				)
 		if row.line_type != LINE_RECEIPT or not row.attachment:
 			continue
@@ -1221,12 +1231,15 @@ def enforce_finance_line_permissions(task) -> None:
 			continue
 		if is_ucr_application_task(seq):
 			frappe.throw(
-				"Finance uploads the <b>UCR Receipt</b> on <b>Finance pays UCR</b> after recording payment. "
+				"The <b>UCR Receipt</b> is uploaded on <b>Finance pays UCR</b> after recording payment. "
 				"Attach only the invoice (and IDF certificate) here."
 			)
 		if is_ucr_finance_payment_task(seq):
-			if not is_finance:
-				frappe.throw("Only <b>Finance</b> can attach the <b>UCR Receipt</b>.")
+			if not can_receipt:
+				frappe.throw(
+					"Only the configured <b>Upload Receipt</b> role group can attach the "
+					"<b>UCR Receipt</b> (CGM Shipping Settings → Document responsibilities)."
+				)
 			if task.project and not ucr_payment_made_for_project(task.project):
 				frappe.throw(
 					"Record payment before uploading the <b>UCR Receipt</b>."
@@ -1861,14 +1874,21 @@ def validate_permit_application_task(task, seq: int) -> None:
 	examples = _permit_type_examples()
 	eg = f" (e.g. {examples})" if examples else ""
 
-	# Finance confirmed client paid — no invoice handoff. Empty rows are fine
-	# (nothing to attach); existing rows still need their certificates.
+	# Client-pays still needs invoices/certificates on rows; empty rows are fine
+	# (nothing to attach). Settlement (verify + client receipt) is enforced elsewhere.
 	if permit_application_client_paid(task):
-		missing = [
-			f"{(r.permit_type or 'Permit')} - permit certificate"
-			for r in rows
-			if r.get("permit_type") and not r.get("permit_document")
-		]
+		missing = []
+		for row in rows:
+			label = row.permit_type or "Permit"
+			if not row.permit_type:
+				continue
+			if permit_requires_payment(row):
+				if not row.get("payment_invoice"):
+					missing.append(f"{label} - supplier/permit invoice (Local)")
+				if not row.get("permit_document"):
+					missing.append(f"{label} - permit certificate")
+			elif not row.get("permit_document"):
+				missing.append(f"{label} - permit certificate (Foreign)")
 		if missing:
 			frappe.throw(
 				"Complete <b>Task Permits</b> before finishing this task:<ul>"
@@ -2003,6 +2023,10 @@ def sync_task_permits_to_project(task) -> None:
 			prow.status = "Paid"
 		if is_finance_permit_payment and trow.get("receipt_verified"):
 			prow.receipt_verified = trow.receipt_verified
+		if trow.get("shared_with_client") and hasattr(prow, "shared_with_client"):
+			prow.shared_with_client = 1
+			prow.shared_by = trow.get("shared_by")
+			prow.shared_on = trow.get("shared_on")
 
 		if hasattr(prow, "custom_source_task"):
 			prow.custom_source_task = task.name

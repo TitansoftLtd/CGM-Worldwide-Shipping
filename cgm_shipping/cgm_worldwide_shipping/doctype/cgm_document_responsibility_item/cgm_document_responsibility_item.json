@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-04 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow_flow",
+  "action",
+  "role_group",
+  "notes"
+ ],
+ "fields": [
+  {
+   "description": "Which sea clearance handoff this row applies to.",
+   "fieldname": "workflow_flow",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Workflow",
+   "options": "Permit\nUCR\nEntry Slip\nShipping Line\nKPA\nClearance Document",
+   "reqd": 1
+  },
+  {
+   "description": "What someone may do. Change Role Group to reassign without code changes.",
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "Upload Invoice\nVerify Invoice\nUpload Receipt\nUpload Certificate\nMake Payment\nConfirm Client Paid\nUpload Document",
+   "reqd": 1
+  },
+  {
+   "description": "Link to a CGM Role Group master. Create new groups (e.g. Documentation) from CGM Role Group — no developer needed. Edit Roles and Department stems on that master.",
+   "fieldname": "role_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Role Group",
+   "options": "CGM Role Group",
+   "reqd": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Notes"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-04 01:05:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "CGM Document Responsibility Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

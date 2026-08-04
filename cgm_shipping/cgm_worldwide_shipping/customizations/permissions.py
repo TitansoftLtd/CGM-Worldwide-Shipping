@@ -158,9 +158,25 @@ def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
 	return set(get_sea_task_template_department_stems()) & user_roles(user)
 
 
+def _roles_from_cgm_role_group(group_name: str) -> frozenset[str]:
+	if not group_name or not frappe.db.exists("DocType", "CGM Role Group"):
+		return frozenset()
+	if not frappe.db.exists("CGM Role Group", group_name):
+		return frozenset()
+	rows = frappe.get_all(
+		"CGM Role Item",
+		filters={"parent": group_name, "parenttype": "CGM Role Group"},
+		pluck="role",
+	)
+	return frozenset(r for r in rows if r)
+
+
 @frappe.request_cache
 def configured_declaration_roles() -> frozenset[str]:
-	"""Declarant roles from CGM Shipping Settings → Roles tab."""
+	"""Declarant roles from CGM Role Group (preferred) or Settings → Roles tab."""
+	from_group = _roles_from_cgm_role_group("Declaration")
+	if from_group:
+		return from_group
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		get_cgm_shipping_settings,
 	)
@@ -227,7 +243,10 @@ def transport_department_stems() -> frozenset[str]:
 
 @frappe.request_cache
 def configured_transport_roles() -> frozenset[str]:
-	"""Transport roles from CGM Shipping Settings → Roles tab."""
+	"""Transport roles from CGM Role Group (preferred) or Settings → Roles tab."""
+	from_group = _roles_from_cgm_role_group("Transport")
+	if from_group:
+		return from_group
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		get_cgm_shipping_settings,
 	)
@@ -317,7 +336,10 @@ def finance_payment_department_stems() -> frozenset[str]:
 
 @frappe.request_cache
 def configured_finance_roles() -> frozenset[str]:
-	"""Finance roles from CGM Shipping Settings → Roles tab."""
+	"""Finance roles from CGM Role Group (preferred) or Settings → Roles tab."""
+	from_group = _roles_from_cgm_role_group("Finance")
+	if from_group:
+		return from_group
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		get_cgm_shipping_settings,
 	)
@@ -331,7 +353,10 @@ def configured_finance_roles() -> frozenset[str]:
 
 @frappe.request_cache
 def configured_operations_roles() -> frozenset[str]:
-	"""Operations roles from CGM Shipping Settings → Roles tab."""
+	"""Operations roles from CGM Role Group (preferred) or Settings → Roles tab."""
+	from_group = _roles_from_cgm_role_group("Operations")
+	if from_group:
+		return from_group
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		get_cgm_shipping_settings,
 	)
@@ -451,25 +476,45 @@ def _project_has_sea_task(project: str, sequence_no: int) -> bool:
 
 
 def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
-	"""Cross-read: Finance may open paired application tasks (not the reverse)."""
+	"""Cross-access paired UCR / permit application ↔ finance tasks.
+
+	- Finance may open the paired application task.
+	- Declaration may open the paired Finance pays task when they own Upload Receipt
+	  (same department that uploaded the invoice attaches the receipt).
+	"""
 	if not hasattr(doc, "get"):
 		return False
 	if not is_sea_import_task(doc):
-		return False
-	if not user_has_finance_department_access(user):
 		return False
 	seq = int(doc.get("custom_sequence_no") or 0)
 	project = doc.get("project")
 	if not project:
 		return False
 
-	for app_seq, fin_seq in _ucr_linked_pairs():
-		if seq == app_seq and _project_has_sea_task(project, fin_seq):
-			return True
+	if user_has_finance_department_access(user):
+		for app_seq, fin_seq in _ucr_linked_pairs():
+			if seq == app_seq and _project_has_sea_task(project, fin_seq):
+				return True
+		for app_seq, _fin_seq in _permit_linked_pairs():
+			if seq == app_seq:
+				return True
 
-	for app_seq, fin_seq in _permit_linked_pairs():
-		if seq == app_seq:
-			return True
+	if user_has_declarant_department_access(user):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+			ACTION_UPLOAD_RECEIPT,
+			FLOW_PERMIT,
+			FLOW_UCR,
+			user_has_responsibility,
+		)
+
+		if user_has_responsibility(FLOW_UCR, ACTION_UPLOAD_RECEIPT, user):
+			for app_seq, fin_seq in _ucr_linked_pairs():
+				if seq == fin_seq and _project_has_sea_task(project, app_seq):
+					return True
+		if user_has_responsibility(FLOW_PERMIT, ACTION_UPLOAD_RECEIPT, user):
+			for _app_seq, fin_seq in _permit_linked_pairs():
+				if seq == fin_seq:
+					return True
 
 	return False
 
@@ -521,6 +566,9 @@ def user_can_access_sea_task(
 	if _user_can_access_sea_payment_task_by_role(doc, user):
 		return True
 
+	if _user_can_access_linked_sea_project_task(doc, user):
+		return True
+
 	return False
 
 
@@ -566,7 +614,8 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 	parts: list[str] = []
 	app_stems = set(application_department_stems_for_linked_pairs(_ucr_linked_pairs()))
 	app_stems |= set(application_department_stems_for_linked_pairs(_permit_linked_pairs()))
-	fin_stems = finance_department_stems_for_linked_pairs(_ucr_linked_pairs())
+	fin_stems = set(finance_department_stems_for_linked_pairs(_ucr_linked_pairs()))
+	fin_stems |= set(finance_department_stems_for_linked_pairs(_permit_linked_pairs()))
 
 	if stems & app_stems:
 		for app_seq, fin_seq in _ucr_linked_pairs():
@@ -587,6 +636,14 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 			)
 	if stems & fin_stems:
 		for app_seq, fin_seq in _ucr_linked_pairs():
+			parts.append(
+				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
+				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
+				f"WHERE lk.project = `tabTask`.project "
+				f"AND {flow_in} "
+				f"AND lk.custom_sequence_no = {fin_seq} LIMIT 1))"
+			)
+		for app_seq, fin_seq in _permit_linked_pairs():
 			parts.append(
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
@@ -637,6 +694,12 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	if stems:
 		visibility_parts.insert(0, _build_department_sql_conditions(stems))
 
+	# UCR / Permit: Declaration may list paired Finance pays tasks (receipt upload).
+	# Finance may list paired application tasks.
+	linked = _build_linked_sea_task_sql(stems)
+	if linked:
+		visibility_parts.append(linked)
+
 	# Finance-only (e.g. Assistant Finance Manager → Finance User): Finance dept / payment
 	# sequences only — never Create UCR / Operations / Transport steps.
 	if user_has_finance_department_access(user):
@@ -661,6 +724,11 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 				f"AND {_build_department_sql_conditions(set(finance_payment_department_stems()) or {'Finance'})})"
 			)
 			visibility_parts.append(finance_seq_clause)
+
+		# Finance-only users still need paired application task visibility (UCR/Permit).
+		linked = _build_linked_sea_task_sql(stems)
+		if linked:
+			visibility_parts.append(linked)
 
 	restricted_visible = f"({restricted} AND ({' OR '.join(visibility_parts)}))"
 	unrestricted = f"(NOT ({restricted}))"

@@ -263,7 +263,7 @@ def project_has_submitted_permit_invoices(
 
 
 def task_client_paid_directly(task) -> bool:
-	"""Finance confirmed the client settled this fee itself — no CGM disbursement."""
+	"""Finance marked the client-pays path (no company Journal Entry)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		CLIENT_PAID_FIELD,
 	)
@@ -271,16 +271,59 @@ def task_client_paid_directly(task) -> bool:
 	return bool(task.get(CLIENT_PAID_FIELD))
 
 
+def client_paid_settlement_ready(task) -> bool:
+	"""Client-pays path is settled when invoices are verified and receipt(s) are attached.
+
+	Does not require a company Journal Entry / Payment Entry.
+	"""
+	from frappe.utils import cint
+
+	if not task_client_paid_directly(task):
+		return False
+
+	if is_permit_finance_task_doc(task):
+		rows = permit_finance_rows(task)
+		if not rows:
+			return True
+		return all(
+			cint(r.get("invoice_verified")) and bool(r.get("payment_receipt")) for r in rows
+		)
+
+	# UCR / Entry / Shipping Line / KPA finance lines
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		get_profile_for_sequence,
+		invoice_verified,
+		receipt_attached_for_payment_workflow,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_ucr_finance_payment_task,
+		ucr_invoice_verified,
+	)
+
+	seq = task_sequence(task)
+	if is_ucr_finance_payment_task(seq) or is_ucr_payment_task_doc(task):
+		inv_ok = ucr_invoice_verified(task) or bool(task.get("custom_ucr_invoice_verified"))
+		return bool(inv_ok and ucr_receipt_attached_for_payment_workflow(task))
+
+	profile = get_profile_for_sequence(seq)
+	if profile:
+		inv_ok = invoice_verified(task, profile)
+		if profile.application_invoice_verified_field:
+			inv_ok = inv_ok or bool(task.get(profile.application_invoice_verified_field))
+		return bool(inv_ok and receipt_attached_for_payment_workflow(task, profile))
+
+	return True
+
+
 def task_has_recorded_payment(task) -> bool:
-	"""Finance recorded payment via Journal Entry, submitted Payment Entry, or client-paid confirmation."""
+	"""Finance settlement recorded via JE/PE, or client-pays path ready (verify + receipt)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		PERMIT_JOURNAL_ENTRY_FIELD,
-		TASK_PERMITS_FIELD,
 	)
 
 	if is_permit_finance_task_doc(task):
 		if task_client_paid_directly(task):
-			return True
+			return client_paid_settlement_ready(task)
 		rows = permit_finance_rows(task)
 		if not rows:
 			# All-foreign (or empty) finance task has nothing to pay.
@@ -297,7 +340,7 @@ def task_has_recorded_payment(task) -> bool:
 		return True
 
 	if task_client_paid_directly(task):
-		return True
+		return client_paid_settlement_ready(task)
 	if task.get("custom_journal_entry"):
 		if frappe.db.exists("Journal Entry", task.custom_journal_entry):
 			return True
@@ -317,19 +360,39 @@ def task_uses_permit_payment_pattern(task) -> bool:
 
 
 def validate_permit_finance_task_completion(task) -> None:
-	"""Each permit row needs its own journal entry and payment receipt before completion."""
+	"""Each permit row needs verify + receipt; JE only on the company-pays path."""
+	from frappe.utils import cint
+
 	if not is_permit_finance_task_doc(task):
-		return
-	if task_client_paid_directly(task):
 		return
 	rows = permit_finance_rows(task)
 	if not rows:
 		return
+
+	missing_verify = [
+		r.permit_type for r in rows if r.permit_type and not cint(r.get("invoice_verified"))
+	]
+	if missing_verify:
+		frappe.throw(
+			"Verify each permit invoice before completing. Missing: "
+			f"<b>{', '.join(missing_verify)}</b>."
+		)
+
+	if task_client_paid_directly(task):
+		missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
+		if missing_receipts:
+			frappe.throw(
+				"Client-pays path: attach the client's <b>Payment Receipt</b> for each permit. "
+				f"Missing: <b>{', '.join(missing_receipts)}</b>."
+			)
+		return
+
 	missing_je = [r.permit_type for r in rows if not r.get("journal_entry")]
 	if missing_je:
 		frappe.throw(
 			"Record a <b>Journal Entry</b> for each permit before completing. Missing: "
-			f"<b>{', '.join(missing_je)}</b>."
+			f"<b>{', '.join(missing_je)}</b>. "
+			"Or tick <b>Client will pay</b> if the client settles this fee (then upload their receipt)."
 		)
 	missing_receipts = [r.permit_type for r in rows if not r.get("payment_receipt")]
 	if missing_receipts:
@@ -356,17 +419,18 @@ def finance_payment_completed(project: str, application_seq: int | None = None) 
 
 
 def build_permit_row_payload(row) -> dict:
+	"""Fields Declarant owns on the application task (safe to copy → Finance).
+
+	Do not include Finance-owned fields (invoice_verified, journal_entry, receipts).
+	Those must be set only on the finance task, or Verify Invoices never appears.
+	"""
 	return {
 		"permit_type": row.get("permit_type"),
 		"origin": row.get("origin") or "Local",
 		"stage": row.get("stage") or PRE_CLEARANCE_STAGE,
 		"payment_invoice": row.get("payment_invoice"),
 		"invoice_amount": row.get("invoice_amount"),
-		"invoice_verified": row.get("invoice_verified"),
-		"journal_entry": row.get("journal_entry"),
-		"payment_receipt": row.get("payment_receipt"),
 		"permit_document": row.get("permit_document"),
-		"receipt_verified": row.get("receipt_verified"),
 		"status": row.get("status") or "Invoice Submitted",
 		"clearance_phase": row.get("clearance_phase") or "Not Started",
 	}
@@ -430,12 +494,8 @@ def seed_finance_permit_rows_from_project(finance_task, *, save: bool = True) ->
 				"stage": row.stage,
 				"payment_invoice": row.get("payment_invoice"),
 				"invoice_amount": row.get("invoice_amount"),
-				"purchase_invoice": row.get("purchase_invoice"),
-				"payment_entry": row.get("payment_entry"),
-				"journal_entry": row.get("journal_entry"),
-				"payment_receipt": row.get("payment_receipt"),
-				"receipt_verified": row.get("receipt_verified"),
-				"status": row.get("status") or "Invoice Submitted",
+				"invoice_verified": 0,
+				"status": "Invoice Submitted",
 			},
 		)
 		added = True
@@ -635,12 +695,35 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 
 	for row in app_rows:
 		data = build_permit_row_payload(row)
+		# New invoices always need Finance verification — never inherit verified from app.
+		data["invoice_verified"] = 0
+		if data.get("status") in (None, "", "Invoice Verified", "Paid", "Receipt Submitted"):
+			data["status"] = "Invoice Submitted"
 		fin_row = existing.get(row.permit_type)
 		if fin_row:
+			invoice_changed = (fin_row.get("payment_invoice") or "") != (
+				data.get("payment_invoice") or ""
+			)
 			for key, value in data.items():
+				if key == "invoice_verified":
+					continue
 				if value and fin_row.get(key) != value:
 					fin_row.set(key, value)
 					changed = True
+			# Replaced invoice → must verify again before Make Payment.
+			if invoice_changed and data.get("payment_invoice"):
+				if cint(fin_row.get("invoice_verified")):
+					fin_row.invoice_verified = 0
+					changed = True
+				if fin_row.get("journal_entry"):
+					fin_row.journal_entry = None
+					changed = True
+				if fin_row.get("payment_receipt"):
+					fin_row.payment_receipt = None
+					fin_row.receipt_verified = 0
+					changed = True
+				fin_row.status = "Invoice Submitted"
+				changed = True
 		else:
 			finance_task.append(TASK_PERMITS_FIELD, data)
 			changed = True
@@ -1283,9 +1366,27 @@ def validate_permit_application_can_complete(task) -> None:
 	if not is_permit_application_task(seq):
 		return
 
-	# Client paid: skip invoice / Finance / receipt handoff. Declarant attaches
-	# certificates on any existing rows (or marks complete if nothing to attach).
+	# Client-pays path still needs invoices submitted + Finance settlement (verify +
+	# client receipt) + certificates. Only the company Journal Entry is skipped.
 	if permit_application_client_paid(task):
+		payable = payable_permit_rows(task)
+		if payable and not task.get("custom_permit_invoices_submitted"):
+			frappe.throw(
+				"Attach all <b>Local</b> permit invoices and save — Finance is notified "
+				"automatically — before completing this task."
+			)
+		if payable and not finance_payment_completed(task.project, seq):
+			fin_seq = get_permit_finance_sequence_for_application(seq)
+			fin_name = get_task_name_by_sequence(task.project, fin_seq) if fin_seq else None
+			fin_label = (
+				frappe.db.get_value("Task", fin_name, "subject")
+				if fin_name
+				else "Finance permit payment"
+			)
+			frappe.throw(
+				f"Finance must verify invoices, tick <b>Client will pay</b>, and upload the "
+				f"client's receipt on <b>{fin_label}</b> before this task can be completed."
+			)
 		rows = [r for r in (task.get(TASK_PERMITS_FIELD) or []) if r.get("permit_type")]
 		missing_certs = [r.permit_type for r in rows if not r.get("permit_document")]
 		if missing_certs:
@@ -1370,30 +1471,52 @@ def validate_permit_application_can_complete(task) -> None:
 
 
 def enforce_receipt_verified_permission(task) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_UPLOAD_RECEIPT,
+		ACTION_VERIFY_INVOICE,
+		FLOW_PERMIT,
+		user_has_responsibility,
+	)
+
 	if is_permit_application_task_doc(task):
-		if user_has_finance_department_access():
-			return
+		# Application task mirrors Finance ticks — only responsibility holders may change them.
 		for row in task.get(TASK_PERMITS_FIELD) or []:
-			if row.get("receipt_verified"):
+			if row.get("receipt_verified") and not user_has_responsibility(
+				FLOW_PERMIT, ACTION_UPLOAD_RECEIPT
+			):
 				frappe.throw(
-					"Only <b>Finance</b> can mark <b>Receipt Verified</b>. "
-					"Use the paired finance permit payment task."
+					"Only the configured <b>Upload Receipt</b> role group can mark "
+					"<b>Receipt Verified</b>. Use the paired finance permit payment task "
+					"(CGM Shipping Settings → Document responsibilities)."
 				)
-			if _permit_invoice_verified_changed(task, row):
+			if _permit_invoice_verified_changed(task, row) and not user_has_responsibility(
+				FLOW_PERMIT, ACTION_VERIFY_INVOICE
+			):
 				frappe.throw(
-					"Only <b>Finance</b> can mark <b>Invoice Verified</b>. "
-					"Use the paired finance permit payment task."
+					"Only the configured <b>Verify Invoice</b> role group can mark "
+					"<b>Invoice Verified</b>. Use the paired finance permit payment task "
+					"(CGM Shipping Settings → Document responsibilities)."
 				)
 		return
 	if not is_permit_finance_task_doc(task):
 		return
-	if user_has_finance_department_access():
-		return
 	for row in task.get(TASK_PERMITS_FIELD) or []:
-		if row.get("receipt_verified"):
-			frappe.throw("Only <b>Finance</b> can mark <b>Receipt Verified</b> on permit rows.")
-		if _permit_invoice_verified_changed(task, row):
-			frappe.throw("Only <b>Finance</b> can mark <b>Invoice Verified</b> on permit rows.")
+		if row.get("receipt_verified") and not user_has_responsibility(
+			FLOW_PERMIT, ACTION_UPLOAD_RECEIPT
+		):
+			frappe.throw(
+				"Only the configured <b>Upload Receipt</b> role group can mark "
+				"<b>Receipt Verified</b> on permit rows "
+				"(CGM Shipping Settings → Document responsibilities)."
+			)
+		if _permit_invoice_verified_changed(task, row) and not user_has_responsibility(
+			FLOW_PERMIT, ACTION_VERIFY_INVOICE
+		):
+			frappe.throw(
+				"Only the configured <b>Verify Invoice</b> role group can mark "
+				"<b>Invoice Verified</b> on permit rows "
+				"(CGM Shipping Settings → Document responsibilities)."
+			)
 
 
 def _permit_invoice_verified_changed(task, row) -> bool:
@@ -1419,16 +1542,20 @@ def _permit_invoice_verified_changed(task, row) -> bool:
 
 
 def can_complete_finance_permit_task(task) -> bool:
+	from frappe.utils import cint
+
 	if not is_permit_finance_task_doc(task):
 		return False
 	if task.status in ("Completed", "Cancelled"):
 		return False
-	if task_client_paid_directly(task):
-		return True
 	rows = permit_finance_rows(task)
 	if not rows:
 		# No Local permits — nothing for Finance to pay on this task.
 		return False
+	if task_client_paid_directly(task):
+		return all(
+			cint(r.get("invoice_verified")) and bool(r.get("payment_receipt")) for r in rows
+		)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		PERMIT_JOURNAL_ENTRY_FIELD,
 	)
@@ -1569,8 +1696,13 @@ def verify_all_permit_invoices(task_name: str) -> dict:
 	if not task_name or not frappe.db.exists("Task", task_name):
 		frappe.throw("Task not found.")
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-	if not user_has_finance_department_access() and frappe.session.user != "Administrator":
-		frappe.throw("Only <b>Finance</b> can verify permit invoices.")
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_VERIFY_INVOICE,
+		FLOW_PERMIT,
+		throw_unless_responsibility,
+	)
+
+	throw_unless_responsibility(FLOW_PERMIT, ACTION_VERIFY_INVOICE, label="verify permit invoices")
 
 	task = frappe.get_doc("Task", task_name)
 	if not is_permit_finance_task_doc(task):
@@ -1996,16 +2128,12 @@ def can_complete_ucr_create_task(task, finance_task=None) -> bool:
 	if finance_task is None and task.project:
 		finance_name = get_ucr_finance_task(task.project)
 		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
-	if finance_task and task_client_paid_directly(finance_task):
-		# Client-paid skips invoice/receipt verification, but Create UCR still
-		# requires the IDF certificate before it can complete.
-		return idf_certificate_uploaded(task)
+	# Client-pays and company-pays: Create UCR still needs invoice verified + IDF certificate.
+	# Receipt stays on Finance.
 	if not ucr_invoice_attached(task) and not task.get("custom_ucr_invoice_submitted"):
 		return False
 	if not ucr_invoice_verified_for_create_task(task, finance_task):
 		return False
-	# Receipts are uploaded by Finance on Finance pays UCR; Create UCR owns
-	# invoice + IDF certificate only.
 	return idf_certificate_uploaded(task)
 
 
@@ -2013,7 +2141,7 @@ def can_complete_ucr_payment_task(task) -> bool:
 	if not is_ucr_payment_task_doc(task):
 		return False
 	if task_client_paid_directly(task):
-		return True
+		return client_paid_settlement_ready(task)
 	if task.project and not project_has_submitted_ucr_invoice(task.project):
 		return False
 
@@ -2343,8 +2471,23 @@ def validate_finance_ucr_payment_task(task) -> None:
 	if not is_ucr_payment_task_doc(task):
 		return
 
-	# Client paid — Finance confirmation alone; skip invoice/receipt/PI checks.
+	# Client-pays path: verify invoice + upload client receipt; skip JE / Purchase Invoice.
 	if task_client_paid_directly(task):
+		app_task = get_ucr_create_task(task.project) if task.project else None
+		if app_task and not ucr_invoice_submitted(app_task):
+			frappe.throw(
+				"The declarant must submit the UCR invoice from <b>Create UCR (IDF)</b> first."
+			)
+		seed_ucr_finance_lines(task)
+		if not (ucr_invoice_verified(task) or task.get("custom_ucr_invoice_verified")):
+			frappe.throw(
+				"Finance must tick <b>Verified by Finance</b> on the <b>UCR Invoice</b> row."
+			)
+		if not ucr_receipt_attached_for_payment_workflow(task):
+			frappe.throw(
+				"Client-pays path: attach the client's <b>UCR Receipt</b> on this finance task "
+				"before completion."
+			)
 		return
 
 	app_task = get_ucr_create_task(task.project) if task.project else None
@@ -2366,7 +2509,7 @@ def validate_finance_ucr_payment_task(task) -> None:
 	if not task_has_recorded_payment(task):
 		frappe.throw(
 			"Record payment via <b>Make Payment</b> (Journal Entry) before completion, "
-			"or tick <b>Paid directly by client</b> if the client settled it."
+			"or tick <b>Client will pay</b> if the client settles it (then upload their receipt)."
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
@@ -2670,8 +2813,13 @@ def legacy_ucr_invoice_url(task) -> str | None:
 @frappe.whitelist()
 def verify_ucr_finance_line(task_name: str, line_type: str = "Invoice") -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-	if not user_has_finance_department_access():
-		frappe.throw("Only <b>Finance</b> can verify UCR invoice and receipt lines.")
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_VERIFY_INVOICE,
+		FLOW_UCR,
+		throw_unless_responsibility,
+	)
+
+	throw_unless_responsibility(FLOW_UCR, ACTION_VERIFY_INVOICE, label="verify UCR invoice and receipt lines")
 
 	task = frappe.get_doc("Task", task_name)
 	if not is_ucr_payment_task_doc(task):
