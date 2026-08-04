@@ -1,6 +1,5 @@
 const CGM_SI_DRAFT_STATE = "Draft";
 const CGM_SI_PENDING_STATE = "Pending Approval";
-const CGM_SI_APPROVED_STATE = "Approved";
 const CGM_SI_REJECTED_STATE = "Rejected";
 const CGM_SI_ACTION_SUBMIT_FOR_REVIEW = "Submit for Review";
 const CGM_SI_REJECTION_REASON_FIELD = "custom_rejection_reason";
@@ -154,22 +153,12 @@ function cgm_configure_sales_invoice_workflow_ui(frm) {
 	}
 
 	const state = frm.doc.workflow_state || CGM_SI_DRAFT_STATE;
-	const can_submit =
-		state === CGM_SI_APPROVED_STATE &&
-		!frm.doc.__islocal &&
-		!frm.is_dirty() &&
-		cint(frm.perm?.[0]?.submit);
-
-	if (can_submit) {
-		frm.page.set_primary_action(__("Submit"), () => frm.savesubmit());
-	} else {
-		frm.page.set_primary_action(__("Save"), () => frm.save());
-	}
+	frm.page.set_primary_action(__("Save"), () => frm.save());
 
 	if (state === CGM_SI_PENDING_STATE) {
 		cgm_set_sales_invoice_workflow_alert(
 			frm,
-			__("Waiting for this invoice to be approved or rejected."),
+			__("Waiting for this invoice to be approved or rejected. Approval will submit the invoice."),
 			"info"
 		);
 	} else if (state === CGM_SI_REJECTED_STATE) {
@@ -186,14 +175,6 @@ function cgm_configure_sales_invoice_workflow_ui(frm) {
 			frm,
 			__("Save the invoice, then use Actions → {0}.", [CGM_SI_ACTION_SUBMIT_FOR_REVIEW]),
 			"brand"
-		);
-	} else if (state === CGM_SI_APPROVED_STATE) {
-		cgm_set_sales_invoice_workflow_alert(
-			frm,
-			__(
-				"This invoice is approved. You can Submit it. Editing and saving will require approval again."
-			),
-			"success"
 		);
 	} else {
 		frm.dashboard.clear_headline();
