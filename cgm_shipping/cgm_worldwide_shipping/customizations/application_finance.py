@@ -914,9 +914,6 @@ def can_complete_application_task(
 ) -> bool:
 	if not is_application_task(int(task.get("custom_sequence_no") or 0), profile):
 		return False
-	# Client-paid bypasses invoice/receipt handoff, but the application task
-	# still owns its required certificate. Profiles without a certificate stay
-	# open for explicit manual completion.
 	if finance_task is None and task.project:
 		finance_name = get_application_finance_task(task.project, profile)
 		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
@@ -924,10 +921,9 @@ def can_complete_application_task(
 		task_client_paid_directly,
 	)
 
-	if finance_task and task_client_paid_directly(finance_task):
-		if not profile.certificate_document_code and not profile.legacy_certificate_codes:
-			return False
-		return certificate_uploaded(task, profile)
+	# Client-pays and company-pays share the same application requirements:
+	# invoice submitted + Finance-verified + certificate (when required).
+	# Only the finance task skips the Journal Entry on the client-pays path.
 	submitted = invoice_attached(task, profile)
 	if profile.application_submitted_field and task.meta.has_field(profile.application_submitted_field):
 		submitted = submitted or bool(task.get(profile.application_submitted_field))
@@ -935,8 +931,12 @@ def can_complete_application_task(
 		return False
 	if not invoice_verified_for_application_task(task, profile, finance_task):
 		return False
-	# Receipts are uploaded by Finance on the finance task; application owns
-	# invoice + certificate only.
+	if not profile.certificate_document_code and not profile.legacy_certificate_codes:
+		# No certificate step (e.g. Shipping Line): keep open for explicit Mark Completed
+		# when Finance uses the client-pays path; company-pays may auto-complete.
+		if finance_task and task_client_paid_directly(finance_task):
+			return False
+		return True
 	return certificate_uploaded(task, profile)
 
 
@@ -944,13 +944,13 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 	if not is_application_finance_task(int(task.get("custom_sequence_no") or 0), profile):
 		return False
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		client_paid_settlement_ready,
 		task_client_paid_directly,
 		task_has_recorded_payment,
 	)
 
-	# Finance tick alone is enough when the client settled the fee itself.
 	if task_client_paid_directly(task):
-		return True
+		return client_paid_settlement_ready(task)
 	if task.project and not project_has_submitted_invoice(task.project, profile):
 		return False
 	inv_ok = invoice_verified(task, profile)
@@ -1048,8 +1048,11 @@ def normalize_application_finance_verification(task, profile: ApplicationFinance
 def enforce_application_finance_line_permissions(
 	task, profile: ApplicationFinanceProfile
 ) -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		user_has_finance_department_access,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_UPLOAD_RECEIPT,
+		ACTION_VERIFY_INVOICE,
+		flow_for_profile,
+		user_has_responsibility,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import _finance_line_verified_changed
 
@@ -1062,20 +1065,24 @@ def enforce_application_finance_line_permissions(
 	seq = int(task.get("custom_sequence_no") or 0)
 	if not is_application_workflow_task(seq, profile) or not task_has_finance_table(task):
 		return
-	is_finance = user_has_finance_department_access()
+	flow = flow_for_profile(profile)
+	can_verify = user_has_responsibility(flow, ACTION_VERIFY_INVOICE)
+	can_receipt = user_has_responsibility(flow, ACTION_UPLOAD_RECEIPT)
 	for row in task.get(TASK_FINANCE_FIELD) or []:
 		if (row.payment_item or profile.payment_item) != profile.payment_item:
 			continue
-		if row.verified and not is_finance and _finance_line_verified_changed(task, row):
+		if row.verified and not can_verify and _finance_line_verified_changed(task, row):
 			frappe.throw(
-				f"Only <b>Finance</b> can verify <b>{row.line_label or 'finance line'}</b>."
+				f"Only the configured <b>Verify Invoice</b> role group can verify "
+				f"<b>{row.line_label or 'finance line'}</b> "
+				"(CGM Shipping Settings → Document responsibilities)."
 			)
-		if not row.verified and not is_finance and _finance_line_verified_changed(task, row):
+		if not row.verified and not can_verify and _finance_line_verified_changed(task, row):
 			prev = task.get_doc_before_save()
 			prev_row = _find_line(prev, row.line_type, profile) if prev else None
 			if prev_row and cint(prev_row.verified):
 				frappe.throw(
-					f"<b>{row.line_label or 'Finance line'}</b> is verified by Finance and cannot be changed here."
+					f"<b>{row.line_label or 'Finance line'}</b> is verified and cannot be changed here."
 				)
 		if row.line_type != LINE_RECEIPT or not row.attachment:
 			continue
@@ -1087,13 +1094,15 @@ def enforce_application_finance_line_permissions(
 			continue
 		if is_application_task(seq, profile):
 			frappe.throw(
-				f"Finance uploads the <b>{profile.receipt_label}</b> on the finance payment task "
+				f"The <b>{profile.receipt_label}</b> is uploaded on the finance payment task "
 				"after recording payment. Attach only the invoice (and certificate) here."
 			)
 		if is_application_finance_task(seq, profile):
-			if not is_finance:
+			if not can_receipt:
 				frappe.throw(
-					f"Only <b>Finance</b> can attach the <b>{profile.receipt_label}</b>."
+					f"Only the configured <b>Upload Receipt</b> role group can attach the "
+					f"<b>{profile.receipt_label}</b> "
+					"(CGM Shipping Settings → Document responsibilities)."
 				)
 			if task.project and not application_payment_made_for_project(task.project, profile):
 				frappe.throw(

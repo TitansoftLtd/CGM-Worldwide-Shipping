@@ -13,30 +13,16 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	UCR_RECEIPT_FOR_DECLARANT,
 	UCR_RECEIPT_VERIFY_FINANCE,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-	user_has_finance_department_access,
-)
 
 
 @frappe.request_cache
 def get_task_form_permissions() -> dict[str, bool]:
-	"""Task form UI flags from ERPNext roles vs sea task template departments."""
-	if frappe.session.user == "Administrator":
-		return {
-			"can_make_payment": True,
-			"can_upload_receipt": True,
-			"can_record_purchase_invoice": True,
-		}
+	"""Task form UI flags from CGM Shipping Settings document responsibilities."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		responsibility_flags_for_user,
+	)
 
-	user = frappe.session.user
-	can_finance = user_has_finance_department_access(user)
-
-	return {
-		"can_make_payment": can_finance,
-		"can_upload_receipt": can_finance,
-		"can_record_purchase_invoice": can_finance
-		or frappe.has_permission("Purchase Invoice", ptype="create"),
-	}
+	return responsibility_flags_for_user()
 
 
 def send_notification(notification_name: str, doc, *, audience: str = "users") -> dict:
