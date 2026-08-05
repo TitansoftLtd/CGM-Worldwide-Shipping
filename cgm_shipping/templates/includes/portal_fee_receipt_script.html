@@ -1,8 +1,52 @@
-{# Shared JS for clearance-fee "I have paid" receipt upload. #}
+{# Shared JS for clearance-fee "I have paid" + receipt/POP upload. #}
 <script>
 frappe.ready(function () {
+	const CONFIRM =
+		"cgm_shipping.cgm_worldwide_shipping.customizations.client_invoice_share.confirm_client_fee_paid";
 	const SUBMIT =
 		"cgm_shipping.cgm_worldwide_shipping.customizations.client_invoice_share.submit_client_fee_payment_receipt";
+
+	function missingArgs(project, source, row) {
+		if (!project || !source || !row) {
+			frappe.msgprint(__("Missing invoice details. Please refresh and try again."));
+			return true;
+		}
+		return false;
+	}
+
+	document.querySelectorAll(".cgm-fee-paid-btn").forEach(function (btn) {
+		btn.addEventListener("click", function () {
+			const project = btn.dataset.project;
+			const source = btn.dataset.source;
+			const row = btn.dataset.row;
+			if (missingArgs(project, source, row)) return;
+
+			frappe.confirm(
+				__("Confirm that you have paid this invoice? Finance will be notified."),
+				function () {
+					frappe.freeze(__("Recording payment confirmation…"));
+					frappe.call({
+						method: CONFIRM,
+						args: { project: project, source: source, row: row },
+						callback: function (r) {
+							frappe.unfreeze();
+							if (r.exc) return;
+							frappe.show_alert({
+								message:
+									(r.message && r.message.message) ||
+									__("Payment reported. Please attach your receipt."),
+								indicator: "green",
+							});
+							window.location.reload();
+						},
+						error: function () {
+							frappe.unfreeze();
+						},
+					});
+				}
+			);
+		});
+	});
 
 	document.querySelectorAll(".cgm-fee-receipt-input").forEach(function (input) {
 		input.addEventListener("change", function () {
@@ -11,48 +55,50 @@ frappe.ready(function () {
 			const project = input.dataset.project;
 			const source = input.dataset.source;
 			const row = input.dataset.row;
-			if (!project || !source || !row) {
-				frappe.msgprint(__("Missing invoice details. Please refresh and try again."));
-				return;
-			}
+			if (missingArgs(project, source, row)) return;
+
 			const formData = new FormData();
 			formData.append("file", file);
-			formData.append("is_private", "1");
-			formData.append("folder", "Home/Attachments");
-			formData.append("doctype", "Project");
-			formData.append("docname", project);
+			formData.append("project", project);
+			formData.append("source", source);
+			formData.append("row", row);
+			formData.append("cmd", SUBMIT);
+
 			frappe.freeze(
 				input.dataset.proofKind === "pop"
 					? __("Uploading POP…")
 					: __("Uploading receipt…")
 			);
-			fetch("/api/method/upload_file", {
+			fetch("/api/method/" + SUBMIT, {
 				method: "POST",
 				body: formData,
 				headers: { "X-Frappe-CSRF-Token": frappe.csrf_token },
 			})
 				.then(function (response) {
-					return response.json();
-				})
-				.then(function (data) {
-					if (data.exc || !(data.message && data.message.file_url)) {
-						throw new Error(__("Upload failed. Please try again."));
-					}
-					return frappe.call({
-						method: SUBMIT,
-						args: {
-							project: project,
-							source: source,
-							row: row,
-							file_url: data.message.file_url,
-						},
+					return response.json().then(function (data) {
+						return { ok: response.ok, data: data };
 					});
 				})
-				.then(function (r) {
+				.then(function (result) {
 					frappe.unfreeze();
-					if (r.exc) return;
+					const data = result.data || {};
+					if (!result.ok || data.exc || !(data.message && data.message.ok)) {
+						var msg = __("Upload failed. Please try again.");
+						if (data._server_messages) {
+							try {
+								var parsed = JSON.parse(data._server_messages);
+								if (parsed && parsed[0]) {
+									var inner = typeof parsed[0] === "string" ? JSON.parse(parsed[0]) : parsed[0];
+									msg = (inner && inner.message) || msg;
+								}
+							} catch (e) {}
+						} else if (data.message && typeof data.message === "string") {
+							msg = data.message;
+						}
+						throw new Error(msg);
+					}
 					frappe.show_alert({
-						message: (r.message && r.message.message) || __("Receipt submitted."),
+						message: (data.message && data.message.message) || __("Receipt submitted."),
 						indicator: "green",
 					});
 					window.location.reload();

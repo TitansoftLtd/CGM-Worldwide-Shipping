@@ -132,7 +132,7 @@
   {
    "default": "0",
    "depends_on": "eval:doc.shared_with_client",
-   "description": "Client uploaded a payment receipt on the portal.",
+   "description": "Client confirmed payment on the portal (receipt may follow).",
    "fieldname": "client_reported_paid",
    "fieldtype": "Check",
    "label": "Client Reported Paid",

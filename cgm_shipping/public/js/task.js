@@ -209,6 +209,8 @@ frappe.ui.form.on("Task", {
 						);
 				intro_set = true;
 			} else if (ui.is_entry_finance) {
+				const inv = get_finance_line(frm, "Invoice");
+				const clientReported = cint(inv?.client_reported_paid);
 				intro = frm.doc.custom_client_paid_directly
 					? __(
 							"<b>Client will pay</b> — no company Journal Entry. " +
@@ -221,6 +223,13 @@ frappe.ui.form.on("Task", {
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
 								"This finance task completes after payment — <b>Entry Slip Receipt</b> is optional."
 						);
+				if (clientReported) {
+					intro +=
+						" " +
+						__(
+							"<b>Client reported paid</b> on the portal — check <b>Client Reported Paid</b> on the invoice row; receipt may still be attached."
+						);
+				}
 				intro_set = true;
 			} else if (ui.is_shipping_line_finance) {
 				intro = frm.doc.custom_client_paid_directly

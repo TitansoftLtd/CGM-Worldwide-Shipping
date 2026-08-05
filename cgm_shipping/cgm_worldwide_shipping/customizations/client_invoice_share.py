@@ -319,27 +319,43 @@ def _labels_for_shared(task, finance_names: list[str], permit_names: list[str]) 
 
 
 @frappe.whitelist()
-def submit_client_fee_payment_receipt(
-	project: str, source: str, row: str, file_url: str
-) -> dict:
-	"""Customer portal: client uploads payment receipt for a shared fee invoice.
+def confirm_client_fee_paid(project: str, source: str, row: str) -> dict:
+	"""Customer portal: client confirms they have paid (no file yet).
 
-	Stores the receipt on the finance Receipt line (or Permit payment_receipt)
-	and stamps client_reported_paid — Finance can then complete settlement.
+	Stamps client_reported_paid so Finance sees the confirmation. Receipt/POP
+	upload is a separate optional next step on the portal.
 	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
-		customer_for_user,
-	)
+	_assert_customer_owns_project(project)
+	when = now_datetime()
+	if source == "finance_line":
+		_stamp_finance_line_client_reported(project, row, when)
+	elif source == "permit":
+		_stamp_permit_client_reported(project, row, when)
+	else:
+		frappe.throw(_("Unknown invoice source."))
 
-	customer = customer_for_user(frappe.session.user)
-	if not customer:
-		raise frappe.PermissionError(_("No customer is linked to your account."))
+	frappe.db.commit()
+	_queue_finance_receipt_notice(project, source, row, event="payment_reported")
+	return {
+		"ok": True,
+		"message": _(
+			"Thank you — we recorded that you have paid. Please attach your payment receipt next."
+		),
+	}
 
-	owner = frappe.db.get_value("Project", project, "customer")
-	if not owner or owner != customer:
-		raise frappe.PermissionError(_("You can only submit receipts for your own shipments."))
 
-	file_url = (file_url or "").strip()
+@frappe.whitelist()
+def submit_client_fee_payment_receipt(
+	project: str, source: str, row: str, file_url: str | None = None
+) -> dict:
+	"""Customer portal: client uploads payment receipt/POP for a shared fee invoice.
+
+	Accepts either ``file_url`` (legacy) or a multipart ``file`` on the request.
+	Also stamps client_reported_paid if not already set.
+	"""
+	_assert_customer_owns_project(project)
+
+	file_url = (file_url or "").strip() or _save_uploaded_portal_file()
 	if not file_url:
 		frappe.throw(_("Upload a payment receipt first."))
 	if not frappe.db.exists("File", {"file_url": file_url}):
@@ -354,7 +370,7 @@ def submit_client_fee_payment_receipt(
 		frappe.throw(_("Unknown invoice source."))
 
 	frappe.db.commit()
-	_queue_finance_receipt_notice(project, source, row)
+	_queue_finance_receipt_notice(project, source, row, event="receipt_submitted")
 	is_shipping_line_pop = False
 	if source == "finance_line":
 		payment_item = frappe.db.get_value("Task Finance Line", row, "payment_item")
@@ -372,6 +388,123 @@ def submit_client_fee_payment_receipt(
 		"ok": True,
 		"message": message,
 	}
+
+
+def _assert_customer_owns_project(project: str) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
+		customer_for_user,
+	)
+
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+
+	owner = frappe.db.get_value("Project", project, "customer")
+	if not owner or owner != customer:
+		raise frappe.PermissionError(_("You can only submit receipts for your own shipments."))
+
+
+def _save_uploaded_portal_file() -> str:
+	"""Persist multipart upload without requiring Project write permission."""
+	uploaded = frappe.request.files.get("file") if frappe.request else None
+	if not uploaded:
+		return ""
+
+	filename = (uploaded.filename or "payment-proof").strip()
+	content = uploaded.stream.read()
+	if not content:
+		frappe.throw(_("The selected file is empty. Please choose another file."))
+
+	allowed = (".pdf", ".jpg", ".jpeg", ".png")
+	lower = filename.lower()
+	if not any(lower.endswith(ext) for ext in allowed):
+		frappe.throw(_("Please upload a PDF or image file (PDF, JPG, PNG)."))
+
+	# Cap ~15 MB to avoid portal abuse.
+	if len(content) > 15 * 1024 * 1024:
+		frappe.throw(_("File is too large. Please upload a file under 15 MB."))
+
+	from frappe.utils.file_manager import save_file
+
+	# Do not attach to Project — portal customers usually cannot write Project,
+	# which caused the generic "Upload failed" from /api/method/upload_file.
+	file_doc = save_file(
+		filename,
+		content,
+		dt=None,
+		dn=None,
+		folder="Home/Attachments",
+		is_private=1,
+	)
+	return file_doc.file_url
+
+
+def _stamp_finance_line_client_reported(project: str, invoice_row: str, when) -> None:
+	matched = frappe.db.sql(
+		"""
+		SELECT tfl.name, tfl.shared_with_client
+		FROM `tabTask Finance Line` tfl
+		INNER JOIN `tabTask` t ON t.name = tfl.parent AND tfl.parenttype = 'Task'
+		WHERE tfl.name = %(row)s
+			AND t.project = %(project)s
+			AND tfl.line_type = 'Invoice'
+		LIMIT 1
+		""",
+		{"row": invoice_row, "project": project},
+		as_dict=True,
+	)
+	if not matched or not cint(matched[0].shared_with_client):
+		frappe.throw(_("This invoice is not shared for client payment."))
+
+	updates = {}
+	meta = frappe.get_meta("Task Finance Line")
+	if meta.has_field("client_reported_paid"):
+		updates["client_reported_paid"] = 1
+	if meta.has_field("client_reported_on"):
+		updates["client_reported_on"] = when
+	if updates:
+		frappe.db.set_value("Task Finance Line", matched[0].name, updates, update_modified=False)
+
+
+def _stamp_permit_client_reported(project: str, permit_row: str, when) -> None:
+	row = frappe.db.get_value(
+		"Permit Register",
+		{
+			"name": permit_row,
+			"parent": project,
+			"parenttype": "Project",
+			"parentfield": PERMIT_REGISTER_FIELD,
+			"shared_with_client": 1,
+		},
+		["name", "permit_type"],
+		as_dict=True,
+	)
+	if not row:
+		frappe.throw(_("This permit invoice is not shared for client payment."))
+
+	updates = {}
+	meta = frappe.get_meta("Permit Register")
+	if meta.has_field("client_reported_paid"):
+		updates["client_reported_paid"] = 1
+	if meta.has_field("client_reported_on"):
+		updates["client_reported_on"] = when
+	if not updates:
+		return
+	frappe.db.set_value("Permit Register", row.name, updates, update_modified=False)
+
+	if row.permit_type:
+		task_rows = frappe.db.sql(
+			"""
+			SELECT pr.name
+			FROM `tabPermit Register` pr
+			INNER JOIN `tabTask` t ON t.name = pr.parent AND pr.parenttype = 'Task'
+			WHERE t.project = %(project)s
+				AND pr.permit_type = %(permit_type)s
+			""",
+			{"project": project, "permit_type": row.permit_type},
+		)
+		for (name,) in task_rows or []:
+			frappe.db.set_value("Permit Register", name, updates, update_modified=False)
 
 
 def _submit_finance_line_receipt(project: str, invoice_row: str, file_url: str, when) -> None:
@@ -417,6 +550,8 @@ def _submit_finance_line_receipt(project: str, invoice_row: str, file_url: str, 
 			{"attachment": file_url},
 			update_modified=False,
 		)
+		# Link File to the finance task for desk visibility.
+		_link_file_to_task(file_url, inv.parent)
 	else:
 		task = frappe.get_doc("Task", inv.parent)
 		task.append(
@@ -430,15 +565,24 @@ def _submit_finance_line_receipt(project: str, invoice_row: str, file_url: str, 
 		)
 		task.flags.ignore_permissions = True
 		task.save(ignore_permissions=True)
+		_link_file_to_task(file_url, inv.parent)
 
-	updates = {}
-	meta = frappe.get_meta("Task Finance Line")
-	if meta.has_field("client_reported_paid"):
-		updates["client_reported_paid"] = 1
-	if meta.has_field("client_reported_on"):
-		updates["client_reported_on"] = when
-	if updates:
-		frappe.db.set_value("Task Finance Line", inv.name, updates, update_modified=False)
+	_stamp_finance_line_client_reported(project, invoice_row, when)
+
+
+def _link_file_to_task(file_url: str, task_name: str) -> None:
+	name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+	if not name:
+		return
+	frappe.db.set_value(
+		"File",
+		name,
+		{
+			"attached_to_doctype": "Task",
+			"attached_to_name": task_name,
+		},
+		update_modified=False,
+	)
 
 
 def _submit_permit_receipt(project: str, permit_row: str, file_url: str, when) -> None:
@@ -480,7 +624,9 @@ def _submit_permit_receipt(project: str, permit_row: str, file_url: str, when) -
 			frappe.db.set_value("Permit Register", name, updates, update_modified=False)
 
 
-def _queue_finance_receipt_notice(project: str, source: str, row: str) -> None:
+def _queue_finance_receipt_notice(
+	project: str, source: str, row: str, *, event: str = "receipt_submitted"
+) -> None:
 	"""Optional light notify — never blocks the portal response."""
 	try:
 		ref = display_ref_from_values(
@@ -489,7 +635,13 @@ def _queue_finance_receipt_notice(project: str, source: str, row: str) -> None:
 		) or project
 		frappe.publish_realtime(
 			"cgm_client_fee_receipt",
-			{"project": project, "source": source, "row": row, "ref": ref},
+			{
+				"project": project,
+				"source": source,
+				"row": row,
+				"ref": ref,
+				"event": event,
+			},
 			user="Administrator",
 			after_commit=True,
 		)

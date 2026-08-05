@@ -968,7 +968,8 @@ def _shared_fee_invoices_for_projects(project_names: list[str]) -> list[dict]:
 		):
 			project = row.parent
 			label = _permit_label(row.get("permit_type"))
-			reported = bool(cint(row.get("client_reported_paid"))) or bool(row.get("payment_receipt"))
+			has_proof = bool(row.get("payment_receipt"))
+			reported = bool(cint(row.get("client_reported_paid"))) or has_proof
 			out.append(
 				_fee_invoice_row(
 					source="permit",
@@ -978,6 +979,7 @@ def _shared_fee_invoices_for_projects(project_names: list[str]) -> list[dict]:
 					label=_("{0} Invoice").format(label),
 					shared_on=row.get("shared_on"),
 					reported=reported,
+					has_proof=has_proof,
 					reported_on=row.get("client_reported_on"),
 					api=api,
 				)
@@ -1055,6 +1057,7 @@ def _shared_fee_invoices_for_projects(project_names: list[str]) -> list[dict]:
 					label=label,
 					shared_on=row.get("shared_on"),
 					reported=reported,
+					has_proof=has_proof,
 					reported_on=row.get("client_reported_on"),
 					api=api,
 					proof_kind="pop" if is_shipping_line else "receipt",
@@ -1076,11 +1079,19 @@ def _fee_invoice_row(
 	reported_on,
 	api: str,
 	proof_kind: str = "receipt",
+	has_proof: bool = False,
 ) -> dict:
 	is_pop = proof_kind == "pop"
-	if reported:
+	if has_proof:
 		status = "pop_submitted" if is_pop else "receipt_submitted"
 		status_label = _("POP submitted") if is_pop else _("Receipt submitted")
+	elif reported:
+		status = "payment_reported"
+		status_label = (
+			_("Payment reported — please attach POP")
+			if is_pop
+			else _("Payment reported — please attach receipt")
+		)
 	else:
 		status = "awaiting_payment"
 		status_label = _("Awaiting your payment")
@@ -1095,6 +1106,7 @@ def _fee_invoice_row(
 		"status_label": status_label,
 		"proof_kind": proof_kind,
 		"client_reported_paid": 1 if reported else 0,
+		"has_payment_proof": 1 if has_proof else 0,
 		"client_reported_on": reported_on,
 		"shipment_url": f"/shipment?name={quote(project, safe='')}",
 		"download_url": (

@@ -2,8 +2,8 @@
 # License: see license.txt
 """Customer portal: sales invoices + Finance-shared clearance fee invoices.
 
-Visible at `/my-invoices`. Clients can download shared fee invoices and upload
-a payment receipt ("I have paid") for the Client will pay path.
+Visible at `/my-invoices`. Clients can download shared fee invoices, confirm
+"I have paid", then optionally attach a payment receipt for the Client will pay path.
 """
 
 from urllib.parse import quote
@@ -55,7 +55,7 @@ def _build_context(context):
 	fee_invoices = get_customer_shared_fee_invoices(customer)
 	context.invoices = invoices
 	context.fee_invoices = fee_invoices
-	context.pending_fees = [f for f in fee_invoices if not f.get("client_reported_paid")]
+	context.pending_fees = [f for f in fee_invoices if not f.get("has_payment_proof")]
 	context.total_outstanding = sum(flt(i.outstanding_amount) for i in invoices)
 	context.currency = (
 		invoices[0].currency if invoices else frappe.defaults.get_global_default("currency")
