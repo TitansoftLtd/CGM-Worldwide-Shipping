@@ -344,6 +344,11 @@ def validate_application_not_manually_completed(
 			f"This task completes automatically after Finance verifies the "
 			f"<b>{profile.receipt_label}</b> (once POP is shared and Documentation attaches the receipt)."
 		)
+	if profile.complete_on_invoice_verified:
+		frappe.throw(
+			f"This task completes automatically after Finance verifies the "
+			f"<b>{profile.invoice_label}</b>."
+		)
 	finance_name = get_application_finance_task(task.project, profile) if task.project else None
 	finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
 	if finance_task:
@@ -700,7 +705,8 @@ def get_application_declarant_workflow_status(
 		"finance_task_completed": bool(finance_task and finance_task.status == "Completed"),
 		"client_paid_directly": client_paid,
 		"certificate_required": bool(
-			profile.certificate_document_code or profile.legacy_certificate_codes
+			(profile.certificate_document_code or profile.legacy_certificate_codes)
+			and not profile.complete_on_invoice_verified
 		),
 		"certificate_attached": certificate_uploaded(task, profile),
 		"application_ready_to_complete": can_complete_application_task(

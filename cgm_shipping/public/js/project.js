@@ -129,13 +129,21 @@ function register_project_action_after_workflow(frm, eventKey, register_action) 
 function mount_port_arrival_confirmation_button(frm) {
 	const on_confirm = () => {
 		const confirmMessage = __(
-			"Confirm that the shipment has arrived at the port? Container trackers will be created for all containers on this project."
+			"Confirm that the shipment has arrived at the port? ATA will be saved on the Project and all Container Trackers will be created/updated."
 		);
 		const submit = (ata) => {
+			if (!ata) {
+				frappe.msgprint({
+					title: __("ATA required"),
+					message: __("Enter the Actual Time of Arrival (ATA) before confirming."),
+					indicator: "orange",
+				});
+				return;
+			}
 			frappe.call({
 				method:
 					"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.confirm_shipment_arrival_at_port",
-				args: { project_name: frm.doc.name, ata: ata || null },
+				args: { project_name: frm.doc.name, ata: ata },
 				freeze: true,
 				freeze_message: __("Creating container trackers..."),
 				callback(r) {
@@ -144,10 +152,11 @@ function mount_port_arrival_confirmation_button(frm) {
 					}
 					frm.reload_doc();
 					const count = r.message?.tracker_count || 0;
+					const savedAta = r.message?.ata || ata;
 					frappe.show_alert({
 						message: __(
-							"Port arrival confirmed — {0} container tracker(s) created.",
-							[count]
+							"Port arrival confirmed — ATA {0} saved on Project and {1} container tracker(s).",
+							[savedAta, count]
 						),
 						indicator: "green",
 					});
@@ -161,6 +170,9 @@ function mount_port_arrival_confirmation_button(frm) {
 					fieldname: "ata",
 					fieldtype: "Date",
 					label: __("Actual Time of Arrival (ATA)"),
+					description: __(
+						"This date is written to the Project ATA field and to every Container Tracker for this shipment."
+					),
 					default: project_ata_value(frm) || frappe.datetime.get_today(),
 					reqd: 1,
 				},
@@ -981,7 +993,7 @@ function render_container_tracking_table(frm, dashboard) {
 	let cards = "";
 	if (!rows.length) {
 		cards = `<div class="text-muted cgm-container-empty">${__(
-			"No containers yet. Use Actions → Confirm Shipment Arrival at the Port, or complete Task 11 (Create Entry), to create Container Trackers."
+			"No containers yet. Use Actions → Confirm Shipment Arrival at the Port to create Container Trackers."
 		)}</div>`;
 	} else {
 		cards = rows

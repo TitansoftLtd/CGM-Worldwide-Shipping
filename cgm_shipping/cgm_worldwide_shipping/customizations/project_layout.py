@@ -913,7 +913,7 @@ def ensure_project_inspection_notification_fields() -> None:
 
 
 def ensure_project_port_arrival_fields() -> None:
-	"""Early port-arrival confirmation (creates container trackers before Entry is paid)."""
+	"""Port-arrival confirmation on Project (creates container trackers; independent of Entry)."""
 	_create_cf(
 		"Project",
 		{

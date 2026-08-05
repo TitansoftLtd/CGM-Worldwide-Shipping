@@ -62,6 +62,8 @@ class ApplicationFinanceProfile:
 	# Shipping Line: POP (proof of payment) between pay and Documentation receipt.
 	requires_pop: bool = False
 	pop_label: str = ""
+	# Create Entry: complete when Finance verifies the invoice (ENTRY doc optional).
+	complete_on_invoice_verified: bool = False
 
 
 APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
@@ -100,6 +102,7 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		application_receipt_verified_field=None,
 		sync_to_idf_record=False,
 		legacy_certificate_codes=frozenset({"ENTRY"}),
+		complete_on_invoice_verified=True,
 	),
 	"Shipping Line Application": ApplicationFinanceProfile(
 		key="shipping_line",
@@ -1175,7 +1178,7 @@ def can_complete_application_task(
 	)
 
 	# Client-pays and company-pays share the same application requirements:
-	# invoice submitted + Finance-verified + certificate (when required).
+	# invoice submitted + Finance-verified (+ certificate or POP when configured).
 	# Only the finance task skips the Journal Entry on the client-pays path.
 	submitted = invoice_attached(task, profile)
 	if profile.application_submitted_field and task.meta.has_field(profile.application_submitted_field):
@@ -1197,6 +1200,11 @@ def can_complete_application_task(
 			finance_task is not None and receipt_verified(finance_task, profile)
 		)
 		return bool(rec_ok)
+
+	# Entry: complete as soon as Finance verifies the Entry Slip invoice.
+	# ENTRY customs document remains optional on Clearance Documents.
+	if profile.complete_on_invoice_verified:
+		return True
 
 	if not profile.certificate_document_code and not profile.legacy_certificate_codes:
 		# No certificate step (e.g. KPA): keep open for explicit Mark Completed
@@ -1241,7 +1249,8 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 			return False
 		return True
 
-	# Other flows: receipt attachment is optional.
+	# Entry / KPA / similar: receipt attachment is optional on both
+	# company-pays and client-pays paths.
 	return True
 
 

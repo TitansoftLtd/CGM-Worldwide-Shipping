@@ -3734,12 +3734,6 @@ def on_task_update(doc, _method=None):
 		profile = profile_for_task(doc)
 		if profile and is_application_finance_task(seq, profile):
 			close_application_when_finance_done(doc, profile)
-		if _is_sea_task(doc) and is_entry_application_task(seq) and doc.get("project"):
-			from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
-				ensure_container_trackers_on_entry_task_complete,
-			)
-
-			ensure_container_trackers_on_entry_task_complete(doc)
 
 
 def validate_task_completion_requirements(doc, _method=None):

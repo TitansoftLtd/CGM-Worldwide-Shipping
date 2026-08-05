@@ -212,15 +212,14 @@ frappe.ui.form.on("Task", {
 				intro = frm.doc.custom_client_paid_directly
 					? __(
 							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>Entry Slip Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
-								"Receipt attachment is optional. " +
-								"Declarant attaches the ENTRY document on <b>Create Entry</b>."
+								"<b>1</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
+								"<b>2</b> <b>Share Invoice with Client</b> (optional). " +
+								"<b>Entry Slip Receipt</b> is optional."
 						)
 					: __(
-							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> · " +
+							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
-								"Receipt attachment is optional — task completes after payment. " +
-								"Declarant attaches the ENTRY document on <b>Create Entry</b>."
+								"This finance task completes after payment — <b>Entry Slip Receipt</b> is optional."
 						);
 				intro_set = true;
 			} else if (ui.is_shipping_line_finance) {
@@ -282,6 +281,7 @@ frappe.ui.form.on("Task", {
 			if (!frm._cgm_entry_declarant_status_loaded) {
 				load_entry_declarant_workflow_status(frm);
 			}
+			configure_entry_arrival_mirror_grid(frm);
 		}
 
 		if (ui.is_shipping_line_application && frm.doc.project) {
@@ -2011,10 +2011,6 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		});
 		btn?.addClass?.("btn-primary");
 	}
-
-	if ((ui.is_entry_application || is_entry_application_step(frm)) && frm.doc.project) {
-		setup_entry_port_arrival_confirmation_button(frm);
-	}
 }
 
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
@@ -2023,90 +2019,6 @@ function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
 		frm.page.set_inner_btn_group_as_primary(CGM_ACTION_GROUP);
 	}
 	return btn;
-}
-
-function prompt_confirm_port_arrival(frm, projectName, defaultAta) {
-	const confirmMessage = __(
-		"Confirm that the shipment has arrived at the port? Container trackers will be created for all containers on this project."
-	);
-	const submit = (ata) => {
-		frappe.call({
-			method:
-				"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.confirm_shipment_arrival_at_port",
-			args: {
-				project_name: projectName,
-				ata: ata || null,
-				task_name: frm.doc.name,
-			},
-			freeze: true,
-			freeze_message: __("Creating container trackers..."),
-			callback(r) {
-				if (r.exc) {
-					return;
-				}
-				frm.reload_doc();
-				const count = r.message?.tracker_count || 0;
-				frappe.show_alert({
-					message: __(
-						"Port arrival confirmed — {0} container tracker(s) created.",
-						[count]
-					),
-					indicator: "green",
-				});
-			},
-		});
-	};
-
-	frappe.prompt(
-		[
-			{
-				fieldname: "ata",
-				fieldtype: "Date",
-				label: __("Actual Time of Arrival (ATA)"),
-				default: defaultAta || frappe.datetime.get_today(),
-				reqd: 1,
-			},
-		],
-		(values) => {
-			frappe.confirm(confirmMessage, () => submit(values.ata));
-		},
-		__("Confirm Port Arrival")
-	);
-}
-
-function setup_entry_port_arrival_confirmation_button(frm) {
-	if (!frm.doc.project) {
-		return;
-	}
-	if (!is_entry_application_step(frm) && !get_sea_task_ui(frm).is_entry_application) {
-		return;
-	}
-
-	const requestId = (frm._cgm_port_arrival_button_request_id || 0) + 1;
-	frm._cgm_port_arrival_button_request_id = requestId;
-
-	frappe.call({
-		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.project_can_confirm_port_arrival",
-		args: { project: frm.doc.project },
-		callback(r) {
-			if (frm._cgm_port_arrival_button_request_id !== requestId) {
-				return;
-			}
-			if (r.exc || !r.message?.can_confirm || frm.doc.name !== frm.docname) {
-				return;
-			}
-			if (!is_entry_application_step(frm) && !get_sea_task_ui(frm).is_entry_application) {
-				return;
-			}
-			// Visible primary button (not only buried under Actions).
-			const btn = frm.add_custom_button(
-				__("Confirm Shipment Arrival at the Port"),
-				() => prompt_confirm_port_arrival(frm, frm.doc.project, r.message.ata)
-			);
-			btn?.addClass?.("btn-primary");
-		},
-	});
 }
 
 function hide_ucr_legacy_fields(frm) {
@@ -2939,47 +2851,37 @@ function apply_entry_application_intro(frm, status) {
 	let intro;
 	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
-	} else if (status.client_paid_directly && !status.certificate_attached) {
+	} else if (status.application_ready_to_complete) {
+		intro = __("<b>Entry Slip invoice verified by Finance.</b> Completing this task…");
+	} else if (status.client_paid_directly && status.invoice_verified) {
+		intro = __(
+			"<b>Finance verified the invoice</b> (client-pays path). Completing this task…"
+		);
+	} else if (status.client_paid_directly) {
 		intro = __(
 			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
-				"Finance verifies the invoice and uploads the client's receipt. " +
-				"Attach the <b>ENTRY customs document</b> under <b>Clearance Documents</b> to complete this task."
-		);
-	} else if (status.application_ready_to_complete) {
-		intro = __("<b>All declarant documents are in place.</b> Completing this task…");
-	} else if (status.receipt_attached && !status.certificate_attached) {
-		intro = __(
-			"<b>Attach the ENTRY customs document</b> under <b>Clearance Documents</b> to finish this task."
-		);
-	} else if (status.receipt_attached) {
-		intro = __(
-			"<b>Entry Slip receipt uploaded.</b> Attach the ENTRY customs document under <b>Clearance Documents</b> to complete this task."
-		);
-	} else if (status.payment_made) {
-		intro = __(
-			"<b>Finance has paid the Entry Slip invoice.</b> Finance will upload the supplier <b>{0}</b> on the finance task. " +
-				"When the ENTRY document is issued, attach it under <b>Clearance Documents</b>.",
-			[receiptLabel]
+				"Waiting for Finance to verify the <b>{0}</b> — this task completes when they do.",
+			[invoiceLabel]
 		);
 	} else if (status.invoice_verified) {
 		intro = __(
-			"<b>{0} verified by Finance.</b> Waiting for payment. After payment, Finance uploads the " +
-				"<b>{1}</b>; attach the ENTRY document under <b>Clearance Documents</b> when issued.",
+			"<b>{0} verified by Finance.</b> Completing this task… Finance continues payment and " +
+				"<b>{1}</b> on the finance task. You may still attach the ENTRY document under " +
+				"<b>Clearance Documents</b> when issued.",
 			[invoiceLabel, receiptLabel]
 		);
 	} else if (status.invoice_submitted) {
 		intro = __(
-			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify and pay. " +
-				"After payment, Finance uploads the supplier receipt on the finance task.",
+			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify — this task completes " +
+				"when the invoice is approved.",
 			[invoiceLabel]
 		);
 	} else {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>{0}</b> and save on " +
-				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, Finance uploads the " +
-				"supplier receipt; attach the ENTRY document under <b>Clearance Documents</b> when issued. " +
-				"When the vessel arrives, use <b>Actions → Confirm Shipment Arrival at the Port</b> to enter ATA " +
-				"(if not already confirmed on the Project).",
+				"<b>Invoices & Receipts</b> — Finance is notified automatically. " +
+				"This task completes once Finance verifies the invoice. " +
+				"ENTRY document under <b>Clearance Documents</b> remains optional when issued.",
 			[invoiceLabel]
 		);
 	}
@@ -2991,8 +2893,15 @@ function ensure_entry_finance_task_completed_on_form(frm) {
 		return;
 	}
 	const inv = get_finance_line(frm, "Invoice");
-	const rec = get_finance_line(frm, "Receipt");
-	if (!inv?.verified || !rec?.verified || !rec?.attachment) {
+	if (!inv?.verified) {
+		return;
+	}
+	// Receipt is optional for Entry — company-pays and client-pays.
+	const clientPaid = cint(frm.doc.custom_client_paid_directly);
+	const paid =
+		clientPaid ||
+		Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
+	if (!paid) {
 		return;
 	}
 	frm._cgm_entry_finance_complete_checking = true;
@@ -3245,6 +3154,29 @@ function configure_shipping_line_deposit_grid(frm) {
 	}
 }
 
+function configure_entry_arrival_mirror_grid(frm) {
+	/** Create Entry container grid mirrors Project port-arrival confirm (read-only). */
+	const grid = frm.fields_dict.custom_container_updates?.grid;
+	if (!grid) {
+		return;
+	}
+	frm.toggle_display("custom_section_container_updates", true);
+	frm.toggle_display("custom_container_updates", true);
+	if (frm._cgm_entry_arrival_mirror_grid_ready) {
+		return;
+	}
+	grid.update_docfield_property("discharging_date", "hidden", 0);
+	grid.update_docfield_property("discharging_date", "in_list_view", 1);
+	grid.update_docfield_property("discharging_date", "read_only", 1);
+	["container_number", "cargo_size", "current_status"].forEach((fn) => {
+		grid.update_docfield_property(fn, "read_only", 1);
+	});
+	frm._cgm_entry_arrival_mirror_grid_ready = true;
+	if (grid.wrapper) {
+		grid.refresh();
+	}
+}
+
 function application_status_for_client_paid(frm, ui) {
 	if (ui.is_kpa_application) {
 		return frm._cgm_kpa_declarant_status;
@@ -3430,8 +3362,18 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 		if (!inv?.verified || !pop?.attachment || !rec?.attachment || !rec?.verified) {
 			return;
 		}
-	} else if (!inv?.verified || !rec?.verified || !rec?.attachment) {
-		return;
+	} else {
+		// KPA (and other non-POP profiles): receipt is optional.
+		if (!inv?.verified) {
+			return;
+		}
+		const clientPaid = cint(frm.doc.custom_client_paid_directly);
+		const paid =
+			clientPaid ||
+			Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
+		if (!paid) {
+			return;
+		}
 	}
 	frm[checkingKey] = true;
 	frappe.call({

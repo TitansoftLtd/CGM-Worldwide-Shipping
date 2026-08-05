@@ -912,26 +912,48 @@ def _apply_bulk_eta(project, trackers: list) -> None:
 
 
 def _apply_bulk_vessel_arrival(project, trackers: list, today_date, task_doc=None) -> None:
-	"""Task 11 — create trackers (vessel arrived); discharge dates come from task grid."""
+	"""Create trackers (vessel arrived); copy Project ATA onto every tracker.
+
+	Also mirrors discharge/ATA onto the Create Entry container grid when that
+	task exists. Create Entry completion is never gated by this step.
+	"""
 	create_container_trackers_for_project(project.name)
 	trackers = _trackers_for_project(project.name)
 	ata = get_project_ata(project)
-	for ct in trackers:
-		if ata:
-			ct.ata = ata
-	_save_trackers(trackers)
+	if ata:
+		_apply_ata_to_trackers(trackers, ata)
 
 	if task_doc:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
-			apply_container_updates_from_task,
 			seed_container_update_rows,
 		)
 
 		if seed_container_update_rows(task_doc):
 			task_doc.save(ignore_permissions=True)
-		apply_container_updates_from_task(task_doc)
+	else:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			sync_vessel_arrival_task_rows_from_project,
+		)
+
+		sync_vessel_arrival_task_rows_from_project(project.name)
 
 	_notify_free_days_awareness(project.name)
+
+
+def _apply_ata_to_trackers(trackers: list, ata) -> None:
+	"""Persist ATA on every in-memory tracker and save.
+
+	When discharging_date is empty, default it to ATA so Create Entry's
+	container-update mirror has a discharge date after Project confirm.
+	"""
+	if not ata or not trackers:
+		return
+	ata_date = getdate(ata)
+	for ct in trackers:
+		ct.ata = ata_date
+		if not ct.get("discharging_date"):
+			ct.discharging_date = ata_date
+	_save_trackers(trackers)
 
 
 def _notify_free_days_awareness(project_name: str) -> None:
@@ -1181,7 +1203,7 @@ def ensure_container_trackers_at_port_arrival(
 	ata=None,
 	require_project_write: bool = True,
 ) -> dict:
-	"""Create/sync container trackers when shipment arrives at port (early or on Entry task)."""
+	"""Create/sync container trackers when shipment arrives at port (Project confirm)."""
 	if require_project_write:
 		frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
 	elif not frappe.has_permission("Project", ptype="read", doc=project_name):
@@ -1212,13 +1234,25 @@ def ensure_container_trackers_at_port_arrival(
 		updates["custom_berth_phase"] = "After Vessel Berthed"
 
 	if updates:
-		# Declarants confirm arrival from Create Entry without Project write.
 		frappe.db.set_value("Project", project_name, updates, update_modified=True)
 		frappe.clear_document_cache("Project", project_name)
 		project = frappe.get_doc("Project", project_name)
 
 	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 	handle_sea_task_container_event(project_name, seq, task_doc=task_doc)
+
+	# Guarantee ATA on every tracker even if they already existed before confirm.
+	final_ata = get_project_ata(project)
+	if final_ata:
+		_apply_ata_to_trackers(_trackers_for_project(project_name), final_ata)
+
+	# Refresh Create Entry mirror after final ATA/discharge write (Project-owned).
+	if not task_doc:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			sync_vessel_arrival_task_rows_from_project,
+		)
+
+		sync_vessel_arrival_task_rows_from_project(project_name)
 
 	trackers = frappe.get_all(
 		"Container Tracker",
@@ -1234,28 +1268,8 @@ def ensure_container_trackers_at_port_arrival(
 		"port_arrival_confirmed": bool(
 			project.get("custom_port_arrival_confirmed") or mark_confirmed
 		),
-		"ata": str(get_project_ata(project) or ""),
+		"ata": str(final_ata or ""),
 	}
-
-
-def ensure_container_trackers_on_entry_task_complete(task_doc) -> dict | None:
-	"""Fallback when Create Entry completes without an early port-arrival confirmation."""
-	project_name = task_doc.get("project")
-	if not project_name:
-		return None
-
-	project = frappe.get_cached_doc("Project", project_name)
-	if project.get("custom_port_arrival_confirmed"):
-		return None
-	if _trackers_for_project(project_name):
-		return None
-
-	return ensure_container_trackers_at_port_arrival(
-		project_name,
-		task_doc=task_doc,
-		mark_confirmed=False,
-		require_project_write=False,
-	)
 
 
 CLOSED_CONTAINER_STATUSES = (
@@ -1302,7 +1316,7 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 
 @frappe.whitelist()
 def project_can_confirm_port_arrival(project: str) -> dict:
-	"""Whether the Project / Create Entry Actions menu should offer port arrival confirmation."""
+	"""Whether the Project Actions menu should offer port arrival confirmation."""
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
 	if not frappe.db.exists("Project", project):
 		return {"can_confirm": False, "ata": ""}
@@ -1322,39 +1336,29 @@ def project_can_confirm_port_arrival(project: str) -> dict:
 def confirm_shipment_arrival_at_port(
 	project_name: str, ata: str | None = None, task_name: str | None = None
 ) -> dict:
-	"""Confirm shipment arrival at port and create container trackers before Entry is paid.
+	"""Confirm shipment arrival at port from the Project form.
 
-	From Project: requires Project write.
-	From Create Entry task: requires Task write on that entry task (Declarants).
+	Requires Project write. ATA is required and is written to Project + every
+	Container Tracker. Create Entry is independent of this confirmation.
+	``task_name`` is accepted for backward compatibility but is ignored.
 	"""
+	if not ata:
+		frappe.throw(_("Actual Time of Arrival (ATA) is required to confirm port arrival."))
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
 	project = frappe.get_doc("Project", project_name)
 	if project.get("custom_port_arrival_confirmed"):
 		frappe.throw(_("Port arrival has already been confirmed for this project."))
 
-	task_doc = None
-	require_project_write = True
-	if task_name:
-		frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-		task_doc = frappe.get_doc("Task", task_name)
-		if (task_doc.get("project") or "") != project_name:
-			frappe.throw(_("Task does not belong to this project."))
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-			is_entry_application_task,
-		)
-
-		seq = int(task_doc.get("custom_sequence_no") or 0)
-		if not is_entry_application_task(seq):
-			frappe.throw(_("Port arrival can only be confirmed from the Create Entry task."))
-		require_project_write = False
-	else:
-		frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	# Ignore task_name — confirmation is Project-owned. Keep arg for old clients.
+	_ = task_name
 
 	return ensure_container_trackers_at_port_arrival(
 		project_name,
-		task_doc=task_doc,
+		task_doc=None,
 		mark_confirmed=True,
 		ata=ata,
-		require_project_write=require_project_write,
+		require_project_write=True,
 	)
 
 
