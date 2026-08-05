@@ -212,8 +212,8 @@ def notify_finance_upload_application_receipt(
 		"task": task.name,
 		"task_url": get_url(f"/app/task/{task.name}"),
 		"message": (
-			f"Payment recorded. Attach the <b>{profile.receipt_label}</b> on this finance task. "
-			"The declarant will see it on the application task automatically."
+			f"Payment recorded. You may optionally attach the <b>{profile.receipt_label}</b> "
+			"on this finance task when available."
 		),
 	}
 
@@ -367,7 +367,7 @@ def validate_finance_application_payment_task(
 		task_has_recorded_payment,
 	)
 
-	# Client-pays: verify invoice + upload client receipt; skip JE / Purchase Invoice.
+	# Client-pays: verify invoice; receipt optional; skip JE / Purchase Invoice.
 	if task_client_paid_directly(task):
 		app_task = get_application_task(task.project, profile) if task.project else None
 		if app_task and not invoice_submitted(app_task, profile):
@@ -380,14 +380,9 @@ def validate_finance_application_payment_task(
 			frappe.throw(
 				f"Finance must tick <b>Verified by Finance</b> on the <b>{profile.invoice_label}</b> row."
 			)
-		if not receipt_attached_for_payment_workflow(task, profile):
-			frappe.throw(
-				f"Client-pays path: attach the client's <b>{profile.receipt_label}</b> "
-				"on this finance task before completion."
-			)
 		if not client_paid_settlement_ready(task):
 			frappe.throw(
-				"Client-pays path is not complete: verify the invoice and attach the client's receipt."
+				"Client-pays path is not complete: verify the invoice first."
 			)
 		return
 
@@ -408,18 +403,12 @@ def validate_finance_application_payment_task(
 	if not task_has_recorded_payment(task):
 		frappe.throw(
 			"Record payment via <b>Make Payment</b> (Journal Entry) or <b>Payment Entry</b> "
-			"before completion, or tick <b>Client will pay</b> if the client settles it "
-			"(then upload their receipt)."
+			"before completion, or tick <b>Client will pay</b> if the client settles it."
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
 		if int(pe_status or 0) != 1:
 			frappe.throw("Payment Entry must be <b>submitted</b> before completing this task.")
-	if not receipt_attached_for_payment_workflow(task, profile):
-		frappe.throw(
-			f"Finance must attach the <b>{profile.receipt_label}</b> on this finance task "
-			"after recording payment, before completion."
-		)
 
 
 def receipt_attached_for_payment_workflow(
@@ -772,7 +761,7 @@ def _profile_by_key(profile_key: str) -> ApplicationFinanceProfile:
 
 
 def application_finance_needs_work(finance_task, profile: ApplicationFinanceProfile) -> bool:
-	"""True when Finance still needs verify, pay, or receipt for the application invoice."""
+	"""True when Finance still needs verify or pay for the application invoice (receipt optional)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		task_client_paid_directly,
 		task_has_recorded_payment,
@@ -789,8 +778,6 @@ def application_finance_needs_work(finance_task, profile: ApplicationFinanceProf
 	if not inv_ok:
 		return True
 	if not task_has_recorded_payment(finance_task):
-		return True
-	if not receipt_attached_for_payment_workflow(finance_task, profile):
 		return True
 	return False
 
@@ -1104,6 +1091,11 @@ def process_application_workflow_onload(task) -> bool:
 	if not profile:
 		return False
 	changed = ensure_application_finance_lines_saved(task, profile)
+	# Seed-save can race with a prior set_value(Completed); re-read status.
+	if changed and task.name:
+		db_status = frappe.db.get_value("Task", task.name, "status")
+		if db_status and task.status != db_status:
+			task.reload()
 	seq = task_sequence(task)
 	if is_application_task(seq, profile):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
@@ -1146,8 +1138,8 @@ def enforce_entry_finance_gate(project: str) -> None:
 	):
 		frappe.throw(
 			"Cannot move to <b>Entry Paid</b> until <b>Finance Pays Entry Slip</b> is completed: "
-			"Finance verifies the invoice, then either records payment (Journal Entry) and "
-			"uploads the receipt, or ticks <b>Client will pay</b> and uploads the client's receipt."
+			"Finance verifies the invoice, then either records payment (Journal Entry) "
+			"or ticks <b>Client will pay</b>. Receipt attachment is optional."
 		)
 
 
@@ -1164,6 +1156,6 @@ def enforce_kpa_finance_gate(project: str) -> None:
 	):
 		frappe.throw(
 			"Cannot move to <b>KPA Paid</b> until <b>Finance pays KPA Invoice</b> is completed: "
-			"Finance verifies the invoice, then either records payment (Journal Entry) and "
-			"uploads the receipt, or ticks <b>Client will pay</b> and uploads the client's receipt."
+			"Finance verifies the invoice, then either records payment (Journal Entry) "
+			"or ticks <b>Client will pay</b>. Receipt attachment is optional."
 		)

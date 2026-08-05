@@ -351,6 +351,12 @@ def ensure_application_finance_lines_saved(task, profile: ApplicationFinanceProf
 	if after != before:
 		frappe.flags.cgm_ensuring_application_finance_lines = True
 		try:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+				preserve_completed_status_against_stale_save,
+			)
+
+			# Same race as UCR: seed-save must not overwrite Completed → Open.
+			preserve_completed_status_against_stale_save(task)
 			task.save(ignore_permissions=True)
 		finally:
 			frappe.flags.cgm_ensuring_application_finance_lines = False
@@ -961,9 +967,7 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 	# JE / submitted PE required for the normal CGM-paid path.
 	if not task_has_recorded_payment(task):
 		return False
-	# Finance uploads the receipt (no separate verify step). Invoice verify + payment + receipt.
-	if not receipt_attached_for_payment_workflow(task, profile):
-		return False
+	# Receipt attachment is optional — keep the field for when one exists.
 	return True
 
 

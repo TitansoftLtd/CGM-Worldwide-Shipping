@@ -651,7 +651,7 @@ def ensure_task_container_update_fields() -> None:
 
 
 def ensure_client_paid_task_fields() -> None:
-	"""Finance marks the client-pays path (no company JE; verify + client receipt still required)."""
+	"""Finance marks the client-pays path (no company JE; verify still required, receipt optional)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		CLIENT_PAID_BY_FIELD,
 		CLIENT_PAID_FIELD,
@@ -661,7 +661,7 @@ def ensure_client_paid_task_fields() -> None:
 	label = "Client will pay"
 	description = (
 		"Tick when the client settles this fee (no company Journal Entry). "
-		"Finance must still verify the invoice and upload the client's payment receipt."
+		"Finance must still verify the invoice. Receipt attachment is optional."
 	)
 	_ensure_cf(
 		"Task",

@@ -3023,9 +3023,8 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 				sync_task_permits_to_project(task)
 				notify_declarant_upload_permit_receipts(task)
 				message = (
-					"Payment recorded. Attach payment receipts on each Local permit row on this "
-					"finance task. Declarant will see them on the application task and attaches "
-					"permit certificates there."
+					"Payment recorded. You may optionally attach payment receipts on each Local "
+					"permit row on this finance task when available."
 				)
 			elif is_entry_finance_payment_task(seq):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
@@ -3040,8 +3039,8 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 				sync_application_payment_hooks(task, entry_profile)
 				notify_declarant_upload_application_receipt(task, entry_profile)
 				message = (
-					"Payment recorded. Attach the <b>Entry Slip Receipt</b> on this finance task. "
-					"The declarant will see it on <b>Create Entry</b>."
+					"Payment recorded. You may optionally attach the <b>Entry Slip Receipt</b> "
+					"on this finance task when available."
 				)
 			else:
 				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -3052,8 +3051,8 @@ def complete_task_with_payment_enhanced(task_name: str, payment_entry: str) -> d
 				sync_ucr_payment_to_idf_record(task)
 				notify_operations_upload_ucr_receipt(task)
 				message = (
-					"Payment recorded. Attach the <b>UCR Receipt</b> on this finance task. "
-					"The declarant will see it on <b>Create UCR (IDF)</b>."
+					"Payment recorded. You may optionally attach the <b>UCR Receipt</b> "
+					"on this finance task when available."
 				)
 		finally:
 			frappe.flags.cgm_skip_task_project_sync = False

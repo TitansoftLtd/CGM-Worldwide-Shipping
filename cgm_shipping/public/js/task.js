@@ -114,9 +114,9 @@ frappe.ui.form.on("Task", {
 					if (frm.doc.custom_client_paid_directly) {
 						intro = __(
 							"<b>Client will pay</b> is selected — no company Journal Entry. " +
-								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> · " +
-								"<b>3</b> Upload the client's payment receipt(s). " +
-								"Both tasks complete when receipts are in."
+								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
+								"Receipt attachment is optional. Both tasks complete when invoices are verified " +
+								"(and certificates are attached on the application task)."
 						);
 					} else {
 						const appLabel = permit_application_task_label(
@@ -126,8 +126,8 @@ frappe.ui.form.on("Task", {
 						intro = __(
 							"<b>1 Finance:</b> Verify permit invoices (tick <b>Invoice Verified</b> or <b>Verify Invoices</b>) · " +
 								"<b>2</b> Use <b>Make Payment</b> on each permit row (or tick <b>Client will pay</b>) · " +
-								"<b>3</b> Declaration uploads receipts on this finance task — both tasks complete automatically. " +
-								"Declarant sees receipts and attaches certificates on <b>{0}</b>.",
+								"<b>3</b> Receipt attachment is optional. Both tasks complete after payment. " +
+								"Declarant attaches certificates on <b>{0}</b>.",
 							[appLabel]
 						);
 					}
@@ -183,14 +183,14 @@ frappe.ui.form.on("Task", {
 				intro = frm.doc.custom_client_paid_directly
 					? __(
 							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>UCR Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> · " +
-								"<b>3</b> Upload the client's <b>UCR Receipt</b>. " +
+								"<b>1</b> Verify <b>UCR Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
+								"Receipt attachment is optional. " +
 								"Declarant attaches the IDF certificate on <b>Create UCR (IDF)</b>."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>) · " +
-								"<b>3</b> Declaration uploads <b>UCR Receipt</b> on this task — completes automatically. " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
+								"Receipt attachment is optional — task completes after payment. " +
 								"Declarant attaches the IDF certificate on <b>Create UCR (IDF)</b>."
 						);
 				intro_set = true;
@@ -198,40 +198,41 @@ frappe.ui.form.on("Task", {
 				intro = frm.doc.custom_client_paid_directly
 					? __(
 							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>Entry Slip Invoice</b> · <b>2</b> Upload the client's <b>Entry Slip Receipt</b>. " +
+								"<b>1</b> Verify <b>Entry Slip Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
+								"Receipt attachment is optional. " +
 								"Declarant attaches the ENTRY document on <b>Create Entry</b>."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>) · " +
-								"<b>3</b> Upload <b>Entry Slip Receipt</b> on this task — completes automatically. " +
-								"Declarant sees the receipt and attaches the ENTRY document on <b>Create Entry</b>."
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
+								"Receipt attachment is optional — task completes after payment. " +
+								"Declarant attaches the ENTRY document on <b>Create Entry</b>."
 						);
 				intro_set = true;
 			} else if (ui.is_shipping_line_finance) {
 				intro = frm.doc.custom_client_paid_directly
 					? __(
 							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>Shipping Line Invoice</b> · <b>2</b> Upload the client's <b>Shipping Line Receipt</b>."
+								"<b>1</b> Verify <b>Shipping Line Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
+								"Receipt attachment is optional."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>Shipping Line Invoice</b> · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>) · " +
-								"<b>3</b> Upload <b>Shipping Line Receipt</b> on this task — completes automatically. " +
-								"Declarant can view the receipt on the application task."
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
+								"Receipt attachment is optional — task completes after payment."
 						);
 				intro_set = true;
 			} else if (ui.is_kpa_finance) {
 				intro = frm.doc.custom_client_paid_directly
 					? __(
 							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>KPA Invoice</b> · <b>2</b> Upload the client's <b>KPA Receipt</b>."
+								"<b>1</b> Verify <b>KPA Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
+								"Receipt attachment is optional."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>KPA Invoice</b> · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>) · " +
-								"<b>3</b> Upload <b>KPA Receipt</b> on this task — completes automatically. " +
-								"Supervisor can view the receipt on the application task."
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
+								"Receipt attachment is optional — task completes after payment."
 						);
 				intro_set = true;
 			} else if (ui.is_document_checkpoint) {
@@ -1209,7 +1210,7 @@ function client_paid_settlement_ready_on_form(frm) {
 		if (!rows.length) {
 			return true;
 		}
-		return rows.every((r) => cint(r.invoice_verified) && r.payment_receipt);
+		return rows.every((r) => cint(r.invoice_verified));
 	}
 	// App-finance settlement is confirmed server-side; client-pays alone is not enough.
 	return false;
@@ -1360,8 +1361,7 @@ function ensure_permit_finance_reopened_for_pending(frm) {
 			(r.origin || "Local") !== "Foreign" &&
 			r.payment_invoice &&
 			(!cint(r.invoice_verified) ||
-				(!frm.doc.custom_client_paid_directly && !r.journal_entry) ||
-				!r.payment_receipt)
+				(!frm.doc.custom_client_paid_directly && !r.journal_entry))
 	);
 	if (!pending.length) {
 		return;
@@ -1415,7 +1415,6 @@ function ensure_finance_permit_task_completed_on_form(frm) {
 		rows.some(
 			(r) =>
 				!cint(r.invoice_verified) ||
-				!r.payment_receipt ||
 				(!client_paid && !r.journal_entry)
 		)
 	) {
@@ -3065,11 +3064,11 @@ function configure_client_paid_field(frm, ui) {
 			finance_step
 				? __(
 						"Tick when the client settles this fee (no company Journal Entry). " +
-							"Still verify the invoice, then upload the client's payment receipt."
+							"Still verify the invoice. Receipt attachment is optional."
 					)
 				: __(
 						"Finance selected the client-pays path (no company Journal Entry). " +
-							"They will verify your invoice and share the client's receipt here."
+							"They will verify your invoice; receipt attachment is optional."
 					)
 		);
 	}
