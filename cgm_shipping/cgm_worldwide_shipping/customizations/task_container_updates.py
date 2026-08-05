@@ -164,6 +164,8 @@ TRACKER_SEED_FIELDS = [
 	"container_number",
 	tracker_cargo_size_field(),
 	"status",
+	"ata",
+	"discharging_date",
 	"truck_number",
 	"driver_name",
 	"driver_contact",
@@ -207,8 +209,15 @@ def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
 	offload_seq = get_container_task_sequence("custom_offload_task_seq")
 	empty_seq = get_container_task_sequence("custom_empty_return_task_seq")
 	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
+	vessel_arrival_seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 
-	if seq in _shipping_line_application_seqs():
+	if seq == vessel_arrival_seq:
+		# Project confirm is the source of truth — keep grid in sync with trackers.
+		discharge = tracker.get("discharging_date") or tracker.get("ata")
+		if discharge and row.get("discharging_date") != discharge:
+			row.discharging_date = discharge
+			changed = True
+	elif seq in _shipping_line_application_seqs():
 		if cint(row.get("has_deposit")) != cint(tracker.get("has_deposit")):
 			row.has_deposit = cint(tracker.get("has_deposit"))
 			changed = True
@@ -281,6 +290,7 @@ def seed_container_update_rows(doc) -> bool:
 	changed = False
 	book_seq = get_container_task_sequence("custom_book_trucks_task_seq")
 	monitor_seq = get_container_task_sequence("custom_monitor_delivery_task_seq")
+	vessel_arrival_seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 	for tracker in trackers:
 		if tracker.name in existing:
 			if _prefill_row_from_tracker(existing[tracker.name], tracker, seq):
@@ -293,7 +303,11 @@ def seed_container_update_rows(doc) -> bool:
 			"cargo_size": tracker_row_cargo_size(tracker),
 			"current_status": tracker.status,
 		}
-		if seq in _shipping_line_application_seqs():
+		if seq == vessel_arrival_seq:
+			row_data["discharging_date"] = (
+				tracker.get("discharging_date") or tracker.get("ata") or None
+			)
+		elif seq in _shipping_line_application_seqs():
 			row_data.update(
 				{
 					"has_deposit": cint(tracker.get("has_deposit")),
@@ -323,13 +337,19 @@ def seed_container_update_rows(doc) -> bool:
 
 
 def apply_container_updates_from_task(doc) -> None:
-	"""Push filled task container grid rows to linked Container Trackers (partial saves OK)."""
+	"""Push filled task container grid rows to linked Container Trackers (partial saves OK).
+
+	Vessel-arrival / Create Entry grid is Project→Task only — never push back from Entry.
+	"""
 	if not is_container_update_task(doc):
 		return
 	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
 		return
 
 	seq = _sea_task_seq(doc)
+	if seq == get_container_task_sequence("custom_vessel_arrival_task_seq"):
+		return
+
 	field_pairs = _seq_field_map().get(seq, [])
 	if not field_pairs:
 		return
@@ -415,12 +435,49 @@ def validate_shipping_line_deposit_declarations(doc) -> None:
 		)
 
 
+def sync_vessel_arrival_task_rows_from_project(project_name: str) -> None:
+	"""Seed/refresh Create Entry container grid after Project port-arrival confirm.
+
+	Does not complete or block Create Entry — Entry paperwork stays independent.
+	"""
+	if not project_name or frappe.flags.get("cgm_syncing_tracker_to_task"):
+		return
+
+	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
+	rows = frappe.get_all(
+		"Task",
+		filters={
+			"project": project_name,
+			"custom_task_flow_key": task_flow_key_in_filter(),
+			"custom_sequence_no": seq,
+			"status": ["!=", "Cancelled"],
+		},
+		pluck="name",
+		order_by="creation desc",
+		limit=1,
+	)
+	if not rows:
+		return
+	task_name = rows[0]
+
+	frappe.flags.cgm_syncing_tracker_to_task = True
+	try:
+		task = frappe.get_doc("Task", task_name)
+		if seed_container_update_rows(task):
+			task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_tracker_to_task = False
+
+
 def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 	"""Push tracker edits back to open transport/delivery task grids."""
 	if not tracker.project or frappe.flags.get("cgm_syncing_tracker_to_task"):
 		return
 
 	sync_seqs = {
+		get_container_task_sequence("custom_vessel_arrival_task_seq"): (
+			"discharging_date",
+		),
 		get_container_task_sequence("custom_book_trucks_task_seq"): TRANSPORT_TRACKER_FIELDS,
 		get_container_task_sequence("custom_gate_out_task_seq"): (
 			"gate_out_date_port",
@@ -472,6 +529,8 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 					continue
 				for field in fields:
 					val = tracker.get(field)
+					if field == "discharging_date" and not val:
+						val = tracker.get("ata")
 					if val and row.get(field) != val:
 						row.set(field, val)
 						changed = True

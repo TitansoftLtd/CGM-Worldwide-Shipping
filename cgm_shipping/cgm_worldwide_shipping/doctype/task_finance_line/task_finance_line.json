@@ -12,7 +12,12 @@
   "attachment",
   "verified",
   "verified_by",
-  "verified_on"
+  "verified_on",
+  "shared_with_client",
+  "shared_by",
+  "shared_on",
+  "client_reported_paid",
+  "client_reported_on"
  ],
  "fields": [
   {
@@ -27,7 +32,7 @@
    "fieldtype": "Select",
    "hidden": 1,
    "label": "Line Type",
-   "options": "Invoice\nReceipt"
+   "options": "Invoice\nPOP\nReceipt"
   },
   {
    "default": "UCR",
@@ -70,6 +75,47 @@
    "fieldname": "verified_on",
    "fieldtype": "Datetime",
    "label": "Verified On",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.line_type==\"Invoice\"",
+   "description": "Finance shared this invoice on the customer portal for the client to pay.",
+   "fieldname": "shared_with_client",
+   "fieldtype": "Check",
+   "label": "Shared with Client",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.shared_with_client",
+   "fieldname": "shared_by",
+   "fieldtype": "Link",
+   "label": "Shared By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.shared_with_client",
+   "fieldname": "shared_on",
+   "fieldtype": "Datetime",
+   "label": "Shared On",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.line_type==\"Invoice\" && doc.shared_with_client",
+   "description": "Client confirmed payment on the portal (receipt/POP may follow).",
+   "fieldname": "client_reported_paid",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Client Reported Paid",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.client_reported_paid",
+   "fieldname": "client_reported_on",
+   "fieldtype": "Datetime",
+   "label": "Client Reported On",
    "read_only": 1
   }
  ],

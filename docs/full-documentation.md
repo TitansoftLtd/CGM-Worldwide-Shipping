@@ -180,7 +180,7 @@ Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded 
 | 7 | Client conducts inspection | Operations |
 | 8 | Receive Final Clearance Documents (B/L, Invoice, PKL, COC) | Documentation |
 | 9 | Request Manifest and Local Import Charges | Documentation |
-| 10 | Create Entry (after vessel arrival confirmation) | Declaration |
+| 12 | Create Entry | Declaration |
 | 11 | Finance Pays Entry Slip | Finance |
 | 12 | Attach Shipping Line Invoice | Documentation |
 | 13 | Finance pays Shipping Line Charges | Finance |

@@ -33,6 +33,8 @@
   "custom_operations_roles",
   "custom_declaration_roles",
   "custom_transport_roles",
+  "section_document_responsibilities",
+  "custom_document_responsibilities",
   "section_email_templates",
   "custom_default_email_template",
   "custom_permit_finance_email_template",
@@ -157,25 +159,37 @@
    "options": "Department"
   },
   {
-   "description": "ERPNext Roles that may open Operations / Documentation sea tasks (e.g. Operations Manager).",
+   "description": "Roles that may open Operations / Documentation sea tasks (e.g. Operations Manager).",
    "fieldname": "custom_operations_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Operations roles",
    "options": "CGM Role Item"
   },
   {
-   "description": "ERPNext Roles that may open Declaration tasks (Create UCR, permits, Entry). Example: Declarant.",
+   "description": "Roles that may open Declaration tasks (Create UCR, permits, Entry). Example: Declarant.",
    "fieldname": "custom_declaration_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Declaration roles",
    "options": "CGM Role Item"
   },
   {
-   "description": "ERPNext Roles that may open Transport / Field Operations tasks (book trucks, gate out, delivery, empty return). Align with departments such as Transport - CWSCL and Field Operations - CWSCL.",
+   "description": "Roles that may open Transport / Field Operations tasks (book trucks, gate out, delivery, empty return). Align with departments such as Transport - CWSCL and Field Operations - CWSCL.",
    "fieldname": "custom_transport_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Transport roles",
    "options": "CGM Role Item"
+  },
+  {
+   "description": "Who may upload or verify each document. Role Group is a Link to CGM Role Group — create Documentation or any other group there, add CGM Roles, then pick it here. No code change needed.",
+   "fieldname": "section_document_responsibilities",
+   "fieldtype": "Section Break",
+   "label": "Document responsibilities"
+  },
+  {
+   "fieldname": "custom_document_responsibilities",
+   "fieldtype": "Table",
+   "label": "Document responsibilities",
+   "options": "CGM Document Responsibility Item"
   },
   {
    "description": "HTML + Jinja. Available variables: {{ message }}, {{ task_url }}, {{ project_url }}. Leave blank to use the built-in default.",

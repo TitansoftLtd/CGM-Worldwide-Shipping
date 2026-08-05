@@ -166,7 +166,8 @@ CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 # tracking tasks to override these.
 CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
 	"custom_track_eta_task_seq": 8,
-	# Create Entry sequence after Shipping Line was moved before Entry.
+	# Bulk vessel-arrival event key used by Project port-arrival confirm.
+	# Not tied to Create Entry — Entry is paperwork-only.
 	"custom_vessel_arrival_task_seq": 12,
 	"custom_field_clearance_task_seq": 17,
 	"custom_kpa_paid_task_seq": 19,
@@ -187,7 +188,9 @@ TASK_CONTAINER_TRACKER_FIELD = "custom_container_tracker"
 TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
 TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 
-# Task child table for per-container data entry (tasks 11, 16, 18–24).
+# Task child table for per-container data entry (transport / field clearance / KPA).
+# Seq 12 (Create Entry / vessel-arrival) is a Project→Task mirror only — not a
+# completion gate.
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
 CONTAINER_UPDATE_TASK_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
 CONTAINER_UPDATE_SEED_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})

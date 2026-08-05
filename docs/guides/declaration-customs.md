@@ -22,10 +22,10 @@ For **Declaration** teams handling UCR, permits, customs entry, and regulatory d
 |-----|------|-------|
 | 3 | Create UCR (IDF) | Triggers UCR finance subflow (task 4) |
 | 5 | Apply for Pre-Clearance Permits | DVS, NBA, VMD, ACA |
-| 10 | Create Entry | After vessel arrival confirmation |
+| 12 | Create Entry | Entry Slip invoice + ENTRY document |
 | 15 | Prepare Post-Clearance Permits | After DO lodged |
 
-Finance pays on tasks **4, 6, 11, 16** (not your submit, but you upload receipts). See [Finance Guide](finance.md).
+Finance pays on tasks **4, 6, 11, 16**. You upload invoices (and certificates); Finance uploads payment receipts after paying. See [Finance Guide](finance.md).
 
 ---
 
@@ -33,11 +33,10 @@ Finance pays on tasks **4, 6, 11, 16** (not your submit, but you upload receipts
 
 ```
 Task 3: Create UCR (IDF)
-  → Attach UCR application / certificate documents on Task
+  → Attach UCR invoice on Task; attach IDF certificate when issued
   → Finance notified (UCR Invoice to Finance)
 Task 4: Finance pays UCR
-  → Upload payment receipt
-  → Finance verifies
+  → Finance records payment, uploads payment receipt, and verifies
   → Project may advance to UCR Paid
 ```
 
@@ -63,13 +62,14 @@ Same pattern after Delivery Order is lodged (task 14).
 
 ---
 
-## Entry slip workflow (tasks 10–11)
+## Entry slip workflow (tasks 12–13)
 
-1. Confirm vessel arrival on Project (ATA / berth confirmation).
-2. Create customs **Entry** on Task 10.
-3. Attach entry slip invoice.
-4. Finance pays on Task 11.
-5. Upload receipt; verify.
+1. Attach Entry Slip invoice on Task 12 (Create Entry).
+2. Finance verifies the invoice on Task 13 — Create Entry completes automatically.
+3. Finance pays (or client-pays) and uploads receipt on Task 13.
+4. ENTRY customs document on Create Entry Clearance Documents remains optional when issued.
+
+Port arrival / ATA is confirmed separately on the **Project** (Actions → Confirm Shipment Arrival at the Port) and does not complete Create Entry.
 
 **Customs Entry** doctype: submittable, unique `entry_number`, tax child table.
 

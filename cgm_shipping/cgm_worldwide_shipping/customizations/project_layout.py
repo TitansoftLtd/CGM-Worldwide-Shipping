@@ -651,28 +651,38 @@ def ensure_task_container_update_fields() -> None:
 
 
 def ensure_client_paid_task_fields() -> None:
-	"""Finance confirmation that the client paid a fee directly (no CGM disbursement)."""
+	"""Finance marks the client-pays path (no company JE; verify still required, receipt optional)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		CLIENT_PAID_BY_FIELD,
 		CLIENT_PAID_FIELD,
 		CLIENT_PAID_ON_FIELD,
 	)
 
+	label = "Client will pay"
+	description = (
+		"Tick when the client settles this fee (no company Journal Entry). "
+		"Finance must still verify the invoice. Receipt attachment is optional."
+	)
 	_ensure_cf(
 		"Task",
 		{
 			"fieldname": CLIENT_PAID_FIELD,
-			"label": "Paid directly by client",
+			"label": label,
 			"fieldtype": "Check",
 			"insert_after": "custom_journal_entry",
-			"description": (
-				"Finance confirms the client settled this fee directly. "
-				"No Journal Entry, invoice verification, or receipt upload is required — "
-				"ticking this completes the payment step."
-			),
+			"description": description,
 			"allow_on_submit": 0,
 		},
 	)
+	# _ensure_cf skips label/description on existing fields — update intentionally.
+	cf_name = f"Task-{CLIENT_PAID_FIELD}"
+	if frappe.db.exists("Custom Field", cf_name):
+		frappe.db.set_value(
+			"Custom Field",
+			cf_name,
+			{"label": label, "description": description},
+			update_modified=False,
+		)
 	_ensure_cf(
 		"Task",
 		{
@@ -903,7 +913,7 @@ def ensure_project_inspection_notification_fields() -> None:
 
 
 def ensure_project_port_arrival_fields() -> None:
-	"""Early port-arrival confirmation (creates container trackers before Entry is paid)."""
+	"""Port-arrival confirmation on Project (creates container trackers; independent of Entry)."""
 	_create_cf(
 		"Project",
 		{
