@@ -975,8 +975,6 @@ def copy_ucr_invoice_to_finance_task(finance_task) -> None:
 	fin_line = _ensure_line(finance_task, LINE_INVOICE, UCR_INVOICE_LABEL)
 	if not fin_line.attachment:
 		fin_line.attachment = app_line.attachment
-	if app_line.amount and not fin_line.amount:
-		fin_line.amount = app_line.amount
 	if task_finance_line_has_item_code():
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			_sync_purchase_item_from_application_line,
@@ -1044,8 +1042,6 @@ def copy_ucr_receipt_to_finance_task(application_task) -> str | None:
 		return finance_name
 
 	updates = {"attachment": app_rec.attachment}
-	if app_rec.amount and not fin_rec.amount:
-		updates["amount"] = app_rec.amount
 	frappe.db.set_value("Task Finance Line", fin_rec.name, updates, update_modified=False)
 
 	return finance_name
@@ -1088,8 +1084,6 @@ def copy_ucr_receipt_to_application_task(finance_task) -> str | None:
 		return app_name
 
 	updates = {"attachment": fin_rec.attachment}
-	if fin_rec.amount:
-		updates["amount"] = fin_rec.amount
 	if cint(fin_rec.verified):
 		updates["verified"] = 1
 		if fin_rec.verified_by:
@@ -1102,7 +1096,12 @@ def copy_ucr_receipt_to_application_task(finance_task) -> str | None:
 	frappe.clear_document_cache("Task", app_name)
 	frappe.publish_realtime(
 		"cgm_task_status_changed",
-		{"task": app_name, "project": finance_task.project, "receipt_synced": 1},
+		{
+			"task": app_name,
+			"project": finance_task.project,
+			"receipt_synced": 1,
+			"soft_sync": 1,
+		},
 	)
 	return app_name
 
@@ -2526,16 +2525,18 @@ def build_permit_purchase_invoice_lines(task) -> list[dict]:
 
 
 def build_ucr_purchase_invoice_lines(task) -> list[dict]:
-	"""Purchase Invoice Item rows from the UCR invoice finance line on Finance pays UCR."""
+	"""Purchase Invoice Item rows from the UCR invoice finance line on Finance pays UCR.
+
+	Amount is entered on Make Payment (Journal Entry), not on the finance line.
+	"""
 	seq = int(task.get("custom_sequence_no") or 0)
 	if not is_ucr_finance_payment_task(seq):
 		return []
 
 	inv = get_ucr_invoice_line(task)
-	if not inv or not flt(inv.amount):
+	if not inv or not inv.attachment:
 		return []
 
-	amount = flt(inv.amount)
 	payment_item = inv.payment_item or PAYMENT_UCR
 	item_code = (
 		inv.get("item_code")
@@ -2553,8 +2554,8 @@ def build_ucr_purchase_invoice_lines(task) -> list[dict]:
 			"item_name": item_name,
 			"description": desc,
 			"qty": 1,
-			"rate": amount,
-			"amount": amount,
+			"rate": 0,
+			"amount": 0,
 			"project": task.project,
 			"payment_item": payment_item,
 		}
@@ -3356,6 +3357,7 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 		# Also protect paired application finance profiles and UCR create when
 		# they were completed by set_value and a later sync save is stale.
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			can_complete_application_task,
 			is_application_finance_task,
 			is_application_task,
 			profile_for_task,
@@ -3369,6 +3371,15 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 			or is_permit_application_task(seq)
 		):
 			return
+		# Shipping Line (and other POP flows): never force Completed back when
+		# receipt verify is still outstanding — that reopened↔Completed flicker.
+		if (
+			profile
+			and profile.requires_pop
+			and is_application_task(seq, profile)
+			and not can_complete_application_task(doc, profile)
+		):
+			return
 
 	db_status = frappe.db.get_value("Task", doc.name, "status")
 	if db_status != "Completed":
@@ -3380,6 +3391,33 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 		doc.completed_by = frappe.session.user
 	if not doc.completed_on:
 		doc.completed_on = now_datetime()
+
+
+def block_premature_shipping_line_completion(doc) -> None:
+	"""Stale Desk forms can still submit status=Completed after onload heal to Open.
+
+	Force those saves back to Open when POP receipt verify is not done yet.
+	"""
+	if doc.is_new() or doc.status != "Completed":
+		return
+	if frappe.flags.get("cgm_auto_completing_sea_task") or frappe.flags.get("cgm_reopening_task"):
+		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		can_complete_application_task,
+		is_application_task,
+		profile_for_task,
+	)
+
+	profile = profile_for_task(doc)
+	seq = int(doc.get("custom_sequence_no") or 0)
+	if not profile or not profile.requires_pop or not is_application_task(seq, profile):
+		return
+	if can_complete_application_task(doc, profile):
+		return
+	doc.status = "Open"
+	doc.progress = 0
+	doc.completed_by = None
+	doc.completed_on = None
 
 
 def promote_ready_finance_task_before_save(doc) -> None:
@@ -3437,7 +3475,21 @@ def before_task_save(doc, _method=None):
 	if not _is_sea_task(doc):
 		return
 	preserve_completed_status_against_stale_save(doc)
+	block_premature_shipping_line_completion(doc)
 	enforce_client_paid_confirmation(doc)
+	# Always keep Shipping Line POP/Receipt rows present — a stale Completed save
+	# used to wipe the POP child row and re-flicker the form on next open.
+	if doc.status != "Cancelled":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			APPLICATION_FINANCE_PROFILES,
+			is_application_task,
+			seed_application_finance_lines,
+		)
+
+		seq = _sea_task_seq(doc)
+		for profile in APPLICATION_FINANCE_PROFILES.values():
+			if profile.requires_pop and is_application_task(seq, profile):
+				seed_application_finance_lines(doc, profile)
 	if doc.status not in ("Completed", "Cancelled"):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			enforce_receipt_verified_permission,

@@ -14,6 +14,7 @@ import frappe
 # Stable action keys used in Settings rows and in code.
 ACTION_UPLOAD_INVOICE = "Upload Invoice"
 ACTION_VERIFY_INVOICE = "Verify Invoice"
+ACTION_UPLOAD_POP = "Upload POP"
 ACTION_UPLOAD_RECEIPT = "Upload Receipt"
 ACTION_UPLOAD_CERTIFICATE = "Upload Certificate"
 ACTION_MAKE_PAYMENT = "Make Payment"
@@ -97,8 +98,19 @@ DEFAULT_DOCUMENT_RESPONSIBILITIES: tuple[tuple[str, str, str, str], ...] = (
 		ROLE_GROUP_DOCUMENTATION,
 		"Documentation attaches shipping line invoice",
 	),
-	(FLOW_SHIPPING_LINE, ACTION_VERIFY_INVOICE, ROLE_GROUP_FINANCE, ""),
-	(FLOW_SHIPPING_LINE, ACTION_UPLOAD_RECEIPT, ROLE_GROUP_FINANCE, ""),
+	(FLOW_SHIPPING_LINE, ACTION_VERIFY_INVOICE, ROLE_GROUP_FINANCE, "Finance verifies invoice and receipt"),
+	(
+		FLOW_SHIPPING_LINE,
+		ACTION_UPLOAD_POP,
+		ROLE_GROUP_FINANCE,
+		"Finance attaches bank POP (or client shares POP via portal)",
+	),
+	(
+		FLOW_SHIPPING_LINE,
+		ACTION_UPLOAD_RECEIPT,
+		ROLE_GROUP_DOCUMENTATION,
+		"Documentation attaches shipping line receipt using the POP",
+	),
 	(FLOW_SHIPPING_LINE, ACTION_MAKE_PAYMENT, ROLE_GROUP_FINANCE, ""),
 	(FLOW_SHIPPING_LINE, ACTION_CONFIRM_CLIENT_PAID, ROLE_GROUP_FINANCE, ""),
 	(
@@ -258,6 +270,50 @@ def migrate_ucr_permit_receipt_upload_to_declaration(settings=None) -> bool:
 	return changed
 
 
+def migrate_shipping_line_pop_responsibilities(settings=None) -> bool:
+	"""Shipping Line: add Upload POP (Finance) and move Upload Receipt → Documentation.
+
+	Skips rows already reassigned away from the old Finance receipt default.
+	"""
+	if settings is None:
+		if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+			return False
+		settings = frappe.get_doc("CGM Shipping Settings")
+	meta = settings.meta if hasattr(settings, "meta") else None
+	if meta and not meta.has_field(RESPONSIBILITIES_FIELD):
+		return False
+
+	changed = False
+	rows = settings.get(RESPONSIBILITIES_FIELD) or []
+	has_pop = any(
+		r.workflow_flow == FLOW_SHIPPING_LINE and r.action == ACTION_UPLOAD_POP for r in rows
+	)
+	if not has_pop and frappe.db.exists("CGM Role Group", ROLE_GROUP_FINANCE):
+		settings.append(
+			RESPONSIBILITIES_FIELD,
+			{
+				"workflow_flow": FLOW_SHIPPING_LINE,
+				"action": ACTION_UPLOAD_POP,
+				"role_group": ROLE_GROUP_FINANCE,
+				"notes": "Finance attaches bank POP (or client shares POP via portal)",
+			},
+		)
+		changed = True
+
+	if frappe.db.exists("CGM Role Group", ROLE_GROUP_DOCUMENTATION):
+		for row in settings.get(RESPONSIBILITIES_FIELD) or []:
+			if row.workflow_flow != FLOW_SHIPPING_LINE:
+				continue
+			if row.action != ACTION_UPLOAD_RECEIPT:
+				continue
+			if row.role_group != ROLE_GROUP_FINANCE:
+				continue
+			row.role_group = ROLE_GROUP_DOCUMENTATION
+			row.notes = "Documentation attaches shipping line receipt using the POP"
+			changed = True
+	return changed
+
+
 def ensure_document_responsibilities(settings=None) -> bool:
 	"""Add missing default responsibility rows (one-time seed helper).
 
@@ -290,6 +346,8 @@ def ensure_document_responsibilities(settings=None) -> bool:
 	# UCR / Permit receipts: uploading department (Declaration), not Finance.
 	# Client will pay / Share Invoice / Make Payment stay with Finance.
 	if migrate_ucr_permit_receipt_upload_to_declaration(settings):
+		changed = True
+	if migrate_shipping_line_pop_responsibilities(settings):
 		changed = True
 
 	for row in default_responsibility_rows():
@@ -505,6 +563,7 @@ def user_has_responsibility(flow: str, action: str, user: str | None = None) -> 
 		if action in (
 			ACTION_VERIFY_INVOICE,
 			ACTION_UPLOAD_RECEIPT,
+			ACTION_UPLOAD_POP,
 			ACTION_MAKE_PAYMENT,
 			ACTION_CONFIRM_CLIENT_PAID,
 		):
@@ -583,6 +642,9 @@ def responsibility_flags_for_user(user: str | None = None) -> dict[str, bool]:
 		),
 		"can_upload_receipt": any(
 			user_has_responsibility(f, ACTION_UPLOAD_RECEIPT, user) for f in money_flows
+		),
+		"can_upload_pop": user_has_responsibility(
+			FLOW_SHIPPING_LINE, ACTION_UPLOAD_POP, user
 		),
 		"can_verify_invoice": any(
 			user_has_responsibility(f, ACTION_VERIFY_INVOICE, user) for f in money_flows

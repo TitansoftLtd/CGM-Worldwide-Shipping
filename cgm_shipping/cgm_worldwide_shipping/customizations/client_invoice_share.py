@@ -355,11 +355,22 @@ def submit_client_fee_payment_receipt(
 
 	frappe.db.commit()
 	_queue_finance_receipt_notice(project, source, row)
+	is_shipping_line_pop = False
+	if source == "finance_line":
+		payment_item = frappe.db.get_value("Task Finance Line", row, "payment_item")
+		is_shipping_line_pop = (payment_item or "") == "Shipping Line"
+	if is_shipping_line_pop:
+		message = _(
+			"Thank you — your bank POP was submitted. Documentation will attach the "
+			"shipping line receipt, then Finance will verify it."
+		)
+	else:
+		message = _(
+			"Thank you — your payment receipt was submitted. CGM Finance will confirm and continue clearance."
+		)
 	return {
 		"ok": True,
-		"message": _(
-			"Thank you — your payment receipt was submitted. CGM Finance will confirm and continue clearance."
-		),
+		"message": message,
 	}
 
 
@@ -381,21 +392,28 @@ def _submit_finance_line_receipt(project: str, invoice_row: str, file_url: str, 
 		frappe.throw(_("This invoice is not shared for client payment."))
 
 	inv = matched[0]
-	# Put receipt on the paired Receipt line (existing settlement path).
-	receipt_name = frappe.db.get_value(
+	# Shipping Line: client shares POP; Documentation later attaches the supplier receipt.
+	# Other fees: client proof still lands on the Receipt line.
+	target_line_type = "Receipt"
+	target_label = f"{inv.payment_item or 'Fee'} Receipt"
+	if (inv.payment_item or "") == "Shipping Line":
+		target_line_type = "POP"
+		target_label = "Shipping Line POP"
+
+	target_name = frappe.db.get_value(
 		"Task Finance Line",
 		{
 			"parent": inv.parent,
 			"parenttype": "Task",
-			"line_type": "Receipt",
+			"line_type": target_line_type,
 			"payment_item": inv.payment_item,
 		},
 		"name",
 	)
-	if receipt_name:
+	if target_name:
 		frappe.db.set_value(
 			"Task Finance Line",
-			receipt_name,
+			target_name,
 			{"attachment": file_url},
 			update_modified=False,
 		)
@@ -404,8 +422,8 @@ def _submit_finance_line_receipt(project: str, invoice_row: str, file_url: str, 
 		task.append(
 			TASK_FINANCE_FIELD,
 			{
-				"line_label": f"{inv.payment_item or 'Fee'} Receipt",
-				"line_type": "Receipt",
+				"line_label": target_label,
+				"line_type": target_line_type,
 				"payment_item": inv.payment_item,
 				"attachment": file_url,
 			},

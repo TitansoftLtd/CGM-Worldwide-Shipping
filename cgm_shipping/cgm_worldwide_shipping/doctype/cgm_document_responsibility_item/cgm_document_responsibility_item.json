@@ -27,7 +27,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Action",
-   "options": "Upload Invoice\nVerify Invoice\nUpload Receipt\nUpload Certificate\nMake Payment\nConfirm Client Paid\nUpload Document",
+   "options": "Upload Invoice\nVerify Invoice\nUpload POP\nUpload Receipt\nUpload Certificate\nMake Payment\nConfirm Client Paid\nUpload Document",
    "reqd": 1
   },
   {

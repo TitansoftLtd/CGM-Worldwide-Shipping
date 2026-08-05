@@ -2390,7 +2390,12 @@ def handle_ucr_finance_receipt_upload(finance_task) -> dict | None:
 		if app_name:
 			frappe.publish_realtime(
 				"cgm_task_status_changed",
-				{"task": app_name, "project": finance_task.project, "receipt_synced": 1},
+				{
+					"task": app_name,
+					"project": finance_task.project,
+					"receipt_synced": 1,
+					"soft_sync": 1,
+				},
 			)
 	return None
 

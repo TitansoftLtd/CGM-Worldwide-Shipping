@@ -19,6 +19,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	get_application_finance_task,
 	get_application_task,
 	get_invoice_line,
+	get_pop_line,
 	get_receipt_line,
 	invoice_attached,
 	invoice_submitted,
@@ -207,14 +208,22 @@ def notify_finance_upload_application_receipt(
 			title=f"{profile.receipt_label} seeding failed",
 			message=f"Could not seed finance lines on {task.name}: {frappe.get_traceback()}",
 		)
+	if profile.requires_pop:
+		message = (
+			f"Payment recorded. Attach the bank <b>{profile.pop_label or 'POP'}</b> "
+			f"on this finance task — Documentation will then attach the "
+			f"<b>{profile.receipt_label}</b> for Finance to verify."
+		)
+	else:
+		message = (
+			f"Payment recorded. You may optionally attach the <b>{profile.receipt_label}</b> "
+			"on this finance task when available."
+		)
 	return {
 		"notified": 0,
 		"task": task.name,
 		"task_url": get_url(f"/app/task/{task.name}"),
-		"message": (
-			f"Payment recorded. You may optionally attach the <b>{profile.receipt_label}</b> "
-			"on this finance task when available."
-		),
+		"message": message,
 	}
 
 
@@ -268,7 +277,7 @@ def handle_application_receipt_upload(
 def handle_finance_receipt_upload(
 	finance_task, profile: ApplicationFinanceProfile
 ) -> dict | None:
-	"""When Finance attaches a receipt: auto-confirm, mirror to Declarant, sync IDF."""
+	"""When a receipt is attached on finance: mirror to application; auto-confirm unless POP flow."""
 	if not is_application_payment_task_doc(finance_task, profile) or not finance_task.project:
 		return None
 	fin_rec = get_receipt_line(finance_task, profile)
@@ -288,29 +297,33 @@ def handle_finance_receipt_upload(
 		copy_finance_receipt_to_application_task,
 	)
 
-	# Persist auto-verified stamp if normalize ran in-memory only.
-	if fin_rec.name and not cint(frappe.db.get_value("Task Finance Line", fin_rec.name, "verified")):
-		frappe.db.set_value(
-			"Task Finance Line",
-			fin_rec.name,
-			{
-				"verified": 1,
-				"verified_by": frappe.session.user,
-				"verified_on": now_datetime(),
-			},
-			update_modified=False,
-		)
-		if profile.application_receipt_verified_field and finance_task.meta.has_field(
-			profile.application_receipt_verified_field
+	# Shipping Line: Documentation attaches; Finance must verify manually — do not auto-stamp.
+	if not profile.requires_pop:
+		# Persist auto-verified stamp if normalize ran in-memory only.
+		if fin_rec.name and not cint(
+			frappe.db.get_value("Task Finance Line", fin_rec.name, "verified")
 		):
 			frappe.db.set_value(
-				"Task",
-				finance_task.name,
-				profile.application_receipt_verified_field,
-				1,
+				"Task Finance Line",
+				fin_rec.name,
+				{
+					"verified": 1,
+					"verified_by": frappe.session.user,
+					"verified_on": now_datetime(),
+				},
 				update_modified=False,
 			)
-		finance_task.reload()
+			if profile.application_receipt_verified_field and finance_task.meta.has_field(
+				profile.application_receipt_verified_field
+			):
+				frappe.db.set_value(
+					"Task",
+					finance_task.name,
+					profile.application_receipt_verified_field,
+					1,
+					update_modified=False,
+				)
+			finance_task.reload()
 
 	copy_finance_receipt_to_application_task(finance_task, profile)
 	sync_application_finance_lines_to_idf_record(finance_task, profile)
@@ -324,6 +337,13 @@ def validate_application_not_manually_completed(
 		return
 	if not is_application_create_task(task, profile):
 		return
+	if task.status == "Completed" and can_complete_application_task(task, profile):
+		return
+	if profile.requires_pop:
+		frappe.throw(
+			f"This task completes automatically after Finance verifies the "
+			f"<b>{profile.receipt_label}</b> (once POP is shared and Documentation attaches the receipt)."
+		)
 	finance_name = get_application_finance_task(task.project, profile) if task.project else None
 	finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
 	if finance_task:
@@ -342,8 +362,6 @@ def validate_application_not_manually_completed(
 			# Client-pays with no certificate: allow explicit Mark Completed after
 			# invoice handoff; Finance still owns verify + client receipt.
 			return
-	if task.status == "Completed" and can_complete_application_task(task, profile):
-		return
 	cert_hint = (
 		f" and the <b>{profile.certificate_document_code}</b> certificate"
 		if profile.certificate_document_code
@@ -380,6 +398,26 @@ def validate_finance_application_payment_task(
 			frappe.throw(
 				f"Finance must tick <b>Verified by Finance</b> on the <b>{profile.invoice_label}</b> row."
 			)
+		if profile.requires_pop:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+				pop_attached,
+				receipt_verified,
+			)
+
+			if not pop_attached(task, profile):
+				frappe.throw(
+					f"Attach the client's <b>{profile.pop_label or 'POP'}</b> "
+					"(portal upload or Finance) before completion."
+				)
+			if not receipt_attached_for_payment_workflow(task, profile):
+				frappe.throw(
+					f"Documentation must attach the <b>{profile.receipt_label}</b> using the POP."
+				)
+			if not receipt_verified(task, profile):
+				frappe.throw(
+					f"Finance must verify the <b>{profile.receipt_label}</b> before completion."
+				)
+			return
 		if not client_paid_settlement_ready(task):
 			frappe.throw(
 				"Client-pays path is not complete: verify the invoice first."
@@ -409,6 +447,24 @@ def validate_finance_application_payment_task(
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
 		if int(pe_status or 0) != 1:
 			frappe.throw("Payment Entry must be <b>submitted</b> before completing this task.")
+	if profile.requires_pop:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			pop_attached,
+			receipt_verified,
+		)
+
+		if not pop_attached(task, profile):
+			frappe.throw(
+				f"Attach the bank <b>{profile.pop_label or 'POP'}</b> after recording payment."
+			)
+		if not receipt_attached_for_payment_workflow(task, profile):
+			frappe.throw(
+				f"Documentation must attach the <b>{profile.receipt_label}</b> using the POP."
+			)
+		if not receipt_verified(task, profile):
+			frappe.throw(
+				f"Finance must verify the <b>{profile.receipt_label}</b> before completion."
+			)
 
 
 def receipt_attached_for_payment_workflow(
@@ -588,12 +644,8 @@ def get_application_declarant_workflow_status(
 	finance_name = get_application_finance_task(task.project, profile) if task.project else None
 	finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
 
-	if task.status not in ("Completed", "Cancelled") and task.project:
-		if sync_status_from_finance_to_application(task, profile):
-			task.reload()
-		if can_complete_application_task(task, profile, finance_task):
-			try_auto_complete_application_task(task, profile)
-			task.reload()
+	# Read-only status for the form intro. Do not sync/complete here — onload and
+	# save hooks own mutations. Side effects here caused Open↔Completed flicker.
 
 	inv = get_invoice_line(task, profile)
 	rec = get_receipt_line(task, profile)
@@ -610,6 +662,7 @@ def get_application_declarant_workflow_status(
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 		certificate_uploaded,
+		pop_attached,
 	)
 
 	return {
@@ -628,6 +681,13 @@ def get_application_declarant_workflow_status(
 			or (fin_inv and fin_inv.verified)
 		),
 		"payment_made": payment_made,
+		"pop_attached": bool(
+			profile.requires_pop
+			and (
+				pop_attached(task, profile)
+				or (finance_task and pop_attached(finance_task, profile))
+			)
+		),
 		"receipt_attached": bool((rec and rec.attachment) or (fin_rec and fin_rec.attachment)),
 		"receipt_verified": bool(
 			(rec and rec.verified)
@@ -650,6 +710,7 @@ def get_application_declarant_workflow_status(
 		"profile_key": profile.key,
 		"invoice_label": profile.invoice_label,
 		"receipt_label": profile.receipt_label,
+		"pop_label": profile.pop_label if profile.requires_pop else "",
 	}
 
 
@@ -692,20 +753,28 @@ def verify_application_finance_line(
 	if not is_application_payment_task_doc(task, profile):
 		frappe.throw(f"This action is only for the <b>{profile.finance_payment_kind}</b> finance task.")
 	line_type = (line_type or "Invoice").strip()
-	if line_type not in ("Invoice", "Receipt"):
+	if line_type not in ("Invoice", "Receipt", "POP"):
 		frappe.throw("Invalid line type.")
 	seed_application_finance_lines(task, profile)
 	if line_type == "Receipt":
 		ensure_application_receipt_on_finance_task(task, profile)
 		task.reload()
 		seed_application_finance_lines(task, profile)
-	line = (
-		get_invoice_line(task, profile)
-		if line_type == "Invoice"
-		else get_receipt_line(task, profile)
-	)
+	if line_type == "Invoice":
+		line = get_invoice_line(task, profile)
+		label_fallback = profile.invoice_label
+	elif line_type == "POP":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			get_pop_line,
+		)
+
+		line = get_pop_line(task, profile)
+		label_fallback = profile.pop_label or "POP"
+	else:
+		line = get_receipt_line(task, profile)
+		label_fallback = profile.receipt_label
 	if not line:
-		frappe.throw(f"<b>{profile.invoice_label if line_type == 'Invoice' else profile.receipt_label}</b> row is missing.")
+		frappe.throw(f"<b>{label_fallback}</b> row is missing.")
 	if not line.attachment:
 		if line_type == "Receipt" and receipt_attached_for_payment_workflow(task, profile):
 			app_name = get_application_task(task.project, profile) if task.project else None
@@ -714,17 +783,19 @@ def verify_application_finance_line(
 			)
 			if app_line and app_line.attachment:
 				line.attachment = app_line.attachment
-				if app_line.amount and not line.amount:
-					line.amount = app_line.amount
 		if not line.attachment:
 			if line_type == "Receipt":
 				frappe.throw(
-					f"The <b>{profile.receipt_label}</b> must be attached on the linked "
-					f"application task before Finance can verify it."
+					f"The <b>{profile.receipt_label}</b> must be attached "
+					f"{'by Documentation using the POP' if profile.requires_pop else 'on the linked application task'} "
+					"before Finance can verify it."
 				)
-			frappe.throw(
-				f"Attach the <b>{profile.invoice_label if line_type == 'Invoice' else profile.receipt_label}</b> before verifying."
-			)
+			frappe.throw(f"Attach the <b>{label_fallback}</b> before verifying.")
+	if line_type == "POP":
+		frappe.throw(
+			f"<b>{profile.pop_label or 'POP'}</b> does not need Finance verification — "
+			"Documentation uses it to attach the shipping line receipt."
+		)
 	line.verified = 1
 	line.verified_by = frappe.session.user
 	line.verified_on = now_datetime()
@@ -744,7 +815,7 @@ def verify_application_finance_line(
 		sync_receipt_verification_to_application_task(task, profile)
 	task.reload()
 	completed = try_auto_complete_application_finance_task(task, profile)
-	label = line.line_label or profile.invoice_label
+	label = line.line_label or label_fallback
 	return {
 		"task": task.name,
 		"message": f"<b>{label}</b> verified.",
@@ -761,13 +832,17 @@ def _profile_by_key(profile_key: str) -> ApplicationFinanceProfile:
 
 
 def application_finance_needs_work(finance_task, profile: ApplicationFinanceProfile) -> bool:
-	"""True when Finance still needs verify or pay for the application invoice (receipt optional)."""
+	"""True when Finance still needs verify/pay (and Shipping Line POP/receipt verify)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		pop_attached,
+		receipt_verified,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		task_client_paid_directly,
 		task_has_recorded_payment,
 	)
 
-	if task_client_paid_directly(finance_task):
+	if task_client_paid_directly(finance_task) and not profile.requires_pop:
 		return False
 	inv = get_invoice_line(finance_task, profile)
 	if not inv or not inv.get("attachment"):
@@ -777,18 +852,26 @@ def application_finance_needs_work(finance_task, profile: ApplicationFinanceProf
 		inv_ok = inv_ok or bool(finance_task.get(profile.application_invoice_verified_field))
 	if not inv_ok:
 		return True
-	if not task_has_recorded_payment(finance_task):
+	if not task_client_paid_directly(finance_task) and not task_has_recorded_payment(finance_task):
 		return True
+	if profile.requires_pop:
+		if not pop_attached(finance_task, profile):
+			return True
+		if not receipt_attached_for_payment_workflow(finance_task, profile):
+			return True
+		if not receipt_verified(finance_task, profile):
+			return True
 	return False
 
 
 def application_invoice_fingerprint(task, profile: ApplicationFinanceProfile) -> tuple:
 	inv = get_invoice_line(task, profile)
 	rec = get_receipt_line(task, profile)
+	pop = get_pop_line(task, profile) if profile.requires_pop else None
 	return (
 		(inv.get("attachment") if inv else "") or "",
-		flt(inv.get("amount") if inv else 0),
 		cint(inv.get("verified") if inv else 0),
+		(pop.get("attachment") if pop else "") or "",
 		(rec.get("attachment") if rec else "") or "",
 		cint(rec.get("verified") if rec else 0),
 		(task.get("custom_journal_entry") or ""),
@@ -927,11 +1010,6 @@ def _sync_changed_application_invoice_onto_finance(
 			profile.application_invoice_verified_field
 		):
 			setattr(finance_task, profile.application_invoice_verified_field, 0)
-	if app_line.amount and fin_line.amount != app_line.amount and (
-		attachment_changed or not fin_line.verified
-	):
-		fin_line.amount = app_line.amount
-		changed = True
 	# Only retarget purchase item before payment is recorded.
 	if not task_has_recorded_payment(finance_task):
 		if _sync_purchase_item_from_application_line(
@@ -1075,14 +1153,22 @@ def process_application_workflow_on_update(task) -> None:
 			try_auto_complete_application_task(task, profile)
 	elif is_application_finance_task(seq, profile) and task.status != "Cancelled":
 		work_changed = application_invoice_work_changed(task, profile)
-		# Receipt mirror only when finance lines actually changed.
+		# POP / receipt mirror when finance lines actually changed.
 		if work_changed:
+			if profile.requires_pop:
+				from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+					copy_finance_pop_to_application_task,
+				)
+
+				copy_finance_pop_to_application_task(task, profile)
 			handle_finance_receipt_upload(task, profile)
 		# Reopen Completed finance when verify/pay/receipt still outstanding.
 		if task.status == "Completed":
 			reopen_application_finance_if_pending_work(task, profile)
 		else:
-			try_auto_complete_application_finance_task(task, profile)
+			completed = try_auto_complete_application_finance_task(task, profile)
+			if completed:
+				close_application_when_finance_done(task, profile)
 
 
 def process_application_workflow_onload(task) -> bool:
@@ -1099,16 +1185,62 @@ def process_application_workflow_onload(task) -> bool:
 	seq = task_sequence(task)
 	if is_application_task(seq, profile):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			ensure_finance_pop_visible_on_application_task,
 			ensure_finance_receipt_visible_on_application_task,
 		)
 
 		changed = sync_status_from_finance_to_application(task, profile) or changed
+		if ensure_finance_pop_visible_on_application_task(task, profile):
+			task.reload()
+			changed = True
 		if ensure_finance_receipt_visible_on_application_task(task, profile):
 			task.reload()
 			changed = True
-		if task.status not in ("Completed", "Cancelled"):
-			if try_auto_complete_application_task(task, profile):
+		# Heal early Completes (e.g. Shipping Line before receipt verify).
+		# Bump modified so a stale Desk form still holding status=Completed cannot
+		# save over this heal. Publish soft_sync so an already-open form updates
+		# status + modified without a full reload loop.
+		if (
+			profile.requires_pop
+			and task.status == "Completed"
+			and not can_complete_application_task(task, profile)
+		):
+			frappe.flags.cgm_reopening_task = True
+			try:
+				values = {
+					"status": "Open",
+					"progress": 0,
+					"completed_by": None,
+					"completed_on": None,
+				}
+				frappe.db.set_value("Task", task.name, values, update_modified=True)
+				for field, value in values.items():
+					task.set(field, value)
+				# Keep in-memory modified aligned with DB for the getdoc response.
+				task.modified = frappe.db.get_value("Task", task.name, "modified")
+				frappe.clear_document_cache("Task", task.name)
+				if task.project:
+					frappe.publish_realtime(
+						"cgm_task_status_changed",
+						{
+							"task": task.name,
+							"project": task.project,
+							"status": "Open",
+							"reopened": 1,
+							"soft_sync": 1,
+						},
+					)
 				changed = True
+			finally:
+				frappe.flags.cgm_reopening_task = False
+		# Do not auto-complete on form open for POP flows — save/verify hooks own that.
+		# Completing here raced with heal reopen and flickered the form.
+		if (
+			task.status not in ("Completed", "Cancelled")
+			and not profile.requires_pop
+			and try_auto_complete_application_task(task, profile)
+		):
+			changed = True
 	elif is_application_finance_task(seq, profile):
 		# Completed + unfinished invoice work → reopen so Make Payment shows.
 		result = reopen_application_finance_if_pending_work(task, profile)
@@ -1116,6 +1248,13 @@ def process_application_workflow_onload(task) -> bool:
 			task.reload()
 			changed = True
 		if task.status not in ("Completed", "Cancelled") and task.project:
+			if profile.requires_pop:
+				from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+					copy_finance_pop_to_application_task,
+				)
+
+				if copy_finance_pop_to_application_task(task, profile):
+					changed = True
 			had_receipt = receipt_attached(task, profile)
 			if ensure_application_receipt_on_finance_task(task, profile) and not had_receipt:
 				task.reload()

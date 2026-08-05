@@ -422,6 +422,24 @@ def _permit_linked_pairs() -> tuple[tuple[int, int], ...]:
 	return permit_linked_task_pairs()
 
 
+def _shipping_line_linked_pairs() -> tuple[tuple[int, int], ...]:
+	"""(application_seq, finance_seq) for Shipping Line POP/receipt handoff."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		get_application_finance_sequence,
+		get_application_sequence,
+	)
+
+	profile = APPLICATION_FINANCE_PROFILES.get("Shipping Line Application")
+	if not profile:
+		return ()
+	app = get_application_sequence(profile)
+	fin = get_application_finance_sequence(profile)
+	if app and fin:
+		return ((int(app), int(fin)),)
+	return ()
+
+
 def user_bypasses_sea_task_department_filter(user: str | None = None) -> bool:
 	"""Only Administrator skips row-level sea task filtering."""
 	return (user or frappe.session.user) == "Administrator"
@@ -476,11 +494,13 @@ def _project_has_sea_task(project: str, sequence_no: int) -> bool:
 
 
 def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
-	"""Cross-access paired UCR / permit application ↔ finance tasks.
+	"""Cross-access paired application ↔ finance tasks.
 
 	- Finance may open the paired application task.
 	- Declaration may open the paired Finance pays task when they own Upload Receipt
 	  (same department that uploaded the invoice attaches the receipt).
+	- Documentation may open Finance Pays Shipping Line when they own Upload Receipt
+	  (attach receipt using the POP).
 	"""
 	if not hasattr(doc, "get"):
 		return False
@@ -497,6 +517,9 @@ def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
 				return True
 		for app_seq, _fin_seq in _permit_linked_pairs():
 			if seq == app_seq:
+				return True
+		for app_seq, fin_seq in _shipping_line_linked_pairs():
+			if seq == app_seq and _project_has_sea_task(project, fin_seq):
 				return True
 
 	if user_has_declarant_department_access(user):
@@ -515,6 +538,17 @@ def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
 			for _app_seq, fin_seq in _permit_linked_pairs():
 				if seq == fin_seq:
 					return True
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_UPLOAD_RECEIPT,
+		FLOW_SHIPPING_LINE,
+		user_has_responsibility,
+	)
+
+	if user_has_responsibility(FLOW_SHIPPING_LINE, ACTION_UPLOAD_RECEIPT, user):
+		for app_seq, fin_seq in _shipping_line_linked_pairs():
+			if seq == fin_seq and _project_has_sea_task(project, app_seq):
+				return True
 
 	return False
 
@@ -609,13 +643,15 @@ def _build_department_sql_conditions(stems: set[str]) -> str:
 
 
 def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
-	"""SQL OR-clauses for linked UCR / permit tasks in list views."""
+	"""SQL OR-clauses for linked UCR / permit / Shipping Line tasks in list views."""
 	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="lk.custom_task_flow_key")
 	parts: list[str] = []
 	app_stems = set(application_department_stems_for_linked_pairs(_ucr_linked_pairs()))
 	app_stems |= set(application_department_stems_for_linked_pairs(_permit_linked_pairs()))
+	app_stems |= set(application_department_stems_for_linked_pairs(_shipping_line_linked_pairs()))
 	fin_stems = set(finance_department_stems_for_linked_pairs(_ucr_linked_pairs()))
 	fin_stems |= set(finance_department_stems_for_linked_pairs(_permit_linked_pairs()))
+	fin_stems |= set(finance_department_stems_for_linked_pairs(_shipping_line_linked_pairs()))
 
 	if stems & app_stems:
 		for app_seq, fin_seq in _ucr_linked_pairs():
@@ -634,6 +670,14 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"AND {flow_in} "
 				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
 			)
+		for app_seq, fin_seq in _shipping_line_linked_pairs():
+			parts.append(
+				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
+				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
+				f"WHERE lk.project = `tabTask`.project "
+				f"AND {flow_in} "
+				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
+			)
 	if stems & fin_stems:
 		for app_seq, fin_seq in _ucr_linked_pairs():
 			parts.append(
@@ -644,6 +688,14 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 				f"AND lk.custom_sequence_no = {fin_seq} LIMIT 1))"
 			)
 		for app_seq, fin_seq in _permit_linked_pairs():
+			parts.append(
+				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
+				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
+				f"WHERE lk.project = `tabTask`.project "
+				f"AND {flow_in} "
+				f"AND lk.custom_sequence_no = {fin_seq} LIMIT 1))"
+			)
+		for app_seq, fin_seq in _shipping_line_linked_pairs():
 			parts.append(
 				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
@@ -679,6 +731,16 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 		stems |= set(operations_visibility_department_stems())
 	if user_has_transport_department_access(user):
 		stems |= set(transport_department_stems())
+
+	# Documentation (Upload Receipt on Shipping Line) needs app-stem for linked finance list.
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_UPLOAD_RECEIPT,
+		FLOW_SHIPPING_LINE,
+		user_has_responsibility,
+	)
+
+	if user_has_responsibility(FLOW_SHIPPING_LINE, ACTION_UPLOAD_RECEIPT, user):
+		stems |= set(application_department_stems_for_linked_pairs(_shipping_line_linked_pairs()))
 
 	assign_token = frappe.db.escape(f'"{user}"')
 	sea_flow = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE)

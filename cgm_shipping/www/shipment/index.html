@@ -74,7 +74,7 @@
   {% if fee_invoices %}
   <div class="cp-banner-info" style="border-color: #bae6fd;">
     <h4>{{ _("Fees to pay") }}</h4>
-    <p style="margin-bottom:0;">{{ _("Finance shared invoice(s) for this shipment. Download, pay, then upload your receipt with") }} <strong>{{ _("I have paid") }}</strong>.</p>
+    <p style="margin-bottom:0;">{{ _("Finance shared invoice(s) for this shipment. Download, pay, then upload your payment proof with") }} <strong>{{ _("I have paid") }}</strong>.</p>
   </div>
   <div class="cp-card" style="margin-bottom:1.25rem;">
     {% for inv in fee_invoices %}
@@ -87,12 +87,13 @@
         <span style="display:inline-flex;gap:.4rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
           <a class="cp-btn cp-btn-ghost" style="padding:.35rem .9rem;font-size:.8rem;" href="{{ inv.download_url }}">{{ _("Download") }}</a>
           {% if inv.client_reported_paid %}
-            <span class="cp-status green" style="text-transform:none;font-size:.75rem;padding:.35rem .75rem;"><span class="dot"></span>{{ _("Receipt sent") }}</span>
+            <span class="cp-status green" style="text-transform:none;font-size:.75rem;padding:.35rem .75rem;"><span class="dot"></span>{% if inv.proof_kind == "pop" %}{{ _("POP sent") }}{% else %}{{ _("Receipt sent") }}{% endif %}</span>
           {% else %}
             <label class="cp-btn cp-btn-primary" style="padding:.35rem .9rem;font-size:.8rem;margin:0;cursor:pointer;">
               {{ _("I have paid") }}
               <input type="file" class="cgm-fee-receipt-input" accept=".pdf,.jpg,.jpeg,.png" hidden
-                data-project="{{ inv.project or shipment.name }}" data-source="{{ inv.source }}" data-row="{{ inv.row }}">
+                data-project="{{ inv.project or shipment.name }}" data-source="{{ inv.source }}" data-row="{{ inv.row }}"
+                data-proof-kind="{{ inv.proof_kind or 'receipt' }}">
             </label>
           {% endif %}
         </span>

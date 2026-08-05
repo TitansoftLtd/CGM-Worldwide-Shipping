@@ -21,7 +21,11 @@ frappe.ready(function () {
 			formData.append("folder", "Home/Attachments");
 			formData.append("doctype", "Project");
 			formData.append("docname", project);
-			frappe.freeze(__("Uploading receipt…"));
+			frappe.freeze(
+				input.dataset.proofKind === "pop"
+					? __("Uploading POP…")
+					: __("Uploading receipt…")
+			);
 			fetch("/api/method/upload_file", {
 				method: "POST",
 				body: formData,

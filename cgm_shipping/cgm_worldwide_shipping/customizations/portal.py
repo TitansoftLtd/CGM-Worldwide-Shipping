@@ -1014,29 +1014,38 @@ def _shared_fee_invoices_for_projects(project_names: list[str]) -> list[dict]:
 			as_dict=True,
 		)
 
-		# Batch-check receipt lines for payment status (one query).
+		# Batch-check receipt / POP lines for payment status (one query).
 		task_names = list({r.task_name for r in rows if r.task_name})
 		receipt_by_task_item: dict[tuple[str, str], str] = {}
+		pop_by_task_item: dict[tuple[str, str], str] = {}
 		if task_names:
 			for rec in frappe.get_all(
 				"Task Finance Line",
 				filters={
 					"parent": ["in", task_names],
 					"parenttype": "Task",
-					"line_type": "Receipt",
+					"line_type": ["in", ["Receipt", "POP"]],
 					"attachment": ["is", "set"],
 				},
-				fields=["parent", "payment_item", "attachment"],
+				fields=["parent", "payment_item", "attachment", "line_type"],
 			):
-				receipt_by_task_item[(rec.parent, rec.payment_item or "")] = rec.attachment
+				key = (rec.parent, rec.payment_item or "")
+				if rec.line_type == "POP":
+					pop_by_task_item[key] = rec.attachment
+				else:
+					receipt_by_task_item[key] = rec.attachment
 
 		for row in rows:
 			project = row.project
 			label = row.get("line_label") or row.get("payment_item") or _("Fee Invoice")
-			has_receipt = bool(
-				receipt_by_task_item.get((row.task_name, row.get("payment_item") or ""))
+			item_key = (row.task_name, row.get("payment_item") or "")
+			is_shipping_line = (row.get("payment_item") or "") == "Shipping Line"
+			has_proof = bool(
+				pop_by_task_item.get(item_key)
+				if is_shipping_line
+				else receipt_by_task_item.get(item_key)
 			)
-			reported = bool(cint(row.get("client_reported_paid"))) or has_receipt
+			reported = bool(cint(row.get("client_reported_paid"))) or has_proof
 			out.append(
 				_fee_invoice_row(
 					source="finance_line",
@@ -1048,6 +1057,7 @@ def _shared_fee_invoices_for_projects(project_names: list[str]) -> list[dict]:
 					reported=reported,
 					reported_on=row.get("client_reported_on"),
 					api=api,
+					proof_kind="pop" if is_shipping_line else "receipt",
 				)
 			)
 
@@ -1065,9 +1075,15 @@ def _fee_invoice_row(
 	reported: bool,
 	reported_on,
 	api: str,
+	proof_kind: str = "receipt",
 ) -> dict:
-	status = "receipt_submitted" if reported else "awaiting_payment"
-	status_label = _("Receipt submitted") if reported else _("Awaiting your payment")
+	is_pop = proof_kind == "pop"
+	if reported:
+		status = "pop_submitted" if is_pop else "receipt_submitted"
+		status_label = _("POP submitted") if is_pop else _("Receipt submitted")
+	else:
+		status = "awaiting_payment"
+		status_label = _("Awaiting your payment")
 	return {
 		"source": source,
 		"row": row_name,
@@ -1077,6 +1093,7 @@ def _fee_invoice_row(
 		"shared_on": shared_on,
 		"payment_status": status,
 		"status_label": status_label,
+		"proof_kind": proof_kind,
 		"client_reported_paid": 1 if reported else 0,
 		"client_reported_on": reported_on,
 		"shipment_url": f"/shipment?name={quote(project, safe='')}",

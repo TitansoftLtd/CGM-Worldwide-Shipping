@@ -46,6 +46,15 @@ frappe.ui.form.on("Task", {
 		frm._cgm_declarant_status = null;
 		frm._cgm_declarant_status_loading = false;
 		frm._cgm_declarant_status_loaded = false;
+		frm._cgm_entry_declarant_status = null;
+		frm._cgm_entry_declarant_status_loading = false;
+		frm._cgm_entry_declarant_status_loaded = false;
+		frm._cgm_shipping_line_declarant_status = null;
+		frm._cgm_shipping_line_declarant_status_loading = false;
+		frm._cgm_shipping_line_declarant_status_loaded = false;
+		frm._cgm_kpa_declarant_status = null;
+		frm._cgm_kpa_declarant_status_loading = false;
+		frm._cgm_kpa_declarant_status_loaded = false;
 		frm._cgm_finance_lines_ensuring = false;
 		frm._cgm_checkpoint_seed_requested = false;
 		frm.set_query("department", () => ({
@@ -74,8 +83,13 @@ frappe.ui.form.on("Task", {
 			configure_permit_grid(frm);
 		}
 		cgm_configure_task_status_fields(frm);
-		cgm_configure_document_status_grids(frm);
-		cgm_configure_permit_status_grids(frm);
+		// Status-grid badge wiring once per form — re-running on every refresh
+		// schedules multi-paint timeouts and makes Attach/Clear flicker.
+		if (!frm._cgm_status_grids_ready) {
+			cgm_configure_document_status_grids(frm);
+			cgm_configure_permit_status_grids(frm);
+			frm._cgm_status_grids_ready = true;
+		}
 		if (ui.show_payments && frm.fields_dict.custom_journal_entry) {
 			frm.set_df_property(
 				"custom_journal_entry",
@@ -213,13 +227,17 @@ frappe.ui.form.on("Task", {
 				intro = frm.doc.custom_client_paid_directly
 					? __(
 							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>Shipping Line Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
-								"Receipt attachment is optional."
+								"<b>1</b> Verify <b>Shipping Line Invoice</b> · <b>2</b> <b>Share Invoice with Client</b>. " +
+								"<b>3</b> Client uploads <b>POP</b> on the portal (or Finance attaches it). " +
+								"<b>4</b> Documentation attaches the <b>Shipping Line Receipt</b> using the POP. " +
+								"<b>5</b> Finance verifies the receipt — then this task completes."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>Shipping Line Invoice</b> · " +
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
-								"Receipt attachment is optional — task completes after payment."
+								"<b>3</b> Attach bank <b>POP</b> (or client shares POP via portal). " +
+								"<b>4</b> Documentation attaches the <b>Shipping Line Receipt</b> using the POP. " +
+								"<b>5</b> Finance verifies the receipt — then this task completes."
 						);
 				intro_set = true;
 			} else if (ui.is_kpa_finance) {
@@ -290,7 +308,7 @@ frappe.ui.form.on("Task", {
 		}
 
 		if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
-			sync_app_finance_receipt_on_form(frm, "shipping_line");
+			ensure_app_finance_lines_on_form(frm, "shipping_line");
 			ensure_app_finance_task_completed_on_form(frm, "shipping_line");
 		}
 
@@ -408,6 +426,15 @@ const CGM_TASK_PERMISSIONS_FALLBACK = {
 		"Accounts User",
 		"Accounts Manager",
 		"System Manager",
+		"CGM Documentation",
+		"Documentation",
+	],
+	can_upload_pop: [
+		"Finance Manager",
+		"Finance User",
+		"Accounts User",
+		"Accounts Manager",
+		"System Manager",
 	],
 	can_verify_invoice: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
 	can_upload_invoice: [
@@ -416,6 +443,8 @@ const CGM_TASK_PERMISSIONS_FALLBACK = {
 		"Operations Manager",
 		"Operations User",
 		"System Manager",
+		"CGM Documentation",
+		"Documentation",
 	],
 	can_upload_certificate: [
 		"Declaration User",
@@ -507,6 +536,7 @@ function get_cgm_permissions(frm) {
 	return {
 		can_make_payment: from_fallback("can_make_payment"),
 		can_upload_receipt: from_fallback("can_upload_receipt"),
+		can_upload_pop: from_fallback("can_upload_pop"),
 		can_verify_invoice: from_fallback("can_verify_invoice"),
 		can_upload_invoice: from_fallback("can_upload_invoice"),
 		can_upload_certificate: from_fallback("can_upload_certificate"),
@@ -554,7 +584,7 @@ const CGM_APP_FINANCE_PROFILES = {
 	shipping_line: {
 		application_seqs_key: "shipping_line_application_seqs",
 		finance_seqs_key: "shipping_line_finance_seqs",
-		upload_role: __("Operations"),
+		upload_role: __("Documentation"),
 	},
 	kpa: {
 		application_seqs_key: "kpa_application_seqs",
@@ -1502,6 +1532,7 @@ function configure_finance_line_grid(frm, ui) {
 	}
 	const is_finance = user_can_make_payment(frm);
 	const can_receipt = user_can_upload_receipt(frm);
+	const can_pop = user_can_upload_pop(frm);
 	const seq = sea_task_sequence(frm);
 	const is_app_step =
 		is_ucr_application_step(frm, seq) ||
@@ -1529,13 +1560,15 @@ function configure_finance_line_grid(frm, ui) {
 		// Invoice editable even after completion (additional / replacement docs).
 		frm.set_df_property("custom_task_finance_lines", "read_only", 0);
 		grid.update_docfield_property("attachment", "read_only", 0);
-		grid.update_docfield_property("amount", "read_only", 0);
 		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	} else if (is_fin_step) {
-		// Invoice copied from application; Finance uploads receipt after payment.
-		grid.update_docfield_property("attachment", "read_only", can_receipt ? 0 : 1);
-		grid.update_docfield_property("amount", "read_only", 1);
+		// Invoice copied from application; POP / receipt by role (row-level in form_render).
+		grid.update_docfield_property(
+			"attachment",
+			"read_only",
+			can_receipt || can_pop ? 0 : 1
+		);
 		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 	}
@@ -1566,6 +1599,11 @@ function reset_cgm_task_sea_ui_state_if_needed(frm) {
 	frm._cgm_sea_seq_load_failed = false;
 	frm._cgm_sea_layout_ready = false;
 	frm._cgm_finance_grid_ready = false;
+	frm._cgm_status_grids_ready = false;
+	frm._cgm_shipping_line_deposit_grid_ready = false;
+	frm._cgm_toolbar_fingerprint = null;
+	frm._cgm_shipping_line_finance_lines_ensured = false;
+	frm._cgm_kpa_finance_lines_ensured = false;
 	frm._cgm_finance_department = CGM_SEA_UI_SEQUENCES_CACHE?.finance_department;
 	if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config) {
 		load_cgm_sea_ui_sequences(frm);
@@ -1640,11 +1678,31 @@ function schedule_cgm_task_toolbar_buttons(frm) {
 		}
 		mount_cgm_task_toolbar_buttons(frm);
 	};
-	// Debounce stacked refresh/realtime remounts that made Complete flicker.
-	frm._cgm_toolbar_timer = setTimeout(mount, 150);
-	register_task_toolbar_after_render(frm, "cgm_task_toolbar", () => {
-		schedule_cgm_task_toolbar_buttons(frm);
-	});
+	// Debounce stacked refresh remounts. Do not re-bind render_complete — that
+	// remounted on every child-grid paint and made Open Shipment Project flicker.
+	frm._cgm_toolbar_timer = setTimeout(mount, 80);
+}
+
+function cgm_task_toolbar_fingerprint(frm) {
+	const ui = get_sea_task_ui(frm);
+	const inv = get_finance_line(frm, "Invoice");
+	const rec = get_finance_line(frm, "Receipt");
+	return [
+		frm.doc.name,
+		frm.doc.status,
+		cint(frm.doc.custom_client_paid_directly),
+		ui.is_shipping_line_finance ? 1 : 0,
+		ui.is_shipping_line_application ? 1 : 0,
+		ui.is_ucr_finance ? 1 : 0,
+		ui.is_entry_finance ? 1 : 0,
+		ui.is_kpa_finance ? 1 : 0,
+		inv?.verified ? 1 : 0,
+		inv?.attachment ? 1 : 0,
+		rec?.verified ? 1 : 0,
+		rec?.attachment ? 1 : 0,
+		user_can_make_payment(frm) ? 1 : 0,
+		user_can_verify_invoice(frm) ? 1 : 0,
+	].join("|");
 }
 
 function mount_cgm_task_toolbar_buttons(frm) {
@@ -1654,8 +1712,16 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	if (frm._cgm_task_action_busy || frm._cgm_completing_permit_application) {
 		return;
 	}
+	const fingerprint = cgm_task_toolbar_fingerprint(frm);
+	const has_buttons =
+		frm.custom_buttons && Object.keys(frm.custom_buttons || {}).length > 0;
+	if (frm._cgm_toolbar_fingerprint === fingerprint && has_buttons) {
+		return;
+	}
+
 	const ui = get_sea_task_ui(frm);
 	frm.clear_custom_buttons();
+	frm._cgm_toolbar_fingerprint = fingerprint;
 
 	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
 		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
@@ -1687,11 +1753,17 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	}
 
 	if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
-		if (user_can_make_payment(frm)) {
+		if (user_can_verify_invoice(frm) || user_can_make_payment(frm)) {
 			const inv = get_finance_line(frm, "Invoice");
 			if (inv?.attachment && !inv?.verified) {
 				add_cgm_toolbar_button(frm, __("Verify Shipping Line Invoice"), () => {
 					verify_app_finance_line(frm, "shipping_line", "Invoice");
+				}, { primary: true });
+			}
+			const rec = get_finance_line(frm, "Receipt");
+			if (rec?.attachment && !rec?.verified) {
+				add_cgm_toolbar_button(frm, __("Verify Shipping Line Receipt"), () => {
+					verify_app_finance_line(frm, "shipping_line", "Receipt");
 				}, { primary: true });
 			}
 		}
@@ -2198,7 +2270,7 @@ function apply_ucr_application_intro(frm, status) {
 		);
 	} else {
 		intro = __(
-			"<b>Declarant:</b> Attach <b>UCR Invoice</b>, enter the <b>Amount</b>, and save on " +
+			"<b>Declarant:</b> Attach <b>UCR Invoice</b> and save on " +
 				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, Finance uploads the " +
 				"supplier receipt; attach the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
 		);
@@ -2321,16 +2393,38 @@ frappe.ui.form.on("Task Finance Line", {
 			is_entry_finance_step(frm, seq) ||
 			is_shipping_line_finance_step(frm, seq) ||
 			is_kpa_finance_step(frm, seq);
-		if (is_app && row.line_type === "Receipt") {
-			grid_row.toggle_editable("attachment", false);
-			grid_row.toggle_editable("amount", false);
+		let attachment_editable = null;
+		let verified_editable = null;
+		if (is_app && (row.line_type === "Receipt" || row.line_type === "POP")) {
+			if (is_shipping_line_application_step(frm, seq) && row.line_type === "Receipt") {
+				attachment_editable = user_can_upload_receipt(frm);
+				verified_editable = false;
+			} else {
+				attachment_editable = false;
+				verified_editable = false;
+			}
 		}
 		if (is_fin && row.line_type === "Invoice") {
-			grid_row.toggle_editable("attachment", false);
-			grid_row.toggle_editable("amount", false);
+			attachment_editable = false;
+		}
+		if (is_fin && row.line_type === "POP") {
+			attachment_editable = user_can_upload_pop(frm);
+			verified_editable = false;
 		}
 		if (is_fin && row.line_type === "Receipt") {
-			grid_row.toggle_editable("attachment", user_can_upload_receipt(frm));
+			attachment_editable = user_can_upload_receipt(frm);
+		}
+		// Skip no-op toggle_editable — it rebuilds Attach/Clear and flickers.
+		const edit_key = `${row.line_type}|${attachment_editable}|${verified_editable}`;
+		if (grid_row._cgm_finance_edit_key === edit_key) {
+			return;
+		}
+		grid_row._cgm_finance_edit_key = edit_key;
+		if (attachment_editable !== null) {
+			grid_row.toggle_editable("attachment", attachment_editable);
+		}
+		if (verified_editable !== null) {
+			grid_row.toggle_editable("verified", verified_editable);
 		}
 	},
 	attachment(frm, cdt, cdn) {
@@ -2338,17 +2432,35 @@ frappe.ui.form.on("Task Finance Line", {
 			return;
 		}
 		const row = locals[cdt][cdn];
-		if (row.line_type === "Receipt" && (
+		if ((row.line_type === "Receipt" || row.line_type === "POP") && (
 			is_ucr_application_step(frm) ||
 			is_entry_application_step(frm) ||
 			is_shipping_line_application_step(frm) ||
 			is_kpa_application_step(frm)
 		)) {
-			frappe.show_alert({
-				message: __("Finance uploads payment receipts on the finance payment task after paying."),
-				indicator: "orange",
-			});
-			return;
+			if (is_shipping_line_application_step(frm) && row.line_type === "Receipt") {
+				// Documentation attaches receipt here after POP is mirrored from Finance.
+			} else if (is_shipping_line_application_step(frm) && row.line_type === "POP") {
+				frappe.show_alert({
+					message: __(
+						"POP is attached by Finance (or the client portal) and shown here automatically."
+					),
+					indicator: "orange",
+				});
+				return;
+			} else {
+				frappe.show_alert({
+					message: is_shipping_line_application_step(frm)
+						? __(
+								"POP and receipt are attached on the finance payment task after payment."
+							)
+						: __(
+								"Finance uploads payment receipts on the finance payment task after paying."
+							),
+					indicator: "orange",
+				});
+				return;
+			}
 		}
 		const is_fin =
 			is_ucr_finance_step(frm) ||
@@ -2387,14 +2499,47 @@ frappe.ui.form.on("Task Finance Line", {
 				});
 			}
 		}
+		if (is_fin && row.line_type === "POP" && row.attachment) {
+			frappe.show_alert({
+				message: __(
+					"POP saved — Documentation can attach the Shipping Line Receipt using this proof."
+				),
+				indicator: "green",
+			});
+		}
 		if (is_fin && row.line_type === "Receipt" && row.attachment) {
 			frappe.show_alert({
-				message: __("Receipt saved — Declarant can view it on the application task."),
+				message: is_shipping_line_finance_step(frm)
+					? __("Receipt saved — Finance must verify it to complete this task.")
+					: __("Receipt saved — Declarant can view it on the application task."),
 				indicator: "green",
 			});
 		}
 		// Always save so Completed tasks can reopen Finance / sync receipts.
-		frm.save();
+		// Skip while soft-sync is applying remote rows (avoids TimestampMismatchError).
+		if (frm._cgm_skip_finance_line_autosave) {
+			return;
+		}
+		// Refresh lock timestamp first — onload heal / POP mirror may have bumped it.
+		frappe.db.get_value("Task", frm.doc.name, "modified").then((r) => {
+			const latest = r?.message?.modified;
+			if (latest) {
+				frm.doc.modified = latest;
+			}
+			if (frm._cgm_skip_finance_line_autosave) {
+				return;
+			}
+			frm.save().catch((e) => {
+				const msg = (e && (e.message || e)) || "";
+				if (String(msg).includes("modified after you have opened")) {
+					frappe.show_alert({
+						message: __("Document was updated elsewhere — refreshing…"),
+						indicator: "orange",
+					});
+					frm.reload_doc();
+				}
+			});
+		});
 	},
 
 	verified(frm, cdt, cdn) {
@@ -2830,7 +2975,7 @@ function apply_entry_application_intro(frm, status) {
 		);
 	} else {
 		intro = __(
-			"<b>Declarant:</b> Attach <b>{0}</b>, enter the <b>Amount</b>, and save on " +
+			"<b>Declarant:</b> Attach <b>{0}</b> and save on " +
 				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, Finance uploads the " +
 				"supplier receipt; attach the ENTRY document under <b>Clearance Documents</b> when issued. " +
 				"When the vessel arrives, use <b>Actions → Confirm Shipment Arrival at the Port</b> to enter ATA " +
@@ -2928,7 +3073,15 @@ function sync_app_finance_receipt_on_form(frm, profileKey) {
 
 function ensure_app_finance_lines_on_form(frm, profileKey) {
 	const ensuringKey = `_cgm_${profileKey}_finance_lines_ensuring`;
-	if (get_finance_line(frm, "Receipt") || frm[ensuringKey]) {
+	const ensuredKey = `_cgm_${profileKey}_finance_lines_ensured`;
+	if (frm[ensuringKey] || frm[ensuredKey]) {
+		return;
+	}
+	const hasReceipt = !!get_finance_line(frm, "Receipt");
+	const needsPop =
+		profileKey === "shipping_line" && !get_finance_line(frm, "POP");
+	if (hasReceipt && !needsPop) {
+		frm[ensuredKey] = true;
 		return;
 	}
 	frm[ensuringKey] = true;
@@ -2938,7 +3091,9 @@ function ensure_app_finance_lines_on_form(frm, profileKey) {
 		args: { task_name: frm.doc.name, profile_key: profileKey },
 		callback(r) {
 			frm[ensuringKey] = false;
+			frm[ensuredKey] = true;
 			if (!r.exc && r.message?.added) {
+				frm._cgm_toolbar_fingerprint = null;
 				frm.reload_doc();
 			}
 		},
@@ -2974,14 +3129,8 @@ function load_app_finance_declarant_status(frm, profileKey) {
 			}
 			frm[statusKey] = r.message;
 			frm[loadedKey] = true;
-			if (r.message.task_status === "Completed" && frm.doc.status !== "Completed") {
-				frappe.show_alert({
-					message: __("Application task completed"),
-					indicator: "green",
-				});
-				frm.reload_doc();
-				return;
-			}
+			// Never full-reload from a status poll — that fought onload heal and
+			// flickered Open↔Completed / POP rows. Intro follows the form doc.
 			apply_app_finance_application_intro(frm, r.message, profileKey);
 		},
 		error() {
@@ -3081,10 +3230,16 @@ function configure_shipping_line_deposit_grid(frm) {
 	}
 	frm.toggle_display("custom_section_container_updates", true);
 	frm.toggle_display("custom_container_updates", true);
+	// Configure once per form open — grid.refresh() on every Task.refresh
+	// re-renders rows, fires render_complete, and makes toolbar buttons flicker.
+	if (frm._cgm_shipping_line_deposit_grid_ready) {
+		return;
+	}
 	["has_deposit", "deposit_amount"].forEach((fn) => {
 		grid.update_docfield_property(fn, "hidden", 0);
 		grid.update_docfield_property(fn, "in_list_view", 1);
 	});
+	frm._cgm_shipping_line_deposit_grid_ready = true;
 	if (grid.wrapper) {
 		grid.refresh();
 	}
@@ -3107,11 +3262,13 @@ function application_status_for_client_paid(frm, ui) {
 }
 
 function client_paid_application_needs_mark_complete(frm, ui) {
-	/** KPA / Shipping Line (no certificate) need an explicit Mark Completed after client-paid. */
+	/** KPA (no certificate) needs an explicit Mark Completed after client-paid.
+	 * Shipping Line waits for Finance receipt verify — no early Mark Completed.
+	 */
 	if (frm.doc.status === "Completed" || frm.doc.status === "Cancelled") {
 		return false;
 	}
-	if (!(ui.is_kpa_application || ui.is_shipping_line_application)) {
+	if (!ui.is_kpa_application) {
 		return false;
 	}
 	const status = application_status_for_client_paid(frm, ui) || {};
@@ -3151,17 +3308,28 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 	const invoiceLabel = status.invoice_label || __("Invoice");
 	const receiptLabel = status.receipt_label || __("Receipt");
 	const uploadRole = profile.upload_role || __("Operations");
+	const isShippingLine = profileKey === "shipping_line";
 	let intro;
-	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
+	// Form doc status wins — stale status.task_status caused "Completed" banners on Open tasks.
+	if (frm.doc.status === "Completed") {
 		intro = __("<b>All documents are in place.</b> This task is <b>Completed</b>.");
 	} else if (status.client_paid_directly && !status.certificate_required) {
-		intro = __(
-			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
-				"Attach/replace the invoice as usual; Finance verifies and uploads the client's receipt. " +
-				"Click <b>Mark Completed</b> when this application step is finished."
-		);
+		intro = isShippingLine
+			? __(
+					"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
+						"After the client/Finance shares <b>POP</b>, attach the <b>{0}</b> here. " +
+						"Finance verifies the receipt — then this task and Finance complete together.",
+					[receiptLabel]
+				)
+			: __(
+					"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
+						"Attach/replace the invoice as usual; Finance verifies and uploads the client's receipt. " +
+						"Click <b>Mark Completed</b> when this application step is finished."
+				);
 		// Remount toolbar so Mark Completed survives form.refresh clearing custom buttons.
-		schedule_cgm_task_toolbar_buttons(frm);
+		if (!isShippingLine) {
+			schedule_cgm_task_toolbar_buttons(frm);
+		}
 	} else if (status.client_paid_directly && status.certificate_required) {
 		intro = __(
 			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
@@ -3171,34 +3339,70 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 	} else if (status.application_ready_to_complete) {
 		intro = __("<b>All documents are in place.</b> Completing this task…");
 	} else if (status.receipt_attached) {
-		intro = __("<b>{0} receipt uploaded.</b> This task will complete automatically.", [
-			invoiceLabel,
-		]);
+		intro = isShippingLine
+			? status.receipt_verified
+				? __("<b>All documents are in place.</b> Completing this task…")
+				: __(
+						"<b>{0} attached.</b> Waiting for Finance to verify it — then both Shipping Line tasks complete.",
+						[receiptLabel]
+					)
+			: __("<b>{0} receipt uploaded.</b> This task will complete automatically.", [
+					invoiceLabel,
+				]);
+	} else if (status.pop_attached && isShippingLine) {
+		intro = __(
+			"<b>POP is available.</b> Attach the <b>{0}</b> on this task (using the POP). Finance will verify it.",
+			[receiptLabel]
+		);
 	} else if (status.payment_made) {
-		intro = __(
-			"<b>Finance has paid the {0}.</b> Finance will upload the supplier <b>{1}</b> on the finance task.",
-			[invoiceLabel, receiptLabel]
-		);
+		intro = isShippingLine
+			? __(
+					"<b>Finance has paid the {0}.</b> Waiting for bank <b>POP</b> to appear here, then attach the <b>{1}</b>.",
+					[invoiceLabel, receiptLabel]
+				)
+			: __(
+					"<b>Finance has paid the {0}.</b> Finance will upload the supplier <b>{1}</b> on the finance task.",
+					[invoiceLabel, receiptLabel]
+				);
 	} else if (status.invoice_verified) {
-		intro = __(
-			"<b>{0} verified by Finance.</b> Waiting for payment. After payment, Finance uploads the " +
-				"<b>{1}</b> on the finance task.",
-			[invoiceLabel, receiptLabel]
-		);
+		intro = isShippingLine
+			? __(
+					"<b>{0} verified by Finance.</b> Waiting for payment / client POP. " +
+						"Then attach the <b>{1}</b> here for Finance to verify.",
+					[invoiceLabel, receiptLabel]
+				)
+			: __(
+					"<b>{0} verified by Finance.</b> Waiting for payment. After payment, Finance uploads the " +
+						"<b>{1}</b> on the finance task.",
+					[invoiceLabel, receiptLabel]
+				);
 	} else if (status.invoice_submitted) {
-		intro = __(
-			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify and pay. " +
-				"After payment, Finance uploads the supplier receipt on the finance task.",
-			[invoiceLabel]
-		);
+		intro = isShippingLine
+			? __(
+					"<b>{0} submitted to Finance.</b> Waiting for Finance to verify and pay. " +
+						"After POP appears here, attach the supplier receipt for Finance to verify.",
+					[invoiceLabel]
+				)
+			: __(
+					"<b>{0} submitted to Finance.</b> Waiting for Finance to verify and pay. " +
+						"After payment, Finance uploads the supplier receipt on the finance task.",
+					[invoiceLabel]
+				);
 	} else {
-		intro = __(
-			"<b>{0}:</b> Attach <b>{1}</b>, enter the <b>Amount</b>, and save on " +
-				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, Finance uploads the " +
-				"supplier receipt.",
-			[uploadRole, invoiceLabel]
-		);
-		if (profileKey === "shipping_line") {
+		intro = isShippingLine
+			? __(
+					"<b>{0}:</b> Attach <b>{1}</b> and save on " +
+						"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, " +
+						"POP appears here; then attach the receipt for Finance to verify.",
+					[uploadRole, invoiceLabel]
+				)
+			: __(
+					"<b>{0}:</b> Attach <b>{1}</b> and save on " +
+						"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, Finance uploads the " +
+						"supplier receipt.",
+					[uploadRole, invoiceLabel]
+				);
+		if (isShippingLine) {
 			intro +=
 				"<br><br>" +
 				__(
@@ -3221,7 +3425,12 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 	}
 	const inv = get_finance_line(frm, "Invoice");
 	const rec = get_finance_line(frm, "Receipt");
-	if (!inv?.verified || !rec?.verified || !rec?.attachment) {
+	if (profileKey === "shipping_line") {
+		const pop = get_finance_line(frm, "POP");
+		if (!inv?.verified || !pop?.attachment || !rec?.attachment || !rec?.verified) {
+			return;
+		}
+	} else if (!inv?.verified || !rec?.verified || !rec?.attachment) {
 		return;
 	}
 	frm[checkingKey] = true;
@@ -3302,6 +3511,16 @@ function user_can_upload_receipt(frm) {
 		return !!perms.can_upload_receipt;
 	}
 	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_receipt.some((role) =>
+		(frappe.user_roles || []).includes(role)
+	);
+}
+
+function user_can_upload_pop(frm) {
+	const perms = frm ? get_cgm_permissions(frm) : null;
+	if (perms && perms.can_upload_pop !== undefined) {
+		return !!perms.can_upload_pop;
+	}
+	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_pop.some((role) =>
 		(frappe.user_roles || []).includes(role)
 	);
 }
@@ -3540,9 +3759,60 @@ frappe.realtime.on("cgm_task_status_changed", (data) => {
 		if (cur_frm._cgm_task_action_busy || cur_frm._cgm_completing_permit_application) {
 			return;
 		}
-		// Soft finance→declarant mirrors must not full-reload (causes button flicker
-		// and concurrent save conflicts). User already sees local rows / can refresh.
-		if (data.soft_sync) {
+		// Soft path: POP/receipt mirrors + quiet reopens — refresh fields only.
+		// Full reload_doc here caused Open↔Completed / row flicker loops.
+		if (data.soft_sync || data.pop_synced || data.receipt_synced || data.reopened) {
+			clearTimeout(cur_frm._cgm_soft_sync_timer);
+			cur_frm._cgm_soft_sync_timer = setTimeout(() => {
+				if (
+					!cur_frm ||
+					cur_frm.doc.name !== data.task ||
+					cur_frm._cgm_task_action_busy ||
+					cur_frm._cgm_completing_permit_application
+				) {
+					return;
+				}
+				frappe.db.get_doc("Task", data.task).then((doc) => {
+					if (!cur_frm || cur_frm.doc.name !== data.task || !doc) {
+						return;
+					}
+					cur_frm._cgm_skip_finance_line_autosave = true;
+					// Keep optimistic-lock timestamp in sync or Attach→save fails with
+					// "modified after you opened it".
+					if (doc.modified) {
+						cur_frm.doc.modified = doc.modified;
+					}
+					if (doc.status && cur_frm.doc.status !== doc.status) {
+						cur_frm.doc.status = doc.status;
+						cur_frm.doc.completed_by = doc.completed_by || null;
+						cur_frm.doc.completed_on = doc.completed_on || null;
+						cur_frm.doc.progress = doc.progress;
+						cur_frm.refresh_field("status");
+						cgm_configure_task_status_fields(cur_frm);
+					}
+					cur_frm.doc.custom_task_finance_lines = doc.custom_task_finance_lines || [];
+					cur_frm._cgm_toolbar_fingerprint = null;
+					cur_frm._cgm_shipping_line_declarant_status_loaded = false;
+					cur_frm.refresh_field("custom_task_finance_lines");
+					const grid = cur_frm.fields_dict.custom_task_finance_lines?.grid;
+					if (grid && cgm_shipping.status_field?.paint_grid) {
+						cgm_shipping.status_field.paint_grid(
+							grid,
+							"verified",
+							(value) => cgm_shipping.status_field.tone_for_verified(value)
+						);
+					}
+					schedule_cgm_task_toolbar_buttons(cur_frm);
+					if (is_app_finance_application_step(cur_frm, undefined, "shipping_line")) {
+						load_app_finance_declarant_status(cur_frm, "shipping_line");
+					}
+					setTimeout(() => {
+						if (cur_frm) {
+							cur_frm._cgm_skip_finance_line_autosave = false;
+						}
+					}, 800);
+				});
+			}, 300);
 			return;
 		}
 		clearTimeout(cur_frm._cgm_status_reload_timer);
@@ -3555,7 +3825,45 @@ frappe.realtime.on("cgm_task_status_changed", (data) => {
 			) {
 				return;
 			}
+			// Skip reload when status already matches the event (no visible change).
+			if (data.status && cur_frm.doc.status === data.status) {
+				return;
+			}
+			// Prefer soft field sync over full reload when only status flipped —
+			// avoids TimestampMismatchError while an Attach save is in flight.
+			if (data.status === "Completed" || data.status === "Open") {
+				cur_frm._cgm_skip_finance_line_autosave = true;
+				frappe.db.get_doc("Task", data.task).then((doc) => {
+					if (!cur_frm || cur_frm.doc.name !== data.task || !doc) {
+						return;
+					}
+					if (doc.modified) {
+						cur_frm.doc.modified = doc.modified;
+					}
+					cur_frm.doc.status = doc.status;
+					cur_frm.doc.completed_by = doc.completed_by || null;
+					cur_frm.doc.completed_on = doc.completed_on || null;
+					cur_frm.doc.progress = doc.progress;
+					cur_frm.doc.custom_task_finance_lines = doc.custom_task_finance_lines || [];
+					cur_frm.refresh_field("status");
+					cur_frm.refresh_field("custom_task_finance_lines");
+					cgm_configure_task_status_fields(cur_frm);
+					cur_frm._cgm_toolbar_fingerprint = null;
+					cur_frm._cgm_shipping_line_declarant_status_loaded = false;
+					schedule_cgm_task_toolbar_buttons(cur_frm);
+					if (is_app_finance_application_step(cur_frm, undefined, "shipping_line")) {
+						load_app_finance_declarant_status(cur_frm, "shipping_line");
+					}
+					setTimeout(() => {
+						if (cur_frm) {
+							cur_frm._cgm_skip_finance_line_autosave = false;
+						}
+					}, 800);
+				});
+				return;
+			}
+			cur_frm._cgm_toolbar_fingerprint = null;
 			cur_frm.reload_doc();
-		}, 250);
+		}, 400);
 	}
 });

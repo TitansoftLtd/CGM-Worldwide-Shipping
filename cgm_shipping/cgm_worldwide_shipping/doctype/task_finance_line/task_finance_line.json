@@ -32,7 +32,7 @@
    "fieldtype": "Select",
    "hidden": 1,
    "label": "Line Type",
-   "options": "Invoice\nReceipt"
+   "options": "Invoice\nPOP\nReceipt"
   },
   {
    "default": "UCR",
