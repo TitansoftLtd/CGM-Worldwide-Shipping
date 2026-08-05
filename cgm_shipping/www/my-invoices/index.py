@@ -1,10 +1,9 @@
 # Copyright (c) 2026, Titansoft Limited and contributors
 # License: see license.txt
-"""Customer portal: list of the logged-in customer's sales invoices.
+"""Customer portal: sales invoices + Finance-shared clearance fee invoices.
 
-Visible at `/my-invoices`. Lists submitted Sales Invoices with status,
-total, outstanding balance and due date, plus a guarded PDF download and
-a headline total-outstanding figure. Mirrors the `/my-shipments` page.
+Visible at `/my-invoices`. Clients can download shared fee invoices, confirm
+"I have paid", then optionally attach a payment receipt for the Client will pay path.
 """
 
 from urllib.parse import quote
@@ -17,6 +16,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	customer_display_name,
 	customer_for_user,
 	get_customer_invoices,
+	get_customer_shared_fee_invoices,
 )
 
 no_cache = 1
@@ -47,12 +47,16 @@ def _build_context(context):
 
 	if not customer:
 		context.invoices = []
+		context.fee_invoices = []
 		context.no_customer = True
 		return
 
 	invoices = get_customer_invoices(customer)
+	fee_invoices = get_customer_shared_fee_invoices(customer)
 	context.invoices = invoices
+	context.fee_invoices = fee_invoices
+	context.pending_fees = [f for f in fee_invoices if not f.get("has_payment_proof")]
 	context.total_outstanding = sum(flt(i.outstanding_amount) for i in invoices)
-	# Currency for the headline figure - use the first invoice's, falling
-	# back to the company default. Mixed-currency portfolios are rare here.
-	context.currency = invoices[0].currency if invoices else frappe.defaults.get_global_default("currency")
+	context.currency = (
+		invoices[0].currency if invoices else frappe.defaults.get_global_default("currency")
+	)

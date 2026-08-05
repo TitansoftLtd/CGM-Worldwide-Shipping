@@ -228,8 +228,13 @@ def derive_version_status(row) -> str:
 	return ""
 
 
-def normalize_shipment_document_row(row, *, prefer_draft_for_legacy: bool = True) -> None:
-	"""Keep version_status and primary attachment in sync with draft/final slots."""
+def normalize_shipment_document_row(row, *, prefer_draft_for_legacy: bool = False) -> None:
+	"""Keep version_status and primary attachment in sync with draft/final slots.
+
+	``prefer_draft_for_legacy`` is only for in-memory form hydration of old rows that
+	still store the file solely in ``attachment``. On save it must stay False so that
+	Clearing draft/final is not undone by copying ``attachment`` back into draft.
+	"""
 	if not row or not has_document_versioning():
 		return
 
@@ -237,9 +242,23 @@ def normalize_shipment_document_row(row, *, prefer_draft_for_legacy: bool = True
 	draft = get_draft_attachment(row)
 	final = (row.get("final_attachment") or "").strip()
 
-	if legacy and not draft and not final and prefer_draft_for_legacy:
-		set_draft_attachment(row, legacy)
-		draft = legacy
+	if not draft and not final:
+		if prefer_draft_for_legacy and legacy:
+			set_draft_attachment(row, legacy)
+			draft = legacy
+		else:
+			# Cleared (or never attached): keep slots empty and drop the legacy mirror.
+			if legacy:
+				row.attachment = ""
+			if row.meta.has_field("version_status"):
+				row.version_status = ""
+			if row.meta.has_field("status") and row.get("status") not in (None, "", "Missing"):
+				row.status = "Missing"
+			if row.meta.has_field("verified_by"):
+				row.verified_by = None
+			if row.meta.has_field("verified_on"):
+				row.verified_on = None
+			return
 
 	if row.meta.has_field("version_status"):
 		row.version_status = derive_version_status(row)
@@ -255,7 +274,7 @@ def resolve_document_row_slots(row) -> tuple[str, str]:
 	"""Return (draft_url, final_url) from a Shipment Document row."""
 	if not row:
 		return "", ""
-	normalize_shipment_document_row(row)
+	normalize_shipment_document_row(row, prefer_draft_for_legacy=True)
 	draft = get_draft_attachment(row)
 	final = (row.get("final_attachment") or "").strip()
 	legacy = (row.get("attachment") or "").strip()
@@ -457,16 +476,18 @@ def migrate_legacy_shipment_document_attachments() -> None:
 			)
 
 
-def normalize_shipment_documents_table(rows) -> None:
+def normalize_shipment_documents_table(rows, *, prefer_draft_for_legacy: bool = False) -> None:
 	for row in rows or []:
-		normalize_shipment_document_row(row)
+		normalize_shipment_document_row(row, prefer_draft_for_legacy=prefer_draft_for_legacy)
 
 
 def prepare_shipment_documents_for_form(doc, table_field: str) -> None:
 	"""Hydrate legacy attachment into draft/final slots for form display (in-memory)."""
 	if not doc.meta.has_field(table_field):
 		return
-	normalize_shipment_documents_table(doc.get(table_field))
+	normalize_shipment_documents_table(
+		doc.get(table_field), prefer_draft_for_legacy=True
+	)
 
 
 def on_opportunity_onload(doc, _method=None) -> None:

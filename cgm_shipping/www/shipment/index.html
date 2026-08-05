@@ -71,6 +71,13 @@
   </div>
   {% endif %}
 
+  {% if fee_invoices %}
+  {% set banner_title = _("Fees to pay") %}
+  {% set banner_intro = _("Finance shared invoice(s) for this shipment. Download, pay, then confirm with") %}
+  {% set project_fallback = shipment.name %}
+  {% include "templates/includes/portal_fee_invoices.html" %}
+  {% endif %}
+
   <!-- PROGRESS -->
   <div class="cp-card">
     <div class="cp-card-body">
@@ -243,6 +250,9 @@
 {% endif %}
 
 </div>
+{% if not error_title and fee_invoices %}
+{% include "templates/includes/portal_fee_receipt_script.html" %}
+{% endif %}
 {% if inspection and inspection.show_banner %}
 <script>
 frappe.ready(function () {
