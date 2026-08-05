@@ -96,10 +96,9 @@ doctype_js = {
 		"public/js/opportunity.js",
 	],
 	"Quotation": "public/js/quotation.js",
-	"Sales Order": "public/js/quotation.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
 	"Supplier": "public/js/supplier.js",
-	# Doctype folder *.js is auto-inlined; only list extra scripts here (not the doctype file itself).
+	"Leave Application": "public/js/leave_application.js",
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -216,8 +215,6 @@ override_doctype_class = {
     ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
     "Quotation":
     "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
-    "Sales Order":
-    "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMSalesOrder",
 }
 
 # Document Events
@@ -247,7 +244,7 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
 	},
 	"Sales Invoice": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice_workflow",
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
 	},
@@ -278,6 +275,9 @@ doc_events = {
 	},
 	"Item": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
+	},
+	"Leave Application": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 	},
 	"Opportunity": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.documents.on_opportunity_onload",
@@ -362,9 +362,6 @@ scheduler_events = {
 # ------------------------------
 #
 override_whitelisted_methods = {
-    "erpnext.selling.doctype.quotation.quotation.make_sales_order":
-    ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_order"
-     ),
     "erpnext.selling.doctype.quotation.quotation.make_sales_invoice":
     ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_invoice"
      ),

@@ -1,8 +1,41 @@
-const CGM_SI_APPROVED_STATE = "Approved";
+const CGM_SI_DRAFT_STATE = "Draft";
+const CGM_SI_PENDING_STATE = "Pending Approval";
+const CGM_SI_REJECTED_STATE = "Rejected";
+const CGM_SI_ACTION_SUBMIT_FOR_REVIEW = "Submit for Review";
+const CGM_SI_REJECTION_REASON_FIELD = "custom_rejection_reason";
+
+/** Sales Invoice field -> Project field for project-linked shipment refs. */
+const CGM_SI_PROJECT_FETCH_MAP = {
+	custom_cgm_reference_no: "custom_cgm_ref_no",
+	custom_client_reference_no: "custom_client_refrence_no",
+	custom_country_of_origin: "custom_country_of_origin",
+};
 
 frappe.ui.form.on("Sales Invoice", {
+	setup(frm) {
+		cgm_toggle_sales_invoice_project_name(frm);
+		cgm_toggle_sales_invoice_project_fetched_fields(frm);
+	},
+
+	onload(frm) {
+		cgm_toggle_sales_invoice_project_name(frm);
+		cgm_toggle_sales_invoice_project_fetched_fields(frm);
+	},
+
 	refresh(frm) {
+		cgm_toggle_sales_invoice_project_name(frm);
+		cgm_toggle_sales_invoice_project_fetched_fields(frm);
 		cgm_configure_sales_invoice_workflow_ui(frm);
+	},
+
+	project(frm) {
+		cgm_toggle_sales_invoice_project_name(frm);
+		cgm_sync_sales_invoice_fields_from_project(frm);
+		cgm_toggle_sales_invoice_project_fetched_fields(frm);
+	},
+
+	validate(frm) {
+		cgm_validate_sales_invoice_project_reference(frm);
 	},
 
 	after_workflow_action(frm) {
@@ -15,6 +48,71 @@ frappe.ui.form.on("Sales Invoice", {
 		}
 	},
 });
+
+function cgm_get_sales_invoice_project_fetch_fields() {
+	return Object.keys(CGM_SI_PROJECT_FETCH_MAP);
+}
+
+function cgm_toggle_sales_invoice_project_name(frm) {
+	if (!frm.fields_dict.custom_project_name) {
+		return;
+	}
+
+	const has_project = Boolean(cstr(frm.doc.project).trim());
+	// Use display toggle only. Do not set df.hidden or depends_on —
+	// those conflict and can leave the field stuck visible.
+	frm.toggle_display("custom_project_name", !has_project);
+}
+
+function cgm_toggle_sales_invoice_project_fetched_fields(frm) {
+	const has_project = Boolean(cstr(frm.doc.project).trim());
+	for (const fieldname of cgm_get_sales_invoice_project_fetch_fields()) {
+		if (!frm.fields_dict[fieldname]) {
+			continue;
+		}
+		frm.set_df_property(fieldname, "read_only", has_project ? 1 : 0);
+	}
+}
+
+function cgm_sync_sales_invoice_fields_from_project(frm) {
+	const project = cstr(frm.doc.project).trim();
+	const si_fields = cgm_get_sales_invoice_project_fetch_fields();
+
+	if (!project) {
+		for (const fieldname of si_fields) {
+			if (frm.fields_dict[fieldname]) {
+				frm.set_value(fieldname, "");
+			}
+		}
+		return;
+	}
+
+	const project_fields = Object.values(CGM_SI_PROJECT_FETCH_MAP);
+	frappe.db.get_value("Project", project, project_fields).then((r) => {
+		if (!r || !r.message) {
+			return;
+		}
+		// Guard against stale async response after project was cleared/changed.
+		if (cstr(frm.doc.project).trim() !== project) {
+			return;
+		}
+		const values = r.message;
+		for (const [si_field, project_field] of Object.entries(CGM_SI_PROJECT_FETCH_MAP)) {
+			if (!frm.fields_dict[si_field]) {
+				continue;
+			}
+			frm.set_value(si_field, values[project_field] || "");
+		}
+	});
+}
+
+function cgm_validate_sales_invoice_project_reference(frm) {
+	const project = cstr(frm.doc.project).trim();
+	const project_name = cstr(frm.doc.custom_project_name).trim();
+	if (!project && !project_name) {
+		frappe.throw(__("Please select a Project or enter a Project Name."));
+	}
+}
 
 function cgm_set_sales_invoice_workflow_alert(frm, text, tone = "brand") {
 	frm.dashboard.clear_headline();
@@ -54,44 +152,29 @@ function cgm_configure_sales_invoice_workflow_ui(frm) {
 		return;
 	}
 
-	const state = frm.doc.workflow_state || "Draft";
-	const can_submit =
-		state === CGM_SI_APPROVED_STATE &&
-		!frm.doc.__islocal &&
-		!frm.is_dirty() &&
-		cint(frm.perm?.[0]?.submit);
+	const state = frm.doc.workflow_state || CGM_SI_DRAFT_STATE;
+	frm.page.set_primary_action(__("Save"), () => frm.save());
 
-	if (can_submit) {
-		frm.page.set_primary_action(__("Submit"), () => frm.savesubmit());
-	} else {
-		frm.page.set_primary_action(__("Save"), () => frm.save());
-	}
-
-	if (state === "Pending Finance Approval") {
+	if (state === CGM_SI_PENDING_STATE) {
 		cgm_set_sales_invoice_workflow_alert(
 			frm,
-			__("Waiting for Finance to approve or reject this invoice."),
+			__("Waiting for this invoice to be approved or rejected. Approval will submit the invoice."),
 			"info"
 		);
-	} else if (state === "Rejected") {
+	} else if (state === CGM_SI_REJECTED_STATE) {
 		cgm_set_sales_invoice_workflow_alert(
 			frm,
 			__(
-				"Finance rejected this invoice. Update it, use Return to Draft, or submit again for approval."
+				"This invoice was rejected. Update it, then use Actions → {0}.",
+				[CGM_SI_ACTION_SUBMIT_FOR_REVIEW]
 			),
 			"danger"
 		);
-	} else if (state === "Draft") {
+	} else if (state === CGM_SI_DRAFT_STATE) {
 		cgm_set_sales_invoice_workflow_alert(
 			frm,
-			__("Save the invoice, then use Actions → Submit for Finance Approval."),
+			__("Save the invoice, then use Actions → {0}.", [CGM_SI_ACTION_SUBMIT_FOR_REVIEW]),
 			"brand"
-		);
-	} else if (state === CGM_SI_APPROVED_STATE) {
-		cgm_set_sales_invoice_workflow_alert(
-			frm,
-			__("Finance approved this invoice. You can now Submit it."),
-			"success"
 		);
 	} else {
 		frm.dashboard.clear_headline();
@@ -145,12 +228,36 @@ function cgm_open_sales_invoice_payment_entry(frm) {
 }
 
 function cgm_prompt_sales_invoice_rejection_reason(frm) {
-	return new Promise((resolve) => {
+	// Workflow freezes the page before before_workflow_action runs.
+	// Unfreeze so the rejection dialog is readable.
+	frappe.dom.unfreeze();
+
+	return new Promise((resolve, reject) => {
+		let settled = false;
+		const settle = (fn) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			fn();
+		};
+
 		const dialog = new frappe.ui.Dialog({
 			title: __("Reject Sales Invoice"),
 			fields: [
 				{
-					fieldname: "custom_finance_rejection_reason",
+					fieldtype: "HTML",
+					fieldname: "rejection_help",
+					options: `<p class="text-muted" style="margin:0 0 8px;">
+						${frappe.utils.escape_html(
+							__(
+								"Enter why this invoice is being rejected. The creator can update it and send it for review again."
+							)
+						)}
+					</p>`,
+				},
+				{
+					fieldname: CGM_SI_REJECTION_REASON_FIELD,
 					fieldtype: "Small Text",
 					label: __("Rejection Reason"),
 					reqd: 1,
@@ -158,14 +265,62 @@ function cgm_prompt_sales_invoice_rejection_reason(frm) {
 			],
 			primary_action_label: __("Reject"),
 			primary_action(values) {
-				frm.set_value(
-					"custom_finance_rejection_reason",
-					values.custom_finance_rejection_reason
-				);
-				dialog.hide();
-				resolve();
+				const reason = (values[CGM_SI_REJECTION_REASON_FIELD] || "").trim();
+				if (!reason) {
+					frappe.msgprint(__("Please enter a Rejection Reason."));
+					return;
+				}
+
+				// Persist before workflow apply — set_value alone is lost on reload.
+				frappe.call({
+					method: "frappe.client.set_value",
+					args: {
+						doctype: frm.doctype,
+						name: frm.doc.name,
+						fieldname: CGM_SI_REJECTION_REASON_FIELD,
+						value: reason,
+					},
+					callback(r) {
+						if (r.exc) {
+							settle(() => {
+								frm.selected_workflow_action = null;
+								reject();
+							});
+							return;
+						}
+						frm.doc[CGM_SI_REJECTION_REASON_FIELD] = reason;
+						settle(() => {
+							dialog.hide();
+							frappe.dom.freeze();
+							resolve();
+						});
+					},
+					error() {
+						settle(() => {
+							frm.selected_workflow_action = null;
+							reject();
+						});
+					},
+				});
+			},
+			secondary_action_label: __("Cancel"),
+			secondary_action() {
+				settle(() => {
+					frm.selected_workflow_action = null;
+					dialog.hide();
+					reject();
+				});
 			},
 		});
+
+		dialog.$wrapper.on("hidden.bs.modal", () => {
+			settle(() => {
+				frm.selected_workflow_action = null;
+				reject();
+			});
+		});
+
 		dialog.show();
+		dialog.get_primary_btn().addClass("btn-danger");
 	});
 }

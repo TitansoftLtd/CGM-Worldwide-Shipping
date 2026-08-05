@@ -1,22 +1,29 @@
-"""Install CGM Sales Invoice finance approval workflow (idempotent)."""
+"""Install CGM Sales Invoice approval workflow (idempotent).
+
+Approval only: Draft → Submit for Review → Pending Approval → Approve / Reject.
+Approve submits the invoice (docstatus=1). ERPNext then owns payment Status
+(Unpaid / Partly Paid / Paid / Overdue). Workflow never overrides that Status.
+"""
 
 from __future__ import annotations
 
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	SALES_INVOICE_WORKFLOW_ACTION_APPROVE,
+	SALES_INVOICE_WORKFLOW_ACTION_REJECT,
+	SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW,
 	SALES_INVOICE_WORKFLOW_NAME,
 	SALES_INVOICE_WORKFLOW_STATE_APPROVED,
 	SALES_INVOICE_WORKFLOW_STATE_DRAFT,
-	SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
+	SALES_INVOICE_WORKFLOW_STATE_PENDING,
 	SALES_INVOICE_WORKFLOW_STATE_REJECTED,
 )
 
 WORKFLOW_ACTIONS = (
-	"Submit for Finance Approval",
-	"Approve",
-	"Reject",
-	"Return to Draft",
+	SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW,
+	SALES_INVOICE_WORKFLOW_ACTION_APPROVE,
+	SALES_INVOICE_WORKFLOW_ACTION_REJECT,
 )
 
 
@@ -43,7 +50,9 @@ def _sync_workflow() -> None:
 	workflow.workflow_state_field = "workflow_state"
 	workflow.is_active = 1
 	workflow.send_email_alert = 0
-	workflow.override_status = 0
+	# Field label is "Don't Override Status" — checked so list/form indicators
+	# keep ERPNext Sales Invoice.status (Unpaid/Paid/Overdue), not workflow_state.
+	workflow.override_status = 1
 
 	workflow.states = []
 	for row in _workflow_states():
@@ -65,14 +74,15 @@ def _workflow_states() -> list[dict]:
 			"is_optional_state": 0,
 		},
 		{
-			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
+			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
 			"doc_status": "0",
 			"allow_edit": "Accounts Manager",
 			"is_optional_state": 0,
 		},
 		{
+			# Approve must submit so ERPNext can set Unpaid/Paid/Overdue.
 			"state": SALES_INVOICE_WORKFLOW_STATE_APPROVED,
-			"doc_status": "0",
+			"doc_status": "1",
 			"allow_edit": "Accounts User",
 			"is_optional_state": 0,
 		},
@@ -89,71 +99,57 @@ def _workflow_transitions() -> list[dict]:
 	return [
 		{
 			"state": SALES_INVOICE_WORKFLOW_STATE_DRAFT,
-			"action": "Submit for Finance Approval",
-			"next_state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
+			"action": SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW,
+			"next_state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
 			"allowed": "Accounts User",
 			"allow_self_approval": 1,
 		},
 		{
 			"state": SALES_INVOICE_WORKFLOW_STATE_DRAFT,
-			"action": "Submit for Finance Approval",
-			"next_state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
+			"action": SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW,
+			"next_state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
 			"allowed": "Accounts Manager",
 			"allow_self_approval": 1,
 		},
 		{
-			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
-			"action": "Approve",
+			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
+			"action": SALES_INVOICE_WORKFLOW_ACTION_APPROVE,
 			"next_state": SALES_INVOICE_WORKFLOW_STATE_APPROVED,
 			"allowed": "Accounts Manager",
 			"allow_self_approval": 0,
 		},
 		{
-			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
-			"action": "Approve",
+			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
+			"action": SALES_INVOICE_WORKFLOW_ACTION_APPROVE,
 			"next_state": SALES_INVOICE_WORKFLOW_STATE_APPROVED,
 			"allowed": "Accounts User",
 			"allow_self_approval": 0,
 		},
 		{
-			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
-			"action": "Reject",
+			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
+			"action": SALES_INVOICE_WORKFLOW_ACTION_REJECT,
 			"next_state": SALES_INVOICE_WORKFLOW_STATE_REJECTED,
 			"allowed": "Accounts Manager",
 			"allow_self_approval": 0,
 		},
 		{
-			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
-			"action": "Reject",
+			"state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
+			"action": SALES_INVOICE_WORKFLOW_ACTION_REJECT,
 			"next_state": SALES_INVOICE_WORKFLOW_STATE_REJECTED,
 			"allowed": "Accounts User",
 			"allow_self_approval": 0,
 		},
 		{
 			"state": SALES_INVOICE_WORKFLOW_STATE_REJECTED,
-			"action": "Return to Draft",
-			"next_state": SALES_INVOICE_WORKFLOW_STATE_DRAFT,
+			"action": SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW,
+			"next_state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
 			"allowed": "Accounts User",
 			"allow_self_approval": 1,
 		},
 		{
 			"state": SALES_INVOICE_WORKFLOW_STATE_REJECTED,
-			"action": "Return to Draft",
-			"next_state": SALES_INVOICE_WORKFLOW_STATE_DRAFT,
-			"allowed": "Accounts Manager",
-			"allow_self_approval": 1,
-		},
-		{
-			"state": SALES_INVOICE_WORKFLOW_STATE_REJECTED,
-			"action": "Submit for Finance Approval",
-			"next_state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
-			"allowed": "Accounts User",
-			"allow_self_approval": 1,
-		},
-		{
-			"state": SALES_INVOICE_WORKFLOW_STATE_REJECTED,
-			"action": "Submit for Finance Approval",
-			"next_state": SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
+			"action": SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW,
+			"next_state": SALES_INVOICE_WORKFLOW_STATE_PENDING,
 			"allowed": "Accounts Manager",
 			"allow_self_approval": 1,
 		},
@@ -163,7 +159,7 @@ def _workflow_transitions() -> list[dict]:
 def _ensure_workflow_states() -> None:
 	for state_name in (
 		SALES_INVOICE_WORKFLOW_STATE_DRAFT,
-		SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE,
+		SALES_INVOICE_WORKFLOW_STATE_PENDING,
 		SALES_INVOICE_WORKFLOW_STATE_APPROVED,
 		SALES_INVOICE_WORKFLOW_STATE_REJECTED,
 	):
@@ -211,4 +207,24 @@ def _backfill_existing_sales_invoices() -> None:
 			AND (workflow_state IS NULL OR workflow_state = '')
 		""",
 		SALES_INVOICE_WORKFLOW_STATE_DRAFT,
+	)
+	# Migrate any leftover pre-rename pending state values.
+	frappe.db.sql(
+		"""
+		UPDATE `tabSales Invoice`
+		SET workflow_state = %s
+		WHERE workflow_state = %s
+		""",
+		(SALES_INVOICE_WORKFLOW_STATE_PENDING, "Pending Finance Approval"),
+	)
+	# Pre-fix invoices that were "Approved" but never submitted must re-enter
+	# review so Approve can submit them (Approved now maps to docstatus=1).
+	frappe.db.sql(
+		"""
+		UPDATE `tabSales Invoice`
+		SET workflow_state = %s
+		WHERE docstatus = 0
+			AND workflow_state = %s
+		""",
+		(SALES_INVOICE_WORKFLOW_STATE_PENDING, SALES_INVOICE_WORKFLOW_STATE_APPROVED),
 	)

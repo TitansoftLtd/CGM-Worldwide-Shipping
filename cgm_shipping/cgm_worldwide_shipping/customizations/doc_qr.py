@@ -52,16 +52,6 @@ def _build_payload(doc):
 			f"Status: {doc.status}"
 		)
 
-	if dt == "Sales Order":
-		return (
-			f"CGM Sales Order\n"
-			f"No: {doc.name}\n"
-			f"Customer: {doc.customer_name}\n"
-			f"Date: {doc.transaction_date}\n"
-			f"Total: {doc.grand_total} {doc.currency}\n"
-			f"Status: {doc.status}"
-		)
-
 	if dt == "Delivery Note":
 		return (
 			f"CGM Delivery Note\n"

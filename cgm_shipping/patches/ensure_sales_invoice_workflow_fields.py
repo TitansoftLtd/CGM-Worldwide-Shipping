@@ -1,9 +1,14 @@
-"""Custom fields for Sales Invoice finance approval workflow."""
+"""Custom fields for Sales Invoice approval workflow."""
 
 from __future__ import annotations
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	SALES_INVOICE_APPROVED_BY_FIELD,
+	SALES_INVOICE_REJECTED_BY_FIELD,
+	SALES_INVOICE_REJECTION_REASON_FIELD,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _upsert_cf
 
 MODULE = "CGM Worldwide Shipping"
@@ -32,8 +37,8 @@ def _ensure_sales_invoice_workflow_fields() -> None:
 	_upsert_cf(
 		"Sales Invoice",
 		{
-			"fieldname": "custom_finance_approved_by",
-			"label": "Finance Approved By",
+			"fieldname": SALES_INVOICE_APPROVED_BY_FIELD,
+			"label": "Approved By",
 			"fieldtype": "Link",
 			"options": "User",
 			"insert_after": "workflow_state",
@@ -44,21 +49,23 @@ def _ensure_sales_invoice_workflow_fields() -> None:
 	_upsert_cf(
 		"Sales Invoice",
 		{
-			"fieldname": "custom_finance_rejected_by",
-			"label": "Finance Rejected By",
+			"fieldname": SALES_INVOICE_REJECTED_BY_FIELD,
+			"label": "Rejected By",
 			"fieldtype": "Link",
 			"options": "User",
-			"insert_after": "custom_finance_approved_by",
+			"insert_after": SALES_INVOICE_APPROVED_BY_FIELD,
 			"read_only": 1,
+			"depends_on": "eval:doc.workflow_state=='Rejected'",
 		},
 	)
 	_upsert_cf(
 		"Sales Invoice",
 		{
-			"fieldname": "custom_finance_rejection_reason",
-			"label": "Finance Rejection Reason",
+			"fieldname": SALES_INVOICE_REJECTION_REASON_FIELD,
+			"label": "Rejection Reason",
 			"fieldtype": "Small Text",
-			"insert_after": "custom_finance_rejected_by",
+			"insert_after": SALES_INVOICE_REJECTED_BY_FIELD,
 			"depends_on": "eval:doc.workflow_state=='Rejected'",
+			"read_only": 1,
 		},
 	)

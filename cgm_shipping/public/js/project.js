@@ -568,106 +568,145 @@ function ensure_project_form_layout_visible(frm) {
 	}
 }
 
-function render_shipment_progress_chart(frm) {
+// Collapse the burst of `refresh` events a single form load produces. Tasks and
+// container trackers change independently of the Project, so this is a short
+// staleness window rather than a revision key — anything that knows the data moved
+// (realtime event, post-action callbacks) passes force to bypass it.
+const TRACKING_DASHBOARD_MIN_INTERVAL_MS = 5000;
+
+function render_shipment_progress_chart(frm, { force = false } = {}) {
 	const field = frm.get_field("custom_shipment_progress_html");
 	if (!field || !frm.doc.name) {
 		return;
 	}
 	frappe.require("/assets/cgm_shipping/css/project_tracking.css");
+
+	const now = new Date().getTime();
+	if (frm.__cgm_tracking_project !== frm.doc.name) {
+		frm.__cgm_tracking_project = frm.doc.name;
+		frm.__cgm_tracking_fetched_at = 0;
+		frm.__cgm_tracking_payload = null;
+	}
+
+	const skip_fetch =
+		!force &&
+		(frm.__cgm_tracking_inflight ||
+			now - (frm.__cgm_tracking_fetched_at || 0) < TRACKING_DASHBOARD_MIN_INTERVAL_MS);
+	if (skip_fetch) {
+		// A form refresh repaints the HTML field, so always redraw — just from the
+		// payload we already have instead of hitting the server again.
+		if (frm.__cgm_tracking_payload) {
+			paint_shipment_progress_chart(frm, field, frm.__cgm_tracking_payload);
+		}
+		return;
+	}
+
+	frm.__cgm_tracking_inflight = true;
+	frm.__cgm_tracking_fetched_at = now;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.project_layout.get_project_tracking_dashboard",
 		args: { project: frm.doc.name },
+		always() {
+			frm.__cgm_tracking_inflight = false;
+		},
 		callback(r) {
 			if (r.exc || !r.message) {
+				// Allow an immediate retry rather than sitting on a failed render.
+				frm.__cgm_tracking_fetched_at = 0;
 				return;
 			}
-			const d = r.message;
-			const steps = (d.states || [])
-				.map((state, i) => {
-					let cls = "cgm-progress-step";
-					if (i < d.current_index) cls += " is-done";
-					if (state === d.current_status) cls += " is-current";
-					return `<span class="${cls}" title="${frappe.utils.escape_html(state)}">${frappe.utils.escape_html(state)}</span>`;
-				})
-				.join("");
-			let taskLine = `<div class="cgm-progress-meta">${__(
-				"No clearance tasks on this project yet."
-			)}</div>`;
-			if (d.tasks_total > 0) {
-				let nextHint = __("Next open task");
-				if (d.first_open_task) {
-					nextHint = `Task ${d.first_open_task.seq}: ${d.first_open_task.subject}`;
-				}
-				const taskLabel = d.task_progress_label || __("workflow tasks");
-				taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> ${frappe.utils.escape_html(taskLabel)} completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
-			}
-			const berth = frappe.utils.escape_html(d.berth_phase || "Before Vessel Berth");
-			const wfNote =
-				d.workflow_behind && d.workflow_status
-					? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
-					: d.workflow_ahead && d.workflow_status
-						? ` · ${__("Workflow field was ahead — correcting to tasks")}`
-						: "";
-			const legendLine = d.uses_clearance_states
-				? `<div class="cgm-tracking-legend">
-						${__("Berth phase")}: <b>${berth}</b> ·
-						${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
-					</div>`
-				: `<div class="cgm-tracking-legend">
-						${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current
-					</div>`;
-			let inspectionLine = "";
-			if (d.inspection_notification_status === "Notified" && d.inspection_notified_on) {
-				inspectionLine = `<div class="cgm-inspection-notified">${__(
-					"Client notified for inspection"
-				)} · ${frappe.datetime.str_to_user(d.inspection_notified_on)}</div>`;
-			} else if (d.inspection_notification_status === "Confirmed" && d.inspection_confirmed_on) {
-				const by = d.inspection_confirmed_by
-					? ` · ${frappe.utils.escape_html(d.inspection_confirmed_by)}`
-					: "";
-				inspectionLine = `<div class="cgm-inspection-confirmed">${__(
-					"Inspection confirmed"
-				)} · ${frappe.datetime.str_to_user(d.inspection_confirmed_on)}${by}</div>`;
-			}
-			let portArrivalLine = "";
-			if (d.port_arrival_confirmed && d.port_arrival_confirmed_on) {
-				const by = d.port_arrival_confirmed_by
-					? ` · ${frappe.utils.escape_html(d.port_arrival_confirmed_by)}`
-					: "";
-				portArrivalLine = `<div class="cgm-port-arrival-confirmed">${__(
-					"Port arrival confirmed"
-				)} · ${frappe.datetime.str_to_user(d.port_arrival_confirmed_on)}${by}</div>`;
-			}
-			field.$wrapper
-				.closest('[data-fieldname="custom_shipment_progress_html"]')
-				.addClass("cgm-shipment-progress-field");
-			field.$wrapper.html(`
-				<div class="cgm-shipment-progress">
-					<h4>${__("Shipment clearance workflow")}</h4>
-					<div class="cgm-progress-steps">${steps}</div>
-					${taskLine}
-					${inspectionLine}
-					${portArrivalLine}
-					${legendLine}
-				</div>
-			`);
-			if (
-				d.uses_clearance_states &&
-				d.current_status &&
-				frm.doc.custom_shipment_status !== d.current_status
-			) {
-				// Keep UI in sync without dirtying — unsaved docs hide workflow Actions.
-				frm.set_value("custom_shipment_status", d.current_status, false, true);
-				const indicator = project_clearance_indicator({
-					custom_shipment_status: d.current_status,
-				});
-				if (indicator) {
-					frm.page.set_indicator(indicator[0], indicator[1]);
-				}
-			}
-			render_container_tracking_table(frm, d);
+			frm.__cgm_tracking_payload = r.message;
+			paint_shipment_progress_chart(frm, field, r.message);
 		},
 	});
+}
+
+function paint_shipment_progress_chart(frm, field, payload) {
+	const d = payload;
+	const steps = (d.states || [])
+		.map((state, i) => {
+			let cls = "cgm-progress-step";
+			if (i < d.current_index) cls += " is-done";
+			if (state === d.current_status) cls += " is-current";
+			return `<span class="${cls}" title="${frappe.utils.escape_html(state)}">${frappe.utils.escape_html(state)}</span>`;
+		})
+		.join("");
+	let taskLine = `<div class="cgm-progress-meta">${__(
+		"No clearance tasks on this project yet."
+	)}</div>`;
+	if (d.tasks_total > 0) {
+		let nextHint = __("Next open task");
+		if (d.first_open_task) {
+			nextHint = `Task ${d.first_open_task.seq}: ${d.first_open_task.subject}`;
+		}
+		const taskLabel = d.task_progress_label || __("workflow tasks");
+		taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> ${frappe.utils.escape_html(taskLabel)} completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
+	}
+	const berth = frappe.utils.escape_html(d.berth_phase || "Before Vessel Berth");
+	const wfNote =
+		d.workflow_behind && d.workflow_status
+			? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
+			: d.workflow_ahead && d.workflow_status
+				? ` · ${__("Workflow field was ahead — correcting to tasks")}`
+				: "";
+	const legendLine = d.uses_clearance_states
+		? `<div class="cgm-tracking-legend">
+				${__("Berth phase")}: <b>${berth}</b> ·
+				${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
+			</div>`
+		: `<div class="cgm-tracking-legend">
+				${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current
+			</div>`;
+	let inspectionLine = "";
+	if (d.inspection_notification_status === "Notified" && d.inspection_notified_on) {
+		inspectionLine = `<div class="cgm-inspection-notified">${__(
+			"Client notified for inspection"
+		)} · ${frappe.datetime.str_to_user(d.inspection_notified_on)}</div>`;
+	} else if (d.inspection_notification_status === "Confirmed" && d.inspection_confirmed_on) {
+		const by = d.inspection_confirmed_by
+			? ` · ${frappe.utils.escape_html(d.inspection_confirmed_by)}`
+			: "";
+		inspectionLine = `<div class="cgm-inspection-confirmed">${__(
+			"Inspection confirmed"
+		)} · ${frappe.datetime.str_to_user(d.inspection_confirmed_on)}${by}</div>`;
+	}
+	let portArrivalLine = "";
+	if (d.port_arrival_confirmed && d.port_arrival_confirmed_on) {
+		const by = d.port_arrival_confirmed_by
+			? ` · ${frappe.utils.escape_html(d.port_arrival_confirmed_by)}`
+			: "";
+		portArrivalLine = `<div class="cgm-port-arrival-confirmed">${__(
+			"Port arrival confirmed"
+		)} · ${frappe.datetime.str_to_user(d.port_arrival_confirmed_on)}${by}</div>`;
+	}
+	field.$wrapper
+		.closest('[data-fieldname="custom_shipment_progress_html"]')
+		.addClass("cgm-shipment-progress-field");
+	field.$wrapper.html(`
+		<div class="cgm-shipment-progress">
+			<h4>${__("Shipment clearance workflow")}</h4>
+			<div class="cgm-progress-steps">${steps}</div>
+			${taskLine}
+			${inspectionLine}
+			${portArrivalLine}
+			${legendLine}
+		</div>
+	`);
+	if (
+		d.uses_clearance_states &&
+		d.current_status &&
+		frm.doc.custom_shipment_status !== d.current_status
+	) {
+		// Keep UI in sync without dirtying — unsaved docs hide workflow Actions.
+		frm.set_value("custom_shipment_status", d.current_status, false, true);
+		const indicator = project_clearance_indicator({
+			custom_shipment_status: d.current_status,
+		});
+		if (indicator) {
+			frm.page.set_indicator(indicator[0], indicator[1]);
+		}
+	}
+	render_container_tracking_table(frm, d);
 }
 
 function format_currency_amount(value, currency) {
@@ -1123,7 +1162,7 @@ function render_container_tracking_table(frm, dashboard) {
 				"cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.resync_project_container_child_rows",
 			args: { project: frm.doc.name },
 			callback() {
-				render_shipment_progress_chart(frm);
+				render_shipment_progress_chart(frm, { force: true });
 				frappe.show_alert({ message: __("Container statuses resynced"), indicator: "green" });
 			},
 		});
@@ -1227,7 +1266,7 @@ function post_container_charge_accrual(frm) {
 					}
 					frm._cgm_costing_display_loaded = null;
 					refresh_project_costing_currency_display(frm);
-					render_shipment_progress_chart(frm);
+					render_shipment_progress_chart(frm, { force: true });
 				},
 			});
 		}
@@ -1258,7 +1297,7 @@ frappe.realtime.on("cgm_project_tracking_refresh", (data) => {
 		cur_frm.doc.name === data.project &&
 		!cur_frm.is_new()
 	) {
-		render_shipment_progress_chart(cur_frm);
+		render_shipment_progress_chart(cur_frm, { force: true });
 	}
 });
 
