@@ -2389,9 +2389,17 @@ def create_journal_payment_from_task(
 
 PAYMENT_ITEM_ITEM_CANDIDATES: dict[str, tuple[str, ...]] = {
 	"UCR": ("UCR Fee", "UCR", "CGM-UCR", "Import UCR"),
-	"ENTRY_SLIP": ("Entry Slip", "Entry Slip Fee", "Customs Entry Slip", "ENTRY_SLIP"),
+	# Prefer the live Item "Customs Entry" / "Entry" used on sea import.
+	"ENTRY_SLIP": (
+		"Customs Entry",
+		"Entry",
+		"Entry Slip",
+		"Entry Slip Fee",
+		"Customs Entry Slip",
+		"ENTRY_SLIP",
+	),
 	"Shipping Line": ("Shipping Line Charge", "Shipping Line", "Line Charges"),
-	"Customs Entry": ("Customs Entry", "Entry Payment", "Customs Entry Charge"),
+	"Customs Entry": ("Customs Entry", "Entry", "Entry Payment", "Customs Entry Charge"),
 	"KPA": ("KPA Invoice", "KPA", "KPA Charge"),
 }
 
