@@ -7,6 +7,7 @@
  "field_order": [
   "permit_type",
   "origin",
+  "is_amendment",
   "payment_invoice",
   "invoice_uploaded_on",
   "invoice_uploaded_by",
@@ -48,6 +49,15 @@
    "in_list_view": 1,
    "label": "Origin",
    "options": "\nLocal\nForeign"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.origin != \"Foreign\"",
+   "description": "Additional invoice for this permit type after a prior payment (keeps the first paid row).",
+   "fieldname": "is_amendment",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Amendment"
   },
   {
    "columns": 3,

@@ -86,6 +86,11 @@ def application_finance_ready_to_complete(task, profile: ApplicationFinanceProfi
 
 
 def sync_application_payment_hooks(task, profile: ApplicationFinanceProfile) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		sync_invoice_line_client_paid_to_task_field,
+	)
+
+	sync_invoice_line_client_paid_to_task_field(task, profile)
 	sync_application_finance_lines_to_idf_record(task, profile)
 	seq = task_sequence(task)
 	if is_application_finance_task(seq, profile) and not frappe.flags.get(
@@ -390,7 +395,8 @@ def validate_finance_application_payment_task(
 		task_has_recorded_payment,
 	)
 
-	# Client-pays: verify invoice; receipt optional; skip JE / Purchase Invoice.
+	# Client-pays: verify invoice; skip JE / Purchase Invoice.
+	# Receipt remains required when profile.requires_receipt_verification (not Entry).
 	if task_client_paid_directly(task):
 		app_task = get_application_task(task.project, profile) if task.project else None
 		if app_task and not invoice_submitted(app_task, profile):
@@ -427,6 +433,19 @@ def validate_finance_application_payment_task(
 			frappe.throw(
 				"Client-pays path is not complete: verify the invoice first."
 			)
+		if profile.requires_receipt_verification:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+				receipt_verified,
+			)
+
+			if not receipt_attached_for_payment_workflow(task, profile):
+				frappe.throw(
+					f"Attach the <b>{profile.receipt_label}</b> before completing this task."
+				)
+			if not receipt_verified(task, profile):
+				frappe.throw(
+					f"Finance must verify the <b>{profile.receipt_label}</b> before completion."
+				)
 		return
 
 	app_task = get_application_task(task.project, profile) if task.project else None
@@ -452,6 +471,19 @@ def validate_finance_application_payment_task(
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
 		if int(pe_status or 0) != 1:
 			frappe.throw("Payment Entry must be <b>submitted</b> before completing this task.")
+	if profile.requires_receipt_verification:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			receipt_verified,
+		)
+
+		if not receipt_attached_for_payment_workflow(task, profile):
+			frappe.throw(
+				f"Attach the <b>{profile.receipt_label}</b> after payment before completing this task."
+			)
+		if not receipt_verified(task, profile):
+			frappe.throw(
+				f"Finance must verify the <b>{profile.receipt_label}</b> before completion."
+			)
 	if profile.requires_pop:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			pop_attached,
@@ -657,18 +689,24 @@ def get_application_declarant_workflow_status(
 	fin_inv = get_invoice_line(finance_task, profile) if finance_task else None
 	fin_rec = get_receipt_line(finance_task, profile) if finance_task else None
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		certificate_uploaded,
+		finance_has_client_paid_invoice_line,
+		pop_attached,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		task_client_paid_directly,
 		task_has_recorded_payment,
 	)
 
-	client_paid = bool(finance_task and task_client_paid_directly(finance_task))
-	payment_made = bool(finance_task and task_has_recorded_payment(finance_task))
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		certificate_uploaded,
-		pop_attached,
+	client_paid = bool(
+		finance_task
+		and (
+			task_client_paid_directly(finance_task)
+			or finance_has_client_paid_invoice_line(finance_task, profile)
+		)
 	)
+	payment_made = bool(finance_task and task_has_recorded_payment(finance_task))
 
 	return {
 		"finance_task": finance_name,
@@ -740,7 +778,10 @@ def ensure_application_finance_task_completed(
 
 @frappe.whitelist()
 def verify_application_finance_line(
-	task_name: str, profile_key: str, line_type: str = "Invoice"
+	task_name: str,
+	profile_key: str,
+	line_type: str = "Invoice",
+	finance_line_name: str | None = None,
 ) -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	profile = _profile_by_key(profile_key)
@@ -767,7 +808,26 @@ def verify_application_finance_line(
 		task.reload()
 		seed_application_finance_lines(task, profile)
 	if line_type == "Invoice":
-		line = get_invoice_line(task, profile)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			get_invoice_lines,
+		)
+
+		line = None
+		if finance_line_name:
+			for row in get_invoice_lines(task, profile):
+				if row.name == finance_line_name:
+					line = row
+					break
+			if not line:
+				frappe.throw("Invoice line not found on this task.")
+		else:
+			# Prefer first unverified attached invoice (covers amendments).
+			for row in get_invoice_lines(task, profile):
+				if row.get("attachment") and not cint(row.get("verified")):
+					line = row
+					break
+			if not line:
+				line = get_invoice_line(task, profile)
 		label_fallback = profile.invoice_label
 	elif line_type == "POP":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
@@ -806,7 +866,14 @@ def verify_application_finance_line(
 	line.verified_by = frappe.session.user
 	line.verified_on = now_datetime()
 	if line_type == "Invoice" and profile.application_invoice_verified_field:
-		if task.meta.has_field(profile.application_invoice_verified_field):
+		# Task-level flag means all attached invoices verified (legacy readers).
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			all_invoice_lines_verified,
+		)
+
+		if task.meta.has_field(profile.application_invoice_verified_field) and all_invoice_lines_verified(
+			task, profile
+		):
 			setattr(task, profile.application_invoice_verified_field, 1)
 	elif line_type == "Receipt" and profile.application_receipt_verified_field:
 		if task.meta.has_field(profile.application_receipt_verified_field):
@@ -838,27 +905,34 @@ def _profile_by_key(profile_key: str) -> ApplicationFinanceProfile:
 
 
 def application_finance_needs_work(finance_task, profile: ApplicationFinanceProfile) -> bool:
-	"""True when Finance still needs verify/pay (and Shipping Line POP/receipt verify)."""
+	"""True when Finance still needs verify/pay on any invoice line (and Shipping Line POP/receipt)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		all_invoice_lines_settled,
+		all_invoice_lines_verified,
+		get_invoice_lines,
 		pop_attached,
 		receipt_verified,
+		unpaid_invoice_lines,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		task_client_paid_directly,
 		task_has_recorded_payment,
 	)
 
-	if task_client_paid_directly(finance_task) and not profile.requires_pop:
+	rows = [r for r in get_invoice_lines(finance_task, profile) if r.get("attachment")]
+	if not rows:
 		return False
-	inv = get_invoice_line(finance_task, profile)
-	if not inv or not inv.get("attachment"):
-		return False
-	inv_ok = bool(inv.get("verified"))
-	if profile.application_invoice_verified_field:
-		inv_ok = inv_ok or bool(finance_task.get(profile.application_invoice_verified_field))
-	if not inv_ok:
+	if not all_invoice_lines_verified(finance_task, profile):
 		return True
-	if not task_client_paid_directly(finance_task) and not task_has_recorded_payment(finance_task):
+	if unpaid_invoice_lines(finance_task, profile):
+		return True
+	# Legacy single-invoice path.
+	if len(rows) == 1 and not cint(rows[0].get("is_amendment")):
+		if not task_client_paid_directly(finance_task) and not task_has_recorded_payment(
+			finance_task
+		):
+			return True
+	elif not all_invoice_lines_settled(finance_task, profile):
 		return True
 	if profile.requires_pop:
 		if not pop_attached(finance_task, profile):
@@ -867,16 +941,36 @@ def application_finance_needs_work(finance_task, profile: ApplicationFinanceProf
 			return True
 		if not receipt_verified(finance_task, profile):
 			return True
+	if profile.requires_receipt_verification:
+		if not receipt_attached_for_payment_workflow(finance_task, profile):
+			return True
+		if not receipt_verified(finance_task, profile):
+			return True
 	return False
 
 
 def application_invoice_fingerprint(task, profile: ApplicationFinanceProfile) -> tuple:
-	inv = get_invoice_line(task, profile)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		get_invoice_lines,
+	)
+
+	inv_rows = get_invoice_lines(task, profile)
 	rec = get_receipt_line(task, profile)
 	pop = get_pop_line(task, profile) if profile.requires_pop else None
+	invoice_fp = tuple(
+		(
+			(r.get("attachment") or ""),
+			cint(r.get("verified")),
+			cint(r.get("is_amendment")),
+			(r.get("journal_entry") or ""),
+			cint(r.get("client_paid_directly")),
+			cint(r.get("client_reported_paid")),
+			(r.get("line_label") or ""),
+		)
+		for r in inv_rows
+	)
 	return (
-		(inv.get("attachment") if inv else "") or "",
-		cint(inv.get("verified") if inv else 0),
+		invoice_fp,
 		(pop.get("attachment") if pop else "") or "",
 		(rec.get("attachment") if rec else "") or "",
 		cint(rec.get("verified") if rec else 0),
@@ -986,45 +1080,269 @@ def reopen_application_task_for_more_documents(task_name: str) -> dict:
 	}
 
 
-def _sync_changed_application_invoice_onto_finance(
-	application_task, finance_task, profile: ApplicationFinanceProfile
-) -> bool:
-	"""Push a new/changed application invoice onto finance and clear verify when attachment changes."""
+@frappe.whitelist()
+def add_amendment_invoice_line(task_name: str, attachment: str | None = None) -> dict:
+	"""Declarant: append an additional Invoice line (does not replace the first paid invoice).
+
+	Creates matching rows on the application and finance tasks, reopens both if needed,
+	and notifies Finance.
+	"""
+	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
+	task = frappe.get_doc("Task", task_name)
+	profile = profile_for_task(task)
+	if not profile or not is_application_create_task(task, profile):
+		frappe.throw("Add amendment invoice is only for application tasks paired with Finance.")
+	if not task.project:
+		frappe.throw("Task must be linked to a Project.")
+
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		_ensure_line,
-		_sync_purchase_item_from_application_line,
 		LINE_INVOICE,
+		TASK_FINANCE_FIELD,
+		get_invoice_lines,
+		task_has_finance_table,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		task_has_recorded_payment,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_purchase_item_for_payment_item,
+		task_finance_line_has_item_code,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import _reopen_sea_task
 
-	app_line = get_invoice_line(application_task, profile)
-	if not app_line or not app_line.get("attachment"):
-		return False
+	if not task_has_finance_table(task):
+		frappe.throw("This task has no finance lines table.")
 
-	fin_line = _ensure_line(finance_task, LINE_INVOICE, profile)
-	changed = False
-	attachment_changed = bool(
-		app_line.attachment and fin_line.attachment != app_line.attachment
-	)
-	if attachment_changed:
-		fin_line.attachment = app_line.attachment
-		fin_line.verified = 0
-		changed = True
+	existing = get_invoice_lines(task, profile)
+	amend_no = sum(1 for r in existing if cint(r.get("is_amendment"))) + 1
+	label = f"{profile.invoice_label} (amendment {amend_no})"
+	payload = {
+		"line_label": label,
+		"line_type": LINE_INVOICE,
+		"payment_item": profile.payment_item,
+		"is_amendment": 1,
+		"verified": 0,
+	}
+	if attachment:
+		payload["attachment"] = attachment
+	if task_finance_line_has_item_code():
+		payload["item_code"] = get_purchase_item_for_payment_item(
+			profile.payment_item, task.company
+		)
+
+	frappe.flags.cgm_reopening_task = True
+	reopened: list[str] = []
+	try:
+		if task.status == "Completed" and _reopen_sea_task(
+			task, reason=f"Additional {profile.invoice_label} amendment added"
+		):
+			reopened.append(task.name)
+			task.reload()
+
+		# Clear legacy task-level verified so Create cannot auto-complete again
+		# until Finance verifies the new amendment line.
+		if profile.application_invoice_verified_field and task.meta.has_field(
+			profile.application_invoice_verified_field
+		):
+			setattr(task, profile.application_invoice_verified_field, 0)
+		if profile.application_submitted_field and task.meta.has_field(
+			profile.application_submitted_field
+		):
+			setattr(task, profile.application_submitted_field, 0)
+
+		task.append(TASK_FINANCE_FIELD, payload)
+		task.flags.ignore_links = True
+		try:
+			task.save(ignore_permissions=True)
+		finally:
+			task.flags.ignore_links = False
+		task.reload()
+		# Defend against any hook that flipped status back during save.
+		if task.status == "Completed":
+			_reopen_sea_task(
+				task, reason=f"Keep open for {profile.invoice_label} amendment"
+			)
+			task.reload()
+
+		finance_name = get_application_finance_task(task.project, profile)
+		if not finance_name:
+			frappe.throw("Paired Finance task not found.")
+		finance_task = frappe.get_doc("Task", finance_name)
+		if finance_task.status == "Completed" and _reopen_sea_task(
+			finance_task,
+			reason=f"Additional {profile.invoice_label} amendment needs verify and pay",
+		):
+			reopened.append(finance_name)
+			finance_task.reload()
+
 		if profile.application_invoice_verified_field and finance_task.meta.has_field(
 			profile.application_invoice_verified_field
 		):
 			setattr(finance_task, profile.application_invoice_verified_field, 0)
-	# Only retarget purchase item before payment is recorded.
-	if not task_has_recorded_payment(finance_task):
-		if _sync_purchase_item_from_application_line(
-			fin_line, app_line, finance_task, profile.payment_item
-		):
+
+		# Single sync path (match-by-label/attachment) — never blind-append, or
+		# auto_submit/copy can create a duplicate Finance amendment row.
+		_sync_changed_application_invoice_onto_finance(task, finance_task, profile)
+		finance_task.reload()
+		_dedupe_finance_invoice_lines(finance_task, profile)
+		finance_task.reload()
+		if finance_task.status == "Completed":
+			_reopen_sea_task(
+				finance_task,
+				reason=f"Keep Finance open for {profile.invoice_label} amendment",
+			)
+			if finance_name not in reopened:
+				reopened.append(finance_name)
+
+		notify_result = send_notification(
+			profile.notification_invoice,
+			finance_task,
+			audience=FINANCE_AUDIENCE,
+		)
+	finally:
+		frappe.flags.cgm_reopening_task = False
+
+	return {
+		"task": task_name,
+		"finance_task": finance_name,
+		"line_label": label,
+		"reopened": reopened,
+		**notify_result,
+		"message": workflow_notify_message(
+			(
+				f"Added <b>{label}</b>"
+				+ (f" with attachment" if attachment else "")
+				+ f". Finance will verify and pay on <b>{finance_name}</b>."
+			),
+			notify_result,
+			audience=FINANCE_AUDIENCE,
+		),
+	}
+
+
+def _dedupe_finance_invoice_lines(finance_task, profile: ApplicationFinanceProfile) -> bool:
+	"""Remove duplicate amendment Invoice rows (same label + attachment).
+
+	Keeps the strongest row (verified, then journal entry, then earliest idx).
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		get_invoice_lines,
+	)
+
+	rows = list(get_invoice_lines(finance_task, profile))
+	groups: dict[tuple, list] = {}
+	for row in rows:
+		if not cint(row.get("is_amendment")):
+			continue
+		key = (
+			(row.get("line_label") or "").strip(),
+			_normalize_attachment_path(row.get("attachment")),
+		)
+		if not key[1]:
+			continue
+		groups.setdefault(key, []).append(row)
+
+	removed = False
+	for group in groups.values():
+		if len(group) < 2:
+			continue
+		group.sort(
+			key=lambda r: (
+				cint(r.get("verified")),
+				1 if r.get("journal_entry") else 0,
+				-(cint(r.get("idx")) or 0),
+			),
+			reverse=True,
+		)
+		for row in group[1:]:
+			finance_task.remove(row)
+			removed = True
+	if not removed:
+		return False
+	finance_task.flags.ignore_links = True
+	try:
+		finance_task.save(ignore_permissions=True)
+	finally:
+		finance_task.flags.ignore_links = False
+	return True
+
+
+def _normalize_attachment_path(value) -> str:
+	path = (value or "").strip()
+	if not path:
+		return ""
+	# Strip host /private vs /files differences for matching.
+	for prefix in ("/private/files/", "/files/"):
+		if prefix in path:
+			return path.split(prefix, 1)[-1].split("?", 1)[0]
+	return path.rsplit("/", 1)[-1].split("?", 1)[0]
+
+
+def _sync_changed_application_invoice_onto_finance(
+	application_task, finance_task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""Push new/changed application Invoice lines onto finance (primary + amendments)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		LINE_INVOICE,
+		TASK_FINANCE_FIELD,
+		_match_finance_invoice_line,
+		_sync_purchase_item_from_application_line,
+		get_invoice_lines,
+	)
+
+	app_lines = [r for r in get_invoice_lines(application_task, profile) if r.get("attachment")]
+	if not app_lines:
+		return False
+
+	fin_lines = list(get_invoice_lines(finance_task, profile))
+	used: set[int] = set()
+	changed = False
+
+	for app_line in app_lines:
+		idx, fin_line = _match_finance_invoice_line(fin_lines, app_line, used)
+		if fin_line is None:
+			payload = {
+				"line_label": app_line.get("line_label") or profile.invoice_label,
+				"line_type": LINE_INVOICE,
+				"payment_item": profile.payment_item,
+				"is_amendment": cint(app_line.get("is_amendment")),
+				"attachment": app_line.attachment,
+				"verified": 0,
+			}
+			if app_line.get("item_code"):
+				payload["item_code"] = app_line.item_code
+			finance_task.append(TASK_FINANCE_FIELD, payload)
+			fin_lines = list(get_invoice_lines(finance_task, profile))
 			changed = True
-	if not fin_line.attachment and app_line.attachment:
-		fin_line.attachment = app_line.attachment
-		changed = True
+			continue
+
+		used.add(idx)
+		attachment_changed = bool(
+			app_line.attachment and fin_line.attachment != app_line.attachment
+		)
+		if attachment_changed:
+			fin_line.attachment = app_line.attachment
+			fin_line.verified = 0
+			changed = True
+			if (
+				not cint(app_line.get("is_amendment"))
+				and profile.application_invoice_verified_field
+				and finance_task.meta.has_field(profile.application_invoice_verified_field)
+			):
+				setattr(finance_task, profile.application_invoice_verified_field, 0)
+		elif not fin_line.attachment and app_line.attachment:
+			fin_line.attachment = app_line.attachment
+			changed = True
+
+		# Align labels for amendments.
+		if app_line.get("line_label") and fin_line.get("line_label") != app_line.line_label:
+			fin_line.line_label = app_line.line_label
+			changed = True
+
+		# Purchase item: only before this line has a JE.
+		if not fin_line.get("journal_entry"):
+			if _sync_purchase_item_from_application_line(
+				fin_line, app_line, finance_task, profile.payment_item
+			):
+				changed = True
+
 	if not changed:
 		return False
 
@@ -1148,7 +1466,14 @@ def process_application_workflow_on_update(task) -> None:
 	if is_application_task(seq, profile) and task.status != "Cancelled":
 		# Even when Completed: new/changed invoices reopen Finance for verify + pay.
 		handle_additional_application_work_on_application(task, profile)
-		if task.status not in ("Completed", "Cancelled"):
+		# Skip first-invoice auto-submit while reopening / adding an amendment —
+		# those flows sync + notify themselves (avoids duplicate Finance invoice rows).
+		if task.status not in ("Completed", "Cancelled") and not frappe.flags.get(
+			"cgm_reopening_task"
+		):
+			# Same amendment can land twice via attach + sync; keep the strongest row.
+			if _dedupe_finance_invoice_lines(task, profile):
+				task.reload()
 			auto_submit_application_invoice_to_finance_if_needed(task, profile)
 			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 				sync_application_purchase_item_to_finance,
@@ -1172,6 +1497,9 @@ def process_application_workflow_on_update(task) -> None:
 		if task.status == "Completed":
 			reopen_application_finance_if_pending_work(task, profile)
 		else:
+			# Clean accidental duplicate amendment rows from earlier double-sync.
+			if _dedupe_finance_invoice_lines(task, profile):
+				task.reload()
 			completed = try_auto_complete_application_finance_task(task, profile)
 			if completed:
 				close_application_when_finance_done(task, profile)
@@ -1189,6 +1517,19 @@ def process_application_workflow_onload(task) -> bool:
 		if db_status and task.status != db_status:
 			task.reload()
 	seq = task_sequence(task)
+	if is_application_finance_task(seq, profile):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			backfill_legacy_payment_onto_invoice_lines,
+		)
+
+		if backfill_legacy_payment_onto_invoice_lines(task, profile):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+				sync_finance_line_payments_to_application_task,
+			)
+
+			sync_finance_line_payments_to_application_task(task, profile)
+			task.reload()
+			changed = True
 	if is_application_task(seq, profile):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			ensure_finance_pop_visible_on_application_task,
@@ -1206,11 +1547,16 @@ def process_application_workflow_onload(task) -> bool:
 		# Bump modified so a stale Desk form still holding status=Completed cannot
 		# save over this heal. Publish soft_sync so an already-open form updates
 		# status + modified without a full reload loop.
-		if (
-			profile.requires_pop
-			and task.status == "Completed"
-			and not can_complete_application_task(task, profile)
-		):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			application_has_pending_amendment_invoice,
+		)
+
+		needs_reopen = task.status == "Completed" and (
+			not can_complete_application_task(task, profile)
+			or application_has_pending_amendment_invoice(task, profile)
+			or (profile.requires_pop and not can_complete_application_task(task, profile))
+		)
+		if needs_reopen:
 			frappe.flags.cgm_reopening_task = True
 			try:
 				values = {
@@ -1251,6 +1597,10 @@ def process_application_workflow_onload(task) -> bool:
 		# Completed + unfinished invoice work → reopen so Make Payment shows.
 		result = reopen_application_finance_if_pending_work(task, profile)
 		if result and result.get("reopened"):
+			task.reload()
+			changed = True
+		# Remove accidental duplicate amendment rows (same label + attachment).
+		if _dedupe_finance_invoice_lines(task, profile):
 			task.reload()
 			changed = True
 		if task.status not in ("Completed", "Cancelled") and task.project:

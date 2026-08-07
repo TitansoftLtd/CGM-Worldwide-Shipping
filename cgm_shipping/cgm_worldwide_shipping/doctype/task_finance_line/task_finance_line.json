@@ -8,11 +8,14 @@
   "line_label",
   "line_type",
   "payment_item",
+  "is_amendment",
   "item_code",
   "attachment",
   "verified",
   "verified_by",
   "verified_on",
+  "journal_entry",
+  "client_paid_directly",
   "shared_with_client",
   "shared_by",
   "shared_on",
@@ -41,6 +44,15 @@
    "hidden": 1,
    "label": "Payment Item",
    "options": "UCR\nENTRY_SLIP\nShipping Line\nCustoms Entry\nKPA"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.line_type==\"Invoice\"",
+   "description": "Additional invoice after a prior payment (not a replacement of the first invoice).",
+   "fieldname": "is_amendment",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Amendment"
   },
   {
    "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line. Editable on the application/finance task so the correct purchase item can be selected.",
@@ -76,6 +88,25 @@
    "fieldtype": "Datetime",
    "label": "Verified On",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.line_type==\"Invoice\"",
+   "description": "Journal Entry that paid this invoice line (company-pays path).",
+   "fieldname": "journal_entry",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Journal Entry",
+   "options": "Journal Entry",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.line_type==\"Invoice\"",
+   "description": "Client will settle this invoice line (Share Invoice / portal). Distinct from company JE payment.",
+   "fieldname": "client_paid_directly",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Client will pay"
   },
   {
    "default": "0",

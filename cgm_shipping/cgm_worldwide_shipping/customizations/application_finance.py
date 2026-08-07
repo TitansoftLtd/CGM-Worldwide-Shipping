@@ -64,6 +64,9 @@ class ApplicationFinanceProfile:
 	pop_label: str = ""
 	# Create Entry: complete when Finance verifies the invoice (ENTRY doc optional).
 	complete_on_invoice_verified: bool = False
+	# After company payment, Finance must attach + verify the receipt before complete.
+	# Only Entry Slip keeps the receipt optional (set requires_receipt_verification=False).
+	requires_receipt_verification: bool = True
 
 
 APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
@@ -103,6 +106,7 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		sync_to_idf_record=False,
 		legacy_certificate_codes=frozenset({"ENTRY"}),
 		complete_on_invoice_verified=True,
+		requires_receipt_verification=False,
 	),
 	"Shipping Line Application": ApplicationFinanceProfile(
 		key="shipping_line",
@@ -255,12 +259,332 @@ def task_has_finance_table(task) -> bool:
 
 
 def _find_line(task, line_type: str, profile: ApplicationFinanceProfile):
+	"""First matching line (primary Invoice / POP / Receipt — not amendment invoices)."""
 	if not task:
 		return None
+	for row in task.get(TASK_FINANCE_FIELD) or []:
+		if row.line_type != line_type:
+			continue
+		if (row.payment_item or profile.payment_item) != profile.payment_item:
+			continue
+		# Prefer the original (non-amendment) invoice when looking up "the" invoice line.
+		if line_type == LINE_INVOICE and cint(row.get("is_amendment")):
+			continue
+		return row
+	# Fallback: any matching invoice (legacy single-row or only amendments present).
 	for row in task.get(TASK_FINANCE_FIELD) or []:
 		if row.line_type == line_type and (row.payment_item or profile.payment_item) == profile.payment_item:
 			return row
 	return None
+
+
+def get_invoice_lines(task, profile: ApplicationFinanceProfile) -> list:
+	"""All Invoice rows for this profile (primary + amendments), in table order."""
+	if not task:
+		return []
+	return [
+		row
+		for row in (task.get(TASK_FINANCE_FIELD) or [])
+		if row.line_type == LINE_INVOICE
+		and (row.payment_item or profile.payment_item) == profile.payment_item
+	]
+
+
+def invoice_line_is_settled(row, task=None) -> bool:
+	"""True when this Invoice line has company JE or client-pays settlement."""
+	if not row or not row.get("attachment"):
+		return False
+	if not cint(row.get("verified")):
+		# Task-level verified flag may still cover the primary line.
+		return False
+	if row.get("journal_entry") and frappe.db.exists("Journal Entry", row.journal_entry):
+		return True
+	if cint(row.get("client_paid_directly")) or cint(row.get("client_reported_paid")):
+		return True
+	# Legacy: primary (non-amendment) line settled via task-level JE / client-paid.
+	if task and not cint(row.get("is_amendment")):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			task_client_paid_directly,
+		)
+
+		task_je = task.get("custom_journal_entry")
+		if task_je and frappe.db.exists("Journal Entry", task_je):
+			# Do not treat an amendment's JE (also stored on the task) as primary settlement.
+			on_other_line = any(
+				(r.get("journal_entry") or "") == task_je
+				and cint(r.get("is_amendment"))
+				for r in (task.get(TASK_FINANCE_FIELD) or [])
+				if (r.line_type or LINE_INVOICE) == LINE_INVOICE
+			)
+			if not on_other_line:
+				return True
+		if task_client_paid_directly(task):
+			return True
+	return False
+
+
+def finance_has_client_paid_invoice_line(task, profile: ApplicationFinanceProfile) -> bool:
+	"""True when any attached Invoice row is marked Client will pay."""
+	return any(
+		cint(r.get("client_paid_directly"))
+		for r in get_invoice_lines(task, profile)
+		if r.get("attachment")
+	)
+
+
+def _finance_line_client_paid_changed(task, row) -> bool:
+	"""True when Client will pay was toggled on this Invoice row."""
+	prev = task.get_doc_before_save()
+	if not prev:
+		return bool(cint(row.get("client_paid_directly")))
+	prev_row = None
+	if row.name:
+		prev_row = next(
+			(
+				r
+				for r in (prev.get(TASK_FINANCE_FIELD) or [])
+				if r.name == row.name
+			),
+			None,
+		)
+	if not prev_row:
+		# Match by amendment + label when the row is new this save.
+		for r in prev.get(TASK_FINANCE_FIELD) or []:
+			if (r.line_type or LINE_INVOICE) != LINE_INVOICE:
+				continue
+			if cint(r.get("is_amendment")) != cint(row.get("is_amendment")):
+				continue
+			if (r.get("line_label") or "") == (row.get("line_label") or ""):
+				prev_row = r
+				break
+	if not prev_row:
+		return bool(cint(row.get("client_paid_directly")))
+	return cint(row.get("client_paid_directly")) != cint(prev_row.get("client_paid_directly"))
+
+
+def _journal_entries_linked_to_finance_task(task_name: str) -> list[str]:
+	"""Existing JEs created from this finance task (oldest first). Does not alter JEs."""
+	names: list[str] = []
+	seen: set[str] = set()
+
+	def _add(name: str | None):
+		name = (name or "").strip()
+		if not name or name in seen:
+			return
+		if not frappe.db.exists("Journal Entry", name):
+			return
+		seen.add(name)
+		names.append(name)
+
+	# Prefer source-task link (covers primary + amendment payments in creation order).
+	if frappe.get_meta("Journal Entry").has_field("custom_cgm_source_task"):
+		for row in frappe.get_all(
+			"Journal Entry",
+			filters={"custom_cgm_source_task": task_name, "docstatus": ("<", 2)},
+			fields=["name"],
+			order_by="creation asc",
+		):
+			_add(row.name)
+
+	# Tasks that only stored JE on custom_journal_entry (no source-task stamp).
+	task_je = frappe.db.get_value("Task", task_name, "custom_journal_entry")
+	_add(task_je)
+	return names
+
+
+def backfill_legacy_payment_onto_invoice_lines(
+	task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""Move existing task-level / source-task JEs onto Invoice finance lines.
+
+	Does not create, cancel, or edit Journal Entry documents — only fills empty
+	``journal_entry`` / ``client_paid_directly`` on Task Finance Line rows.
+
+	Assignment order: primary invoice first, then amendments by idx. Oldest
+	linked JE goes to the first unsettled line so a later amendment payment does
+	not steal the primary row's JE.
+	"""
+	if not task_has_finance_table(task) or not task.name:
+		return False
+	if not is_application_finance_task(int(task.get("custom_sequence_no") or 0), profile):
+		return False
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CLIENT_PAID_FIELD,
+	)
+
+	changed = False
+	lines = [
+		r
+		for r in get_invoice_lines(task, profile)
+		if r.get("attachment") and r.name
+	]
+	if not lines:
+		return False
+
+	# Primary first, then amendments in table order.
+	lines.sort(key=lambda r: (cint(r.get("is_amendment")), cint(r.get("idx") or 0)))
+
+	used_jes: set[str] = {
+		(r.get("journal_entry") or "").strip()
+		for r in lines
+		if (r.get("journal_entry") or "").strip()
+	}
+	candidates = [
+		je for je in _journal_entries_linked_to_finance_task(task.name) if je not in used_jes
+	]
+
+	for row in lines:
+		if (row.get("journal_entry") or "").strip():
+			continue
+		if cint(row.get("client_paid_directly")) or cint(row.get("client_reported_paid")):
+			continue
+		if not candidates:
+			break
+		je = candidates.pop(0)
+		frappe.db.set_value(
+			"Task Finance Line",
+			row.name,
+			"journal_entry",
+			je,
+			update_modified=False,
+		)
+		row.journal_entry = je
+		used_jes.add(je)
+		changed = True
+
+	# Task-level Client will pay → primary line only when no line already has it.
+	primary = next((r for r in lines if not cint(r.get("is_amendment"))), None)
+	if (
+		primary
+		and primary.name
+		and cint(task.get(CLIENT_PAID_FIELD))
+		and not cint(primary.get("client_paid_directly"))
+		and not any(cint(r.get("client_paid_directly")) for r in lines)
+		and not (primary.get("journal_entry") or "").strip()
+	):
+		frappe.db.set_value(
+			"Task Finance Line",
+			primary.name,
+			"client_paid_directly",
+			1,
+			update_modified=False,
+		)
+		primary.client_paid_directly = 1
+		changed = True
+
+	if changed:
+		frappe.clear_document_cache("Task", task.name)
+	return changed
+
+
+def sync_finance_line_payments_to_application_task(
+	finance_task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""Copy line JE / client-pays from Finance onto matching Create/Application rows."""
+	if not finance_task.project:
+		return False
+	app_name = get_application_task(finance_task.project, profile)
+	if not app_name:
+		return False
+	app = frappe.get_doc("Task", app_name)
+	if not task_has_finance_table(app):
+		return False
+
+	fin_lines = list(get_invoice_lines(finance_task, profile))
+	app_lines = list(get_invoice_lines(app, profile))
+	used: set[int] = set()
+	changed = False
+	for fin in fin_lines:
+		if not fin.get("attachment"):
+			continue
+		if not (fin.get("journal_entry") or cint(fin.get("client_paid_directly"))):
+			continue
+		idx, app_line = _match_finance_invoice_line(app_lines, fin, used)
+		if app_line is None or not app_line.name:
+			continue
+		used.add(idx)
+		updates = {}
+		if fin.get("journal_entry") and app_line.get("journal_entry") != fin.journal_entry:
+			updates["journal_entry"] = fin.journal_entry
+		if cint(fin.get("client_paid_directly")) and not cint(app_line.get("client_paid_directly")):
+			updates["client_paid_directly"] = 1
+		if updates:
+			frappe.db.set_value(
+				"Task Finance Line", app_line.name, updates, update_modified=False
+			)
+			changed = True
+	if changed:
+		frappe.clear_document_cache("Task", app_name)
+	return changed
+
+
+def sync_invoice_line_client_paid_to_task_field(
+	task, profile: ApplicationFinanceProfile
+) -> None:
+	"""Keep hidden task-level Client will pay in sync for legacy application mirrors.
+
+	Set when every attached invoice is client-pays, or the sole primary invoice is.
+	Clear when mixed (company JE on one line, client-pays on another).
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CLIENT_PAID_BY_FIELD,
+		CLIENT_PAID_FIELD,
+		CLIENT_PAID_ON_FIELD,
+	)
+
+	if not task.meta.has_field(CLIENT_PAID_FIELD):
+		return
+	if not is_application_finance_task(int(task.get("custom_sequence_no") or 0), profile):
+		return
+
+	lines = [r for r in get_invoice_lines(task, profile) if r.get("attachment")]
+	if not lines:
+		return
+	all_client = all(cint(r.get("client_paid_directly")) for r in lines)
+	sole_primary = (
+		len(lines) == 1
+		and not cint(lines[0].get("is_amendment"))
+		and cint(lines[0].get("client_paid_directly"))
+	)
+	want = 1 if (all_client or sole_primary) else 0
+	have = 1 if task.get(CLIENT_PAID_FIELD) else 0
+	if want == have:
+		return
+	task.set(CLIENT_PAID_FIELD, want)
+	if want:
+		if task.meta.has_field(CLIENT_PAID_BY_FIELD) and not task.get(CLIENT_PAID_BY_FIELD):
+			task.set(CLIENT_PAID_BY_FIELD, frappe.session.user)
+		if task.meta.has_field(CLIENT_PAID_ON_FIELD) and not task.get(CLIENT_PAID_ON_FIELD):
+			task.set(CLIENT_PAID_ON_FIELD, now_datetime())
+	else:
+		for field in (CLIENT_PAID_BY_FIELD, CLIENT_PAID_ON_FIELD):
+			if task.meta.has_field(field):
+				task.set(field, None)
+
+
+def unpaid_invoice_lines(task, profile: ApplicationFinanceProfile) -> list:
+	return [r for r in get_invoice_lines(task, profile) if r.get("attachment") and not invoice_line_is_settled(r, task)]
+
+
+def all_invoice_lines_settled(task, profile: ApplicationFinanceProfile) -> bool:
+	rows = [r for r in get_invoice_lines(task, profile) if r.get("attachment")]
+	if not rows:
+		return False
+	return all(invoice_line_is_settled(r, task) for r in rows)
+
+
+def all_invoice_lines_verified(task, profile: ApplicationFinanceProfile) -> bool:
+	rows = [r for r in get_invoice_lines(task, profile) if r.get("attachment")]
+	if not rows:
+		return False
+	ok = all(cint(r.get("verified")) for r in rows)
+	if ok:
+		return True
+	# Legacy primary-only verified field on task.
+	if len(rows) == 1 and profile.application_invoice_verified_field:
+		return bool(task.get(profile.application_invoice_verified_field))
+	return False
 
 
 def get_invoice_line(task, profile: ApplicationFinanceProfile):
@@ -293,8 +617,7 @@ def receipt_attached(task, profile: ApplicationFinanceProfile) -> bool:
 
 
 def invoice_verified(task, profile: ApplicationFinanceProfile) -> bool:
-	line = get_invoice_line(task, profile)
-	return bool(line and line.verified)
+	return all_invoice_lines_verified(task, profile)
 
 
 def receipt_verified(task, profile: ApplicationFinanceProfile) -> bool:
@@ -542,13 +865,88 @@ def copy_application_invoice_to_finance_task(
 	if not app_name:
 		return
 	app = frappe.get_doc("Task", app_name)
-	app_line = get_invoice_line(app, profile)
-	if not app_line or not app_line.attachment:
+	app_lines = get_invoice_lines(app, profile)
+	if not app_lines:
 		return
-	fin_line = _ensure_line(finance_task, LINE_INVOICE, profile)
-	if not fin_line.attachment:
-		fin_line.attachment = app_line.attachment
-	_sync_purchase_item_from_application_line(fin_line, app_line, finance_task, profile.payment_item)
+	fin_lines = list(get_invoice_lines(finance_task, profile))
+	used: set[int] = set()
+	for app_line in app_lines:
+		if not app_line.get("attachment") and not cint(app_line.get("is_amendment")):
+			# Still ensure primary row exists.
+			fin_line = _ensure_line(finance_task, LINE_INVOICE, profile)
+			_sync_purchase_item_from_application_line(
+				fin_line, app_line, finance_task, profile.payment_item
+			)
+			continue
+		idx, fin_line = _match_finance_invoice_line(fin_lines, app_line, used)
+		if fin_line is None:
+			payload = {
+				"line_label": app_line.get("line_label") or profile.invoice_label,
+				"line_type": LINE_INVOICE,
+				"payment_item": profile.payment_item,
+				"is_amendment": cint(app_line.get("is_amendment")),
+				"attachment": app_line.get("attachment"),
+				"verified": 0,
+			}
+			if app_line.get("item_code"):
+				payload["item_code"] = app_line.item_code
+			finance_task.append(TASK_FINANCE_FIELD, payload)
+			fin_lines = list(get_invoice_lines(finance_task, profile))
+			continue
+		used.add(idx)
+		if app_line.attachment and not fin_line.attachment:
+			fin_line.attachment = app_line.attachment
+		if not fin_line.get("journal_entry"):
+			_sync_purchase_item_from_application_line(
+				fin_line, app_line, finance_task, profile.payment_item
+			)
+
+
+def _match_finance_invoice_line(fin_lines: list, app_line, used: set[int]):
+	"""Match application → finance Invoice rows (primary + amendments)."""
+	is_amend = cint(app_line.get("is_amendment"))
+	attachment = _normalize_attach((app_line.get("attachment") or "").strip())
+	label = (app_line.get("line_label") or "").strip()
+
+	if attachment:
+		for i, fin in enumerate(fin_lines):
+			if i in used:
+				continue
+			if cint(fin.get("is_amendment")) != is_amend:
+				continue
+			if _normalize_attach(fin.get("attachment") or "") == attachment:
+				return i, fin
+
+	if not is_amend:
+		for i, fin in enumerate(fin_lines):
+			if i in used:
+				continue
+			if not cint(fin.get("is_amendment")):
+				return i, fin
+		return None, None
+
+	# Amendment: same label, or empty attachment slot.
+	for i, fin in enumerate(fin_lines):
+		if i in used or not cint(fin.get("is_amendment")):
+			continue
+		if label and (fin.get("line_label") or "").strip() == label:
+			return i, fin
+	for i, fin in enumerate(fin_lines):
+		if i in used or not cint(fin.get("is_amendment")):
+			continue
+		if not (fin.get("attachment") or "").strip():
+			return i, fin
+	return None, None
+
+
+def _normalize_attach(path: str) -> str:
+	path = (path or "").strip()
+	if not path:
+		return ""
+	for prefix in ("/private/files/", "/files/"):
+		if prefix in path:
+			return path.split(prefix, 1)[-1].split("?", 1)[0]
+	return path.rsplit("/", 1)[-1].split("?", 1)[0]
 
 
 def _sync_purchase_item_from_application_line(
@@ -556,20 +954,24 @@ def _sync_purchase_item_from_application_line(
 ) -> bool:
 	"""Keep finance Purchase Item aligned with the application task.
 
-	Returns True when fin_line.item_code changed. Stops once Finance has recorded
-	payment so a posted Purchase Invoice is not silently retargeted.
+	Returns True when fin_line.item_code changed. Stops once this line has a
+	Journal Entry so a posted payment is not silently retargeted.
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_purchase_item_for_payment_item,
 		task_finance_line_has_item_code,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		task_has_recorded_payment,
-	)
 
 	if not task_finance_line_has_item_code():
 		return False
-	if task_has_recorded_payment(finance_task):
+	if fin_line.get("journal_entry"):
+		return False
+	# Legacy primary: task-level JE means the first invoice was already paid.
+	if (
+		not cint(fin_line.get("is_amendment"))
+		and finance_task.get("custom_journal_entry")
+		and frappe.db.exists("Journal Entry", finance_task.custom_journal_entry)
+	):
 		return False
 
 	app_item = (app_line.get("item_code") or "").strip()
@@ -1073,14 +1475,117 @@ def _sync_line_verification_to_application(
 def sync_invoice_verification_to_application_task(
 	finance_task, profile: ApplicationFinanceProfile
 ) -> bool:
-	return _sync_line_verification_to_application(
-		finance_task,
-		profile,
-		get_invoice_line,
-		LINE_INVOICE,
-		profile.application_invoice_verified_field,
-		seed=True,
-	)
+	"""Mirror every verified Invoice line (primary + amendments) onto Create/Application.
+
+	Uses db.set_value / child.insert only — never Task.save() — to avoid on_update
+	loops (application ↔ finance sync).
+	"""
+	if frappe.flags.get("cgm_syncing_invoice_verification"):
+		return False
+	if (
+		not is_application_finance_task(int(finance_task.get("custom_sequence_no") or 0), profile)
+		or not finance_task.project
+		or not task_has_finance_table(finance_task)
+	):
+		return False
+	app_name = get_application_task(finance_task.project, profile)
+	if not app_name:
+		return False
+
+	frappe.flags.cgm_syncing_invoice_verification = True
+	try:
+		seed_application_finance_lines(finance_task, profile)
+		fin_lines = [
+			r
+			for r in get_invoice_lines(finance_task, profile)
+			if r.get("attachment") and cint(r.get("verified"))
+		]
+		if not fin_lines:
+			return False
+
+		app = frappe.get_doc("Task", app_name)
+		if not task_has_finance_table(app):
+			return False
+		# Persist any seed rows without parent.save().
+		ensure_application_finance_lines_saved(app, profile)
+		app.reload()
+		app_lines = list(get_invoice_lines(app, profile))
+		used: set[int] = set()
+		changed = False
+
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			task_finance_line_has_item_code,
+		)
+
+		for fin_line in fin_lines:
+			idx, app_line = _match_finance_invoice_line(app_lines, fin_line, used)
+			if app_line is None:
+				payload = {
+					"doctype": "Task Finance Line",
+					"parent": app_name,
+					"parenttype": "Task",
+					"parentfield": TASK_FINANCE_FIELD,
+					"line_label": fin_line.get("line_label") or profile.invoice_label,
+					"line_type": LINE_INVOICE,
+					"payment_item": profile.payment_item,
+					"is_amendment": cint(fin_line.get("is_amendment")),
+					"attachment": fin_line.get("attachment"),
+					"verified": 1,
+					"verified_by": fin_line.get("verified_by"),
+					"verified_on": fin_line.get("verified_on"),
+					"idx": len(app.get(TASK_FINANCE_FIELD) or []) + 1,
+				}
+				if fin_line.get("journal_entry"):
+					payload["journal_entry"] = fin_line.journal_entry
+				if task_finance_line_has_item_code() and fin_line.get("item_code"):
+					payload["item_code"] = fin_line.item_code
+				child = frappe.get_doc(payload)
+				child.insert(ignore_permissions=True)
+				app.append(TASK_FINANCE_FIELD, child.as_dict())
+				app_lines = list(get_invoice_lines(app, profile))
+				used.add(len(app_lines) - 1)
+				changed = True
+				continue
+
+			used.add(idx)
+			updates = {}
+			if not cint(app_line.get("verified")):
+				updates["verified"] = 1
+				updates["verified_by"] = fin_line.get("verified_by")
+				updates["verified_on"] = fin_line.get("verified_on")
+			if fin_line.get("attachment") and app_line.get("attachment") != fin_line.attachment:
+				updates["attachment"] = fin_line.attachment
+			if fin_line.get("journal_entry") and app_line.get("journal_entry") != fin_line.journal_entry:
+				updates["journal_entry"] = fin_line.journal_entry
+			if fin_line.get("line_label") and app_line.get("line_label") != fin_line.line_label:
+				updates["line_label"] = fin_line.line_label
+			if cint(fin_line.get("is_amendment")) and not cint(app_line.get("is_amendment")):
+				updates["is_amendment"] = 1
+			if updates and app_line.name:
+				frappe.db.set_value(
+					"Task Finance Line", app_line.name, updates, update_modified=False
+				)
+				for key, value in updates.items():
+					app_line.set(key, value)
+				changed = True
+
+		# Task-level verified flag only when every attached invoice is verified.
+		app_field = profile.application_invoice_verified_field
+		if app_field and app.meta.has_field(app_field):
+			app.reload()
+			if all_invoice_lines_verified(app, profile) and not app.get(app_field):
+				frappe.db.set_value("Task", app_name, app_field, 1, update_modified=False)
+				changed = True
+
+		if changed:
+			frappe.clear_document_cache("Task", app_name)
+			frappe.publish_realtime(
+				"cgm_task_status_changed",
+				{"task": app_name, "project": finance_task.project, "soft_sync": 1},
+			)
+		return changed
+	finally:
+		frappe.flags.cgm_syncing_invoice_verification = False
 
 
 def sync_receipt_verification_to_application_task(
@@ -1134,6 +1639,21 @@ def project_has_submitted_invoice(project: str, profile: ApplicationFinanceProfi
 def invoice_verified_for_application_task(
 	task, profile: ApplicationFinanceProfile, finance_task=None
 ) -> bool:
+	# With amendment invoices, every attached Invoice line must be verified —
+	# do not trust the legacy task-level verified flag alone.
+	rows = [r for r in get_invoice_lines(task, profile) if r.get("attachment")]
+	if len(rows) > 1 or any(cint(r.get("is_amendment")) for r in rows):
+		if not all_invoice_lines_verified(task, profile):
+			return False
+		if finance_task is None and task.project:
+			finance_name = get_application_finance_task(task.project, profile)
+			finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
+		if finance_task:
+			fin_rows = [r for r in get_invoice_lines(finance_task, profile) if r.get("attachment")]
+			if fin_rows and not all_invoice_lines_verified(finance_task, profile):
+				return False
+		return True
+
 	if (
 		profile.application_invoice_verified_field
 		and task.get(profile.application_invoice_verified_field)
@@ -1147,6 +1667,16 @@ def invoice_verified_for_application_task(
 	if finance_task:
 		fin_inv = get_invoice_line(finance_task, profile)
 		if fin_inv and fin_inv.verified:
+			return True
+	return False
+
+
+def application_has_pending_amendment_invoice(task, profile: ApplicationFinanceProfile) -> bool:
+	"""True when an amendment Invoice row still needs attachment or Finance verify."""
+	for row in get_invoice_lines(task, profile):
+		if not cint(row.get("is_amendment")):
+			continue
+		if not row.get("attachment") or not cint(row.get("verified")):
 			return True
 	return False
 
@@ -1176,6 +1706,12 @@ def can_complete_application_task(
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		task_client_paid_directly,
 	)
+
+	# Pending amendment invoices keep Create/Application open until Finance verifies them.
+	if application_has_pending_amendment_invoice(task, profile):
+		return False
+	if finance_task and application_has_pending_amendment_invoice(finance_task, profile):
+		return False
 
 	# Client-pays and company-pays share the same application requirements:
 	# invoice submitted + Finance-verified (+ certificate or POP when configured).
@@ -1224,19 +1760,22 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 		task_has_recorded_payment,
 	)
 
-	if task_client_paid_directly(task):
-		if not client_paid_settlement_ready(task):
-			return False
-	else:
-		if task.project and not project_has_submitted_invoice(task.project, profile):
-			return False
-		inv_ok = invoice_verified(task, profile)
-		if profile.application_invoice_verified_field:
-			inv_ok = inv_ok or bool(task.get(profile.application_invoice_verified_field))
-		if not inv_ok:
-			return False
-		# JE / submitted PE required for the normal CGM-paid path.
-		if not task_has_recorded_payment(task):
+	rows = [r for r in get_invoice_lines(task, profile) if r.get("attachment")]
+	if not rows:
+		return False
+	if not all_invoice_lines_verified(task, profile):
+		return False
+
+	# Every invoice line must be settled (per-line JE / client-pays, or legacy task-level).
+	if not all_invoice_lines_settled(task, profile):
+		# Backward compat: single primary invoice + task-level payment / client-pays.
+		if len(rows) == 1 and not cint(rows[0].get("is_amendment")):
+			if task_client_paid_directly(task):
+				if not client_paid_settlement_ready(task):
+					return False
+			elif not task_has_recorded_payment(task):
+				return False
+		else:
 			return False
 
 	# Shipping Line: POP + Documentation receipt + Finance receipt verify.
@@ -1249,8 +1788,15 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 			return False
 		return True
 
-	# Entry / KPA / similar: receipt attachment is optional on both
-	# company-pays and client-pays paths.
+	# Receipt required after settlement except Entry Slip (requires_receipt_verification=False).
+	if profile.requires_receipt_verification:
+		if not receipt_attached_for_payment_workflow(task, profile):
+			return False
+		if not receipt_verified(task, profile):
+			return False
+		return True
+
+	# Entry Slip: receipt attachment is optional.
 	return True
 
 
@@ -1340,10 +1886,12 @@ def enforce_application_finance_line_permissions(
 	task, profile: ApplicationFinanceProfile
 ) -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ACTION_CONFIRM_CLIENT_PAID,
 		ACTION_UPLOAD_POP,
 		ACTION_UPLOAD_RECEIPT,
 		ACTION_VERIFY_INVOICE,
 		flow_for_profile,
+		throw_unless_responsibility,
 		user_has_responsibility,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import _finance_line_verified_changed
@@ -1382,6 +1930,16 @@ def enforce_application_finance_line_permissions(
 					f"<b>{row.line_label or 'Finance line'}</b> is verified and cannot be changed here."
 				)
 
+		# Per-invoice Client will pay (replaces task-level checkbox on finance forms).
+		if row.line_type == LINE_INVOICE and _finance_line_client_paid_changed(task, row):
+			if not is_application_finance_task(seq, profile):
+				frappe.throw(
+					"<b>Client will pay</b> can only be set on the finance payment task."
+				)
+			throw_unless_responsibility(
+				flow, ACTION_CONFIRM_CLIENT_PAID, label="select Client will pay"
+			)
+
 		prev = task.get_doc_before_save()
 		prev_row = _find_line(prev, row.line_type, profile) if prev else None
 		prev_attachment = prev_row.attachment if prev_row else None
@@ -1406,9 +1964,10 @@ def enforce_application_finance_line_permissions(
 				if not (
 					task_has_recorded_payment(task)
 					or task_client_paid_directly(task)
+					or finance_has_client_paid_invoice_line(task, profile)
 				):
 					frappe.throw(
-						f"Record payment (or tick <b>Client will pay</b>) before attaching the "
+						f"Record payment (or tick <b>Client will pay</b> on the invoice row) before attaching the "
 						f"<b>{profile.pop_label or 'POP'}</b>."
 					)
 			continue

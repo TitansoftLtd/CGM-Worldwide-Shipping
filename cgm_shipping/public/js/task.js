@@ -90,11 +90,12 @@ frappe.ui.form.on("Task", {
 			cgm_configure_permit_status_grids(frm);
 			frm._cgm_status_grids_ready = true;
 		}
-		if (ui.show_payments && frm.fields_dict.custom_journal_entry) {
+		if (frm.fields_dict.custom_journal_entry) {
+			// Per-row JE on Invoices & Receipts / Permits is the source of truth.
 			frm.set_df_property(
 				"custom_journal_entry",
 				"hidden",
-				is_permit_finance_step(frm) ? 1 : 0
+				is_sea_clearance_task(frm) ? 1 : 0
 			);
 		}
 		configure_client_paid_field(frm, ui);
@@ -194,33 +195,35 @@ frappe.ui.form.on("Task", {
 					intro_set = true;
 				}
 			} else if (ui.is_ucr_finance) {
-				intro = frm.doc.custom_client_paid_directly
+				intro = form_has_client_paid_invoice_line(frm)
 					? __(
-							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>UCR Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
-								"Receipt attachment is optional. " +
+							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
+								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional) · " +
+								"<b>3</b> Attach <b>UCR Receipt</b> · <b>4</b> Verify the receipt. " +
+								"Task completes only after the receipt is verified. " +
 								"Declarant attaches the IDF certificate on <b>Create UCR (IDF)</b>."
 						)
 					: __(
-							"<b>1 Finance:</b> Verify <b>UCR Invoice</b> · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
-								"Receipt attachment is optional — task completes after payment. " +
+							"<b>1 Finance:</b> Verify each <b>UCR Invoice</b> · " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row) · " +
+								"<b>3</b> Attach <b>UCR Receipt</b> · <b>4</b> Verify the receipt. " +
+								"Task completes only after the receipt is verified. " +
 								"Declarant attaches the IDF certificate on <b>Create UCR (IDF)</b>."
 						);
 				intro_set = true;
 			} else if (ui.is_entry_finance) {
 				const inv = get_finance_line(frm, "Invoice");
 				const clientReported = cint(inv?.client_reported_paid);
-				intro = frm.doc.custom_client_paid_directly
+				intro = form_has_client_paid_invoice_line(frm)
 					? __(
-							"<b>Client will pay</b> — no company Journal Entry. " +
+							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
 								"<b>1</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
 								"<b>2</b> <b>Share Invoice with Client</b> (optional). " +
 								"<b>Entry Slip Receipt</b> is optional."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row). " +
 								"This finance task completes after payment — <b>Entry Slip Receipt</b> is optional."
 						);
 				if (clientReported) {
@@ -232,33 +235,35 @@ frappe.ui.form.on("Task", {
 				}
 				intro_set = true;
 			} else if (ui.is_shipping_line_finance) {
-				intro = frm.doc.custom_client_paid_directly
+				intro = form_has_client_paid_invoice_line(frm)
 					? __(
-							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>Shipping Line Invoice</b> · <b>2</b> <b>Share Invoice with Client</b>. " +
+							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
+								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b>. " +
 								"<b>3</b> Client uploads <b>POP</b> on the portal (or Finance attaches it). " +
 								"<b>4</b> Documentation attaches the <b>Shipping Line Receipt</b> using the POP. " +
 								"<b>5</b> Finance verifies the receipt — then this task completes."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>Shipping Line Invoice</b> · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row). " +
 								"<b>3</b> Attach bank <b>POP</b> (or client shares POP via portal). " +
 								"<b>4</b> Documentation attaches the <b>Shipping Line Receipt</b> using the POP. " +
 								"<b>5</b> Finance verifies the receipt — then this task completes."
 						);
 				intro_set = true;
 			} else if (ui.is_kpa_finance) {
-				intro = frm.doc.custom_client_paid_directly
+				intro = form_has_client_paid_invoice_line(frm)
 					? __(
-							"<b>Client will pay</b> — no company Journal Entry. " +
-								"<b>1</b> Verify <b>KPA Invoice</b> · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
-								"Receipt attachment is optional."
+							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
+								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional) · " +
+								"<b>3</b> Attach <b>KPA Receipt</b> · <b>4</b> Verify the receipt. " +
+								"Task completes only after the receipt is verified."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>KPA Invoice</b> · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b>). " +
-								"Receipt attachment is optional — task completes after payment."
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row) · " +
+								"<b>3</b> Attach <b>KPA Receipt</b> · <b>4</b> Verify the receipt. " +
+								"Task completes only after the receipt is verified."
 						);
 				intro_set = true;
 			} else if (ui.is_document_checkpoint) {
@@ -653,7 +658,13 @@ function permit_finance_rows_on_form(frm) {
 
 function permit_rows_all_have_journal_entry(frm) {
 	const rows = permit_finance_rows_on_form(frm);
-	return rows.length > 0 && rows.every((r) => r.journal_entry);
+	return (
+		rows.length > 0 &&
+		rows.every(
+			(r) =>
+				r.journal_entry || cint(r.client_reported_paid) || cint(r.client_paid_directly)
+		)
+	);
 }
 
 function get_permit_stage_for_seq(frm, seq) {
@@ -1262,6 +1273,10 @@ function task_has_recorded_payment_on_form(frm) {
 	if (is_permit_payment_pattern(frm)) {
 		return permit_rows_all_have_journal_entry(frm);
 	}
+	const invoices = get_invoice_finance_lines(frm).filter((r) => r.attachment);
+	if (invoices.length > 1 || invoices.some((r) => cint(r.is_amendment))) {
+		return invoices.length > 0 && invoices.every((r) => invoice_line_settled_on_form(r, frm));
+	}
 	return Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
 }
 
@@ -1487,6 +1502,87 @@ function get_finance_line(frm, line_type) {
 	return (frm.doc.custom_task_finance_lines || []).find((r) => r.line_type === line_type);
 }
 
+function get_invoice_finance_lines(frm) {
+	return (frm.doc.custom_task_finance_lines || []).filter(
+		(r) => (r.line_type || "Invoice") === "Invoice"
+	);
+}
+
+function is_app_finance_payment_step(frm, ui) {
+	ui = ui || get_sea_task_ui(frm);
+	return Boolean(
+		ui.is_ucr_finance ||
+			ui.is_entry_finance ||
+			ui.is_shipping_line_finance ||
+			ui.is_kpa_finance
+	);
+}
+
+function form_has_client_paid_invoice_line(frm) {
+	if (cint(frm.doc.custom_client_paid_directly)) {
+		return true;
+	}
+	return get_invoice_finance_lines(frm).some(
+		(r) => r.attachment && cint(r.client_paid_directly)
+	);
+}
+
+function invoice_line_settled_on_form(row, frm) {
+	if (!row || !row.attachment) {
+		return false;
+	}
+	if (row.journal_entry) {
+		return true;
+	}
+	if (cint(row.client_paid_directly) || cint(row.client_reported_paid)) {
+		return true;
+	}
+	// Legacy primary: task-level JE / client-pays (only when JE is not on an amendment).
+	if (!cint(row.is_amendment)) {
+		const taskJe = frm.doc.custom_journal_entry || frm.doc.custom_payment_entry;
+		if (taskJe) {
+			const onAmendment = get_invoice_finance_lines(frm).some(
+				(r) => cint(r.is_amendment) && r.journal_entry === taskJe
+			);
+			if (!onAmendment) {
+				return true;
+			}
+		}
+		if (cint(frm.doc.custom_client_paid_directly) && cint(row.verified)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function unpaid_verified_invoice_lines_on_form(frm) {
+	return get_invoice_finance_lines(frm).filter(
+		(r) =>
+			r.attachment &&
+			cint(r.verified) &&
+			!invoice_line_settled_on_form(r, frm) &&
+			!cint(r.client_paid_directly)
+	);
+}
+
+function unverified_invoice_lines_on_form(frm) {
+	return get_invoice_finance_lines(frm).filter(
+		(r) => r.attachment && !cint(r.verified)
+	);
+}
+
+function unverified_receipt_line_on_form(frm) {
+	const rec = get_finance_line(frm, "Receipt");
+	if (rec?.attachment && !cint(rec.verified)) {
+		return rec;
+	}
+	return null;
+}
+
+function finance_line_display_label(row) {
+	return row.line_label || (cint(row.is_amendment) ? __("Invoice (amendment)") : __("Invoice"));
+}
+
 function ucr_finance_ready_on_form(frm) {
 	const inv = get_finance_line(frm, "Invoice");
 	const rec = get_finance_line(frm, "Receipt");
@@ -1571,6 +1667,12 @@ function configure_finance_line_grid(frm, ui) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
+		if (grid.get_docfield("client_paid_directly")) {
+			grid.update_docfield_property("client_paid_directly", "read_only", 1);
+		}
+		if (grid.get_docfield("journal_entry")) {
+			grid.update_docfield_property("journal_entry", "read_only", 1);
+		}
 	} else if (is_fin_step) {
 		// Invoice copied from application; POP / receipt by role (row-level in form_render).
 		grid.update_docfield_property(
@@ -1580,6 +1682,17 @@ function configure_finance_line_grid(frm, ui) {
 		);
 		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
+		// Per-invoice Client will pay (e.g. amendment after company paid the first).
+		if (grid.get_docfield("client_paid_directly")) {
+			grid.update_docfield_property(
+				"client_paid_directly",
+				"read_only",
+				is_finance ? 0 : 1
+			);
+		}
+		if (grid.get_docfield("journal_entry")) {
+			grid.update_docfield_property("journal_entry", "read_only", 1);
+		}
 	}
 
 	frm._cgm_finance_grid_ready = true;
@@ -1613,6 +1726,10 @@ function reset_cgm_task_sea_ui_state_if_needed(frm) {
 	frm._cgm_toolbar_fingerprint = null;
 	frm._cgm_shipping_line_finance_lines_ensured = false;
 	frm._cgm_kpa_finance_lines_ensured = false;
+	frm._cgm_ucr_finance_ensure_done = false;
+	frm._cgm_entry_finance_ensure_done = false;
+	frm._cgm_shipping_line_finance_ensure_done = false;
+	frm._cgm_kpa_finance_ensure_done = false;
 	frm._cgm_finance_department = CGM_SEA_UI_SEQUENCES_CACHE?.finance_department;
 	if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config) {
 		load_cgm_sea_ui_sequences(frm);
@@ -1696,6 +1813,12 @@ function cgm_task_toolbar_fingerprint(frm) {
 	const ui = get_sea_task_ui(frm);
 	const inv = get_finance_line(frm, "Invoice");
 	const rec = get_finance_line(frm, "Receipt");
+	const invoice_sig = get_invoice_finance_lines(frm)
+		.map(
+			(r) =>
+				`${r.name || ""}:${cint(r.verified)}:${r.attachment ? 1 : 0}:${r.journal_entry || ""}:${cint(r.is_amendment)}:${cint(r.client_paid_directly)}`
+		)
+		.join(",");
 	return [
 		frm.doc.name,
 		frm.doc.status,
@@ -1709,6 +1832,7 @@ function cgm_task_toolbar_fingerprint(frm) {
 		inv?.attachment ? 1 : 0,
 		rec?.verified ? 1 : 0,
 		rec?.attachment ? 1 : 0,
+		invoice_sig,
 		user_can_make_payment(frm) ? 1 : 0,
 		user_can_verify_invoice(frm) ? 1 : 0,
 	].join("|");
@@ -1727,11 +1851,19 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	if (frm._cgm_toolbar_fingerprint === fingerprint && has_buttons) {
 		return;
 	}
+	// Settlement / status changed — allow ensure-complete to run again once.
+	if (frm._cgm_toolbar_fingerprint !== fingerprint) {
+		frm._cgm_ucr_finance_ensure_done = false;
+		frm._cgm_entry_finance_ensure_done = false;
+		frm._cgm_shipping_line_finance_ensure_done = false;
+		frm._cgm_kpa_finance_ensure_done = false;
+	}
 
 	const ui = get_sea_task_ui(frm);
 	frm.clear_custom_buttons();
 	frm._cgm_toolbar_fingerprint = fingerprint;
 
+	// Only Open Shipment Project stays top-level — everything else under Actions.
 	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
 		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
 			frappe.set_route("Form", "Project", frm.doc.project);
@@ -1740,51 +1872,73 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	}
 
 	if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
-		if (user_can_make_payment(frm)) {
-			const inv = get_finance_line(frm, "Invoice");
-			if (inv?.attachment && !inv?.verified) {
-				add_cgm_toolbar_button(frm, __("Verify UCR Invoice"), () => {
-					verify_ucr_finance_line(frm, "Invoice");
-				}, { primary: true });
+		if (user_can_make_payment(frm) || user_can_verify_invoice(frm)) {
+			unverified_invoice_lines_on_form(frm).forEach((inv) => {
+				add_cgm_toolbar_button(
+					frm,
+					__("Verify {0}", [finance_line_display_label(inv)]),
+					() => verify_ucr_finance_line(frm, "Invoice", inv.name)
+				);
+			});
+			const rec = unverified_receipt_line_on_form(frm);
+			if (rec) {
+				add_cgm_toolbar_button(frm, __("Verify UCR Receipt"), () => {
+					verify_ucr_finance_line(frm, "Receipt", rec.name);
+				});
 			}
 		}
 	}
 
 	if (ui.is_entry_finance && frm.doc.status !== "Completed") {
-		if (user_can_make_payment(frm)) {
-			const inv = get_finance_line(frm, "Invoice");
-			if (inv?.attachment && !inv?.verified) {
-				add_cgm_toolbar_button(frm, __("Verify Entry Slip Invoice"), () => {
-					verify_entry_finance_line(frm, "Invoice");
-				}, { primary: true });
+		if (user_can_make_payment(frm) || user_can_verify_invoice(frm)) {
+			unverified_invoice_lines_on_form(frm).forEach((inv) => {
+				add_cgm_toolbar_button(
+					frm,
+					__("Verify {0}", [finance_line_display_label(inv)]),
+					() => verify_entry_finance_line(frm, "Invoice", inv.name)
+				);
+			});
+			const rec = unverified_receipt_line_on_form(frm);
+			if (rec) {
+				add_cgm_toolbar_button(frm, __("Verify Entry Slip Receipt"), () => {
+					verify_entry_finance_line(frm, "Receipt", rec.name);
+				});
 			}
 		}
 	}
 
 	if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
 		if (user_can_verify_invoice(frm) || user_can_make_payment(frm)) {
-			const inv = get_finance_line(frm, "Invoice");
-			if (inv?.attachment && !inv?.verified) {
-				add_cgm_toolbar_button(frm, __("Verify Shipping Line Invoice"), () => {
-					verify_app_finance_line(frm, "shipping_line", "Invoice");
-				}, { primary: true });
-			}
-			const rec = get_finance_line(frm, "Receipt");
-			if (rec?.attachment && !rec?.verified) {
+			unverified_invoice_lines_on_form(frm).forEach((inv) => {
+				add_cgm_toolbar_button(
+					frm,
+					__("Verify {0}", [finance_line_display_label(inv)]),
+					() => verify_app_finance_line(frm, "shipping_line", "Invoice", inv.name)
+				);
+			});
+			const rec = unverified_receipt_line_on_form(frm);
+			if (rec) {
 				add_cgm_toolbar_button(frm, __("Verify Shipping Line Receipt"), () => {
 					verify_app_finance_line(frm, "shipping_line", "Receipt");
-				}, { primary: true });
+				});
 			}
 		}
 	}
 
 	if (ui.is_kpa_finance && frm.doc.status !== "Completed") {
-		if (user_can_make_payment(frm)) {
-			const inv = get_finance_line(frm, "Invoice");
-			if (inv?.attachment && !inv?.verified) {
-				add_cgm_toolbar_button(frm, __("Verify KPA Invoice"), () => {
-					verify_app_finance_line(frm, "kpa", "Invoice");
-				}, { primary: true });
+		if (user_can_make_payment(frm) || user_can_verify_invoice(frm)) {
+			unverified_invoice_lines_on_form(frm).forEach((inv) => {
+				add_cgm_toolbar_button(
+					frm,
+					__("Verify {0}", [finance_line_display_label(inv)]),
+					() => verify_app_finance_line(frm, "kpa", "Invoice", inv.name)
+				);
+			});
+			const rec = unverified_receipt_line_on_form(frm);
+			if (rec) {
+				add_cgm_toolbar_button(frm, __("Verify KPA Receipt"), () => {
+					verify_app_finance_line(frm, "kpa", "Receipt", rec.name);
+				});
 			}
 		}
 	}
@@ -1797,13 +1951,12 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		!ui.show_payments &&
 		!ui.show_permits
 	) {
-		const markCompleteBtn = frm.add_custom_button(__("Mark Completed"), async () => {
+		add_cgm_toolbar_button(frm, __("Mark Completed"), async () => {
 			await frm.set_value("completed_by", frappe.session.user);
 			await frm.set_value("completed_on", frappe.datetime.now_datetime());
 			await frm.set_value("status", "Completed");
 			await frm.save();
 		});
-		markCompleteBtn?.addClass?.("btn-primary");
 	}
 
 	add_client_paid_application_mark_complete_button(frm, ui);
@@ -1823,7 +1976,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		(is_sea_clearance_task(frm) || frm.doc.custom_sequence_no) &&
 		!has_dedicated_add_more
 	) {
-		frm.add_custom_button(__("Re-open Task"), () => {
+		add_cgm_toolbar_button(frm, __("Re-open Task"), () => {
 			frappe.confirm(
 				__(
 					"Re-open this completed task so you can attach or replace documents? " +
@@ -1860,13 +2013,12 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		frm.doc.status !== "Completed" &&
 		frm.doc.custom_client_paid_directly
 	) {
-		const btn = frm.add_custom_button(__("Mark Completed"), async () => {
+		add_cgm_toolbar_button(frm, __("Mark Completed"), async () => {
 			await frm.set_value("completed_by", frappe.session.user);
 			await frm.set_value("completed_on", frappe.datetime.now_datetime());
 			await frm.set_value("status", "Completed");
 			await frm.save();
 		});
-		btn?.addClass?.("btn-primary");
 	}
 
 	if (
@@ -1875,10 +2027,9 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		!frm.doc.custom_client_paid_directly &&
 		frm.doc.custom_permit_invoices_submitted
 	) {
-		const btn = frm.add_custom_button(__("Complete Pre-Clearance Permits Task"), () => {
+		add_cgm_toolbar_button(frm, __("Complete Pre-Clearance Permits Task"), () => {
 			complete_permit_application_task_from_form(frm);
 		});
-		btn?.addClass?.("btn-primary");
 	}
 
 	if (
@@ -1887,14 +2038,13 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		!frm.doc.custom_client_paid_directly &&
 		frm.doc.custom_permit_invoices_submitted
 	) {
-		const btn = frm.add_custom_button(__("Complete Post-Clearance Permits Task"), () => {
+		add_cgm_toolbar_button(frm, __("Complete Post-Clearance Permits Task"), () => {
 			complete_permit_application_task_from_form(frm);
 		});
-		btn?.addClass?.("btn-primary");
 	}
 
 	if (ui.show_permits && is_permit_application_step(frm) && frm.doc.status === "Completed") {
-		frm.add_custom_button(__("Add more permits / invoices"), () => {
+		add_cgm_toolbar_button(frm, __("Add more permits / invoices"), () => {
 			frappe.call({
 				method: "cgm_shipping.cgm_worldwide_shipping.customizations.task.reopen_task_for_permit_attachments",
 				args: { task_name: frm.doc.name },
@@ -1904,11 +2054,11 @@ function mount_cgm_task_toolbar_buttons(frm) {
 						frappe.show_alert({
 							message: fin
 								? __(
-										"Task re-opened. Add new permit rows with invoices and save — Finance will verify and pay on {0}.",
+										"Task re-opened. Add a new Local row (tick <b>Amendment</b> to keep the first payment) with the new invoice and save — Finance will verify and pay on {0}.",
 										[fin]
 								  )
 								: __(
-										"Task re-opened. Add new permit rows with invoices and save — Finance will be notified."
+										"Task re-opened. Add a new Local row (tick <b>Amendment</b> for an extra invoice on the same permit type) and save — Finance will be notified."
 								  ),
 							indicator: "orange",
 						});
@@ -1924,8 +2074,18 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		ui.is_entry_application ||
 		ui.is_shipping_line_application ||
 		ui.is_kpa_application;
+	if (is_app_finance_application && frm.doc.status !== "Cancelled") {
+		const has_primary_invoice = get_invoice_finance_lines(frm).some(
+			(r) => r.attachment && !cint(r.is_amendment)
+		);
+		if (has_primary_invoice || frm.doc.status === "Completed") {
+			add_cgm_toolbar_button(frm, __("Add amendment invoice"), () => {
+				add_amendment_invoice_from_form(frm);
+			});
+		}
+	}
 	if (is_app_finance_application && frm.doc.status === "Completed") {
-		frm.add_custom_button(__("Add / replace invoice"), () => {
+		add_cgm_toolbar_button(frm, __("Replace primary invoice"), () => {
 			frappe.call({
 				method:
 					"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.reopen_application_task_for_more_documents",
@@ -1934,7 +2094,8 @@ function mount_cgm_task_toolbar_buttons(frm) {
 					if (!r.exc) {
 						frappe.show_alert({
 							message: __(
-								"Task re-opened. Attach or replace the invoice and save — Finance will verify and pay."
+								"Task re-opened. Replace the primary invoice attachment and save — Finance will verify and pay. " +
+									"To keep the first payment and add another invoice, use <b>Add amendment invoice</b> instead."
 							),
 							indicator: "orange",
 						});
@@ -1947,51 +2108,74 @@ function mount_cgm_task_toolbar_buttons(frm) {
 
 	if (is_permit_payment_pattern(frm)) {
 		show_permit_finance_journal_entry_view_buttons(frm);
-	} else if (frm.doc.custom_journal_entry) {
-		add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
-			frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
+	} else {
+		get_invoice_finance_lines(frm).forEach((row) => {
+			if (row.journal_entry) {
+				add_cgm_toolbar_button(
+					frm,
+					__("View Journal Entry — {0}", [finance_line_display_label(row)]),
+					() => frappe.set_route("Form", "Journal Entry", row.journal_entry)
+				);
+			}
 		});
+		if (
+			frm.doc.custom_journal_entry &&
+			!get_invoice_finance_lines(frm).some((r) => r.journal_entry === frm.doc.custom_journal_entry)
+		) {
+			add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
+				frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
+			});
+		}
 	}
 
 	const permit_finance_has_unpaid =
 		is_permit_payment_pattern(frm) &&
 		permit_finance_rows_on_form(frm).some(
-			(r) => r.permit_type && r.payment_invoice && !r.journal_entry
+			(r) =>
+				r.permit_type &&
+				r.payment_invoice &&
+				!r.journal_entry &&
+				!cint(r.client_reported_paid) &&
+				!cint(r.client_paid_directly)
 		);
+	const app_finance_unpaid_lines = unpaid_verified_invoice_lines_on_form(frm);
 	const app_finance_needs_payment =
 		(ui.is_ucr_finance ||
 			ui.is_entry_finance ||
 			ui.is_shipping_line_finance ||
 			ui.is_kpa_finance) &&
-		!frm.doc.custom_journal_entry &&
-		!frm.doc.custom_client_paid_directly;
+		app_finance_unpaid_lines.length > 0;
 
 	if (
 		is_finance_department_task(frm) &&
 		user_can_make_payment(frm) &&
-		!frm.doc.custom_client_paid_directly &&
 		frm.doc.status !== "Cancelled" &&
 		(frm.doc.status !== "Completed" || permit_finance_has_unpaid || app_finance_needs_payment)
 	) {
 		if (is_permit_payment_pattern(frm)) {
-			setup_permit_finance_make_payment_buttons(frm);
-		} else if (!frm.doc.custom_journal_entry) {
-			add_cgm_toolbar_button(
-				frm,
-				__("Make Payment"),
-				() => open_journal_entry_payment_dialog(frm),
-				{ primary: true }
+			if (!frm.doc.custom_client_paid_directly) {
+				setup_permit_finance_make_payment_buttons(frm);
+			}
+		} else if (is_app_finance_payment_step(frm, ui)) {
+			if (app_finance_unpaid_lines.length) {
+				setup_app_finance_make_payment_buttons(frm, app_finance_unpaid_lines);
+				setup_app_finance_client_will_pay_buttons(frm, app_finance_unpaid_lines);
+			}
+		} else if (!frm.doc.custom_journal_entry && !frm.doc.custom_client_paid_directly) {
+			add_cgm_toolbar_button(frm, __("Make Payment"), () =>
+				open_journal_entry_payment_dialog(frm)
 			);
 		}
 	}
 
 	setup_client_inspection_buttons(frm);
 
+	const line_client_pays = form_has_client_paid_invoice_line(frm);
 	if (
 		is_finance_department_task(frm) &&
 		frm.doc.project &&
 		frm.doc.status !== "Cancelled" &&
-		cint(frm.doc.custom_client_paid_directly) &&
+		line_client_pays &&
 		(user_can_verify_invoice(frm) ||
 			user_can_make_payment(frm) ||
 			user_can_confirm_client_paid(frm)) &&
@@ -2000,11 +2184,11 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		const already =
 			finance_task_has_already_shared_invoice(frm) &&
 			!finance_task_has_unshared_verified_invoice(frm);
-		const btn = frm.add_custom_button(
+		add_cgm_toolbar_button(
+			frm,
 			already ? __("Notify Client Again") : __("Share Invoice with Client"),
 			() => share_invoices_with_client_from_form(frm)
 		);
-		btn?.addClass?.("btn-primary");
 	}
 
 	if (
@@ -2014,11 +2198,9 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		user_can_verify_invoice(frm) &&
 		permit_rows_pending_invoice_verification(frm).length
 	) {
-		// Top-level (not Actions menu) so Pre-/Post-Clearance Finance always see it.
-		const btn = frm.add_custom_button(__("Verify Invoices"), () => {
+		add_cgm_toolbar_button(frm, __("Verify Invoices"), () => {
 			verify_all_permit_invoices_from_form(frm);
 		});
-		btn?.addClass?.("btn-primary");
 	}
 }
 
@@ -2441,6 +2623,11 @@ frappe.ui.form.on("Task Finance Line", {
 		if (frm._cgm_skip_finance_line_autosave) {
 			return;
 		}
+		if (!row.attachment) {
+			return;
+		}
+		// Attach in child grids sometimes updates the control without dirtying the form.
+		frm.dirty();
 		// Refresh lock timestamp first — onload heal / POP mirror may have bumped it.
 		frappe.db.get_value("Task", frm.doc.name, "modified").then((r) => {
 			const latest = r?.message?.modified;
@@ -2449,6 +2636,9 @@ frappe.ui.form.on("Task Finance Line", {
 			}
 			if (frm._cgm_skip_finance_line_autosave) {
 				return;
+			}
+			if (!frm.is_dirty()) {
+				frm.dirty();
 			}
 			frm.save().catch((e) => {
 				const msg = (e && (e.message || e)) || "";
@@ -2729,12 +2919,22 @@ frappe.ui.form.on("Permit Register", {
 });
 
 function ensure_ucr_finance_task_completed_on_form(frm) {
-	if (frm._cgm_finance_complete_checking) {
+	if (frm._cgm_finance_complete_checking || frm._cgm_ucr_finance_ensure_done) {
 		return;
 	}
-	const inv = get_finance_line(frm, "Invoice");
+	if (frm.doc.status === "Completed" || frm.doc.status === "Cancelled") {
+		return;
+	}
+	// All attached invoices must be verified + settled (not only the primary row).
+	const invoices = get_invoice_finance_lines(frm).filter((r) => r.attachment);
+	if (
+		!invoices.length ||
+		invoices.some((r) => !cint(r.verified) || !invoice_line_settled_on_form(r, frm))
+	) {
+		return;
+	}
 	const rec = get_finance_line(frm, "Receipt");
-	if (!inv?.verified || !rec?.verified || !rec?.attachment) {
+	if (!rec?.verified || !rec?.attachment) {
 		return;
 	}
 	frm._cgm_finance_complete_checking = true;
@@ -2746,13 +2946,21 @@ function ensure_ucr_finance_task_completed_on_form(frm) {
 			if (r.exc || !r.message) {
 				return;
 			}
-			if (r.message.status === "Completed" && frm.doc.status !== "Completed") {
+			// Only toast when this call newly completed the task — never when the
+			// server was already Completed / form was stale Open (reload loops).
+			if (r.message.completed && r.message.status === "Completed") {
+				frm._cgm_ucr_finance_ensure_done = true;
 				frappe.show_alert({
 					message: __("Finance pays UCR task completed"),
 					indicator: "green",
 				});
-				frm.reload_doc();
+				if (frm.doc.status !== "Completed") {
+					frm.reload_doc();
+				}
+				return;
 			}
+			// Remember no-op so refresh does not keep re-calling ensure.
+			frm._cgm_ucr_finance_ensure_done = true;
 		},
 		error() {
 			frm._cgm_finance_complete_checking = false;
@@ -2760,10 +2968,10 @@ function ensure_ucr_finance_task_completed_on_form(frm) {
 	});
 }
 
-function verify_ucr_finance_line(frm, line_type) {
+function verify_ucr_finance_line(frm, line_type, finance_line_name) {
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.verify_ucr_finance_line",
-		args: { task_name: frm.doc.name, line_type },
+		args: { task_name: frm.doc.name, line_type, finance_line_name },
 		freeze: true,
 		callback(r) {
 			if (!r.exc) {
@@ -2771,11 +2979,14 @@ function verify_ucr_finance_line(frm, line_type) {
 					message: r.message?.message || __("Verified"),
 					indicator: "green",
 				});
-				if (r.message?.task_status === "Completed" && frm.doc.status !== "Completed") {
+				if (r.message?.completed && r.message?.task_status === "Completed") {
+					frm._cgm_ucr_finance_ensure_done = true;
 					frappe.show_alert({
 						message: __("Finance pays UCR task completed"),
 						indicator: "green",
 					});
+				} else {
+					frm._cgm_ucr_finance_ensure_done = false;
 				}
 				frm.reload_doc();
 			}
@@ -2898,19 +3109,17 @@ function apply_entry_application_intro(frm, status) {
 }
 
 function ensure_entry_finance_task_completed_on_form(frm) {
-	if (frm._cgm_entry_finance_complete_checking) {
+	if (frm._cgm_entry_finance_complete_checking || frm._cgm_entry_finance_ensure_done) {
 		return;
 	}
-	const inv = get_finance_line(frm, "Invoice");
-	if (!inv?.verified) {
+	if (frm.doc.status === "Completed" || frm.doc.status === "Cancelled") {
 		return;
 	}
-	// Receipt is optional for Entry — company-pays and client-pays.
-	const clientPaid = cint(frm.doc.custom_client_paid_directly);
-	const paid =
-		clientPaid ||
-		Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
-	if (!paid) {
+	const invoices = get_invoice_finance_lines(frm).filter((r) => r.attachment);
+	if (
+		!invoices.length ||
+		invoices.some((r) => !cint(r.verified) || !invoice_line_settled_on_form(r, frm))
+	) {
 		return;
 	}
 	frm._cgm_entry_finance_complete_checking = true;
@@ -2923,13 +3132,18 @@ function ensure_entry_finance_task_completed_on_form(frm) {
 			if (r.exc || !r.message) {
 				return;
 			}
-			if (r.message.status === "Completed" && frm.doc.status !== "Completed") {
+			if (r.message.completed && r.message.status === "Completed") {
+				frm._cgm_entry_finance_ensure_done = true;
 				frappe.show_alert({
 					message: __("Finance Pays Entry Slip task completed"),
 					indicator: "green",
 				});
-				frm.reload_doc();
+				if (frm.doc.status !== "Completed") {
+					frm.reload_doc();
+				}
+				return;
 			}
+			frm._cgm_entry_finance_ensure_done = true;
 		},
 		error() {
 			frm._cgm_entry_finance_complete_checking = false;
@@ -2937,11 +3151,16 @@ function ensure_entry_finance_task_completed_on_form(frm) {
 	});
 }
 
-function verify_entry_finance_line(frm, line_type) {
+function verify_entry_finance_line(frm, line_type, finance_line_name) {
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.verify_application_finance_line",
-		args: { task_name: frm.doc.name, profile_key: "entry", line_type },
+		args: {
+			task_name: frm.doc.name,
+			profile_key: "entry",
+			line_type,
+			finance_line_name,
+		},
 		freeze: true,
 		callback(r) {
 			if (!r.exc) {
@@ -3096,6 +3315,24 @@ function set_client_paid_fields_hidden(frm, hidden) {
 }
 
 function configure_client_paid_field(frm, ui) {
+	// App-finance (UCR / Entry / SL / KPA): Client will pay lives on each Invoice row.
+	// Permit finance still uses the task-level checkbox (plus per-permit row flags).
+	ui = ui || get_sea_task_ui(frm);
+	if (is_app_finance_payment_step(frm, ui)) {
+		set_client_paid_fields_hidden(frm, 1);
+		return;
+	}
+	// Application tasks for those flows: hide task-level mirror (intros / status cover it).
+	if (
+		ui.is_ucr_application ||
+		ui.is_entry_application ||
+		ui.is_shipping_line_application ||
+		ui.is_kpa_application
+	) {
+		set_client_paid_fields_hidden(frm, 1);
+		return;
+	}
+
 	// Finance confirms this on the payment task; the paired application task
 	// mirrors it read-only so the owner knows no invoice handoff is coming.
 	//
@@ -3125,18 +3362,29 @@ function configure_client_paid_field(frm, ui) {
 		const editable =
 			finance_step && user_can_confirm_client_paid(frm) && frm.doc.status !== "Completed";
 		frm.set_df_property("custom_client_paid_directly", "read_only", editable ? 0 : 1);
+		const receiptOptional = Boolean(ui.is_entry_finance || ui.is_entry_application);
 		frm.set_df_property(
 			"custom_client_paid_directly",
 			"description",
 			finance_step
-				? __(
-						"Tick when the client settles this fee (no company Journal Entry). " +
-							"Still verify the invoice. Receipt attachment is optional."
-					)
-				: __(
-						"Finance selected the client-pays path (no company Journal Entry). " +
-							"They will verify your invoice; receipt attachment is optional."
-					)
+				? receiptOptional
+					? __(
+							"Tick when the client settles this fee (no company Journal Entry). " +
+								"Still verify the invoice. Entry Slip Receipt is optional."
+						)
+					: __(
+							"Tick when the client settles this fee (no company Journal Entry). " +
+								"Still verify the invoice, then attach and verify the receipt before completing."
+						)
+				: receiptOptional
+					? __(
+							"Finance selected the client-pays path (no company Journal Entry). " +
+								"They will verify your invoice; Entry Slip Receipt is optional."
+						)
+					: __(
+							"Finance selected the client-pays path (no company Journal Entry). " +
+								"They will verify your invoice and the payment receipt."
+						)
 		);
 	}
 }
@@ -3236,8 +3484,7 @@ function add_client_paid_application_mark_complete_button(frm, ui) {
 	if (!client_paid_application_needs_mark_complete(frm, ui)) {
 		return;
 	}
-	const btn = frm.add_custom_button(__("Mark Completed"), () => mark_application_task_completed(frm));
-	btn?.addClass?.("btn-primary");
+	add_cgm_toolbar_button(frm, __("Mark Completed"), () => mark_application_task_completed(frm));
 }
 
 function apply_app_finance_application_intro(frm, status, profileKey) {
@@ -3358,29 +3605,30 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 
 function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 	const checkingKey = `_cgm_${profileKey}_finance_complete_checking`;
-	if (frm[checkingKey]) {
+	const doneKey = `_cgm_${profileKey}_finance_ensure_done`;
+	if (frm[checkingKey] || frm[doneKey]) {
 		return;
 	}
 	if (!is_app_finance_finance_step(frm, undefined, profileKey) || frm.doc.status === "Completed") {
 		return;
 	}
-	const inv = get_finance_line(frm, "Invoice");
-	const rec = get_finance_line(frm, "Receipt");
+	const invoices = get_invoice_finance_lines(frm).filter((r) => r.attachment);
+	if (
+		!invoices.length ||
+		invoices.some((r) => !cint(r.verified) || !invoice_line_settled_on_form(r, frm))
+	) {
+		return;
+	}
 	if (profileKey === "shipping_line") {
 		const pop = get_finance_line(frm, "POP");
-		if (!inv?.verified || !pop?.attachment || !rec?.attachment || !rec?.verified) {
+		const rec = get_finance_line(frm, "Receipt");
+		if (!pop?.attachment || !rec?.attachment || !rec?.verified) {
 			return;
 		}
 	} else {
-		// KPA (and other non-POP profiles): receipt is optional.
-		if (!inv?.verified) {
-			return;
-		}
-		const clientPaid = cint(frm.doc.custom_client_paid_directly);
-		const paid =
-			clientPaid ||
-			Boolean(frm.doc.custom_journal_entry || frm.doc.custom_payment_entry);
-		if (!paid) {
+		const rec = get_finance_line(frm, "Receipt");
+		// KPA: receipt required when present on the row; settlement is per invoice line.
+		if (rec?.attachment && !cint(rec.verified)) {
 			return;
 		}
 	}
@@ -3394,13 +3642,18 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 			if (r.exc || !r.message) {
 				return;
 			}
-			if (r.message.status === "Completed" && frm.doc.status !== "Completed") {
+			if (r.message.completed && r.message.status === "Completed") {
+				frm[doneKey] = true;
 				frappe.show_alert({
 					message: __("Finance task completed"),
 					indicator: "green",
 				});
-				frm.reload_doc();
+				if (frm.doc.status !== "Completed") {
+					frm.reload_doc();
+				}
+				return;
 			}
+			frm[doneKey] = true;
 		},
 		error() {
 			frm[checkingKey] = false;
@@ -3408,11 +3661,16 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 	});
 }
 
-function verify_app_finance_line(frm, profileKey, lineType) {
+function verify_app_finance_line(frm, profileKey, lineType, finance_line_name) {
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.verify_application_finance_line",
-		args: { task_name: frm.doc.name, profile_key: profileKey, line_type: lineType },
+		args: {
+			task_name: frm.doc.name,
+			profile_key: profileKey,
+			line_type: lineType,
+			finance_line_name,
+		},
 		freeze: true,
 		callback(r) {
 			if (!r.exc) {
@@ -3533,7 +3791,10 @@ function show_permit_finance_journal_entry_view_buttons(frm) {
 		if (!row.journal_entry) {
 			return;
 		}
-		add_cgm_toolbar_button(frm, __("View Journal Entry — {0}", [row.permit_type]), () => {
+		const label = cint(row.is_amendment)
+			? __("{0} (amendment)", [row.permit_type])
+			: row.permit_type;
+		add_cgm_toolbar_button(frm, __("View Journal Entry — {0}", [label]), () => {
 			frappe.set_route("Form", "Journal Entry", row.journal_entry);
 		});
 	});
@@ -3541,22 +3802,119 @@ function show_permit_finance_journal_entry_view_buttons(frm) {
 
 function setup_permit_finance_make_payment_buttons(frm) {
 	permit_finance_rows_on_form(frm).forEach((row) => {
-		if (row.journal_entry) {
+		if (row.journal_entry || cint(row.client_reported_paid) || cint(row.client_paid_directly)) {
 			return;
 		}
 		if (row.payment_invoice && !cint(row.invoice_verified)) {
 			return;
 		}
-		// Top-level primary — same visibility as Verify Invoices.
-		const btn = frm.add_custom_button(__("Make Payment — {0}", [row.permit_type]), () =>
+		const label = cint(row.is_amendment)
+			? __("{0} (amendment)", [row.permit_type])
+			: row.permit_type;
+		add_cgm_toolbar_button(frm, __("Make Payment — {0}", [label]), () =>
 			open_journal_entry_payment_dialog(frm, {
 				permit_row_name: row.name,
 				default_amount: row.invoice_amount,
-				title_suffix: row.permit_type,
+				title_suffix: label,
 			})
 		);
-		btn?.addClass?.("btn-primary");
 	});
+}
+
+function setup_app_finance_make_payment_buttons(frm, unpaid_lines) {
+	(unpaid_lines || unpaid_verified_invoice_lines_on_form(frm)).forEach((row) => {
+		const label = finance_line_display_label(row);
+		add_cgm_toolbar_button(frm, __("Make Payment — {0}", [label]), () =>
+			open_journal_entry_payment_dialog(frm, {
+				finance_line_name: row.name,
+				title_suffix: label,
+			})
+		);
+	});
+}
+
+function setup_app_finance_client_will_pay_buttons(frm, unpaid_lines) {
+	if (!user_can_confirm_client_paid(frm)) {
+		return;
+	}
+	(unpaid_lines || unpaid_verified_invoice_lines_on_form(frm)).forEach((row) => {
+		if (!row.name || cint(row.client_paid_directly)) {
+			return;
+		}
+		const label = finance_line_display_label(row);
+		add_cgm_toolbar_button(frm, __("Client will pay — {0}", [label]), () => {
+			if (frm.is_dirty()) {
+				frappe.msgprint({
+					title: __("Save first"),
+					message: __("Save the task, then mark Client will pay."),
+					indicator: "orange",
+				});
+				return;
+			}
+			frappe.model.set_value(row.doctype, row.name, "client_paid_directly", 1);
+			frm.save().then(() => {
+				frappe.show_alert({
+					message: __("{0}: Client will pay — no company Journal Entry.", [label]),
+					indicator: "blue",
+				});
+			});
+		});
+	});
+}
+
+function add_amendment_invoice_from_form(frm) {
+	if (frm.is_new()) {
+		frappe.msgprint(__("Save the task first."));
+		return;
+	}
+	if (frm.is_dirty()) {
+		frappe.msgprint({
+			title: __("Save first"),
+			message: __("Save the task, then add an amendment invoice."),
+			indicator: "orange",
+		});
+		return;
+	}
+	const dialog = new frappe.ui.Dialog({
+		title: __("Add amendment invoice"),
+		fields: [
+			{
+				fieldname: "attachment",
+				label: __("Amendment Invoice PDF"),
+				fieldtype: "Attach",
+				reqd: 1,
+				description: __(
+					"Attach the new invoice here. The first paid invoice stays as-is."
+				),
+			},
+		],
+		primary_action_label: __("Add amendment"),
+		primary_action(values) {
+			if (!values.attachment) {
+				frappe.msgprint(__("Attach the amendment invoice PDF first."));
+				return;
+			}
+			dialog.hide();
+			frappe.call({
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.add_amendment_invoice_line",
+				args: { task_name: frm.doc.name, attachment: values.attachment },
+				freeze: true,
+				freeze_message: __("Adding amendment invoice…"),
+				callback(r) {
+					if (r.exc || !r.message) {
+						return;
+					}
+					frappe.show_alert({
+						message: r.message.message || __("Amendment invoice line added."),
+						indicator: "green",
+					});
+					frm.reload_doc();
+				},
+			});
+		},
+	});
+	dialog.show();
 }
 
 function setup_permit_finance_payment_buttons(frm) {
@@ -3566,6 +3924,7 @@ function setup_permit_finance_payment_buttons(frm) {
 
 function open_journal_entry_payment_dialog(frm, opts = {}) {
 	const permit_row_name = opts.permit_row_name || null;
+	const finance_line_name = opts.finance_line_name || null;
 	const title_suffix = opts.title_suffix ? ` — ${opts.title_suffix}` : "";
 	if (!frm.doc.name || frm.is_new()) {
 		frappe.msgprint(__("Save the task before making a payment."));
@@ -3620,6 +3979,7 @@ function open_journal_entry_payment_dialog(frm, opts = {}) {
 					cheque_date: values.cheque_date,
 					user_remark: values.user_remark,
 					permit_row_name,
+					finance_line_name,
 				},
 				freeze: true,
 				freeze_message: __("Creating Journal Entry…"),
