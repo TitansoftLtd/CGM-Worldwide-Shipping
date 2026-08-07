@@ -235,7 +235,7 @@ CARGO_TYPE_OPTIONS = (
 	"Project Cargo",
 )
 
-# ERPNext Notification fixture names (see fixtures/notification.json).
+# ERPNext Notification names (ensured by patches.ensure_sea_task_notifications).
 FINANCE_PAYMENT_ACTION = "CGM Task - Finance Payment Action"
 PERMIT_INVOICES_TO_FINANCE = "CGM Task - Permit Invoices to Finance"
 PERMIT_RECEIPTS_FOR_DECLARANT = "CGM Task - Permit Receipts for Declarant"

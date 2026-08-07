@@ -926,6 +926,20 @@ def _reopen_sea_task(task, *, reason: str | None = None) -> bool:
 			"reason": reason or "",
 		},
 	)
+	# set_value bypasses on_update — notify department that work is back.
+	try:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
+			send_notification,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+			your_turn_notification_for_department,
+		)
+
+		notification = your_turn_notification_for_department(task.get("department"))
+		if notification:
+			send_notification(notification, task, audience=task.get("department") or "users")
+	except Exception:
+		frappe.log_error(title=f"CGM reopen notify failed for {task.name}")
 	return True
 
 
@@ -1338,13 +1352,19 @@ def notify_finance_upload_permit_receipts(task) -> dict:
 		return {"notified": 0}
 	if not task_has_recorded_payment(task):
 		return {"notified": 0}
+	result = send_notification(
+		PERMIT_RECEIPTS_FOR_DECLARANT,
+		task,
+		audience=FINANCE_AUDIENCE,
+	)
 	return {
-		"notified": 0,
+		**result,
 		"task": task.name,
 		"task_url": get_url(f"/app/task/{task.name}"),
-		"message": (
-			"Payment recorded. You may optionally attach <b>Payment Receipt</b> on each Local "
-			"permit row on this finance task when available."
+		"message": workflow_notify_message(
+			"Finance notified to attach permit payment receipts when available.",
+			result,
+			audience=FINANCE_AUDIENCE,
 		),
 	}
 
@@ -2413,13 +2433,19 @@ def notify_finance_upload_ucr_receipt(task) -> dict:
 			message=f"Could not seed UCR finance lines on {task.name}: {frappe.get_traceback()}",
 		)
 
+	result = send_notification(
+		UCR_RECEIPT_FOR_DECLARANT,
+		task,
+		audience=FINANCE_AUDIENCE,
+	)
 	return {
-		"notified": 0,
+		**result,
 		"task": task.name,
 		"task_url": get_url(f"/app/task/{task.name}"),
-		"message": (
-			"Payment recorded. You may optionally attach the <b>UCR Receipt</b> on this finance "
-			"task when available."
+		"message": workflow_notify_message(
+			"Finance notified to attach the UCR Receipt when available.",
+			result,
+			audience=FINANCE_AUDIENCE,
 		),
 	}
 
