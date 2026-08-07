@@ -61,6 +61,16 @@ def send_notification(notification_name: str, doc, *, audience: str = "users") -
 
 	recipient_count = len(notification.get("recipients") or [])
 
+	# Prefer shipment business name (e.g. LJL-2606-0635 / 4X40 / 30) over Project ID.
+	try:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+			stamp_shipment_name_on_doc,
+		)
+
+		stamp_shipment_name_on_doc(doc)
+	except Exception:
+		pass
+
 	try:
 		notification.send(doc)
 	except Exception as exc:

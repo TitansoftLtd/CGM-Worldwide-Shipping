@@ -203,7 +203,11 @@ def notify_finance_upload_application_receipt(
 	"""After payment: prompt Finance to attach the receipt on this finance task."""
 	if not is_application_payment_task_doc(task, profile):
 		return {"notified": 0}
-	if not task.get("custom_payment_entry") and not task.get("custom_journal_entry"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_has_recorded_payment,
+	)
+
+	if not task_has_recorded_payment(task):
 		return {"notified": 0}
 	seed_application_finance_lines(task, profile)
 	try:
@@ -213,22 +217,21 @@ def notify_finance_upload_application_receipt(
 			title=f"{profile.receipt_label} seeding failed",
 			message=f"Could not seed finance lines on {task.name}: {frappe.get_traceback()}",
 		)
-	if profile.requires_pop:
-		message = (
-			f"Payment recorded. Attach the bank <b>{profile.pop_label or 'POP'}</b> "
-			f"on this finance task — Documentation will then attach the "
-			f"<b>{profile.receipt_label}</b> for Finance to verify."
-		)
-	else:
-		message = (
-			f"Payment recorded. You may optionally attach the <b>{profile.receipt_label}</b> "
-			"on this finance task when available."
-		)
+	result = send_notification(
+		profile.notification_receipt_declarant,
+		task,
+		audience=FINANCE_AUDIENCE,
+	)
+	label = profile.pop_label if profile.requires_pop else profile.receipt_label
 	return {
-		"notified": 0,
+		**result,
 		"task": task.name,
 		"task_url": get_url(f"/app/task/{task.name}"),
-		"message": message,
+		"message": workflow_notify_message(
+			f"Finance notified to attach <b>{label}</b> when available.",
+			result,
+			audience=FINANCE_AUDIENCE,
+		),
 	}
 
 

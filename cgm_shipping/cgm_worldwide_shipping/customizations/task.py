@@ -3660,6 +3660,36 @@ def before_task_save(doc, _method=None):
 	promote_ready_finance_task_before_save(doc)
 
 
+def notify_sea_task_your_turn(task) -> dict | None:
+	"""When a sea Task becomes Open again, notify the department that owns it.
+
+	Skips initial plan creation (tasks inserted already Open) to avoid spam.
+	Specific handoffs (invoice → Finance pay, etc.) use dedicated Notifications.
+	"""
+	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_auto_completing_sea_task"):
+		return None
+	if not _is_sea_task(task) or task.status != "Open":
+		return None
+	prev = task.get_doc_before_save()
+	if not prev or (prev.status or "") == "Open":
+		return None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
+		send_notification,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+		your_turn_notification_for_department,
+	)
+
+	notification = your_turn_notification_for_department(task.get("department"))
+	if not notification:
+		return None
+	flag_key = f"cgm_your_turn_notified:{task.name}"
+	if frappe.flags.get(flag_key):
+		return None
+	frappe.flags[flag_key] = True
+	return send_notification(notification, task, audience=task.get("department") or "users")
+
+
 def on_task_update(doc, _method=None):
 	seq = _sea_task_seq(doc)
 
@@ -3670,6 +3700,10 @@ def on_task_update(doc, _method=None):
 
 		check_task_container_completion(doc)
 		sync_client_paid_to_application_task(doc)
+		try:
+			notify_sea_task_your_turn(doc)
+		except Exception:
+			frappe.log_error(title=f"CGM your-turn notify failed for {doc.name}")
 
 	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status not in (
 		"Completed",
