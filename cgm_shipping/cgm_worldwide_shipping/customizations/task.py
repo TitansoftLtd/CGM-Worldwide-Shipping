@@ -585,7 +585,22 @@ def sync_client_paid_to_application_task(task) -> str | None:
 	if not app_name:
 		return None
 
-	values = {CLIENT_PAID_FIELD: 1 if task.get(CLIENT_PAID_FIELD) else 0}
+	# Prefer task-level flag; also treat any invoice-line Client will pay as set.
+	client_paid = bool(task.get(CLIENT_PAID_FIELD))
+	if not client_paid:
+		try:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+				finance_has_client_paid_invoice_line,
+				profile_for_task,
+			)
+
+			profile = profile_for_task(task)
+			if profile and finance_has_client_paid_invoice_line(task, profile):
+				client_paid = True
+		except Exception:
+			pass
+
+	values = {CLIENT_PAID_FIELD: 1 if client_paid else 0}
 	meta = frappe.get_meta("Task")
 	for field in (CLIENT_PAID_BY_FIELD, CLIENT_PAID_ON_FIELD):
 		if meta.has_field(field):
@@ -1405,10 +1420,22 @@ def _sync_ucr_line_verification_to_application(
 
 
 def sync_ucr_verification_to_application_task(finance_task) -> bool:
-	"""Mirror invoice verification from Finance pays UCR (seq 4) → Create UCR task (seq 3)."""
-	return _sync_ucr_line_verification_to_application(
-		finance_task, get_ucr_invoice_line, LINE_INVOICE, "custom_ucr_invoice_verified", seed=True
+	"""Mirror invoice verification (primary + amendments) from Finance pays UCR → Create UCR."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		sync_invoice_verification_to_application_task,
 	)
+
+	changed = sync_invoice_verification_to_application_task(
+		finance_task, APPLICATION_FINANCE_PROFILES["UCR Application"]
+	)
+	if changed and finance_task.project:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			auto_complete_ucr_application_for_project,
+		)
+
+		auto_complete_ucr_application_for_project(finance_task.project)
+	return changed
 
 
 def sync_ucr_receipt_verification_to_application_task(finance_task) -> bool:
@@ -2154,7 +2181,7 @@ def reopen_task_for_permit_attachments(task_name: str) -> dict:
 # ==================== Finance document linking ====================
 
 """Link Purchase Invoice / Payment Entry to sea finance Tasks and Project."""
-from frappe.utils import flt, now_datetime
+from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	is_sea_payment_task,
@@ -2230,12 +2257,16 @@ def create_journal_payment_from_task(
 	cheque_date: str | None = None,
 	user_remark: str | None = None,
 	permit_row_name: str | None = None,
+	finance_line_name: str | None = None,
 ) -> str:
 	"""Create a *draft* Journal Entry to pay a finance Task.
 
 	Accounts are chosen in the dialog: ``pay_to_account`` is debited (the expense
 	or payable being settled) and ``pay_from_account`` (Bank/Cash) is credited.
 	A Party is attached to whichever account is a Payable/Receivable account.
+
+	Optional ``permit_row_name`` / ``finance_line_name`` link the JE to a specific
+	permit or Task Finance Line (amendment invoices).
 	"""
 	from frappe.utils import cint, flt, getdate, today
 
@@ -2296,9 +2327,32 @@ def create_journal_payment_from_task(
 				"(tick <b>Invoice Verified</b> or use <b>Verify Invoices</b>) before Make Payment."
 			)
 
+	finance_line = None
+	if finance_line_name:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+			TASK_FINANCE_FIELD,
+		)
+
+		for row in task.get(TASK_FINANCE_FIELD) or []:
+			if row.name == finance_line_name:
+				finance_line = row
+				break
+		if not finance_line:
+			frappe.throw("Finance invoice line not found on this task.")
+		if finance_line.get("journal_entry"):
+			frappe.throw(
+				f"A Journal Entry is already linked for <b>{finance_line.line_label or 'invoice'}</b>."
+			)
+		if finance_line.get("attachment") and not cint(finance_line.get("verified")):
+			frappe.throw(
+				f"Verify <b>{finance_line.line_label or 'the invoice'}</b> before Make Payment."
+			)
+
 	remark = user_remark or f"{task.subject} ({task.name})"
 	if permit_row and permit_row.get("permit_type"):
 		remark = user_remark or f"{task.subject} - {permit_row.permit_type} ({task.name})"
+	elif finance_line and finance_line.get("line_label"):
+		remark = user_remark or f"{task.subject} - {finance_line.line_label} ({task.name})"
 
 	company_currency = frappe.get_cached_value("Company", company, "default_currency")
 	from_currency = frappe.db.get_value("Account", pay_from_account, "account_currency") or company_currency
@@ -2355,24 +2409,65 @@ def create_journal_payment_from_task(
 		task.reload()
 		if task_has_recorded_payment(task):
 			notify_declarant_upload_permit_receipts(task)
+	elif finance_line:
+		frappe.db.set_value(
+			"Task Finance Line",
+			finance_line.name,
+			"journal_entry",
+			je.name,
+			update_modified=False,
+		)
+		# Task-level JE is a legacy mirror of the primary invoice only (hidden in UI).
+		# Amendments keep JE on their row so Reference No does not show the wrong payment.
+		if task.meta.has_field("custom_journal_entry") and not cint(
+			finance_line.get("is_amendment")
+		):
+			frappe.db.set_value(
+				"Task", task.name, "custom_journal_entry", je.name, update_modified=False
+			)
 	elif task.meta.has_field("custom_journal_entry"):
 		frappe.db.set_value(
 			"Task", task.name, "custom_journal_entry", je.name, update_modified=False
 		)
+		# Also stamp the primary Invoice row when payment was not scoped to a line.
+		try:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+				get_invoice_line,
+				profile_for_task,
+			)
+
+			profile = profile_for_task(task)
+			primary = get_invoice_line(task, profile) if profile else None
+			if primary and primary.name and not primary.get("journal_entry"):
+				frappe.db.set_value(
+					"Task Finance Line",
+					primary.name,
+					"journal_entry",
+					je.name,
+					update_modified=False,
+				)
+		except Exception:
+			pass
 
 	seq = int(task.get("custom_sequence_no") or 0)
 	if is_ucr_finance_payment_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			notify_operations_upload_ucr_receipt,
 			sync_ucr_payment_to_idf_record,
+			task_has_recorded_payment,
 		)
 
 		task.reload()
 		sync_ucr_payment_to_idf_record(task)
-		notify_operations_upload_ucr_receipt(task)
+		# Wait until every invoice line (incl. amendments) is settled.
+		if task_has_recorded_payment(task):
+			notify_operations_upload_ucr_receipt(task)
 	elif is_entry_finance_payment_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			APPLICATION_FINANCE_PROFILES,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			task_has_recorded_payment,
 		)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
 			notify_declarant_upload_application_receipt,
@@ -2382,7 +2477,8 @@ def create_journal_payment_from_task(
 		task.reload()
 		entry_profile = APPLICATION_FINANCE_PROFILES["Entry Application"]
 		sync_application_payment_hooks(task, entry_profile)
-		notify_declarant_upload_application_receipt(task, entry_profile)
+		if task_has_recorded_payment(task):
+			notify_declarant_upload_application_receipt(task, entry_profile)
 
 	return je.name
 

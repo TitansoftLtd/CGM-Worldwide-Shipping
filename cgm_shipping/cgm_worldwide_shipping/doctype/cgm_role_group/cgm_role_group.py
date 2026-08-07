@@ -26,18 +26,22 @@ class CGMRoleGroup(Document):
 			frappe.cache().delete_value("cgm:sea_task_ui_sequence_lists")
 		except Exception:
 			pass
-		# Keep legacy Settings MultiSelect lists in sync for older callers.
+		if self.flags.get("skip_settings_sync"):
+			return
+		# Keep Settings MultiSelect lists in sync with this Role Group.
 		_sync_settings_role_multiselect(self)
 
 
+def _settings_role_field_by_group() -> dict[str, str]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		SETTINGS_ROLE_FIELDS,
+	)
+
+	return dict(SETTINGS_ROLE_FIELDS)
+
+
 def _sync_settings_role_multiselect(role_group: "CGMRoleGroup") -> None:
-	field_by_name = {
-		"Finance": "custom_finance_roles",
-		"Declaration": "custom_declaration_roles",
-		"Operations": "custom_operations_roles",
-		"Transport": "custom_transport_roles",
-	}
-	fieldname = field_by_name.get(role_group.name)
+	fieldname = _settings_role_field_by_group().get(role_group.name)
 	if not fieldname or not frappe.db.exists("DocType", "CGM Shipping Settings"):
 		return
 	settings = frappe.get_doc("CGM Shipping Settings")
@@ -51,4 +55,5 @@ def _sync_settings_role_multiselect(role_group: "CGMRoleGroup") -> None:
 	for role in sorted(wanted):
 		settings.append(fieldname, {"role": role})
 	settings.flags.ignore_permissions = True
+	settings.flags.skip_role_group_sync = True
 	settings.save(ignore_permissions=True)

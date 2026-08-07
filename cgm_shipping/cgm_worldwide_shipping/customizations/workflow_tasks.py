@@ -144,7 +144,11 @@ def get_workflow_tasks_for_project(
 	for row in rows:
 		if "custom_sequence_no" in row and "seq" not in row:
 			row["seq"] = row.get("custom_sequence_no")
-	return rows
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		filter_sea_tasks_for_user,
+	)
+
+	return filter_sea_tasks_for_user(rows)
 
 
 def get_all_workflow_tasks_for_project(project: str, user: str | None = None) -> list[dict]:

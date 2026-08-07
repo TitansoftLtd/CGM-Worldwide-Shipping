@@ -45,15 +45,15 @@ DEFAULT_ROLE_GROUPS: dict[str, tuple[str, tuple[str, ...]]] = {
 		("Declarant", "Declaration User"),
 	),
 	ROLE_GROUP_OPERATIONS: (
-		"Operations,Field Operations",
+		"Operations",
 		("Operations Manager", "Operations User"),
 	),
 	ROLE_GROUP_DOCUMENTATION: (
 		"Documentation",
-		("CGM Documentation", "Operations Manager"),
+		("CGM Documentation", "Documentation"),
 	),
 	ROLE_GROUP_TRANSPORT: (
-		"Transport",
+		"Transport,Field Operations",
 		("Transport Manager", "Transport User", "Fleet Manager", "Transporter"),
 	),
 }
@@ -143,6 +143,7 @@ SETTINGS_ROLE_FIELDS = {
 	ROLE_GROUP_FINANCE: "custom_finance_roles",
 	ROLE_GROUP_DECLARATION: "custom_declaration_roles",
 	ROLE_GROUP_OPERATIONS: "custom_operations_roles",
+	ROLE_GROUP_DOCUMENTATION: "custom_documentation_roles",
 	ROLE_GROUP_TRANSPORT: "custom_transport_roles",
 }
 
@@ -373,6 +374,110 @@ def ensure_document_responsibilities(settings=None) -> bool:
 	return changed
 
 
+def migrate_strict_department_task_visibility() -> bool:
+	"""Scope department task visibility to real department roles only.
+
+	- Operations group stems: drop Documentation; narrow legacy ``Operations,Field Operations``
+	  to ``Operations``.
+	- Documentation group: remove Operations Manager / Operations User left from old defaults.
+	- Strip desk-wide roles (Projects User / Projects Manager / …) from every CGM Role Group
+	  and Settings Roles Multiselect — those roles are needed for Desk/Task DocPerm, not for
+	  opening every clearance department.
+	"""
+	if not frappe.db.exists("DocType", "CGM Role Group"):
+		return False
+
+	changed = False
+	desk_drop = {
+		"Projects User",
+		"Projects Manager",
+		"System Manager",
+		"Administrator",
+		"All",
+		"Guest",
+		"Desk User",
+		"Dashboard Manager",
+		"Supplier",
+	}
+
+	if frappe.db.exists("CGM Role Group", ROLE_GROUP_OPERATIONS):
+		doc = frappe.get_doc("CGM Role Group", ROLE_GROUP_OPERATIONS)
+		raw = (doc.department_stems or "").strip()
+		parts = [s.strip() for s in raw.split(",") if s.strip()]
+		# Legacy default bundled Field Operations with Operations.
+		if set(parts) == {"Operations", "Field Operations"}:
+			parts = ["Operations"]
+		parts = [p for p in parts if p != "Documentation"]
+		new_raw = ",".join(parts) if parts else "Operations"
+		if new_raw != raw:
+			doc.department_stems = new_raw
+			doc.flags.ignore_permissions = True
+			doc.flags.skip_settings_sync = True
+			doc.save(ignore_permissions=True)
+			changed = True
+
+	if frappe.db.exists("CGM Role Group", ROLE_GROUP_DOCUMENTATION):
+		doc = frappe.get_doc("CGM Role Group", ROLE_GROUP_DOCUMENTATION)
+		drop = {"Operations Manager", "Operations User"} | desk_drop
+		current_roles = [r.role for r in (doc.get("roles") or []) if r.role]
+		kept_roles = [role for role in current_roles if role not in drop]
+		if kept_roles != current_roles:
+			doc.set("roles", [])
+			for role in kept_roles:
+				doc.append("roles", {"role": role})
+			have = set(kept_roles)
+			for role in ("CGM Documentation", "Documentation"):
+				if role not in have and frappe.db.exists("Role", role):
+					doc.append("roles", {"role": role})
+			doc.flags.ignore_permissions = True
+			doc.flags.skip_settings_sync = True
+			doc.save(ignore_permissions=True)
+			changed = True
+
+	for group_name in (
+		ROLE_GROUP_FINANCE,
+		ROLE_GROUP_DECLARATION,
+		ROLE_GROUP_OPERATIONS,
+		ROLE_GROUP_TRANSPORT,
+	):
+		if not frappe.db.exists("CGM Role Group", group_name):
+			continue
+		doc = frappe.get_doc("CGM Role Group", group_name)
+		current_roles = [r.role for r in (doc.get("roles") or []) if r.role]
+		kept_roles = [role for role in current_roles if role not in desk_drop]
+		if kept_roles != current_roles:
+			doc.set("roles", [])
+			for role in kept_roles:
+				doc.append("roles", {"role": role})
+			doc.flags.ignore_permissions = True
+			doc.flags.skip_settings_sync = True
+			doc.save(ignore_permissions=True)
+			changed = True
+
+	if frappe.db.exists("DocType", "CGM Shipping Settings"):
+		settings = frappe.get_doc("CGM Shipping Settings")
+		settings_changed = False
+		for _group, fieldname in SETTINGS_ROLE_FIELDS.items():
+			if not settings.meta.has_field(fieldname):
+				continue
+			current = [r.role for r in (settings.get(fieldname) or []) if r.role]
+			kept = [role for role in current if role not in desk_drop]
+			if kept != current:
+				settings.set(fieldname, [])
+				for role in kept:
+					settings.append(fieldname, {"role": role})
+				settings_changed = True
+		if settings_changed:
+			settings.flags.ignore_permissions = True
+			settings.flags.skip_role_group_sync = True
+			settings.save(ignore_permissions=True)
+			changed = True
+
+	if changed:
+		frappe.clear_cache()
+	return changed
+
+
 def ensure_default_role_group_membership(settings=None) -> bool:
 	"""Fill empty legacy Settings MultiSelect tables (kept in sync with CGM Role Group)."""
 	if settings is None:
@@ -458,9 +563,10 @@ def roles_for_group(role_group: str) -> frozenset[str]:
 		if roles:
 			return roles
 
-	# Legacy Settings MultiSelect fallback for the four classic groups.
+	# Settings MultiSelect fallback (and union source for classic groups).
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		configured_declaration_roles,
+		configured_documentation_roles,
 		configured_finance_roles,
 		configured_operations_roles,
 		configured_transport_roles,
@@ -470,6 +576,7 @@ def roles_for_group(role_group: str) -> frozenset[str]:
 		ROLE_GROUP_FINANCE: configured_finance_roles,
 		ROLE_GROUP_DECLARATION: configured_declaration_roles,
 		ROLE_GROUP_OPERATIONS: configured_operations_roles,
+		ROLE_GROUP_DOCUMENTATION: configured_documentation_roles,
 		ROLE_GROUP_TRANSPORT: configured_transport_roles,
 	}
 	getter = legacy.get(role_group)
@@ -491,20 +598,27 @@ def department_stems_for_group(role_group: str) -> frozenset[str]:
 
 
 def user_matches_department_stems(stems: frozenset[str], user: str | None = None) -> bool:
-	"""True when the user has an ERPNext Role whose name matches a department stem,
-	or (best-effort) when any open Task department they own matches — role name is primary.
+	"""True when the user has an ERPNext Role that exactly matches a stem, or is a
+	prefixed role for that stem (e.g. ``Operations Manager`` for ``Operations``).
+
+	Does not use bare substring matching — that incorrectly treated
+	``Field Operations`` as matching stem ``Operations``.
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import user_roles
 
 	if not stems:
 		return False
 	roles = user_roles(user)
-	# Role named like the stem (e.g. "Documentation") or containing it.
 	for stem in stems:
-		if stem in roles:
-			return True
-		if any(stem.lower() in (r or "").lower() for r in roles):
-			return True
+		stem_l = (stem or "").strip().lower()
+		if not stem_l:
+			continue
+		for role in roles:
+			role_l = (role or "").strip().lower()
+			if not role_l:
+				continue
+			if role_l == stem_l or role_l.startswith(stem_l + " "):
+				return True
 	return False
 
 
@@ -512,6 +626,7 @@ def user_in_role_group(role_group: str, user: str | None = None) -> bool:
 	"""True when user has a role on the CGM Role Group, or matches its department stems."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		user_has_declarant_department_access,
+		user_has_documentation_department_access,
 		user_has_finance_department_access,
 		user_has_operations_department_access,
 		user_roles,
@@ -533,12 +648,9 @@ def user_in_role_group(role_group: str, user: str | None = None) -> bool:
 		return user_has_finance_department_access(user)
 	if role_group == ROLE_GROUP_DECLARATION:
 		return user_has_declarant_department_access(user)
-	if role_group in (ROLE_GROUP_OPERATIONS, ROLE_GROUP_DOCUMENTATION):
-		# Documentation visibility is part of operations visibility stems.
-		if role_group == ROLE_GROUP_DOCUMENTATION and "Documentation" in stems:
-			roles = user_roles(user)
-			if "CGM Documentation" in roles or "Documentation" in roles:
-				return True
+	if role_group == ROLE_GROUP_DOCUMENTATION:
+		return user_has_documentation_department_access(user)
+	if role_group == ROLE_GROUP_OPERATIONS:
 		return user_has_operations_department_access(user)
 	if role_group == ROLE_GROUP_TRANSPORT:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
