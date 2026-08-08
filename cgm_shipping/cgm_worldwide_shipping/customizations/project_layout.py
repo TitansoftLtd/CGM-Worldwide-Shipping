@@ -19,7 +19,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	derive_workflow_progress_from_tasks,
-	get_tracking_workflow_states,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
 	GENERIC_WORKFLOW_STATES,
@@ -1273,7 +1272,16 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	doc = frappe.get_doc("Project", project)
 	workflow_status = doc.get("custom_shipment_status") or "Draft"
 	use_clearance_states = project_uses_clearance_workflow_states(doc)
-	states = get_tracking_workflow_states() if use_clearance_states else list(GENERIC_WORKFLOW_STATES)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_clearance_workflow_gates_for_project,
+		get_clearance_workflow_states_for_project,
+	)
+
+	states = (
+		get_clearance_workflow_states_for_project(doc)
+		if use_clearance_states
+		else list(GENERIC_WORKFLOW_STATES)
+	)
 	try:
 		workflow_index = states.index(workflow_status)
 	except ValueError:
@@ -1285,7 +1293,10 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	total = len(tasks) or workflow_task_count_for_project(doc)
 
 	if use_clearance_states:
-		progress_status, progress_index = derive_workflow_progress_from_tasks(tasks, states)
+		gates = get_clearance_workflow_gates_for_project(doc)
+		progress_status, progress_index = derive_workflow_progress_from_tasks(
+			tasks, states=states, gates=gates
+		)
 	else:
 		progress_status, progress_index = derive_generic_workflow_progress(tasks)
 
@@ -1295,11 +1306,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	workflow_behind = workflow_index < progress_index
 	workflow_ahead = workflow_index > progress_index
 	# Keep the shipment status field aligned with tasks — advance OR rewind.
-	if (
-		(workflow_behind or workflow_ahead)
-		and use_clearance_states
-		and doc.get("custom_mode_of_transport") == "Sea"
-	):
+	if (workflow_behind or workflow_ahead) and use_clearance_states:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 			sync_project_shipment_status_from_tasks,
 		)

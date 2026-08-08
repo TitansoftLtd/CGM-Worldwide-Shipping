@@ -133,8 +133,9 @@ def furthest_contiguous_completed_seq(completed_seqs: set[int]) -> int:
 def derive_workflow_progress_from_tasks(
 	tasks: list,
 	states: list[str] | None = None,
+	gates: dict | None = None,
 ) -> tuple[str, int]:
-	"""Furthest workflow state supported by completed sea tasks (for the progress chart)."""
+	"""Furthest workflow state supported by completed clearance tasks (progress chart)."""
 	states = states or get_tracking_workflow_states()
 	if not states:
 		return "Draft", 0
@@ -145,12 +146,15 @@ def derive_workflow_progress_from_tasks(
 	progress_seq = furthest_contiguous_completed_seq(completed_seqs)
 	progress_status = states[0]
 	progress_index = 0
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		get_workflow_task_gates,
-	)
+	if gates is None:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			get_workflow_task_gates,
+		)
+
+		gates = get_workflow_task_gates()
 
 	for state in states:
-		gate_row = get_workflow_task_gates().get(state)
+		gate_row = gates.get(state) if gates else None
 		gate = gate_row.get("min_completed_task_seq") if gate_row else None
 		if gate and progress_seq >= gate:
 			progress_status = state
@@ -179,11 +183,20 @@ def _project_workflow_flow_keys(project: str) -> tuple[str, ...]:
 
 
 def sync_project_shipment_status_from_tasks(project: str) -> str | None:
-	"""Align Project shipment status with completed sea tasks (advance or rewind)."""
+	"""Align Project shipment status with completed clearance tasks (advance or rewind)."""
 	if frappe.flags.get("cgm_skip_task_project_sync"):
 		return None
-	if frappe.db.get_value("Project", project, "custom_mode_of_transport") != "Sea":
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_clearance_workflow_gates_for_project,
+		get_clearance_workflow_states_for_project,
+		project_uses_clearance_workflow_states,
+	)
+
+	proj = frappe.get_doc("Project", project)
+	if not project_uses_clearance_workflow_states(proj):
 		return None
+
 	tasks = frappe.get_all(
 		"Task",
 		filters={
@@ -193,17 +206,17 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 		fields=_sea_task_progress_fields(),
 		limit=100,
 	)
-	progress_status, _ = derive_workflow_progress_from_tasks(tasks)
+	states = get_clearance_workflow_states_for_project(proj)
+	gates = get_clearance_workflow_gates_for_project(proj)
+	progress_status, _ = derive_workflow_progress_from_tasks(tasks, states=states, gates=gates)
 	current = frappe.db.get_value("Project", project, "custom_shipment_status") or "Draft"
-	states = get_tracking_workflow_states()
 	if not states:
 		return None
-	try:
-		if states.index(progress_status) == states.index(current):
-			return None
-	except ValueError:
-		# Unknown current status — still snap to task-derived progress.
-		pass
+	if progress_status == current:
+		return None
+	if progress_status not in states:
+		return None
+
 	frappe.db.set_value(
 		"Project",
 		project,
@@ -219,6 +232,7 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 			progress_status,
 			update_modified=False,
 		)
+	frappe.clear_document_cache("Project", project)
 	frappe.publish_realtime(
 		"cgm_project_tracking_refresh",
 		{"project": project},

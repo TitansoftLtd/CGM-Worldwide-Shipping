@@ -208,16 +208,24 @@ def road_transit_outbound_tasks() -> list[dict]:
 
 
 def road_transit_inbound_tasks() -> list[dict]:
+	"""Road transit inbound: Declaration applies → Finance pays (Sea/Air pattern).
+
+	Book trucks and Obtain C2 are separate Transport / Declaration steps.
+	"""
 	return [
 		_row(1, "Receive shipment documents", "Documentation", doc=1),
-		_row(2, "IDF application and UCR payment", "Declaration", depends=1, finance=1),
-		_row(3, "Apply and pay pre-clearance permits", "Declaration", depends=2, finance=1, permit=1),
-		_row(4, "Lodge border or ICD entry", "Declaration", depends=3),
-		_row(5, "Taxes paid", "Finance", depends=4, finance=1),
-		_row(6, "Post-clearance permits", "Declaration", depends=5, finance=1, permit=1),
-		_row(7, "Border and ICD clearance", "Field Operations", depends=6),
-		_row(8, "Book trucks and obtain C2", "Transport", depends=7, container=1),
-		_row(9, "Monitor delivery to Kenya destination", "Transport", depends=8, container=1),
+		_row(2, "IDF application (UCR)", "Declaration", depends=1),
+		_row(3, "Finance pays UCR", "Finance", depends=2, finance=1),
+		_row(4, "Apply for pre-clearance permits", "Declaration", depends=3, permit=1),
+		_row(5, "Finance pays pre-clearance permits", "Finance", depends=4, finance=1),
+		_row(6, "Lodge border or ICD entry", "Declaration", depends=5),
+		_row(7, "Finance pays entry / taxes", "Finance", depends=6, finance=1),
+		_row(8, "Apply for post-clearance permits", "Declaration", depends=7, permit=1),
+		_row(9, "Finance pays post-clearance permits", "Finance", depends=8, finance=1),
+		_row(10, "Border and ICD clearance", "Field Operations", depends=9),
+		_row(11, "Book trucks", "Transport", depends=10, container=1),
+		_row(12, "Obtain C2", "Declaration", depends=11, doc=1),
+		_row(13, "Monitor delivery to Kenya destination", "Transport", depends=12, container=1),
 	]
 
 

@@ -556,21 +556,36 @@ function setup_bill_of_lading_shipment_type_query(frm) {
 	}
 	frm._cgm_bl_shipment_type_query_setup = true;
 
-	const apply_query = (profiles) => {
-		const sea_types = cgm_shipping.transport_reference.shipment_type_names_for_category(
-			profiles,
-			"sea"
-		);
+	const apply_query = () => {
 		frm.set_query("shipment_type", () => {
-			if (!sea_types.length) {
+			const profiles = cgm_shipping.transport_reference._profiles || {};
+			const current = (frm.doc.shipment_type || "").trim();
+			const current_category =
+				(current && profiles[current] && profiles[current].category) || null;
+
+			// Match the seeded / current type's mode (Road → road types, Sea → sea).
+			// Standalone BL (no type yet): sea + road — both use Bill of Lading in intake.
+			const categories = current_category ? [current_category] : ["sea", "road"];
+			const allowed = new Set();
+			categories.forEach((category) => {
+				cgm_shipping.transport_reference
+					.shipment_type_names_for_category(profiles, category)
+					.forEach((name) => allowed.add(name));
+			});
+			if (current) {
+				allowed.add(current);
+			}
+
+			const names = Array.from(allowed);
+			if (!names.length) {
 				return { filters: { is_active: 1 } };
 			}
-			return { filters: { name: ["in", sea_types] } };
+			return { filters: { name: ["in", names] } };
 		});
 	};
 
 	if (cgm_shipping.transport_reference._profiles) {
-		apply_query(cgm_shipping.transport_reference._profiles);
+		apply_query();
 		return;
 	}
 
