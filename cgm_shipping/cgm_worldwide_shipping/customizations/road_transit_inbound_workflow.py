@@ -25,6 +25,9 @@ DEFAULT_ROAD_TRANSIT_INBOUND_WORKFLOW_STATES: list[str] = ["Draft"] + [
 	row["shipment_workflow_state"] for row in DEFAULT_ROAD_TRANSIT_INBOUND_WORKFLOW_GATES
 ]
 
+# Receive shipment documents — auto-complete when CRM CI/PKL already on the Project.
+ROAD_TRANSIT_INBOUND_AUTO_COMPLETE_SEQS: frozenset[int] = frozenset({1})
+
 
 def get_road_transit_inbound_workflow_states() -> list[str]:
 	return list(DEFAULT_ROAD_TRANSIT_INBOUND_WORKFLOW_STATES)
@@ -41,3 +44,7 @@ def get_road_transit_inbound_workflow_gates() -> dict[str, dict]:
 				"gate_rule": "Standard",
 			}
 	return out
+
+
+def get_road_transit_inbound_auto_complete_sequences() -> frozenset[int]:
+	return ROAD_TRANSIT_INBOUND_AUTO_COMPLETE_SEQS

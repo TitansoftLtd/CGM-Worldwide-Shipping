@@ -25,8 +25,19 @@ def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		sea_import_flow_keys,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_project_workflow_flow_keys,
+	)
 
-	for flow_key in sea_import_flow_keys():
+	keys: list[str] = []
+	seen: set[str] = set()
+	for flow_key in (*sea_import_flow_keys(), *get_project_workflow_flow_keys(project)):
+		value = (flow_key or "").strip()
+		if value and value not in seen:
+			seen.add(value)
+			keys.append(value)
+
+	for flow_key in keys:
 		name = frappe.db.get_value(
 			"Task",
 			{
@@ -38,7 +49,13 @@ def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 		)
 		if name:
 			return name
-	return None
+
+	# Last resort: sequence alone on this project (single-plan projects).
+	return frappe.db.get_value(
+		"Task",
+		{"project": project, "custom_sequence_no": sequence_no},
+		"name",
+	)
 
 
 
@@ -885,10 +902,22 @@ def _find_line(task, line_type: str, payment_item: str = PAYMENT_UCR):
 
 
 def _ensure_line(task, line_type: str, label: str, payment_item: str = PAYMENT_UCR):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		build_finance_line_payload,
+		get_clearance_charge_item,
+		task_finance_line_has_charge_item,
+	)
+
 	row = _find_line(task, line_type, payment_item)
 	if row:
 		if not row.line_label:
 			row.line_label = label
+		if not row.get("charge_item") and task_finance_line_has_charge_item():
+			charge_item = get_clearance_charge_item(
+				payment_item, line_type, fallback_label=label
+			)
+			if charge_item:
+				row.charge_item = charge_item
 		if (
 			line_type == LINE_INVOICE
 			and task_finance_line_has_item_code()
@@ -896,14 +925,15 @@ def _ensure_line(task, line_type: str, label: str, payment_item: str = PAYMENT_U
 		):
 			row.item_code = get_purchase_item_for_payment_item(payment_item, task.company)
 		return row
-	payload = {
-		"line_label": label,
-		"line_type": line_type,
-		"payment_item": payment_item,
-	}
-	if line_type == LINE_INVOICE and task_finance_line_has_item_code():
-		payload["item_code"] = get_purchase_item_for_payment_item(payment_item, task.company)
-	task.append(TASK_FINANCE_FIELD, payload)
+	task.append(
+		TASK_FINANCE_FIELD,
+		build_finance_line_payload(
+			line_type,
+			payment_item,
+			fallback_label=label,
+			company=task.company,
+		),
+	)
 	return task.get(TASK_FINANCE_FIELD)[-1]
 
 

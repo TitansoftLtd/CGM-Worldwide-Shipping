@@ -1580,7 +1580,11 @@ function unverified_receipt_line_on_form(frm) {
 }
 
 function finance_line_display_label(row) {
-	return row.line_label || (cint(row.is_amendment) ? __("Invoice (amendment)") : __("Invoice"));
+	return (
+		row.charge_item ||
+		row.line_label ||
+		(cint(row.is_amendment) ? __("Invoice (amendment)") : __("Invoice"))
+	);
 }
 
 function ucr_finance_ready_on_form(frm) {
@@ -1652,13 +1656,29 @@ function configure_finance_line_grid(frm, ui) {
 
 	// Set docfield properties directly - avoid toggle_enable() which re-renders the grid
 	// and can collapse the toolbar while the user clicks action buttons.
-	const line_label_df = grid.get_docfield("line_label");
 	const verified_df = grid.get_docfield("verified");
-	if (line_label_df) {
-		line_label_df.read_only = 1;
-	}
 	if (verified_df) {
 		verified_df.read_only = is_app_step ? 1 : is_finance ? 0 : 1;
+	}
+	// Item links to Clearance Charge Item master (UCR Invoice, UCR Receipt, …).
+	grid.update_docfield_property("charge_item", "read_only", 0);
+	if (grid.get_docfield("line_label")) {
+		grid.update_docfield_property("line_label", "hidden", 1);
+	}
+	const charge_field = grid.get_field("charge_item");
+	if (charge_field && !charge_field._cgm_charge_query) {
+		charge_field._cgm_charge_query = true;
+		charge_field.get_query = (_doc, cdt, cdn) => {
+			const row = locals[cdt][cdn] || {};
+			const filters = { is_active: 1 };
+			if (row.line_type) {
+				filters.line_type = row.line_type;
+			}
+			if (row.payment_item) {
+				filters.payment_kind = row.payment_item;
+			}
+			return { filters };
+		};
 	}
 
 	if (is_app_step) {
@@ -2476,6 +2496,35 @@ function configure_permit_grid(frm) {
 }
 
 frappe.ui.form.on("Task Finance Line", {
+	charge_item(frm, cdt, cdn) {
+		if (frm.doctype !== "Task") {
+			return;
+		}
+		const row = locals[cdt][cdn];
+		if (!row.charge_item) {
+			return;
+		}
+		frappe.db.get_value(
+			"Clearance Charge Item",
+			row.charge_item,
+			["charge_name", "line_type", "payment_kind", "purchase_item"],
+			(r) => {
+				if (!r) {
+					return;
+				}
+				frappe.model.set_value(cdt, cdn, "line_label", r.charge_name || row.charge_item);
+				if (r.line_type) {
+					frappe.model.set_value(cdt, cdn, "line_type", r.line_type);
+				}
+				if (r.payment_kind) {
+					frappe.model.set_value(cdt, cdn, "payment_item", r.payment_kind);
+				}
+				if (r.purchase_item && row.line_type === "Invoice") {
+					frappe.model.set_value(cdt, cdn, "item_code", r.purchase_item);
+				}
+			}
+		);
+	},
 	form_render(frm, cdt, cdn) {
 		if (frm.doctype !== "Task") {
 			return;

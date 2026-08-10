@@ -63,6 +63,9 @@ def after_migrate() -> None:
 
 
 def ensure_task_workflow_masters() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		repair_clearance_charge_item_setup,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		ensure_transit_project_fields,
 	)
@@ -75,6 +78,7 @@ def ensure_task_workflow_masters() -> None:
 		ensure_transit_project_fields()
 	seed_task_workflow_masters()
 	seed_cgm_shipping_settings()
+	repair_clearance_charge_item_setup()
 	frappe.db.commit()
 
 

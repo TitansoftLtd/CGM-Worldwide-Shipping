@@ -641,11 +641,12 @@ def _seed_project_workflow_state(project_name: str) -> None:
 	if not shipment_status:
 		return
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		get_sea_import_workflow_states,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_clearance_workflow_states_for_project,
 	)
 
-	valid_states = get_sea_import_workflow_states()
+	project = frappe.get_doc("Project", project_name)
+	valid_states = get_clearance_workflow_states_for_project(project)
 	if not valid_states or shipment_status not in valid_states:
 		return
 

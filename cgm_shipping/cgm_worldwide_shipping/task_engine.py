@@ -229,26 +229,54 @@ def _run_post_create_automation(project_name: str, template_name: str) -> None:
 		carry_project_documents_to_sea_tasks,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+		bootstrap_project_workflow_status,
 		project_ready_for_documents_received,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.road_transit_inbound_workflow import (
+		get_road_transit_inbound_auto_complete_sequences,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+		sync_project_shipment_status_from_tasks,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		auto_complete_sequences,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		ROAD_TRANSIT_INBOUND_TEMPLATE,
 		SEA_TRANSIT_IMPORT_TEMPLATE,
 	)
 
 	normalized = normalize_template_name(template_name)
-	if normalized not in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE):
+	if normalized not in (
+		SEA_IMPORT_TEMPLATE,
+		SEA_TRANSIT_IMPORT_TEMPLATE,
+		ROAD_TRANSIT_INBOUND_TEMPLATE,
+	):
 		return
 
 	project_doc = frappe.get_doc("Project", project_name)
 	if not project_ready_for_documents_received(project_doc):
 		return
 
-	carry_project_documents_to_sea_tasks(project_name)
-	_auto_complete_intake_tasks(project_name, template_name)
+	if normalized == ROAD_TRANSIT_INBOUND_TEMPLATE:
+		seqs = sorted(get_road_transit_inbound_auto_complete_sequences())
+	else:
+		seqs = sorted(auto_complete_sequences())
+
+	carry_project_documents_to_sea_tasks(project_name, task_sequences=seqs)
+	_auto_complete_intake_tasks(project_name, template_name, sequences=seqs)
+	# Status chart: Documents Received once intake task(s) are complete.
+	bootstrap_project_workflow_status(project_name)
+	sync_project_shipment_status_from_tasks(project_name)
 
 
-def _auto_complete_intake_tasks(project_name: str, template_name: str) -> None:
-	"""Mark template intake tasks complete (sequences from Settings auto-complete list)."""
+def _auto_complete_intake_tasks(
+	project_name: str,
+	template_name: str,
+	*,
+	sequences: list[int] | None = None,
+) -> None:
+	"""Mark template intake tasks complete when CRM documents already cover them."""
 	from frappe.utils import now_datetime
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
@@ -258,16 +286,31 @@ def _auto_complete_intake_tasks(project_name: str, template_name: str) -> None:
 		auto_complete_sequences,
 	)
 
-	for seq in sorted(auto_complete_sequences()):
-		task_name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project_name,
-				"custom_task_flow_key": template_name,
-				"custom_sequence_no": seq,
-			},
-			"name",
-		)
+	seqs = sequences if sequences is not None else sorted(auto_complete_sequences())
+	flow_keys = {
+		template_name,
+		normalize_template_name(template_name) or template_name,
+	}
+	for seq in seqs:
+		task_name = None
+		for flow_key in flow_keys:
+			task_name = frappe.db.get_value(
+				"Task",
+				{
+					"project": project_name,
+					"custom_task_flow_key": flow_key,
+					"custom_sequence_no": seq,
+				},
+				"name",
+			)
+			if task_name:
+				break
+		if not task_name:
+			task_name = frappe.db.get_value(
+				"Task",
+				{"project": project_name, "custom_sequence_no": seq},
+				"name",
+			)
 		if not task_name:
 			continue
 		if frappe.db.get_value("Task", task_name, "status") == "Completed":

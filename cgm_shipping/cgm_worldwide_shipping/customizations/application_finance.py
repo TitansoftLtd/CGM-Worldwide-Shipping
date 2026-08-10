@@ -626,6 +626,11 @@ def receipt_verified(task, profile: ApplicationFinanceProfile) -> bool:
 
 
 def _ensure_line(task, line_type: str, profile: ApplicationFinanceProfile):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		build_finance_line_payload,
+		get_clearance_charge_item,
+		task_finance_line_has_charge_item,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_purchase_item_for_payment_item,
 		task_finance_line_has_item_code,
@@ -641,6 +646,12 @@ def _ensure_line(task, line_type: str, profile: ApplicationFinanceProfile):
 	if row:
 		if not row.line_label:
 			row.line_label = label
+		if not row.get("charge_item") and task_finance_line_has_charge_item():
+			charge_item = get_clearance_charge_item(
+				profile.payment_item, line_type, fallback_label=label
+			)
+			if charge_item:
+				row.charge_item = charge_item
 		if (
 			line_type == LINE_INVOICE
 			and task_finance_line_has_item_code()
@@ -648,14 +659,15 @@ def _ensure_line(task, line_type: str, profile: ApplicationFinanceProfile):
 		):
 			row.item_code = get_purchase_item_for_payment_item(profile.payment_item, task.company)
 		return row
-	payload = {
-		"line_label": label,
-		"line_type": line_type,
-		"payment_item": profile.payment_item,
-	}
-	if line_type == LINE_INVOICE and task_finance_line_has_item_code():
-		payload["item_code"] = get_purchase_item_for_payment_item(profile.payment_item, task.company)
-	task.append(TASK_FINANCE_FIELD, payload)
+	task.append(
+		TASK_FINANCE_FIELD,
+		build_finance_line_payload(
+			line_type,
+			profile.payment_item,
+			fallback_label=label,
+			company=task.company,
+		),
+	)
 	return task.get(TASK_FINANCE_FIELD)[-1]
 
 
@@ -759,6 +771,10 @@ def ensure_application_finance_lines_saved(task, profile: ApplicationFinanceProf
 	if after == before:
 		return False
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		get_clearance_charge_item,
+		task_finance_line_has_charge_item,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_purchase_item_for_payment_item,
 		task_finance_line_has_item_code,
@@ -782,6 +798,22 @@ def ensure_application_finance_lines_saved(task, profile: ApplicationFinanceProf
 					"payment_item": row.payment_item or profile.payment_item,
 					"idx": cint(row.idx) or 0,
 				}
+				if row.get("charge_item"):
+					payload["charge_item"] = row.charge_item
+				elif task_finance_line_has_charge_item():
+					fallback = row.line_label
+					if not fallback:
+						if row.line_type == LINE_INVOICE:
+							fallback = profile.invoice_label
+						elif row.line_type == LINE_POP:
+							fallback = profile.pop_label or "POP"
+						else:
+							fallback = profile.receipt_label
+					charge_item = get_clearance_charge_item(
+						profile.payment_item, row.line_type, fallback_label=fallback
+					)
+					if charge_item:
+						payload["charge_item"] = charge_item
 				if row.line_type == LINE_INVOICE and task_finance_line_has_item_code():
 					payload["item_code"] = row.get("item_code") or get_purchase_item_for_payment_item(
 						profile.payment_item, task.company
@@ -802,6 +834,13 @@ def ensure_application_finance_lines_saved(task, profile: ApplicationFinanceProf
 					updates["line_label"] = profile.pop_label or "POP"
 				else:
 					updates["line_label"] = profile.receipt_label
+			if not row.get("charge_item") and task_finance_line_has_charge_item():
+				fallback = row.line_label or updates.get("line_label")
+				charge_item = get_clearance_charge_item(
+					profile.payment_item, row.line_type, fallback_label=fallback
+				)
+				if charge_item:
+					updates["charge_item"] = charge_item
 			if (
 				row.line_type == LINE_INVOICE
 				and task_finance_line_has_item_code()
