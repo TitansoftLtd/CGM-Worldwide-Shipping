@@ -8,6 +8,95 @@ LINE_INVOICE = "Invoice"
 LINE_POP = "POP"
 LINE_RECEIPT = "Receipt"
 
+DEFAULT_PAYMENT_KINDS: tuple[dict, ...] = (
+	{
+		"payment_kind": "UCR",
+		"description": "UCR / IDF finance payment grouping.",
+	},
+	{
+		"payment_kind": "ENTRY_SLIP",
+		"description": "Customs entry / e-slip finance payment grouping.",
+	},
+	{
+		"payment_kind": "Shipping Line",
+		"description": "Shipping line finance payment grouping.",
+	},
+	{
+		"payment_kind": "Customs Entry",
+		"description": "Customs entry finance payment grouping.",
+	},
+	{
+		"payment_kind": "KPA",
+		"description": "KPA port charge finance payment grouping.",
+	},
+)
+
+DEFAULT_LINE_TYPES: tuple[dict, ...] = (
+	{
+		"line_type": "Invoice",
+		"description": "Invoice line type.",
+	},
+	{
+		"line_type": "Receipt",
+		"description": "Receipt line type.",
+	},
+	{
+		"line_type": "POP",
+		"description": "Proof of payment / POP line type.",
+	},
+)
+
+
+def ensure_payment_kinds() -> int:
+	"""Create missing Payment Kind master rows used by Clearance Charge Item."""
+	if not frappe.db.exists("DocType", "Payment Kind"):
+		return 0
+
+	created = 0
+	for spec in DEFAULT_PAYMENT_KINDS:
+		name = (spec.get("payment_kind") or "").strip()
+		if not name:
+			continue
+		if frappe.db.exists("Payment Kind", name):
+			continue
+		doc = frappe.get_doc(
+			{
+				"doctype": "Payment Kind",
+				"payment_kind": name,
+				"is_active": 1,
+				"description": spec.get("description") or "",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		created += 1
+	return created
+
+
+def ensure_line_types() -> int:
+	"""Create missing Line Type master rows used by Clearance Charge Item."""
+	if not frappe.db.exists("DocType", "Line Type"):
+		return 0
+
+	created = 0
+	for spec in DEFAULT_LINE_TYPES:
+		name = (spec.get("line_type") or "").strip()
+		if not name:
+			continue
+		if frappe.db.exists("Line Type", name):
+			continue
+		doc = frappe.get_doc(
+			{
+				"doctype": "Line Type",
+				"line_type": name,
+				"is_active": 1,
+				"description": spec.get("description") or "",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		created += 1
+	return created
+
+
 # Defaults seeded when missing. Ops can add more rows in Desk without code changes.
 DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 	{
@@ -71,6 +160,10 @@ def ensure_clearance_charge_items(*, sync_descriptions: bool = False) -> int:
 	"""Create missing Clearance Charge Item defaults. Returns count created."""
 	if not frappe.db.exists("DocType", "Clearance Charge Item"):
 		return 0
+
+	# Keep the payment-kind and line-type reference trees hydrated before building charge rows.
+	ensure_payment_kinds()
+	ensure_line_types()
 
 	created = 0
 	for spec in DEFAULT_CLEARANCE_CHARGE_ITEMS:
@@ -304,14 +397,22 @@ def sync_task_finance_lines_from_charge_items() -> int:
 
 def repair_clearance_charge_item_setup() -> dict:
 	"""Idempotent repair: caches, master rows, and Task Finance Line backfill."""
+	if frappe.db.exists("DocType", "Payment Kind"):
+		frappe.reload_doctype("Payment Kind", force=True)
+	if frappe.db.exists("DocType", "Line Type"):
+		frappe.reload_doctype("Line Type", force=True)
 	if frappe.db.exists("DocType", "Clearance Charge Item"):
 		frappe.reload_doctype("Clearance Charge Item", force=True)
 	clear_clearance_charge_item_caches()
+	created_payment_kinds = ensure_payment_kinds()
+	created_line_types = ensure_line_types()
 	created = ensure_clearance_charge_items()
 	backfilled = backfill_task_finance_line_charge_items()
 	synced = sync_task_finance_lines_from_charge_items()
 	clear_clearance_charge_item_caches()
 	return {
+		"created_payment_kinds": created_payment_kinds,
+		"created_line_types": created_line_types,
 		"created_charge_items": created,
 		"backfilled_charge_links": backfilled,
 		"synced_finance_lines": synced,

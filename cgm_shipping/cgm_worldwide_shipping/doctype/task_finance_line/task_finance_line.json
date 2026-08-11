@@ -46,20 +46,20 @@
    "fetch_from": "charge_item.line_type",
    "fetch_if_empty": 1,
    "fieldname": "line_type",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "hidden": 1,
    "label": "Line Type",
-   "options": "Invoice\nPOP\nReceipt"
+   "options": "Line Type"
   },
   {
    "default": "UCR",
    "fetch_from": "charge_item.payment_kind",
    "fetch_if_empty": 1,
    "fieldname": "payment_item",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "hidden": 1,
    "label": "Payment Item",
-   "options": "UCR\nENTRY_SLIP\nShipping Line\nCustoms Entry\nKPA"
+   "options": "Payment Kind"
   },
   {
    "default": "0",

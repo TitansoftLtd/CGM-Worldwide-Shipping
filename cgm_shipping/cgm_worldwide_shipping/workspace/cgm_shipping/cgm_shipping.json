@@ -369,6 +369,26 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Payment Kind",
+   "link_count": 0,
+   "link_to": "Payment Kind",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Line Type",
+   "link_count": 0,
+   "link_to": "Line Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Cost Type",
    "link_count": 0,
    "link_to": "Cost Type",

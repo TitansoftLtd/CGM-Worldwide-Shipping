@@ -2,49 +2,25 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:charge_name",
+ "autoname": "field:payment_kind",
  "creation": "2026-08-10 09:00:00.000000",
  "default_view": "List",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "charge_name",
-  "line_type",
   "payment_kind",
   "is_active",
-  "purchase_item",
   "description"
  ],
  "fields": [
   {
-   "description": "Shown as Item on Task Invoices & Receipts (e.g. UCR Invoice, UCR Receipt). After save, rename from the title bar.",
-   "fieldname": "charge_name",
+   "fieldname": "payment_kind",
    "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Charge Name",
+   "label": "Payment Kind",
    "reqd": 1,
    "unique": 1
-  },
-  {
-   "default": "Invoice",
-   "fieldname": "line_type",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Line Type",
-   "options": "Line Type",
-   "reqd": 1
-  },
-  {
-   "description": "Groups this charge with a finance payment kind master (UCR, Entry Slip, Shipping Line, KPA).",
-   "fieldname": "payment_kind",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Payment Kind",
-   "options": "Payment Kind",
-   "reqd": 1
   },
   {
    "default": "1",
@@ -52,14 +28,6 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Active"
-  },
-  {
-   "description": "Default ERPNext Item when Finance makes a Purchase Invoice / Journal Entry for this charge.",
-   "fieldname": "purchase_item",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Purchase Item",
-   "options": "Item"
   },
   {
    "fieldname": "description",
@@ -70,10 +38,10 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-08-10 12:25:00.000000",
+ "modified": "2026-08-10 12:30:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
- "name": "Clearance Charge Item",
+ "name": "Payment Kind",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
@@ -127,10 +95,10 @@
   }
  ],
  "quick_entry": 0,
- "search_fields": "charge_name,payment_kind,line_type",
- "sort_field": "charge_name",
+ "search_fields": "payment_kind",
+ "sort_field": "payment_kind",
  "sort_order": "ASC",
  "states": [],
- "title_field": "charge_name",
+ "title_field": "payment_kind",
  "track_changes": 1
 }
