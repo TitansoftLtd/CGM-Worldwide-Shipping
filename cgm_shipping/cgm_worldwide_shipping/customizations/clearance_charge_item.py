@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe.utils import cint
 
 LINE_INVOICE = "Invoice"
 LINE_POP = "POP"
@@ -103,6 +104,7 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 		"charge_name": "UCR Invoice",
 		"line_type": LINE_INVOICE,
 		"payment_kind": "UCR",
+		"allows_amendment": 1,
 		"description": "IDF / UCR supplier invoice on Create UCR / Finance pays UCR.",
 	},
 	{
@@ -115,6 +117,7 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 		"charge_name": "Entry Slip Invoice",
 		"line_type": LINE_INVOICE,
 		"payment_kind": "ENTRY_SLIP",
+		"allows_amendment": 1,
 		"description": "Customs entry / e-slip invoice.",
 	},
 	{
@@ -127,6 +130,7 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 		"charge_name": "Shipping Line Invoice",
 		"line_type": LINE_INVOICE,
 		"payment_kind": "Shipping Line",
+		"allows_amendment": 1,
 		"description": "Shipping line charges invoice.",
 	},
 	{
@@ -145,6 +149,7 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 		"charge_name": "KPA Invoice",
 		"line_type": LINE_INVOICE,
 		"payment_kind": "KPA",
+		"allows_amendment": 1,
 		"description": "KPA port charges invoice.",
 	},
 	{
@@ -165,34 +170,49 @@ def ensure_clearance_charge_items(*, sync_descriptions: bool = False) -> int:
 	ensure_payment_kinds()
 	ensure_line_types()
 
+	has_allows_amendment = frappe.get_meta("Clearance Charge Item").has_field(
+		"allows_amendment"
+	)
+
 	created = 0
 	for spec in DEFAULT_CLEARANCE_CHARGE_ITEMS:
 		name = (spec.get("charge_name") or "").strip()
 		if not name:
 			continue
 		if frappe.db.exists("Clearance Charge Item", name):
+			updates: dict = {}
 			if sync_descriptions and spec.get("description"):
 				current = frappe.db.get_value("Clearance Charge Item", name, "description") or ""
 				if not current.strip():
-					frappe.db.set_value(
-						"Clearance Charge Item",
-						name,
-						"description",
-						spec["description"],
-						update_modified=False,
-					)
+					updates["description"] = spec["description"]
+			if has_allows_amendment and "allows_amendment" in spec:
+				current_flag = cint(
+					frappe.db.get_value("Clearance Charge Item", name, "allows_amendment")
+				)
+				desired = cint(spec.get("allows_amendment") or 0)
+				# Only turn the flag on for seeded invoice charges; never clear a Desk edit to 0.
+				if desired and not current_flag:
+					updates["allows_amendment"] = 1
+			if updates:
+				frappe.db.set_value(
+					"Clearance Charge Item",
+					name,
+					updates,
+					update_modified=False,
+				)
 			continue
-		doc = frappe.get_doc(
-			{
-				"doctype": "Clearance Charge Item",
-				"charge_name": name,
-				"line_type": spec["line_type"],
-				"payment_kind": spec["payment_kind"],
-				"is_active": 1,
-				"description": spec.get("description") or "",
-				"purchase_item": spec.get("purchase_item"),
-			}
-		)
+		payload = {
+			"doctype": "Clearance Charge Item",
+			"charge_name": name,
+			"line_type": spec["line_type"],
+			"payment_kind": spec["payment_kind"],
+			"is_active": 1,
+			"description": spec.get("description") or "",
+			"purchase_item": spec.get("purchase_item"),
+		}
+		if has_allows_amendment:
+			payload["allows_amendment"] = cint(spec.get("allows_amendment") or 0)
+		doc = frappe.get_doc(payload)
 		doc.insert(ignore_permissions=True)
 		created += 1
 	return created
@@ -245,6 +265,29 @@ def get_charge_item_purchase_item(charge_item: str | None) -> str | None:
 	if not charge_item or not frappe.db.exists("Clearance Charge Item", charge_item):
 		return None
 	return frappe.db.get_value("Clearance Charge Item", charge_item, "purchase_item") or None
+
+
+def charge_item_allows_amendment(charge_item: str | None) -> bool:
+	"""True when the charge master allows extra Invoice (amendment) lines."""
+	if not charge_item or not frappe.db.exists("Clearance Charge Item", charge_item):
+		return False
+	meta = frappe.get_meta("Clearance Charge Item")
+	if not meta.has_field("allows_amendment"):
+		# Pre-field sites: treat Invoice charge items as amendable (sea behaviour).
+		line_type = frappe.db.get_value("Clearance Charge Item", charge_item, "line_type")
+		return (line_type or "") == LINE_INVOICE
+	return bool(
+		cint(frappe.db.get_value("Clearance Charge Item", charge_item, "allows_amendment"))
+	)
+
+
+def payment_kind_allows_amendment(payment_kind: str | None) -> bool:
+	"""True when the Invoice charge for this payment kind allows amendments."""
+	charge_item = get_clearance_charge_item(payment_kind, LINE_INVOICE)
+	if not charge_item:
+		# No master yet — keep sea-clearance amendment behaviour enabled.
+		return True
+	return charge_item_allows_amendment(charge_item)
 
 
 @frappe.request_cache

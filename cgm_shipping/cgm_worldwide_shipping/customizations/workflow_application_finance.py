@@ -1104,6 +1104,13 @@ def add_amendment_invoice_line(task_name: str, attachment: str | None = None) ->
 		get_invoice_lines,
 		task_has_finance_table,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		build_finance_line_payload,
+		get_charge_item_label,
+		get_clearance_charge_item,
+		payment_kind_allows_amendment,
+		task_finance_line_has_charge_item,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_purchase_item_for_payment_item,
 		task_finance_line_has_item_code,
@@ -1113,19 +1120,41 @@ def add_amendment_invoice_line(task_name: str, attachment: str | None = None) ->
 	if not task_has_finance_table(task):
 		frappe.throw("This task has no finance lines table.")
 
+	if not payment_kind_allows_amendment(profile.payment_item):
+		frappe.throw(
+			frappe._(
+				"Amendment invoices are not enabled for {0}. "
+				"Turn on <b>Allows Amendment Invoices</b> on the Clearance Charge Item."
+			).format(profile.invoice_label)
+		)
+
 	existing = get_invoice_lines(task, profile)
 	amend_no = sum(1 for r in existing if cint(r.get("is_amendment"))) + 1
-	label = f"{profile.invoice_label} (amendment {amend_no})"
-	payload = {
-		"line_label": label,
-		"line_type": LINE_INVOICE,
-		"payment_item": profile.payment_item,
-		"is_amendment": 1,
-		"verified": 0,
-	}
+	charge_item = get_clearance_charge_item(
+		profile.payment_item,
+		LINE_INVOICE,
+		fallback_label=profile.invoice_label,
+	)
+	base_label = get_charge_item_label(charge_item, profile.invoice_label) or profile.invoice_label
+	label = f"{base_label} (amendment {amend_no})"
+	payload = build_finance_line_payload(
+		LINE_INVOICE,
+		profile.payment_item,
+		fallback_label=base_label,
+		company=task.company,
+	)
+	payload.update(
+		{
+			"line_label": label,
+			"is_amendment": 1,
+			"verified": 0,
+		}
+	)
+	if charge_item and task_finance_line_has_charge_item():
+		payload["charge_item"] = charge_item
 	if attachment:
 		payload["attachment"] = attachment
-	if task_finance_line_has_item_code():
+	if task_finance_line_has_item_code() and not payload.get("item_code"):
 		payload["item_code"] = get_purchase_item_for_payment_item(
 			profile.payment_item, task.company
 		)
@@ -1309,6 +1338,8 @@ def _sync_changed_application_invoice_onto_finance(
 				"attachment": app_line.attachment,
 				"verified": 0,
 			}
+			if app_line.get("charge_item"):
+				payload["charge_item"] = app_line.charge_item
 			if app_line.get("item_code"):
 				payload["item_code"] = app_line.item_code
 			finance_task.append(TASK_FINANCE_FIELD, payload)
@@ -1337,6 +1368,10 @@ def _sync_changed_application_invoice_onto_finance(
 		# Align labels for amendments.
 		if app_line.get("line_label") and fin_line.get("line_label") != app_line.line_label:
 			fin_line.line_label = app_line.line_label
+			changed = True
+
+		if app_line.get("charge_item") and fin_line.get("charge_item") != app_line.charge_item:
+			fin_line.charge_item = app_line.charge_item
 			changed = True
 
 		# Purchase item: only before this line has a JE.

@@ -2099,9 +2099,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 			(r) => r.attachment && !cint(r.is_amendment)
 		);
 		if (has_primary_invoice || frm.doc.status === "Completed") {
-			add_cgm_toolbar_button(frm, __("Add amendment invoice"), () => {
-				add_amendment_invoice_from_form(frm);
-			});
+			show_add_amendment_invoice_button(frm);
 		}
 	}
 	if (is_app_finance_application && frm.doc.status === "Completed") {
@@ -3964,6 +3962,30 @@ function add_amendment_invoice_from_form(frm) {
 		},
 	});
 	dialog.show();
+}
+
+function primary_invoice_charge_item(frm) {
+	const primary = get_invoice_finance_lines(frm).find((r) => !cint(r.is_amendment));
+	return (primary && primary.charge_item) || "";
+}
+
+function show_add_amendment_invoice_button(frm) {
+	const charge_item = primary_invoice_charge_item(frm);
+	const add_button = () => {
+		add_cgm_toolbar_button(frm, __("Add amendment invoice"), () => {
+			add_amendment_invoice_from_form(frm);
+		});
+	};
+	if (!charge_item) {
+		// No Clearance Charge Item linked yet — keep sea-clearance behaviour.
+		add_button();
+		return;
+	}
+	frappe.db.get_value("Clearance Charge Item", charge_item, "allows_amendment", (r) => {
+		if (r && cint(r.allows_amendment)) {
+			add_button();
+		}
+	});
 }
 
 function setup_permit_finance_payment_buttons(frm) {
