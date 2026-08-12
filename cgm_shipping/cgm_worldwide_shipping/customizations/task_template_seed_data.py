@@ -30,23 +30,46 @@ def _row(
 	condition: str = "",
 	optional: int = 0,
 	description: str = "",
+	role: str = "Standard",
+	payment_kind: str = "",
+	permit_stage: str = "",
+	required_docs: str = "",
 ) -> dict:
 	deps = ""
 	if depends is not None:
 		deps = str(depends)
+	# Infer role from legacy flags when caller did not set an explicit role.
+	task_role = (role or "Standard").strip() or "Standard"
+	if task_role == "Standard":
+		if auto:
+			task_role = "Auto Complete"
+		elif permit and finance:
+			task_role = "Permit Finance"
+		elif permit:
+			task_role = "Permit Application"
+		elif finance and payment_kind:
+			task_role = "Finance Payment"
+		elif finance:
+			task_role = "Finance Payment"
+		elif doc:
+			task_role = "Document"
 	return {
 		"sequence_no": seq,
 		"subject": subject,
 		"department_role": dept,
 		"depends_on_sequences": deps,
+		"task_role": task_role,
+		"payment_kind": payment_kind or "",
+		"permit_stage": permit_stage or "",
 		"requires_finance_action": finance,
-		"requires_document_upload": doc,
+		"requires_document_upload": doc or (1 if required_docs else 0),
 		"requires_container_update": container,
 		"requires_permit_action": permit,
 		"is_auto_completable": auto,
 		"completion_condition": condition,
 		"is_optional": optional,
 		"description": description,
+		"required_document_types": required_docs or "",
 	}
 
 
@@ -57,35 +80,124 @@ def sea_import_tasks() -> list[dict]:
 	non-finance steps (inspection, Lodge DO, field clearance, …) independently.
 	"""
 	return [
-		_row(1, "Receive shipment documents from Client", "Operations", auto=1),
-		_row(2, "Share documents with Declarants", "Operations", auto=1),
-		_row(3, "Create UCR (IDF)", "Declaration"),
-		_row(4, "Finance pays UCR", "Finance", depends=3, finance=1),
+		_row(1, "Receive shipment documents from Client", "Operations", auto=1, role="Auto Complete"),
+		_row(2, "Share documents with Declarants", "Operations", auto=1, role="Auto Complete"),
+		_row(
+			3,
+			"Create UCR (IDF)",
+			"Declaration",
+			role="Application",
+			payment_kind="UCR",
+			required_docs="IDF CERT",
+		),
+		_row(
+			4,
+			"Finance pays UCR",
+			"Finance",
+			depends=3,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="UCR",
+		),
 		_row(
 			5,
 			"Apply for Pre-Clearance Permits (DVS, NBA, VMD, ACA)",
 			"Declaration",
 			permit=1,
+			role="Permit Application",
+			permit_stage="Pre-clearance",
 		),
-		_row(6, "Finance pays Pre-Clearance Permits", "Finance", depends=5, finance=1),
+		_row(
+			6,
+			"Finance pays Pre-Clearance Permits",
+			"Finance",
+			depends=5,
+			finance=1,
+			permit=1,
+			role="Permit Finance",
+			permit_stage="Pre-clearance",
+			payment_kind="Permit",
+		),
 		_row(7, "Client conducts inspection", "Operations"),
 		_row(
 			8,
 			"Receive Final Clearance Documents (B/L, Invoice, PKL, COC)",
 			"Documentation",
 			doc=1,
+			role="Document Checkpoint",
 		),
-		_row(9, "Request Manifest and Local Import Charges", "Documentation", doc=1),
-		_row(10, "Attach Shipping Line Invoice", "Documentation", doc=1),
-		_row(11, "Finance pays Shipping Line Charges", "Finance", depends=10, finance=1),
-		_row(12, "Create Entry", "Declaration", doc=1),
-		_row(13, "Finance Pays Entry Slip", "Finance", depends=12, finance=1),
-		_row(14, "Lodge Delivery Order", "Operations", doc=1),
-		_row(15, "Prepare Post-Clearance Permits", "Declaration", permit=1),
-		_row(16, "Finance pays for Post-Clearance Permits", "Finance", depends=15, finance=1),
+		_row(9, "Request Manifest and Local Import Charges", "Documentation", doc=1, role="Document"),
+		_row(
+			10,
+			"Attach Shipping Line Invoice",
+			"Documentation",
+			doc=1,
+			role="Application",
+			payment_kind="Shipping Line",
+		),
+		_row(
+			11,
+			"Finance pays Shipping Line Charges",
+			"Finance",
+			depends=10,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="Shipping Line",
+		),
+		_row(
+			12,
+			"Create Entry",
+			"Declaration",
+			doc=1,
+			role="Application",
+			payment_kind="ENTRY_SLIP",
+		),
+		_row(
+			13,
+			"Finance Pays Entry Slip",
+			"Finance",
+			depends=12,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="ENTRY_SLIP",
+		),
+		_row(14, "Lodge Delivery Order", "Operations", doc=1, role="Document"),
+		_row(
+			15,
+			"Prepare Post-Clearance Permits",
+			"Declaration",
+			permit=1,
+			role="Permit Application",
+			permit_stage="Post-clearance",
+		),
+		_row(
+			16,
+			"Finance pays for Post-Clearance Permits",
+			"Finance",
+			depends=15,
+			finance=1,
+			permit=1,
+			role="Permit Finance",
+			permit_stage="Post-clearance",
+			payment_kind="Permit",
+		),
 		_row(17, "Field Officers conduct clearance", "Field Operations"),
-		_row(18, "Supervisor obtains KPA Invoice", "Operations"),
-		_row(19, "Finance pays KPA Invoice", "Finance", depends=18, finance=1),
+		_row(
+			18,
+			"Supervisor obtains KPA Invoice",
+			"Operations",
+			role="Application",
+			payment_kind="KPA",
+		),
+		_row(
+			19,
+			"Finance pays KPA Invoice",
+			"Finance",
+			depends=18,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="KPA",
+		),
 		_row(20, "Book trucks and notify warehouse", "Transport", container=1),
 		_row(21, "Load trucks and exit port", "Transport", container=1),
 		_row(22, "Monitor delivery to destination", "Transport", container=1),
@@ -116,11 +228,45 @@ def sea_export_tasks() -> list[dict]:
 
 def air_import_tasks() -> list[dict]:
 	return [
-		_row(1, "Receive proforma invoice packing list COA", "Documentation", doc=1),
-		_row(2, "IDF application (UCR)", "Declaration", depends=1),
-		_row(3, "Finance pays UCR", "Finance", depends=2, finance=1),
-		_row(4, "Apply for pre-clearance permits", "Declaration", depends=3, permit=1),
-		_row(5, "Finance pays permit invoices", "Finance", depends=4, finance=1),
+		_row(1, "Receive proforma invoice packing list COA", "Documentation", doc=1, role="Document"),
+		_row(
+			2,
+			"IDF application (UCR)",
+			"Declaration",
+			depends=1,
+			role="Application",
+			payment_kind="UCR",
+			required_docs="IDF CERT",
+		),
+		_row(
+			3,
+			"Finance pays UCR",
+			"Finance",
+			depends=2,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="UCR",
+		),
+		_row(
+			4,
+			"Apply for pre-clearance permits",
+			"Declaration",
+			depends=3,
+			permit=1,
+			role="Permit Application",
+			permit_stage="Pre-clearance",
+		),
+		_row(
+			5,
+			"Finance pays permit invoices",
+			"Finance",
+			depends=4,
+			finance=1,
+			permit=1,
+			role="Permit Finance",
+			permit_stage="Pre-clearance",
+			payment_kind="Permit",
+		),
 		_row(
 			6,
 			"IDF approved — share with client",
@@ -128,9 +274,10 @@ def air_import_tasks() -> list[dict]:
 			depends=3,
 			auto=1,
 			condition="project.custom_entry_no",
+			role="Auto Complete",
 		),
 		_row(7, "Client inspects and shares draft COC", "Operations", depends=6),
-		_row(8, "Client shares airwaybill", "Documentation", depends=7, doc=1),
+		_row(8, "Client shares airwaybill", "Documentation", depends=7, doc=1, role="Document"),
 		_row(
 			9,
 			"Shipment arrival — manifest issued",
@@ -139,12 +286,36 @@ def air_import_tasks() -> list[dict]:
 			doc=1,
 			auto=1,
 			condition="project.custom_actual_time_of_arrival_ata",
+			role="Auto Complete",
 		),
-		_row(10, "Lodge draft entry — share with client", "Declaration", depends=9),
-		_row(11, "Register entry — share e-slip for tax payment", "Declaration", depends=10),
-		_row(12, "Confirm entry taxes paid", "Finance", depends=11, finance=1),
-		_row(13, "Apply for post-clearance permits", "Declaration", depends=12, permit=1),
-		_row(14, "Share documents to ground handling team", "Field Operations", depends=13, doc=1),
+		_row(10, "Lodge draft entry — share with client", "Declaration", depends=9, role="Document"),
+		_row(
+			11,
+			"Register entry — share e-slip for tax payment",
+			"Declaration",
+			depends=10,
+			role="Application",
+			payment_kind="ENTRY_SLIP",
+		),
+		_row(
+			12,
+			"Confirm entry taxes paid",
+			"Finance",
+			depends=11,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="ENTRY_SLIP",
+		),
+		_row(
+			13,
+			"Apply for post-clearance permits",
+			"Declaration",
+			depends=12,
+			permit=1,
+			role="Permit Application",
+			permit_stage="Post-clearance",
+		),
+		_row(14, "Share documents to ground handling team", "Field Operations", depends=13, doc=1, role="Document"),
 		_row(15, "Clearance — verification and permit removal", "Field Operations", depends=14),
 		_row(16, "Release and entry settlement", "Operations", depends=15),
 	]
@@ -208,16 +379,91 @@ def road_transit_outbound_tasks() -> list[dict]:
 
 
 def road_transit_inbound_tasks() -> list[dict]:
+	"""Road transit inbound: Declaration applies → Finance pays (Sea/Air pattern).
+
+	Book trucks and Obtain C2 are separate Transport / Declaration steps.
+	"""
 	return [
-		_row(1, "Receive shipment documents", "Documentation", doc=1),
-		_row(2, "IDF application and UCR payment", "Declaration", depends=1, finance=1),
-		_row(3, "Apply and pay pre-clearance permits", "Declaration", depends=2, finance=1, permit=1),
-		_row(4, "Lodge border or ICD entry", "Declaration", depends=3),
-		_row(5, "Taxes paid", "Finance", depends=4, finance=1),
-		_row(6, "Post-clearance permits", "Declaration", depends=5, finance=1, permit=1),
-		_row(7, "Border and ICD clearance", "Field Operations", depends=6),
-		_row(8, "Book trucks and obtain C2", "Transport", depends=7, container=1),
-		_row(9, "Monitor delivery to Kenya destination", "Transport", depends=8, container=1),
+		_row(1, "Receive shipment documents", "Documentation", doc=1, role="Document"),
+		_row(
+			2,
+			"IDF application (UCR)",
+			"Declaration",
+			depends=1,
+			role="Application",
+			payment_kind="UCR",
+			required_docs="IDF CERT",
+		),
+		_row(
+			3,
+			"Finance pays UCR",
+			"Finance",
+			depends=2,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="UCR",
+		),
+		_row(
+			4,
+			"Apply for pre-clearance permits",
+			"Declaration",
+			depends=3,
+			permit=1,
+			role="Permit Application",
+			permit_stage="Pre-clearance",
+		),
+		_row(
+			5,
+			"Finance pays pre-clearance permits",
+			"Finance",
+			depends=4,
+			finance=1,
+			permit=1,
+			role="Permit Finance",
+			permit_stage="Pre-clearance",
+			payment_kind="Permit",
+		),
+		_row(
+			6,
+			"Lodge border or ICD entry",
+			"Declaration",
+			depends=5,
+			role="Application",
+			payment_kind="ENTRY_SLIP",
+		),
+		_row(
+			7,
+			"Finance pays entry / taxes",
+			"Finance",
+			depends=6,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="ENTRY_SLIP",
+		),
+		_row(
+			8,
+			"Apply for post-clearance permits",
+			"Declaration",
+			depends=7,
+			permit=1,
+			role="Permit Application",
+			permit_stage="Post-clearance",
+		),
+		_row(
+			9,
+			"Finance pays post-clearance permits",
+			"Finance",
+			depends=8,
+			finance=1,
+			permit=1,
+			role="Permit Finance",
+			permit_stage="Post-clearance",
+			payment_kind="Permit",
+		),
+		_row(10, "Border and ICD clearance", "Field Operations", depends=9),
+		_row(11, "Book trucks", "Transport", depends=10, container=1),
+		_row(12, "Obtain C2", "Declaration", depends=11, doc=1, role="Document"),
+		_row(13, "Monitor delivery to Kenya destination", "Transport", depends=12, container=1),
 	]
 
 
@@ -338,6 +584,163 @@ def seed_cgm_task_templates() -> None:
 		for task in definition.get("tasks") or []:
 			doc.append("tasks", task)
 		doc.insert(ignore_permissions=True)
+
+
+_BEHAVIOUR_FIELDS = (
+	"task_role",
+	"payment_kind",
+	"permit_stage",
+	"requires_finance_action",
+	"requires_document_upload",
+	"requires_container_update",
+	"requires_permit_action",
+	"is_auto_completable",
+	"required_document_types",
+)
+
+
+def sync_template_behaviour_fields() -> int:
+	"""Stamp Task Role / Payment Kind / Permit Stage onto existing template rows.
+
+	Matches by sequence_no within each template's own tasks table (not the
+	flattened extends plan). Does not change subjects or dependencies.
+	"""
+	import frappe
+
+	if not frappe.db.exists("DocType", "CGM Task Template"):
+		return 0
+	meta = frappe.get_meta("CGM Task Template Item")
+	if not meta.has_field("task_role"):
+		return 0
+
+	updated = 0
+	for definition in TEMPLATE_DEFINITIONS:
+		name = definition["template_name"]
+		if not frappe.db.exists("CGM Task Template", name):
+			continue
+		seed_by_seq = {
+			int(t["sequence_no"]): t for t in (definition.get("tasks") or []) if t.get("sequence_no")
+		}
+		if not seed_by_seq:
+			continue
+		doc = frappe.get_doc("CGM Task Template", name)
+		changed = False
+		for row in doc.get("tasks") or []:
+			seed = seed_by_seq.get(int(row.sequence_no or 0))
+			if not seed:
+				continue
+			for field in _BEHAVIOUR_FIELDS:
+				if not meta.has_field(field):
+					continue
+				new_val = seed.get(field)
+				if new_val is None or new_val == "":
+					continue
+				if row.get(field) != new_val:
+					row.set(field, new_val)
+					changed = True
+		if changed:
+			doc.flags.ignore_permissions = True
+			doc.save(ignore_permissions=True)
+			updated += 1
+		# Always sync required docs by child name — reliable for Data/MultiSelect UX.
+		for row in doc.get("tasks") or []:
+			seed = seed_by_seq.get(int(row.sequence_no or 0))
+			want = (seed or {}).get("required_document_types") or ""
+			if not want or not row.name:
+				continue
+			current = frappe.db.get_value(
+				"CGM Task Template Item", row.name, "required_document_types"
+			) or ""
+			if current != want:
+				frappe.db.set_value(
+					"CGM Task Template Item",
+					row.name,
+					"required_document_types",
+					want,
+					update_modified=False,
+				)
+				updated += 1
+	return updated
+
+
+def backfill_open_task_behaviour_from_templates() -> int:
+	"""Copy template behaviour onto existing Tasks by flow_key + sequence_no."""
+	import frappe
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ensure_task_behaviour_fields,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.task_engine import _collect_items
+
+	ensure_task_behaviour_fields()
+	if not frappe.db.exists("DocType", "CGM Task Template"):
+		return 0
+	if not frappe.get_meta("Task").has_field("custom_task_role"):
+		return 0
+
+	flow_keys = frappe.get_all(
+		"Task",
+		filters={"custom_task_flow_key": ["!=", ""], "status": ["!=", "Cancelled"]},
+		pluck="custom_task_flow_key",
+		distinct=True,
+	)
+	updated = 0
+	for flow_key in flow_keys:
+		if not flow_key or not frappe.db.exists("CGM Task Template", flow_key):
+			continue
+		template = frappe.get_doc("CGM Task Template", flow_key)
+		by_seq = {int(i["sequence_no"]): i for i in _collect_items(template)}
+		if not by_seq:
+			continue
+		tasks = frappe.get_all(
+			"Task",
+			filters={
+				"custom_task_flow_key": flow_key,
+				"status": ["!=", "Cancelled"],
+			},
+			fields=["name", "custom_sequence_no", "custom_task_role"],
+		)
+		for task in tasks:
+			item = by_seq.get(int(task.custom_sequence_no or 0))
+			if not item:
+				continue
+			role = (item.get("task_role") or "Standard").strip() or "Standard"
+			want_kind = (item.get("payment_kind") or "").strip()
+			want_docs = (item.get("required_document_types") or "").strip()
+			current = frappe.db.get_value(
+				"Task",
+				task.name,
+				["custom_task_role", "custom_payment_kind", "custom_required_document_types"],
+				as_dict=True,
+			) or {}
+			current_role = (current.get("custom_task_role") or "").strip()
+			current_kind = (current.get("custom_payment_kind") or "").strip()
+			current_docs = (current.get("custom_required_document_types") or "").strip()
+			# Skip only when role, kind, and required docs already match.
+			if (
+				current_role
+				and current_role == role
+				and current_kind == want_kind
+				and current_docs == want_docs
+			):
+				continue
+			values = {
+				"custom_task_role": role,
+				"custom_requires_finance_action": 1 if item.get("requires_finance_action") else 0,
+				"custom_requires_document_upload": 1 if item.get("requires_document_upload") else 0,
+				"custom_requires_permit_action": 1 if item.get("requires_permit_action") else 0,
+				"custom_requires_container_update": 1 if item.get("requires_container_update") else 0,
+				"custom_is_auto_completable": 1 if item.get("is_auto_completable") else 0,
+			}
+			if want_kind:
+				values["custom_payment_kind"] = want_kind
+			if item.get("permit_stage"):
+				values["custom_permit_stage"] = item["permit_stage"]
+			if frappe.get_meta("Task").has_field("custom_required_document_types"):
+				values["custom_required_document_types"] = want_docs
+			frappe.db.set_value("Task", task.name, values, update_modified=False)
+			updated += 1
+	return updated
 
 
 def link_shipment_types_to_templates() -> None:

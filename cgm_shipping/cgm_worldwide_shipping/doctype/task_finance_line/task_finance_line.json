@@ -5,6 +5,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "charge_item",
   "line_label",
   "line_type",
   "payment_item",
@@ -24,26 +25,41 @@
  ],
  "fields": [
   {
-   "fieldname": "line_label",
-   "fieldtype": "Data",
+   "description": "Master charge (UCR Invoice, UCR Receipt, …). Add new ones under Clearance Charge Item.",
+   "fieldname": "charge_item",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item",
-   "read_only": 1
+   "options": "Clearance Charge Item",
+   "reqd": 0
   },
   {
+   "fetch_from": "charge_item.charge_name",
+   "fetch_if_empty": 1,
+   "fieldname": "line_label",
+   "fieldtype": "Data",
+   "in_list_view": 0,
+   "label": "Item Label",
+   "read_only": 0
+  },
+  {
+   "fetch_from": "charge_item.line_type",
+   "fetch_if_empty": 1,
    "fieldname": "line_type",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "hidden": 1,
    "label": "Line Type",
-   "options": "Invoice\nPOP\nReceipt"
+   "options": "Line Type"
   },
   {
    "default": "UCR",
+   "fetch_from": "charge_item.payment_kind",
+   "fetch_if_empty": 1,
    "fieldname": "payment_item",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "hidden": 1,
    "label": "Payment Item",
-   "options": "UCR\nENTRY_SLIP\nShipping Line\nCustoms Entry\nKPA"
+   "options": "Payment Kind"
   },
   {
    "default": "0",
@@ -55,7 +71,9 @@
    "label": "Amendment"
   },
   {
-   "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line. Editable on the application/finance task so the correct purchase item can be selected.",
+   "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line. Defaults from Clearance Charge Item.",
+   "fetch_from": "charge_item.purchase_item",
+   "fetch_if_empty": 1,
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,

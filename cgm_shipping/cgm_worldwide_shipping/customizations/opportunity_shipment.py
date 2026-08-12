@@ -47,13 +47,28 @@ def has_any_transport_document(opportunity) -> bool:
 	return False
 
 
+def transport_documents_deferred(opportunity) -> bool:
+	"""True when intake explicitly continues without BL / Booking / AWB yet."""
+	if not getattr(opportunity, "meta", None) or not opportunity.meta.has_field(
+		"custom_transport_docs_deferred"
+	):
+		return False
+	return bool(cint(opportunity.get("custom_transport_docs_deferred")))
+
+
 def has_required_transport_documents(opportunity) -> bool:
 	"""True when Start Shipment transport gate is satisfied.
 
 	Bill of Lading and Booking Confirmation are interchangeable: either one is
 	enough when both are allowed on the Shipment Type (whichever arrives first).
 	Other required documents (e.g. Air Waybill) still use an OR within their set.
+
+	Operators may tick ``custom_transport_docs_deferred`` when none are available
+	yet and attach them later on the Project.
 	"""
+	if transport_documents_deferred(opportunity):
+		return True
+
 	linked = get_transport_documents_with_links(opportunity)
 	if not linked:
 		return has_any_transport_document(opportunity)
@@ -113,6 +128,13 @@ def sync_opportunity_batch_from_transport_doc(doc, _method=None) -> None:
 	fcl_batch = resolve_fcl_batch_for_opportunity(doc)
 	if fcl_batch:
 		doc.custom_batch_no = fcl_batch
+	# Once a real transport document arrives, clear the "none yet" deferral.
+	if (
+		doc.meta.has_field("custom_transport_docs_deferred")
+		and cint(doc.get("custom_transport_docs_deferred"))
+		and has_any_transport_document(doc)
+	):
+		doc.custom_transport_docs_deferred = 0
 
 
 def get_shipment_type_flags(shipment_type: str | None) -> dict:
@@ -311,6 +333,7 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 		blockers.append(_("Select a Shipment Type before starting the shipment."))
 
 	transport_documents = get_transport_documents_with_links(opp)
+	deferred = transport_documents_deferred(opp)
 	if not has_required_transport_documents(opp):
 		alternates = [
 			item["transport_document"]
@@ -380,8 +403,74 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 		"primary_linked": has_any_transport_document(opp),
 		"transport_docs_linked": has_any_transport_document(opp),
 		"required_transport_linked": has_required_transport_documents(opp),
+		"transport_docs_deferred": deferred,
 		"existing_project": existing_project,
 		"workflow_state": opp.get("workflow_state"),
+	}
+
+
+@frappe.whitelist()
+def set_transport_docs_deferred(opportunity: str, deferred: int | str = 1) -> dict:
+	"""Mark / clear 'none provided yet' without bumping modified (avoids form conflicts)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard import (
+		STAGE_AWAITING_PRIMARY,
+		STAGE_AUTHORIZATION,
+		STAGE_DOCUMENTS,
+		build_intake_wizard_html,
+		sync_opportunity_intake_stage,
+	)
+
+	if not opportunity or not frappe.db.exists("Opportunity", opportunity):
+		frappe.throw(_("Opportunity not found."))
+	frappe.has_permission("Opportunity", ptype="write", doc=opportunity, throw=True)
+
+	if not frappe.get_meta("Opportunity").has_field("custom_transport_docs_deferred"):
+		frappe.throw(
+			_("Missing field Custom Transport Docs Deferred — run bench migrate."),
+			title=_("Migrate required"),
+		)
+
+	deferred_flag = 1 if cint(deferred) else 0
+	opp = frappe.get_doc("Opportunity", opportunity)
+	if deferred_flag and has_any_transport_document(opp):
+		frappe.throw(
+			_("A transport document is already linked. Clear it first if you need to defer.")
+		)
+
+	# Do not bump ``modified`` — Desk form still holds the previous timestamp.
+	frappe.db.set_value(
+		"Opportunity",
+		opportunity,
+		"custom_transport_docs_deferred",
+		deferred_flag,
+		update_modified=False,
+	)
+	opp.custom_transport_docs_deferred = deferred_flag
+	sync_opportunity_intake_stage(opp)
+
+	stage_updates: dict = {}
+	if opp.meta.has_field("custom_intake_stage"):
+		stage_updates["custom_intake_stage"] = opp.get("custom_intake_stage") or STAGE_AWAITING_PRIMARY
+	if opp.meta.has_field("custom_primary_doc_linked"):
+		stage_updates["custom_primary_doc_linked"] = cint(opp.get("custom_primary_doc_linked"))
+	if opp.meta.has_field("custom_uses_container_tracking"):
+		stage_updates["custom_uses_container_tracking"] = cint(
+			opp.get("custom_uses_container_tracking")
+		)
+	if stage_updates:
+		frappe.db.set_value("Opportunity", opportunity, stage_updates, update_modified=False)
+
+	readiness = evaluate_start_shipment_readiness(opportunity)
+	stage = (opp.get("custom_intake_stage") or STAGE_DOCUMENTS).strip()
+	if stage not in (STAGE_AWAITING_PRIMARY, STAGE_DOCUMENTS, STAGE_AUTHORIZATION):
+		stage = STAGE_DOCUMENTS if deferred_flag else STAGE_AWAITING_PRIMARY
+
+	return {
+		"deferred": deferred_flag,
+		"stage": stage,
+		"primary_doc_linked": cint(opp.get("custom_primary_doc_linked")),
+		"readiness": readiness,
+		"html": build_intake_wizard_html(stage, readiness),
 	}
 
 

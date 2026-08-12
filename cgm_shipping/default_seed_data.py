@@ -111,6 +111,9 @@ def seed_document_responsibility_defaults() -> None:
 
 
 def seed_all_defaults() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		ensure_clearance_charge_items,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
 		seed_task_workflow_masters,
 	)
@@ -120,4 +123,5 @@ def seed_all_defaults() -> None:
 	seed_cgm_shipping_settings()
 	seed_document_responsibility_defaults()
 	seed_task_workflow_masters()
+	ensure_clearance_charge_items()
 	frappe.db.commit()
