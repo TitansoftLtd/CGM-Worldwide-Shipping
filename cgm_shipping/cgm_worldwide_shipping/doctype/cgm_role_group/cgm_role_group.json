@@ -1,0 +1,110 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:role_group_name",
+ "creation": "2026-08-04 01:00:00.000000",
+ "default_view": "List",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "role_group_name",
+  "department_stems",
+  "section_roles",
+  "roles",
+  "section_help",
+  "help_html"
+ ],
+ "fields": [
+  {
+   "description": "Short name used in Document responsibilities (e.g. Finance, Documentation). Create new groups here anytime — no code change needed.",
+   "fieldname": "role_group_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Role Group Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Comma-separated Task department prefixes that also grant this group (e.g. Documentation, Finance, Field Operations). Matched against the start of Task.department.",
+   "fieldname": "department_stems",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Department stems"
+  },
+  {
+   "fieldname": "section_roles",
+   "fieldtype": "Section Break",
+   "label": "CGM Roles"
+  },
+  {
+   "description": "Any Role can be added. Users with these roles may perform actions assigned to this group.",
+   "fieldname": "roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "fieldname": "section_help",
+   "fieldtype": "Section Break",
+   "label": "How to use"
+  },
+  {
+   "fieldname": "help_html",
+   "fieldtype": "HTML",
+   "options": "<p>1. Add or remove <b>CGM Roles</b> above.<br>2. Optionally set <b>Department stems</b> so users on matching Task departments also qualify.<br>3. In <b>CGM Shipping Settings → Roles → Document responsibilities</b>, pick this group as a Link on each action.</p>"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-04 01:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "CGM Role Group",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "CGM Documentation",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Operations Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "quick_entry": 1,
+ "search_fields": "role_group_name,department_stems",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "role_group_name",
+ "track_changes": 1
+}

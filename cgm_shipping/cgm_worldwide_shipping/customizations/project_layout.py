@@ -19,7 +19,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	derive_workflow_progress_from_tasks,
-	get_tracking_workflow_states,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
 	GENERIC_WORKFLOW_STATES,
@@ -650,6 +649,65 @@ def ensure_task_container_update_fields() -> None:
 	frappe.clear_cache(doctype="Task")
 
 
+def ensure_client_paid_task_fields() -> None:
+	"""Finance marks the client-pays path (no company JE; verify still required, receipt optional)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CLIENT_PAID_BY_FIELD,
+		CLIENT_PAID_FIELD,
+		CLIENT_PAID_ON_FIELD,
+	)
+
+	label = "Client will pay"
+	description = (
+		"Tick when the client settles this fee (no company Journal Entry). "
+		"Finance must still verify the invoice. Receipt attachment is optional."
+	)
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_FIELD,
+			"label": label,
+			"fieldtype": "Check",
+			"insert_after": "custom_journal_entry",
+			"description": description,
+			"allow_on_submit": 0,
+		},
+	)
+	# _ensure_cf skips label/description on existing fields — update intentionally.
+	cf_name = f"Task-{CLIENT_PAID_FIELD}"
+	if frappe.db.exists("Custom Field", cf_name):
+		frappe.db.set_value(
+			"Custom Field",
+			cf_name,
+			{"label": label, "description": description},
+			update_modified=False,
+		)
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_BY_FIELD,
+			"label": "Client Payment Confirmed By",
+			"fieldtype": "Link",
+			"options": "User",
+			"insert_after": CLIENT_PAID_FIELD,
+			"read_only": 1,
+			"depends_on": f"eval:doc.{CLIENT_PAID_FIELD}",
+		},
+	)
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_ON_FIELD,
+			"label": "Client Payment Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": CLIENT_PAID_BY_FIELD,
+			"read_only": 1,
+			"depends_on": f"eval:doc.{CLIENT_PAID_FIELD}",
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
 def ensure_field_officer_task_fields() -> None:
 	"""Task 16 field-officer clearance tracking fields."""
 	depends = (
@@ -854,7 +912,7 @@ def ensure_project_inspection_notification_fields() -> None:
 
 
 def ensure_project_port_arrival_fields() -> None:
-	"""Early port-arrival confirmation (creates container trackers before Entry is paid)."""
+	"""Port-arrival confirmation on Project (creates container trackers; independent of Entry)."""
 	_create_cf(
 		"Project",
 		{
@@ -1214,7 +1272,16 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	doc = frappe.get_doc("Project", project)
 	workflow_status = doc.get("custom_shipment_status") or "Draft"
 	use_clearance_states = project_uses_clearance_workflow_states(doc)
-	states = get_tracking_workflow_states() if use_clearance_states else list(GENERIC_WORKFLOW_STATES)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_clearance_workflow_gates_for_project,
+		get_clearance_workflow_states_for_project,
+	)
+
+	states = (
+		get_clearance_workflow_states_for_project(doc)
+		if use_clearance_states
+		else list(GENERIC_WORKFLOW_STATES)
+	)
 	try:
 		workflow_index = states.index(workflow_status)
 	except ValueError:
@@ -1226,7 +1293,10 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	total = len(tasks) or workflow_task_count_for_project(doc)
 
 	if use_clearance_states:
-		progress_status, progress_index = derive_workflow_progress_from_tasks(tasks, states)
+		gates = get_clearance_workflow_gates_for_project(doc)
+		progress_status, progress_index = derive_workflow_progress_from_tasks(
+			tasks, states=states, gates=gates
+		)
 	else:
 		progress_status, progress_index = derive_generic_workflow_progress(tasks)
 
@@ -1236,11 +1306,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	workflow_behind = workflow_index < progress_index
 	workflow_ahead = workflow_index > progress_index
 	# Keep the shipment status field aligned with tasks — advance OR rewind.
-	if (
-		(workflow_behind or workflow_ahead)
-		and use_clearance_states
-		and doc.get("custom_mode_of_transport") == "Sea"
-	):
+	if (workflow_behind or workflow_ahead) and use_clearance_states:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 			sync_project_shipment_status_from_tasks,
 		)

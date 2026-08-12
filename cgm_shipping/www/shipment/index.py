@@ -29,6 +29,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	get_shipment_documents,
 	get_shipment_for_customer,
 	get_shipment_permits,
+	get_shipment_shared_fee_invoices,
 	shipment_display_ref,
 	shipment_progress,
 	status_tone,
@@ -109,17 +110,24 @@ def _build_context(context, project):
 	context.charges_total = sum(c["amount"] for c in charges)
 	context.charges_currency = frappe.defaults.get_global_default("currency")
 
-	containers = get_containers_for_shipment(project)
-	for c in containers:
-		c["timeline"] = container_timeline(c)
-		c["has_charges"] = bool(
-			(c.get("demurrage_days") or 0)
-		)
-	context.containers = containers
-
+	# Fee invoices first — must not depend on containers/docs succeeding.
+	context.fee_invoices = get_shipment_shared_fee_invoices(project)
 	context.documents = get_shipment_documents(project)
 	context.permits = get_shipment_permits(project)
 	context.inspection = get_project_inspection_portal_context(project, customer)
+
+	try:
+		containers = get_containers_for_shipment(project)
+		for c in containers:
+			c["timeline"] = container_timeline(c)
+			c["has_charges"] = bool(c.get("demurrage_days") or 0)
+		context.containers = containers
+	except Exception:
+		frappe.log_error(
+			title="Shipment portal containers failed",
+			message=frappe.get_traceback(),
+		)
+		context.containers = []
 
 	# Only updates posted by the logged-in customer user.
 	context.updates = get_my_updates_for_project(project, limit=100)

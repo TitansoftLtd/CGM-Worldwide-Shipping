@@ -22,7 +22,7 @@ DEFAULT_SEA_IMPORT_TASK_TEMPLATE: list[dict[str, str]] = [
 	{"task_subject": "Request Manifest and Local Import Charges", "department": "Documentation"},
 	{"task_subject": "Attach Shipping Line Invoice", "department": "Documentation"},
 	{"task_subject": "Finance pays Shipping Line Charges", "department": "Finance"},
-	{"task_subject": "Create Entry (after vessel arrival confirmation)", "department": "Declaration"},
+	{"task_subject": "Create Entry", "department": "Declaration"},
 	{"task_subject": "Finance Pays Entry Slip", "department": "Finance"},
 	{"task_subject": "Lodge Delivery Order", "department": "Operations"},
 	{"task_subject": "Prepare Post-Clearance Permits", "department": "Declaration"},

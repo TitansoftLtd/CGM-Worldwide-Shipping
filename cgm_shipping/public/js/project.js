@@ -9,12 +9,21 @@ function configure_project_document_grid(frm) {
 		const draft_field = cgm_draft_document_field();
 		for (const row of frm.doc.custom_shipment_documents || []) {
 			const draft = draft_field ? row[draft_field] : null;
-			if (draft_field && !draft && row.attachment) {
+			if (draft_field && !draft && !row.final_attachment && row.attachment) {
+				if (row.status === "Missing") {
+					row.attachment = "";
+					changed = true;
+					continue;
+				}
 				row[draft_field] = row.attachment;
 				changed = true;
 			}
-			if (draft || row.final_attachment) {
-				row.attachment = row.final_attachment || draft || row.attachment;
+			const next_draft = draft_field ? row[draft_field] : null;
+			if (next_draft || row.final_attachment) {
+				row.attachment = row.final_attachment || next_draft || row.attachment;
+			} else if (row.attachment) {
+				row.attachment = "";
+				changed = true;
 			}
 		}
 		if (changed) {
@@ -120,13 +129,21 @@ function register_project_action_after_workflow(frm, eventKey, register_action) 
 function mount_port_arrival_confirmation_button(frm) {
 	const on_confirm = () => {
 		const confirmMessage = __(
-			"Confirm that the shipment has arrived at the port? Container trackers will be created for all containers on this project."
+			"Confirm that the shipment has arrived at the port? ATA will be saved on the Project and all Container Trackers will be created/updated."
 		);
 		const submit = (ata) => {
+			if (!ata) {
+				frappe.msgprint({
+					title: __("ATA required"),
+					message: __("Enter the Actual Time of Arrival (ATA) before confirming."),
+					indicator: "orange",
+				});
+				return;
+			}
 			frappe.call({
 				method:
 					"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.confirm_shipment_arrival_at_port",
-				args: { project_name: frm.doc.name, ata: ata || null },
+				args: { project_name: frm.doc.name, ata: ata },
 				freeze: true,
 				freeze_message: __("Creating container trackers..."),
 				callback(r) {
@@ -135,10 +152,11 @@ function mount_port_arrival_confirmation_button(frm) {
 					}
 					frm.reload_doc();
 					const count = r.message?.tracker_count || 0;
+					const savedAta = r.message?.ata || ata;
 					frappe.show_alert({
 						message: __(
-							"Port arrival confirmed — {0} container tracker(s) created.",
-							[count]
+							"Port arrival confirmed — ATA {0} saved on Project and {1} container tracker(s).",
+							[savedAta, count]
 						),
 						indicator: "green",
 					});
@@ -152,6 +170,9 @@ function mount_port_arrival_confirmation_button(frm) {
 					fieldname: "ata",
 					fieldtype: "Date",
 					label: __("Actual Time of Arrival (ATA)"),
+					description: __(
+						"This date is written to the Project ATA field and to every Container Tracker for this shipment."
+					),
 					default: project_ata_value(frm) || frappe.datetime.get_today(),
 					reqd: 1,
 				},
@@ -460,22 +481,28 @@ function toggle_project_document_stage_fields(frm, category) {
 function setup_add_bill_of_lading_button(frm) {
 	frm.remove_custom_button(__("Add Bill of Lading"), __("Shipment"));
 	frm.remove_custom_button(__("Add Bill of Lading"), __("Actions"));
+	frm.remove_custom_button(__("Add Booking Confirmation"), __("Actions"));
 	if (frm.is_new() || !frm.doc.name) {
 		return;
 	}
-	// Only when shipment started without a BL (typically Booking-first).
-	if (frm.doc.custom_bill_of_lading) {
-		return;
-	}
-	if (!frm.doc.custom_source_opportunity && !frm.doc.custom_booking_confirmation) {
-		return;
-	}
 
-	frm.add_custom_button(
-		__("Add Bill of Lading"),
-		() => open_bill_of_lading_from_project(frm),
-		__("Actions")
-	);
+	if (!frm.doc.custom_bill_of_lading) {
+		frm.add_custom_button(
+			__("Add Bill of Lading"),
+			() => open_bill_of_lading_from_project(frm),
+			__("Actions")
+		);
+	}
+	if (
+		frm.fields_dict.custom_booking_confirmation &&
+		!frm.doc.custom_booking_confirmation
+	) {
+		frm.add_custom_button(
+			__("Add Booking Confirmation"),
+			() => open_booking_confirmation_from_project(frm),
+			__("Actions")
+		);
+	}
 }
 
 function open_bill_of_lading_from_project(frm) {
@@ -498,6 +525,23 @@ function open_bill_of_lading_from_project(frm) {
 	frappe.route_options = seed;
 	frappe.model.with_doctype("Bill of Lading", () => {
 		frappe.new_doc("Bill of Lading");
+	});
+}
+
+function open_booking_confirmation_from_project(frm) {
+	const opportunity = frm.doc.custom_source_opportunity;
+	if (opportunity) {
+		localStorage.setItem("cgm_return_opportunity", opportunity);
+	}
+
+	frappe.route_options = {
+		linked_opportunity: opportunity || undefined,
+		customer: frm.doc.customer || undefined,
+		shipment_type: frm.doc.custom_shipment_type || undefined,
+		client_reference_no: frm.doc.custom_client_refrence_no || undefined,
+	};
+	frappe.model.with_doctype("Booking Confirmation", () => {
+		frappe.new_doc("Booking Confirmation");
 	});
 }
 
@@ -1011,7 +1055,7 @@ function render_container_tracking_table(frm, dashboard) {
 	let cards = "";
 	if (!rows.length) {
 		cards = `<div class="text-muted cgm-container-empty">${__(
-			"No containers yet. Use Actions → Confirm Shipment Arrival at the Port, or complete Task 11 (Create Entry), to create Container Trackers."
+			"No containers yet. Use Actions → Confirm Shipment Arrival at the Port to create Container Trackers."
 		)}</div>`;
 	} else {
 		cards = rows

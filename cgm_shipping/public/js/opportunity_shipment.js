@@ -363,31 +363,34 @@ cgm_shipping.opportunity_shipment._build_readiness_html = function (readiness) {
 		return "";
 	}
 	const items = [];
+	const deferred = Boolean(readiness.transport_docs_deferred);
 	const transport_docs = readiness.transport_documents || [];
 	const startAlternates = new Set(["Bill of Lading", "Booking Confirmation"]);
 	const alternateDocs = transport_docs.filter((doc) =>
 		startAlternates.has(doc.transport_document)
 	);
 	const alternateLinked = alternateDocs.some((doc) => doc.linked_name);
-	if (alternateDocs.length >= 2 && !alternateLinked) {
-		items.push(
-			__("Link Bill of Lading or Booking Confirmation (whichever was provided first).")
-		);
-	} else if (!alternateDocs.length) {
-		const missing_required = transport_docs.filter(
-			(doc) => doc.is_required_for_start && !doc.linked_name
-		);
-		if (missing_required.length) {
+	if (!deferred) {
+		if (alternateDocs.length >= 2 && !alternateLinked) {
 			items.push(
-				__("Link required transport document(s): {0}", [
-					missing_required.map((doc) => doc.transport_document).join(", "),
-				])
+				__("Link Bill of Lading or Booking Confirmation (whichever was provided first).")
 			);
-		} else if (!readiness.transport_docs_linked && transport_docs.length) {
+		} else if (!alternateDocs.length) {
+			const missing_required = transport_docs.filter(
+				(doc) => doc.is_required_for_start && !doc.linked_name
+			);
+			if (missing_required.length) {
+				items.push(
+					__("Link required transport document(s): {0}", [
+						missing_required.map((doc) => doc.transport_document).join(", "),
+					])
+				);
+			} else if (!readiness.transport_docs_linked && transport_docs.length) {
+				items.push(__("Attach at least one transport document"));
+			}
+		} else if (!alternateLinked && !readiness.required_transport_linked) {
 			items.push(__("Attach at least one transport document"));
 		}
-	} else if (!alternateLinked && !readiness.required_transport_linked) {
-		items.push(__("Attach at least one transport document"));
 	}
 	(readiness.missing_documents || []).forEach((doc) => {
 		items.push(__("Upload: {0}", [doc]));
@@ -399,9 +402,12 @@ cgm_shipping.opportunity_shipment._build_readiness_html = function (readiness) {
 		items.push(__("Submit for approval (current: {0})", [readiness.workflow_state]));
 	}
 	if (!items.length) {
-		return `<div class="cgm-intake-readiness text-success">${__(
-			"Ready to start shipment after approval."
-		)}</div>`;
+		const readyMsg = deferred
+			? __(
+					"Transport documents deferred. Submit for approval, then Start Shipment — attach BL / Booking / AWB later on the Project."
+			  )
+			: __("Ready to start shipment after approval.");
+		return `<div class="cgm-intake-readiness text-success">${readyMsg}</div>`;
 	}
 	return `<div class="cgm-intake-readiness"><strong>${__(
 		"Before Start Shipment"
@@ -415,6 +421,8 @@ cgm_shipping.opportunity_shipment._apply_post_bl_layout_visibility = function (f
 		!frm.is_new() &&
 		(Boolean(readiness.transport_docs_linked) ||
 			Boolean(readiness.primary_linked) ||
+			Boolean(readiness.transport_docs_deferred) ||
+			cint(frm.doc.custom_transport_docs_deferred) ||
 			frm.doc.custom_primary_doc_linked ||
 			[STAGE_DOCUMENTS, STAGE_AUTHORIZATION].includes(stage));
 
@@ -491,6 +499,27 @@ cgm_shipping.opportunity_shipment.render_transport_documents_dashboard = functio
 	});
 
 	parts.push("</div></div>");
+
+	const anyLinked = docs.some((doc) => doc.linked_name);
+	const deferred = cint(frm.doc.custom_transport_docs_deferred);
+	if (!anyLinked) {
+		parts.push('<div class="cgm-transport-docs-defer" style="margin-top: 10px;">');
+		if (deferred) {
+			parts.push(
+				`<button type="button" class="btn btn-sm btn-default cgm-clear-transport-defer">${__(
+					"Undo to add transport documents"
+				)}</button>`
+			);
+		} else {
+			parts.push(
+				`<button type="button" class="btn btn-sm btn-default cgm-defer-transport-docs">${__(
+					"None provided yet — continue to approval without BL / Booking / AWB"
+				)}</button>`
+			);
+		}
+		parts.push("</div>");
+	}
+
 	field.$wrapper.html(parts.join(""));
 
 	field.$wrapper
@@ -506,7 +535,89 @@ cgm_shipping.opportunity_shipment.render_transport_documents_dashboard = functio
 		.on("click.cgmTransportDocs", ".cgm-transport-doc-linked", (event) => {
 			const $btn = $(event.currentTarget);
 			frappe.set_route("Form", $btn.data("doctype"), $btn.data("name"));
+		})
+		.on("click.cgmTransportDocs", ".cgm-defer-transport-docs", () => {
+			cgm_shipping.opportunity_shipment._set_transport_docs_deferred(frm, 1);
+		})
+		.on("click.cgmTransportDocs", ".cgm-clear-transport-defer", () => {
+			cgm_shipping.opportunity_shipment._set_transport_docs_deferred(frm, 0);
 		});
+};
+
+cgm_shipping.opportunity_shipment._set_transport_docs_deferred = function (frm, value) {
+	if (!frm.doc.name || String(frm.doc.name).startsWith("new-")) {
+		frappe.msgprint(__("Save the Opportunity first, then continue without transport documents."));
+		return;
+	}
+	if (frm._cgm_deferring_transport) {
+		return;
+	}
+	if (!frm.fields_dict.custom_transport_docs_deferred) {
+		frappe.msgprint(
+			__(
+				"Please migrate the site to enable continuing without transport documents (missing field)."
+			)
+		);
+		return;
+	}
+
+	frm._cgm_deferring_transport = true;
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.set_transport_docs_deferred",
+		args: {
+			opportunity: frm.doc.name,
+			deferred: value ? 1 : 0,
+		},
+		freeze: true,
+		freeze_message: __("Updating…"),
+		callback(r) {
+			frm._cgm_deferring_transport = false;
+			const msg = r.message || {};
+			// Patch locals only — do not reload/save (avoids TimestampMismatch).
+			frm.doc.custom_transport_docs_deferred = msg.deferred ? 1 : 0;
+			if (msg.stage) {
+				frm.doc.custom_intake_stage = msg.stage;
+			}
+			if (msg.primary_doc_linked != null) {
+				frm.doc.custom_primary_doc_linked = msg.primary_doc_linked ? 1 : 0;
+			}
+
+			const readiness = msg.readiness || {};
+			frm._cgm_intake_context = {
+				...(frm._cgm_intake_context || {}),
+				stage: msg.stage || frm.doc.custom_intake_stage,
+				readiness,
+				html: msg.html || "",
+			};
+			frm._cgm_shipment_type_flags = readiness;
+
+			if (frm.fields_dict.custom_shipment_intake_wizard_html && msg.html) {
+				frm.get_field("custom_shipment_intake_wizard_html").html(msg.html);
+			}
+
+			const stage = cgm_shipping.opportunity_shipment._current_stage(frm);
+			if (frm.fields_dict.custom_intake_readiness_html) {
+				if (READINESS_STAGES.includes(stage)) {
+					frm.toggle_display("custom_intake_readiness_html", true);
+					frm.get_field("custom_intake_readiness_html").html(
+						cgm_shipping.opportunity_shipment._build_readiness_html(readiness)
+					);
+				} else {
+					frm.get_field("custom_intake_readiness_html").html("");
+					frm.toggle_display("custom_intake_readiness_html", false);
+				}
+			}
+
+			cgm_shipping.opportunity_shipment.render_transport_documents_dashboard(frm, readiness);
+			cgm_shipping.opportunity_shipment._apply_post_bl_layout_visibility(frm, readiness);
+			cgm_shipping.opportunity_shipment._ensure_intake_fields_visible(frm);
+			cgm_shipping.opportunity_shipment.setup_start_shipment_button(frm);
+		},
+		error() {
+			frm._cgm_deferring_transport = false;
+		},
+	});
 };
 
 cgm_shipping.opportunity_shipment._open_transport_document = function (frm, doc) {

@@ -228,8 +228,13 @@ def derive_version_status(row) -> str:
 	return ""
 
 
-def normalize_shipment_document_row(row, *, prefer_draft_for_legacy: bool = True) -> None:
-	"""Keep version_status and primary attachment in sync with draft/final slots."""
+def normalize_shipment_document_row(row, *, prefer_draft_for_legacy: bool = False) -> None:
+	"""Keep version_status and primary attachment in sync with draft/final slots.
+
+	``prefer_draft_for_legacy`` is only for in-memory form hydration of old rows that
+	still store the file solely in ``attachment``. On save it must stay False so that
+	Clearing draft/final is not undone by copying ``attachment`` back into draft.
+	"""
 	if not row or not has_document_versioning():
 		return
 
@@ -237,9 +242,23 @@ def normalize_shipment_document_row(row, *, prefer_draft_for_legacy: bool = True
 	draft = get_draft_attachment(row)
 	final = (row.get("final_attachment") or "").strip()
 
-	if legacy and not draft and not final and prefer_draft_for_legacy:
-		set_draft_attachment(row, legacy)
-		draft = legacy
+	if not draft and not final:
+		if prefer_draft_for_legacy and legacy:
+			set_draft_attachment(row, legacy)
+			draft = legacy
+		else:
+			# Cleared (or never attached): keep slots empty and drop the legacy mirror.
+			if legacy:
+				row.attachment = ""
+			if row.meta.has_field("version_status"):
+				row.version_status = ""
+			if row.meta.has_field("status") and row.get("status") not in (None, "", "Missing"):
+				row.status = "Missing"
+			if row.meta.has_field("verified_by"):
+				row.verified_by = None
+			if row.meta.has_field("verified_on"):
+				row.verified_on = None
+			return
 
 	if row.meta.has_field("version_status"):
 		row.version_status = derive_version_status(row)
@@ -255,7 +274,7 @@ def resolve_document_row_slots(row) -> tuple[str, str]:
 	"""Return (draft_url, final_url) from a Shipment Document row."""
 	if not row:
 		return "", ""
-	normalize_shipment_document_row(row)
+	normalize_shipment_document_row(row, prefer_draft_for_legacy=True)
 	draft = get_draft_attachment(row)
 	final = (row.get("final_attachment") or "").strip()
 	legacy = (row.get("attachment") or "").strip()
@@ -457,16 +476,18 @@ def migrate_legacy_shipment_document_attachments() -> None:
 			)
 
 
-def normalize_shipment_documents_table(rows) -> None:
+def normalize_shipment_documents_table(rows, *, prefer_draft_for_legacy: bool = False) -> None:
 	for row in rows or []:
-		normalize_shipment_document_row(row)
+		normalize_shipment_document_row(row, prefer_draft_for_legacy=prefer_draft_for_legacy)
 
 
 def prepare_shipment_documents_for_form(doc, table_field: str) -> None:
 	"""Hydrate legacy attachment into draft/final slots for form display (in-memory)."""
 	if not doc.meta.has_field(table_field):
 		return
-	normalize_shipment_documents_table(doc.get(table_field))
+	normalize_shipment_documents_table(
+		doc.get(table_field), prefer_draft_for_legacy=True
+	)
 
 
 def on_opportunity_onload(doc, _method=None) -> None:
@@ -1466,14 +1487,50 @@ def get_document_type_link_name(code):
 	if not code:
 		return None
 
-	# 1. Prefer a match on the code field.
-	name = frappe.db.get_value("Document Type", {"code": code}, "name")
-	if name:
-		return name
+	raw = str(code).strip()
+	if not raw:
+		return None
 
-	# 2. Fall back to using the code directly as the document name.
-	if frappe.db.exists("Document Type", code):
-		return code
+	# Try exact and common stamp variants ("IDF CERT" ↔ "IDF_CERT").
+	candidates = [raw]
+	spaced = raw.replace("_", " ")
+	underscored = raw.replace(" ", "_")
+	for variant in (spaced, underscored):
+		if variant not in candidates:
+			candidates.append(variant)
+
+	for candidate in candidates:
+		# 1. Prefer a match on the code field.
+		name = frappe.db.get_value("Document Type", {"code": candidate}, "name")
+		if name:
+			return name
+
+		# 2. Case-insensitive code match (settings may store INSPECT, master Inspect).
+		matched = frappe.db.sql(
+			"select name from `tabDocument Type` where upper(ifnull(code, '')) = %s limit 1",
+			(candidate.upper(),),
+		)
+		if matched:
+			return matched[0][0]
+
+		# 3. Fall back to using the candidate directly as the document name.
+		if frappe.db.exists("Document Type", candidate):
+			return candidate
+
+	# 4. Compact alphanumeric match (IDF CERT → IDFCERT ↔ IDF_CERT).
+	compact = "".join(ch for ch in raw.upper() if ch.isalnum())
+	if compact:
+		matched = frappe.db.sql(
+			"""
+			select name from `tabDocument Type`
+			where replace(replace(upper(ifnull(code, '')), ' ', ''), '_', '') = %s
+			   or replace(replace(upper(name), ' ', ''), '_', '') = %s
+			limit 1
+			""",
+			(compact, compact),
+		)
+		if matched:
+			return matched[0][0]
 
 	return None
 

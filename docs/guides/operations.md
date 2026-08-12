@@ -124,10 +124,10 @@ Submit a **Daily Status Update** (`DSU-{date}-{#####}`) for RAG reporting on act
 
 ### After vessel arrival
 
-1. Confirm ETA/ATA fields on Project.
-2. Coordinate **Create Entry** (Declaration, task 10).
-3. After finance pays entry (task 11), attach shipping line invoice (task 12).
-4. Lodge DO when line charges are paid (task 14).
+1. Confirm ATA on Project (Actions → Confirm Shipment Arrival at the Port) to create Container Trackers.
+2. Create Entry (Declaration, task 12) proceeds independently for Entry Slip / ENTRY paperwork.
+3. After finance pays entry (task 13), continue shipping-line / DO steps as sequenced.
+4. Lodge DO when line charges are paid.
 
 ### Field clearance
 

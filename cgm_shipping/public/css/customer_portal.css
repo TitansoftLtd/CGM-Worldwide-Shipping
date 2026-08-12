@@ -344,23 +344,182 @@ button.cp-kpi { width: 100%; text-align: left; font: inherit; }
 .cp-empty p { margin: 0; font-size: .9rem; }
 .cp-empty .cp-btn { margin-top: 1rem; }
 
-.cp-btn { display: inline-block; padding: .5rem 1.2rem; background: var(--cp-brand); color: #fff; border-radius: var(--cp-radius-sm); text-decoration: none; font-weight: 600; font-size: .88rem; border: none; cursor: pointer; }
+.cp-btn { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; padding: .5rem 1.2rem; background: var(--cp-brand); color: #fff; border-radius: var(--cp-radius-sm); text-decoration: none; font-weight: 600; font-size: .88rem; border: none; cursor: pointer; line-height: 1.2; transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease; }
 .cp-btn:hover { background: var(--cp-brand-dark); color: #fff; text-decoration: none; }
+.cp-btn-primary { background: var(--cp-brand); color: #fff; }
+.cp-btn-primary:hover { background: var(--cp-brand-dark); color: #fff; }
 .cp-btn-ghost { background: var(--cp-surface); color: var(--cp-text); border: 1px solid var(--cp-border); }
 .cp-btn-ghost:hover { background: var(--cp-surface-alt); color: var(--cp-brand); border-color: var(--cp-brand); }
+.cp-btn-sm { padding: .4rem .9rem; font-size: .8rem; border-radius: 8px; }
 
 .cp-banner-error { padding: 1.25rem 1.5rem; border-radius: var(--cp-radius); background: var(--cp-red-soft); color: var(--cp-red); border: 1px solid #fecaca; margin-bottom: 1.5rem; }
 .cp-banner-error h4 { margin: 0 0 .25rem; font-weight: 600; font-size: 1rem; color: var(--cp-red); }
 .cp-banner-error p { margin: 0; }
 
-.cp-banner-info { padding: 1.1rem 1.35rem; border-radius: var(--cp-radius); background: var(--cp-brand-soft); color: var(--cp-text); border: 1px solid var(--cp-border); margin-bottom: 1.25rem; }
+.cp-banner-info { padding: 1.1rem 1.35rem; border-radius: var(--cp-radius); background: var(--cp-brand-soft); color: var(--cp-text); border: 1px solid #bae6fd; margin-bottom: 1.25rem; }
 .cp-banner-info h4 { margin: 0 0 .35rem; font-weight: 600; font-size: .98rem; color: var(--cp-text); }
-.cp-banner-info p { margin: 0 0 .85rem; color: var(--cp-text-muted); font-size: .9rem; line-height: 1.45; }
+.cp-banner-info p { margin: 0; color: var(--cp-text-muted); font-size: .9rem; line-height: 1.45; }
+.cp-banner-info .cp-btn { margin-top: .85rem; }
 
-.cp-alert { display: flex; align-items: center; gap: .9rem; padding: 1rem 1.25rem; border-radius: var(--cp-radius); margin-bottom: 1.25rem; background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%); border: 1px solid #fcd34d; }
-.cp-alert .icon { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; background: var(--cp-amber); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.cp-alert { display: flex; align-items: flex-start; gap: .9rem; padding: 1rem 1.25rem; border-radius: var(--cp-radius); margin-bottom: 1rem; background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%); border: 1px solid #fcd34d; box-shadow: var(--cp-shadow); }
+.cp-alert .icon { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; background: var(--cp-amber); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-top: .05rem; }
 .cp-alert h4 { margin: 0; font-size: .95rem; font-weight: 700; color: #92400e; }
-.cp-alert p { margin: .1rem 0 0; font-size: .84rem; color: #92400e; }
+.cp-alert p { margin: .15rem 0 0; font-size: .84rem; color: #92400e; line-height: 1.4; }
+
+.cp-section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 1.5rem 0 .85rem;
+  letter-spacing: -0.01em;
+  color: var(--cp-text);
+}
+
+/* Document / fee rows (shipment + invoices) */
+.sh-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .85rem 1.25rem;
+  border-bottom: 1px solid var(--cp-border);
+}
+.sh-doc-row:last-child { border-bottom: none; }
+.sh-doc-icon {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--cp-brand-soft);
+  color: var(--cp-brand);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sh-doc-body { flex: 1; min-width: 0; }
+.sh-doc-title { font-weight: 600; font-size: .9rem; }
+.sh-doc-sub { font-size: .76rem; color: var(--cp-text-muted); margin-top: .1rem; }
+.sh-doc-sub a { color: inherit; text-decoration: none; }
+.sh-doc-sub a:hover { color: var(--cp-brand); text-decoration: underline; }
+
+label.cp-btn {
+  margin: 0;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+label.cp-btn input[type="file"],
+.cgm-fee-receipt-input {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  border: 0 !important;
+  opacity: 0 !important;
+}
+
+/* ───── Clearance fee invoices (legacy stack — kept for optional use) ───── */
+.cp-fee-stack { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1.5rem; }
+.cp-fee-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.2rem;
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  box-shadow: var(--cp-shadow);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.cp-fee-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: var(--cp-shadow-md);
+}
+.cp-fee-card.is-done {
+  background: linear-gradient(180deg, #f8fffb 0%, #ffffff 70%);
+  border-color: #bbf7d0;
+}
+.cp-fee-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--cp-brand-soft);
+  color: var(--cp-brand);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cp-fee-card.is-done .cp-fee-icon {
+  background: var(--cp-green-soft);
+  color: var(--cp-green);
+}
+.cp-fee-body { flex: 1; min-width: 180px; }
+.cp-fee-title {
+  margin: 0;
+  font-size: .95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--cp-text);
+}
+.cp-fee-meta {
+  margin: .25rem 0 0;
+  font-size: .78rem;
+  color: var(--cp-text-muted);
+  line-height: 1.45;
+}
+.cp-fee-meta a {
+  color: var(--cp-brand);
+  font-weight: 600;
+  text-decoration: none;
+}
+.cp-fee-meta a:hover { text-decoration: underline; }
+.cp-fee-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.cp-fee-status {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .35rem .75rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cp-fee-status .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.cp-fee-status.is-waiting {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+}
+.cp-fee-status.is-waiting .dot { background: #ea580c; }
+.cp-fee-status.is-done {
+  background: var(--cp-green-soft);
+  color: #166534;
+  border: 1px solid #86efac;
+}
+.cp-fee-status.is-done .dot { background: var(--cp-green); }
+
+label.cp-btn { margin: 0; }
+label.cp-btn input[type="file"] { display: none; }
+
+@media (max-width: 640px) {
+  .cp-fee-card { align-items: flex-start; }
+  .cp-fee-actions { width: 100%; margin-left: 0; }
+  .cp-fee-actions .cp-btn { flex: 1; text-align: center; }
+}
 
 /* ───── Transporter portal assignment form ───── */
 .tp-assign-steps {

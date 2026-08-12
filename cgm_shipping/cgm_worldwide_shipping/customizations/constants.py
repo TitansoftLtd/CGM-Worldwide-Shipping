@@ -27,8 +27,19 @@ TASK_PERMITS_FIELD = "custom_task_permits"
 TASK_FINANCE_FIELD = "custom_task_finance_lines"
 PERMIT_JOURNAL_ENTRY_FIELD = "journal_entry"
 
+# Finance confirms the client settled a payment directly (no CGM disbursement,
+# so no Journal Entry / Payment Entry exists on the finance task).
+CLIENT_PAID_FIELD = "custom_client_paid_directly"
+CLIENT_PAID_BY_FIELD = "custom_client_paid_confirmed_by"
+CLIENT_PAID_ON_FIELD = "custom_client_paid_confirmed_on"
+
 # Intake documents required before Documents Received workflow state.
 INTAKE_DOCUMENT_CODES = ("CI", "PKL")
+
+# IDF/UCR certificate document codes. The "IDF CERT" Document Type carries the
+# code "IDF Certificate" on live sites, so it must be accepted alongside the
+# short codes or Create UCR (IDF) never auto-completes.
+IDF_CERTIFICATE_CODES = frozenset({"IDF_CERT", "UCR_CERT", "IDF", "IDF Certificate"})
 
 # Sea task completion requirement labels (Settings-driven; defaults for throws).
 PRE_CLEARANCE_STAGE = "Pre-clearance"
@@ -155,7 +166,8 @@ CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 # tracking tasks to override these.
 CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
 	"custom_track_eta_task_seq": 8,
-	# Create Entry sequence after Shipping Line was moved before Entry.
+	# Bulk vessel-arrival event key used by Project port-arrival confirm.
+	# Not tied to Create Entry — Entry is paperwork-only.
 	"custom_vessel_arrival_task_seq": 12,
 	"custom_field_clearance_task_seq": 17,
 	"custom_kpa_paid_task_seq": 19,
@@ -176,7 +188,9 @@ TASK_CONTAINER_TRACKER_FIELD = "custom_container_tracker"
 TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
 TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 
-# Task child table for per-container data entry (tasks 11, 16, 18–24).
+# Task child table for per-container data entry (transport / field clearance / KPA).
+# Seq 12 (Create Entry / vessel-arrival) is a Project→Task mirror only — not a
+# completion gate.
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
 CONTAINER_UPDATE_TASK_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
 CONTAINER_UPDATE_SEED_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
@@ -221,7 +235,7 @@ CARGO_TYPE_OPTIONS = (
 	"Project Cargo",
 )
 
-# ERPNext Notification fixture names (see fixtures/notification.json).
+# ERPNext Notification names (ensured by patches.ensure_sea_task_notifications).
 FINANCE_PAYMENT_ACTION = "CGM Task - Finance Payment Action"
 PERMIT_INVOICES_TO_FINANCE = "CGM Task - Permit Invoices to Finance"
 PERMIT_RECEIPTS_FOR_DECLARANT = "CGM Task - Permit Receipts for Declarant"

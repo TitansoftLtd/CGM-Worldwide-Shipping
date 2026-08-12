@@ -31,8 +31,11 @@
   "custom_finance_roles",
   "custom_finance_department",
   "custom_operations_roles",
+  "custom_documentation_roles",
   "custom_declaration_roles",
   "custom_transport_roles",
+  "section_document_responsibilities",
+  "custom_document_responsibilities",
   "section_email_templates",
   "custom_default_email_template",
   "custom_permit_finance_email_template",
@@ -139,11 +142,12 @@
    "label": "Roles"
   },
   {
-   "description": "Which roles are notified / treated as Finance, Operations, or Declaration. Required: an empty table means no one is in that group (those notifications and role checks will match nobody).",
+   "description": "Map ERPNext Roles to departments. A role listed here may open only that department's sea tasks. Do not add Projects User / Projects Manager here — give those on the User for Desk access only; use Transporter, Declarant, Finance User, etc. for department tasks.",
    "fieldname": "section_roles",
    "fieldtype": "Section Break"
   },
   {
+   "description": "Roles that may open Finance-department sea tasks only (e.g. Finance User, Accounts User).",
    "fieldname": "custom_finance_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Finance roles",
@@ -157,25 +161,44 @@
    "options": "Department"
   },
   {
-   "description": "ERPNext Roles that may open Operations / Documentation sea tasks (e.g. Operations Manager).",
+   "description": "Roles that may open Operations-department sea tasks only (e.g. Operations Manager). Add a role here to grant Operations tasks — not Documentation.",
    "fieldname": "custom_operations_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Operations roles",
    "options": "CGM Role Item"
   },
   {
-   "description": "ERPNext Roles that may open Declaration tasks (Create UCR, permits, Entry). Example: Declarant.",
+   "description": "Roles that may open Documentation-department sea tasks only (e.g. CGM Documentation). Keep this separate from Operations roles.",
+   "fieldname": "custom_documentation_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Documentation roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "Roles that may open Declaration-department sea tasks only (Create UCR, permits, Entry). Example: Declarant.",
    "fieldname": "custom_declaration_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Declaration roles",
    "options": "CGM Role Item"
   },
   {
-   "description": "ERPNext Roles that may open Transport / Field Operations tasks (book trucks, gate out, delivery, empty return). Align with departments such as Transport - CWSCL and Field Operations - CWSCL.",
+   "description": "Roles that may open Transport / Field Operations tasks (book trucks, gate out, delivery, empty return).",
    "fieldname": "custom_transport_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Transport roles",
    "options": "CGM Role Item"
+  },
+  {
+   "description": "Who may upload or verify each document. Role Group is a Link to CGM Role Group — create Documentation or any other group there, add CGM Roles, then pick it here. No code change needed.",
+   "fieldname": "section_document_responsibilities",
+   "fieldtype": "Section Break",
+   "label": "Document responsibilities"
+  },
+  {
+   "fieldname": "custom_document_responsibilities",
+   "fieldtype": "Table",
+   "label": "Document responsibilities",
+   "options": "CGM Document Responsibility Item"
   },
   {
    "description": "HTML + Jinja. Available variables: {{ message }}, {{ task_url }}, {{ project_url }}. Leave blank to use the built-in default.",

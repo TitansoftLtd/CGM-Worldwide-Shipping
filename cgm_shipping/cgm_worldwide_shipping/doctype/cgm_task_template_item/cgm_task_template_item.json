@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "creation": "2026-07-17 12:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -12,6 +12,10 @@
   "column_break_item",
   "depends_on_sequences",
   "description",
+  "section_role",
+  "task_role",
+  "payment_kind",
+  "permit_stage",
   "section_flags",
   "requires_finance_action",
   "requires_document_upload",
@@ -20,7 +24,9 @@
   "column_break_flags",
   "is_auto_completable",
   "completion_condition",
-  "is_optional"
+  "is_optional",
+  "section_documents",
+  "required_document_types"
  ],
  "fields": [
   {
@@ -50,7 +56,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Comma-separated sequence numbers this task waits for. e.g. 1,2",
+   "description": "Comma-separated sequence numbers this task waits for. e.g. 1,2. For Finance Payment / Permit Finance, list the Application / Permit Application sequence so invoice copy and pairing work.",
    "fieldname": "depends_on_sequences",
    "fieldtype": "Data",
    "label": "Depends On (sequences)"
@@ -62,18 +68,52 @@
    "label": "Instructions"
   },
   {
+   "fieldname": "section_role",
+   "fieldtype": "Section Break",
+   "label": "Task Role (drives Desk UI + finance)"
+  },
+  {
+   "default": "Standard",
+   "description": "Controls which tables and finance/permit workflows run. Document = attach only. Application = Declarant attaches invoice (+ receipt later). Finance Payment = Finance verifies/pays. Permit Application / Permit Finance = permit register flow.",
+   "fieldname": "task_role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Task Role",
+   "options": "Standard\nDocument\nDocument Checkpoint\nApplication\nFinance Payment\nPermit Application\nPermit Finance\nAuto Complete",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:[\"Application\",\"Finance Payment\",\"Permit Finance\"].includes(doc.task_role)",
+   "description": "UCR / ENTRY_SLIP / Shipping Line / KPA / Permit — must match on the Application and Finance Payment pair.",
+   "fieldname": "payment_kind",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Payment Kind",
+   "options": "Payment Kind"
+  },
+  {
+   "depends_on": "eval:[\"Permit Application\",\"Permit Finance\"].includes(doc.task_role)",
+   "description": "Pre-clearance or Post-clearance permit stage.",
+   "fieldname": "permit_stage",
+   "fieldtype": "Select",
+   "label": "Permit Stage",
+   "options": "\nPre-clearance\nPost-clearance"
+  },
+  {
    "fieldname": "section_flags",
    "fieldtype": "Section Break",
    "label": "Task Behaviour"
   },
   {
    "default": "0",
+   "description": "Show finance-related actions (also implied by Finance Payment / Application roles).",
    "fieldname": "requires_finance_action",
    "fieldtype": "Check",
    "label": "Finance Action Required"
   },
   {
    "default": "0",
+   "description": "Show Task Documents (also implied by Document / Document Checkpoint roles).",
    "fieldname": "requires_document_upload",
    "fieldtype": "Check",
    "label": "Document Upload Required"
@@ -86,6 +126,7 @@
   },
   {
    "default": "0",
+   "description": "Show permit table (also implied by Permit Application / Permit Finance roles).",
    "fieldname": "requires_permit_action",
    "fieldtype": "Check",
    "label": "Permit Action Required"
@@ -114,13 +155,26 @@
    "fieldname": "is_optional",
    "fieldtype": "Check",
    "label": "Optional Task"
+  },
+  {
+   "depends_on": "eval:[\"Document\",\"Document Checkpoint\",\"Application\"].includes(doc.task_role) || doc.requires_document_upload",
+   "fieldname": "section_documents",
+   "fieldtype": "Section Break",
+   "label": "Required Documents"
+  },
+  {
+   "depends_on": "eval:[\"Document\",\"Document Checkpoint\",\"Application\"].includes(doc.task_role) || doc.requires_document_upload",
+   "description": "Document Types required before this task can be Completed (e.g. IDF CERT). Prefills Task Documents and blocks Complete until each is attached. Select from Document Type master (comma-separated).",
+   "fieldname": "required_document_types",
+   "fieldtype": "Data",
+   "label": "Required Document Types"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-17 12:00:00.000000",
+ "modified": "2026-08-12 05:20:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Task Template Item",

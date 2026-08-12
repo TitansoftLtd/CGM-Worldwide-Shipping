@@ -66,6 +66,7 @@ web_include_js = [
 
 # include js in doctype views
 doctype_js = {
+	"CGM Task Template": "public/js/cgm_task_template.js",
 	"Task": [
 		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
@@ -99,7 +100,7 @@ doctype_js = {
 	"Quotation": "public/js/quotation.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
 	"Supplier": "public/js/supplier.js",
-	# Doctype folder *.js is auto-inlined; only list extra scripts here (not the doctype file itself).
+	"Leave Application": "public/js/leave_application.js",
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -276,6 +277,9 @@ doc_events = {
 	},
 	"Item": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
+	},
+	"Leave Application": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 	},
 	"Opportunity": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.documents.on_opportunity_onload",

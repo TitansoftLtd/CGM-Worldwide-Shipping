@@ -143,6 +143,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			"customer",
 			"shipping_line",
 			"bill_of_lading",
+			"batch_no",
 			"clearance_station",
 			"date_field",
 			"date_from",
@@ -201,6 +202,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				label: __("B/L"),
 				fieldtype: "Link",
 				options: "Bill of Lading",
+			},
+			{
+				fieldname: "batch_no",
+				label: __("Client Batch No"),
+				fieldtype: "Data",
 			},
 			{
 				fieldname: "clearance_station",
@@ -669,15 +675,15 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("CGM Ref No")}</th>
 				<th>${__("B/L Number")}</th>
 				<th>${__("Shipment")}</th>
+				<th>${__("ETA")}</th>
+				<th>${__("Operational Status")}</th>
 				<th>${__("CGM Batch No")}</th>
 				<th>${__("Shipping Line")}</th>
 				<th>${__("Country of Origin")}</th>
-				<th>${__("ETA")}</th>
 				<th>${__("Clearance Station")}</th>
 				<th>${__("Remarks")}</th>
 				<th>${__("Container")}</th>
 				<th>${__("ATA")}</th>
-				<th>${__("Operational Status")}</th>
 				<th>${__("Container Status")}</th>
 				<th>${__("Container Deposit")}</th>
 				<th>${__("Deposit Payment Status")}</th>
@@ -722,15 +728,15 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<td>${cgmReferenceCell(row)}</td>
 				<td>${blCell(row)}</td>
 				<td>${shipmentCell(row)}</td>
+				<td>${fmtDate(row.eta)}</td>
+				<td>${statusPill(row)}</td>
 				<td>${batchCell(row)}</td>
 				<td>${frappe.utils.escape_html(row.shipping_line || "—")}</td>
 				<td>${frappe.utils.escape_html(row.country_of_origin || "—")}</td>
-				<td>${fmtDate(row.eta)}</td>
 				<td>${frappe.utils.escape_html(row.clearance_station || "—")}</td>
 				<td>${frappe.utils.escape_html(remarks || "—")}</td>
 				<td>${trackerLink(row)}${alert}</td>
 				<td>${fmtDate(row.ata)}</td>
-				<td>${statusPill(row)}</td>
 				<td>${containerStatusCell(row.container_status)}</td>
 				<td>${frappe.utils.escape_html(row.deposit_amount || 0)}</td>
 				<td>${depositPaymentStatusCell(row)}</td>
@@ -789,15 +795,15 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("CGM Ref No")}</th>
 				<th>${__("B/L Number")}</th>
 				<th>${__("Shipment")}</th>
+				<th>${__("ETA")}</th>
+				<th>${__("Operational Status")}</th>
 				<th>${__("CGM Batch No")}</th>
 				<th>${__("Shipping Line")}</th>
 				<th>${__("Country of Origin")}</th>
-				<th>${__("ETA")}</th>
 				<th>${__("Clearance Station")}</th>
 				<th>${__("Remarks")}</th>
 				<th>${__("Containers")}</th>
 				<th>${__("ATA")}</th>
-				<th>${__("Operational Status")}</th>
 				<th>${__("Container Status")}</th>
 				<th>${__("Container Deposit")}</th>
 				<th>${__("Vessel")}</th>
@@ -821,15 +827,15 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<td>${cgmReferenceCell(row)}</td>
 				<td>${frappe.utils.escape_html(row.bl_number || "—")}</td>
 				<td>${projectLink(row)}</td>
+				<td>${fmtDate(row.eta)}</td>
+				<td>${shipmentOperationalStatusCell(row)}</td>
 				<td>${frappe.utils.escape_html(row.batch_no || "—")}</td>
 				<td>${frappe.utils.escape_html(row.shipping_line || "—")}</td>
 				<td>${frappe.utils.escape_html(row.country_of_origin || "—")}</td>
-				<td>${fmtDate(row.eta)}</td>
 				<td>${frappe.utils.escape_html(row.clearance_station || "—")}</td>
 				<td>${frappe.utils.escape_html(row.remarks || "—")}</td>
 				<td>${frappe.utils.escape_html(row.quantity || "—")}</td>
 				<td>${fmtDate(row.ata)}</td>
-				<td>${shipmentOperationalStatusCell(row)}</td>
 				<td>${containerStatusCell(row.container_status_summary)}</td>
 				<td>${frappe.utils.escape_html(row.deposit_amount || 0)}</td>
 				<td>${frappe.utils.escape_html(row.vessel_name || "—")}</td>
