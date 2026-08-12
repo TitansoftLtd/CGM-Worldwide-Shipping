@@ -39,6 +39,7 @@ app_include_js = [
 	"/assets/cgm_shipping/js/operational_updates_ui.js",
 	"/assets/cgm_shipping/js/cgm_shipping_workspace.js",
 	"/assets/cgm_shipping/js/supplier_link_filters.js",
+	"/assets/cgm_shipping/js/item_link_display.js",
 ]
 
 # include js, css files in header of web template
