@@ -1016,6 +1016,10 @@ def reopen_application_finance_if_pending_work(
 		return None
 	if finance_task.status == "Cancelled":
 		return None
+	# Never reopen a task that already satisfies completion — prevents form=Completed
+	# / list=Open flicker when needs_work briefly disagrees with can_complete.
+	if can_complete_application_finance_task(finance_task, profile):
+		return None
 	if not application_finance_needs_work(finance_task, profile):
 		return None
 	if finance_task.status != "Completed":

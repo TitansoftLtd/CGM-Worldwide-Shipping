@@ -1591,11 +1591,20 @@ def get_document_type_code(document_type_link: str | None) -> str | None:
 	return frappe.db.get_value("Document Type", document_type_link, "code")
 
 
+def normalize_document_type_key(value: str | None) -> str:
+	"""Alphanumeric-only key so 'IDF CERT' and 'IDF_CERT' match."""
+	if not value:
+		return ""
+	return "".join(ch for ch in str(value).upper() if ch.isalnum())
+
+
 def document_type_match_tokens(document_type_link: str | None) -> set[str]:
 	"""Normalized identifiers for a Document Type (link name + code).
 
 	Settings often store short codes like DO while the master may use a longer
 	code (e.g. Delivery Order) with name DO — both must count as the same type.
+	Template stamps may also use spaces ('IDF CERT') while the master uses
+	underscores ('IDF_CERT').
 	"""
 	tokens: set[str] = set()
 	if not document_type_link:
@@ -1604,9 +1613,15 @@ def document_type_match_tokens(document_type_link: str | None) -> set[str]:
 	if not link:
 		return tokens
 	tokens.add(link.upper())
+	compact = normalize_document_type_key(link)
+	if compact:
+		tokens.add(compact)
 	code = get_document_type_code(link)
 	if code and str(code).strip():
 		tokens.add(str(code).strip().upper())
+		compact_code = normalize_document_type_key(code)
+		if compact_code:
+			tokens.add(compact_code)
 	return tokens
 
 
@@ -1628,6 +1643,9 @@ def required_document_code_is_attached(required_code: str, attached: set[str]) -
 	if not req:
 		return True
 	if req in attached:
+		return True
+	compact = normalize_document_type_key(req)
+	if compact and compact in attached:
 		return True
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		get_document_type_link_name,
@@ -3665,6 +3683,9 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 	Finance auto-complete writes Completed via db.set_value. Seeding finance lines
 	or receipt sync can then save the older in-memory Open doc and make List View
 	show Open while the form (after a reload) still shows Completed.
+
+	Also force Completed when this save's own finance lines already satisfy the
+	completion gate — so a late Open save cannot win the race after verify/pay.
 	"""
 	if doc.is_new() or doc.status in ("Completed", "Cancelled"):
 		return
@@ -3710,7 +3731,8 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 			return
 
 	db_status = frappe.db.get_value("Task", doc.name, "status")
-	if db_status != "Completed":
+	ready = finance_payment_task_ready_to_complete(doc)
+	if db_status != "Completed" and not ready:
 		return
 	doc.status = "Completed"
 	if not doc.progress or float(doc.progress or 0) < 100:
@@ -3719,6 +3741,8 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 		doc.completed_by = frappe.session.user
 	if not doc.completed_on:
 		doc.completed_on = now_datetime()
+	if ready:
+		frappe.flags.cgm_auto_completing_sea_task = True
 
 
 def block_premature_shipping_line_completion(doc) -> None:
@@ -3751,6 +3775,40 @@ def block_premature_shipping_line_completion(doc) -> None:
 	doc.completed_on = None
 
 
+def finance_payment_task_ready_to_complete(doc) -> bool:
+	"""True when a clearance finance payment task has met its completion gate."""
+	if not _is_sea_task(doc) or doc.status == "Cancelled":
+		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_application_finance_for_profile,
+		task_is_permit_finance,
+		task_is_ucr_finance,
+	)
+
+	if task_is_ucr_finance(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			can_complete_ucr_payment_task,
+		)
+
+		return can_complete_ucr_payment_task(doc)
+	if task_is_permit_finance(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			can_complete_finance_permit_task,
+		)
+
+		return can_complete_finance_permit_task(doc)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		can_complete_application_finance_task,
+		profile_for_task,
+	)
+
+	profile = profile_for_task(doc)
+	if profile and task_is_application_finance_for_profile(doc, profile):
+		return can_complete_application_finance_task(doc, profile)
+	return False
+
+
 def promote_ready_finance_task_before_save(doc) -> None:
 	"""Write Completed on the same save that finishes payment verification.
 
@@ -3758,42 +3816,41 @@ def promote_ready_finance_task_before_save(doc) -> None:
 	"""
 	if doc.status in ("Completed", "Cancelled") or not _is_sea_task(doc):
 		return
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		task_is_application_finance_for_profile,
-		task_is_permit_finance,
-		task_is_ucr_finance,
-	)
-
-	ready = False
-	if task_is_ucr_finance(doc):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-			can_complete_ucr_payment_task,
-		)
-
-		ready = can_complete_ucr_payment_task(doc)
-	elif task_is_permit_finance(doc):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-			can_complete_finance_permit_task,
-		)
-
-		ready = can_complete_finance_permit_task(doc)
-	else:
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			can_complete_application_finance_task,
-			profile_for_task,
-		)
-
-		profile = profile_for_task(doc)
-		if profile and task_is_application_finance_for_profile(doc, profile):
-			ready = can_complete_application_finance_task(doc, profile)
-
-	if not ready:
+	if not finance_payment_task_ready_to_complete(doc):
 		return
 	doc.status = "Completed"
 	doc.completed_by = doc.completed_by or frappe.session.user
 	doc.completed_on = doc.completed_on or now_datetime()
 	doc.progress = 100
 	frappe.flags.cgm_auto_completing_sea_task = True
+
+
+def heal_ready_finance_task_status(doc) -> bool:
+	"""If a finance task is Open but payment/receipt gates are met, force Completed.
+
+	Covers the race where auto-complete wrote Completed via set_value, then a
+	concurrent stale save still carrying status=Open overwrote the DB. List View
+	then showed Open while the form (after reload/auto-complete) looked Completed.
+	"""
+	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_healing_finance_status"):
+		return False
+	if doc.is_new() or doc.status in ("Completed", "Cancelled") or not _is_sea_task(doc):
+		return False
+	if not finance_payment_task_ready_to_complete(doc):
+		return False
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		mark_task_completed,
+	)
+
+	frappe.flags.cgm_healing_finance_status = True
+	frappe.flags.cgm_auto_completing_sea_task = True
+	try:
+		mark_task_completed(doc)
+	finally:
+		frappe.flags.cgm_auto_completing_sea_task = False
+		frappe.flags.cgm_healing_finance_status = False
+	return True
 
 
 def before_task_save(doc, _method=None):
@@ -4122,6 +4179,10 @@ def on_task_update(doc, _method=None):
 		if profile and task_is_application_finance_for_profile(doc, profile):
 			close_application_when_finance_done(doc, profile)
 
+	# Last: if this save left a ready finance task Open (stale race), force Completed.
+	if heal_ready_finance_task_status(doc):
+		doc.reload()
+
 
 def validate_task_completion_requirements(doc, _method=None):
 	"""Task → Completed only when documents, permits, and payments are satisfied."""
@@ -4188,9 +4249,10 @@ class CGMTask(Task):
 	def validate_status(self):
 		"""ERPNext blocks Completed when depends_on parents are open.
 
-		Sea finance payment tasks intentionally stay linked to their application
-		task while that application remains Open (invoice submitted). Allow
-		completion in that case; other depends_on rules stay strict.
+		Clearance finance payment tasks intentionally stay linked to their
+		application task while that application remains Open (invoice submitted).
+		Allow completion in that case for every CGM clearance flow (sea, road,
+		air, transit); other depends_on rules stay strict.
 		"""
 		from frappe import _
 		from frappe.desk.form.assign_to import close_all_assignments
@@ -4203,15 +4265,12 @@ class CGMTask(Task):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 				_application_invoice_ready_for_finance,
 			)
-			from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-				is_sea_import_task,
-			)
 
 			for d in self.depends_on:
 				parent_status = frappe.db.get_value("Task", d.task, "status")
 				if parent_status in ("Completed", "Cancelled"):
 					continue
-				if is_sea_import_task(self):
+				if _is_sea_task(self):
 					parent_seq = int(
 						frappe.db.get_value("Task", d.task, "custom_sequence_no") or 0
 					)
