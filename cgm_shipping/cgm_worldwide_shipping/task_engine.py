@@ -148,6 +148,9 @@ def _collect_items(template, _visited: set | None = None) -> list[dict]:
 				"department_role": row.department_role,
 				"description": row.description or "",
 				"depends_on_sequences": row.depends_on_sequences or "",
+				"task_role": (row.get("task_role") or "Standard").strip() or "Standard",
+				"payment_kind": (row.get("payment_kind") or "").strip(),
+				"permit_stage": (row.get("permit_stage") or "").strip(),
 				"requires_finance_action": bool(row.requires_finance_action),
 				"requires_document_upload": bool(row.requires_document_upload),
 				"requires_container_update": bool(row.requires_container_update),
@@ -155,6 +158,7 @@ def _collect_items(template, _visited: set | None = None) -> list[dict]:
 				"is_auto_completable": bool(row.is_auto_completable),
 				"completion_condition": row.completion_condition or "",
 				"is_optional": bool(row.is_optional),
+				"required_document_types": (row.get("required_document_types") or "").strip(),
 			}
 		)
 
@@ -175,20 +179,39 @@ def _create_single_task(
 	dept_stem = (item.get("department_role") or "").strip()
 	department = f"{dept_stem} - {company_abbr}" if company_abbr else dept_stem
 
-	task = frappe.get_doc(
-		{
-			"doctype": "Task",
-			"subject": item["subject"],
-			"project": project.name,
-			"description": item.get("description") or "",
-			"department": department,
-			"company": project.company,
-			"status": "Open",
-			"priority": "Low",
-			"custom_task_flow_key": template_name,
-			"custom_sequence_no": item["sequence_no"],
-		}
-	)
+	payload = {
+		"doctype": "Task",
+		"subject": item["subject"],
+		"project": project.name,
+		"description": item.get("description") or "",
+		"department": department,
+		"company": project.company,
+		"status": "Open",
+		"priority": "Low",
+		"custom_task_flow_key": template_name,
+		"custom_sequence_no": item["sequence_no"],
+	}
+	# Template-driven behaviour (finance / permits / documents) — see task_behaviour.py.
+	meta = frappe.get_meta("Task")
+	if meta.has_field("custom_task_role"):
+		payload["custom_task_role"] = item.get("task_role") or "Standard"
+	if meta.has_field("custom_payment_kind") and item.get("payment_kind"):
+		payload["custom_payment_kind"] = item["payment_kind"]
+	if meta.has_field("custom_permit_stage") and item.get("permit_stage"):
+		payload["custom_permit_stage"] = item["permit_stage"]
+	for src, dst in (
+		("requires_finance_action", "custom_requires_finance_action"),
+		("requires_document_upload", "custom_requires_document_upload"),
+		("requires_permit_action", "custom_requires_permit_action"),
+		("requires_container_update", "custom_requires_container_update"),
+		("is_auto_completable", "custom_is_auto_completable"),
+	):
+		if meta.has_field(dst):
+			payload[dst] = 1 if item.get(src) else 0
+	if meta.has_field("custom_required_document_types") and item.get("required_document_types"):
+		payload["custom_required_document_types"] = item["required_document_types"]
+
+	task = frappe.get_doc(payload)
 
 	if item.get("depends_on_sequences"):
 		seq_nums = [
@@ -229,26 +252,54 @@ def _run_post_create_automation(project_name: str, template_name: str) -> None:
 		carry_project_documents_to_sea_tasks,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+		bootstrap_project_workflow_status,
 		project_ready_for_documents_received,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.road_transit_inbound_workflow import (
+		get_road_transit_inbound_auto_complete_sequences,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+		sync_project_shipment_status_from_tasks,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		auto_complete_sequences,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		ROAD_TRANSIT_INBOUND_TEMPLATE,
 		SEA_TRANSIT_IMPORT_TEMPLATE,
 	)
 
 	normalized = normalize_template_name(template_name)
-	if normalized not in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE):
+	if normalized not in (
+		SEA_IMPORT_TEMPLATE,
+		SEA_TRANSIT_IMPORT_TEMPLATE,
+		ROAD_TRANSIT_INBOUND_TEMPLATE,
+	):
 		return
 
 	project_doc = frappe.get_doc("Project", project_name)
 	if not project_ready_for_documents_received(project_doc):
 		return
 
-	carry_project_documents_to_sea_tasks(project_name)
-	_auto_complete_intake_tasks(project_name, template_name)
+	if normalized == ROAD_TRANSIT_INBOUND_TEMPLATE:
+		seqs = sorted(get_road_transit_inbound_auto_complete_sequences())
+	else:
+		seqs = sorted(auto_complete_sequences())
+
+	carry_project_documents_to_sea_tasks(project_name, task_sequences=seqs)
+	_auto_complete_intake_tasks(project_name, template_name, sequences=seqs)
+	# Status chart: Documents Received once intake task(s) are complete.
+	bootstrap_project_workflow_status(project_name)
+	sync_project_shipment_status_from_tasks(project_name)
 
 
-def _auto_complete_intake_tasks(project_name: str, template_name: str) -> None:
-	"""Mark template intake tasks complete (sequences from Settings auto-complete list)."""
+def _auto_complete_intake_tasks(
+	project_name: str,
+	template_name: str,
+	*,
+	sequences: list[int] | None = None,
+) -> None:
+	"""Mark template intake tasks complete when CRM documents already cover them."""
 	from frappe.utils import now_datetime
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
@@ -258,16 +309,31 @@ def _auto_complete_intake_tasks(project_name: str, template_name: str) -> None:
 		auto_complete_sequences,
 	)
 
-	for seq in sorted(auto_complete_sequences()):
-		task_name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project_name,
-				"custom_task_flow_key": template_name,
-				"custom_sequence_no": seq,
-			},
-			"name",
-		)
+	seqs = sequences if sequences is not None else sorted(auto_complete_sequences())
+	flow_keys = {
+		template_name,
+		normalize_template_name(template_name) or template_name,
+	}
+	for seq in seqs:
+		task_name = None
+		for flow_key in flow_keys:
+			task_name = frappe.db.get_value(
+				"Task",
+				{
+					"project": project_name,
+					"custom_task_flow_key": flow_key,
+					"custom_sequence_no": seq,
+				},
+				"name",
+			)
+			if task_name:
+				break
+		if not task_name:
+			task_name = frappe.db.get_value(
+				"Task",
+				{"project": project_name, "custom_sequence_no": seq},
+				"name",
+			)
 		if not task_name:
 			continue
 		if frappe.db.get_value("Task", task_name, "status") == "Completed":

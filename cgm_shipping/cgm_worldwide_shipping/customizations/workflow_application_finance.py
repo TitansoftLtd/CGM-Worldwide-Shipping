@@ -78,7 +78,11 @@ def is_application_create_task(task, profile: ApplicationFinanceProfile) -> bool
 
 
 def is_application_payment_task_doc(task, profile: ApplicationFinanceProfile) -> bool:
-	return is_application_finance_task(task_sequence(task), profile)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		task_matches_application_finance,
+	)
+
+	return task_matches_application_finance(task, profile)
 
 
 def application_finance_ready_to_complete(task, profile: ApplicationFinanceProfile) -> bool:
@@ -90,15 +94,21 @@ def sync_application_payment_hooks(task, profile: ApplicationFinanceProfile) -> 
 		sync_invoice_line_client_paid_to_task_field,
 	)
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		task_matches_application,
+		task_matches_application_finance,
+	)
+
 	sync_invoice_line_client_paid_to_task_field(task, profile)
 	sync_application_finance_lines_to_idf_record(task, profile)
-	seq = task_sequence(task)
-	if is_application_finance_task(seq, profile) and not frappe.flags.get(
+	if task_matches_application_finance(task, profile) and not frappe.flags.get(
 		"cgm_syncing_application_receipt"
 	):
 		sync_invoice_verification_to_application_task(task, profile)
 		sync_receipt_verification_to_application_task(task, profile)
-	if is_application_task(seq, profile) or is_application_finance_task(seq, profile):
+	if task_matches_application(task, profile) or task_matches_application_finance(
+		task, profile
+	):
 		sync_certificate_to_project(task, profile)
 
 
@@ -785,6 +795,7 @@ def verify_application_finance_line(
 	profile_key: str,
 	line_type: str = "Invoice",
 	finance_line_name: str | None = None,
+	attachment: str | None = None,
 ) -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	profile = _profile_by_key(profile_key)
@@ -844,6 +855,9 @@ def verify_application_finance_line(
 		label_fallback = profile.receipt_label
 	if not line:
 		frappe.throw(f"<b>{label_fallback}</b> row is missing.")
+	pending_attachment = (attachment or "").strip()
+	if not line.attachment and pending_attachment:
+		line.attachment = pending_attachment
 	if not line.attachment:
 		if line_type == "Receipt" and receipt_attached_for_payment_workflow(task, profile):
 			app_name = get_application_task(task.project, profile) if task.project else None
@@ -1104,6 +1118,13 @@ def add_amendment_invoice_line(task_name: str, attachment: str | None = None) ->
 		get_invoice_lines,
 		task_has_finance_table,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		build_finance_line_payload,
+		get_charge_item_label,
+		get_clearance_charge_item,
+		payment_kind_allows_amendment,
+		task_finance_line_has_charge_item,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_purchase_item_for_payment_item,
 		task_finance_line_has_item_code,
@@ -1113,19 +1134,41 @@ def add_amendment_invoice_line(task_name: str, attachment: str | None = None) ->
 	if not task_has_finance_table(task):
 		frappe.throw("This task has no finance lines table.")
 
+	if not payment_kind_allows_amendment(profile.payment_item):
+		frappe.throw(
+			frappe._(
+				"Amendment invoices are not enabled for {0}. "
+				"Turn on <b>Allows Amendment Invoices</b> on the Clearance Charge Item."
+			).format(profile.invoice_label)
+		)
+
 	existing = get_invoice_lines(task, profile)
 	amend_no = sum(1 for r in existing if cint(r.get("is_amendment"))) + 1
-	label = f"{profile.invoice_label} (amendment {amend_no})"
-	payload = {
-		"line_label": label,
-		"line_type": LINE_INVOICE,
-		"payment_item": profile.payment_item,
-		"is_amendment": 1,
-		"verified": 0,
-	}
+	charge_item = get_clearance_charge_item(
+		profile.payment_item,
+		LINE_INVOICE,
+		fallback_label=profile.invoice_label,
+	)
+	base_label = get_charge_item_label(charge_item, profile.invoice_label) or profile.invoice_label
+	label = f"{base_label} (amendment {amend_no})"
+	payload = build_finance_line_payload(
+		LINE_INVOICE,
+		profile.payment_item,
+		fallback_label=base_label,
+		company=task.company,
+	)
+	payload.update(
+		{
+			"line_label": label,
+			"is_amendment": 1,
+			"verified": 0,
+		}
+	)
+	if charge_item and task_finance_line_has_charge_item():
+		payload["charge_item"] = charge_item
 	if attachment:
 		payload["attachment"] = attachment
-	if task_finance_line_has_item_code():
+	if task_finance_line_has_item_code() and not payload.get("item_code"):
 		payload["item_code"] = get_purchase_item_for_payment_item(
 			profile.payment_item, task.company
 		)
@@ -1309,6 +1352,8 @@ def _sync_changed_application_invoice_onto_finance(
 				"attachment": app_line.attachment,
 				"verified": 0,
 			}
+			if app_line.get("charge_item"):
+				payload["charge_item"] = app_line.charge_item
 			if app_line.get("item_code"):
 				payload["item_code"] = app_line.item_code
 			finance_task.append(TASK_FINANCE_FIELD, payload)
@@ -1337,6 +1382,10 @@ def _sync_changed_application_invoice_onto_finance(
 		# Align labels for amendments.
 		if app_line.get("line_label") and fin_line.get("line_label") != app_line.line_label:
 			fin_line.line_label = app_line.line_label
+			changed = True
+
+		if app_line.get("charge_item") and fin_line.get("charge_item") != app_line.charge_item:
+			fin_line.charge_item = app_line.charge_item
 			changed = True
 
 		# Purchase item: only before this line has a JE.
@@ -1462,11 +1511,15 @@ def handle_additional_application_work_on_application(
 
 def process_application_workflow_on_update(task) -> None:
 	"""Run auto-submit, receipt sync, and auto-complete for all configured profiles."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		task_matches_application,
+		task_matches_application_finance,
+	)
+
 	profile = profile_for_task(task)
 	if not profile:
 		return
-	seq = task_sequence(task)
-	if is_application_task(seq, profile) and task.status != "Cancelled":
+	if task_matches_application(task, profile) and task.status != "Cancelled":
 		# Even when Completed: new/changed invoices reopen Finance for verify + pay.
 		handle_additional_application_work_on_application(task, profile)
 		# Skip first-invoice auto-submit while reopening / adding an amendment —
@@ -1485,7 +1538,7 @@ def process_application_workflow_on_update(task) -> None:
 			sync_application_purchase_item_to_finance(task, profile)
 			handle_application_receipt_upload(task, profile)
 			try_auto_complete_application_task(task, profile)
-	elif is_application_finance_task(seq, profile) and task.status != "Cancelled":
+	elif task_matches_application_finance(task, profile) and task.status != "Cancelled":
 		work_changed = application_invoice_work_changed(task, profile)
 		# POP / receipt mirror when finance lines actually changed.
 		if work_changed:
@@ -1510,6 +1563,11 @@ def process_application_workflow_on_update(task) -> None:
 
 def process_application_workflow_onload(task) -> bool:
 	"""Seed lines, sync status, auto-complete on form open. Returns True if task was updated."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		task_matches_application,
+		task_matches_application_finance,
+	)
+
 	profile = profile_for_task(task)
 	if not profile:
 		return False
@@ -1519,8 +1577,7 @@ def process_application_workflow_onload(task) -> bool:
 		db_status = frappe.db.get_value("Task", task.name, "status")
 		if db_status and task.status != db_status:
 			task.reload()
-	seq = task_sequence(task)
-	if is_application_finance_task(seq, profile):
+	if task_matches_application_finance(task, profile):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			backfill_legacy_payment_onto_invoice_lines,
 		)
@@ -1533,7 +1590,7 @@ def process_application_workflow_onload(task) -> bool:
 			sync_finance_line_payments_to_application_task(task, profile)
 			task.reload()
 			changed = True
-	if is_application_task(seq, profile):
+	if task_matches_application(task, profile):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			ensure_finance_pop_visible_on_application_task,
 			ensure_finance_receipt_visible_on_application_task,
@@ -1596,7 +1653,7 @@ def process_application_workflow_onload(task) -> bool:
 			and try_auto_complete_application_task(task, profile)
 		):
 			changed = True
-	elif is_application_finance_task(seq, profile):
+	elif task_matches_application_finance(task, profile):
 		# Completed + unfinished invoice work → reopen so Make Payment shows.
 		result = reopen_application_finance_if_pending_work(task, profile)
 		if result and result.get("reopened"):

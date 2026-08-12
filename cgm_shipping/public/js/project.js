@@ -481,22 +481,28 @@ function toggle_project_document_stage_fields(frm, category) {
 function setup_add_bill_of_lading_button(frm) {
 	frm.remove_custom_button(__("Add Bill of Lading"), __("Shipment"));
 	frm.remove_custom_button(__("Add Bill of Lading"), __("Actions"));
+	frm.remove_custom_button(__("Add Booking Confirmation"), __("Actions"));
 	if (frm.is_new() || !frm.doc.name) {
 		return;
 	}
-	// Only when shipment started without a BL (typically Booking-first).
-	if (frm.doc.custom_bill_of_lading) {
-		return;
-	}
-	if (!frm.doc.custom_source_opportunity && !frm.doc.custom_booking_confirmation) {
-		return;
-	}
 
-	frm.add_custom_button(
-		__("Add Bill of Lading"),
-		() => open_bill_of_lading_from_project(frm),
-		__("Actions")
-	);
+	if (!frm.doc.custom_bill_of_lading) {
+		frm.add_custom_button(
+			__("Add Bill of Lading"),
+			() => open_bill_of_lading_from_project(frm),
+			__("Actions")
+		);
+	}
+	if (
+		frm.fields_dict.custom_booking_confirmation &&
+		!frm.doc.custom_booking_confirmation
+	) {
+		frm.add_custom_button(
+			__("Add Booking Confirmation"),
+			() => open_booking_confirmation_from_project(frm),
+			__("Actions")
+		);
+	}
 }
 
 function open_bill_of_lading_from_project(frm) {
@@ -519,6 +525,23 @@ function open_bill_of_lading_from_project(frm) {
 	frappe.route_options = seed;
 	frappe.model.with_doctype("Bill of Lading", () => {
 		frappe.new_doc("Bill of Lading");
+	});
+}
+
+function open_booking_confirmation_from_project(frm) {
+	const opportunity = frm.doc.custom_source_opportunity;
+	if (opportunity) {
+		localStorage.setItem("cgm_return_opportunity", opportunity);
+	}
+
+	frappe.route_options = {
+		linked_opportunity: opportunity || undefined,
+		customer: frm.doc.customer || undefined,
+		shipment_type: frm.doc.custom_shipment_type || undefined,
+		client_reference_no: frm.doc.custom_client_refrence_no || undefined,
+	};
+	frappe.model.with_doctype("Booking Confirmation", () => {
+		frappe.new_doc("Booking Confirmation");
 	});
 }
 

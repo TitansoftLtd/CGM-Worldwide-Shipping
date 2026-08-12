@@ -156,6 +156,14 @@ def get_pre_clearance_permit_application_task_name(project: str) -> str | None:
 
 
 def is_pre_clearance_permit_application_task(task) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+		task_is_permit_application,
+	)
+
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return task_is_permit_application(task) and behaviour.permit_stage == PRE_CLEARANCE_STAGE
 	seq = task_sequence(task)
 	return is_permit_application_task(seq) and get_permit_stage_for_sequence(seq) == PRE_CLEARANCE_STAGE
 
@@ -165,12 +173,24 @@ def is_pre_clearance_finance_permit_task(task) -> bool:
 
 
 def is_permit_finance_task_doc(task) -> bool:
-	return is_permit_finance_payment_task(task_sequence(task))
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_permit_finance,
+	)
+
+	return task_is_permit_finance(task)
 
 
 def get_permit_application_task_for_finance(finance_task) -> str | None:
 	if not finance_task.project:
 		return None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_permit_application_for_behaviour,
+		get_task_behaviour,
+	)
+
+	behaviour = get_task_behaviour(finance_task)
+	if behaviour.from_template:
+		return get_permit_application_for_behaviour(finance_task)
 	app_seq = get_application_sequence_for_finance_task(finance_task)
 	if not app_seq:
 		return None
@@ -178,6 +198,13 @@ def get_permit_application_task_for_finance(finance_task) -> str | None:
 
 
 def permit_stage_for_finance_task(finance_task) -> str:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+	)
+
+	behaviour = get_task_behaviour(finance_task)
+	if behaviour.from_template and behaviour.permit_stage:
+		return behaviour.permit_stage
 	app_seq = get_application_sequence_for_finance_task(finance_task)
 	if app_seq:
 		return get_permit_stage_for_sequence(app_seq)
@@ -193,7 +220,11 @@ def finance_permit_task_label(finance_task) -> str:
 
 
 def is_permit_application_task_doc(task) -> bool:
-	return is_permit_application_task(task_sequence(task))
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_permit_application,
+	)
+
+	return task_is_permit_application(task)
 
 
 # ------------------------------------------------------------------
@@ -2083,6 +2114,27 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 
 
 def get_ucr_task(project: str, task_type: str) -> str | None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_APPLICATION,
+		ROLE_FINANCE_PAYMENT,
+		task_has_behaviour_fields,
+	)
+
+	if task_has_behaviour_fields():
+		role = ROLE_APPLICATION if task_type == "create" else ROLE_FINANCE_PAYMENT
+		name = frappe.db.get_value(
+			"Task",
+			{
+				"project": project,
+				"custom_task_role": role,
+				"custom_payment_kind": "UCR",
+			},
+			"name",
+			order_by="custom_sequence_no asc",
+		)
+		if name:
+			return name
+
 	seq_by_type = {
 		"create": get_ucr_create_sequence(),
 		"payment": get_ucr_payment_sequence(),
@@ -2102,11 +2154,19 @@ def get_ucr_payment_task(project: str) -> str | None:
 
 
 def is_ucr_create_task(task) -> bool:
-	return is_ucr_application_task(task_sequence(task))
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_application,
+	)
+
+	return task_is_ucr_application(task)
 
 
 def is_ucr_payment_task_doc(task) -> bool:
-	return is_ucr_finance_payment_task(task_sequence(task))
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_finance,
+	)
+
+	return task_is_ucr_finance(task)
 
 
 # ------------------------------------------------------------------
@@ -2214,12 +2274,19 @@ def can_complete_ucr_create_task(task, finance_task=None) -> bool:
 	if finance_task is None and task.project:
 		finance_name = get_ucr_finance_task(task.project)
 		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
-	# Client-pays and company-pays: Create UCR still needs invoice verified + IDF certificate.
-	# Receipt stays on Finance.
+	# Client-pays and company-pays: Create UCR still needs invoice verified + certificate docs.
+	# Receipt stays on Finance. Certificate gate prefers template stamp when present.
 	if not ucr_invoice_attached(task) and not task.get("custom_ucr_invoice_submitted"):
 		return False
 	if not ucr_invoice_verified_for_create_task(task, finance_task):
 		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_stamped_required_document_types,
+		stamped_required_document_types_attached,
+	)
+
+	if get_stamped_required_document_types(task):
+		return stamped_required_document_types_attached(task)
 	return idf_certificate_uploaded(task)
 
 
@@ -2942,7 +3009,10 @@ def legacy_ucr_invoice_url(task) -> str | None:
 
 @frappe.whitelist()
 def verify_ucr_finance_line(
-	task_name: str, line_type: str = "Invoice", finance_line_name: str | None = None
+	task_name: str,
+	line_type: str = "Invoice",
+	finance_line_name: str | None = None,
+	attachment: str | None = None,
 ) -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
@@ -2985,8 +3055,18 @@ def verify_ucr_finance_line(
 			line = get_ucr_invoice_line(task)
 	else:
 		line = get_ucr_receipt_line(task)
+		if finance_line_name and line and line.name != finance_line_name:
+			for row in task.get(TASK_FINANCE_FIELD) or []:
+				if row.name == finance_line_name and (row.line_type or "") == "Receipt":
+					line = row
+					break
 	if not line:
 		frappe.throw(f"<b>UCR {line_type}</b> row is missing on this task.")
+	# Desk often shows an attach before the child row is persisted (soft-sync /
+	# skipped autosave). Accept the URL from the form so Verify still works.
+	pending_attachment = (attachment or "").strip()
+	if not line.attachment and pending_attachment:
+		line.attachment = pending_attachment
 	if not line.attachment:
 		frappe.throw(f"Attach the <b>UCR {line_type}</b> before verifying.")
 
