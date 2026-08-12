@@ -2274,12 +2274,19 @@ def can_complete_ucr_create_task(task, finance_task=None) -> bool:
 	if finance_task is None and task.project:
 		finance_name = get_ucr_finance_task(task.project)
 		finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
-	# Client-pays and company-pays: Create UCR still needs invoice verified + IDF certificate.
-	# Receipt stays on Finance.
+	# Client-pays and company-pays: Create UCR still needs invoice verified + certificate docs.
+	# Receipt stays on Finance. Certificate gate prefers template stamp when present.
 	if not ucr_invoice_attached(task) and not task.get("custom_ucr_invoice_submitted"):
 		return False
 	if not ucr_invoice_verified_for_create_task(task, finance_task):
 		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_stamped_required_document_types,
+		stamped_required_document_types_attached,
+	)
+
+	if get_stamped_required_document_types(task):
+		return stamped_required_document_types_attached(task)
 	return idf_certificate_uploaded(task)
 
 

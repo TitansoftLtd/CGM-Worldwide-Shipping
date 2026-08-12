@@ -44,3 +44,4 @@ cgm_shipping.patches.sync_road_transit_inbound_template
 # thin alias patches for that work.
 cgm_shipping.patches.sync_task_template_behaviour
 cgm_shipping.patches.fix_cgm_task_template_item_nested_table
+cgm_shipping.patches.sync_template_required_document_types

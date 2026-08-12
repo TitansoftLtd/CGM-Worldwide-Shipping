@@ -65,6 +65,7 @@ web_include_js = [
 
 # include js in doctype views
 doctype_js = {
+	"CGM Task Template": "public/js/cgm_task_template.js",
 	"Task": [
 		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",

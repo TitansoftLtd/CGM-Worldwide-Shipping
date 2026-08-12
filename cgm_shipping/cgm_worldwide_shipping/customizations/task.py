@@ -1652,18 +1652,154 @@ def seed_checkpoint_task_documents(task) -> bool:
 	return seed_checkpoint_task_documents_from_project(task)
 
 
+def parse_required_document_types(value: str | None) -> list[str]:
+	"""Split MultiSelect / comma-separated Document Type names from template stamp."""
+	if not value:
+		return []
+	return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
+def get_stamped_required_document_types(task) -> list[str]:
+	if not task or not getattr(task, "meta", None) or not task.meta.has_field(
+		"custom_required_document_types"
+	):
+		return []
+	return parse_required_document_types(task.get("custom_required_document_types"))
+
+
+def resolve_required_document_type_name(token: str) -> str | None:
+	"""Resolve a template token to a Document Type name."""
+	token = (token or "").strip()
+	if not token:
+		return None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		get_document_type_link_name,
+	)
+
+	return get_document_type_link_name(token) or (
+		token if frappe.db.exists("Document Type", token) else None
+	)
+
+
+def seed_stamped_required_document_rows(task) -> bool:
+	"""Prefill Task Documents from custom_required_document_types. Returns True if rows added."""
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	required = get_stamped_required_document_types(task)
+	if not required:
+		return False
+	existing_types = {
+		row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or [] if row.document_type
+	}
+	added = False
+	for token in required:
+		dt_name = resolve_required_document_type_name(token)
+		if not dt_name or dt_name in existing_types:
+			continue
+		task.append(
+			TASK_DOCUMENTS_FIELD,
+			{"document_type": dt_name, "status": "Missing"},
+		)
+		existing_types.add(dt_name)
+		added = True
+	return added
+
+
+def ensure_stamped_required_documents_saved(task) -> bool:
+	"""Persist stamped Task Document rows on form open without a full Task.save().
+
+	Returns True when the in-memory task should be reloaded for Desk.
+	"""
+	if task.is_new() or not task.name or not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	if not get_stamped_required_document_types(task):
+		return False
+
+	# DB may already have the rows even if this form session is stale.
+	existing_db = {
+		r.document_type
+		for r in frappe.get_all(
+			"Shipment Document",
+			filters={"parent": task.name, "parenttype": "Task", "parentfield": TASK_DOCUMENTS_FIELD},
+			fields=["document_type"],
+		)
+		if r.document_type
+	}
+	required_names = []
+	for token in get_stamped_required_document_types(task):
+		dt_name = resolve_required_document_type_name(token)
+		if dt_name:
+			required_names.append(dt_name)
+	missing = [n for n in required_names if n not in existing_db]
+	if not missing:
+		# Still hydrate in-memory if form has no typed rows yet.
+		return seed_stamped_required_document_rows(task)
+
+	seed_stamped_required_document_rows(task)
+	max_idx = cint(
+		frappe.db.sql(
+			"""
+			select max(idx) from `tabShipment Document`
+			where parent=%s and parenttype='Task' and parentfield=%s
+			""",
+			(task.name, TASK_DOCUMENTS_FIELD),
+		)[0][0]
+		or 0
+	)
+	for dt_name in missing:
+		max_idx += 1
+		child = frappe.get_doc(
+			{
+				"doctype": "Shipment Document",
+				"parent": task.name,
+				"parenttype": "Task",
+				"parentfield": TASK_DOCUMENTS_FIELD,
+				"document_type": dt_name,
+				"status": "Missing",
+				"idx": max_idx,
+			}
+		)
+		child.insert(ignore_permissions=True)
+	frappe.clear_document_cache("Task", task.name)
+	return True
+
+
+def stamped_required_document_types_attached(task) -> bool:
+	"""True when every stamped required Document Type has a primary attachment."""
+	required = get_stamped_required_document_types(task)
+	if not required:
+		return True
+	attached = attached_document_codes(task)
+	for token in required:
+		if required_document_code_is_attached(token, attached):
+			continue
+		dt_name = resolve_required_document_type_name(token)
+		if dt_name and required_document_code_is_attached(dt_name, attached):
+			continue
+		return False
+	return True
+
+
 def seed_required_task_document_rows(task) -> None:
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_document_checkpoint,
+		task_is_ucr_application,
+	)
+
+	# Template stamp first — dynamic required docs for any mode.
+	seed_stamped_required_document_rows(task)
+
 	seq = int(task.get("custom_sequence_no") or 0)
-	if is_document_checkpoint_task(seq):
+	if task_is_document_checkpoint(task) or is_document_checkpoint_task(seq):
 		seed_checkpoint_task_documents(task)
 		return
-	if is_ucr_application_task(seq):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-			ensure_idf_certificate_document_row,
-		)
-
+	# If stamp already seeded rows, skip hardcoded certificate helpers unless UCR/Entry
+	# still need profile certificate when stamp is empty.
+	if get_stamped_required_document_types(task):
+		return
+	if task_is_ucr_application(task) or is_ucr_application_task(seq):
 		ensure_idf_certificate_document_row(task)
 		return
 	if is_entry_application_task(seq):
@@ -1708,20 +1844,27 @@ def seed_required_task_document_rows(task) -> None:
 
 
 def validate_sea_task_can_complete(task) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_auto_complete,
+		uses_clearance_behaviour,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		is_sea_import_task,
 	)
 
-	if not is_sea_import_task(task):
+	has_stamp = bool(get_stamped_required_document_types(task))
+	if not is_sea_import_task(task) and not uses_clearance_behaviour(task) and not has_stamp:
 		return
 	if frappe.flags.get("cgm_auto_completing_sea_task"):
 		return
 
 	seq = int(task.get("custom_sequence_no") or 0)
-	if is_auto_complete_task(seq):
+	if task_is_auto_complete(task) or is_auto_complete_task(seq):
 		return
 
 	seed_required_task_document_rows(task)
+	# Template-stamped Document Types always gate Complete (any mode).
+	validate_required_documents(task, seq)
 
 	if is_permit_application_task(seq):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -1779,8 +1922,6 @@ def validate_sea_task_can_complete(task) -> None:
 		validate_light_proof_task(task)
 	elif seq == CONTAINER_TASK_SEQ_DEFAULTS["custom_field_clearance_task_seq"]:
 		validate_field_clearance_task(task)
-	elif not is_finance_payment_task(seq):
-		validate_required_documents(task, seq)
 
 	if is_finance_payment_task(seq):
 		if is_ucr_finance_payment_task(seq):
@@ -1835,17 +1976,29 @@ def validate_sea_task_can_complete(task) -> None:
 
 
 def validate_required_documents(task, seq: int) -> None:
-	required_codes = get_required_document_codes(seq)
-	if not required_codes:
-		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
 
+	stamped = get_stamped_required_document_types(task)
 	attached = attached_document_codes(task)
 	missing = []
-	for code in required_codes:
-		if required_document_code_is_attached(code, attached):
-			continue
-		label = frappe.db.get_value("Document Type", {"code": code}, "name") or code
-		missing.append(label)
+
+	if stamped:
+		for token in stamped:
+			if required_document_code_is_attached(token, attached):
+				continue
+			dt_name = resolve_required_document_type_name(token)
+			if dt_name and required_document_code_is_attached(dt_name, attached):
+				continue
+			missing.append(dt_name or token)
+	else:
+		required_codes = get_required_document_codes(seq)
+		if not required_codes:
+			return
+		for code in required_codes:
+			if required_document_code_is_attached(code, attached):
+				continue
+			label = frappe.db.get_value("Document Type", {"code": code}, "name") or code
+			missing.append(label)
 
 	if missing:
 		frappe.throw(
@@ -1853,12 +2006,18 @@ def validate_required_documents(task, seq: int) -> None:
 			f"<b>{', '.join(missing)}</b>."
 		)
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
-
+	# Only enforce empty-row cleanup for stamped / settings-required rows.
+	required_names = set()
+	for token in stamped or get_required_document_codes(seq):
+		name = resolve_required_document_type_name(token) or token
+		if name:
+			required_names.add(name)
 	empty_rows = [
 		row.document_type or "Document"
 		for row in task.get(TASK_DOCUMENTS_FIELD) or []
-		if row.document_type and not primary_attachment(row)
+		if row.document_type
+		and (not required_names or row.document_type in required_names)
+		and not primary_attachment(row)
 	]
 	if empty_rows:
 		frappe.throw(
@@ -3492,6 +3651,11 @@ def on_task_onload(doc, _method=None):
 			prepare_shipment_documents_for_form,
 		)
 
+		# Prefill Task Documents from template stamp so IDF CERT (etc.) shows on open.
+		if ensure_stamped_required_documents_saved(doc):
+			doc.reload()
+		else:
+			seed_required_task_document_rows(doc)
 		prepare_shipment_documents_for_form(doc, TASK_DOCUMENTS_FIELD)
 
 

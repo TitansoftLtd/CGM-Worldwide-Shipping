@@ -158,6 +158,7 @@ def _collect_items(template, _visited: set | None = None) -> list[dict]:
 				"is_auto_completable": bool(row.is_auto_completable),
 				"completion_condition": row.completion_condition or "",
 				"is_optional": bool(row.is_optional),
+				"required_document_types": (row.get("required_document_types") or "").strip(),
 			}
 		)
 
@@ -207,6 +208,8 @@ def _create_single_task(
 	):
 		if meta.has_field(dst):
 			payload[dst] = 1 if item.get(src) else 0
+	if meta.has_field("custom_required_document_types") and item.get("required_document_types"):
+		payload["custom_required_document_types"] = item["required_document_types"]
 
 	task = frappe.get_doc(payload)
 

@@ -33,6 +33,7 @@ def _row(
 	role: str = "Standard",
 	payment_kind: str = "",
 	permit_stage: str = "",
+	required_docs: str = "",
 ) -> dict:
 	deps = ""
 	if depends is not None:
@@ -61,13 +62,14 @@ def _row(
 		"payment_kind": payment_kind or "",
 		"permit_stage": permit_stage or "",
 		"requires_finance_action": finance,
-		"requires_document_upload": doc,
+		"requires_document_upload": doc or (1 if required_docs else 0),
 		"requires_container_update": container,
 		"requires_permit_action": permit,
 		"is_auto_completable": auto,
 		"completion_condition": condition,
 		"is_optional": optional,
 		"description": description,
+		"required_document_types": required_docs or "",
 	}
 
 
@@ -80,7 +82,14 @@ def sea_import_tasks() -> list[dict]:
 	return [
 		_row(1, "Receive shipment documents from Client", "Operations", auto=1, role="Auto Complete"),
 		_row(2, "Share documents with Declarants", "Operations", auto=1, role="Auto Complete"),
-		_row(3, "Create UCR (IDF)", "Declaration", role="Application", payment_kind="UCR"),
+		_row(
+			3,
+			"Create UCR (IDF)",
+			"Declaration",
+			role="Application",
+			payment_kind="UCR",
+			required_docs="IDF CERT",
+		),
 		_row(
 			4,
 			"Finance pays UCR",
@@ -227,6 +236,7 @@ def air_import_tasks() -> list[dict]:
 			depends=1,
 			role="Application",
 			payment_kind="UCR",
+			required_docs="IDF CERT",
 		),
 		_row(
 			3,
@@ -382,6 +392,7 @@ def road_transit_inbound_tasks() -> list[dict]:
 			depends=1,
 			role="Application",
 			payment_kind="UCR",
+			required_docs="IDF CERT",
 		),
 		_row(
 			3,
@@ -584,6 +595,7 @@ _BEHAVIOUR_FIELDS = (
 	"requires_container_update",
 	"requires_permit_action",
 	"is_auto_completable",
+	"required_document_types",
 )
 
 
@@ -630,6 +642,24 @@ def sync_template_behaviour_fields() -> int:
 			doc.flags.ignore_permissions = True
 			doc.save(ignore_permissions=True)
 			updated += 1
+		# Always sync required docs by child name — reliable for Data/MultiSelect UX.
+		for row in doc.get("tasks") or []:
+			seed = seed_by_seq.get(int(row.sequence_no or 0))
+			want = (seed or {}).get("required_document_types") or ""
+			if not want or not row.name:
+				continue
+			current = frappe.db.get_value(
+				"CGM Task Template Item", row.name, "required_document_types"
+			) or ""
+			if current != want:
+				frappe.db.set_value(
+					"CGM Task Template Item",
+					row.name,
+					"required_document_types",
+					want,
+					update_modified=False,
+				)
+				updated += 1
 	return updated
 
 
@@ -675,13 +705,25 @@ def backfill_open_task_behaviour_from_templates() -> int:
 			if not item:
 				continue
 			role = (item.get("task_role") or "Standard").strip() or "Standard"
-			# Skip only when already stamped with the same non-empty role and kind.
-			current_role = (task.custom_task_role or "").strip()
-			if current_role and current_role == role:
-				current_kind = frappe.db.get_value("Task", task.name, "custom_payment_kind") or ""
-				want_kind = (item.get("payment_kind") or "").strip()
-				if current_kind == want_kind:
-					continue
+			want_kind = (item.get("payment_kind") or "").strip()
+			want_docs = (item.get("required_document_types") or "").strip()
+			current = frappe.db.get_value(
+				"Task",
+				task.name,
+				["custom_task_role", "custom_payment_kind", "custom_required_document_types"],
+				as_dict=True,
+			) or {}
+			current_role = (current.get("custom_task_role") or "").strip()
+			current_kind = (current.get("custom_payment_kind") or "").strip()
+			current_docs = (current.get("custom_required_document_types") or "").strip()
+			# Skip only when role, kind, and required docs already match.
+			if (
+				current_role
+				and current_role == role
+				and current_kind == want_kind
+				and current_docs == want_docs
+			):
+				continue
 			values = {
 				"custom_task_role": role,
 				"custom_requires_finance_action": 1 if item.get("requires_finance_action") else 0,
@@ -690,10 +732,12 @@ def backfill_open_task_behaviour_from_templates() -> int:
 				"custom_requires_container_update": 1 if item.get("requires_container_update") else 0,
 				"custom_is_auto_completable": 1 if item.get("is_auto_completable") else 0,
 			}
-			if item.get("payment_kind"):
-				values["custom_payment_kind"] = item["payment_kind"]
+			if want_kind:
+				values["custom_payment_kind"] = want_kind
 			if item.get("permit_stage"):
 				values["custom_permit_stage"] = item["permit_stage"]
+			if frappe.get_meta("Task").has_field("custom_required_document_types"):
+				values["custom_required_document_types"] = want_docs
 			frappe.db.set_value("Task", task.name, values, update_modified=False)
 			updated += 1
 	return updated

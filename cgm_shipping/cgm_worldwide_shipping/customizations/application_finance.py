@@ -1428,6 +1428,14 @@ def prepare_application_task_tables(task, profile: ApplicationFinanceProfile) ->
 
 
 def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_stamped_required_document_types,
+		stamped_required_document_types_attached,
+	)
+
+	# Template stamp replaces hardcoded profile certificate codes when configured.
+	if get_stamped_required_document_types(task):
+		return stamped_required_document_types_attached(task)
 	if not profile.certificate_document_code and not profile.legacy_certificate_codes:
 		return True
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_document_type_code

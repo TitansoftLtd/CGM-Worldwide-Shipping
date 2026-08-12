@@ -564,32 +564,64 @@ function seq_in_list(seq, list) {
 	return (list || []).includes(seq);
 }
 
+function role_payment_match(frm, role, kind) {
+	const r = (frm.doc.custom_task_role || "").trim();
+	if (!r) {
+		return null;
+	}
+	return r === role && (frm.doc.custom_payment_kind || "").trim() === kind;
+}
+
 function is_ucr_application_step(frm, seq) {
+	const stamped = role_payment_match(frm, "Application", "UCR");
+	if (stamped !== null) {
+		return stamped;
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).ucr_application_seqs);
 }
 
 function is_ucr_finance_step(frm, seq) {
+	const stamped = role_payment_match(frm, "Finance Payment", "UCR");
+	if (stamped !== null) {
+		return stamped;
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).ucr_finance_seqs);
 }
 
 function is_entry_application_step(frm, seq) {
+	const stamped = role_payment_match(frm, "Application", "ENTRY_SLIP");
+	if (stamped !== null) {
+		return stamped;
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).entry_application_seqs);
 }
 
 function is_entry_finance_step(frm, seq) {
+	const stamped = role_payment_match(frm, "Finance Payment", "ENTRY_SLIP");
+	if (stamped !== null) {
+		return stamped;
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).entry_finance_seqs);
 }
 
 function is_shipping_line_application_step(frm, seq) {
+	const stamped = role_payment_match(frm, "Application", "Shipping Line");
+	if (stamped !== null) {
+		return stamped;
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).shipping_line_application_seqs);
 }
 
 function is_shipping_line_finance_step(frm, seq) {
+	const stamped = role_payment_match(frm, "Finance Payment", "Shipping Line");
+	if (stamped !== null) {
+		return stamped;
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).shipping_line_finance_seqs);
 }
@@ -608,6 +640,14 @@ const CGM_APP_FINANCE_PROFILES = {
 };
 
 function is_app_finance_application_step(frm, seq, profileKey) {
+	const kindByProfile = { shipping_line: "Shipping Line", kpa: "KPA" };
+	const kind = kindByProfile[profileKey];
+	if (kind) {
+		const stamped = role_payment_match(frm, "Application", kind);
+		if (stamped !== null) {
+			return stamped;
+		}
+	}
 	const profile = CGM_APP_FINANCE_PROFILES[profileKey];
 	if (!profile) {
 		return false;
@@ -617,6 +657,14 @@ function is_app_finance_application_step(frm, seq, profileKey) {
 }
 
 function is_app_finance_finance_step(frm, seq, profileKey) {
+	const kindByProfile = { shipping_line: "Shipping Line", kpa: "KPA" };
+	const kind = kindByProfile[profileKey];
+	if (kind) {
+		const stamped = role_payment_match(frm, "Finance Payment", kind);
+		if (stamped !== null) {
+			return stamped;
+		}
+	}
 	const profile = CGM_APP_FINANCE_PROFILES[profileKey];
 	if (!profile) {
 		return false;
@@ -634,11 +682,19 @@ function is_kpa_finance_step(frm, seq) {
 }
 
 function is_permit_application_step(frm, seq) {
+	const role = (frm.doc.custom_task_role || "").trim();
+	if (role) {
+		return role === "Permit Application";
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).permit_application_seqs);
 }
 
 function is_permit_finance_step(frm, seq) {
+	const role = (frm.doc.custom_task_role || "").trim();
+	if (role) {
+		return role === "Permit Finance";
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	return seq_in_list(s, get_cgm_sea_seq_config(frm).permit_finance_seqs);
 }
@@ -668,6 +724,10 @@ function permit_rows_all_have_journal_entry(frm) {
 }
 
 function get_permit_stage_for_seq(frm, seq) {
+	const stamped = (frm.doc.custom_permit_stage || "").trim();
+	if (stamped && (frm.doc.custom_task_role || "").trim()) {
+		return stamped;
+	}
 	const s = seq !== undefined ? seq : sea_task_sequence(frm);
 	const map = get_cgm_sea_seq_config(frm).permit_stage_by_seq || {};
 	return map[String(s)] || map[s] || null;
@@ -754,14 +814,71 @@ const SEA_TASK_HIDDEN_FIELDS = [
 ];
 
 function is_sea_clearance_task(frm) {
-	return isSeaImportFlowKey(get_task_flow_key(frm));
+	// Sea Import OR any task stamped from CGM Task Template with a Task Role.
+	return isSeaImportFlowKey(get_task_flow_key(frm)) || Boolean(frm.doc.custom_task_role);
 }
 
 function sea_task_sequence(frm) {
 	return Number(frm.doc.custom_sequence_no || 0);
 }
 
+function ui_from_task_role(frm) {
+	const role = (frm.doc.custom_task_role || "").trim();
+	const kind = (frm.doc.custom_payment_kind || "").trim();
+	const stage = (frm.doc.custom_permit_stage || "").trim();
+	const is_app = role === "Application";
+	const is_fin = role === "Finance Payment";
+	const is_permit_app = role === "Permit Application";
+	const is_permit_fin = role === "Permit Finance";
+	const show_finance = is_app || is_fin;
+	const show_permits = is_permit_app || is_permit_fin || cint(frm.doc.custom_requires_permit_action);
+	let show_documents = true;
+	if (is_app && kind === "Shipping Line") {
+		show_documents = false;
+	}
+	if (role === "Document" || role === "Document Checkpoint") {
+		show_documents = true;
+	}
+	if (cint(frm.doc.custom_requires_document_upload)) {
+		show_documents = true;
+	}
+	return {
+		is_sea_task: true,
+		from_template: true,
+		task_role: role,
+		payment_kind: kind,
+		permit_stage: stage,
+		show_finance_lines: show_finance,
+		show_documents: show_documents,
+		documents_read_only: false,
+		show_permits: show_permits,
+		show_payments: false,
+		show_external_ref: true,
+		show_description: true,
+		auto_intake_intro: role === "Auto Complete" && frm.doc.status === "Completed",
+		hide_mark_complete:
+			is_app || is_fin || is_permit_app || is_permit_fin || role === "Auto Complete",
+		is_ucr_application: is_app && kind === "UCR",
+		is_ucr_finance: is_fin && kind === "UCR",
+		is_entry_application: is_app && kind === "ENTRY_SLIP",
+		is_entry_finance: is_fin && kind === "ENTRY_SLIP",
+		is_shipping_line_application: is_app && kind === "Shipping Line",
+		is_shipping_line_finance: is_fin && kind === "Shipping Line",
+		is_kpa_application: is_app && kind === "KPA",
+		is_kpa_finance: is_fin && kind === "KPA",
+		is_permit_application: is_permit_app,
+		is_permit_finance: is_permit_fin,
+		is_pre_clearance_permit: is_permit_app && stage === "Pre-clearance",
+		is_post_clearance_permit: is_permit_app && stage === "Post-clearance",
+		is_document_checkpoint: role === "Document Checkpoint",
+		is_auto_complete: role === "Auto Complete",
+	};
+}
+
 function get_sea_task_ui(frm) {
+	if ((frm.doc.custom_task_role || "").trim()) {
+		return ui_from_task_role(frm);
+	}
 	const seq = sea_task_sequence(frm);
 	const cfg = get_cgm_sea_seq_config(frm);
 	if (!is_sea_clearance_task(frm)) {
@@ -994,7 +1111,12 @@ function apply_sea_task_form_layout(frm, ui) {
 			return;
 		}
 		if (ui.show_permits) {
-			frm.set_df_property(fieldname, "depends_on", sea_task_permits_depends_on(frm));
+			// Template-stamped roles: do not gate on Sea Import sequence lists.
+			frm.set_df_property(
+				fieldname,
+				"depends_on",
+				ui.from_template ? "" : sea_task_permits_depends_on(frm)
+			);
 		}
 		toggle(fieldname, ui.show_permits);
 	});

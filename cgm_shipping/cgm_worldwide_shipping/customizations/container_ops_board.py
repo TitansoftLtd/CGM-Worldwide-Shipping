@@ -286,6 +286,9 @@ def _project_filters(filters) -> dict:
 		project_filters["custom_clearance_station"] = station
 	if filters.get("bill_of_lading"):
 		project_filters["custom_bill_of_lading"] = filters.bill_of_lading
+	batch_no = (filters.get("batch_no") or "").strip()
+	if batch_no:
+		project_filters["custom_batch_no"] = ["like", f"%{batch_no}%"]
 	date_key = _normalize_date_field(filters.get("date_field"))
 	if date_key:
 		field = (
@@ -351,6 +354,7 @@ def _apply_container_post_filters(
 	"""Shared post-fetch filters for All Containers / Return Tracker tabs."""
 	rows = _filter_by_customer(rows, filters.get("customer"), projects)
 	rows = _filter_by_bill_of_lading(rows, filters.get("bill_of_lading"), projects)
+	rows = _filter_by_batch_no(rows, filters.get("batch_no"), projects)
 	rows = _filter_by_shipping_line(rows, filters.get("shipping_line"), projects)
 	rows = _filter_by_date_range(rows, filters, projects)
 	return rows
@@ -656,6 +660,23 @@ def _filter_by_bill_of_lading(
 		}
 		bl_values.discard("")
 		if any(bl_filter == value or bl_filter in value for value in bl_values):
+			filtered.append(row)
+	return filtered
+
+
+def _filter_by_batch_no(
+	rows: list[dict], batch_no: str | None, projects: dict
+) -> list[dict]:
+	if not batch_no:
+		return rows
+	batch_filter = str(batch_no).strip().lower()
+	if not batch_filter:
+		return rows
+	filtered = []
+	for row in rows:
+		project_doc = projects.get(row.get("project")) or {}
+		value = (project_doc.get("custom_batch_no") or "").strip().lower()
+		if value and (batch_filter == value or batch_filter in value):
 			filtered.append(row)
 	return filtered
 

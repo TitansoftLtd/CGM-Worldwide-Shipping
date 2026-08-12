@@ -164,9 +164,9 @@
   },
   {
    "depends_on": "eval:[\"Document\",\"Document Checkpoint\",\"Application\"].includes(doc.task_role) || doc.requires_document_upload",
-   "description": "Optional. Comma-separated Document Type names expected on this task (e.g. Commercial Invoice, Packing List). Leave empty to allow any document.",
+   "description": "Document Types required before this task can be Completed (e.g. IDF CERT). Prefills Task Documents and blocks Complete until each is attached. Select from Document Type master (comma-separated).",
    "fieldname": "required_document_types",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Required Document Types"
   }
  ],
@@ -174,7 +174,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-11 14:15:00.000000",
+ "modified": "2026-08-12 05:20:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Task Template Item",
