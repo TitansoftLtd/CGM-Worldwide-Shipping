@@ -156,6 +156,14 @@ def get_pre_clearance_permit_application_task_name(project: str) -> str | None:
 
 
 def is_pre_clearance_permit_application_task(task) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+		task_is_permit_application,
+	)
+
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return task_is_permit_application(task) and behaviour.permit_stage == PRE_CLEARANCE_STAGE
 	seq = task_sequence(task)
 	return is_permit_application_task(seq) and get_permit_stage_for_sequence(seq) == PRE_CLEARANCE_STAGE
 
@@ -165,12 +173,24 @@ def is_pre_clearance_finance_permit_task(task) -> bool:
 
 
 def is_permit_finance_task_doc(task) -> bool:
-	return is_permit_finance_payment_task(task_sequence(task))
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_permit_finance,
+	)
+
+	return task_is_permit_finance(task)
 
 
 def get_permit_application_task_for_finance(finance_task) -> str | None:
 	if not finance_task.project:
 		return None
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_permit_application_for_behaviour,
+		get_task_behaviour,
+	)
+
+	behaviour = get_task_behaviour(finance_task)
+	if behaviour.from_template:
+		return get_permit_application_for_behaviour(finance_task)
 	app_seq = get_application_sequence_for_finance_task(finance_task)
 	if not app_seq:
 		return None
@@ -178,6 +198,13 @@ def get_permit_application_task_for_finance(finance_task) -> str | None:
 
 
 def permit_stage_for_finance_task(finance_task) -> str:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+	)
+
+	behaviour = get_task_behaviour(finance_task)
+	if behaviour.from_template and behaviour.permit_stage:
+		return behaviour.permit_stage
 	app_seq = get_application_sequence_for_finance_task(finance_task)
 	if app_seq:
 		return get_permit_stage_for_sequence(app_seq)
@@ -193,7 +220,11 @@ def finance_permit_task_label(finance_task) -> str:
 
 
 def is_permit_application_task_doc(task) -> bool:
-	return is_permit_application_task(task_sequence(task))
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_permit_application,
+	)
+
+	return task_is_permit_application(task)
 
 
 # ------------------------------------------------------------------
@@ -2083,6 +2114,27 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 
 
 def get_ucr_task(project: str, task_type: str) -> str | None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_APPLICATION,
+		ROLE_FINANCE_PAYMENT,
+		task_has_behaviour_fields,
+	)
+
+	if task_has_behaviour_fields():
+		role = ROLE_APPLICATION if task_type == "create" else ROLE_FINANCE_PAYMENT
+		name = frappe.db.get_value(
+			"Task",
+			{
+				"project": project,
+				"custom_task_role": role,
+				"custom_payment_kind": "UCR",
+			},
+			"name",
+			order_by="custom_sequence_no asc",
+		)
+		if name:
+			return name
+
 	seq_by_type = {
 		"create": get_ucr_create_sequence(),
 		"payment": get_ucr_payment_sequence(),
@@ -2102,11 +2154,19 @@ def get_ucr_payment_task(project: str) -> str | None:
 
 
 def is_ucr_create_task(task) -> bool:
-	return is_ucr_application_task(task_sequence(task))
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_application,
+	)
+
+	return task_is_ucr_application(task)
 
 
 def is_ucr_payment_task_doc(task) -> bool:
-	return is_ucr_finance_payment_task(task_sequence(task))
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_finance,
+	)
+
+	return task_is_ucr_finance(task)
 
 
 # ------------------------------------------------------------------

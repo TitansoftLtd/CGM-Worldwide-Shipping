@@ -69,6 +69,9 @@ def ensure_task_workflow_masters() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		ensure_transit_project_fields,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ensure_task_behaviour_fields,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
 		seed_task_workflow_masters,
 	)
@@ -76,6 +79,8 @@ def ensure_task_workflow_masters() -> None:
 
 	if frappe.db.exists("DocType", "Project"):
 		ensure_transit_project_fields()
+	if frappe.db.exists("DocType", "Task"):
+		ensure_task_behaviour_fields()
 	seed_task_workflow_masters()
 	seed_cgm_shipping_settings()
 	repair_clearance_charge_item_setup()

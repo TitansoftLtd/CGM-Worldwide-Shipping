@@ -148,6 +148,9 @@ def _collect_items(template, _visited: set | None = None) -> list[dict]:
 				"department_role": row.department_role,
 				"description": row.description or "",
 				"depends_on_sequences": row.depends_on_sequences or "",
+				"task_role": (row.get("task_role") or "Standard").strip() or "Standard",
+				"payment_kind": (row.get("payment_kind") or "").strip(),
+				"permit_stage": (row.get("permit_stage") or "").strip(),
 				"requires_finance_action": bool(row.requires_finance_action),
 				"requires_document_upload": bool(row.requires_document_upload),
 				"requires_container_update": bool(row.requires_container_update),
@@ -175,20 +178,37 @@ def _create_single_task(
 	dept_stem = (item.get("department_role") or "").strip()
 	department = f"{dept_stem} - {company_abbr}" if company_abbr else dept_stem
 
-	task = frappe.get_doc(
-		{
-			"doctype": "Task",
-			"subject": item["subject"],
-			"project": project.name,
-			"description": item.get("description") or "",
-			"department": department,
-			"company": project.company,
-			"status": "Open",
-			"priority": "Low",
-			"custom_task_flow_key": template_name,
-			"custom_sequence_no": item["sequence_no"],
-		}
-	)
+	payload = {
+		"doctype": "Task",
+		"subject": item["subject"],
+		"project": project.name,
+		"description": item.get("description") or "",
+		"department": department,
+		"company": project.company,
+		"status": "Open",
+		"priority": "Low",
+		"custom_task_flow_key": template_name,
+		"custom_sequence_no": item["sequence_no"],
+	}
+	# Template-driven behaviour (finance / permits / documents) — see task_behaviour.py.
+	meta = frappe.get_meta("Task")
+	if meta.has_field("custom_task_role"):
+		payload["custom_task_role"] = item.get("task_role") or "Standard"
+	if meta.has_field("custom_payment_kind") and item.get("payment_kind"):
+		payload["custom_payment_kind"] = item["payment_kind"]
+	if meta.has_field("custom_permit_stage") and item.get("permit_stage"):
+		payload["custom_permit_stage"] = item["permit_stage"]
+	for src, dst in (
+		("requires_finance_action", "custom_requires_finance_action"),
+		("requires_document_upload", "custom_requires_document_upload"),
+		("requires_permit_action", "custom_requires_permit_action"),
+		("requires_container_update", "custom_requires_container_update"),
+		("is_auto_completable", "custom_is_auto_completable"),
+	):
+		if meta.has_field(dst):
+			payload[dst] = 1 if item.get(src) else 0
+
+	task = frappe.get_doc(payload)
 
 	if item.get("depends_on_sequences"):
 		seq_nums = [

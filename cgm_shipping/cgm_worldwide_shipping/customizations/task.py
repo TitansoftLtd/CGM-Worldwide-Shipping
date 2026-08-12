@@ -510,11 +510,17 @@ def finance_payment_with_supplier_invoice_sequences() -> frozenset[int]:
 
 
 def is_sea_finance_payment_task(task) -> bool:
-	"""Task is a sea import finance payment step (settings-driven)."""
+	"""Task is a finance payment step (template role or Sea Settings)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		is_sea_import_task,
 	)
 
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_finance_payment or behaviour.is_permit_finance
 	return is_sea_import_task(task) and is_finance_payment_task(
 		int(task.get("custom_sequence_no") or 0)
 	)
@@ -848,8 +854,11 @@ def remove_invoice_rows_from_task_documents(task) -> None:
 def ensure_idf_certificate_document_row(task) -> None:
 	"""Task 3: only IDF/UCR certificate on Clearance Documents (optional until issued)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import get_document_type_link_name
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_application,
+	)
 
-	if not is_ucr_application_task(_task_seq(task)):
+	if not task_is_ucr_application(task):
 		return
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
@@ -3366,11 +3375,15 @@ def _sea_task_seq(doc) -> int:
 
 
 def _is_sea_task(doc) -> bool:
+	"""True for Sea Import OR any task with stamped clearance behaviour."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		uses_clearance_behaviour,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		is_sea_import_task,
 	)
 
-	return is_sea_import_task(doc)
+	return is_sea_import_task(doc) or uses_clearance_behaviour(doc)
 
 
 def on_task_onload(doc, _method=None):
@@ -3383,15 +3396,23 @@ def on_task_onload(doc, _method=None):
 		if _is_sea_task(doc):
 			prepare_ucr_task_tables(doc)
 			prepare_application_finance_task_tables(doc)
-	if _is_sea_task(doc) and is_ucr_workflow_task(_sea_task_seq(doc)):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_configured_application_workflow,
+		task_is_permit_application,
+		task_is_permit_finance,
+		task_is_ucr_application,
+		task_is_ucr_finance,
+		task_is_ucr_workflow,
+	)
+
+	if _is_sea_task(doc) and task_is_ucr_workflow(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 			ensure_ucr_finance_lines_saved,
 			sync_ucr_status_from_finance_to_application,
 		)
 
 		changed = ensure_ucr_finance_lines_saved(doc)
-		seq = _sea_task_seq(doc)
-		if is_ucr_application_task(seq):
+		if task_is_ucr_application(doc):
 			changed = sync_ucr_status_from_finance_to_application(doc) or changed
 			if doc.status not in ("Completed", "Cancelled"):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -3400,7 +3421,7 @@ def on_task_onload(doc, _method=None):
 
 				if try_auto_complete_ucr_application_task(doc):
 					changed = True
-		elif is_ucr_finance_payment_task(seq) and doc.status not in ("Completed", "Cancelled"):
+		elif task_is_ucr_finance(doc) and doc.status not in ("Completed", "Cancelled"):
 			if doc.project:
 				from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 					copy_ucr_receipt_to_finance_task,
@@ -3419,7 +3440,7 @@ def on_task_onload(doc, _method=None):
 		if changed:
 			doc.reload()
 
-	if _is_sea_task(doc) and is_configured_application_workflow_task(_sea_task_seq(doc)):
+	if _is_sea_task(doc) and task_is_configured_application_workflow(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
 			process_application_workflow_onload,
 		)
@@ -3427,7 +3448,7 @@ def on_task_onload(doc, _method=None):
 		if process_application_workflow_onload(doc):
 			doc.reload()
 
-	if _is_sea_task(doc) and is_permit_finance_payment_task(_sea_task_seq(doc)):
+	if _is_sea_task(doc) and task_is_permit_finance(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			application_missing_finance_permit_receipts,
 			ensure_finance_permit_rows_saved,
@@ -3447,7 +3468,7 @@ def on_task_onload(doc, _method=None):
 		if app_name and application_missing_finance_permit_receipts(app_name, doc.name):
 			handle_finance_permit_receipt_upload(doc)
 
-	if _is_sea_task(doc) and is_permit_application_task(_sea_task_seq(doc)):
+	if _is_sea_task(doc) and task_is_permit_application(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			ensure_finance_permit_receipts_visible_on_application,
 			merge_project_permits_into_application_task,
@@ -3485,24 +3506,33 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 		return
 	if frappe.flags.get("cgm_reopening_task"):
 		return
-	if not is_sea_finance_payment_task(doc) and not is_permit_finance_payment_task(
-		int(doc.get("custom_sequence_no") or 0)
-	):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_application_finance_for_profile,
+		task_is_application_for_profile,
+		task_is_permit_application,
+		task_is_permit_finance,
+		task_is_ucr_application,
+	)
+
+	if not is_sea_finance_payment_task(doc) and not task_is_permit_finance(doc):
 		# Also protect paired application finance profiles and UCR create when
 		# they were completed by set_value and a later sync save is stale.
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			can_complete_application_task,
-			is_application_finance_task,
-			is_application_task,
 			profile_for_task,
 		)
 
-		seq = int(doc.get("custom_sequence_no") or 0)
 		profile = profile_for_task(doc)
 		if not (
-			is_ucr_application_task(seq)
-			or (profile and (is_application_task(seq, profile) or is_application_finance_task(seq, profile)))
-			or is_permit_application_task(seq)
+			task_is_ucr_application(doc)
+			or (
+				profile
+				and (
+					task_is_application_for_profile(doc, profile)
+					or task_is_application_finance_for_profile(doc, profile)
+				)
+			)
+			or task_is_permit_application(doc)
 		):
 			return
 		# Shipping Line (and other POP flows): never force Completed back when
@@ -3510,7 +3540,7 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 		if (
 			profile
 			and profile.requires_pop
-			and is_application_task(seq, profile)
+			and task_is_application_for_profile(doc, profile)
 			and not can_complete_application_task(doc, profile)
 		):
 			return
@@ -3542,9 +3572,12 @@ def block_premature_shipping_line_completion(doc) -> None:
 		profile_for_task,
 	)
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_application_for_profile,
+	)
+
 	profile = profile_for_task(doc)
-	seq = int(doc.get("custom_sequence_no") or 0)
-	if not profile or not profile.requires_pop or not is_application_task(seq, profile):
+	if not profile or not profile.requires_pop or not task_is_application_for_profile(doc, profile):
 		return
 	if can_complete_application_task(doc, profile):
 		return
@@ -3561,15 +3594,20 @@ def promote_ready_finance_task_before_save(doc) -> None:
 	"""
 	if doc.status in ("Completed", "Cancelled") or not _is_sea_task(doc):
 		return
-	seq = _sea_task_seq(doc)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_application_finance_for_profile,
+		task_is_permit_finance,
+		task_is_ucr_finance,
+	)
+
 	ready = False
-	if is_ucr_finance_payment_task(seq):
+	if task_is_ucr_finance(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			can_complete_ucr_payment_task,
 		)
 
 		ready = can_complete_ucr_payment_task(doc)
-	elif is_permit_finance_payment_task(seq):
+	elif task_is_permit_finance(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			can_complete_finance_permit_task,
 		)
@@ -3578,12 +3616,11 @@ def promote_ready_finance_task_before_save(doc) -> None:
 	else:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			can_complete_application_finance_task,
-			is_application_finance_task,
 			profile_for_task,
 		)
 
 		profile = profile_for_task(doc)
-		if profile and is_application_finance_task(seq, profile):
+		if profile and task_is_application_finance_for_profile(doc, profile):
 			ready = can_complete_application_finance_task(doc, profile)
 
 	if not ready:
@@ -3608,6 +3645,11 @@ def before_task_save(doc, _method=None):
 	stamp_shipment_document_upload_metadata(doc, TASK_DOCUMENTS_FIELD)
 	if not _is_sea_task(doc):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_application_for_profile,
+		task_is_document_checkpoint,
+	)
+
 	preserve_completed_status_against_stale_save(doc)
 	block_premature_shipping_line_completion(doc)
 	enforce_client_paid_confirmation(doc)
@@ -3616,13 +3658,11 @@ def before_task_save(doc, _method=None):
 	if doc.status != "Cancelled":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			APPLICATION_FINANCE_PROFILES,
-			is_application_task,
 			seed_application_finance_lines,
 		)
 
-		seq = _sea_task_seq(doc)
 		for profile in APPLICATION_FINANCE_PROFILES.values():
-			if profile.requires_pop and is_application_task(seq, profile):
+			if profile.requires_pop and task_is_application_for_profile(doc, profile):
 				seed_application_finance_lines(doc, profile)
 	if doc.status not in ("Completed", "Cancelled"):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -3659,8 +3699,7 @@ def before_task_save(doc, _method=None):
 			for profile in APPLICATION_FINANCE_PROFILES.values():
 				sync_application_payment_hooks(doc, profile)
 
-		seq = _sea_task_seq(doc)
-		if _is_sea_task(doc) and is_document_checkpoint_task(seq):
+		if _is_sea_task(doc) and task_is_document_checkpoint(doc):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 				normalize_shipment_documents_table,
 				promote_checkpoint_task_final_uploads,
@@ -3722,6 +3761,16 @@ def notify_sea_task_your_turn(task) -> dict | None:
 
 def on_task_update(doc, _method=None):
 	seq = _sea_task_seq(doc)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_permit_finance_for_behaviour,
+		task_is_application_finance_for_profile,
+		task_is_auto_complete,
+		task_is_configured_application_workflow,
+		task_is_permit_application,
+		task_is_permit_finance,
+		task_is_ucr_application,
+		task_is_ucr_finance,
+	)
 
 	if _is_sea_task(doc):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
@@ -3735,7 +3784,7 @@ def on_task_update(doc, _method=None):
 		except Exception:
 			frappe.log_error(title=f"CGM your-turn notify failed for {doc.name}")
 
-	if _is_sea_task(doc) and is_ucr_application_task(seq) and doc.status not in (
+	if _is_sea_task(doc) and task_is_ucr_application(doc) and doc.status not in (
 		"Completed",
 		"Cancelled",
 	):
@@ -3758,7 +3807,7 @@ def on_task_update(doc, _method=None):
 
 	if (
 		_is_sea_task(doc)
-		and is_ucr_finance_payment_task(seq)
+		and task_is_ucr_finance(doc)
 		and doc.status not in ("Completed", "Cancelled")
 	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -3769,7 +3818,11 @@ def on_task_update(doc, _method=None):
 		handle_ucr_finance_receipt_upload(doc)
 		try_auto_complete_ucr_finance_task(doc)
 
-	if _is_sea_task(doc) and is_configured_application_workflow_task(seq) and doc.status != "Cancelled":
+	if (
+		_is_sea_task(doc)
+		and task_is_configured_application_workflow(doc)
+		and doc.status != "Cancelled"
+	):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
 			process_application_workflow_on_update,
 		)
@@ -3777,7 +3830,7 @@ def on_task_update(doc, _method=None):
 		# Shared path for UCR / Entry / Shipping Line / KPA — including Completed reopen.
 		process_application_workflow_on_update(doc)
 
-	if _is_sea_task(doc) and is_permit_finance_payment_task(seq) and doc.status != "Cancelled":
+	if _is_sea_task(doc) and task_is_permit_finance(doc) and doc.status != "Cancelled":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			handle_finance_permit_receipt_upload,
 			permit_work_changed,
@@ -3798,7 +3851,7 @@ def on_task_update(doc, _method=None):
 		):
 			try_auto_complete_permit_finance_task(doc)
 
-	if _is_sea_task(doc) and is_permit_application_task(seq) and doc.status != "Cancelled":
+	if _is_sea_task(doc) and task_is_permit_application(doc) and doc.status != "Cancelled":
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			auto_submit_permit_invoices_to_finance_if_needed,
 			handle_additional_permit_work_on_application,
@@ -3850,7 +3903,7 @@ def on_task_update(doc, _method=None):
 			refresh_project_documents(doc.project)
 
 		# Permit project register sync only for permit tasks when rows changed.
-		if is_permit_application_task(seq) or is_permit_finance_payment_task(seq):
+		if task_is_permit_application(doc) or task_is_permit_finance(doc):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 				permit_work_changed,
 			)
@@ -3858,7 +3911,7 @@ def on_task_update(doc, _method=None):
 			if permit_work_changed(doc) or not prev:
 				sync_task_permits_to_project(doc)
 		if _is_sea_task(doc):
-			if is_permit_application_task(seq):
+			if task_is_permit_application(doc):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 					get_permit_finance_task,
 					permit_work_changed as _permit_rows_changed,
@@ -3866,7 +3919,9 @@ def on_task_update(doc, _method=None):
 				)
 
 				if _permit_rows_changed(doc):
-					fin_name = get_permit_finance_task(doc.project, seq)
+					fin_name = get_permit_finance_for_behaviour(doc) or get_permit_finance_task(
+						doc.project, seq
+					)
 					if fin_name and not frappe.flags.get("cgm_permit_finance_completing"):
 						sync_permit_invoices_to_finance_task(
 							frappe.get_doc("Task", fin_name), save=True
@@ -3900,7 +3955,7 @@ def on_task_update(doc, _method=None):
 		)
 
 		profile = profile_for_task(doc)
-		if profile and is_application_finance_task(seq, profile):
+		if profile and task_is_application_finance_for_profile(doc, profile):
 			close_application_when_finance_done(doc, profile)
 
 
@@ -3913,19 +3968,26 @@ def validate_task_completion_requirements(doc, _method=None):
 		return
 
 	seq = _sea_task_seq(doc)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_auto_complete,
+		task_is_configured_application_workflow,
+		task_is_ucr_application,
+		task_is_ucr_finance,
+	)
+
 	if (
 		_is_sea_task(doc)
 		and frappe.flags.get("cgm_auto_completing_sea_task")
 		and (
-			is_auto_complete_task(seq)
-			or is_ucr_application_task(seq)
-			or is_ucr_finance_payment_task(seq)
-			or is_configured_application_workflow_task(seq)
+			task_is_auto_complete(doc)
+			or task_is_ucr_application(doc)
+			or task_is_ucr_finance(doc)
+			or task_is_configured_application_workflow(doc)
 		)
 	):
 		return
 
-	if _is_sea_task(doc) and is_auto_complete_task(seq):
+	if _is_sea_task(doc) and task_is_auto_complete(doc):
 		return
 
 	if _is_sea_task(doc):

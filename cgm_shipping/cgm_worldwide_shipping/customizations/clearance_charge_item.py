@@ -30,6 +30,10 @@ DEFAULT_PAYMENT_KINDS: tuple[dict, ...] = (
 		"payment_kind": "KPA",
 		"description": "KPA port charge finance payment grouping.",
 	},
+	{
+		"payment_kind": "Permit",
+		"description": "Pre-/post-clearance permit finance payment grouping.",
+	},
 )
 
 DEFAULT_LINE_TYPES: tuple[dict, ...] = (

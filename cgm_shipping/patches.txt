@@ -24,7 +24,6 @@ cgm_shipping.patches.sync_sea_template_shipping_line_order
 cgm_shipping.patches.rename_transit_project_types
 cgm_shipping.patches.backfill_bill_of_lading_cargo_type
 cgm_shipping.patches.ensure_sea_import_project_workflow
-cgm_shipping.patches.fix_sea_clearance_permit_requirement_sequences
 cgm_shipping.patches.ensure_container_charge_fields
 cgm_shipping.patches.enable_manual_batch_no_fields
 cgm_shipping.patches.enable_manual_batch_on_transport_docs
@@ -40,6 +39,8 @@ cgm_shipping.patches.migrate_strict_department_task_visibility
 cgm_shipping.patches.backfill_finance_line_journal_entries
 cgm_shipping.patches.ensure_sea_task_notifications
 cgm_shipping.patches.sync_road_transit_inbound_template
-cgm_shipping.patches.ensure_clearance_charge_items
-cgm_shipping.patches.fix_clearance_charge_item_form_and_backfill_finance_lines
-cgm_shipping.patches.enable_clearance_charge_item_amendments
+# Clearance charge seed/repair + sea requirement reseed live in install.after_migrate
+# (repair_clearance_charge_item_setup / seed_cgm_shipping_settings) — do not re-add
+# thin alias patches for that work.
+cgm_shipping.patches.sync_task_template_behaviour
+cgm_shipping.patches.fix_cgm_task_template_item_nested_table

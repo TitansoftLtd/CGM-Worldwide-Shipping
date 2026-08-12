@@ -1,0 +1,129 @@
+{
+ "custom_fields": [],
+ "custom_perms": [],
+ "doctype": "Material Request Item",
+ "links": [],
+ "property_setters": [
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocType",
+   "field_name": null,
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-main-field_order",
+   "property": "field_order",
+   "property_type": "Data",
+   "value": "[\"item_code\", \"item_name\", \"col_break1\", \"section_break_4\", \"description\", \"column_break_12\", \"item_group\", \"brand\", \"image\", \"quantity_and_warehouse\", \"qty\", \"stock_uom\", \"from_warehouse\", \"col_break2\", \"uom\", \"conversion_factor\", \"stock_qty\", \"qty_info_sec_break\", \"min_order_qty\", \"projected_qty\", \"picked_qty\", \"qty_info_col_break\", \"actual_qty\", \"ordered_qty\", \"received_qty\", \"rate_and_amount_section_break\", \"rate\", \"price_list_rate\", \"col_break3\", \"amount\", \"schedule_date\", \"warehouse\", \"accounting_details_section\", \"expense_account\", \"column_break_glru\", \"wip_composite_asset\", \"manufacture_details\", \"manufacturer\", \"manufacturer_part_no\", \"col_break_mfg\", \"bom_no\", \"accounting_dimensions_section\", \"project\", \"dimension_col_break\", \"cost_center\", \"more_info\", \"lead_time_date\", \"sales_order\", \"sales_order_item\", \"packed_item\", \"col_break4\", \"production_plan\", \"material_request_plan_item\", \"job_card_item\", \"item_reorder_section\", \"projected_on_hand\", \"column_break_fdjh\", \"reorder_level\", \"reorder_qty\", \"section_break_46\", \"page_break\"]"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "item_code",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-item_code-columns",
+   "property": "columns",
+   "property_type": "Int",
+   "value": "2"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "schedule_date",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-schedule_date-columns",
+   "property": "columns",
+   "property_type": "Int",
+   "value": "2"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "qty",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-qty-columns",
+   "property": "columns",
+   "property_type": "Int",
+   "value": "1"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "uom",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-uom-columns",
+   "property": "columns",
+   "property_type": "Int",
+   "value": "1"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "rate",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-rate-in_list_view",
+   "property": "in_list_view",
+   "property_type": "Check",
+   "value": "1"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "rate",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-rate-columns",
+   "property": "columns",
+   "property_type": "Int",
+   "value": "1"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "amount",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-amount-in_list_view",
+   "property": "in_list_view",
+   "property_type": "Check",
+   "value": "1"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "amount",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-amount-columns",
+   "property": "columns",
+   "property_type": "Int",
+   "value": "1"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "warehouse",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request Item-warehouse-columns",
+   "property": "columns",
+   "property_type": "Int",
+   "value": "2"
+  }
+ ],
+ "sync_on_migrate": 1
+}
