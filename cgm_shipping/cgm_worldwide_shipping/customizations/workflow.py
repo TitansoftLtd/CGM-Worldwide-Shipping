@@ -3009,7 +3009,10 @@ def legacy_ucr_invoice_url(task) -> str | None:
 
 @frappe.whitelist()
 def verify_ucr_finance_line(
-	task_name: str, line_type: str = "Invoice", finance_line_name: str | None = None
+	task_name: str,
+	line_type: str = "Invoice",
+	finance_line_name: str | None = None,
+	attachment: str | None = None,
 ) -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
@@ -3052,8 +3055,18 @@ def verify_ucr_finance_line(
 			line = get_ucr_invoice_line(task)
 	else:
 		line = get_ucr_receipt_line(task)
+		if finance_line_name and line and line.name != finance_line_name:
+			for row in task.get(TASK_FINANCE_FIELD) or []:
+				if row.name == finance_line_name and (row.line_type or "") == "Receipt":
+					line = row
+					break
 	if not line:
 		frappe.throw(f"<b>UCR {line_type}</b> row is missing on this task.")
+	# Desk often shows an attach before the child row is persisted (soft-sync /
+	# skipped autosave). Accept the URL from the form so Verify still works.
+	pending_attachment = (attachment or "").strip()
+	if not line.attachment and pending_attachment:
+		line.attachment = pending_attachment
 	if not line.attachment:
 		frappe.throw(f"Attach the <b>UCR {line_type}</b> before verifying.")
 

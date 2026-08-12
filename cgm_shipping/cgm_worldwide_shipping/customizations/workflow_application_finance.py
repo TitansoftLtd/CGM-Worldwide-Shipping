@@ -795,6 +795,7 @@ def verify_application_finance_line(
 	profile_key: str,
 	line_type: str = "Invoice",
 	finance_line_name: str | None = None,
+	attachment: str | None = None,
 ) -> dict:
 	frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
 	profile = _profile_by_key(profile_key)
@@ -854,6 +855,9 @@ def verify_application_finance_line(
 		label_fallback = profile.receipt_label
 	if not line:
 		frappe.throw(f"<b>{label_fallback}</b> row is missing.")
+	pending_attachment = (attachment or "").strip()
+	if not line.attachment and pending_attachment:
+		line.attachment = pending_attachment
 	if not line.attachment:
 		if line_type == "Receipt" and receipt_attached_for_payment_workflow(task, profile):
 			app_name = get_application_task(task.project, profile) if task.project else None

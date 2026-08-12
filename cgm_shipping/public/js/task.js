@@ -2788,38 +2788,49 @@ frappe.ui.form.on("Task Finance Line", {
 			});
 		}
 		// Always save so Completed tasks can reopen Finance / sync receipts.
-		// Skip while soft-sync is applying remote rows (avoids TimestampMismatchError).
-		if (frm._cgm_skip_finance_line_autosave) {
-			return;
-		}
+		// Skip while soft-sync is applying remote rows (avoids TimestampMismatchError),
+		// but queue a retry — otherwise the paperclip stays only in the open form.
 		if (!row.attachment) {
 			return;
 		}
 		// Attach in child grids sometimes updates the control without dirtying the form.
 		frm.dirty();
-		// Refresh lock timestamp first — onload heal / POP mirror may have bumped it.
-		frappe.db.get_value("Task", frm.doc.name, "modified").then((r) => {
-			const latest = r?.message?.modified;
-			if (latest) {
-				frm.doc.modified = latest;
-			}
+		const persist_finance_line_attachment = () => {
 			if (frm._cgm_skip_finance_line_autosave) {
+				clearTimeout(frm._cgm_finance_line_autosave_retry);
+				frm._cgm_finance_line_autosave_retry = setTimeout(() => {
+					if (!frm || frm.is_new()) {
+						return;
+					}
+					persist_finance_line_attachment();
+				}, 400);
 				return;
 			}
-			if (!frm.is_dirty()) {
-				frm.dirty();
-			}
-			frm.save().catch((e) => {
-				const msg = (e && (e.message || e)) || "";
-				if (String(msg).includes("modified after you have opened")) {
-					frappe.show_alert({
-						message: __("Document was updated elsewhere — refreshing…"),
-						indicator: "orange",
-					});
-					frm.reload_doc();
+			frappe.db.get_value("Task", frm.doc.name, "modified").then((r) => {
+				const latest = r?.message?.modified;
+				if (latest) {
+					frm.doc.modified = latest;
 				}
+				if (frm._cgm_skip_finance_line_autosave) {
+					persist_finance_line_attachment();
+					return;
+				}
+				if (!frm.is_dirty()) {
+					frm.dirty();
+				}
+				frm.save().catch((e) => {
+					const msg = (e && (e.message || e)) || "";
+					if (String(msg).includes("modified after you have opened")) {
+						frappe.show_alert({
+							message: __("Document was updated elsewhere — refreshing…"),
+							indicator: "orange",
+						});
+						frm.reload_doc();
+					}
+				});
 			});
-		});
+		};
+		persist_finance_line_attachment();
 	},
 
 	verified(frm, cdt, cdn) {
@@ -3137,30 +3148,102 @@ function ensure_ucr_finance_task_completed_on_form(frm) {
 	});
 }
 
+function finance_line_attachment_on_form(frm, line_type, finance_line_name) {
+	const rows = frm.doc.custom_task_finance_lines || [];
+	if (finance_line_name) {
+		const byName = rows.find((r) => r.name === finance_line_name);
+		if (byName?.attachment) {
+			return byName.attachment;
+		}
+	}
+	const byType = get_finance_line(frm, line_type);
+	return byType?.attachment || null;
+}
+
+function merge_finance_lines_preserving_local_attachments(localRows, serverRows) {
+	const localByName = {};
+	(localRows || []).forEach((row) => {
+		if (row?.name) {
+			localByName[row.name] = row;
+		}
+	});
+	return (serverRows || []).map((serverRow) => {
+		const local = localByName[serverRow.name];
+		if (local?.attachment && !serverRow.attachment) {
+			return { ...serverRow, attachment: local.attachment };
+		}
+		return serverRow;
+	});
+}
+
+function save_task_before_finance_verify(frm) {
+	return frappe.db.get_value("Task", frm.doc.name, "modified").then((r) => {
+		const latest = r?.message?.modified;
+		if (latest) {
+			frm.doc.modified = latest;
+		}
+		if (!frm.is_dirty()) {
+			return Promise.resolve();
+		}
+		return frm.save();
+	});
+}
+
 function verify_ucr_finance_line(frm, line_type, finance_line_name) {
-	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.verify_ucr_finance_line",
-		args: { task_name: frm.doc.name, line_type, finance_line_name },
-		freeze: true,
-		callback(r) {
-			if (!r.exc) {
+	const attachment = finance_line_attachment_on_form(frm, line_type, finance_line_name);
+	if (!attachment) {
+		frappe.msgprint({
+			title: __("Attachment required"),
+			message: __("Attach the {0} and wait for the task to save, then verify again.", [
+				line_type === "Receipt" ? __("UCR Receipt") : __("UCR Invoice"),
+			]),
+			indicator: "orange",
+		});
+		return;
+	}
+	// Child-grid attach often sits only in the open form until Save.
+	frm.dirty();
+	save_task_before_finance_verify(frm)
+		.then(() => {
+			frappe.call({
+				method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.verify_ucr_finance_line",
+				args: {
+					task_name: frm.doc.name,
+					line_type,
+					finance_line_name,
+					attachment,
+				},
+				freeze: true,
+				callback(r) {
+					if (!r.exc) {
+						frappe.show_alert({
+							message: r.message?.message || __("Verified"),
+							indicator: "green",
+						});
+						if (r.message?.completed && r.message?.task_status === "Completed") {
+							frm._cgm_ucr_finance_ensure_done = true;
+							frappe.show_alert({
+								message: __("Finance pays UCR task completed"),
+								indicator: "green",
+							});
+						} else {
+							frm._cgm_ucr_finance_ensure_done = false;
+						}
+						frm.reload_doc();
+					}
+				},
+			});
+		})
+		.catch((e) => {
+			const msg = (e && (e.message || e)) || "";
+			if (String(msg).includes("modified after you have opened")) {
 				frappe.show_alert({
-					message: r.message?.message || __("Verified"),
-					indicator: "green",
+					message: __("Document was updated elsewhere — refreshing…"),
+					indicator: "orange",
 				});
-				if (r.message?.completed && r.message?.task_status === "Completed") {
-					frm._cgm_ucr_finance_ensure_done = true;
-					frappe.show_alert({
-						message: __("Finance pays UCR task completed"),
-						indicator: "green",
-					});
-				} else {
-					frm._cgm_ucr_finance_ensure_done = false;
-				}
 				frm.reload_doc();
 			}
-		},
-	});
+		});
 }
 
 function ensure_entry_finance_lines_on_form(frm) {
@@ -3321,32 +3404,48 @@ function ensure_entry_finance_task_completed_on_form(frm) {
 }
 
 function verify_entry_finance_line(frm, line_type, finance_line_name) {
-	frappe.call({
-		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.verify_application_finance_line",
-		args: {
-			task_name: frm.doc.name,
-			profile_key: "entry",
-			line_type,
-			finance_line_name,
-		},
-		freeze: true,
-		callback(r) {
-			if (!r.exc) {
+	const attachment = finance_line_attachment_on_form(frm, line_type, finance_line_name);
+	frm.dirty();
+	save_task_before_finance_verify(frm)
+		.then(() => {
+			frappe.call({
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.verify_application_finance_line",
+				args: {
+					task_name: frm.doc.name,
+					profile_key: "entry",
+					line_type,
+					finance_line_name,
+					attachment,
+				},
+				freeze: true,
+				callback(r) {
+					if (!r.exc) {
+						frappe.show_alert({
+							message: r.message?.message || __("Verified"),
+							indicator: "green",
+						});
+						if (r.message?.task_status === "Completed" && frm.doc.status !== "Completed") {
+							frappe.show_alert({
+								message: __("Finance Pays Entry Slip task completed"),
+								indicator: "green",
+							});
+						}
+						frm.reload_doc();
+					}
+				},
+			});
+		})
+		.catch((e) => {
+			const msg = (e && (e.message || e)) || "";
+			if (String(msg).includes("modified after you have opened")) {
 				frappe.show_alert({
-					message: r.message?.message || __("Verified"),
-					indicator: "green",
+					message: __("Document was updated elsewhere — refreshing…"),
+					indicator: "orange",
 				});
-				if (r.message?.task_status === "Completed" && frm.doc.status !== "Completed") {
-					frappe.show_alert({
-						message: __("Finance Pays Entry Slip task completed"),
-						indicator: "green",
-					});
-				}
 				frm.reload_doc();
 			}
-		},
-	});
+		});
 }
 
 function sync_app_finance_receipt_on_form(frm, profileKey) {
@@ -3831,26 +3930,42 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 }
 
 function verify_app_finance_line(frm, profileKey, lineType, finance_line_name) {
-	frappe.call({
-		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.verify_application_finance_line",
-		args: {
-			task_name: frm.doc.name,
-			profile_key: profileKey,
-			line_type: lineType,
-			finance_line_name,
-		},
-		freeze: true,
-		callback(r) {
-			if (!r.exc) {
+	const attachment = finance_line_attachment_on_form(frm, lineType, finance_line_name);
+	frm.dirty();
+	save_task_before_finance_verify(frm)
+		.then(() => {
+			frappe.call({
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.verify_application_finance_line",
+				args: {
+					task_name: frm.doc.name,
+					profile_key: profileKey,
+					line_type: lineType,
+					finance_line_name,
+					attachment,
+				},
+				freeze: true,
+				callback(r) {
+					if (!r.exc) {
+						frappe.show_alert({
+							message: r.message?.message || __("Verified"),
+							indicator: "green",
+						});
+						frm.reload_doc();
+					}
+				},
+			});
+		})
+		.catch((e) => {
+			const msg = (e && (e.message || e)) || "";
+			if (String(msg).includes("modified after you have opened")) {
 				frappe.show_alert({
-					message: r.message?.message || __("Verified"),
-					indicator: "green",
+					message: __("Document was updated elsewhere — refreshing…"),
+					indicator: "orange",
 				});
 				frm.reload_doc();
 			}
-		},
-	});
+		});
 }
 
 function ensure_shipping_line_finance_lines_on_form(frm) {
@@ -4294,7 +4409,10 @@ frappe.realtime.on("cgm_task_status_changed", (data) => {
 						cur_frm.refresh_field("status");
 						cgm_configure_task_status_fields(cur_frm);
 					}
-					cur_frm.doc.custom_task_finance_lines = doc.custom_task_finance_lines || [];
+					cur_frm.doc.custom_task_finance_lines = merge_finance_lines_preserving_local_attachments(
+						cur_frm.doc.custom_task_finance_lines,
+						doc.custom_task_finance_lines
+					);
 					cur_frm._cgm_toolbar_fingerprint = null;
 					cur_frm._cgm_shipping_line_declarant_status_loaded = false;
 					cur_frm.refresh_field("custom_task_finance_lines");
@@ -4348,7 +4466,10 @@ frappe.realtime.on("cgm_task_status_changed", (data) => {
 					cur_frm.doc.completed_by = doc.completed_by || null;
 					cur_frm.doc.completed_on = doc.completed_on || null;
 					cur_frm.doc.progress = doc.progress;
-					cur_frm.doc.custom_task_finance_lines = doc.custom_task_finance_lines || [];
+					cur_frm.doc.custom_task_finance_lines = merge_finance_lines_preserving_local_attachments(
+						cur_frm.doc.custom_task_finance_lines,
+						doc.custom_task_finance_lines
+					);
 					cur_frm.refresh_field("status");
 					cur_frm.refresh_field("custom_task_finance_lines");
 					cgm_configure_task_status_fields(cur_frm);
