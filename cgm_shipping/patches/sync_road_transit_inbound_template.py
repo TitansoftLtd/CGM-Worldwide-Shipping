@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+	ensure_payment_kinds,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 	ROAD_TRANSIT_INBOUND_TEMPLATE,
 )
@@ -40,6 +43,10 @@ def execute() -> None:
 		return
 	if not frappe.db.exists("CGM Task Template", ROAD_TRANSIT_INBOUND_TEMPLATE):
 		return
+
+	# Template rows Link to Payment Kind — seed masters before save (this patch
+	# runs before sync_task_template_behaviour, which also ensures them).
+	ensure_payment_kinds()
 
 	doc = frappe.get_doc("CGM Task Template", ROAD_TRANSIT_INBOUND_TEMPLATE)
 	rows = list(doc.get("tasks") or [])
