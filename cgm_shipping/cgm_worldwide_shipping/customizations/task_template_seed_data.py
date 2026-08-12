@@ -88,7 +88,7 @@ def sea_import_tasks() -> list[dict]:
 			"Declaration",
 			role="Application",
 			payment_kind="UCR",
-			required_docs="IDF CERT",
+			required_docs="IDF_CERT",
 		),
 		_row(
 			4,
@@ -236,7 +236,7 @@ def air_import_tasks() -> list[dict]:
 			depends=1,
 			role="Application",
 			payment_kind="UCR",
-			required_docs="IDF CERT",
+			required_docs="IDF_CERT",
 		),
 		_row(
 			3,
@@ -392,7 +392,7 @@ def road_transit_inbound_tasks() -> list[dict]:
 			depends=1,
 			role="Application",
 			payment_kind="UCR",
-			required_docs="IDF CERT",
+			required_docs="IDF_CERT",
 		),
 		_row(
 			3,

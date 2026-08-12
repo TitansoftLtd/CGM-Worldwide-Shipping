@@ -225,44 +225,131 @@ function cgm_configure_shipment_document_grid(grid, { initial_read_only = false 
 	cgm_apply_attach_view_formatters(grid, slot_fields);
 }
 
-function cgm_on_shipment_document_slot_change(frm, cdt, cdn) {
+function cgm_on_shipment_document_slot_change(frm, cdt, cdn, options = {}) {
 	const row = locals[cdt][cdn];
+	if (!row) {
+		return false;
+	}
 	const draft_field = cgm_draft_document_field();
 	const draft = (draft_field ? row[draft_field] : null) || "";
 	const final_file = row.final_attachment || "";
 	const has_slot_file = Boolean(final_file || draft);
+	let changed = false;
 
 	if (has_slot_file) {
 		if (!row.status || row.status === "Missing") {
 			frappe.model.set_value(cdt, cdn, "status", "Uploaded");
+			changed = true;
 		}
 		if (final_file) {
-			frappe.model.set_value(cdt, cdn, "version_status", "Final Received");
+			if (row.version_status !== "Final Received") {
+				frappe.model.set_value(cdt, cdn, "version_status", "Final Received");
+				changed = true;
+			}
 			if (
 				frappe.meta.get_docfield("Shipment Document", "final_document_status") &&
 				!row.final_document_status
 			) {
 				frappe.model.set_value(cdt, cdn, "final_document_status", "Draft");
+				changed = true;
 			}
-		} else if (draft) {
+		} else if (draft && row.version_status !== "Awaiting Final") {
 			frappe.model.set_value(cdt, cdn, "version_status", "Awaiting Final");
+			changed = true;
 		}
 		const primary = final_file || draft;
 		if (row.attachment !== primary) {
 			frappe.model.set_value(cdt, cdn, "attachment", primary);
+			changed = true;
 		}
-		return;
+		// Only autosave on a real user attach — never from refresh hydration
+		// (that caused Not Saved ↔ Saved loops with Completed banners).
+		if (options.autosave && changed) {
+			cgm_autosave_task_document_attachment(frm);
+		}
+		return changed;
 	}
 
 	// Both draft and final cleared — also clear the legacy attachment mirror so
 	// refresh/save cannot resurrect the file into Draft Document.
 	if (row.attachment) {
 		frappe.model.set_value(cdt, cdn, "attachment", "");
+		changed = true;
 	}
-	frappe.model.set_value(cdt, cdn, "status", "Missing");
-	frappe.model.set_value(cdt, cdn, "verified_by", "");
-	frappe.model.set_value(cdt, cdn, "verified_on", "");
-	frappe.model.set_value(cdt, cdn, "version_status", "");
+	if (row.status && row.status !== "Missing") {
+		frappe.model.set_value(cdt, cdn, "status", "Missing");
+		changed = true;
+	}
+	if (row.verified_by) {
+		frappe.model.set_value(cdt, cdn, "verified_by", "");
+		changed = true;
+	}
+	if (row.verified_on) {
+		frappe.model.set_value(cdt, cdn, "verified_on", "");
+		changed = true;
+	}
+	if (row.version_status) {
+		frappe.model.set_value(cdt, cdn, "version_status", "");
+		changed = true;
+	}
+	return changed;
+}
+
+function cgm_autosave_task_document_attachment(frm) {
+	// Persist Draft/Final document uploads immediately on Create UCR / clearance
+	// tasks so the cert gate can auto-complete (same pattern as finance-line attach).
+	if (!frm || frm.doctype !== "Task" || frm.is_new()) {
+		return;
+	}
+	if (frm._cgm_document_autosave_pending) {
+		return;
+	}
+	frm._cgm_document_autosave_pending = true;
+	frm.dirty();
+	const persist = () => {
+		if (frm._cgm_skip_document_autosave) {
+			clearTimeout(frm._cgm_document_autosave_retry);
+			frm._cgm_document_autosave_retry = setTimeout(() => {
+				if (!frm || frm.is_new()) {
+					frm._cgm_document_autosave_pending = false;
+					return;
+				}
+				persist();
+			}, 400);
+			return;
+		}
+		frappe.db.get_value("Task", frm.doc.name, "modified").then((r) => {
+			const latest = r?.message?.modified;
+			if (latest) {
+				frm.doc.modified = latest;
+			}
+			if (frm._cgm_skip_document_autosave) {
+				persist();
+				return;
+			}
+			if (!frm.is_dirty()) {
+				frm._cgm_document_autosave_pending = false;
+				return;
+			}
+			frm
+				.save()
+				.catch((e) => {
+					const msg = (e && (e.message || e)) || "";
+					if (String(msg).includes("modified after you have opened")) {
+						frappe.show_alert({
+							message: __("Document was updated elsewhere — refreshing…"),
+							indicator: "orange",
+						});
+						frm.reload_doc();
+					}
+				})
+				.finally(() => {
+					frm._cgm_document_autosave_pending = false;
+				});
+		});
+	};
+	clearTimeout(frm._cgm_document_autosave_timer);
+	frm._cgm_document_autosave_timer = setTimeout(persist, 350);
 }
 
 function cgm_sync_shipment_document_rows_on_refresh(frm, table_field) {
@@ -273,11 +360,17 @@ function cgm_sync_shipment_document_rows_on_refresh(frm, table_field) {
 	if (!cdt) {
 		return;
 	}
-	for (const row of frm.doc[table_field]) {
-		if (!row.name) {
-			continue;
+	// Hydrate row mirrors only — never autosave from refresh.
+	frm._cgm_skip_document_autosave = true;
+	try {
+		for (const row of frm.doc[table_field]) {
+			if (!row.name) {
+				continue;
+			}
+			cgm_on_shipment_document_slot_change(frm, cdt, row.name, { autosave: false });
 		}
-		cgm_on_shipment_document_slot_change(frm, cdt, row.name);
+	} finally {
+		frm._cgm_skip_document_autosave = false;
 	}
 }
 
@@ -295,10 +388,10 @@ frappe.ui.form.on("Shipment Document", {
 		);
 	},
 	draft_documents(frm, cdt, cdn) {
-		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
+		cgm_on_shipment_document_slot_change(frm, cdt, cdn, { autosave: true });
 	},
 	final_attachment(frm, cdt, cdn) {
-		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
+		cgm_on_shipment_document_slot_change(frm, cdt, cdn, { autosave: true });
 	},
 	attachment(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
@@ -313,7 +406,7 @@ frappe.ui.form.on("Shipment Document", {
 		) {
 			frappe.model.set_value(cdt, cdn, "final_attachment", row.attachment);
 		}
-		cgm_on_shipment_document_slot_change(frm, cdt, cdn);
+		cgm_on_shipment_document_slot_change(frm, cdt, cdn, { autosave: false });
 	},
 	status(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];

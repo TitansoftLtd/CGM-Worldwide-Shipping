@@ -2448,7 +2448,11 @@ function load_ucr_declarant_workflow_status(frm) {
 			}
 			frm._cgm_declarant_status = r.message;
 			frm._cgm_declarant_status_loaded = true;
-			if (r.message.task_status === "Completed" && frm.doc.status !== "Completed") {
+			if (
+				r.message.task_status === "Completed" &&
+				frm.doc.status !== "Completed" &&
+				!frm.is_dirty()
+			) {
 				frappe.show_alert({
 					message: __("Create UCR (IDF) task completed"),
 					indicator: "green",
@@ -2477,7 +2481,9 @@ function apply_ucr_application_intro(frm, status) {
 	}
 	status = status || {};
 	let intro;
-	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
+	// Form doc status wins — stale API task_status caused "Completed" banners while
+	// the form was still dirty / Open during document autosave loops.
+	if (frm.doc.status === "Completed") {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
 	} else if (status.client_paid_directly && !status.idf_certificate_attached) {
 		intro = __(
@@ -2485,7 +2491,7 @@ function apply_ucr_application_intro(frm, status) {
 				"Finance verifies the invoice and uploads the client's receipt. " +
 				"Attach the <b>IDF/UCR certificate</b> under <b>Clearance Documents</b> to complete this task."
 		);
-	} else if (status.application_ready_to_complete) {
+	} else if (status.application_ready_to_complete && !frm.is_dirty()) {
 		intro = __("<b>All declarant documents are in place.</b> Completing this task…");
 	} else if (status.receipt_attached && !status.idf_certificate_attached) {
 		intro = __(
