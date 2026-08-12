@@ -42,6 +42,10 @@ class TestTaskStatusSync(unittest.TestCase):
 		set_value.assert_called_once()
 
 	@patch(
+		"cgm_shipping.cgm_worldwide_shipping.customizations.task.finance_payment_task_ready_to_complete",
+		return_value=False,
+	)
+	@patch(
 		"cgm_shipping.cgm_worldwide_shipping.customizations.task.is_sea_finance_payment_task",
 		return_value=True,
 	)
@@ -53,6 +57,30 @@ class TestTaskStatusSync(unittest.TestCase):
 		task = MagicMock()
 		task.is_new.return_value = False
 		task.name = "TASK-STATUS-2"
+		task.status = "Open"
+		task.progress = 0
+		task.completed_by = None
+		task.completed_on = None
+		preserve_completed_status_against_stale_save(task)
+		self.assertEqual(task.status, "Completed")
+		self.assertEqual(task.progress, 100)
+
+	@patch(
+		"cgm_shipping.cgm_worldwide_shipping.customizations.task.finance_payment_task_ready_to_complete",
+		return_value=True,
+	)
+	@patch(
+		"cgm_shipping.cgm_worldwide_shipping.customizations.task.is_sea_finance_payment_task",
+		return_value=True,
+	)
+	@patch(
+		"cgm_shipping.cgm_worldwide_shipping.customizations.task.frappe.db.get_value",
+		return_value="Open",
+	)
+	def test_ready_finance_open_save_promotes_to_completed(self, *_mocks):
+		task = MagicMock()
+		task.is_new.return_value = False
+		task.name = "TASK-STATUS-3"
 		task.status = "Open"
 		task.progress = 0
 		task.completed_by = None

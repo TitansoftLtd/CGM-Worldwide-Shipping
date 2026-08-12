@@ -1487,22 +1487,50 @@ def get_document_type_link_name(code):
 	if not code:
 		return None
 
-	# 1. Prefer a match on the code field.
-	name = frappe.db.get_value("Document Type", {"code": code}, "name")
-	if name:
-		return name
+	raw = str(code).strip()
+	if not raw:
+		return None
 
-	# 2. Case-insensitive code match (settings may store INSPECT, master Inspect).
-	matched = frappe.db.sql(
-		"select name from `tabDocument Type` where upper(ifnull(code, '')) = %s limit 1",
-		(code.strip().upper(),),
-	)
-	if matched:
-		return matched[0][0]
+	# Try exact and common stamp variants ("IDF CERT" ↔ "IDF_CERT").
+	candidates = [raw]
+	spaced = raw.replace("_", " ")
+	underscored = raw.replace(" ", "_")
+	for variant in (spaced, underscored):
+		if variant not in candidates:
+			candidates.append(variant)
 
-	# 3. Fall back to using the code directly as the document name.
-	if frappe.db.exists("Document Type", code):
-		return code
+	for candidate in candidates:
+		# 1. Prefer a match on the code field.
+		name = frappe.db.get_value("Document Type", {"code": candidate}, "name")
+		if name:
+			return name
+
+		# 2. Case-insensitive code match (settings may store INSPECT, master Inspect).
+		matched = frappe.db.sql(
+			"select name from `tabDocument Type` where upper(ifnull(code, '')) = %s limit 1",
+			(candidate.upper(),),
+		)
+		if matched:
+			return matched[0][0]
+
+		# 3. Fall back to using the candidate directly as the document name.
+		if frappe.db.exists("Document Type", candidate):
+			return candidate
+
+	# 4. Compact alphanumeric match (IDF CERT → IDFCERT ↔ IDF_CERT).
+	compact = "".join(ch for ch in raw.upper() if ch.isalnum())
+	if compact:
+		matched = frappe.db.sql(
+			"""
+			select name from `tabDocument Type`
+			where replace(replace(upper(ifnull(code, '')), ' ', ''), '_', '') = %s
+			   or replace(replace(upper(name), ' ', ''), '_', '') = %s
+			limit 1
+			""",
+			(compact, compact),
+		)
+		if matched:
+			return matched[0][0]
 
 	return None
 

@@ -1428,6 +1428,9 @@ def prepare_application_task_tables(task, profile: ApplicationFinanceProfile) ->
 
 
 def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_stamped_required_document_types,
 		stamped_required_document_types_attached,
@@ -1442,7 +1445,7 @@ def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
 
 	for row in task.get(TASK_DOCUMENTS_FIELD) or []:
 		code = get_document_type_code(row.document_type)
-		if code in profile.legacy_certificate_codes and row.attachment:
+		if code in profile.legacy_certificate_codes and primary_attachment(row):
 			return True
 	return False
 

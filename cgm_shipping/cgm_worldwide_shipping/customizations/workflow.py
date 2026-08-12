@@ -2211,12 +2211,23 @@ def idf_certificate_uploaded(task) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		IDF_CERTIFICATE_CODES,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_document_type_code,
+		get_stamped_required_document_types,
+		stamped_required_document_types_attached,
 	)
 
+	# Prefer template stamp (handles "IDF CERT" vs "IDF_CERT" and draft/final slots).
+	if get_stamped_required_document_types(task):
+		return stamped_required_document_types_attached(task)
+
 	for row in task.get("custom_task_documents") or []:
-		if get_document_type_code(row.document_type) in IDF_CERTIFICATE_CODES and row.attachment:
+		if get_document_type_code(row.document_type) in IDF_CERTIFICATE_CODES and primary_attachment(
+			row
+		):
 			return True
 	return False
 
@@ -2366,9 +2377,18 @@ def sync_ucr_invoice_to_finance_task(project: str) -> str | None:
 		return None
 
 	finance_task = frappe.get_doc("Task", finance_name)
+	# Do not touch a settled finance task — incidental saves were overwriting
+	# Completed back to Open when a stale in-memory Open doc raced the write.
+	if finance_task.status == "Completed":
+		return finance_name
 	prepare_ucr_task_tables(finance_task)
 	finance_task.flags.ignore_links = True
 	try:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			preserve_completed_status_against_stale_save,
+		)
+
+		preserve_completed_status_against_stale_save(finance_task)
 		finance_task.save(ignore_permissions=True)
 	finally:
 		finance_task.flags.ignore_links = False
