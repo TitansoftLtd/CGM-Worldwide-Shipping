@@ -26,9 +26,19 @@ def get_task_form_permissions() -> dict[str, bool]:
 
 
 def send_notification(notification_name: str, doc, *, audience: str = "users") -> dict:
-	"""Fire a Custom Notification using recipients defined on the Notification doc."""
+	"""Fire a Custom Notification using recipients defined on the Notification doc.
+
+	``notification_name`` may be a seeded default; CGM Shipping Settings → Workflow
+	notifications can point the same event at a different Desk Notification.
+	"""
 	if not notification_name or not doc:
 		return {"notified": 0, "emails_sent": 0}
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_notifications import (
+		resolve_notification_name,
+	)
+
+	notification_name = resolve_notification_name(notification_name) or notification_name
 
 	if not frappe.db.exists("Notification", notification_name):
 		frappe.log_error(
@@ -61,15 +71,18 @@ def send_notification(notification_name: str, doc, *, audience: str = "users") -
 
 	recipient_count = len(notification.get("recipients") or [])
 
-	# Prefer shipment business name (e.g. LJL-2606-0635 / 4X40 / 30) over Project ID.
-	try:
-		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
-			stamp_shipment_name_on_doc,
-		)
+	# Prefer company shipment name (e.g. LJL-2607-0650 / 0X0 / 6) over PROJ-####.
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+		stamp_shipment_name_on_doc,
+	)
 
+	try:
 		stamp_shipment_name_on_doc(doc)
 	except Exception:
-		pass
+		frappe.log_error(
+			title="CGM shipment name stamp failed",
+			message=frappe.get_traceback(),
+		)
 
 	try:
 		notification.send(doc)

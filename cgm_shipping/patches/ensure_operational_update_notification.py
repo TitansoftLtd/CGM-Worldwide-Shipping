@@ -35,7 +35,9 @@ def execute() -> None:
 		"<p><b>Source:</b> {{ doc.update_source }}</p>"
 		"<p><b>Subject:</b> {{ doc.subject }}</p>"
 		"<p><b>Message:</b> {{ doc.message or '—' }}</p>"
-		"<p><b>Shipment:</b> {{ doc.project or '—' }}</p>"
+		"<p><b>Shipment:</b> {{ doc.get('cgm_shipment_name') "
+		"or (frappe.db.get_value('Project', doc.project, 'project_name') if doc.project else None) "
+		"or doc.project or '—' }}</p>"
 	)
 	notification.append("recipients", {"receiver_by_role": "Transport Officer"})
 	notification.append("recipients", {"receiver_by_role": "Operations Manager"})

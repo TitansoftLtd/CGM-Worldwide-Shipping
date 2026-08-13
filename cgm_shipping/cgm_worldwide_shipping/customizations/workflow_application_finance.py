@@ -210,9 +210,18 @@ def auto_submit_application_invoice_to_finance_if_needed(
 def notify_finance_upload_application_receipt(
 	task, profile: ApplicationFinanceProfile
 ) -> dict:
-	"""After payment: prompt Finance to attach the receipt on this finance task."""
+	"""After Journal Entry payment: notify Upload Receipt owners from Settings."""
 	if not is_application_payment_task_doc(task, profile):
 		return {"notified": 0}
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		FLOW_ENTRY,
+		FLOW_KPA,
+		FLOW_SHIPPING_LINE,
+		FLOW_UCR,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+		audience_label_for_receipt_upload,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		task_has_recorded_payment,
 	)
@@ -227,10 +236,22 @@ def notify_finance_upload_application_receipt(
 			title=f"{profile.receipt_label} seeding failed",
 			message=f"Could not seed finance lines on {task.name}: {frappe.get_traceback()}",
 		)
+
+	flow_by_key = {
+		"ucr": FLOW_UCR,
+		"entry": FLOW_ENTRY,
+		"shipping_line": FLOW_SHIPPING_LINE,
+		"kpa": FLOW_KPA,
+	}
+	flow = flow_by_key.get(profile.key, FLOW_UCR)
+	audience = audience_label_for_receipt_upload(flow)
+	if profile.requires_pop:
+		audience = "Finance / Documentation"
+
 	result = send_notification(
 		profile.notification_receipt_declarant,
 		task,
-		audience=FINANCE_AUDIENCE,
+		audience=audience,
 	)
 	label = profile.pop_label if profile.requires_pop else profile.receipt_label
 	return {
@@ -238,14 +259,14 @@ def notify_finance_upload_application_receipt(
 		"task": task.name,
 		"task_url": get_url(f"/app/task/{task.name}"),
 		"message": workflow_notify_message(
-			f"Finance notified to attach <b>{label}</b> when available.",
+			f"{audience} notified to attach <b>{label}</b> when available.",
 			result,
-			audience=FINANCE_AUDIENCE,
+			audience=audience,
 		),
 	}
 
 
-# Backward-compatible alias — receipt upload is now Finance-owned.
+# Alias kept for call sites; recipients follow Document responsibilities.
 notify_declarant_upload_application_receipt = notify_finance_upload_application_receipt
 
 
@@ -472,12 +493,9 @@ def validate_finance_application_payment_task(
 		frappe.throw(
 			f"Finance must tick <b>Verified by Finance</b> on the <b>{profile.invoice_label}</b> row."
 		)
-	task_fields = frappe.get_meta("Task")
-	if task_fields.has_field("custom_purchase_invoice") and not task.get("custom_purchase_invoice"):
-		frappe.throw("Create and submit a <b>Purchase Invoice</b> from this task before completion.")
 	if not task_has_recorded_payment(task):
 		frappe.throw(
-			"Record payment via <b>Make Payment</b> (Journal Entry) or <b>Payment Entry</b> "
+			"Record payment via <b>Make Payment</b> (Journal Entry) "
 			"before completion, or tick <b>Client will pay</b> if the client settles it."
 		)
 	if task.get("custom_payment_entry"):

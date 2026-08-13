@@ -26,6 +26,8 @@
   "inspection_reminder_hours",
   "portal_url",
   "ops_notification_email",
+  "section_workflow_notifications",
+  "custom_workflow_notifications",
   "roles_tab",
   "section_roles",
   "custom_finance_roles",
@@ -419,6 +421,18 @@
    "fieldname": "ops_notification_email",
    "fieldtype": "Data",
    "label": "Operations Notification Email"
+  },
+  {
+   "description": "Map each clearance handoff to an ERPNext Notification. Seeded defaults are create-if-missing only — edit subject/message/recipients on the Notification in Desk, or create a new Notification and select it here. Migrates never overwrite Desk Notification content.",
+   "fieldname": "section_workflow_notifications",
+   "fieldtype": "Section Break",
+   "label": "Workflow notifications"
+  },
+  {
+   "fieldname": "custom_workflow_notifications",
+   "fieldtype": "Table",
+   "label": "Workflow notifications",
+   "options": "CGM Workflow Notification Item"
   }
  ],
  "grid_page_length": 50,
