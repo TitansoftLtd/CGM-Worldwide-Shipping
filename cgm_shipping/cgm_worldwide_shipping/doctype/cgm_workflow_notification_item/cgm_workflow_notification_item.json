@@ -1,0 +1,53 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-13 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow_event",
+  "notification",
+  "notes"
+ ],
+ "fields": [
+  {
+   "description": "Built-in clearance handoff. Code fires this event; change Notification to use a Desk Notification you created.",
+   "fieldname": "workflow_event",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Workflow Event",
+   "options": "Finance Payment Action\nPermit Invoices to Finance\nPermit Receipts Attach\nPermit Receipts Verify\nUCR Invoice to Finance\nUCR Receipt Attach\nUCR Receipt Verify\nEntry Invoice to Finance\nEntry Receipt Attach\nEntry Receipt Verify\nShipping Line Invoice to Finance\nShipping Line Receipt Attach\nShipping Line Receipt Verify\nKPA Invoice to Finance\nKPA Receipt Attach\nKPA Receipt Verify\nYour Turn Finance\nYour Turn Declaration\nYour Turn Documentation\nYour Turn Operations\nYour Turn Transport\nDaily Status RAG Alert\nOperational Update",
+   "reqd": 1
+  },
+  {
+   "description": "ERPNext Notification to send. Create a new Notification in Desk, then select it here to replace the seeded default.",
+   "fieldname": "notification",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Notification",
+   "options": "Notification",
+   "reqd": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Notes"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "CGM Workflow Notification Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}
