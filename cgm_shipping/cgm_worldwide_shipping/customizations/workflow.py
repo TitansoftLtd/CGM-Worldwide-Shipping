@@ -1378,29 +1378,37 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 
 
 def notify_finance_upload_permit_receipts(task) -> dict:
-	"""After payment: prompt Finance to attach permit receipts on this finance task."""
+	"""After Journal Entry payment: prompt Upload Receipt owners (Settings → Declaration)."""
 	if not is_permit_finance_payment_task(task_sequence(task)):
 		return {"notified": 0}
 	if not task_has_recorded_payment(task):
 		return {"notified": 0}
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		FLOW_PERMIT,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+		audience_label_for_receipt_upload,
+	)
+
+	audience = audience_label_for_receipt_upload(FLOW_PERMIT)
 	result = send_notification(
 		PERMIT_RECEIPTS_FOR_DECLARANT,
 		task,
-		audience=FINANCE_AUDIENCE,
+		audience=audience,
 	)
 	return {
 		**result,
 		"task": task.name,
 		"task_url": get_url(f"/app/task/{task.name}"),
 		"message": workflow_notify_message(
-			"Finance notified to attach permit payment receipts when available.",
+			f"{audience} notified to attach permit payment receipts when available.",
 			result,
-			audience=FINANCE_AUDIENCE,
+			audience=audience,
 		),
 	}
 
 
-# Backward-compatible alias — receipt upload is now Finance-owned.
+# Alias: Settings assign Upload Receipt to Declaration (Declarant).
 notify_declarant_upload_permit_receipts = notify_finance_upload_permit_receipts
 
 
@@ -2503,12 +2511,18 @@ def submit_ucr_invoice_to_finance(task_name: str) -> dict:
 
 
 def notify_finance_upload_ucr_receipt(task) -> dict:
-	"""After payment: prompt Finance to attach the UCR receipt on this finance task."""
+	"""After Journal Entry payment: prompt Upload Receipt owners (Settings → Declaration)."""
 	if not is_ucr_payment_task_doc(task):
 		return {"notified": 0}
 	if not task_has_recorded_payment(task):
 		return {"notified": 0}
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		FLOW_UCR,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+		audience_label_for_receipt_upload,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import seed_ucr_finance_lines
 
 	seed_ucr_finance_lines(task)
@@ -2520,24 +2534,25 @@ def notify_finance_upload_ucr_receipt(task) -> dict:
 			message=f"Could not seed UCR finance lines on {task.name}: {frappe.get_traceback()}",
 		)
 
+	audience = audience_label_for_receipt_upload(FLOW_UCR)
 	result = send_notification(
 		UCR_RECEIPT_FOR_DECLARANT,
 		task,
-		audience=FINANCE_AUDIENCE,
+		audience=audience,
 	)
 	return {
 		**result,
 		"task": task.name,
 		"task_url": get_url(f"/app/task/{task.name}"),
 		"message": workflow_notify_message(
-			"Finance notified to attach the UCR Receipt when available.",
+			f"{audience} notified to attach the UCR Receipt when available.",
 			result,
-			audience=FINANCE_AUDIENCE,
+			audience=audience,
 		),
 	}
 
 
-# Backward-compatible aliases — receipt upload is now Finance-owned.
+# Alias: Settings assign UCR Upload Receipt to Declaration (Declarant).
 notify_declarant_upload_ucr_receipt = notify_finance_upload_ucr_receipt
 notify_operations_upload_ucr_receipt = notify_finance_upload_ucr_receipt
 
@@ -2717,9 +2732,6 @@ def validate_finance_ucr_payment_task(task) -> None:
 			"Finance must tick <b>Verified by Finance</b> on the <b>UCR Invoice</b> row."
 		)
 
-	task_fields = frappe.get_meta("Task")
-	if task_fields.has_field("custom_purchase_invoice") and not task.get("custom_purchase_invoice"):
-		frappe.throw("Create and submit a <b>Purchase Invoice</b> from this task before completion.")
 	if not task_has_recorded_payment(task):
 		frappe.throw(
 			"Record payment via <b>Make Payment</b> (Journal Entry) before completion, "

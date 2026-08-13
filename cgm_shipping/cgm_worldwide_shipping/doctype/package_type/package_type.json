@@ -22,7 +22,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-07-21 17:51:11.069529",
+ "modified": "2026-08-13 06:28:48.050724",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Package Type",
@@ -38,8 +38,30 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
    "share": 1,
    "write": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "CGM Documentation",
+   "select": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Operations Manager",
+   "select": 1
+  },
+  {
+   "read": 1,
+   "role": "All",
+   "select": 1
   }
  ],
  "row_format": "Dynamic",

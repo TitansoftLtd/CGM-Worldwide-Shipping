@@ -2176,14 +2176,16 @@ def validate_finance_task(task) -> None:
 			"before completing this finance task."
 		)
 
-	task_fields = frappe.get_meta("Task")
-	if task_fields.has_field("custom_purchase_invoice") and not task.get("custom_purchase_invoice"):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+		task_has_recorded_payment,
+	)
+
+	# Sea finance payments use Make Payment → Journal Entry (not Purchase Invoice).
+	if not task_client_paid_directly(task) and not task_has_recorded_payment(task):
 		frappe.throw(
-			"Create and submit a <b>Purchase Invoice</b> from this task before completion."
-		)
-	if task_fields.has_field("custom_payment_entry") and not task.get("custom_payment_entry"):
-		frappe.throw(
-			"Record payment via <b>Make Payment</b> and submit the <b>Payment Entry</b> before completion."
+			"Record payment via <b>Make Payment</b> (Journal Entry) before completion, "
+			"or tick <b>Client will pay</b> if the client settles it."
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")

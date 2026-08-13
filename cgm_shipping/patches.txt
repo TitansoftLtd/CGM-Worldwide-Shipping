@@ -39,6 +39,10 @@ cgm_shipping.patches.migrate_ucr_permit_receipt_upload_to_declaration
 cgm_shipping.patches.migrate_strict_department_task_visibility
 cgm_shipping.patches.backfill_finance_line_journal_entries
 cgm_shipping.patches.ensure_sea_task_notifications
+cgm_shipping.patches.sync_receipt_notification_recipients
+cgm_shipping.patches.sync_notification_shipment_display_name
+cgm_shipping.patches.ensure_workflow_notification_settings
+cgm_shipping.patches.ensure_cargo_master_select_permissions
 cgm_shipping.patches.sync_road_transit_inbound_template
 # Clearance charge seed/repair + sea requirement reseed live in install.after_migrate
 # (repair_clearance_charge_item_setup / seed_cgm_shipping_settings) — do not re-add
