@@ -228,19 +228,16 @@
    "label": "ATA / Berthing Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "section_mombasa",
    "fieldtype": "Section Break",
    "label": "Mombasa Port"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "discharging_date",
    "fieldtype": "Date",
    "label": "Gate In Mombasa"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "custom_release_date",
    "fieldtype": "Date",
    "label": "Custom Release Date"
@@ -250,7 +247,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Mombasa')",
    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
    "label": "Gate Out Mombasa"
@@ -263,7 +259,6 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('ICD')",
    "fieldname": "section_icd",
    "fieldtype": "Section Break",
    "label": "ICD"
@@ -279,7 +274,6 @@
    "label": "Gate Out ICD"
   },
   {
-   "depends_on": "eval:doc.container_mode && (doc.container_mode.includes('Mombasa') || doc.container_mode.includes('ICD') || doc.container_mode.includes('Transit') || doc.container_mode.includes('Export'))",
    "fieldname": "section_transport",
    "fieldtype": "Section Break",
    "label": "Transport"
@@ -306,7 +300,6 @@
    "options": "Supplier"
   },
   {
-   "depends_on": "eval:doc.container_mode && (doc.container_mode.includes('Mombasa') || doc.container_mode.includes('ICD') || doc.container_mode.includes('Transit'))",
    "fieldname": "section_warehouse",
    "fieldtype": "Section Break",
    "label": "Warehouse"
@@ -322,183 +315,152 @@
    "label": "Offloading Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "warehouse_loading_date",
    "fieldtype": "Date",
    "label": "Warehouse Loading Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "section_transit",
    "fieldtype": "Section Break",
    "label": "Transit"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "release_order_number",
    "fieldtype": "Data",
    "label": "KPA Release Order No."
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "release_order_date",
    "fieldtype": "Date",
    "label": "Release Order Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "column_break_transit_ro",
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "kpa_booking_reference",
    "fieldtype": "Data",
    "label": "KPA Truck Booking Ref"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "loading_slip_number",
    "fieldtype": "Data",
    "label": "Loading Slip Number"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "loading_slip_date",
    "fieldtype": "Date",
    "label": "Loading Slip Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "delivery_note_number",
    "fieldtype": "Data",
    "label": "Delivery Note Number"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "delivery_note_date",
    "fieldtype": "Date",
    "label": "Delivery Note Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "c2_number",
    "fieldtype": "Data",
    "label": "C2 Number"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "c2_date",
    "fieldtype": "Date",
    "label": "C2 Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "column_break_transit_c2",
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "exit_note_number",
    "fieldtype": "Data",
    "label": "Exit Note Number"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "exit_note_date",
    "fieldtype": "Date",
    "label": "Exit Note Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "transit_departure_date",
    "fieldtype": "Date",
    "label": "Transit Departure Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "border_post",
    "fieldtype": "Data",
    "label": "Border Post"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "border_clearance_date",
    "fieldtype": "Date",
    "label": "Border Clearance Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "uganda_release_date",
    "fieldtype": "Date",
    "label": "Destination Country Release Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Transit')",
    "fieldname": "transit_gate_in_date",
    "fieldtype": "Date",
    "label": "Transit Gate In Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "section_export",
    "fieldtype": "Section Break",
    "label": "Export"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "port_entry_date",
    "fieldtype": "Date",
    "label": "Port Entry Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "stuffing_date",
    "fieldtype": "Date",
    "label": "Stuffing Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "column_break_export",
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "mother_entry_number",
    "fieldtype": "Data",
    "label": "Mother Entry Number"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "child_entry_number",
    "fieldtype": "Data",
    "label": "Child Entry Number"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "armed_date",
    "fieldtype": "Date",
    "label": "Armed / Sealed Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "column_break_export_sail",
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "sailing_date",
    "fieldtype": "Date",
    "label": "Sailing Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "coe_date",
    "fieldtype": "Date",
    "label": "Certificate of Export Date"
   },
   {
-   "depends_on": "eval:doc.container_mode && doc.container_mode.includes('Export')",
    "fieldname": "coe_document",
    "fieldtype": "Attach",
    "label": "Certificate of Export"
@@ -515,7 +477,7 @@
    "label": "Shipping Line Free Day Start Date"
   },
   {
-   "description": "Last shipping-line free day \u2014 demurrage/detention starts the day after",
+   "description": "Last shipping-line free day — demurrage/detention starts the day after",
    "fieldname": "free_days_end_date",
    "fieldtype": "Date",
    "label": "Shipping Line Free Day End Date"
@@ -555,7 +517,7 @@
    "label": "KPA Free Day Start Date"
   },
   {
-   "description": "Last KPA free day \u2014 KPA storage charges start the day after",
+   "description": "Last KPA free day — KPA storage charges start the day after",
    "fieldname": "kpa_free_days_end_date",
    "fieldtype": "Date",
    "label": "KPA Free Day End Date"
@@ -574,7 +536,6 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.container_mode && (doc.container_mode.includes('Mombasa') || doc.container_mode.includes('ICD'))",
    "fieldname": "section_empty_return",
    "fieldtype": "Section Break",
    "label": "Empty Return & Interchange"
@@ -701,7 +662,7 @@
    "label": "Get In Mombasa"
   },
   {
-   "description": "First chargeable day \u2014 the day after Shipping Line Free Day End Date",
+   "description": "First chargeable day — the day after Shipping Line Free Day End Date",
    "fieldname": "demurrage_start_date",
    "fieldtype": "Date",
    "label": "Demurrage Start Date",
@@ -719,7 +680,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-30 12:42:07.345262",
+ "modified": "2026-08-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",
