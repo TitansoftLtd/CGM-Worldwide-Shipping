@@ -1,0 +1,164 @@
+{
+ "actions": [],
+ "creation": "2026-08-14 12:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "material_request",
+  "employee",
+  "employee_name",
+  "item_summary",
+  "purpose",
+  "column_break_mid",
+  "project",
+  "status",
+  "description",
+  "amounts_section",
+  "requested_amount",
+  "approved_amount",
+  "column_break_amt",
+  "reduction_amount",
+  "funded_amount",
+  "reduction_reason"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "material_request",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Material Request",
+   "options": "Material Request",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "material_request.custom_employee",
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fetch_from": "employee.employee_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Requester",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 2,
+   "fieldname": "item_summary",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Items",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fetch_from": "material_request.custom_purpose",
+   "fieldname": "purpose",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "in_list_view": 0,
+   "label": "Purpose (legacy)",
+   "options": "Material Request Purpose",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_mid",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "material_request.custom_project",
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_list_view": 0,
+   "label": "Project / Shipment",
+   "options": "Project",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fetch_from": "material_request.workflow_state",
+   "fieldname": "status",
+   "fieldtype": "Link",
+   "in_list_view": 0,
+   "label": "Status",
+   "options": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "material_request.custom_request_description",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amounts_section",
+   "fieldtype": "Section Break",
+   "label": "Amounts"
+  },
+  {
+   "columns": 1,
+   "description": "Original amount from Material Request Items. Never overwritten by approval.",
+   "fieldname": "requested_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Requested Amount",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 0,
+   "columns": 1,
+   "description": "Stays 0 until the Director approves. Leave 0 to approve the requested amount in full. Enter a lower amount to reduce.",
+   "fieldname": "approved_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Approved Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_amt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reduction_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 0,
+   "label": "Reduction Amount",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "funded_amount",
+   "fieldtype": "Currency",
+   "label": "Funded Amount",
+   "read_only": 1
+  },
+  {
+   "description": "Required when the Director approves less than the requested amount.",
+   "fieldname": "reduction_reason",
+   "fieldtype": "Small Text",
+   "label": "Reduction Reason"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-17 07:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Funding Request Material Request",
+ "owner": "Administrator",
+ "permissions": [],
+ "rows_threshold_for_grid_search": 999,
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

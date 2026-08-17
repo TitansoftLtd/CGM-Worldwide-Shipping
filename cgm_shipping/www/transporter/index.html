@@ -70,7 +70,7 @@
       <div class="cp-avatar" aria-hidden="true">{{ (first_name or "?")[0]|upper }}</div>
       <div style="flex:1; min-width:0;">
         <h1>{{ _("Transporter Portal") }}</h1>
-        <p class="cp-sub">{{ _("Manage container allocations, truck assignments, and interchange receipts.") }}</p>
+        <p class="cp-sub">{{ _("Manage container allocations, truck assignments, interchange receipts, and invoices from CGM.") }}</p>
         {% if is_transporter %}
         <span class="cp-chip"><span class="dot"></span>{{ transporter_name }}</span>
         {% endif %}
@@ -128,9 +128,27 @@
         <div class="cp-kpi-label">{{ _("Completed Jobs") }}</div>
       </div>
     </button>
+    <a class="cp-kpi rose" href="/transporter/invoices" aria-label="{{ _('View invoices from CGM') }}">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ frappe.utils.fmt_money(stat_outstanding_amount|default(0), currency=invoice_currency) }}</div>
+        <div class="cp-kpi-label">{{ _("CGM owes you") }}</div>
+      </div>
+    </a>
   </section>
 
   <nav class="cp-actions" style="margin-bottom:1.5rem;">
+    <a class="cp-action" href="/transporter/invoices">
+      <span class="cp-action-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>
+      </span>
+      <div>
+        <h3>{{ _("Invoices from CGM") }}</h3>
+        <p>{{ _("See what CGM owes you, and which invoices have been paid.") }}</p>
+      </div>
+    </a>
     <a class="cp-action" href="/transporter/profile">
       <span class="cp-action-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>

@@ -1,0 +1,140 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/portal_localize.html" import local_date %}
+
+{% block title %}{{ _("Invoices from CGM") }}{% endblock %}
+
+{% block page_content %}
+<div class="cp-page">
+  <p><a class="cp-back" href="/transporter">&larr; {{ _("Back to allocations") }}</a></p>
+
+  {% if error_message %}
+  <div class="cp-banner-error">
+    <h4>{{ error_title or _("Something went wrong") }}</h4>
+    <p>{{ error_message }}</p>
+  </div>
+  {% elif is_transporter %}
+
+  <section class="cp-hero">
+    <h1>{{ _("Invoices from CGM") }}</h1>
+    <p class="cp-sub">{{ _("Purchase invoices CGM has shared with you. Outstanding amounts are what CGM still owes you.") }}</p>
+    <span class="cp-chip"><span class="dot"></span>{{ transporter_name }}</span>
+  </section>
+
+  <section class="cp-kpis" aria-label="{{ _('Invoice summary') }}">
+    <button type="button" class="cp-kpi rose" data-cp-tab="outstanding">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ frappe.utils.fmt_money(stat_outstanding_amount|default(0), currency=currency) }}</div>
+        <div class="cp-kpi-label">{{ _("CGM owes you") }}</div>
+      </div>
+    </button>
+    <button type="button" class="cp-kpi amber" data-cp-tab="outstanding">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_outstanding_count|default(0) }}</div>
+        <div class="cp-kpi-label">{{ _("Unpaid invoices") }}</div>
+      </div>
+    </button>
+    <button type="button" class="cp-kpi green" data-cp-tab="paid">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_paid_count|default(0) }}</div>
+        <div class="cp-kpi-label">{{ _("Paid invoices") }}</div>
+      </div>
+    </button>
+  </section>
+
+  {% if stat_outstanding_amount and stat_outstanding_amount > 0 %}
+  <div class="cp-alert">
+    <div class="icon">!</div>
+    <div>
+      <h4>{{ _("CGM owes you") }}: {{ frappe.utils.fmt_money(stat_outstanding_amount, currency=currency) }}</h4>
+      <p>{{ _("This is the unpaid balance on invoices CGM has shared with you. It will show as Paid after CGM records payment.") }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="cp-card">
+    <div class="cp-card-tabbar" role="tablist" aria-label="{{ _('Invoice status') }}">
+      <button type="button" class="cp-card-tab active" role="tab" id="tp-inv-tab-outstanding" aria-selected="true" aria-controls="tp-inv-panel-outstanding" data-cp-tab="outstanding">
+        <span>{{ _("Unpaid") }}</span>
+        <span class="cp-card-tab-badge">{{ stat_outstanding_count|default(0) }}</span>
+      </button>
+      <button type="button" class="cp-card-tab" role="tab" id="tp-inv-tab-paid" aria-selected="false" aria-controls="tp-inv-panel-paid" data-cp-tab="paid">
+        <span>{{ _("Paid") }}</span>
+        <span class="cp-card-tab-badge">{{ stat_paid_count|default(0) }}</span>
+      </button>
+    </div>
+
+    <div class="cp-tab-panel active" role="tabpanel" id="tp-inv-panel-outstanding" aria-labelledby="tp-inv-tab-outstanding">
+      {% if outstanding_invoices %}
+      {% with invoice_rows = outstanding_invoices %}
+      {% include "templates/includes/transporter_invoice_table.html" %}
+      {% endwith %}
+      {% else %}
+      <div class="cp-empty" style="border:none;">
+        <div class="cp-empty-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        </div>
+        <p>{{ _("CGM does not currently owe you on any shared invoices.") }}</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="cp-tab-panel" role="tabpanel" id="tp-inv-panel-paid" aria-labelledby="tp-inv-tab-paid" hidden>
+      {% if paid_invoices %}
+      {% with invoice_rows = paid_invoices %}
+      {% include "templates/includes/transporter_invoice_table.html" %}
+      {% endwith %}
+      {% else %}
+      <div class="cp-empty" style="border:none;">
+        <div class="cp-empty-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>
+        </div>
+        <p>{{ _("No paid invoices yet.") }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var panels = {
+      outstanding: document.getElementById("tp-inv-panel-outstanding"),
+      paid: document.getElementById("tp-inv-panel-paid"),
+    };
+    function showTab(name) {
+      if (!panels[name]) return;
+      document.querySelectorAll(".cp-card-tab").forEach(function (el) {
+        var on = el.getAttribute("data-cp-tab") === name;
+        el.classList.toggle("active", on);
+        el.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      Object.keys(panels).forEach(function (key) {
+        var on = key === name;
+        panels[key].classList.toggle("active", on);
+        panels[key].hidden = !on;
+      });
+      if (history.replaceState) {
+        history.replaceState(null, "", name === "paid" ? "?tab=paid" : window.location.pathname);
+      }
+    }
+    document.querySelectorAll("[data-cp-tab]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        showTab(el.getAttribute("data-cp-tab"));
+      });
+    });
+    var initial = new URLSearchParams(window.location.search).get("tab");
+    if (initial === "paid") showTab("paid");
+    else if (!{{ stat_outstanding_count|default(0) }} && {{ stat_paid_count|default(0) }}) showTab("paid");
+  })();
+  </script>
+  {% endif %}
+</div>
+{% endblock %}

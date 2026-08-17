@@ -1,0 +1,43 @@
+{
+ "custom_fields": [
+  {
+   "allow_on_submit": 0,
+   "dt": "Employee Advance",
+   "fieldname": "custom_material_request",
+   "fieldtype": "Link",
+   "insert_after": "purpose",
+   "in_standard_filter": 1,
+   "label": "Material Request",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Advance-custom_material_request",
+   "options": "Material Request"
+  },
+  {
+   "dt": "Employee Advance",
+   "fieldname": "custom_funding_request",
+   "fieldtype": "Link",
+   "insert_after": "custom_material_request",
+   "in_standard_filter": 1,
+   "label": "Funding Request",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Advance-custom_funding_request",
+   "options": "Funding Request"
+  },
+  {
+   "dt": "Employee Advance",
+   "fieldname": "custom_project",
+   "fieldtype": "Link",
+   "insert_after": "custom_funding_request",
+   "in_standard_filter": 1,
+   "label": "Project / Shipment",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Advance-custom_project",
+   "options": "Project"
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "Employee Advance",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}

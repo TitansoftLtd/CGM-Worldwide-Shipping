@@ -131,6 +131,108 @@
    "translatable": 0,
    "unique": 0,
    "width": null
+  },
+  {
+   "dt": "Material Request",
+   "fieldname": "custom_employee",
+   "fieldtype": "Link",
+   "insert_after": "custom_requested_by_name",
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-custom_employee",
+   "options": "Employee"
+  },
+  {
+   "description": "Historical classification. New requests use Item on the Items table.",
+   "dt": "Material Request",
+   "fieldname": "custom_purpose",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "insert_after": "custom_employee",
+   "in_list_view": 0,
+   "in_standard_filter": 0,
+   "label": "Purpose (legacy)",
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-custom_purpose",
+   "options": "Material Request Purpose",
+   "read_only": 1
+  },
+  {
+   "dt": "Material Request",
+   "fieldname": "custom_request_description",
+   "fieldtype": "Small Text",
+   "insert_after": "custom_purpose",
+   "label": "Request Description",
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-custom_request_description"
+  },
+  {
+   "dt": "Material Request",
+   "fieldname": "custom_project",
+   "fieldtype": "Link",
+   "insert_after": "custom_request_description",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project / Shipment",
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-custom_project",
+   "options": "Project"
+  },
+  {
+   "description": "Historical header total. Requested amount is now sum(Items.amount).",
+   "dt": "Material Request",
+   "fieldname": "custom_requested_amount",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "insert_after": "custom_project",
+   "in_list_view": 0,
+   "label": "Requested Amount (legacy)",
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-custom_requested_amount",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "dt": "Material Request",
+   "fieldname": "custom_approved_amount",
+   "fieldtype": "Currency",
+   "insert_after": "custom_requested_amount",
+   "label": "Approved Amount",
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-custom_approved_amount",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "dt": "Material Request",
+   "fieldname": "custom_funding_request",
+   "fieldtype": "Link",
+   "insert_after": "custom_approved_amount",
+   "in_standard_filter": 1,
+   "label": "Funding Request",
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-custom_funding_request",
+   "no_copy": 1,
+   "options": "Funding Request",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Replaced by standard workflow_state on Material Request.",
+   "dt": "Material Request",
+   "fieldname": "custom_funding_status",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "insert_after": "custom_funding_request",
+   "in_standard_filter": 0,
+   "label": "Funding Status (legacy)",
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-custom_funding_status",
+   "no_copy": 1,
+   "options": "Workflow State",
+   "read_only": 1
   }
  ],
  "custom_perms": [],
@@ -158,7 +260,7 @@
    "property": "field_order",
    "property_type": "Data",
    "row_name": null,
-   "value": "[\"type_section\", \"naming_series\", \"title\", \"material_request_type\", \"customer\", \"company\", \"auto_created_via_reorder\", \"custom_requested_by\", \"custom_requested_by_name\", \"column_break_2\", \"transaction_date\", \"schedule_date\", \"buying_price_list\", \"amended_from\", \"warehouse_section\", \"scan_barcode\", \"last_scanned_warehouse\", \"column_break5\", \"set_from_warehouse\", \"set_warehouse\", \"items_section\", \"items\", \"terms_tab\", \"terms_section_break\", \"tc_name\", \"terms\", \"more_info_tab\", \"status_section\", \"status\", \"per_ordered\", \"column_break2\", \"transfer_status\", \"per_received\", \"printing_details\", \"letter_head\", \"column_break_31\", \"select_print_heading\", \"reference\", \"job_card\", \"column_break_35\", \"work_order\", \"connections_tab\"]"
+   "value": "[\"type_section\", \"naming_series\", \"title\", \"material_request_type\", \"customer\", \"company\", \"auto_created_via_reorder\", \"custom_requested_by\", \"custom_requested_by_name\", \"custom_employee\", \"custom_purpose\", \"custom_request_description\", \"column_break_2\", \"transaction_date\", \"schedule_date\", \"buying_price_list\", \"custom_project\", \"custom_requested_amount\", \"custom_approved_amount\", \"custom_funding_request\", \"custom_funding_status\", \"amended_from\", \"warehouse_section\", \"scan_barcode\", \"last_scanned_warehouse\", \"column_break5\", \"set_from_warehouse\", \"set_warehouse\", \"items_section\", \"items\", \"terms_tab\", \"terms_section_break\", \"tc_name\", \"terms\", \"more_info_tab\", \"status_section\", \"status\", \"per_ordered\", \"column_break2\", \"transfer_status\", \"per_received\", \"printing_details\", \"letter_head\", \"column_break_31\", \"select_print_heading\", \"reference\", \"job_card\", \"column_break_35\", \"work_order\", \"connections_tab\"]"
   },
   {
    "_assign": null,
@@ -182,6 +284,17 @@
    "property_type": "Check",
    "row_name": null,
    "value": "0"
+  },
+  {
+   "doc_type": "Material Request",
+   "doctype_or_field": "DocField",
+   "field_name": "material_request_type",
+   "is_system_generated": 0,
+   "module": "CGM Worldwide Shipping",
+   "name": "Material Request-material_request_type-label",
+   "property": "label",
+   "property_type": "Data",
+   "value": "Request Type"
   }
  ],
  "sync_on_migrate": 1
