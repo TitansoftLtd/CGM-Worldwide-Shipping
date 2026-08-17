@@ -52,6 +52,7 @@ def after_migrate() -> None:
 		("finance cost ledger schema", ensure_finance_cost_ledger_schema),
 		("transporter portal setup", ensure_transporter_portal_setup),
 		("task workflow masters", ensure_task_workflow_masters),
+		("funding request setup", ensure_funding_request_setup),
 	):
 		try:
 			fn()
@@ -87,12 +88,26 @@ def ensure_task_workflow_masters() -> None:
 	frappe.db.commit()
 
 
+def ensure_funding_request_setup() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+		ensure_funding_request_setup as _ensure,
+	)
+
+	_ensure()
+	frappe.db.commit()
+
+
 def ensure_transporter_portal_setup() -> None:
 	"""Role, portal menu, and portal user accounts for transporter suppliers."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.transporter_invoice_share import (
+		ensure_transporter_invoice_share_fields,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.transporter_supplier import (
 		sync_all_transporter_portal_users,
 	)
 
+	if frappe.db.exists("DocType", "Purchase Invoice"):
+		ensure_transporter_invoice_share_fields()
 	sync_all_transporter_portal_users()
 
 
