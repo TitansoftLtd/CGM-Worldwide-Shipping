@@ -202,6 +202,10 @@ def list_my_allocations_flat(transporter: str) -> list[dict]:
 
 def get_transporter_portal_dashboard(transporter: str) -> dict:
 	"""Summary stats + allocation lists for the transporter portal home page."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.transporter_invoice_share import (
+		get_transporter_invoice_summary,
+	)
+
 	grouped = list_my_allocations(transporter)
 	active = grouped["active"]
 	completed = grouped["completed"]
@@ -220,6 +224,7 @@ def get_transporter_portal_dashboard(transporter: str) -> dict:
 		total = int(row.get("container_total") or 0)
 		row["progress_label"] = f"{total}/{total}" if total else "0/0"
 
+	invoice_summary = get_transporter_invoice_summary(transporter)
 	return {
 		"active_allocations": active,
 		"completed_allocations": completed,
@@ -230,6 +235,11 @@ def get_transporter_portal_dashboard(transporter: str) -> dict:
 		"stat_complete_containers": interchange_on_active + completed_containers,
 		"stat_total_containers": sum(int(r.get("container_total") or 0) for r in active)
 		+ completed_containers,
+		"stat_invoice_count": invoice_summary["stat_invoice_count"],
+		"stat_outstanding_count": invoice_summary["stat_outstanding_count"],
+		"stat_outstanding_amount": invoice_summary["stat_outstanding_amount"],
+		"stat_paid_count": invoice_summary["stat_paid_count"],
+		"invoice_currency": invoice_summary["currency"],
 	}
 
 
