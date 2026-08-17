@@ -102,10 +102,13 @@ doctype_js = {
 	"Supplier": "public/js/supplier.js",
 	"Leave Application": "public/js/leave_application.js",
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
+	"Material Request": "public/js/material_request.js",
+	"Employee Advance": "public/js/employee_advance.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
 	"Task": "public/js/task_list.js",
+	"Material Request": "public/js/material_request_list.js",
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -239,11 +242,19 @@ doc_events = {
 		],
 	},
 	"Purchase Invoice": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_validate_from_task",
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_validate_from_task",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.transporter_invoice_share.validate_share_with_transporter",
+		],
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_on_submit",
 	},
 	"Payment Entry": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.copy_project_from_employee_advance",
+		],
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_submit",
+		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_cancel",
 	},
 	"Sales Invoice": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
@@ -280,6 +291,27 @@ doc_events = {
 	},
 	"Leave Application": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
+	},
+	"Material Request": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_validate",
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
+	},
+	"Purchase Order": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
+	},
+	"Request for Quotation": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
+	},
+	"Supplier Quotation": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
+	},
+	"Stock Entry": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.copy_project_to_stock_entry",
+	},
+	"Employee Advance": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_validate",
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_on_submit",
+		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_on_cancel",
 	},
 	"Opportunity": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.documents.on_opportunity_onload",
@@ -367,6 +399,14 @@ override_whitelisted_methods = {
     "erpnext.selling.doctype.quotation.quotation.make_sales_invoice":
     ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_invoice"
      ),
+    "erpnext.stock.doctype.material_request.material_request.make_purchase_order":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_purchase_order",
+    "erpnext.stock.doctype.material_request.material_request.make_request_for_quotation":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_request_for_quotation",
+    "erpnext.stock.doctype.material_request.material_request.make_supplier_quotation":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_supplier_quotation",
+    "erpnext.stock.doctype.material_request.material_request.make_purchase_order_based_on_supplier":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_purchase_order_based_on_supplier",
 }
 #
 # each overriding function accepts a `data` argument;
@@ -378,6 +418,12 @@ override_whitelisted_methods = {
 override_doctype_dashboards = {
     "Opportunity":
     "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_dashboard_data",
+    "Project":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_project_dashboard_data",
+    "Material Request":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_material_request_dashboard_data",
+    "Employee Advance":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_employee_advance_dashboard_data",
 }
 
 # exempt linked doctypes from being automatically cancelled

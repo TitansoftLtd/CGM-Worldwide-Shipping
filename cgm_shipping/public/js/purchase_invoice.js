@@ -2,30 +2,21 @@ frappe.ui.form.on("Purchase Invoice", {
 	onload(frm) {
 		persist_cgm_source_task(frm);
 		apply_task_defaults(frm);
+		exclude_shipping_line_suppliers(frm);
 	},
 
 	refresh(frm) {
+		exclude_shipping_line_suppliers(frm);
 		add_cgm_finance_buttons(frm);
+		refresh_transporter_share_ui(frm);
 	},
 
-	on_submit(frm) {
-		const task_name = get_cgm_source_task(frm);
-		if (task_name) {
-			localStorage.setItem("cgm_return_task", task_name);
-			localStorage.setItem("cgm_pe_for_task", "1");
-		}
-		frappe.after_ajax(() => {
-			if (flt(frm.doc.outstanding_amount) > 0 && !frm.doc.on_hold) {
-				open_payment_from_purchase_invoice(frm);
-			} else {
-				return_to_cgm_task(frm, {
-					message: __(
-						"Purchase Invoice submitted - returning to task {0}. Receipt verification may continue there.",
-						[task_name]
-					),
-				});
-			}
-		});
+	supplier(frm) {
+		refresh_transporter_share_ui(frm);
+	},
+
+	custom_share_with_transporter(frm) {
+		toggle_transporter_share_fields(frm);
 	},
 });
 
@@ -63,74 +54,15 @@ function add_cgm_finance_buttons(frm) {
 		frappe.set_route("Form", "Task", task_name);
 	}, __("CGM"));
 	frm.page.set_inner_btn_group_as_primary(__("CGM"));
-
-	if (frm.doc.docstatus === 1 && flt(frm.doc.outstanding_amount) > 0 && !frm.doc.on_hold) {
-		frm.add_custom_button(
-			__("Make Payment"),
-			() => open_payment_from_purchase_invoice(frm),
-			__("CGM")
-		);
-		frm.page.set_inner_btn_group_as_primary(__("CGM"));
-	}
 }
 
-function open_payment_from_purchase_invoice(frm) {
-	const task_name = get_cgm_source_task(frm);
-	if (!frm.doc.name || frm.doc.docstatus !== 1) {
-		frappe.msgprint(__("Submit the Purchase Invoice before making payment."));
-		return;
-	}
-	if (flt(frm.doc.outstanding_amount) <= 0) {
-		return_to_cgm_task(frm);
-		return;
-	}
-
-	frappe.call({
-		method: "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry",
-		args: {
-			dt: "Purchase Invoice",
-			dn: frm.doc.name,
+function exclude_shipping_line_suppliers(frm) {
+	frm.set_query("supplier", () => ({
+		filters: {
+			disabled: 0,
+			custom_is_shipping_line: 0,
 		},
-		freeze: true,
-		freeze_message: __("Building Payment Entry…"),
-		callback(r) {
-			if (r.exc || !r.message) {
-				return;
-			}
-			const doclist = frappe.model.sync(r.message);
-			const pe = doclist[0];
-			if (pe && task_name) {
-				if (frm.fields_dict.custom_cgm_source_task || pe.custom_cgm_source_task !== undefined) {
-					frappe.model.set_value(pe.doctype, pe.name, "custom_cgm_source_task", task_name);
-				}
-				if (frm.doc.project) {
-					frappe.model.set_value(pe.doctype, pe.name, "project", frm.doc.project);
-				}
-				localStorage.setItem("cgm_return_task", task_name);
-				localStorage.setItem("cgm_pe_for_task", "1");
-			}
-			frappe.show_alert({
-				message: __("Submit payment - you will return to the finance task."),
-				indicator: "blue",
-			});
-			frappe.set_route("Form", "Payment Entry", pe.name);
-		},
-	});
-}
-
-function return_to_cgm_task(frm, opts = {}) {
-	const task_name = get_cgm_source_task(frm);
-	if (!task_name || frm.__cgm_returned_to_task) {
-		return;
-	}
-	frm.__cgm_returned_to_task = true;
-	localStorage.removeItem("cgm_pi_for_task");
-	localStorage.removeItem("cgm_return_task");
-	frappe.show_alert({
-		message: opts.message || __("Returning to task {0}", [task_name]),
-		indicator: "green",
-	});
-	frappe.set_route("Form", "Task", task_name);
+	}));
 }
 
 function apply_task_defaults(frm) {
@@ -158,21 +90,11 @@ function apply_task_defaults(frm) {
 
 			set_purchase_invoice_header_defaults(frm, defaults).then(() => {
 				if (!permit_items.length) {
-					frappe.show_alert({
-						message: __(
-							"Submit this invoice, then use CGM → Make Payment. You will return to task {0}.",
-							[task_name]
-						),
-						indicator: "blue",
-					});
 					return;
 				}
 				apply_permit_lines_to_purchase_invoice(frm, permit_items).then(() => {
 					frappe.show_alert({
-						message: __(
-							"Added {0} line(s) from task {1} - submit, then use CGM → Make Payment.",
-							[permit_items.length, task_name]
-						),
+						message: __("Added {0} line(s) from task {1}.", [permit_items.length, task_name]),
 						indicator: "green",
 					});
 				});
@@ -245,6 +167,109 @@ function apply_permit_lines_to_purchase_invoice(frm, permit_items) {
 	});
 }
 
+function supplier_is_transporter_on_invoice(frm) {
+	if (frm._cgm_supplier_is_transporter != null) {
+		return cint(frm._cgm_supplier_is_transporter);
+	}
+	return cint(frm.doc.custom_supplier_is_transporter);
+}
+
+function refresh_transporter_share_ui(frm) {
+	if (!frm.fields_dict.custom_share_with_transporter) {
+		return;
+	}
+	if (!frm.doc.supplier) {
+		frm._cgm_supplier_is_transporter = 0;
+		if (
+			frm.doc.docstatus === 0 &&
+			frm.fields_dict.custom_supplier_is_transporter &&
+			cint(frm.doc.custom_supplier_is_transporter)
+		) {
+			frm.set_value("custom_supplier_is_transporter", 0);
+		}
+		toggle_transporter_share_fields(frm);
+		add_share_with_transporter_button(frm);
+		return;
+	}
+	frappe.db.get_value("Supplier", frm.doc.supplier, "is_transporter", (r) => {
+		const is_transporter = cint(r && r.is_transporter);
+		frm._cgm_supplier_is_transporter = is_transporter;
+		if (
+			frm.doc.docstatus === 0 &&
+			frm.fields_dict.custom_supplier_is_transporter &&
+			cint(frm.doc.custom_supplier_is_transporter) !== is_transporter
+		) {
+			frm.set_value("custom_supplier_is_transporter", is_transporter);
+		}
+		toggle_transporter_share_fields(frm);
+		add_share_with_transporter_button(frm);
+	});
+}
+
+function toggle_transporter_share_fields(frm) {
+	const is_transporter = supplier_is_transporter_on_invoice(frm);
+	if (frm.fields_dict.custom_share_with_transporter) {
+		frm.toggle_display("custom_share_with_transporter", is_transporter);
+	}
+	if (frm.fields_dict.custom_shared_with_transporter_on) {
+		frm.toggle_display(
+			"custom_shared_with_transporter_on",
+			is_transporter && cint(frm.doc.custom_share_with_transporter)
+		);
+	}
+}
+
+function add_share_with_transporter_button(frm) {
+	if (!frm.fields_dict.custom_share_with_transporter) {
+		return;
+	}
+	if (frm.doc.docstatus !== 1 || frm.doc.is_return) {
+		return;
+	}
+	if (!supplier_is_transporter_on_invoice(frm)) {
+		return;
+	}
+
+	if (cint(frm.doc.custom_share_with_transporter)) {
+		frm.dashboard.set_headline_alert(
+			__("Shared with the transporter portal. They can see what CGM owes on this invoice."),
+			"blue"
+		);
+		return;
+	}
+
+	frm.add_custom_button(__("Share with Transporter"), () => {
+		frappe.confirm(
+			__(
+				"Share this invoice on the transporter portal? They will see that CGM owes {0}. When you record payment, they will see it as Paid.",
+				[format_currency(frm.doc.outstanding_amount || frm.doc.grand_total, frm.doc.currency)]
+			),
+			() => share_purchase_invoice_with_transporter(frm)
+		);
+	}, __("CGM"));
+	frm.page.set_inner_btn_group_as_primary(__("CGM"));
+}
+
+function share_purchase_invoice_with_transporter(frm) {
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.transporter_invoice_share.share_purchase_invoice_with_transporter",
+		args: { purchase_invoice: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Sharing with transporter…"),
+		callback(r) {
+			if (r.exc || !r.message) {
+				return;
+			}
+			frappe.show_alert({
+				message: __("Invoice shared. The transporter can now see what CGM owes them."),
+				indicator: "green",
+			});
+			frm.reload_doc();
+		},
+	});
+}
+
 function add_one_permit_line(frm, row) {
 	return new Promise((resolve) => {
 		const child = frm.add_child("items");
@@ -270,3 +295,9 @@ function add_one_permit_line(frm, row) {
 			});
 	});
 }
+
+$(document).on("form-refresh", (_e, frm) => {
+	if (frm?.doctype === "Purchase Invoice") {
+		exclude_shipping_line_suppliers(frm);
+	}
+});

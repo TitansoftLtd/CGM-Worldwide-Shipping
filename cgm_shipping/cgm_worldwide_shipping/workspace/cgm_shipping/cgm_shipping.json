@@ -1,7 +1,7 @@
 {
  "app": "cgm_shipping",
  "charts": [],
- "content": "[{\"id\": \"cgmStartHdr01\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"cgm-start-shipment-header\\\" style=\\\"font-size: 18px;\\\"><b>Start a New Shipment</b></span>\", \"col\": 12}}, {\"id\": \"cgmStartBtn01\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Start New Shipment\", \"col\": 6}}, {\"id\": \"cgmStartSp01\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"uWiLsJUdVJ\", \"type\": \"header\", \"data\": {\"text\": \"<span style=\\\"font-size: 16px;\\\"><b>Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"5slaFAopFc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer\", \"col\": 3}}, {\"id\": \"yNse_cDnTB\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Project\", \"col\": 3}}, {\"id\": \"qc7j4a49Sa\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bill Of Lading\", \"col\": 3}}, {\"id\": \"ZCVcZygZ0r\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Air Waybill\", \"col\": 3}}, {\"id\": \"iXULP7P6qN\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Opportunity\", \"col\": 3}}, {\"id\": \"HooY9lDlzt\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Container Tracker\", \"col\": 3}}, {\"id\": \"cgmOpsBrd01\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Container Ops Board\", \"col\": 3}}, {\"id\": \"pt6I2_8o9i\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customs Entry\", \"col\": 3}}, {\"id\": \"mF1Spy7u2_\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"s-vIcHLenp\", \"type\": \"card\", \"data\": {\"card_name\": \"Shipments\", \"col\": 3}}, {\"id\": \"3UvHg06GlH\", \"type\": \"card\", \"data\": {\"card_name\": \"Clearance & Customs\", \"col\": 3}}, {\"id\": \"5280sQiiF1\", \"type\": \"card\", \"data\": {\"card_name\": \"Transport & Containers\", \"col\": 3}}, {\"id\": \"9lOSeVN8nN\", \"type\": \"card\", \"data\": {\"card_name\": \"Masters & Setup\", \"col\": 3}}]",
+ "content": "[{\"id\": \"cgmStartHdr01\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"cgm-start-shipment-header\\\" style=\\\"font-size: 18px;\\\"><b>Start a New Shipment</b></span>\", \"col\": 12}}, {\"id\": \"cgmStartBtn01\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Start New Shipment\", \"col\": 6}}, {\"id\": \"cgmStartSp01\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"uWiLsJUdVJ\", \"type\": \"header\", \"data\": {\"text\": \"<span style=\\\"font-size: 16px;\\\"><b>Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"5slaFAopFc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer\", \"col\": 3}}, {\"id\": \"yNse_cDnTB\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Project\", \"col\": 3}}, {\"id\": \"qc7j4a49Sa\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bill Of Lading\", \"col\": 3}}, {\"id\": \"ZCVcZygZ0r\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Air Waybill\", \"col\": 3}}, {\"id\": \"iXULP7P6qN\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Opportunity\", \"col\": 3}}, {\"id\": \"HooY9lDlzt\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Container Tracker\", \"col\": 3}}, {\"id\": \"cgmOpsBrd01\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Container Ops Board\", \"col\": 3}}, {\"id\": \"pt6I2_8o9i\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customs Entry\", \"col\": 3}}, {\"id\": \"mF1Spy7u2_\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"s-vIcHLenp\", \"type\": \"card\", \"data\": {\"card_name\": \"Shipments\", \"col\": 3}}, {\"id\": \"3UvHg06GlH\", \"type\": \"card\", \"data\": {\"card_name\": \"Clearance & Customs\", \"col\": 3}}, {\"id\": \"5280sQiiF1\", \"type\": \"card\", \"data\": {\"card_name\": \"Transport & Containers\", \"col\": 3}}, {\"id\": \"9lOSeVN8nN\", \"type\": \"card\", \"data\": {\"card_name\": \"Masters & Setup\", \"col\": 3}}, {\"id\": \"cgmFundCard01\", \"type\": \"card\", \"data\": {\"card_name\": \"Requisitions & Funding\", \"col\": 3}}]",
  "creation": "2026-06-09 22:50:45.113316",
  "custom_blocks": [],
  "docstatus": 0,
@@ -413,6 +413,74 @@
    "link_count": 0,
    "link_to": "CGM Shipping Settings",
    "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Requisitions & Funding",
+   "link_count": 6,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Material Request",
+   "link_count": 0,
+   "link_to": "Material Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Funding Request",
+   "link_count": 0,
+   "link_to": "Funding Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Employee Advance",
+   "link_count": 0,
+   "link_to": "Employee Advance",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 1,
+   "is_query_report": 0,
+   "label": "Material Request Purpose",
+   "link_count": 0,
+   "link_to": "Material Request Purpose",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Funding Request Report",
+   "link_count": 0,
+   "link_to": "Funding Request Report",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Project Expense Summary",
+   "link_count": 0,
+   "link_to": "Project Expense Summary",
+   "link_type": "Report",
    "onboard": 0,
    "type": "Link"
   }

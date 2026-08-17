@@ -1398,6 +1398,19 @@ function setup_project_toolbar_buttons(frm) {
 	frm.add_custom_button(__("Post Container Charge Accrual"), () => {
 		post_container_charge_accrual(frm);
 	}, __("Shipment"));
+	frm.add_custom_button(__("Material Requests"), () => {
+		frappe.set_route("List", "Material Request", { custom_project: frm.doc.name });
+	}, __("View"));
+	frm.add_custom_button(__("Material Request Funding"), () => {
+		frappe.set_route("query-report", "Material Request Funding", {
+			project: frm.doc.name,
+		});
+	}, __("View"));
+	frm.add_custom_button(__("Project Expense Summary"), () => {
+		frappe.set_route("query-report", "Project Expense Summary", {
+			project: frm.doc.name,
+		});
+	}, __("View"));
 	frm.add_custom_button(__("View Journal Entries"), () => {
 		open_project_finance_journal_entries(frm);
 	}, __("View"));

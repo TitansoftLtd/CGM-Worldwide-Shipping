@@ -1,0 +1,27 @@
+{
+ "add_total_row": 1,
+ "columns": [],
+ "creation": "2026-08-14 12:00:00",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "idx": 0,
+ "is_standard": "Yes",
+ "modified": "2026-08-14 12:00:00",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Project Expense Summary",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Project",
+ "report_name": "Project Expense Summary",
+ "report_type": "Script Report",
+ "roles": [
+  {"role": "System Manager"},
+  {"role": "Director"},
+  {"role": "Finance User"},
+  {"role": "Finance Manager"},
+  {"role": "Accounts Manager"},
+  {"role": "Projects User"}
+ ]
+}

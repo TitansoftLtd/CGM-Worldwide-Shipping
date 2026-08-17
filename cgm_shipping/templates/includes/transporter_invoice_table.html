@@ -1,0 +1,35 @@
+{# Shared table for transporter portal invoices. Expects invoice_rows. #}
+{% from "templates/includes/portal_localize.html" import local_date %}
+<div class="cp-table-wrap" style="border:none; box-shadow:none; border-radius:0;">
+  <table class="cp-table">
+    <thead>
+      <tr>
+        <th>{{ _("Invoice") }}</th>
+        <th>{{ _("Date") }}</th>
+        <th>{{ _("Shipment") }}</th>
+        <th>{{ _("Status") }}</th>
+        <th style="text-align:right;">{{ _("Total") }}</th>
+        <th style="text-align:right;">{{ _("CGM owes you") }}</th>
+        <th>{{ _("Actions") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in invoice_rows %}
+      <tr>
+        <td data-label="{{ _('Invoice') }}"><span class="ref-link">{{ i.name }}</span>{% if i.bill_no %}<div class="cp-list-sub">{{ i.bill_no }}</div>{% endif %}</td>
+        <td data-label="{{ _('Date') }}">{% if i.posting_date %}{{ local_date(i.posting_date) }}{% else %}-{% endif %}</td>
+        <td data-label="{{ _('Shipment') }}">{{ i.project_ref or i.project or "—" }}</td>
+        <td data-label="{{ _('Status') }}"><span class="cp-status {{ i.tone }}"><span class="dot"></span>{{ i.status_label }}</span></td>
+        <td data-label="{{ _('Total') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">{{ frappe.utils.fmt_money(i.grand_total, currency=i.currency) }}</td>
+        <td data-label="{{ _('CGM owes you') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;{% if i.outstanding_amount and i.outstanding_amount > 0 %}color:#be123c;{% else %}color:var(--cp-green);{% endif %}">{{ frappe.utils.fmt_money(i.outstanding_amount, currency=i.currency) }}</td>
+        <td data-label="{{ _('Actions') }}">
+          <span style="display:inline-flex;gap:.4rem;">
+            <a class="cp-btn cp-btn-ghost cp-btn-sm" href="{{ i.pdf_view_url }}" target="_blank" rel="noopener">{{ _("Preview") }}</a>
+            <a class="cp-btn cp-btn-ghost cp-btn-sm" href="{{ i.pdf_download_url }}">{{ _("Download") }}</a>
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
