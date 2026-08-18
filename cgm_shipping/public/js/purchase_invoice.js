@@ -2,11 +2,9 @@ frappe.ui.form.on("Purchase Invoice", {
 	onload(frm) {
 		persist_cgm_source_task(frm);
 		apply_task_defaults(frm);
-		exclude_shipping_line_suppliers(frm);
 	},
 
 	refresh(frm) {
-		exclude_shipping_line_suppliers(frm);
 		add_cgm_finance_buttons(frm);
 		refresh_transporter_share_ui(frm);
 	},
@@ -54,15 +52,6 @@ function add_cgm_finance_buttons(frm) {
 		frappe.set_route("Form", "Task", task_name);
 	}, __("CGM"));
 	frm.page.set_inner_btn_group_as_primary(__("CGM"));
-}
-
-function exclude_shipping_line_suppliers(frm) {
-	frm.set_query("supplier", () => ({
-		filters: {
-			disabled: 0,
-			custom_is_shipping_line: 0,
-		},
-	}));
 }
 
 function apply_task_defaults(frm) {
@@ -295,9 +284,3 @@ function add_one_permit_line(frm, row) {
 			});
 	});
 }
-
-$(document).on("form-refresh", (_e, frm) => {
-	if (frm?.doctype === "Purchase Invoice") {
-		exclude_shipping_line_suppliers(frm);
-	}
-});

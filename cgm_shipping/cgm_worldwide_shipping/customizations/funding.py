@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, nowdate
+from frappe.utils import cint, flt, getdate, nowdate, strip_html
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	DIRECTOR_ROLE,
@@ -177,6 +177,7 @@ def assert_material_request_may_create_purchase_document(material_request: str) 
 def on_purchase_document_validate(doc, method=None) -> None:
 	if cint_docstatus(doc.docstatus) == 2:
 		return
+	_reject_shipping_line_supplier_on_po(doc)
 	if not doc.is_new() and cint_docstatus(doc.docstatus) == 1:
 		return
 	seen = set()
@@ -186,6 +187,19 @@ def on_purchase_document_validate(doc, method=None) -> None:
 			continue
 		seen.add(mr_name)
 		assert_material_request_may_create_purchase_document(mr_name)
+
+
+def _reject_shipping_line_supplier_on_po(doc) -> None:
+	if doc.doctype != "Purchase Order" or not doc.get("supplier"):
+		return
+	if not frappe.db.has_column("Supplier", "custom_is_shipping_line"):
+		return
+	if frappe.db.get_value("Supplier", doc.supplier, "custom_is_shipping_line"):
+		frappe.throw(
+			_("Supplier {0} is marked as a Shipping Line and cannot be used on Purchase Orders.").format(
+				frappe.bold(doc.supplier)
+			)
+		)
 
 
 @frappe.whitelist()
@@ -325,6 +339,34 @@ def get_material_request_item_summary(material_request) -> str:
 	return ", ".join(names)
 
 
+def get_material_request_description(material_request) -> str:
+	"""Notes from item descriptions; legacy header text as fallback."""
+	if not material_request:
+		return ""
+	if isinstance(material_request, str):
+		rows = frappe.get_all(
+			"Material Request Item",
+			filters={"parent": material_request},
+			fields=["description"],
+			order_by="idx asc",
+		)
+		legacy = frappe.db.get_value(
+			"Material Request", material_request, "custom_request_description"
+		)
+	else:
+		rows = material_request.get("items") or []
+		legacy = material_request.get("custom_request_description")
+	parts = []
+	for row in rows:
+		text = strip_html((row.get("description") or "").strip())
+		if text and text not in parts:
+			parts.append(text)
+	if parts:
+		return " — ".join(parts)
+	legacy = (legacy or "").strip()
+	return legacy or get_material_request_item_summary(material_request)
+
+
 def get_material_request_project(material_request) -> str | None:
 	"""Header custom_project, else the item-level Project accounting dimension."""
 	if not material_request:
@@ -352,6 +394,7 @@ def on_material_request_validate(doc, method=None) -> None:
 	_copy_header_project_to_items(doc)
 	_clear_warehouse_for_operational_expense(doc)
 	_set_default_funding_workflow_state(doc)
+	_validate_operational_expense_request(doc)
 
 
 def on_material_request_on_submit(doc, method=None) -> None:
@@ -382,6 +425,8 @@ def _set_default_funding_workflow_state(doc) -> None:
 def _set_requester_defaults(doc) -> None:
 	if not doc.get("custom_requested_by"):
 		doc.custom_requested_by = frappe.session.user
+	if doc.get("material_request_type") != MATERIAL_REQUEST_TYPE_OPERATIONAL:
+		return
 	if doc.get("custom_employee"):
 		return
 	employee = frappe.db.get_value(
@@ -391,6 +436,23 @@ def _set_requester_defaults(doc) -> None:
 	)
 	if employee:
 		doc.custom_employee = employee
+
+
+def _validate_operational_expense_request(doc) -> None:
+	if doc.get("material_request_type") != MATERIAL_REQUEST_TYPE_OPERATIONAL:
+		return
+	if not doc.get("custom_employee"):
+		frappe.throw(
+			_("Set Employee on Operational Expense requests. Link your user on the Employee record, or pick the employee who receives the cash.")
+		)
+	for item in doc.get("items") or []:
+		if not strip_html((item.get("description") or "").strip()):
+			frappe.throw(
+				_("Row {0}: add a Description on the item — this is the note Finance and the Director see.").format(
+					item.idx
+				)
+			)
+			break
 
 
 def _copy_header_project_to_items(doc) -> None:
@@ -757,10 +819,8 @@ def fetch_material_request_details(material_request: str) -> dict:
 		return {}
 	mr = frappe.get_doc("Material Request", material_request)
 	requested = get_material_request_total(mr)
-	description = mr.get("custom_request_description")
+	description = get_material_request_description(mr)
 	item_summary = get_material_request_item_summary(mr)
-	if not description:
-		description = item_summary
 	employee_name = None
 	if mr.get("custom_employee"):
 		employee_name = frappe.db.get_value("Employee", mr.custom_employee, "employee_name")
@@ -1331,6 +1391,8 @@ def ensure_funding_custom_fields() -> None:
 	_ensure_journal_entry_fields()
 
 
+OE_FIELD_DEPENDS = "eval:doc.material_request_type=='Operational Expense'"
+
 def _ensure_material_request_fields() -> None:
 	fields = [
 		{
@@ -1340,6 +1402,9 @@ def _ensure_material_request_fields() -> None:
 			"options": "Employee",
 			"insert_after": "custom_requested_by_name",
 			"in_standard_filter": 1,
+			"depends_on": OE_FIELD_DEPENDS,
+			"mandatory_depends_on": OE_FIELD_DEPENDS,
+			"description": "",
 		},
 		{
 			"fieldname": "custom_purpose",
@@ -1355,18 +1420,22 @@ def _ensure_material_request_fields() -> None:
 		},
 		{
 			"fieldname": "custom_request_description",
-			"label": "Request Description",
+			"label": "Request Description (legacy)",
 			"fieldtype": "Small Text",
 			"insert_after": "custom_purpose",
+			"hidden": 1,
+			"read_only": 1,
+			"description": "Use Description on each item row instead.",
 		},
 		{
 			"fieldname": "custom_project",
 			"label": "Project / Shipment",
 			"fieldtype": "Link",
 			"options": "Project",
-			"insert_after": "custom_request_description",
+			"insert_after": "buying_price_list",
 			"in_standard_filter": 1,
 			"in_list_view": 1,
+			"depends_on": OE_FIELD_DEPENDS,
 		},
 		{
 			"fieldname": "custom_requested_amount",
@@ -1417,6 +1486,9 @@ def _ensure_material_request_fields() -> None:
 			"custom_funding_status",
 			"custom_purpose",
 			"custom_requested_amount",
+			"custom_employee",
+			"custom_project",
+			"custom_request_description",
 		):
 			_upsert_cf("Material Request", values)
 		else:
@@ -1575,6 +1647,9 @@ def ensure_material_request_workflow_state_visible() -> None:
 		changed = True
 	if not doc.in_standard_filter:
 		doc.in_standard_filter = 1
+		changed = True
+	if not doc.read_only:
+		doc.read_only = 1
 		changed = True
 	if changed:
 		doc.save(ignore_permissions=True)
