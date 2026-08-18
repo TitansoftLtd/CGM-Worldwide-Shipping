@@ -1,33 +1,38 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 // For license information, please see license.txt
 
+const OE_ITEM_GRID_FIELDS = {
+	show: ["item_code", "description", "qty", "uom", "rate", "amount", "expense_account"],
+	hide: ["schedule_date", "warehouse", "from_warehouse"],
+};
+
 frappe.ui.form.on("Material Request", {
 	onload(frm) {
 		if (frm.is_new() && !frm.doc.custom_requested_by) {
 			frm.set_value("custom_requested_by", frappe.session.user);
 		}
 		set_item_code_query(frm);
+		set_employee_from_user(frm);
 	},
 
 	refresh(frm) {
-		if (frm.fields_dict.material_request_type) {
-			frm.set_df_property(
-				"material_request_type",
-				"description",
-				__(
-					"How the request is processed. Items describe what is requested and carry the accounting classification."
-				)
-			);
-		}
 		set_item_code_query(frm);
-		toggle_operational_expense_warehouse(frm);
+		toggle_operational_expense_layout(frm);
 		setup_funding_actions(frm);
 		set_operational_expense_indicator(frm);
+		if (frm.fields_dict.workflow_state) {
+			frm.set_df_property("workflow_state", "read_only", 1);
+		}
 	},
 
 	material_request_type(frm) {
 		set_item_code_query(frm);
-		toggle_operational_expense_warehouse(frm);
+		toggle_operational_expense_layout(frm);
+		set_employee_from_user(frm);
+	},
+
+	custom_requested_by(frm) {
+		set_employee_from_user(frm);
 	},
 
 	custom_project(frm) {
@@ -64,7 +69,6 @@ frappe.ui.form.on("Material Request Item", {
 			}
 		};
 		clear_warehouse();
-		// ERPNext get_item_details fills warehouse after this event; clear again.
 		frappe.after_ajax(clear_warehouse);
 	},
 
@@ -74,7 +78,73 @@ frappe.ui.form.on("Material Request Item", {
 			frm.set_value("custom_project", row.project);
 		}
 	},
+
+	items_add(frm) {
+		if (frm.doc.material_request_type === "Operational Expense") {
+			toggle_operational_expense_item_grid(frm);
+		}
+	},
 });
+
+function is_operational_expense(frm) {
+	return frm.doc.material_request_type === "Operational Expense";
+}
+
+function set_employee_from_user(frm) {
+	if (!is_operational_expense(frm) || frm.doc.custom_employee) {
+		return;
+	}
+	const user = frm.doc.custom_requested_by || frappe.session.user;
+	frappe.db.get_value("Employee", { user_id: user, status: "Active" }, "name", (r) => {
+		if (r && r.name) {
+			frm.set_value("custom_employee", r.name);
+		}
+	});
+}
+
+function toggle_operational_expense_layout(frm) {
+	const is_oe = is_operational_expense(frm);
+	toggle_operational_expense_warehouse(frm);
+	toggle_operational_expense_item_grid(frm);
+
+	["schedule_date", "buying_price_list"].forEach((field) => {
+		if (frm.fields_dict[field]) {
+			frm.toggle_display(field, !is_oe);
+		}
+	});
+
+	["scan_barcode", "set_warehouse", "set_from_warehouse"].forEach((field) => {
+		if (frm.fields_dict[field]) {
+			frm.toggle_display(field, !is_oe);
+		}
+	});
+
+	if (frm.fields_dict.custom_request_description) {
+		frm.toggle_display("custom_request_description", false);
+	}
+}
+
+function toggle_operational_expense_item_grid(frm) {
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid) {
+		return;
+	}
+	const is_oe = is_operational_expense(frm);
+	OE_ITEM_GRID_FIELDS.hide.forEach((fieldname) => {
+		grid.update_docfield_property(fieldname, "hidden", is_oe);
+		grid.update_docfield_property(fieldname, "in_list_view", is_oe ? 0 : undefined);
+	});
+	OE_ITEM_GRID_FIELDS.show.forEach((fieldname) => {
+		if (fieldname === "description" || fieldname === "expense_account") {
+			grid.update_docfield_property(fieldname, "in_list_view", is_oe ? 1 : undefined);
+		}
+		grid.update_docfield_property(fieldname, "hidden", 0);
+	});
+	if (is_oe) {
+		grid.update_docfield_property("item_code", "columns", 2);
+		grid.update_docfield_property("description", "columns", 2);
+	}
+}
 
 function setup_funding_actions(frm) {
 	const type = frm.doc.material_request_type;
@@ -174,7 +244,7 @@ function open_funding_request(frm) {
 }
 
 function toggle_operational_expense_warehouse(frm) {
-	const is_oe = frm.doc.material_request_type === "Operational Expense";
+	const is_oe = is_operational_expense(frm);
 	frm.set_df_property("set_warehouse", "hidden", is_oe);
 	if (frm.fields_dict.items && frm.fields_dict.items.grid) {
 		frm.fields_dict.items.grid.update_docfield_property("warehouse", "hidden", is_oe);
