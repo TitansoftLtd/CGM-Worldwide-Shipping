@@ -1,15 +1,15 @@
 """Material Request funding workflow: Purpose, Project carry-through, Funding Request.
 
-ERPNext already owns Material Request, purchasing, stock, Employee Advance, and
-Payment Entry. This module only connects those documents for CGM requisition
-funding. It does not replace accounting vouchers.
+ERPNext already owns Material Request, purchasing, stock, Journal Entry, and
+Payment Entry. Operational Expense is paid by Journal Entry (expense + bank).
+Purchase still uses Purchase Order. Employee Advance is not used for funding.
 """
 
 from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import flt, nowdate
+from frappe.utils import cint, flt, getdate, nowdate
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	DIRECTOR_ROLE,
@@ -116,9 +116,9 @@ def funding_progress_state(
 ) -> str | None:
 	"""Payment-driven Funding Request state.
 
-	Creating or submitting an Employee Advance is not payment, so paid can stay 0.
+	Creating a draft Journal Entry is not payment, so paid can stay 0.
 	Never reverse Funding in Progress back to Director Approved — that transition
-	is not in the workflow and would block Employee Advance submit.
+	is not in the workflow.
 	"""
 	if current not in (
 		FUNDING_REQUEST_STATE_APPROVED,
@@ -195,7 +195,9 @@ def make_purchase_order(source_name, target_doc=None, args=None):
 		make_purchase_order as erpnext_make_purchase_order,
 	)
 
-	return erpnext_make_purchase_order(source_name, target_doc=target_doc, args=args)
+	po = erpnext_make_purchase_order(source_name, target_doc=target_doc, args=args)
+	_ensure_purchase_order_required_by(po)
+	return po
 
 
 @frappe.whitelist()
@@ -225,7 +227,29 @@ def make_purchase_order_based_on_supplier(source_name, target_doc=None, args=Non
 		make_purchase_order_based_on_supplier as erpnext_make_po_by_supplier,
 	)
 
-	return erpnext_make_po_by_supplier(source_name, target_doc=target_doc, args=args)
+	po = erpnext_make_po_by_supplier(source_name, target_doc=target_doc, args=args)
+	_ensure_purchase_order_required_by(po)
+	return po
+
+
+def _ensure_purchase_order_required_by(po) -> None:
+	"""ERPNext blanks Required By when the Material Request date is already past."""
+	if not po:
+		return
+	required_by = nowdate()
+	header = po.get("schedule_date")
+	if not header or getdate(header) < getdate(required_by):
+		if isinstance(po, dict):
+			po["schedule_date"] = required_by
+		else:
+			po.schedule_date = required_by
+	for item in po.get("items") or []:
+		item_date = item.get("schedule_date")
+		if not item_date or getdate(item_date) < getdate(required_by):
+			if isinstance(item, dict):
+				item["schedule_date"] = po.get("schedule_date")
+			else:
+				item.schedule_date = po.schedule_date
 
 
 def cint_docstatus(docstatus) -> int:
@@ -434,6 +458,14 @@ def on_payment_entry_on_cancel(doc, method=None) -> None:
 	sync_funding_requests_touched_by_payment_entry(doc)
 
 
+def on_journal_entry_on_submit(doc, method=None) -> None:
+	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
+
+
+def on_journal_entry_on_cancel(doc, method=None) -> None:
+	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
+
+
 # ── Employee Advance ─────────────────────────────────────────────────────────
 
 
@@ -493,13 +525,6 @@ def _populate_employee_advance_from_request(doc) -> None:
 def _validate_employee_advance_funding_gate(doc) -> None:
 	fr_name = doc.get("custom_funding_request")
 	if not fr_name:
-		if doc.get("custom_material_request"):
-			frappe.throw(
-				_(
-					"Employee Advance for a Material Request can only be created from an "
-					"approved Funding Request."
-				)
-			)
 		return
 
 	fr = frappe.db.get_value(
@@ -611,10 +636,41 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 def paid_amount_for_material_request(funding_request: str, material_request: str) -> float:
 	mr_type = frappe.db.get_value("Material Request", material_request, "material_request_type")
 	if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
+		journal_paid = _paid_against_journal_entries(funding_request, material_request)
+		if journal_paid:
+			return journal_paid
 		return _paid_against_employee_advances(funding_request, material_request)
 	if mr_type in PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING:
 		return _paid_against_purchase_orders(material_request)
 	return 0.0
+
+
+def _paid_against_journal_entries(funding_request: str, material_request: str) -> float:
+	if not frappe.db.has_column("Journal Entry", "custom_material_request"):
+		return 0.0
+	entries = frappe.get_all(
+		"Journal Entry",
+		filters={
+			"custom_funding_request": funding_request,
+			"custom_material_request": material_request,
+			"docstatus": 1,
+		},
+		pluck="name",
+	)
+	if not entries:
+		return 0.0
+	paid = frappe.db.sql(
+		"""
+		select coalesce(sum(jea.debit_in_account_currency), 0)
+		from `tabJournal Entry Account` jea
+		inner join `tabJournal Entry` je on je.name = jea.parent
+		where je.docstatus = 1
+			and je.name in %(entries)s
+			and jea.debit_in_account_currency > 0
+		""",
+		{"entries": entries},
+	)
+	return flt(paid[0][0] if paid else 0)
 
 
 def _paid_against_employee_advances(funding_request: str, material_request: str) -> float:
@@ -822,30 +878,26 @@ def make_funding_request(material_request: str):
 
 @frappe.whitelist()
 def make_employee_advance(funding_request: str, material_request: str | None = None):
-	frappe.has_permission("Funding Request", "write", throw=True)
-	fr = frappe.get_doc("Funding Request", funding_request)
-	_assert_funding_request_approved(fr)
-	row = _employee_advance_target_row(fr, material_request)
-	return _build_employee_advance(fr, row).as_dict()
+	frappe.throw(
+		_("Operational expense is funded by Journal Entry, not Employee Advance.")
+	)
 
 
 @frappe.whitelist()
-def make_employee_advances(funding_request: str) -> list[str]:
-	"""Create one draft Employee Advance per remaining operational-expense row."""
-	frappe.has_permission("Employee Advance", "create", throw=True)
+def make_journal_entries(funding_request: str) -> list[str]:
+	"""Create one draft Journal Entry per remaining operational-expense row."""
+	frappe.has_permission("Journal Entry", "create", throw=True)
 	fr = frappe.get_doc("Funding Request", funding_request)
 	_assert_funding_request_approved(fr)
 	created = []
 	for row in _outstanding_rows(fr, MATERIAL_REQUEST_TYPE_OPERATIONAL):
-		if _open_employee_advance_exists(fr.name, row.material_request):
+		if _open_journal_entry_exists(fr.name, row.material_request):
 			continue
-		adv = _build_employee_advance(fr, row)
-		if not adv.advance_account:
-			adv.flags.ignore_validate = True
-		adv.insert(ignore_permissions=True, ignore_mandatory=True)
-		created.append(adv.name)
+		je = _build_operational_journal_entry(fr, row)
+		je.insert(ignore_permissions=True)
+		created.append(je.name)
 	if not created:
-		frappe.throw(_("No Employee Advances left to create."))
+		frappe.throw(_("No Journal Entries left to create."))
 	return created
 
 
@@ -862,6 +914,7 @@ def make_purchase_orders(funding_request: str) -> list[str]:
 		po = make_purchase_order(row.material_request)
 		if isinstance(po, dict):
 			po = frappe.get_doc(po)
+		_ensure_purchase_order_required_by(po)
 		if po.meta.has_field("custom_funding_request"):
 			po.custom_funding_request = fr.name
 		po.insert(ignore_permissions=True, ignore_mandatory=True)
@@ -898,6 +951,95 @@ def _assert_funding_request_approved(fr) -> None:
 				frappe.bold(fr.name)
 			)
 		)
+
+
+def _build_operational_journal_entry(fr, row):
+	remaining = flt(row.approved_amount) - flt(row.funded_amount)
+	if remaining <= 0:
+		frappe.throw(_("No remaining approved amount to journal."))
+	expense_account = _material_request_expense_account(row.material_request, fr.company)
+	if not expense_account:
+		frappe.throw(
+			_(
+				"Set Expense Account on Material Request {0} items to a posting account. "
+				"Transport Expense is a group — pick the leaf account under it."
+			).format(frappe.bold(row.material_request))
+		)
+	bank_account = _company_bank_or_cash_account(fr.company)
+	if not bank_account:
+		frappe.throw(
+			_("Set Default Bank Account on Company {0} before creating the Journal Entry.").format(
+				frappe.bold(fr.company)
+			)
+		)
+	remark = " — ".join(
+		part
+		for part in (
+			row.employee_name or row.employee,
+			get_material_request_item_summary(row.material_request),
+			row.material_request,
+			fr.name,
+		)
+		if part
+	)
+	je = frappe.new_doc("Journal Entry")
+	je.voucher_type = "Journal Entry"
+	je.company = fr.company
+	je.posting_date = nowdate()
+	je.user_remark = remark
+	if je.meta.has_field("custom_funding_request"):
+		je.custom_funding_request = fr.name
+	if je.meta.has_field("custom_material_request"):
+		je.custom_material_request = row.material_request
+	if je.meta.has_field("custom_project"):
+		je.custom_project = row.project
+	if je.meta.has_field("custom_employee"):
+		je.custom_employee = row.employee
+	cost_center = frappe.db.get_value("Company", fr.company, "cost_center")
+	debit = {
+		"account": expense_account,
+		"debit_in_account_currency": remaining,
+		"user_remark": remark,
+	}
+	credit = {
+		"account": bank_account,
+		"credit_in_account_currency": remaining,
+		"user_remark": remark,
+	}
+	if row.project:
+		debit["project"] = row.project
+		credit["project"] = row.project
+	if cost_center:
+		debit["cost_center"] = cost_center
+		credit["cost_center"] = cost_center
+	je.append("accounts", debit)
+	je.append("accounts", credit)
+	return je
+
+
+def _material_request_expense_account(material_request: str, company: str | None) -> str | None:
+	for account in frappe.get_all(
+		"Material Request Item",
+		filters={"parent": material_request},
+		pluck="expense_account",
+		order_by="idx",
+	):
+		if account and not cint(frappe.db.get_value("Account", account, "is_group")):
+			return account
+	if not company:
+		return None
+	return frappe.db.get_value(
+		"Account",
+		{"account_name": "Transport Expense", "company": company, "is_group": 0},
+	)
+
+
+def _company_bank_or_cash_account(company: str | None) -> str | None:
+	if not company:
+		return None
+	return frappe.db.get_value("Company", company, "default_bank_account") or frappe.db.get_value(
+		"Company", company, "default_cash_account"
+	)
 
 
 def _employee_advance_target_row(fr, material_request: str | None):
@@ -979,6 +1121,21 @@ def _outstanding_rows(fr, request_type: str | None, purchase: bool = False):
 	return out
 
 
+def _open_journal_entry_exists(funding_request: str, material_request: str) -> bool:
+	if not frappe.db.has_column("Journal Entry", "custom_material_request"):
+		return False
+	return bool(
+		frappe.db.exists(
+			"Journal Entry",
+			{
+				"custom_funding_request": funding_request,
+				"custom_material_request": material_request,
+				"docstatus": ["<", 2],
+			},
+		)
+	)
+
+
 def _open_employee_advance_exists(funding_request: str, material_request: str) -> bool:
 	return bool(
 		frappe.db.exists(
@@ -1042,7 +1199,7 @@ def get_funding_pay_options(funding_request: str) -> dict:
 			"label": _pay_option_label(row, remaining),
 		}
 		if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
-			if not _open_employee_advance_exists(fr.name, row.material_request):
+			if not _open_journal_entry_exists(fr.name, row.material_request):
 				operational.append(payload)
 		elif mr_type in PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING:
 			if not _open_purchase_order_exists(row.material_request):
@@ -1085,7 +1242,7 @@ def get_project_dashboard_data(data):
 		transactions.append(
 			{
 				"label": _("Funding"),
-				"items": ["Employee Advance"],
+				"items": ["Journal Entry"],
 			}
 		)
 	for group in transactions:
@@ -1095,17 +1252,17 @@ def get_project_dashboard_data(data):
 				items.append("Payment Entry")
 	non_standard = data.setdefault("non_standard_fieldnames", {})
 	non_standard["Material Request"] = "custom_project"
-	non_standard["Employee Advance"] = "custom_project"
+	non_standard["Journal Entry"] = "custom_project"
 	return data
 
 
 def get_material_request_dashboard_data(data):
 	transactions = data.setdefault("transactions", [])
 	transactions.append(
-		{"label": _("Funding"), "items": ["Funding Request", "Employee Advance"]}
+		{"label": _("Funding"), "items": ["Funding Request", "Journal Entry"]}
 	)
 	non_standard = data.setdefault("non_standard_fieldnames", {})
-	non_standard["Employee Advance"] = "custom_material_request"
+	non_standard["Journal Entry"] = "custom_material_request"
 	internal = data.setdefault("internal_links", {})
 	internal["Funding Request"] = "custom_funding_request"
 	return data
@@ -1171,6 +1328,7 @@ def ensure_funding_custom_fields() -> None:
 	_ensure_material_request_fields()
 	_ensure_employee_advance_fields()
 	_ensure_purchase_order_fields()
+	_ensure_journal_entry_fields()
 
 
 def _ensure_material_request_fields() -> None:
@@ -1296,6 +1454,54 @@ def _ensure_purchase_order_fields() -> None:
 		  AND IFNULL(mr.custom_funding_request, '') != ''
 		"""
 	)
+
+
+def _ensure_journal_entry_fields() -> None:
+	if not frappe.db.exists("DocType", "Journal Entry"):
+		return
+	for values in (
+		{
+			"fieldname": "custom_funding_request",
+			"label": "Funding Request",
+			"fieldtype": "Link",
+			"options": "Funding Request",
+			"insert_after": "custom_cgm_source_task",
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+			"in_standard_filter": 1,
+		},
+		{
+			"fieldname": "custom_material_request",
+			"label": "Material Request",
+			"fieldtype": "Link",
+			"options": "Material Request",
+			"insert_after": "custom_funding_request",
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+			"in_standard_filter": 1,
+		},
+		{
+			"fieldname": "custom_project",
+			"label": "Project / Shipment",
+			"fieldtype": "Link",
+			"options": "Project",
+			"insert_after": "custom_material_request",
+			"read_only": 1,
+			"in_standard_filter": 1,
+		},
+		{
+			"fieldname": "custom_employee",
+			"label": "Employee",
+			"fieldtype": "Link",
+			"options": "Employee",
+			"insert_after": "custom_project",
+			"read_only": 1,
+			"in_standard_filter": 1,
+		},
+	):
+		_ensure_cf("Journal Entry", values)
 
 
 def _ensure_employee_advance_fields() -> None:

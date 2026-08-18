@@ -126,7 +126,7 @@ function setup_funding_actions(frm) {
 		frm.dashboard.set_headline(
 			is_oe
 				? __(
-						"This request is on Funding Request {0}. Pay the Employee Advance to mark it Funded. It does not go through Purchase Order.",
+						"This request is on Funding Request {0}. Submit the Journal Entry to mark it Funded. It does not go through Purchase Order.",
 						[frm.doc.custom_funding_request]
 					)
 				: approved
@@ -148,7 +148,7 @@ function setup_funding_actions(frm) {
 	frm.dashboard.set_headline(
 		is_oe
 			? __(
-					"Submitted and waiting for funding. Finance adds this to a Funding Request. Status follows the Employee Advance payment, not Purchase Order."
+					"Submitted and waiting for funding. Finance adds this to a Funding Request. Status follows the Journal Entry, not Purchase Order."
 				)
 			: __(
 					"Director must approve this Purchase request on a Funding Request before a Purchase Order or quotation can be created."
