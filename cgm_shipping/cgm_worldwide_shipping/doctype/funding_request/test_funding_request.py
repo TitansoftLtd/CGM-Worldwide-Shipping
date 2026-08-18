@@ -68,34 +68,35 @@ class TestFundingRequestHelpers(unittest.TestCase):
 		self.assertFalse(funding_is_approved("Rejected", 0))
 		self.assertFalse(funding_is_approved("Director Approved", 0))
 
-	def test_employee_advance_skips_non_receivable_account(self):
+	def test_operational_expense_uses_item_expense_account_then_transport_expense(self):
 		from unittest.mock import patch
 
 		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
-			_employee_advance_receivable_account,
+			_company_bank_or_cash_account,
+			_material_request_expense_account,
 		)
 
-		def _holding(doctype, name, field=None, as_dict=False):
-			if doctype in ("Employee", "Company"):
-				return "Holding Account - CWSCL"
-			if doctype == "Account":
-				return "Asset"
+		def _not_group(doctype, name, field=None, as_dict=False):
+			if field == "is_group":
+				return 0
 			return None
 
-		with patch("frappe.db.get_value", side_effect=_holding):
-			self.assertIsNone(_employee_advance_receivable_account("EMP-1", "Company"))
+		with patch("frappe.get_all", return_value=["Felix Gor - CWSCL", None]):
+			with patch("frappe.db.get_value", side_effect=_not_group):
+				self.assertEqual(
+					_material_request_expense_account("MAT-MR-1", "Company"),
+					"Felix Gor - CWSCL",
+				)
 
-		def _receivable(doctype, name, field=None, as_dict=False):
-			if doctype == "Employee":
-				return "Employee Advances - CWSCL"
-			if doctype == "Account":
-				return "Receivable"
+		def _company_bank(doctype, name, field=None, as_dict=False):
+			if field == "default_bank_account":
+				return "Stanbic Bank - CWSCL"
 			return None
 
-		with patch("frappe.db.get_value", side_effect=_receivable):
+		with patch("frappe.db.get_value", side_effect=_company_bank):
 			self.assertEqual(
-				_employee_advance_receivable_account("EMP-1", "Company"),
-				"Employee Advances - CWSCL",
+				_company_bank_or_cash_account("Company"),
+				"Stanbic Bank - CWSCL",
 			)
 
 	def test_total_approved_is_not_recorded_before_director_approves(self):
@@ -174,6 +175,24 @@ class TestFundingRequestHelpers(unittest.TestCase):
 			self.assertTrue(material_request_purchase_is_director_approved("MAT-MR-3"))
 			assert_material_request_may_create_purchase_document("MAT-MR-3")
 
+	def test_purchase_order_keeps_required_by_when_material_request_date_is_past(self):
+		import frappe
+		from frappe.utils import add_days, nowdate
+
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+			_ensure_purchase_order_required_by,
+		)
+
+		yesterday = add_days(nowdate(), -1)
+		po = frappe._dict(
+			schedule_date=None,
+			items=[frappe._dict(schedule_date=yesterday), frappe._dict(schedule_date=None)],
+		)
+		_ensure_purchase_order_required_by(po)
+		self.assertEqual(po.schedule_date, nowdate())
+		self.assertEqual(po.get("items")[0].schedule_date, nowdate())
+		self.assertEqual(po.get("items")[1].schedule_date, nowdate())
+
 	def test_hooks_are_wired(self):
 		import frappe
 
@@ -192,12 +211,12 @@ class TestFundingRequestHelpers(unittest.TestCase):
 			any("funding.on_material_request_on_submit" in h for h in mr_submit),
 			"Material Request on_submit hook is missing",
 		)
-		ea_submit = events.get("Employee Advance", {}).get("on_submit") or []
-		if isinstance(ea_submit, str):
-			ea_submit = [ea_submit]
+		je_submit = events.get("Journal Entry", {}).get("on_submit") or []
+		if isinstance(je_submit, str):
+			je_submit = [je_submit]
 		self.assertTrue(
-			any("funding.on_employee_advance_on_submit" in h for h in ea_submit),
-			"Employee Advance on_submit hook is missing",
+			any("funding.on_journal_entry_on_submit" in h for h in je_submit),
+			"Journal Entry on_submit funding hook is missing",
 		)
 		for doctype in ("Purchase Order", "Request for Quotation", "Supplier Quotation"):
 			validates = events.get(doctype, {}).get("validate") or []

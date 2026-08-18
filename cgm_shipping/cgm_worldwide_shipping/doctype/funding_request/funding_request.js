@@ -282,11 +282,11 @@ function setup_funding_pay_buttons(frm) {
 			}
 			const register_actions = () => {
 				if (has_operational) {
-					frm.page.add_action_item(__("Create Employee Advance"), () => {
+					frm.page.add_action_item(__("Create Journal Entry"), () => {
 						create_funding_docs(
 							frm,
-							"cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_employee_advances",
-							"Employee Advance"
+							"cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_journal_entries",
+							"Journal Entry"
 						);
 					}, true);
 				}
