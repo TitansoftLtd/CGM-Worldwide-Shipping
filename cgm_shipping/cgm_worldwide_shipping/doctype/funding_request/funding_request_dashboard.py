@@ -9,7 +9,7 @@ def get_data():
 		"fieldname": "custom_funding_request",
 		"non_standard_fieldnames": {
 			"Material Request": "custom_funding_request",
-			"Employee Advance": "custom_funding_request",
+			"Journal Entry": "custom_funding_request",
 			"Purchase Order": "custom_funding_request",
 			"Payment Entry": "project",
 		},
@@ -18,7 +18,7 @@ def get_data():
 		},
 		"transactions": [
 			{"label": _("Requests"), "items": ["Material Request"]},
-			{"label": _("Employee Advance"), "items": ["Employee Advance"]},
+			{"label": _("Journal Entry"), "items": ["Journal Entry"]},
 			{"label": _("Purchase Order"), "items": ["Purchase Order"]},
 		],
 	}

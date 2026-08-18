@@ -270,10 +270,12 @@ doc_events = {
 		"on_submit": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_on_submit",
 		],
 		"on_cancel": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_cancel",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_on_cancel",
 		],
 		"on_update_after_submit": (
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
