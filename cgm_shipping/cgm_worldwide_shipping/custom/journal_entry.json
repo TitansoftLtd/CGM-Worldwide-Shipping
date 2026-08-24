@@ -65,6 +65,58 @@
    "translatable": 0,
    "unique": 0,
    "width": null
+  },
+  {
+   "allow_on_submit": 1,
+   "dt": "Journal Entry",
+   "fieldname": "custom_funding_request",
+   "fieldtype": "Link",
+   "insert_after": "custom_cgm_source_task",
+   "label": "Funding Request",
+   "module": "CGM Worldwide Shipping",
+   "name": "Journal Entry-custom_funding_request",
+   "no_copy": 1,
+   "options": "Funding Request",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "dt": "Journal Entry",
+   "fieldname": "custom_material_request",
+   "fieldtype": "Link",
+   "insert_after": "custom_funding_request",
+   "label": "Material Request",
+   "module": "CGM Worldwide Shipping",
+   "name": "Journal Entry-custom_material_request",
+   "no_copy": 1,
+   "options": "Material Request",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "dt": "Journal Entry",
+   "fieldname": "custom_project",
+   "fieldtype": "Link",
+   "insert_after": "custom_material_request",
+   "label": "Project / Shipment",
+   "module": "CGM Worldwide Shipping",
+   "name": "Journal Entry-custom_project",
+   "options": "Project",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "dt": "Journal Entry",
+   "fieldname": "custom_employee",
+   "fieldtype": "Link",
+   "insert_after": "custom_project",
+   "label": "Employee",
+   "module": "CGM Worldwide Shipping",
+   "name": "Journal Entry-custom_employee",
+   "options": "Employee",
+   "read_only": 1,
+   "in_standard_filter": 1
   }
  ],
  "custom_perms": [

@@ -52,7 +52,6 @@ def after_migrate() -> None:
 		("finance cost ledger schema", ensure_finance_cost_ledger_schema),
 		("transporter portal setup", ensure_transporter_portal_setup),
 		("task workflow masters", ensure_task_workflow_masters),
-		("funding request setup", ensure_funding_request_setup),
 	):
 		try:
 			fn()
@@ -85,15 +84,6 @@ def ensure_task_workflow_masters() -> None:
 	seed_task_workflow_masters()
 	seed_cgm_shipping_settings()
 	repair_clearance_charge_item_setup()
-	frappe.db.commit()
-
-
-def ensure_funding_request_setup() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
-		ensure_funding_request_setup as _ensure,
-	)
-
-	_ensure()
 	frappe.db.commit()
 
 
