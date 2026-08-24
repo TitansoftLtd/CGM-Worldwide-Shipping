@@ -96,12 +96,16 @@ def ensure_task_workflow_masters() -> None:
 
 
 def ensure_license_setup() -> None:
-	"""Roles the licence & permit register doctypes grant permissions to."""
+	"""Roles and licence types the licence & permit register depends on."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.license_roles import (
 		ensure_license_roles,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.license_seed_data import (
+		seed_license_types,
+	)
 
 	ensure_license_roles()
+	seed_license_types()
 	frappe.db.commit()
 
 
