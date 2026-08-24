@@ -21,6 +21,8 @@
   "column_break_accrual_accounts",
   "kpa_port_accrual_expense_account",
   "kpa_port_accrual_payable_account",
+  "section_funding_settings",
+  "default_operational_expense_account",
   "tab_notification_settings",
   "section_notification_settings",
   "inspection_reminder_hours",
@@ -393,6 +395,18 @@
    "fieldname": "kpa_port_accrual_payable_account",
    "fieldtype": "Link",
    "label": "KPA Port Accrued Payable Account",
+   "options": "Account"
+  },
+  {
+   "description": "Fallback expense account for Operational Expense Journal Entries when Material Request items have no Expense Account.",
+   "fieldname": "section_funding_settings",
+   "fieldtype": "Section Break",
+   "label": "Funding"
+  },
+  {
+   "fieldname": "default_operational_expense_account",
+   "fieldtype": "Link",
+   "label": "Default Operational Expense Account",
    "options": "Account"
   },
   {

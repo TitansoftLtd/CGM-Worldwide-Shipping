@@ -250,7 +250,6 @@ doc_events = {
 	"Payment Entry": {
 		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
-			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.copy_project_from_employee_advance",
 		],
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_submit",
 		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_cancel",
@@ -294,6 +293,7 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 	},
 	"Material Request": {
+		"before_validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.before_material_request_validate",
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_validate",
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
 	},
@@ -308,11 +308,6 @@ doc_events = {
 	},
 	"Stock Entry": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.copy_project_to_stock_entry",
-	},
-	"Employee Advance": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_validate",
-		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_on_submit",
-		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_on_cancel",
 	},
 	"Opportunity": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.documents.on_opportunity_onload",
@@ -423,8 +418,6 @@ override_doctype_dashboards = {
     "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_project_dashboard_data",
     "Material Request":
     "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_material_request_dashboard_data",
-    "Employee Advance":
-    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_employee_advance_dashboard_data",
 }
 
 # exempt linked doctypes from being automatically cancelled

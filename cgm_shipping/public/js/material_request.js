@@ -3,31 +3,38 @@
 
 const OE_ITEM_GRID_FIELDS = {
 	show: ["item_code", "description", "qty", "uom", "rate", "amount", "expense_account"],
-	hide: ["schedule_date", "warehouse", "from_warehouse"],
+	hide: ["warehouse", "from_warehouse"],
 };
 
 frappe.ui.form.on("Material Request", {
+	setup(frm) {
+		patch_material_request_set_warehouse_label();
+	},
+
 	onload(frm) {
+		patch_material_request_set_warehouse_label();
 		if (frm.is_new() && !frm.doc.custom_requested_by) {
 			frm.set_value("custom_requested_by", frappe.session.user);
 		}
+		frm._cgm_layout_type = frm.doc.material_request_type;
 		set_item_code_query(frm);
 		set_employee_from_user(frm);
 	},
 
 	refresh(frm) {
 		set_item_code_query(frm);
-		toggle_operational_expense_layout(frm);
+		apply_material_request_form_layout(frm);
 		setup_funding_actions(frm);
-		set_operational_expense_indicator(frm);
-		if (frm.fields_dict.workflow_state) {
+		set_funding_workflow_indicator(frm);
+		if (frm.fields_dict.workflow_state && is_funding_request_type(frm)) {
 			frm.set_df_property("workflow_state", "read_only", 1);
 		}
 	},
 
 	material_request_type(frm) {
+		frm._cgm_layout_type = frm.doc.material_request_type;
 		set_item_code_query(frm);
-		toggle_operational_expense_layout(frm);
+		apply_material_request_form_layout(frm, { type_changed: true });
 		set_employee_from_user(frm);
 	},
 
@@ -63,31 +70,54 @@ frappe.ui.form.on("Material Request Item", {
 		if (frm.doc.material_request_type !== "Operational Expense") {
 			return;
 		}
-		const clear_warehouse = () => {
-			if (locals[cdt][cdn] && locals[cdt][cdn].warehouse) {
-				frappe.model.set_value(cdt, cdn, "warehouse", "");
-			}
-		};
-		clear_warehouse();
-		frappe.after_ajax(clear_warehouse);
-	},
-
-	project(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
-		if (!frm.doc.custom_project && row.project) {
-			frm.set_value("custom_project", row.project);
+		if (row.warehouse) {
+			row.warehouse = null;
 		}
+		if (row.from_warehouse) {
+			row.from_warehouse = null;
+		}
+		ensure_operational_expense_item_description(row);
 	},
 
 	items_add(frm) {
-		if (frm.doc.material_request_type === "Operational Expense") {
-			toggle_operational_expense_item_grid(frm);
+		if (!is_operational_expense(frm)) {
+			return;
 		}
+		apply_operational_expense_item_grid(frm);
 	},
 });
 
+function patch_material_request_set_warehouse_label() {
+	if (frappe.cgm__mr_set_warehouse_label_patched) {
+		return;
+	}
+	const handlers = frappe.ui.form.handlers["Material Request"]?.set_warehouse_label;
+	if (!handlers?.length) {
+		return;
+	}
+	const original_handlers = handlers.slice();
+	handlers.length = 0;
+	handlers.push((frm) => {
+		if (is_operational_expense(frm)) {
+			apply_operational_expense_item_grid(frm);
+			toggle_operational_expense_warehouse(frm);
+			return;
+		}
+		original_handlers.forEach((fn) => fn(frm));
+	});
+	frappe.cgm__mr_set_warehouse_label_patched = true;
+}
+
 function is_operational_expense(frm) {
 	return frm.doc.material_request_type === "Operational Expense";
+}
+
+function is_funding_request_type(frm) {
+	const type = frm.doc.material_request_type;
+	return (
+		type === "Operational Expense" || type === "Purchase" || type === "Subcontracting"
+	);
 }
 
 function set_employee_from_user(frm) {
@@ -102,47 +132,74 @@ function set_employee_from_user(frm) {
 	});
 }
 
-function toggle_operational_expense_layout(frm) {
+function apply_material_request_form_layout(frm, opts = {}) {
 	const is_oe = is_operational_expense(frm);
-	toggle_operational_expense_warehouse(frm);
-	toggle_operational_expense_item_grid(frm);
+	const type_changed = Boolean(opts.type_changed);
 
-	["schedule_date", "buying_price_list"].forEach((field) => {
-		if (frm.fields_dict[field]) {
-			frm.toggle_display(field, !is_oe);
+	if (is_oe) {
+		apply_operational_expense_item_grid(frm);
+		if (type_changed) {
+			toggle_operational_expense_warehouse(frm);
 		}
-	});
+		["scan_barcode", "set_warehouse", "set_from_warehouse"].forEach((field) => {
+			if (frm.fields_dict[field]) {
+				frm.toggle_display(field, false);
+			}
+		});
+		frm._cgm_oe_grid_applied = true;
+	} else if (frm._cgm_oe_grid_applied && type_changed) {
+		frm.refresh_field("items");
+		frm._cgm_oe_grid_applied = false;
+	} else {
+		["scan_barcode", "set_warehouse", "set_from_warehouse"].forEach((field) => {
+			if (frm.fields_dict[field]) {
+				frm.toggle_display(field, true);
+			}
+		});
+		if (frm.fields_dict.set_warehouse) {
+			frm.set_df_property("set_warehouse", "hidden", 0);
+		}
+	}
 
-	["scan_barcode", "set_warehouse", "set_from_warehouse"].forEach((field) => {
-		if (frm.fields_dict[field]) {
-			frm.toggle_display(field, !is_oe);
-		}
-	});
+	if (frm.fields_dict.buying_price_list) {
+		frm.toggle_display("buying_price_list", !is_oe);
+	}
 
 	if (frm.fields_dict.custom_request_description) {
 		frm.toggle_display("custom_request_description", false);
 	}
 }
 
-function toggle_operational_expense_item_grid(frm) {
+function ensure_operational_expense_item_description(row) {
+	if ((row.description || "").trim()) {
+		return;
+	}
+	const fallback = (row.item_name || row.item_code || "").trim();
+	if (fallback) {
+		row.description = fallback;
+	}
+}
+
+function apply_operational_expense_item_grid(frm) {
 	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
 	if (!grid) {
 		return;
 	}
-	const is_oe = is_operational_expense(frm);
 	OE_ITEM_GRID_FIELDS.hide.forEach((fieldname) => {
-		grid.update_docfield_property(fieldname, "hidden", is_oe);
-		grid.update_docfield_property(fieldname, "in_list_view", is_oe ? 0 : undefined);
+		grid.update_docfield_property(fieldname, "hidden", 1);
+		grid.update_docfield_property(fieldname, "in_list_view", 0);
 	});
 	OE_ITEM_GRID_FIELDS.show.forEach((fieldname) => {
-		if (fieldname === "description" || fieldname === "expense_account") {
-			grid.update_docfield_property(fieldname, "in_list_view", is_oe ? 1 : undefined);
-		}
 		grid.update_docfield_property(fieldname, "hidden", 0);
+		if (fieldname === "description" || fieldname === "expense_account") {
+			grid.update_docfield_property(fieldname, "in_list_view", 1);
+		}
 	});
-	if (is_oe) {
-		grid.update_docfield_property("item_code", "columns", 2);
-		grid.update_docfield_property("description", "columns", 2);
+	grid.update_docfield_property("item_code", "columns", 2);
+	grid.update_docfield_property("description", "columns", 2);
+	(frm.doc.items || []).forEach((row) => ensure_operational_expense_item_description(row));
+	if (typeof grid.refresh === "function") {
+		grid.refresh();
 	}
 }
 
@@ -155,9 +212,10 @@ function setup_funding_actions(frm) {
 	}
 
 	const approved = [
-		"Director Approved",
-		"Funding in Progress",
-		"Funded",
+		"Approved",
+		"Partially Approved",
+		"Disbursement in Progress",
+		"Disbursed",
 	].includes(frm.doc.workflow_state);
 
 	const hide_purchase_create = () => {
@@ -196,16 +254,16 @@ function setup_funding_actions(frm) {
 		frm.dashboard.set_headline(
 			is_oe
 				? __(
-						"This request is on Funding Request {0}. Submit the Journal Entry to mark it Funded. It does not go through Purchase Order.",
+						"This request is on Funding Request {0}. Submit the Journal Entry to mark it Disbursed. It does not go through Purchase Order.",
 						[frm.doc.custom_funding_request]
 					)
 				: approved
 					? __(
-							"This request is on Funding Request {0}. Director approval is there. The orange Pending badge is ERPNext's submitted status, not approval.",
+							"This request is on Funding Request {0}. Funding Approver approval is recorded. The orange Pending badge is ERPNext's submitted status, not approval.",
 							[frm.doc.custom_funding_request]
 						)
 					: __(
-							"This request is on Funding Request {0}. Wait for the Director to approve before creating a Purchase Order. The orange Pending badge is ERPNext's submitted status, not approval.",
+							"This request is on Funding Request {0}. Wait for the Funding Approver to approve before creating a Purchase Order. The orange Pending badge is ERPNext's submitted status, not approval.",
 							[frm.doc.custom_funding_request]
 						)
 		);
@@ -221,7 +279,7 @@ function setup_funding_actions(frm) {
 					"Submitted and waiting for funding. Finance adds this to a Funding Request. Status follows the Journal Entry, not Purchase Order."
 				)
 			: __(
-					"Director must approve this Purchase request on a Funding Request before a Purchase Order or quotation can be created."
+					"Submitted and waiting for funding. Finance adds this to a Funding Request."
 				)
 	);
 	frm.add_custom_button(__("Add to Funding Request"), () => open_funding_request(frm));
@@ -244,21 +302,17 @@ function open_funding_request(frm) {
 }
 
 function toggle_operational_expense_warehouse(frm) {
-	const is_oe = is_operational_expense(frm);
-	frm.set_df_property("set_warehouse", "hidden", is_oe);
-	if (frm.fields_dict.items && frm.fields_dict.items.grid) {
-		frm.fields_dict.items.grid.update_docfield_property("warehouse", "hidden", is_oe);
+	frm.set_df_property("set_warehouse", "hidden", 1);
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (grid) {
+		grid.update_docfield_property("warehouse", "hidden", 1);
+		grid.update_docfield_property("from_warehouse", "hidden", 1);
 	}
-	if (!is_oe) {
-		return;
-	}
-	if (frm.doc.set_warehouse) {
-		frm.set_value("set_warehouse", "");
-	}
+	frm.doc.set_warehouse = null;
+	frm.doc.set_from_warehouse = null;
 	(frm.doc.items || []).forEach((item) => {
-		if (item.warehouse) {
-			frappe.model.set_value(item.doctype, item.name, "warehouse", "");
-		}
+		item.warehouse = null;
+		item.from_warehouse = null;
 	});
 }
 
@@ -289,8 +343,8 @@ function set_item_code_query(frm) {
 	});
 }
 
-function set_operational_expense_indicator(frm) {
-	if (frm.doc.material_request_type !== "Operational Expense") {
+function set_funding_workflow_indicator(frm) {
+	if (!is_funding_request_type(frm)) {
 		return;
 	}
 	const apply = () => {
@@ -303,12 +357,14 @@ function set_operational_expense_indicator(frm) {
 		const colors = {
 			Draft: "gray",
 			Unfunded: "orange",
-			"On Funding Request": "blue",
-			"Pending Director Approval": "orange",
-			"Director Approved": "blue",
-			Funded: "green",
-			Rejected: "red",
 			Submitted: "blue",
+			"On Funding Request": "blue",
+			"Pending Approval": "orange",
+			Approved: "blue",
+			"Partially Approved": "orange",
+			"Disbursement in Progress": "blue",
+			Disbursed: "green",
+			Rejected: "red",
 		};
 		frm.page.set_indicator(__(state), colors[state] || "blue");
 	};
