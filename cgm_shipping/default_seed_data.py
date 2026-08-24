@@ -125,17 +125,6 @@ def seed_all_defaults() -> None:
 	seed_task_workflow_masters()
 	ensure_clearance_charge_items()
 	try:
-		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
-			ensure_funding_request_setup,
-		)
-
-		ensure_funding_request_setup()
-	except Exception:
-		frappe.log_error(
-			title="CGM seed funding request setup failed",
-			message=frappe.get_traceback(),
-		)
-	try:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
 			ensure_sea_task_notifications,
 		)

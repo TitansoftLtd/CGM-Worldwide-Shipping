@@ -4,30 +4,42 @@
 import unittest
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
-	NON_OE_WORKFLOW_CONDITION,
-	OE_WORKFLOW_CONDITION,
 	funding_approval_is_recorded,
 	funding_is_approved,
 	funding_progress_state,
 	get_material_request_item_summary,
 	get_material_request_total,
-	mr_funding_state_for_funding_request,
-	mr_row_funding_state,
-	reduction_amount,
-	with_operational_expense_request_type,
+	mr_workflow_state_from_funding_request,
+	mr_row_workflow_state,
+	material_request_purchase_is_funding_approved,
+	variance_amount,
 )
 
 
 class TestFundingRequestHelpers(unittest.TestCase):
-	def test_reduction_preserves_requested_amount(self):
+	def test_variance_preserves_requested_amount(self):
 		requested = 5000
 		approved = 3500
-		self.assertEqual(reduction_amount(requested, approved), 1500)
+		self.assertEqual(variance_amount(requested, approved), -1500)
 		self.assertEqual(requested, 5000)
 		self.assertEqual(approved, 3500)
 
-	def test_full_approval_has_no_reduction(self):
-		self.assertEqual(reduction_amount(2000, 2000), 0)
+	def test_invalid_material_request_link_is_rejected(self):
+		from cgm_shipping.cgm_worldwide_shipping.doctype.funding_request.funding_request import (
+			is_valid_funding_material_request_link,
+		)
+
+		self.assertFalse(is_valid_funding_material_request_link(None))
+		self.assertFalse(is_valid_funding_material_request_link(""))
+		self.assertFalse(is_valid_funding_material_request_link("Material Request"))
+		self.assertTrue(is_valid_funding_material_request_link("MAT-MR-2026-00013"))
+
+	def test_variance_amount_sign(self):
+		self.assertEqual(variance_amount(5000, 3500), -1500)
+		self.assertEqual(variance_amount(5000, 5500), 500)
+
+	def test_full_approval_has_no_variance(self):
+		self.assertEqual(variance_amount(2000, 2000), 0)
 
 	def test_requested_total_comes_from_items_not_header(self):
 		import frappe
@@ -48,6 +60,29 @@ class TestFundingRequestHelpers(unittest.TestCase):
 		mr = frappe._dict(items=[], custom_requested_amount=2000)
 		self.assertEqual(get_material_request_total(mr), 2000)
 
+	def test_purchase_requester_uses_requested_by_when_no_employee(self):
+		from unittest.mock import patch
+
+		import frappe
+
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+			get_material_request_requester_name,
+		)
+
+		mr = frappe._dict(
+			custom_employee=None,
+			custom_requested_by="user@example.com",
+			custom_requested_by_name="Jane Purchase",
+		)
+		self.assertEqual(get_material_request_requester_name(mr), "Jane Purchase")
+
+		with patch(
+			"frappe.db.get_value",
+			return_value="Bob Employee",
+		):
+			mr_oe = frappe._dict(custom_employee="EMP-1")
+			self.assertEqual(get_material_request_requester_name(mr_oe), "Bob Employee")
+
 	def test_item_summary_uses_item_names(self):
 		import frappe
 
@@ -62,17 +97,18 @@ class TestFundingRequestHelpers(unittest.TestCase):
 			"Transport Expense, Document Collection Expense",
 		)
 
-	def test_unapproved_funding_cannot_create_advance(self):
+	def test_unapproved_funding_cannot_create_payment_docs(self):
 		self.assertFalse(funding_is_approved("Draft", 0))
-		self.assertFalse(funding_is_approved("Pending Director Approval", 0))
+		self.assertFalse(funding_is_approved("Pending Approval", 0))
 		self.assertFalse(funding_is_approved("Rejected", 0))
-		self.assertFalse(funding_is_approved("Director Approved", 0))
+		self.assertFalse(funding_is_approved("Approved", 0))
 
-	def test_operational_expense_uses_item_expense_account_then_transport_expense(self):
+	def test_operational_expense_uses_item_expense_account_then_settings_default(self):
 		from unittest.mock import patch
 
 		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
 			_company_bank_or_cash_account,
+			_default_operational_expense_account,
 			_material_request_expense_account,
 		)
 
@@ -88,6 +124,15 @@ class TestFundingRequestHelpers(unittest.TestCase):
 					"Felix Gor - CWSCL",
 				)
 
+		with patch("frappe.db.exists", return_value=True):
+			with patch("frappe.db.has_column", return_value=True):
+				with patch("frappe.db.get_single_value", return_value="Settings Expense - CWSCL"):
+					with patch("frappe.db.get_value", side_effect=_not_group):
+						self.assertEqual(
+							_default_operational_expense_account("Company"),
+							"Settings Expense - CWSCL",
+						)
+
 		def _company_bank(doctype, name, field=None, as_dict=False):
 			if field == "default_bank_account":
 				return "Stanbic Bank - CWSCL"
@@ -99,59 +144,61 @@ class TestFundingRequestHelpers(unittest.TestCase):
 				"Stanbic Bank - CWSCL",
 			)
 
-	def test_total_approved_is_not_recorded_before_director_approves(self):
+	def test_total_approved_is_not_recorded_before_approver_approves(self):
 		self.assertFalse(funding_approval_is_recorded("Draft"))
-		self.assertFalse(funding_approval_is_recorded("Pending Director Approval"))
+		self.assertFalse(funding_approval_is_recorded("Pending Approval"))
 		self.assertFalse(funding_approval_is_recorded("Rejected"))
-		self.assertTrue(funding_approval_is_recorded("Director Approved"))
-		self.assertTrue(funding_approval_is_recorded("Funded"))
+		self.assertTrue(funding_approval_is_recorded("Approved"))
+		self.assertTrue(funding_approval_is_recorded("Partially Approved"))
+		self.assertTrue(funding_approval_is_recorded("Disbursed"))
 
-	def test_approved_funding_can_create_advance(self):
-		self.assertTrue(funding_is_approved("Director Approved", 1))
-		self.assertTrue(funding_is_approved("Funding in Progress", 1))
-		self.assertTrue(funding_is_approved("Funded", 1))
+	def test_approved_funding_can_create_payment_docs(self):
+		self.assertTrue(funding_is_approved("Approved", 1))
+		self.assertTrue(funding_is_approved("Partially Approved", 1))
+		self.assertTrue(funding_is_approved("Disbursement in Progress", 1))
+		self.assertTrue(funding_is_approved("Disbursed", 1))
 
-	def test_submitting_employee_advance_does_not_revert_funding_in_progress(self):
+	def test_submitting_journal_entry_does_not_revert_disbursement_in_progress(self):
 		self.assertEqual(
-			funding_progress_state("Funding in Progress", 0, 700),
-			"Funding in Progress",
+			funding_progress_state("Disbursement in Progress", 0, 700),
+			"Disbursement in Progress",
 		)
 		self.assertEqual(
-			funding_progress_state("Director Approved", 0, 700),
-			"Director Approved",
+			funding_progress_state("Approved", 0, 700),
+			"Approved",
 		)
 		self.assertEqual(
-			funding_progress_state("Director Approved", 200, 700),
-			"Funding in Progress",
+			funding_progress_state("Approved", 200, 700),
+			"Disbursement in Progress",
 		)
 		self.assertEqual(
-			funding_progress_state("Funding in Progress", 700, 700),
-			"Funded",
+			funding_progress_state("Disbursement in Progress", 700, 700),
+			"Disbursed",
 		)
 		self.assertEqual(
-			funding_progress_state("Funded", 0, 700),
-			"Funding in Progress",
+			funding_progress_state("Disbursed", 0, 700),
+			"Disbursement in Progress",
 		)
 
 	def test_rejected_is_never_approved(self):
 		self.assertFalse(funding_is_approved("Rejected", 1))
 		self.assertFalse(funding_is_approved("Cancelled", 2))
 
-	def test_purchase_documents_require_director_approved_funding(self):
+	def test_purchase_documents_require_funding_approved(self):
 		from unittest.mock import patch
 
 		import frappe
 
 		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
 			assert_material_request_may_create_purchase_document,
-			material_request_purchase_is_director_approved,
+			material_request_purchase_is_funding_approved,
 		)
 
-		self.assertTrue(material_request_purchase_is_director_approved(""))
+		self.assertTrue(material_request_purchase_is_funding_approved(""))
 
 		unfunded = frappe._dict(material_request_type="Purchase", custom_funding_request=None)
 		with patch("frappe.db.get_value", return_value=unfunded):
-			self.assertFalse(material_request_purchase_is_director_approved("MAT-MR-1"))
+			self.assertFalse(material_request_purchase_is_funding_approved("MAT-MR-1"))
 			self.assertRaises(
 				frappe.ValidationError,
 				assert_material_request_may_create_purchase_document,
@@ -162,17 +209,17 @@ class TestFundingRequestHelpers(unittest.TestCase):
 			material_request_type="Material Transfer", custom_funding_request=None
 		)
 		with patch("frappe.db.get_value", return_value=transfer):
-			self.assertTrue(material_request_purchase_is_director_approved("MAT-MR-2"))
+			self.assertTrue(material_request_purchase_is_funding_approved("MAT-MR-2"))
 
 		def _approved_lookup(doctype, name, fields, as_dict=False):
 			if doctype == "Material Request":
 				return frappe._dict(
 					material_request_type="Purchase", custom_funding_request="FR-1"
 				)
-			return frappe._dict(workflow_state="Director Approved", docstatus=1)
+			return frappe._dict(workflow_state="Approved", docstatus=1)
 
 		with patch("frappe.db.get_value", side_effect=_approved_lookup):
-			self.assertTrue(material_request_purchase_is_director_approved("MAT-MR-3"))
+			self.assertTrue(material_request_purchase_is_funding_approved("MAT-MR-3"))
 			assert_material_request_may_create_purchase_document("MAT-MR-3")
 
 	def test_purchase_order_keeps_required_by_when_material_request_date_is_past(self):
@@ -234,70 +281,37 @@ class TestFundingRequestHelpers(unittest.TestCase):
 			"Payment Entry on_submit hook is missing",
 		)
 
-	def test_operational_expense_is_appended_without_replacing_erpnext_types(self):
-		erpnext_options = "Purchase\nMaterial Transfer\nMaterial Issue"
-		merged = with_operational_expense_request_type(erpnext_options).split("\n")
-		self.assertEqual(merged[:3], erpnext_options.split("\n"))
-		self.assertEqual(merged[-1], "Operational Expense")
-		self.assertEqual(merged.count("Operational Expense"), 1)
-		self.assertEqual(
-			with_operational_expense_request_type("\n".join(merged)),
-			"\n".join(merged),
-		)
-
 	def test_funding_request_maps_to_material_request_workflow_states(self):
 		self.assertEqual(
-			mr_funding_state_for_funding_request("Draft"), "On Funding Request"
+			mr_workflow_state_from_funding_request("Draft"), "On Funding Request"
 		)
 		self.assertEqual(
-			mr_funding_state_for_funding_request("Pending Director Approval"),
-			"Pending Director Approval",
+			mr_workflow_state_from_funding_request("Pending Approval"),
+			"Pending Approval",
 		)
 		self.assertEqual(
-			mr_funding_state_for_funding_request("Director Approved"), "Director Approved"
+			mr_workflow_state_from_funding_request("Approved"), "Approved"
 		)
 		self.assertEqual(
-			mr_funding_state_for_funding_request("Funding in Progress"), "Director Approved"
-		)
-		self.assertEqual(mr_funding_state_for_funding_request("Funded"), "Funded")
-		self.assertEqual(mr_funding_state_for_funding_request("Completed"), "Funded")
-		self.assertEqual(mr_funding_state_for_funding_request("Rejected"), "Rejected")
-
-	def test_operational_expense_becomes_funded_when_that_request_is_paid(self):
-		self.assertEqual(
-			mr_row_funding_state("Funding in Progress", 200, 0),
-			"Director Approved",
+			mr_workflow_state_from_funding_request("Partially Approved"), "Approved"
 		)
 		self.assertEqual(
-			mr_row_funding_state("Funding in Progress", 200, 200),
-			"Funded",
+			mr_workflow_state_from_funding_request("Disbursement in Progress"), "Approved"
+		)
+		self.assertEqual(mr_workflow_state_from_funding_request("Disbursed"), "Disbursed")
+		self.assertEqual(mr_workflow_state_from_funding_request("Completed"), "Disbursed")
+		self.assertEqual(mr_workflow_state_from_funding_request("Rejected"), "Rejected")
+
+	def test_operational_expense_becomes_disbursed_when_that_request_is_paid(self):
+		self.assertEqual(
+			mr_row_workflow_state("Disbursement in Progress", 200, 0),
+			"Approved",
 		)
 		self.assertEqual(
-			mr_row_funding_state("Director Approved", 200, 50),
-			"Director Approved",
+			mr_row_workflow_state("Disbursement in Progress", 200, 200),
+			"Disbursed",
 		)
-
-	def test_material_request_submit_paths_are_split_by_request_type(self):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
-			_mr_funding_workflow_transitions,
+		self.assertEqual(
+			mr_row_workflow_state("Approved", 200, 50),
+			"Approved",
 		)
-
-		self.assertIn("Operational Expense", OE_WORKFLOW_CONDITION)
-		self.assertIn("Operational Expense", NON_OE_WORKFLOW_CONDITION)
-		self.assertIn("==", OE_WORKFLOW_CONDITION)
-		self.assertIn("!=", NON_OE_WORKFLOW_CONDITION)
-
-		actions = {(row["action"], row["next_state"]) for row in _mr_funding_workflow_transitions()}
-		self.assertIn(("Submit", "Submitted"), actions)
-		self.assertIn(("Submit Request", "Unfunded"), actions)
-		self.assertIn(("Cancel", "Cancelled"), actions)
-
-	def test_funding_workflow_does_not_let_finance_mark_funded_before_payment(self):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
-			_funding_workflow_transitions,
-		)
-
-		actions = {(row["action"], row["next_state"]) for row in _funding_workflow_transitions()}
-		self.assertNotIn(("Mark Funded", "Funded"), actions)
-		self.assertNotIn(("Start Funding", "Funding in Progress"), actions)
-		self.assertIn(("Complete", "Completed"), actions)
