@@ -16,9 +16,16 @@ def before_migrate() -> None:
 
 def after_install() -> None:
 	"""Seed default masters and CGM Shipping Settings on a fresh site."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.license_roles import (
+		seed_license_settings,
+	)
 	from cgm_shipping.default_seed_data import seed_all_defaults
 
 	seed_all_defaults()
+	ensure_license_setup()
+	# Reminder schedule defaults are fresh-install only, so removing a period on a
+	# live site is not undone by the next migrate.
+	seed_license_settings()
 
 
 def after_migrate() -> None:
@@ -52,6 +59,7 @@ def after_migrate() -> None:
 		("finance cost ledger schema", ensure_finance_cost_ledger_schema),
 		("transporter portal setup", ensure_transporter_portal_setup),
 		("task workflow masters", ensure_task_workflow_masters),
+		("licence register roles", ensure_license_setup),
 	):
 		try:
 			fn()
@@ -84,6 +92,16 @@ def ensure_task_workflow_masters() -> None:
 	seed_task_workflow_masters()
 	seed_cgm_shipping_settings()
 	repair_clearance_charge_item_setup()
+	frappe.db.commit()
+
+
+def ensure_license_setup() -> None:
+	"""Roles the licence & permit register doctypes grant permissions to."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.license_roles import (
+		ensure_license_roles,
+	)
+
+	ensure_license_roles()
 	frappe.db.commit()
 
 
