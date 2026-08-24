@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "naming_series:",
  "creation": "2026-08-11 12:00:00",
@@ -257,7 +258,7 @@
   }
  ],
  "make_attachments_public": 1,
- "modified": "2026-08-11 18:00:03.722430",
+ "modified": "2026-08-24 13:14:15.535896",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "License Register",
