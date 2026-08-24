@@ -355,6 +355,8 @@ scheduler_events = {
     "daily": [
         "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
         "cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.post_all_container_charge_accruals",
+        # Licence & permit expiry reminders. Periods and recipients live in License Settings.
+        "cgm_shipping.cgm_worldwide_shipping.customizations.license_reminders.send_license_expiry_reminders",
     ],
 }
 
