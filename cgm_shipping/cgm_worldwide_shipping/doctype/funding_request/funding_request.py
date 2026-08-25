@@ -12,32 +12,26 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	FR_ROW_DECISION_APPROVED,
 	FR_ROW_DECISION_PENDING,
 	FR_ROW_DECISION_REJECTED,
-	FUNDING_REQUEST_APPROVAL_RECORDED_STATES,
-	FUNDING_REQUEST_STATE_APPROVED,
-	FUNDING_REQUEST_STATE_CANCELLED,
-	FUNDING_REQUEST_STATE_DISBURSED,
-	FUNDING_REQUEST_STATE_PARTIALLY_APPROVED,
-	FUNDING_REQUEST_STATE_PENDING,
-	FUNDING_REQUEST_STATE_REJECTED,
-	FUNDING_REQUEST_TERMINAL_STATES,
 	MR_WORKFLOW_STATE_FIELD,
-	MR_WORKFLOW_STATE_PENDING_APPROVAL,
-	MR_WORKFLOW_STATE_REJECTED,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
 	_material_requests_on_active_funding_requests,
+	apply_batch_approve_to_pending_rows,
 	funding_approval_is_recorded,
 	funding_is_approved,
+	funding_is_pending,
 	funding_progress_state,
 	get_material_request_item_summary,
 	get_material_request_total,
 	get_material_request_requester_name,
 	mr_row_workflow_state,
+	mr_workflow_state_from_funding_request,
 	released_mr_workflow_state,
 	variance_amount,
 )
-
-INACTIVE_FUNDING_STATES = FUNDING_REQUEST_TERMINAL_STATES
+from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+	get_funding_workflow_map,
+)
 
 MATERIAL_REQUEST_LINK_PLACEHOLDER = "Material Request"
 AMOUNT_TOLERANCE = 0.005
@@ -57,6 +51,7 @@ class FundingRequest(Document):
 	def validate(self):
 		self._validate_material_requests()
 		self._normalize_row_decisions()
+		self._apply_batch_approve_to_pending_rows()
 		self._apply_row_amounts()
 		self._validate_approval_decisions()
 		self._ensure_submitted_by()
@@ -78,7 +73,9 @@ class FundingRequest(Document):
 		self.sync_material_request_links()
 
 	def on_cancel(self):
-		self.workflow_state = FUNDING_REQUEST_STATE_CANCELLED
+		cancel_state = get_funding_workflow_map().cancel_state
+		if cancel_state:
+			self.workflow_state = cancel_state
 		self.sync_material_request_links(release=True)
 
 	def calculate_totals(self) -> None:
@@ -131,18 +128,18 @@ class FundingRequest(Document):
 			elif row.decision == FR_ROW_DECISION_APPROVED and flt(row.approved_amount) == 0:
 				row.approved_amount = flt(row.requested_amount)
 
+	def _apply_batch_approve_to_pending_rows(self) -> None:
+		"""Header Approve approves remaining Pending rows (Reject rows stay rejected)."""
+		if not get_funding_workflow_map().is_approve_next(self.workflow_state):
+			return
+		apply_batch_approve_to_pending_rows(self._valid_material_request_rows())
+
 	def _validate_approval_decisions(self) -> None:
 		"""Validate row decisions when the Approve workflow action is applied."""
-		if self.workflow_state != FUNDING_REQUEST_STATE_APPROVED:
+		if not get_funding_workflow_map().is_approve_next(self.workflow_state):
 			return
 		rows = self._valid_material_request_rows()
 		approved = [row for row in rows if row.decision == FR_ROW_DECISION_APPROVED]
-		rejected = [row for row in rows if row.decision == FR_ROW_DECISION_REJECTED]
-		pending = [row for row in rows if row.decision == FR_ROW_DECISION_PENDING]
-		if pending:
-			frappe.throw(
-				_("Set Approve or Reject on every Material Request row before approving the batch.")
-			)
 		if not approved:
 			frappe.throw(
 				_(
@@ -151,12 +148,13 @@ class FundingRequest(Document):
 			)
 
 	def _apply_partial_approval_state(self) -> None:
-		"""After Approve, downgrade to Partially Approved when some rows were rejected.
+		"""After Approve, move to the workflow's partial state when some rows were rejected.
 
-		Uses db_set so ERPNext workflow is not asked for a Pending Approval →
-		Partially Approved transition (the Approve action only targets Approved).
+		Uses db_set so ERPNext is not asked for a transition that is not on the workflow
+		(Approve only targets the fully-approved state).
 		"""
-		if self.workflow_state != FUNDING_REQUEST_STATE_APPROVED:
+		wf = get_funding_workflow_map()
+		if not wf.is_approve_next(self.workflow_state) or not wf.partial_state:
 			return
 		rows = self._valid_material_request_rows()
 		approved = [row for row in rows if row.decision == FR_ROW_DECISION_APPROVED]
@@ -167,21 +165,21 @@ class FundingRequest(Document):
 			"Funding Request",
 			self.name,
 			"workflow_state",
-			FUNDING_REQUEST_STATE_PARTIALLY_APPROVED,
+			wf.partial_state,
 			update_modified=False,
 		)
-		self.workflow_state = FUNDING_REQUEST_STATE_PARTIALLY_APPROVED
+		self.workflow_state = wf.partial_state
 		if not self.approved_by:
 			self.approved_by = frappe.session.user
 		if not self.approval_date:
 			self.approval_date = nowdate()
 
 	def _ensure_submitted_by(self) -> None:
-		if self.workflow_state != FUNDING_REQUEST_STATE_PENDING:
+		if not funding_is_pending(self.workflow_state):
 			return
 		previous = self.get_doc_before_save() if not self.is_new() else None
 		previous_state = previous.workflow_state if previous else None
-		if not self.submitted_by or previous_state != FUNDING_REQUEST_STATE_PENDING:
+		if not self.submitted_by or not funding_is_pending(previous_state):
 			self.submitted_by = frappe.session.user
 		if not self.submitted_by:
 			frappe.throw(_("Submitted By is required when sending a Funding Request for approval."))
@@ -232,40 +230,41 @@ class FundingRequest(Document):
 				row.item_summary = get_material_request_item_summary(row.material_request)
 			if row.meta.has_field("employee_name"):
 				row.employee_name = get_material_request_requester_name(row.material_request)
-			if self.workflow_state in FUNDING_REQUEST_APPROVAL_RECORDED_STATES:
+			if funding_approval_is_recorded(self.workflow_state):
 				if row.decision == FR_ROW_DECISION_APPROVED:
 					if row.approved_amount in (None, "") or flt(row.approved_amount) == 0:
 						row.approved_amount = requested
 				elif row.decision == FR_ROW_DECISION_REJECTED:
 					row.approved_amount = 0
-			elif self.workflow_state == FUNDING_REQUEST_STATE_PENDING:
+			elif funding_is_pending(self.workflow_state):
 				if row.decision == FR_ROW_DECISION_APPROVED and flt(row.approved_amount) == 0:
 					row.approved_amount = requested
 				if row.decision == FR_ROW_DECISION_REJECTED:
 					row.approved_amount = 0
 			else:
-				if self.workflow_state not in (FUNDING_REQUEST_STATE_PENDING,):
-					row.approved_amount = 0
+				row.approved_amount = 0
 			if row.meta.has_field("variance"):
 				row.variance = variance_amount(row.requested_amount, row.approved_amount)
 			row.status = self._row_status_label(row)
 
 	def _row_status_label(self, row) -> str:
 		if row.decision == FR_ROW_DECISION_REJECTED:
-			return MR_WORKFLOW_STATE_REJECTED
+			rejected = next(iter(get_funding_workflow_map().reject_next_states), "Rejected")
+			return mr_workflow_state_from_funding_request(rejected)
 		if row.decision == FR_ROW_DECISION_APPROVED and funding_approval_is_recorded(self.workflow_state):
 			return mr_row_workflow_state(
 				self.workflow_state, row.approved_amount, row.funded_amount
 			)
-		if self.workflow_state == FUNDING_REQUEST_STATE_PENDING:
-			return MR_WORKFLOW_STATE_PENDING_APPROVAL
+		if funding_is_pending(self.workflow_state):
+			return mr_workflow_state_from_funding_request(self.workflow_state)
 		return row.decision or FR_ROW_DECISION_PENDING
 
 	def _validate_row_approvals(self) -> None:
-		if self.workflow_state not in (
-			FUNDING_REQUEST_STATE_PENDING,
-			FUNDING_REQUEST_STATE_APPROVED,
-			FUNDING_REQUEST_STATE_PARTIALLY_APPROVED,
+		wf = get_funding_workflow_map()
+		if not (
+			wf.is_pending(self.workflow_state)
+			or wf.is_approve_next(self.workflow_state)
+			or wf.is_partial(self.workflow_state)
 		):
 			return
 		for row in self.material_requests:
@@ -294,7 +293,7 @@ class FundingRequest(Document):
 				)
 
 	def _validate_funding_complete(self) -> None:
-		if self.workflow_state != FUNDING_REQUEST_STATE_DISBURSED:
+		if not get_funding_workflow_map().is_completed(self.workflow_state):
 			return
 		if flt(self.total_funded) <= 0:
 			frappe.throw(
@@ -302,10 +301,7 @@ class FundingRequest(Document):
 			)
 
 	def _stamp_approval(self) -> None:
-		if self.workflow_state not in (
-			FUNDING_REQUEST_STATE_APPROVED,
-			FUNDING_REQUEST_STATE_PARTIALLY_APPROVED,
-		):
+		if not get_funding_workflow_map().is_approval_stamp_state(self.workflow_state):
 			return
 		if not self.approved_by:
 			self.approved_by = frappe.session.user
@@ -313,7 +309,7 @@ class FundingRequest(Document):
 			self.approval_date = nowdate()
 
 	def sync_material_request_links(self, release: bool = False) -> None:
-		if release or self.workflow_state in INACTIVE_FUNDING_STATES:
+		if release or get_funding_workflow_map().is_terminal(self.workflow_state):
 			self._release_material_requests()
 			return
 		for row in self.material_requests:
@@ -334,7 +330,8 @@ class FundingRequest(Document):
 
 	def _material_request_workflow_state(self, row) -> str:
 		if row.decision == FR_ROW_DECISION_REJECTED:
-			return MR_WORKFLOW_STATE_REJECTED
+			rejected = next(iter(get_funding_workflow_map().reject_next_states), "Rejected")
+			return mr_workflow_state_from_funding_request(rejected)
 		return mr_row_workflow_state(self.workflow_state, row.approved_amount, row.funded_amount)
 
 	def _release_material_requests(self) -> None:
@@ -347,8 +344,9 @@ class FundingRequest(Document):
 		current = frappe.db.get_value("Material Request", material_request, "custom_funding_request")
 		if current and current != self.name:
 			return
-		if rejected or self.workflow_state == FUNDING_REQUEST_STATE_REJECTED:
-			mr_state = MR_WORKFLOW_STATE_REJECTED
+		if rejected or get_funding_workflow_map().is_rejected(self.workflow_state):
+			rejected_state = next(iter(get_funding_workflow_map().reject_next_states), "Rejected")
+			mr_state = mr_workflow_state_from_funding_request(rejected_state)
 		else:
 			mr_state = released_mr_workflow_state(material_request)
 		frappe.db.set_value(
