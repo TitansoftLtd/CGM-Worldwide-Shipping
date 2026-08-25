@@ -337,14 +337,102 @@ def air_export_tasks() -> list[dict]:
 	]
 
 
-def sea_transit_import_extension_tasks() -> list[dict]:
+def sea_transit_import_tasks() -> list[dict]:
+	"""Sea transit import from B/L through transit-country taxes to border delivery.
+
+	Application ↔ Finance Payment pairs mirror Sea Import (shipping line + entry slip).
+	Only finance rows use depends_on so ops can work other steps in parallel.
+	"""
 	return [
-		_row(1, "Obtain KPA release order", "Field Operations", depends=25),
-		_row(2, "Book trucks with KPA using release order", "Transport", depends=1),
-		_row(3, "Create delivery note", "Documentation", depends=2, doc=1),
-		_row(4, "Obtain C2 and exit note", "Declaration", depends=3),
-		_row(5, "Fit ECMD devices and dispatch trucks", "Transport", depends=4, container=1),
-		_row(6, "Monitor to border and destination warehouse", "Transport", depends=5, container=1),
+		_row(
+			1,
+			"Receive B/L and import documents",
+			"Documentation",
+			doc=1,
+			role="Document Checkpoint",
+			description="Collect the bill of lading and supporting import documents.",
+		),
+		_row(
+			2,
+			"Request shipping line charges from B/L",
+			"Documentation",
+			doc=1,
+			role="Document",
+			description="Use the B/L to obtain manifest, local charges, and the shipping line invoice.",
+		),
+		_row(
+			3,
+			"Attach shipping line invoice",
+			"Documentation",
+			doc=1,
+			role="Application",
+			payment_kind="Shipping Line",
+			description="Attach the shipping line invoice for Finance verification and payment.",
+		),
+		_row(
+			4,
+			"Finance pays shipping line charges",
+			"Finance",
+			depends=3,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="Shipping Line",
+		),
+		_row(
+			5,
+			"Request delivery order",
+			"Operations",
+			doc=1,
+			role="Document",
+			description="Lodge and obtain the delivery order after shipping line charges are settled.",
+		),
+		_row(
+			6,
+			"Coordinate transit country tax assessment (Uganda/Tanzania)",
+			"Declaration",
+			description=(
+				"Engage the destination-country team (Uganda, Tanzania, etc.) to assess "
+				"transit taxes and share amounts for payment."
+			),
+		),
+		_row(
+			7,
+			"Create transit entry — destination country team",
+			"Declaration",
+			doc=1,
+			role="Application",
+			payment_kind="ENTRY_SLIP",
+			description=(
+				"Destination-country team lodges the entry and shares the tax / entry slip "
+				"for Finance payment."
+			),
+		),
+		_row(
+			8,
+			"Finance pays transit entry taxes",
+			"Finance",
+			depends=7,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="ENTRY_SLIP",
+		),
+		_row(
+			9,
+			"Clear with transit customs (URA or destination country)",
+			"Field Operations",
+			description="Complete customs clearance with URA or the relevant destination-country authority.",
+		),
+		_row(10, "Obtain C2 and exit note", "Declaration", doc=1, role="Document"),
+		_row(11, "Obtain KPA release order", "Field Operations"),
+		_row(12, "Book trucks", "Transport", container=1),
+		_row(13, "Create delivery note", "Documentation", doc=1, role="Document"),
+		_row(14, "Fit ECMD devices and dispatch trucks", "Transport", container=1),
+		_row(
+			15,
+			"Monitor to border and destination warehouse",
+			"Transport",
+			container=1,
+		),
 	]
 
 
@@ -494,9 +582,12 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 	},
 	{
 		"template_name": SEA_TRANSIT_IMPORT_TEMPLATE,
-		"description": "Sea import through KPA paid, then transit to border/warehouse.",
-		"extends_template": SEA_IMPORT_TEMPLATE,
-		"tasks": sea_transit_import_extension_tasks(),
+		"description": (
+			"Sea transit import: B/L and shipping line charges, transit-country entry "
+			"and taxes, KPA release, then truck dispatch to border/warehouse."
+		),
+		"extends_template": None,
+		"tasks": sea_transit_import_tasks(),
 	},
 	{
 		"template_name": SEA_TRANSIT_EXPORT_TEMPLATE,

@@ -12,15 +12,6 @@ from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate, strip_html
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-	FUNDING_REQUEST_APPROVAL_RECORDED_STATES,
-	FUNDING_REQUEST_STATE_APPROVED,
-	FUNDING_REQUEST_STATE_COMPLETED,
-	FUNDING_REQUEST_STATE_DISBURSED,
-	FUNDING_REQUEST_STATE_DISBURSEMENT,
-	FUNDING_REQUEST_STATE_PARTIALLY_APPROVED,
-	FUNDING_REQUEST_STATE_PENDING,
-	FUNDING_REQUEST_STATE_REJECTED,
-	FUNDING_REQUEST_TERMINAL_STATES,
 	FR_ROW_DECISION_APPROVED,
 	FR_ROW_DECISION_PENDING,
 	FR_ROW_DECISION_REJECTED,
@@ -30,53 +21,82 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	MR_WORKFLOW_STATE_DISBURSED,
 	MR_WORKFLOW_STATE_FIELD,
 	MR_WORKFLOW_STATE_ON_FUNDING_REQUEST,
-	MR_WORKFLOW_STATE_PENDING_APPROVAL,
 	MR_WORKFLOW_STATE_REJECTED,
 	MR_WORKFLOW_STATE_SUBMITTED,
 	MR_WORKFLOW_STATE_UNFUNDED,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+	get_funding_workflow_map,
+	get_material_request_state_names,
+	pick_workflow_state,
+)
 
-INACTIVE_FUNDING_STATES = FUNDING_REQUEST_TERMINAL_STATES
 
-
-def mr_workflow_state_from_funding_request(fr_workflow_state: str | None) -> str:
-	"""Derive Material Request workflow_state from Funding Request context.
-
-	Does not copy Funding Request states onto Material Request — maps to
-	Material Request workflow states configured separately in ERPNext.
-	"""
-	return {
-		"Draft": MR_WORKFLOW_STATE_ON_FUNDING_REQUEST,
-		FUNDING_REQUEST_STATE_PENDING: MR_WORKFLOW_STATE_PENDING_APPROVAL,
-		FUNDING_REQUEST_STATE_APPROVED: MR_WORKFLOW_STATE_APPROVED,
-		FUNDING_REQUEST_STATE_PARTIALLY_APPROVED: MR_WORKFLOW_STATE_APPROVED,
-		FUNDING_REQUEST_STATE_DISBURSEMENT: MR_WORKFLOW_STATE_APPROVED,
-		FUNDING_REQUEST_STATE_DISBURSED: MR_WORKFLOW_STATE_DISBURSED,
-		FUNDING_REQUEST_STATE_COMPLETED: MR_WORKFLOW_STATE_DISBURSED,
-		FUNDING_REQUEST_STATE_REJECTED: MR_WORKFLOW_STATE_REJECTED,
-	}.get(fr_workflow_state or "", MR_WORKFLOW_STATE_ON_FUNDING_REQUEST)
+def mr_workflow_state_from_funding_request(
+	fr_workflow_state: str | None, workflow=None, mr_workflow=None
+) -> str:
+	"""Write a Material Request workflow_state that exists on the live MR workflow."""
+	wf = get_funding_workflow_map(workflow)
+	mr_states = get_material_request_state_names(mr_workflow)
+	if wf.is_rejected(fr_workflow_state):
+		return pick_workflow_state(mr_states, "Rejected", default=MR_WORKFLOW_STATE_REJECTED)
+	if wf.is_pending(fr_workflow_state):
+		return pick_workflow_state(
+			mr_states,
+			fr_workflow_state,
+			*wf.pending_states,
+			"Pending",
+			"Pending Approval",
+			default=fr_workflow_state or "Pending",
+		)
+	if wf.is_disbursed(fr_workflow_state) or wf.is_completed(fr_workflow_state):
+		return pick_workflow_state(mr_states, "Disbursed", default=MR_WORKFLOW_STATE_DISBURSED)
+	if wf.is_partial(fr_workflow_state):
+		return pick_workflow_state(
+			mr_states,
+			wf.partial_state,
+			"Partially Approved",
+			"Approved",
+			default=MR_WORKFLOW_STATE_APPROVED,
+		)
+	if wf.approval_is_recorded(fr_workflow_state):
+		return pick_workflow_state(
+			mr_states,
+			fr_workflow_state,
+			"Approved",
+			default=MR_WORKFLOW_STATE_APPROVED,
+		)
+	return pick_workflow_state(
+		mr_states, "On Funding Request", default=MR_WORKFLOW_STATE_ON_FUNDING_REQUEST
+	)
 
 
 def mr_row_workflow_state(
-	fr_workflow_state: str | None, approved_amount, funded_amount
+	fr_workflow_state: str | None, approved_amount, funded_amount, workflow=None, mr_workflow=None
 ) -> str:
 	"""Operational Expense completes per request when that request is paid, not via PO."""
-	state = mr_workflow_state_from_funding_request(fr_workflow_state)
+	mr_states = get_material_request_state_names(mr_workflow)
+	state = mr_workflow_state_from_funding_request(
+		fr_workflow_state, workflow=workflow, mr_workflow=mr_workflow
+	)
+	approved = pick_workflow_state(mr_states, "Approved", default=MR_WORKFLOW_STATE_APPROVED)
+	disbursed = pick_workflow_state(mr_states, "Disbursed", default=MR_WORKFLOW_STATE_DISBURSED)
 	if (
-		state == MR_WORKFLOW_STATE_APPROVED
+		state == approved
 		and flt(approved_amount) > 0
 		and flt(funded_amount) + 0.005 >= flt(approved_amount)
 	):
-		return MR_WORKFLOW_STATE_DISBURSED
+		return disbursed
 	return state
 
 
-def released_mr_workflow_state(material_request: str) -> str:
+def released_mr_workflow_state(material_request: str, mr_workflow=None) -> str:
 	"""State to restore on a Material Request when it leaves a Funding Request."""
+	mr_states = get_material_request_state_names(mr_workflow)
 	mr_type = frappe.db.get_value("Material Request", material_request, "material_request_type")
 	if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
-		return MR_WORKFLOW_STATE_UNFUNDED
-	return MR_WORKFLOW_STATE_SUBMITTED
+		return pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED)
+	return pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED)
 
 
 def variance_amount(requested, approved) -> float:
@@ -84,21 +104,43 @@ def variance_amount(requested, approved) -> float:
 	return flt(approved) - flt(requested)
 
 
-def funding_approval_is_recorded(workflow_state: str | None) -> bool:
+def funding_is_pending(workflow_state: str | None, workflow=None) -> bool:
+	"""True while the Funding Request is waiting for the Funding Approver."""
+	return get_funding_workflow_map(workflow).is_pending(workflow_state)
+
+
+@frappe.whitelist()
+def funding_request_is_pending_approval(workflow_state=None) -> bool:
+	"""Form helper: unlock row decisions from the live workflow, not a label list."""
+	return funding_is_pending(workflow_state)
+
+
+def apply_batch_approve_to_pending_rows(rows) -> None:
+	"""Header Approve means approve every row that was not explicitly rejected."""
+	for row in rows:
+		if row.get("decision") != FR_ROW_DECISION_PENDING:
+			continue
+		row.decision = FR_ROW_DECISION_APPROVED
+		if flt(row.get("approved_amount")) == 0:
+			row.approved_amount = flt(row.get("requested_amount"))
+
+
+def funding_approval_is_recorded(workflow_state: str | None, workflow=None) -> bool:
 	"""True only after a Funding Approver has approved the batch."""
-	return workflow_state in FUNDING_REQUEST_APPROVAL_RECORDED_STATES
+	return get_funding_workflow_map(workflow).approval_is_recorded(workflow_state)
 
 
-def funding_is_approved(workflow_state: str | None, docstatus: int | None = 0) -> bool:
-	if workflow_state in INACTIVE_FUNDING_STATES:
+def funding_is_approved(workflow_state: str | None, docstatus: int | None = 0, workflow=None) -> bool:
+	wf = get_funding_workflow_map(workflow)
+	if wf.is_terminal(workflow_state):
 		return False
-	if not funding_approval_is_recorded(workflow_state):
+	if not wf.approval_is_recorded(workflow_state):
 		return False
 	return cint_docstatus(docstatus) == 1
 
 
 def funding_progress_state(
-	current: str | None, total_funded: float, total_approved: float
+	current: str | None, total_funded: float, total_approved: float, workflow=None
 ) -> str | None:
 	"""Payment-driven Funding Request state.
 
@@ -106,21 +148,18 @@ def funding_progress_state(
 	Never reverse Disbursement in Progress back to Approved — that transition
 	is not in the workflow.
 	"""
-	if current not in (
-		FUNDING_REQUEST_STATE_APPROVED,
-		FUNDING_REQUEST_STATE_PARTIALLY_APPROVED,
-		FUNDING_REQUEST_STATE_DISBURSEMENT,
-		FUNDING_REQUEST_STATE_DISBURSED,
-	):
+	wf = get_funding_workflow_map(workflow)
+	if current not in wf.progress_states():
 		return current
 	funded = flt(total_funded)
 	approved = flt(total_approved)
+	disbursed = next(iter(wf.complete_from_states), None)
 	if approved > 0 and funded + 0.005 >= approved:
-		return FUNDING_REQUEST_STATE_DISBURSED
+		return disbursed or current
 	if funded > 0:
-		return FUNDING_REQUEST_STATE_DISBURSEMENT
-	if current == FUNDING_REQUEST_STATE_DISBURSED:
-		return FUNDING_REQUEST_STATE_DISBURSEMENT
+		return wf.disbursement_state or current
+	if wf.is_disbursed(current):
+		return wf.disbursement_state or current
 	return current
 
 
@@ -416,12 +455,14 @@ def on_material_request_on_submit(doc, method=None) -> None:
 	if not doc.meta.has_field(MR_WORKFLOW_STATE_FIELD):
 		return
 	current = (doc.get(MR_WORKFLOW_STATE_FIELD) or "").strip()
-	if current and current not in {MR_WORKFLOW_STATE_DRAFT, ""}:
+	mr_states = get_material_request_state_names()
+	draft = pick_workflow_state(mr_states, "Draft", default=MR_WORKFLOW_STATE_DRAFT)
+	if current and current not in {draft, ""}:
 		return
 	next_state = (
-		MR_WORKFLOW_STATE_UNFUNDED
+		pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED)
 		if doc.get("material_request_type") == MATERIAL_REQUEST_TYPE_OPERATIONAL
-		else MR_WORKFLOW_STATE_SUBMITTED
+		else pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED)
 	)
 	doc.db_set(MR_WORKFLOW_STATE_FIELD, next_state, update_modified=False)
 
@@ -433,7 +474,10 @@ def _set_default_funding_workflow_state(doc) -> None:
 		return
 	if cint_docstatus(doc.docstatus) >= 1:
 		return
-	doc.set(MR_WORKFLOW_STATE_FIELD, MR_WORKFLOW_STATE_DRAFT)
+	doc.set(
+		MR_WORKFLOW_STATE_FIELD,
+		pick_workflow_state(get_material_request_state_names(), "Draft", default=MR_WORKFLOW_STATE_DRAFT),
+	)
 
 
 def _set_requester_defaults(doc) -> None:
@@ -696,7 +740,11 @@ def fetch_material_request_details(material_request: str) -> dict:
 		"approved_amount": 0,
 		"variance": 0,
 		"funded_amount": 0,
-		"status": MR_WORKFLOW_STATE_ON_FUNDING_REQUEST,
+		"status": pick_workflow_state(
+			get_material_request_state_names(),
+			"On Funding Request",
+			default=MR_WORKFLOW_STATE_ON_FUNDING_REQUEST,
+		),
 		"decision": FR_ROW_DECISION_PENDING,
 		"material_request_type": mr.material_request_type,
 	}
@@ -725,9 +773,13 @@ def get_unfunded_material_requests(
 	elif to_date:
 		filters["transaction_date"] = ["<=", to_date]
 
+	mr_states = get_material_request_state_names()
 	filters[MR_WORKFLOW_STATE_FIELD] = [
 		"in",
-		[MR_WORKFLOW_STATE_UNFUNDED, MR_WORKFLOW_STATE_SUBMITTED],
+		[
+			pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED),
+			pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED),
+		],
 	]
 	blocked = set(_material_requests_on_active_funding_requests())
 	rows = frappe.get_all(
@@ -755,7 +807,10 @@ def get_unfunded_material_requests(
 
 
 def _material_requests_on_active_funding_requests(exclude_parent: str | None = None) -> list[str]:
-	fr_filters: dict = {"workflow_state": ["not in", list(INACTIVE_FUNDING_STATES)]}
+	terminal = list(get_funding_workflow_map().terminal_states)
+	fr_filters: dict = {}
+	if terminal:
+		fr_filters["workflow_state"] = ["not in", terminal]
 	if exclude_parent:
 		fr_filters["name"] = ["!=", exclude_parent]
 	parents = frappe.get_all("Funding Request", filters=fr_filters, pluck="name")

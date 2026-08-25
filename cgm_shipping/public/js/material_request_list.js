@@ -33,6 +33,7 @@ function cgm_funding_workflow_indicator(doc) {
 		Unfunded: "orange",
 		"On Funding Request": "blue",
 		"Pending Approval": "orange",
+		Pending: "orange",
 		Approved: "blue",
 		"Partially Approved": "orange",
 		"Disbursement in Progress": "blue",

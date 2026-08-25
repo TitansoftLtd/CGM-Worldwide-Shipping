@@ -14,6 +14,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 	can_complete_ucr_create_task,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
+	is_application_create_task,
 	validate_application_not_manually_completed,
 )
 
@@ -325,3 +326,15 @@ class TestClientPaidApplicationCompletion(unittest.TestCase):
 		self.assertTrue(
 			can_complete_application_task(self._task(10), profile, finance_task)
 		)
+
+	def test_transit_template_shipping_line_application_recognized_at_non_sea_seq(self):
+		"""Sea Transit Import uses seq 3 for SL application — not Sea Import seq 10."""
+		profile = APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
+		task = frappe._dict(
+			custom_sequence_no=3,
+			custom_task_role="Application",
+			custom_payment_kind="Shipping Line",
+			project="PROJ-1",
+			status="Open",
+		)
+		self.assertTrue(is_application_create_task(task, profile))
