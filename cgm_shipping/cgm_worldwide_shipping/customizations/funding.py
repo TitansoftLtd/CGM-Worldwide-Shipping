@@ -438,10 +438,6 @@ def get_material_request_project(material_request) -> str | None:
 # ── Material Request ─────────────────────────────────────────────────────────
 
 
-def before_material_request_validate(doc, method=None) -> None:
-	_ensure_operational_expense_item_descriptions(doc)
-
-
 def on_material_request_validate(doc, method=None) -> None:
 	_set_requester_defaults(doc)
 	_copy_header_project_to_items(doc)
@@ -536,17 +532,6 @@ def _clear_warehouse_for_operational_expense(doc) -> None:
 	for item in doc.get("items") or []:
 		if item.get("warehouse"):
 			item.warehouse = None
-
-
-def _ensure_operational_expense_item_descriptions(doc) -> None:
-	if doc.get("material_request_type") != MATERIAL_REQUEST_TYPE_OPERATIONAL:
-		return
-	for item in doc.get("items") or []:
-		if strip_html((item.get("description") or "").strip()):
-			continue
-		fallback = (item.get("item_name") or item.get("item_code") or "").strip()
-		if fallback:
-			item.description = fallback
 
 
 def copy_project_to_stock_entry(doc, method=None) -> None:
