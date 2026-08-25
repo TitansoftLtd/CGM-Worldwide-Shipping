@@ -2,8 +2,31 @@
 // For license information, please see license.txt
 
 const OE_ITEM_GRID_FIELDS = {
-	show: ["item_code", "description", "qty", "uom", "rate", "amount", "expense_account"],
-	hide: ["warehouse", "from_warehouse"],
+	show: ["item_code", "qty", "uom", "rate", "amount"],
+	hide: ["warehouse", "from_warehouse", "schedule_date"],
+	columns: {
+		item_code: 3,
+		qty: 1,
+		uom: 1,
+		rate: 2,
+		amount: 2,
+	},
+};
+
+// Matches local Customize Form: Item Code first so selecting the item can
+// populate warehouse. Staging GridView settings put Required By first.
+const STANDARD_ITEM_GRID_FIELDS = {
+	show: ["item_code", "qty", "uom", "rate", "amount", "schedule_date", "warehouse"],
+	hide: [],
+	columns: {
+		item_code: 2,
+		qty: 1,
+		uom: 1,
+		rate: 1,
+		amount: 1,
+		schedule_date: 2,
+		warehouse: 2,
+	},
 };
 
 frappe.ui.form.on("Material Request", {
@@ -77,14 +100,16 @@ frappe.ui.form.on("Material Request Item", {
 		if (row.from_warehouse) {
 			row.from_warehouse = null;
 		}
-		ensure_operational_expense_item_description(row);
+		clear_copied_operational_expense_description(cdt, cdn);
+		if (typeof frappe.after_ajax === "function") {
+			frappe.after_ajax(() => clear_copied_operational_expense_description(cdt, cdn));
+		} else {
+			setTimeout(() => clear_copied_operational_expense_description(cdt, cdn), 400);
+		}
 	},
 
 	items_add(frm) {
-		if (!is_operational_expense(frm)) {
-			return;
-		}
-		apply_operational_expense_item_grid(frm);
+		apply_item_grid_layout(frm);
 	},
 });
 
@@ -100,11 +125,12 @@ function patch_material_request_set_warehouse_label() {
 	handlers.length = 0;
 	handlers.push((frm) => {
 		if (is_operational_expense(frm)) {
-			apply_operational_expense_item_grid(frm);
+			apply_item_grid_layout(frm);
 			toggle_operational_expense_warehouse(frm);
 			return;
 		}
 		original_handlers.forEach((fn) => fn(frm));
+		apply_item_grid_layout(frm);
 	});
 	frappe.cgm__mr_set_warehouse_label_patched = true;
 }
@@ -136,8 +162,9 @@ function apply_material_request_form_layout(frm, opts = {}) {
 	const is_oe = is_operational_expense(frm);
 	const type_changed = Boolean(opts.type_changed);
 
+	apply_item_grid_layout(frm);
+
 	if (is_oe) {
-		apply_operational_expense_item_grid(frm);
 		if (type_changed) {
 			toggle_operational_expense_warehouse(frm);
 		}
@@ -146,10 +173,6 @@ function apply_material_request_form_layout(frm, opts = {}) {
 				frm.toggle_display(field, false);
 			}
 		});
-		frm._cgm_oe_grid_applied = true;
-	} else if (frm._cgm_oe_grid_applied && type_changed) {
-		frm.refresh_field("items");
-		frm._cgm_oe_grid_applied = false;
 	} else {
 		["scan_barcode", "set_warehouse", "set_from_warehouse"].forEach((field) => {
 			if (frm.fields_dict[field]) {
@@ -170,37 +193,111 @@ function apply_material_request_form_layout(frm, opts = {}) {
 	}
 }
 
-function ensure_operational_expense_item_description(row) {
-	if ((row.description || "").trim()) {
+function clear_copied_operational_expense_description(cdt, cdn) {
+	const row = locals[cdt][cdn];
+	if (!row) {
 		return;
 	}
-	const fallback = (row.item_name || row.item_code || "").trim();
-	if (fallback) {
-		row.description = fallback;
+	const raw = $("<div>")
+		.html(row.description || "")
+		.text()
+		.trim();
+	if (!raw) {
+		return;
+	}
+	const name = (row.item_name || "").trim();
+	const code = (row.item_code || "").trim();
+	if (raw === name || raw === code) {
+		frappe.model.set_value(cdt, cdn, "description", "");
 	}
 }
 
-function apply_operational_expense_item_grid(frm) {
+function set_grid_df_property(grid, fieldname, property, value) {
+	if (!grid.get_docfield(fieldname)) {
+		return;
+	}
+	try {
+		grid.update_docfield_property(fieldname, property, value);
+	} catch (e) {
+		const df = grid.get_docfield(fieldname);
+		if (df) {
+			df[property] = value;
+		}
+	}
+}
+
+function get_item_grid_layout(frm) {
+	return is_operational_expense(frm) ? OE_ITEM_GRID_FIELDS : STANDARD_ITEM_GRID_FIELDS;
+}
+
+function apply_item_grid_layout(frm) {
 	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
 	if (!grid) {
 		return;
 	}
-	OE_ITEM_GRID_FIELDS.hide.forEach((fieldname) => {
-		grid.update_docfield_property(fieldname, "hidden", 1);
-		grid.update_docfield_property(fieldname, "in_list_view", 0);
+
+	const layout = get_item_grid_layout(frm);
+	const other = layout === OE_ITEM_GRID_FIELDS ? STANDARD_ITEM_GRID_FIELDS : OE_ITEM_GRID_FIELDS;
+
+	other.hide.forEach((fieldname) => {
+		set_grid_df_property(grid, fieldname, "hidden", 0);
 	});
-	OE_ITEM_GRID_FIELDS.show.forEach((fieldname) => {
-		grid.update_docfield_property(fieldname, "hidden", 0);
-		if (fieldname === "description" || fieldname === "expense_account") {
-			grid.update_docfield_property(fieldname, "in_list_view", 1);
+	["description", "expense_account"].forEach((fieldname) => {
+		set_grid_df_property(grid, fieldname, "hidden", 0);
+		if (!layout.show.includes(fieldname)) {
+			set_grid_df_property(grid, fieldname, "in_list_view", 0);
 		}
 	});
-	grid.update_docfield_property("item_code", "columns", 2);
-	grid.update_docfield_property("description", "columns", 2);
-	(frm.doc.items || []).forEach((row) => ensure_operational_expense_item_description(row));
-	if (typeof grid.refresh === "function") {
-		grid.refresh();
+
+	layout.hide.forEach((fieldname) => {
+		set_grid_df_property(grid, fieldname, "hidden", 1);
+		set_grid_df_property(grid, fieldname, "in_list_view", 0);
+	});
+	layout.show.forEach((fieldname) => {
+		set_grid_df_property(grid, fieldname, "hidden", 0);
+		set_grid_df_property(grid, fieldname, "in_list_view", 1);
+		const width = layout.columns[fieldname];
+		if (width) {
+			set_grid_df_property(grid, fieldname, "columns", width);
+		}
+	});
+
+	// Staging/user GridView settings override Customize Form. Force the app
+	// column order so Item Code stays first on every site.
+	if (!grid._cgm_columns_patched) {
+		grid.setup_user_defined_columns = function () {
+			this.user_defined_columns = build_grid_columns(this, get_item_grid_layout(frm));
+		};
+		grid._cgm_columns_patched = true;
 	}
+
+	const signature = `${is_operational_expense(frm) ? "oe" : "std"}:${layout.show.join(",")}`;
+	if (grid._cgm_layout_signature !== signature) {
+		if (typeof grid.reset_grid === "function") {
+			grid.reset_grid();
+		} else if (typeof grid.refresh === "function") {
+			grid.refresh();
+		}
+		grid._cgm_layout_signature = signature;
+	}
+}
+
+function build_grid_columns(grid, layout) {
+	return layout.show
+		.map((fieldname) => {
+			const df = grid.get_docfield(fieldname);
+			if (!df) {
+				return null;
+			}
+			const width = layout.columns[fieldname] || df.columns || 1;
+			return Object.assign({}, df, {
+				in_list_view: 1,
+				hidden: 0,
+				columns: width,
+				colsize: width,
+			});
+		})
+		.filter(Boolean);
 }
 
 function setup_funding_actions(frm) {

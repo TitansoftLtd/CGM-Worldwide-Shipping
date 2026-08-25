@@ -294,7 +294,6 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 	},
 	"Material Request": {
-		"before_validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.before_material_request_validate",
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_validate",
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
 	},
