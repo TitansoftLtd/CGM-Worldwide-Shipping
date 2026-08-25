@@ -256,37 +256,6 @@ DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 TRANSPORTER_TRUCK_UPDATE = "CGM Operational Update"  # legacy alias
 OPERATIONAL_UPDATE_NOTIFICATION = "CGM Operational Update"
 
-# ── Funding Request (runtime state checks only — workflow configured in ERPNext) ──
-
-FUNDING_REQUEST_STATE_PENDING = "Pending Approval"
-FUNDING_REQUEST_STATE_APPROVED = "Approved"
-FUNDING_REQUEST_STATE_PARTIALLY_APPROVED = "Partially Approved"
-FUNDING_REQUEST_STATE_DISBURSEMENT = "Disbursement in Progress"
-FUNDING_REQUEST_STATE_DISBURSED = "Disbursed"
-FUNDING_REQUEST_STATE_COMPLETED = "Completed"
-FUNDING_REQUEST_STATE_REJECTED = "Rejected"
-FUNDING_REQUEST_STATE_CANCELLED = "Cancelled"
-
-# Header states where a Funding Approver decision has been recorded.
-FUNDING_REQUEST_APPROVAL_RECORDED_STATES = frozenset(
-	{
-		FUNDING_REQUEST_STATE_APPROVED,
-		FUNDING_REQUEST_STATE_PARTIALLY_APPROVED,
-		FUNDING_REQUEST_STATE_DISBURSEMENT,
-		FUNDING_REQUEST_STATE_DISBURSED,
-		FUNDING_REQUEST_STATE_COMPLETED,
-	}
-)
-
-# Terminal Funding Request states — MR links are released.
-FUNDING_REQUEST_TERMINAL_STATES = frozenset(
-	{
-		FUNDING_REQUEST_STATE_REJECTED,
-		FUNDING_REQUEST_STATE_CANCELLED,
-		FUNDING_REQUEST_STATE_COMPLETED,
-	}
-)
-
 # Per-row decisions on Funding Request Material Request child table.
 FR_ROW_DECISION_PENDING = "Pending"
 FR_ROW_DECISION_APPROVED = "Approved"

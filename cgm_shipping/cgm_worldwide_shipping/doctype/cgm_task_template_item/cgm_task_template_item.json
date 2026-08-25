@@ -87,7 +87,6 @@
    "description": "UCR / ENTRY_SLIP / Shipping Line / KPA / Permit — must match on the Application and Finance Payment pair.",
    "fieldname": "payment_kind",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Payment Kind",
    "options": "Payment Kind"
   },

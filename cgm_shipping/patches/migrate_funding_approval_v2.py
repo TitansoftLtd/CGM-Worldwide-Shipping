@@ -7,19 +7,15 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-	FUNDING_REQUEST_STATE_APPROVED,
-	FUNDING_REQUEST_STATE_DISBURSED,
-	FUNDING_REQUEST_STATE_DISBURSEMENT,
-	FUNDING_REQUEST_STATE_PENDING,
 	MR_WORKFLOW_STATE_FIELD,
 )
 
-# Legacy workflow_state values on existing records only — not used at runtime.
+# Historical labels from the v2 rename — this patch is one-time, not runtime.
 _LEGACY_FUNDING_WORKFLOW_STATE_MAP = {
-	"Pending Director Approval": FUNDING_REQUEST_STATE_PENDING,
-	"Director Approved": FUNDING_REQUEST_STATE_APPROVED,
-	"Funding in Progress": FUNDING_REQUEST_STATE_DISBURSEMENT,
-	"Funded": FUNDING_REQUEST_STATE_DISBURSED,
+	"Pending Director Approval": "Pending Approval",
+	"Director Approved": "Approved",
+	"Funding in Progress": "Disbursement in Progress",
+	"Funded": "Disbursed",
 	"Submit for Director Approval": "Submit for Approval",
 }
 

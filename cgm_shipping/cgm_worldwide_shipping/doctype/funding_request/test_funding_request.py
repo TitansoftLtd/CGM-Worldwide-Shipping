@@ -3,9 +3,13 @@
 
 import unittest
 
+import frappe
+
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+	apply_batch_approve_to_pending_rows,
 	funding_approval_is_recorded,
 	funding_is_approved,
+	funding_is_pending,
 	funding_progress_state,
 	get_material_request_item_summary,
 	get_material_request_total,
@@ -13,6 +17,64 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
 	mr_row_workflow_state,
 	material_request_purchase_is_funding_approved,
 	variance_amount,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+	FundingWorkflowMap,
+)
+
+
+def _funding_workflow(states, transitions):
+	return frappe._dict(
+		states=[
+			frappe._dict(state=name, doc_status=str(doc_status), idx=idx)
+			for idx, (name, doc_status) in enumerate(states, start=1)
+		],
+		transitions=[
+			frappe._dict(state=src, action=action, next_state=dst)
+			for src, action, dst in transitions
+		],
+	)
+
+
+# Mirrors the Desk Funding Request workflow: labels can change, the graph cannot.
+USER_FUNDING_WORKFLOW = _funding_workflow(
+	[
+		("Draft", 0),
+		("Pending", 0),
+		("Approved", 1),
+		("Partially Approved", 1),
+		("Disbursement in Progress", 1),
+		("Disbursed", 1),
+		("Completed", 1),
+		("Rejected", 0),
+		("Cancelled", 2),
+	],
+	[
+		("Draft", "Submit", "Pending"),
+		("Rejected", "Submit", "Pending"),
+		("Pending", "Approve", "Approved"),
+		("Pending", "Reject", "Rejected"),
+		("Disbursed", "Complete", "Completed"),
+		("Approved", "Cancel", "Cancelled"),
+		("Partially Approved", "Cancel", "Cancelled"),
+		("Disbursement in Progress", "Cancel", "Cancelled"),
+	],
+)
+
+# Server Material Request workflow labels (Pending, not Pending Approval).
+SERVER_MR_STATES = frozenset(
+	{
+		"Draft",
+		"Submitted",
+		"Unfunded",
+		"On Funding Request",
+		"Pending",
+		"Approved",
+		"Partially Approved",
+		"Disbursed",
+		"Rejected",
+		"Cancelled",
+	}
 )
 
 
@@ -98,10 +160,11 @@ class TestFundingRequestHelpers(unittest.TestCase):
 		)
 
 	def test_unapproved_funding_cannot_create_payment_docs(self):
-		self.assertFalse(funding_is_approved("Draft", 0))
-		self.assertFalse(funding_is_approved("Pending Approval", 0))
-		self.assertFalse(funding_is_approved("Rejected", 0))
-		self.assertFalse(funding_is_approved("Approved", 0))
+		wf = USER_FUNDING_WORKFLOW
+		self.assertFalse(funding_is_approved("Draft", 0, workflow=wf))
+		self.assertFalse(funding_is_approved("Pending", 0, workflow=wf))
+		self.assertFalse(funding_is_approved("Rejected", 0, workflow=wf))
+		self.assertFalse(funding_is_approved("Approved", 0, workflow=wf))
 
 	def test_operational_expense_uses_item_expense_account_then_settings_default(self):
 		from unittest.mock import patch
@@ -145,44 +208,48 @@ class TestFundingRequestHelpers(unittest.TestCase):
 			)
 
 	def test_total_approved_is_not_recorded_before_approver_approves(self):
-		self.assertFalse(funding_approval_is_recorded("Draft"))
-		self.assertFalse(funding_approval_is_recorded("Pending Approval"))
-		self.assertFalse(funding_approval_is_recorded("Rejected"))
-		self.assertTrue(funding_approval_is_recorded("Approved"))
-		self.assertTrue(funding_approval_is_recorded("Partially Approved"))
-		self.assertTrue(funding_approval_is_recorded("Disbursed"))
+		wf = USER_FUNDING_WORKFLOW
+		self.assertFalse(funding_approval_is_recorded("Draft", workflow=wf))
+		self.assertFalse(funding_approval_is_recorded("Pending", workflow=wf))
+		self.assertFalse(funding_approval_is_recorded("Rejected", workflow=wf))
+		self.assertTrue(funding_approval_is_recorded("Approved", workflow=wf))
+		self.assertTrue(funding_approval_is_recorded("Partially Approved", workflow=wf))
+		self.assertTrue(funding_approval_is_recorded("Disbursed", workflow=wf))
 
 	def test_approved_funding_can_create_payment_docs(self):
-		self.assertTrue(funding_is_approved("Approved", 1))
-		self.assertTrue(funding_is_approved("Partially Approved", 1))
-		self.assertTrue(funding_is_approved("Disbursement in Progress", 1))
-		self.assertTrue(funding_is_approved("Disbursed", 1))
+		wf = USER_FUNDING_WORKFLOW
+		self.assertTrue(funding_is_approved("Approved", 1, workflow=wf))
+		self.assertTrue(funding_is_approved("Partially Approved", 1, workflow=wf))
+		self.assertTrue(funding_is_approved("Disbursement in Progress", 1, workflow=wf))
+		self.assertTrue(funding_is_approved("Disbursed", 1, workflow=wf))
 
 	def test_submitting_journal_entry_does_not_revert_disbursement_in_progress(self):
+		wf = USER_FUNDING_WORKFLOW
 		self.assertEqual(
-			funding_progress_state("Disbursement in Progress", 0, 700),
+			funding_progress_state("Disbursement in Progress", 0, 700, workflow=wf),
 			"Disbursement in Progress",
 		)
 		self.assertEqual(
-			funding_progress_state("Approved", 0, 700),
+			funding_progress_state("Approved", 0, 700, workflow=wf),
 			"Approved",
 		)
 		self.assertEqual(
-			funding_progress_state("Approved", 200, 700),
+			funding_progress_state("Approved", 200, 700, workflow=wf),
 			"Disbursement in Progress",
 		)
 		self.assertEqual(
-			funding_progress_state("Disbursement in Progress", 700, 700),
+			funding_progress_state("Disbursement in Progress", 700, 700, workflow=wf),
 			"Disbursed",
 		)
 		self.assertEqual(
-			funding_progress_state("Disbursed", 0, 700),
+			funding_progress_state("Disbursed", 0, 700, workflow=wf),
 			"Disbursement in Progress",
 		)
 
 	def test_rejected_is_never_approved(self):
-		self.assertFalse(funding_is_approved("Rejected", 1))
-		self.assertFalse(funding_is_approved("Cancelled", 2))
+		wf = USER_FUNDING_WORKFLOW
+		self.assertFalse(funding_is_approved("Rejected", 1, workflow=wf))
+		self.assertFalse(funding_is_approved("Cancelled", 2, workflow=wf))
 
 	def test_purchase_documents_require_funding_approved(self):
 		from unittest.mock import patch
@@ -218,9 +285,14 @@ class TestFundingRequestHelpers(unittest.TestCase):
 				)
 			return frappe._dict(workflow_state="Approved", docstatus=1)
 
+		wf_map = FundingWorkflowMap.from_workflow(USER_FUNDING_WORKFLOW)
 		with patch("frappe.db.get_value", side_effect=_approved_lookup):
-			self.assertTrue(material_request_purchase_is_funding_approved("MAT-MR-3"))
-			assert_material_request_may_create_purchase_document("MAT-MR-3")
+			with patch(
+				"cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_funding_workflow_map",
+				return_value=wf_map,
+			):
+				self.assertTrue(material_request_purchase_is_funding_approved("MAT-MR-3"))
+				assert_material_request_may_create_purchase_document("MAT-MR-3")
 
 	def test_purchase_order_keeps_required_by_when_material_request_date_is_past(self):
 		import frappe
@@ -282,36 +354,131 @@ class TestFundingRequestHelpers(unittest.TestCase):
 		)
 
 	def test_funding_request_maps_to_material_request_workflow_states(self):
+		wf = USER_FUNDING_WORKFLOW
+		mr = SERVER_MR_STATES
 		self.assertEqual(
-			mr_workflow_state_from_funding_request("Draft"), "On Funding Request"
+			mr_workflow_state_from_funding_request("Draft", workflow=wf, mr_workflow=mr),
+			"On Funding Request",
 		)
 		self.assertEqual(
-			mr_workflow_state_from_funding_request("Pending Approval"),
-			"Pending Approval",
+			mr_workflow_state_from_funding_request("Pending", workflow=wf, mr_workflow=mr),
+			"Pending",
 		)
 		self.assertEqual(
-			mr_workflow_state_from_funding_request("Approved"), "Approved"
-		)
-		self.assertEqual(
-			mr_workflow_state_from_funding_request("Partially Approved"), "Approved"
-		)
-		self.assertEqual(
-			mr_workflow_state_from_funding_request("Disbursement in Progress"), "Approved"
-		)
-		self.assertEqual(mr_workflow_state_from_funding_request("Disbursed"), "Disbursed")
-		self.assertEqual(mr_workflow_state_from_funding_request("Completed"), "Disbursed")
-		self.assertEqual(mr_workflow_state_from_funding_request("Rejected"), "Rejected")
-
-	def test_operational_expense_becomes_disbursed_when_that_request_is_paid(self):
-		self.assertEqual(
-			mr_row_workflow_state("Disbursement in Progress", 200, 0),
+			mr_workflow_state_from_funding_request("Approved", workflow=wf, mr_workflow=mr),
 			"Approved",
 		)
 		self.assertEqual(
-			mr_row_workflow_state("Disbursement in Progress", 200, 200),
+			mr_workflow_state_from_funding_request(
+				"Partially Approved", workflow=wf, mr_workflow=mr
+			),
+			"Partially Approved",
+		)
+		self.assertEqual(
+			mr_workflow_state_from_funding_request(
+				"Disbursement in Progress", workflow=wf, mr_workflow=mr
+			),
+			"Approved",
+		)
+		self.assertEqual(
+			mr_workflow_state_from_funding_request("Disbursed", workflow=wf, mr_workflow=mr),
 			"Disbursed",
 		)
 		self.assertEqual(
-			mr_row_workflow_state("Approved", 200, 50),
+			mr_workflow_state_from_funding_request("Completed", workflow=wf, mr_workflow=mr),
+			"Disbursed",
+		)
+		self.assertEqual(
+			mr_workflow_state_from_funding_request("Rejected", workflow=wf, mr_workflow=mr),
+			"Rejected",
+		)
+		self.assertEqual(
+			mr_workflow_state_from_funding_request(
+				"Pending",
+				workflow=wf,
+				mr_workflow={"On Funding Request", "Pending Approval", "Approved", "Rejected"},
+			),
+			"Pending Approval",
+		)
+
+	def test_operational_expense_becomes_disbursed_when_that_request_is_paid(self):
+		wf = USER_FUNDING_WORKFLOW
+		mr = SERVER_MR_STATES
+		self.assertEqual(
+			mr_row_workflow_state(
+				"Disbursement in Progress", 200, 0, workflow=wf, mr_workflow=mr
+			),
 			"Approved",
 		)
+		self.assertEqual(
+			mr_row_workflow_state(
+				"Disbursement in Progress", 200, 200, workflow=wf, mr_workflow=mr
+			),
+			"Disbursed",
+		)
+		self.assertEqual(
+			mr_row_workflow_state("Approved", 200, 50, workflow=wf, mr_workflow=mr),
+			"Approved",
+		)
+
+	def test_pending_is_read_from_the_workflow_graph(self):
+		wf = USER_FUNDING_WORKFLOW
+		self.assertTrue(funding_is_pending("Pending", workflow=wf))
+		self.assertFalse(funding_is_pending("Pending Approval", workflow=wf))
+		self.assertFalse(funding_is_pending("Draft", workflow=wf))
+		self.assertFalse(funding_is_pending("Approved", workflow=wf))
+
+		renamed = _funding_workflow(
+			[
+				("Draft", 0),
+				("Queued", 0),
+				("Greenlit", 1),
+				("No", 0),
+				("Stopped", 2),
+			],
+			[
+				("Draft", "Submit", "Queued"),
+				("Queued", "Approve", "Greenlit"),
+				("Queued", "Reject", "No"),
+				("Greenlit", "Cancel", "Stopped"),
+			],
+		)
+		self.assertTrue(funding_is_pending("Queued", workflow=renamed))
+		self.assertTrue(funding_approval_is_recorded("Greenlit", workflow=renamed))
+		self.assertTrue(funding_is_approved("Greenlit", 1, workflow=renamed))
+		self.assertEqual(
+			mr_workflow_state_from_funding_request(
+				"Queued", workflow=renamed, mr_workflow={"Queued", "Greenlit", "No"}
+			),
+			"Queued",
+		)
+		self.assertEqual(
+			mr_workflow_state_from_funding_request(
+				"Greenlit", workflow=renamed, mr_workflow={"Queued", "Greenlit", "No"}
+			),
+			"Greenlit",
+		)
+
+	def test_workflow_map_classifies_partial_and_disbursement_without_labels(self):
+		wf_map = FundingWorkflowMap.from_workflow(USER_FUNDING_WORKFLOW)
+		self.assertEqual(wf_map.pending_states, frozenset({"Pending"}))
+		self.assertEqual(wf_map.approve_next_states, frozenset({"Approved"}))
+		self.assertEqual(wf_map.reject_next_states, frozenset({"Rejected"}))
+		self.assertEqual(wf_map.partial_state, "Partially Approved")
+		self.assertEqual(wf_map.disbursement_state, "Disbursement in Progress")
+		self.assertEqual(wf_map.complete_from_states, frozenset({"Disbursed"}))
+		self.assertEqual(wf_map.complete_next_states, frozenset({"Completed"}))
+		self.assertEqual(wf_map.cancel_state, "Cancelled")
+
+	def test_header_approve_promotes_pending_rows(self):
+		import frappe
+
+		pending = frappe._dict(decision="Pending", approved_amount=0, requested_amount=1500)
+		rejected = frappe._dict(decision="Rejected", approved_amount=0, requested_amount=800)
+		already = frappe._dict(decision="Approved", approved_amount=1200, requested_amount=1500)
+		apply_batch_approve_to_pending_rows([pending, rejected, already])
+		self.assertEqual(pending.decision, "Approved")
+		self.assertEqual(pending.approved_amount, 1500)
+		self.assertEqual(rejected.decision, "Rejected")
+		self.assertEqual(already.decision, "Approved")
+		self.assertEqual(already.approved_amount, 1200)

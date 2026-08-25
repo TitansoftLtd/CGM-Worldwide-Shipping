@@ -360,6 +360,7 @@ function set_funding_workflow_indicator(frm) {
 			Submitted: "blue",
 			"On Funding Request": "blue",
 			"Pending Approval": "orange",
+			Pending: "orange",
 			Approved: "blue",
 			"Partially Approved": "orange",
 			"Disbursement in Progress": "blue",

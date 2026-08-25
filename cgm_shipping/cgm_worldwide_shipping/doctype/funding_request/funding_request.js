@@ -1,16 +1,6 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 // For license information, please see license.txt
 
-const APPROVED_WORKFLOW_STATES = [
-	"Approved",
-	"Partially Approved",
-	"Disbursement in Progress",
-	"Disbursed",
-	"Completed",
-];
-
-const PENDING_APPROVAL_STATE = "Pending Approval";
-
 const MATERIAL_REQUEST_LINK_PLACEHOLDER = __("Material Request");
 
 frappe.ui.form.on("Funding Request", {
@@ -161,7 +151,7 @@ function get_valid_material_request_rows(frm) {
 }
 
 function funding_totals_are_recorded(frm) {
-	return APPROVED_WORKFLOW_STATES.includes(frm.doc.workflow_state);
+	return cint(frm.doc.docstatus) === 1;
 }
 
 function recalc_totals(frm) {
@@ -191,13 +181,25 @@ function recalc_totals(frm) {
 }
 
 function toggle_approval_row_fields(frm) {
-	const pending = frm.doc.workflow_state === PENDING_APPROVAL_STATE;
 	const grid = frm.fields_dict.material_requests?.grid;
 	if (!grid) {
 		return;
 	}
-	["decision", "approved_amount", "adjustment_reason", "rejection_reason"].forEach((fieldname) => {
-		grid.update_docfield_property(fieldname, "read_only", pending ? 0 : 1);
+	const set_read_only = (read_only) => {
+		["decision", "approved_amount", "adjustment_reason", "rejection_reason"].forEach((fieldname) => {
+			grid.update_docfield_property(fieldname, "read_only", read_only);
+		});
+	};
+	if (!frm.doc.workflow_state) {
+		set_read_only(1);
+		return;
+	}
+	frappe.call({
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.funding.funding_request_is_pending_approval",
+		args: { workflow_state: frm.doc.workflow_state },
+		callback(r) {
+			set_read_only(r.message ? 0 : 1);
+		},
 	});
 }
 
@@ -280,7 +282,7 @@ function add_material_request_row(frm, details) {
 }
 
 function setup_funding_pay_buttons(frm) {
-	if (frm.is_new() || frm.doc.docstatus !== 1 || !APPROVED_WORKFLOW_STATES.includes(frm.doc.workflow_state)) {
+	if (frm.is_new() || frm.doc.docstatus !== 1) {
 		return;
 	}
 	frappe.call({
