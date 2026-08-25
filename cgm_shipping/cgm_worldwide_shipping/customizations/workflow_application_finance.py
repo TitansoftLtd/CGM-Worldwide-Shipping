@@ -24,7 +24,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	invoice_attached,
 	invoice_submitted,
 	is_application_finance_task,
-	is_application_task,
 	prepare_application_task_tables,
 	profile_by_finance_kind,
 	profile_for_task,
@@ -37,6 +36,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	sync_invoice_verification_to_application_task,
 	sync_receipt_verification_to_application_task,
 	sync_status_from_finance_to_application,
+	task_matches_application,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 	send_notification,
@@ -74,7 +74,7 @@ def get_application_task_by_profile(
 
 
 def is_application_create_task(task, profile: ApplicationFinanceProfile) -> bool:
-	return is_application_task(task_sequence(task), profile)
+	return task_matches_application(task, profile)
 
 
 def is_application_payment_task_doc(task, profile: ApplicationFinanceProfile) -> bool:
