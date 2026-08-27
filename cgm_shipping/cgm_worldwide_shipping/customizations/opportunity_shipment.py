@@ -21,6 +21,7 @@ from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
 	TRANSPORT_DOC_TO_OPP_FIELD,
 	get_allowed_transport_documents,
 	resolve_primary_transport_document,
+	transport_mode_is_air,
 )
 
 
@@ -56,12 +57,20 @@ def transport_documents_deferred(opportunity) -> bool:
 	return bool(cint(opportunity.get("custom_transport_docs_deferred")))
 
 
+def _opportunity_is_air(opportunity) -> bool:
+	mode = (opportunity.get("custom_mode_of_transport") or "").strip()
+	if transport_mode_is_air(mode=mode):
+		return True
+	row = get_shipment_type_record(opportunity.get("custom_shipment_type"))
+	return transport_mode_is_air(row)
+
+
 def has_required_transport_documents(opportunity) -> bool:
 	"""True when Start Shipment transport gate is satisfied.
 
-	Bill of Lading and Booking Confirmation are interchangeable: either one is
-	enough when both are allowed on the Shipment Type (whichever arrives first).
-	Other required documents (e.g. Air Waybill) still use an OR within their set.
+	Sea: Bill of Lading and Booking Confirmation are interchangeable (either one).
+	Air: Air Waybill is the start document. Booking Confirmation is not required.
+	Other required documents still use an OR within their set.
 
 	Operators may tick ``custom_transport_docs_deferred`` when none are available
 	yet and attach them later on the Project.
@@ -69,15 +78,21 @@ def has_required_transport_documents(opportunity) -> bool:
 	if transport_documents_deferred(opportunity):
 		return True
 
+	if (opportunity.get("custom_bill_of_lading") or "").strip() or (
+		opportunity.get("custom_air_waybill") or ""
+	).strip():
+		return True
+
 	linked = get_transport_documents_with_links(opportunity)
 	if not linked:
 		return has_any_transport_document(opportunity)
 
-	alternates = [
-		item for item in linked if item.get("transport_document") in START_GATE_ALTERNATES
-	]
-	if alternates:
-		return any(item.get("linked_name") for item in alternates)
+	if not _opportunity_is_air(opportunity):
+		alternates = [
+			item for item in linked if item.get("transport_document") in START_GATE_ALTERNATES
+		]
+		if alternates:
+			return any(item.get("linked_name") for item in alternates)
 
 	required = [item for item in linked if item.get("is_required_for_start")]
 	if not required:
@@ -210,6 +225,7 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_port_of_discharge", "custom_port_of_discharge"),
 		("custom_voyage_number", "custom_voyage_number"),
 		("custom_cargo_cutoff", "custom_cargo_cutoff"),
+		("custom_cargo_cut_off", "custom_cargo_cutoff"),
 		("custom_booking_confirmation", "custom_booking_confirmation"),
 		("custom_bill_of_lading", "custom_bill_of_lading"),
 		("custom_air_waybill", "custom_air_waybill"),
@@ -335,11 +351,14 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 	transport_documents = get_transport_documents_with_links(opp)
 	deferred = transport_documents_deferred(opp)
 	if not has_required_transport_documents(opp):
-		alternates = [
-			item["transport_document"]
-			for item in transport_documents
-			if item.get("transport_document") in START_GATE_ALTERNATES
-		]
+		if not _opportunity_is_air(opp):
+			alternates = [
+				item["transport_document"]
+				for item in transport_documents
+				if item.get("transport_document") in START_GATE_ALTERNATES
+			]
+		else:
+			alternates = []
 		if len(alternates) >= 2:
 			blockers.append(
 				_("Link Bill of Lading or Booking Confirmation (whichever was provided first).")
@@ -350,6 +369,15 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 				for item in transport_documents
 				if item.get("is_required_for_start") and not item.get("linked_name")
 			]
+			has_bl_or_awb = any(
+				item.get("transport_document") in {"Bill of Lading", "Air Waybill"}
+				and item.get("linked_name")
+				for item in transport_documents
+			)
+			if has_bl_or_awb:
+				missing_transport = [
+					label for label in missing_transport if label != "Booking Confirmation"
+				]
 			if missing_transport:
 				blockers.append(
 					_("Link required transport document(s): {0}").format(
@@ -406,6 +434,12 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 		"transport_docs_deferred": deferred,
 		"existing_project": existing_project,
 		"workflow_state": opp.get("workflow_state"),
+		"mode_of_transport": (opp.get("custom_mode_of_transport") or flags.get("default_mode_of_transport") or ""),
+		"is_air": _opportunity_is_air(opp),
+		"has_bl_or_awb": bool(
+			(opp.get("custom_bill_of_lading") or "").strip()
+			or (opp.get("custom_air_waybill") or "").strip()
+		),
 	}
 
 

@@ -79,6 +79,7 @@ doctype_js = {
 		"public/js/attachment_approval_workflow.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
+		"public/js/package_field_visibility.js",
 		"public/js/project.js",
 	],
 	"Lead": [
@@ -89,11 +90,11 @@ doctype_js = {
 	"Customer": "public/js/crm_customer.js",
 	"Item": "public/js/item_pricing_rule.js",
 	"Opportunity": [
+		"public/js/package_field_visibility.js",
 		"public/js/opportunity_shipment.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/shipment_document_grid.js",
-		"public/js/attachment_approval_workflow.js",
 		"public/js/crm_opportunity.js",
 		"public/js/opportunity.js",
 	],
@@ -169,6 +170,9 @@ jinja = {
 after_install = "cgm_shipping.install.after_install"
 before_migrate = ["cgm_shipping.install.before_migrate"]
 after_migrate = ["cgm_shipping.install.after_migrate"]
+
+# Desk boot: package-field visibility lists from CGM Shipping Settings.
+extend_bootinfo = "cgm_shipping.boot.extend_bootinfo"
 
 # Uninstallation
 # ------------
@@ -331,6 +335,7 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.documents.normalize_opportunity_clients_documents",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.seed_required_documents_on_opportunity",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_bl_from_clients_documents",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_from_linked_awb",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_linked_project_from_opportunity",

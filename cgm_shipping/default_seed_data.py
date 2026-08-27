@@ -97,8 +97,15 @@ def seed_cgm_shipping_settings() -> None:
 			changed = True
 
 	if changed:
+		settings.flags.skip_package_visibility_apply = True
 		settings.save(ignore_permissions=True)
 		frappe.clear_cache()
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.package_field_visibility import (
+		seed_package_visibility_defaults,
+	)
+
+	seed_package_visibility_defaults()
 
 
 def seed_document_responsibility_defaults() -> None:

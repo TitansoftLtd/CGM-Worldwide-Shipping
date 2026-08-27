@@ -52,6 +52,22 @@ class TestProjectNaming(unittest.TestCase):
 		self.assertEqual(package_quantity_segment(project), "10 Cartons")
 		self.assertEqual(build_lp_project_reference(project), "PO-99 / 10 Cartons")
 
+	def test_air_reference_uses_packages_not_container_placeholder(self):
+		project = frappe._dict(
+			custom_client_refrence_no="uytfrdcx",
+			custom_mode_of_transport="Air",
+			custom_shipment_type="Air Import",
+			custom_cargo_type=None,
+			custom_quantity=None,
+			custom_batch_no=None,
+			custom_number_of_packages=12,
+			custom_package_type="Cartons",
+			meta=frappe._dict(has_field=lambda *_a, **_k: False),
+		)
+		self.assertEqual(package_quantity_segment(project), "12 Cartons")
+		self.assertEqual(build_lp_project_reference(project), "uytfrdcx / 12 Cartons")
+		self.assertNotIn("0X0", build_lp_project_reference(project))
+
 	def test_requires_client_reference(self):
 		project = frappe._dict(
 			custom_client_refrence_no="",

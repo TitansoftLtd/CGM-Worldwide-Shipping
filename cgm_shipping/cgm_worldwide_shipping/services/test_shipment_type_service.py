@@ -20,6 +20,68 @@ class TestShipmentTypeService(IntegrationTestCase):
 		labels = {row["transport_document"] for row in rows}
 		self.assertEqual(labels, {"Air Waybill"})
 
+	def test_air_does_not_force_booking_confirmation_required(self):
+		from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
+			_apply_primary_start_requirement,
+		)
+
+		docs = [
+			{
+				"transport_document": "Air Waybill",
+				"doctype": "Air Waybill",
+				"opp_field": "custom_air_waybill",
+				"is_required_for_start": True,
+				"sort_order": 1,
+			},
+			{
+				"transport_document": "Booking Confirmation",
+				"doctype": "Booking Confirmation",
+				"opp_field": "custom_booking_confirmation",
+				"is_required_for_start": False,
+				"sort_order": 2,
+			},
+		]
+		out = _apply_primary_start_requirement(
+			docs,
+			{
+				"default_mode_of_transport": "Air",
+				"primary_transport_document": "Air Waybill",
+			},
+			strict=True,
+		)
+		by_label = {row["transport_document"]: row for row in out}
+		self.assertTrue(by_label["Air Waybill"]["is_required_for_start"])
+		self.assertFalse(by_label["Booking Confirmation"]["is_required_for_start"])
+
+	def test_air_clears_booking_required_even_when_child_row_is_ticked(self):
+		from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
+			_apply_primary_start_requirement,
+		)
+
+		docs = [
+			{
+				"transport_document": "Air Waybill",
+				"doctype": "Air Waybill",
+				"opp_field": "custom_air_waybill",
+				"is_required_for_start": True,
+				"sort_order": 1,
+			},
+			{
+				"transport_document": "Booking Confirmation",
+				"doctype": "Booking Confirmation",
+				"opp_field": "custom_booking_confirmation",
+				"is_required_for_start": True,
+				"sort_order": 2,
+			},
+		]
+		out = _apply_primary_start_requirement(
+			docs,
+			{"default_mode_of_transport": "Air", "primary_transport_document": "Air Waybill"},
+			strict=True,
+		)
+		booking = next(row for row in out if row["transport_document"] == "Booking Confirmation")
+		self.assertFalse(booking["is_required_for_start"])
+
 	def test_air_export_respects_explicit_transport_documents_only(self):
 		if not self.db_exists("Shipment Type", "Air Export"):
 			self.skipTest("Air Export Shipment Type not installed")
