@@ -10,21 +10,8 @@ def before_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
 		ensure_cargo_doctype_renames_before_migrate,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.recruitment import (
-		ensure_recruitment_custom_fields,
-	)
 
 	ensure_cargo_doctype_renames_before_migrate()
-
-	# Must run before the careers Web Form JSON is imported: the form lists these
-	# fieldnames, and importing it against a DocType that lacks them truncates it.
-	try:
-		ensure_recruitment_custom_fields()
-	except Exception:
-		frappe.log_error(
-			title="CGM before_migrate: recruitment fields",
-			message=frappe.get_traceback(),
-		)
 
 
 def after_install() -> None:
