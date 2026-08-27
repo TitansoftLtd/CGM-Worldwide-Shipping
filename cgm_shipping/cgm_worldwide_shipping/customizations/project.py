@@ -29,6 +29,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	refresh_project_reference_from_fields,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	apply_awb_fields_to_doc,
 	apply_bill_of_lading_from_source,
 	copy_carrier_fields_from_source,
 	copy_shipment_classification_from_source,
@@ -700,6 +701,10 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 			awb = get_awb_value_from_doc(source_doc)
 		if awb and not project.get(project_awb_field):
 			project.set(project_awb_field, awb)
+
+	awb_name = project.get(project_awb_field) if project_meta.has_field(project_awb_field) else None
+	if awb_name and frappe.db.exists("Air Waybill", awb_name):
+		apply_awb_fields_to_doc(project, frappe.get_doc("Air Waybill", awb_name))
 
 	quantity_field = bl_config.get("opportunity_quantity_field")
 	if quantity_field and project_meta.has_field(quantity_field) and not project.get(quantity_field):

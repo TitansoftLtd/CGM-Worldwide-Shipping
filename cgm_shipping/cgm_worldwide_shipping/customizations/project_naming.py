@@ -26,6 +26,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import containe
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
 )
+from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
+	transport_mode_is_air,
+)
 
 # Legacy: LP 3X20-1/0109
 LP_PROJECT_NAME_PATTERN = re.compile(
@@ -198,14 +201,22 @@ def container_qty_size_segment(project) -> str:
 	)
 
 
+def _field_text(value) -> str:
+	if value in (None, ""):
+		return ""
+	return str(value).strip()
+
+
 def package_quantity_segment(project) -> str | None:
 	"""Return e.g. '10 Cartons' from package fields or non-container quantity."""
-	pkgs = (project.get("custom_number_of_packages") or "").strip()
-	ptype = (project.get("custom_package_type") or "").strip()
+	pkgs = _field_text(project.get("custom_number_of_packages"))
+	ptype = _field_text(project.get("custom_package_type"))
+	if pkgs in {"0", "0.0"}:
+		pkgs = ""
 	if pkgs or ptype:
 		return f"{pkgs} {ptype}".strip()
 
-	summary = (project.get("custom_quantity") or "").strip()
+	summary = _field_text(project.get("custom_quantity"))
 	if summary and not QUANTITY_SUMMARY_PATTERN.search(summary):
 		return summary
 	return None
@@ -224,13 +235,23 @@ def _client_reference(project) -> str:
 	return ref
 
 
+def _project_is_air(project) -> bool:
+	mode = _field_text(project.get("custom_mode_of_transport"))
+	if transport_mode_is_air(mode=mode):
+		return True
+	stype = _field_text(project.get("custom_shipment_type")).lower()
+	return stype.startswith("air")
+
+
 def _uses_package_naming(project) -> bool:
+	if _project_is_air(project):
+		return True
 	cargo_type = project.get("custom_cargo_type")
 	if is_lcl_cargo_type(cargo_type):
 		return True
 	if is_fcl_cargo_type(cargo_type):
 		return False
-	# Air / other package-only shipments: prefer packages when present.
+	# Other package-only shipments: prefer packages when present.
 	return bool(package_quantity_segment(project))
 
 

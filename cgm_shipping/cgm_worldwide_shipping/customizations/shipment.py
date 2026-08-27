@@ -437,6 +437,8 @@ AWB_TO_OPPORTUNITY_FIELDS = (
 	("gross_weight", "custom_gross_weight"),
 	("port_of_loading", "custom_port_of_loading"),
 	("port_of_discharge", "custom_port_of_discharge"),
+	("number_of_packages", "custom_number_of_packages"),
+	("package_type", "custom_package_type"),
 )
 
 OPPORTUNITY_TO_AWB_FIELDS = tuple(
@@ -515,6 +517,10 @@ def _set_doc_field_if_changed(target_doc, fieldname: str, value) -> bool:
 			return False
 		if df.fieldtype == "Int":
 			value = int(value)
+	elif df and df.fieldtype in ("Data", "Small Text", "Link"):
+		value = str(value).strip()
+		if not value:
+			return False
 
 	if target_doc.get(fieldname) == value:
 		return False
@@ -564,7 +570,10 @@ def apply_awb_scalar_fields_to_doc(target_doc, awb_doc) -> bool:
 	"""Copy Air Waybill scalars onto Opportunity or Project."""
 	changed = False
 	for src_field, dest_field in AWB_TO_OPPORTUNITY_FIELDS:
-		if _set_doc_field_if_changed(target_doc, dest_field, awb_doc.get(src_field)):
+		value = awb_doc.get(src_field)
+		if src_field == "number_of_packages" and value in (0, "0", "0.0"):
+			continue
+		if _set_doc_field_if_changed(target_doc, dest_field, value):
 			changed = True
 	# Project form shows custom_expected_time_of_depatureetd (custom_etd is hidden).
 	alternates = (
@@ -606,9 +615,12 @@ def awb_propagation_payload(awb_doc) -> dict:
 	}
 	for src_field, dest_field in AWB_TO_OPPORTUNITY_FIELDS:
 		value = awb_doc.get(src_field)
-		if value not in (None, ""):
-			payload[dest_field] = value
-			payload[src_field] = value
+		if value in (None, ""):
+			continue
+		if src_field == "number_of_packages" and value in (0, "0", "0.0"):
+			continue
+		payload[dest_field] = value
+		payload[src_field] = value
 	return payload
 
 
@@ -971,6 +983,16 @@ def sync_opportunity_bl_from_clients_documents(doc, method=None) -> None:
 	if quantity_field and doc.meta.has_field(quantity_field) and not doc.get(quantity_field):
 		bl_doc = frappe.get_doc("Bill of Lading", bl_name)
 		doc.set(quantity_field, get_bl_quantity_summary(bl_doc))
+
+
+def sync_opportunity_from_linked_awb(doc, method=None) -> None:
+	"""Copy Air Waybill cargo fields (packages, weights, airline) onto Opportunity."""
+	if doc.doctype != "Opportunity":
+		return
+	awb = (doc.get("custom_air_waybill") or "").strip()
+	if not awb or not frappe.db.exists("Air Waybill", awb):
+		return
+	apply_awb_fields_to_doc(doc, frappe.get_doc("Air Waybill", awb))
 
 
 def sync_preshipment_containers_from_bl(doc, method=None) -> None:
