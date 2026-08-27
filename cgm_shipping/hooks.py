@@ -104,6 +104,7 @@ doctype_js = {
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 	"Material Request": "public/js/material_request.js",
 	"Employee Advance": "public/js/employee_advance.js",
+	"Job Applicant": "public/js/job_applicant.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
@@ -292,6 +293,9 @@ doc_events = {
 	},
 	"Leave Application": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
+	},
+	"Job Applicant": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_territory",
 	},
 	"Material Request": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_validate",
