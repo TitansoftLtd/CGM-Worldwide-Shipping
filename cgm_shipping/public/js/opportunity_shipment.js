@@ -366,9 +366,10 @@ cgm_shipping.opportunity_shipment._build_readiness_html = function (readiness) {
 	const deferred = Boolean(readiness.transport_docs_deferred);
 	const transport_docs = readiness.transport_documents || [];
 	const startAlternates = new Set(["Bill of Lading", "Booking Confirmation"]);
-	const alternateDocs = transport_docs.filter((doc) =>
-		startAlternates.has(doc.transport_document)
-	);
+	const isAir = Boolean(readiness.is_air) || String(readiness.mode_of_transport || "").toLowerCase() === "air";
+	const alternateDocs = isAir
+		? []
+		: transport_docs.filter((doc) => startAlternates.has(doc.transport_document));
 	const alternateLinked = alternateDocs.some((doc) => doc.linked_name);
 	if (!deferred) {
 		if (alternateDocs.length >= 2 && !alternateLinked) {
