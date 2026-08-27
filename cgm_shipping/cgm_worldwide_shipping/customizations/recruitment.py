@@ -232,6 +232,40 @@ def get_country_territory(country: str | None) -> dict | None:
 	)
 
 
+def get_open_job_openings() -> list:
+	"""Vacancies an applicant may actually apply to, newest first."""
+	return frappe.get_all(
+		"Job Opening",
+		filters={"status": "Open", "publish": 1},
+		fields=["name", "job_title"],
+		order_by="posted_on desc, creation desc",
+	)
+
+
+def validate_job_applicant_opening(doc, method=None) -> None:
+	"""Public applications must name a vacancy that is open and published.
+
+	The careers form offers nothing else and marks the field required, but the
+	endpoint accepts any payload. HR stays free to log desk applications with no
+	opening, or against an unpublished one.
+	"""
+	if not frappe.flags.in_web_form:
+		return
+
+	if not doc.get("job_title"):
+		# Without the link, `designation` never fetches through and the application
+		# lands unattached. Only insist while there is something to choose.
+		if get_open_job_openings():
+			frappe.throw(_("Select the job opening you are applying for."))
+		return
+
+	opening = frappe.db.get_value(
+		"Job Opening", doc.job_title, ["status", "publish"], as_dict=True
+	)
+	if not opening or opening.status != "Open" or not opening.publish:
+		frappe.throw(_("This vacancy is no longer open for applications."))
+
+
 def get_county_options() -> list[dict]:
 	"""Counties for the careers form, each tagged with the country it sits under.
 

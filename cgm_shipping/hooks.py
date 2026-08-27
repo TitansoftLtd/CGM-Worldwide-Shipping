@@ -295,7 +295,10 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 	},
 	"Job Applicant": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_territory",
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_territory",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_opening",
+		],
 	},
 	"Material Request": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_validate",
