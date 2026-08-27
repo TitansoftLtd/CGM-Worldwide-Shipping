@@ -52,6 +52,7 @@ def after_migrate() -> None:
 		("finance cost ledger schema", ensure_finance_cost_ledger_schema),
 		("transporter portal setup", ensure_transporter_portal_setup),
 		("task workflow masters", ensure_task_workflow_masters),
+		("package field visibility", ensure_package_field_visibility),
 	):
 		try:
 			fn()
@@ -84,6 +85,18 @@ def ensure_task_workflow_masters() -> None:
 	seed_task_workflow_masters()
 	seed_cgm_shipping_settings()
 	repair_clearance_charge_item_setup()
+	frappe.db.commit()
+
+
+def ensure_package_field_visibility() -> None:
+	"""Copy live package-field rules into Settings (if empty) and write depends_on."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.package_field_visibility import (
+		apply_package_field_depends_on,
+		seed_package_visibility_defaults,
+	)
+
+	seed_package_visibility_defaults()
+	apply_package_field_depends_on()
 	frappe.db.commit()
 
 

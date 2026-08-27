@@ -23,6 +23,8 @@ class TestAirWaybillSync(IntegrationTestCase):
 			"gross_weight",
 			"port_of_loading",
 			"port_of_discharge",
+			"number_of_packages",
+			"package_type",
 		}
 		mapped = {src for src, _dest in AWB_TO_OPPORTUNITY_FIELDS}
 		self.assertEqual(mapped, awb_fields)
@@ -44,6 +46,8 @@ class TestAirWaybillSync(IntegrationTestCase):
 					"gross_weight": 120,
 					"port_of_loading": "NBO",
 					"port_of_discharge": "DXB",
+					"number_of_packages": 12,
+					"package_type": "Cartons",
 				}
 				return values.get(fieldname)
 
@@ -52,6 +56,8 @@ class TestAirWaybillSync(IntegrationTestCase):
 		self.assertEqual(payload["custom_client_refrence_no"], "REF-1")
 		self.assertEqual(payload["custom_airline"], "KQ")
 		self.assertEqual(payload["custom_port_of_loading"], "NBO")
+		self.assertEqual(payload["custom_number_of_packages"], 12)
+		self.assertEqual(payload["custom_package_type"], "Cartons")
 
 	def test_build_awb_seed_from_opportunity(self):
 		class FakeMeta:
@@ -158,6 +164,8 @@ class TestAirWaybillSync(IntegrationTestCase):
 					"etd": "2026-08-28",
 					"net_weight": 50,
 					"gross_weight": 55,
+					"number_of_packages": 8,
+					"package_type": "Pallets",
 				}.get(fieldname)
 
 		opp = FakeOpp()
@@ -165,3 +173,5 @@ class TestAirWaybillSync(IntegrationTestCase):
 		self.assertEqual(opp.get("custom_client_refrence_no"), "REF-99")
 		self.assertEqual(opp.get("custom_airline"), "ET")
 		self.assertEqual(opp.get("custom_mode_of_transport"), "Air")
+		self.assertEqual(opp.get("custom_number_of_packages"), "8")
+		self.assertEqual(opp.get("custom_package_type"), "Pallets")

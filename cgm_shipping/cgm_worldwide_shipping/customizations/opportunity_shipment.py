@@ -78,6 +78,11 @@ def has_required_transport_documents(opportunity) -> bool:
 	if transport_documents_deferred(opportunity):
 		return True
 
+	if (opportunity.get("custom_bill_of_lading") or "").strip() or (
+		opportunity.get("custom_air_waybill") or ""
+	).strip():
+		return True
+
 	linked = get_transport_documents_with_links(opportunity)
 	if not linked:
 		return has_any_transport_document(opportunity)
@@ -220,6 +225,7 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_port_of_discharge", "custom_port_of_discharge"),
 		("custom_voyage_number", "custom_voyage_number"),
 		("custom_cargo_cutoff", "custom_cargo_cutoff"),
+		("custom_cargo_cut_off", "custom_cargo_cutoff"),
 		("custom_booking_confirmation", "custom_booking_confirmation"),
 		("custom_bill_of_lading", "custom_bill_of_lading"),
 		("custom_air_waybill", "custom_air_waybill"),
@@ -363,6 +369,15 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 				for item in transport_documents
 				if item.get("is_required_for_start") and not item.get("linked_name")
 			]
+			has_bl_or_awb = any(
+				item.get("transport_document") in {"Bill of Lading", "Air Waybill"}
+				and item.get("linked_name")
+				for item in transport_documents
+			)
+			if has_bl_or_awb:
+				missing_transport = [
+					label for label in missing_transport if label != "Booking Confirmation"
+				]
 			if missing_transport:
 				blockers.append(
 					_("Link required transport document(s): {0}").format(
@@ -421,6 +436,10 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 		"workflow_state": opp.get("workflow_state"),
 		"mode_of_transport": (opp.get("custom_mode_of_transport") or flags.get("default_mode_of_transport") or ""),
 		"is_air": _opportunity_is_air(opp),
+		"has_bl_or_awb": bool(
+			(opp.get("custom_bill_of_lading") or "").strip()
+			or (opp.get("custom_air_waybill") or "").strip()
+		),
 	}
 
 

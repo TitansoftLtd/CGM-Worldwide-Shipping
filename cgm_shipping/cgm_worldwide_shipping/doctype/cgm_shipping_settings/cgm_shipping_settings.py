@@ -23,6 +23,12 @@ class CGMShippingSettings(Document):
 			frappe.cache().delete_value("cgm:sea_task_ui_sequence_lists")
 		except Exception:
 			pass
+		if not self.flags.get("skip_package_visibility_apply"):
+			from cgm_shipping.cgm_worldwide_shipping.customizations.package_field_visibility import (
+				apply_package_field_depends_on,
+			)
+
+			apply_package_field_depends_on()
 		if self.flags.get("skip_role_group_sync"):
 			return
 		_sync_role_groups_from_settings(self)

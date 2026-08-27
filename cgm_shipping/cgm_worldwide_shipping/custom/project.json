@@ -423,7 +423,7 @@
    "columns": 0,
    "creation": "2026-07-14 10:38:08.356596",
    "default": null,
-   "depends_on": null,
+   "depends_on": "eval:doc.custom_booking_confirmation",
    "description": null,
    "docstatus": 0,
    "dt": "Project",

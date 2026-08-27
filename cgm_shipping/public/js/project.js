@@ -420,10 +420,19 @@ function project_cargo_type_code(frm) {
 	return (frm.doc.custom_cargo_type || "").trim().toUpperCase();
 }
 
+function project_is_air(frm) {
+	const mode = String(frm.doc.custom_mode_of_transport || "").trim().toLowerCase();
+	if (mode === "air") {
+		return true;
+	}
+	return String(frm.doc.custom_shipment_type || "").trim().toLowerCase().startsWith("air");
+}
+
 function toggle_project_cargo_fields(frm) {
 	const is_lcl = project_cargo_type_code(frm) === "LCL";
-	const show_fcl = !is_lcl;
-	const show_packages = is_lcl;
+	const is_air = project_is_air(frm);
+	const show_fcl = !is_lcl && !is_air;
+	const show_packages = cgm_shipping.package_visibility.should_show(frm);
 	const showRequestedCargo = show_fcl && !frm.doc.custom_bill_of_lading;
 
 	[
@@ -438,7 +447,10 @@ function toggle_project_cargo_fields(frm) {
 	});
 
 	if (frm.fields_dict.custom_booking_confirmation) {
-		frm.set_df_property("custom_booking_confirmation", "hidden", 0);
+		const showBooking = Boolean(frm.doc.custom_booking_confirmation);
+		frm.set_df_property("custom_booking_confirmation", "depends_on", "eval:doc.custom_booking_confirmation");
+		frm.set_df_property("custom_booking_confirmation", "hidden", showBooking ? 0 : 1);
+		frm.toggle_display("custom_booking_confirmation", showBooking);
 	}
 	if (frm.fields_dict.custom_cargo_type) {
 		frm.set_df_property("custom_cargo_type", "hidden", 0);
