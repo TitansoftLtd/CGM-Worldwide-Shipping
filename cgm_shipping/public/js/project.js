@@ -674,8 +674,11 @@ function paint_shipment_progress_chart(frm, field, payload) {
 				: "";
 	const legendLine = d.uses_clearance_states
 		? `<div class="cgm-tracking-legend">
-				${__("Berth phase")}: <b>${berth}</b> ·
-				${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
+				${
+					d.show_berth_phase
+						? `${__("Berth phase")}: <b>${berth}</b> · `
+						: ""
+				}${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
 			</div>`
 		: `<div class="cgm-tracking-legend">
 				${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current

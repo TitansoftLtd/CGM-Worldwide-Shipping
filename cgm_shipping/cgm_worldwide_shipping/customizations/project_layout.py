@@ -1372,6 +1372,8 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"uses_clearance_states": use_clearance_states,
 		"has_workflow_tasks": bool(visible_tasks or tasks),
 		"task_progress_label": "clearance tasks" if use_clearance_states else "workflow tasks",
+		"show_berth_phase": use_clearance_states
+		and (doc.get("custom_mode_of_transport") or "").strip().lower() == "sea",
 		"berth_phase": berth_phase,
 		"project_reference": get_project_reference(doc) or doc.name,
 		"cgm_ref_no": (doc.get("custom_cgm_ref_no") or "").strip()
