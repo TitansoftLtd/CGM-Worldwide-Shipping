@@ -1,33 +1,20 @@
-"""Recruitment schema for the public CGM job application.
+"""Recruitment support for the public CGM job application.
 
-Adds the Territory / Notice Period fields the careers form collects on top of the
-stock HRMS Job Applicant, and classifies Territory records so the Territory link
-can be filtered by type. Installers are idempotent and run from
-`install.after_migrate`.
+The County / Notice Period fields on Job Applicant and the Territory Type field on
+Territory are *not* defined here: they live in the Customize Form exports at
+`custom/job_applicant.json` and `custom/territory.json`, which `sync_customizations`
+applies on every migrate. This module owns the data and behaviour around them - the
+county seed, the link queries, and the validation - and its installer is idempotent
+and runs from `install.after_migrate`, after those exports have been applied.
 """
 from __future__ import annotations
 
 import frappe
 from frappe import _
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
-	_remove_cf,
-	_upsert_cf,
-)
-
-# Territory records are classified with these so a Territory link field can be
-# narrowed to just counties or just countries.
-TERRITORY_TYPES = ("County", "Country")
-TERRITORY_TYPE_OPTIONS = "\n" + "\n".join(TERRITORY_TYPES)
-
-NOTICE_PERIODS = (
-	"Immediately Available",
-	"1 Month",
-	"2 Months",
-	"3 Months",
-	"More than 3 Months",
-)
-NOTICE_PERIOD_OPTIONS = "\n" + "\n".join(NOTICE_PERIODS)
+# Territory Type values, as defined by the Customize Form export for Territory.
+COUNTY = "County"
+COUNTRY = "Country"
 
 KENYA = "Kenya"
 
@@ -86,78 +73,14 @@ WEB_FORM = "cgm-job-application"
 WEB_FORM_ROUTE = "careers/apply"
 
 
-def ensure_recruitment_custom_fields() -> None:
-	"""Field-only installer, called from install.before_migrate.
-
-	The careers Web Form lists these fieldnames, so they have to exist before the
-	standard Web Form JSON is imported. In developer mode a Web Form saved while a
-	referenced field is missing exports itself back over its own source file minus
-	that field, which silently truncates the form.
-	"""
-	if not frappe.db.table_exists("Territory") or not frappe.db.table_exists("Job Applicant"):
-		return
-
-	ensure_territory_type_field()
-	ensure_job_applicant_fields()
-
-
 def ensure_recruitment_schema() -> None:
-	"""Entry point called from install.after_migrate."""
-	ensure_recruitment_custom_fields()
+	"""Entry point called from install.after_migrate.
+
+	Runs after `sync_customizations` has applied the Customize Form exports, so the
+	Territory Type field it writes to is already in place.
+	"""
 	seed_kenyan_counties()
 	point_job_openings_at_cgm_form()
-
-
-def ensure_territory_type_field() -> None:
-	"""Classify Territory masters so the applicant's Territory link can be filtered."""
-	_upsert_cf(
-		"Territory",
-		{
-			"fieldname": "custom_territory_type",
-			"label": "Territory Type",
-			"fieldtype": "Select",
-			"options": TERRITORY_TYPE_OPTIONS,
-			"insert_after": "is_group",
-			"description": (
-				"Classifies this territory so Territory link fields can be filtered by type. "
-				"Leave blank for grouping nodes that are neither a county nor a country."
-			),
-		},
-	)
-
-
-def ensure_job_applicant_fields() -> None:
-	"""County picker on Job Applicant, scoped by the Country of Residence.
-
-	There is deliberately no Territory Type field here: the type lives on the
-	Territory master, and the applicant's country is what narrows the list.
-	"""
-	# Removed in favour of driving the county list straight off `country`.
-	_remove_cf("Job Applicant", "custom_territory_type")
-
-	_upsert_cf(
-		"Job Applicant",
-		{
-			"fieldname": "custom_territory",
-			"label": "County",
-			"fieldtype": "Link",
-			"options": "Territory",
-			"insert_after": "country",
-			"depends_on": "eval:doc.country",
-			"description": "Counties available for the selected Country of Residence.",
-		},
-	)
-	_upsert_cf(
-		"Job Applicant",
-		{
-			"fieldname": "custom_notice_period",
-			"label": "Notice Period",
-			"fieldtype": "Select",
-			"options": NOTICE_PERIOD_OPTIONS,
-			"insert_after": "custom_territory",
-			"description": "How soon the applicant can start.",
-		},
-	)
 
 
 def seed_kenyan_counties() -> None:
@@ -178,23 +101,23 @@ def seed_kenyan_counties() -> None:
 	if not kenya.is_group:
 		kenya.is_group = 1
 		changed = True
-	if kenya.get("custom_territory_type") != "Country":
-		kenya.custom_territory_type = "Country"
+	if kenya.get("custom_territory_type") != COUNTRY:
+		kenya.custom_territory_type = COUNTRY
 		changed = True
 	if changed:
 		kenya.save(ignore_permissions=True)
 
 	for county in KENYAN_COUNTIES:
 		if frappe.db.exists("Territory", county):
-			if frappe.db.get_value("Territory", county, "custom_territory_type") != "County":
-				frappe.db.set_value("Territory", county, "custom_territory_type", "County")
+			if frappe.db.get_value("Territory", county, "custom_territory_type") != COUNTY:
+				frappe.db.set_value("Territory", county, "custom_territory_type", COUNTY)
 			continue
 
 		doc = frappe.new_doc("Territory")
 		doc.territory_name = county
 		doc.parent_territory = KENYA
 		doc.is_group = 0
-		doc.custom_territory_type = "County"
+		doc.custom_territory_type = COUNTY
 		doc.insert(ignore_permissions=True)
 
 
@@ -226,7 +149,7 @@ def get_country_territory(country: str | None) -> dict | None:
 
 	return frappe.db.get_value(
 		"Territory",
-		{"name": country, "custom_territory_type": "Country"},
+		{"name": country, "custom_territory_type": COUNTRY},
 		["name", "lft", "rgt"],
 		as_dict=True,
 	)
@@ -274,13 +197,13 @@ def get_county_options() -> list[dict]:
 	"""
 	rows = frappe.get_all(
 		"Territory",
-		filters={"custom_territory_type": "County"},
+		filters={"custom_territory_type": COUNTY},
 		fields=["name", "lft", "rgt"],
 		order_by="name asc",
 	)
 	countries = frappe.get_all(
 		"Territory",
-		filters={"custom_territory_type": "Country"},
+		filters={"custom_territory_type": COUNTRY},
 		fields=["name", "lft", "rgt"],
 	)
 
@@ -311,7 +234,7 @@ def county_query(doctype, txt, searchfield, start, page_len, filters):
 		return []
 
 	conditions = {
-		"custom_territory_type": "County",
+		"custom_territory_type": COUNTY,
 		"lft": (">=", country_node.lft),
 		"rgt": ("<=", country_node.rgt),
 	}
@@ -344,7 +267,7 @@ def validate_job_applicant_territory(doc, method=None) -> None:
 	territory = frappe.db.get_value(
 		"Territory", doc.custom_territory, ["custom_territory_type", "lft", "rgt"], as_dict=True
 	)
-	if not territory or territory.custom_territory_type != "County":
+	if not territory or territory.custom_territory_type != COUNTY:
 		frappe.throw(
 			_("{0} is not a County.").format(frappe.bold(doc.custom_territory))
 		)
