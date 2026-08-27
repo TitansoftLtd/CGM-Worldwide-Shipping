@@ -5,6 +5,10 @@ frappe.ui.form.on("Opportunity", {
 		configure_opportunity_clients_documents_grid(frm);
 	},
 
+	onload_post_render(frm) {
+		cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+	},
+
 	before_save(frm) {
 		if (!frm.doc.opportunity_from) {
 			frm.set_value("opportunity_from", "Customer");
@@ -26,9 +30,6 @@ frappe.ui.form.on("Opportunity", {
 			sync_opportunity_transport_and_containers(frm);
 			cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
 			configure_opportunity_clients_documents_grid(frm);
-			if (cgm_shipping?.attachment_approval?.refresh) {
-				cgm_shipping.attachment_approval.refresh(frm);
-			}
 			setup_opportunity_batch_autocomplete(frm);
 			schedule_shipment_project_create_menu(frm);
 			hide_procurement_create_buttons(frm);
@@ -370,7 +371,6 @@ function apply_bl_classification_fields(frm, data) {
 
 	const detail_fields = [
 		"custom_description_of_goods",
-		"custom_draft_bl_number",
 		"custom_number_of_packages",
 		"custom_package_type",
 		// Confirmed shipping / cargo — Opportunity stays the latest shipment record.
@@ -539,9 +539,6 @@ function setup_opportunity_bill_of_lading_create(frm) {
 				}
 			}
 			opts.linked_opportunity = frm.doc.name;
-			if (frm.doc.custom_draft_bl_number) {
-				opts.bl_number = frm.doc.custom_draft_bl_number;
-			}
 			// FCL batch is allocated on Booking/BL save — not from Opportunity.
 			if (frm.doc.party_name) {
 				opts.customer = frm.doc.party_name;

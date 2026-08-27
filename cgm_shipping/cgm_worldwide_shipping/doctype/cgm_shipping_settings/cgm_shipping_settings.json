@@ -9,6 +9,9 @@
   "section_task_workflow_settings",
   "default_company",
   "sea_import_template",
+  "section_package_field_visibility",
+  "package_visibility_modes",
+  "package_visibility_cargo_types",
   "tab_container_port_settings",
   "section_container_port_settings",
   "kpa_default_free_days",
@@ -330,6 +333,24 @@
    "options": "CGM Task Template"
   },
   {
+   "description": "Show Number of Packages and Package Type when Mode of Transport or Cargo Type matches a value listed here. Changing this list updates Opportunity and Project forms on save.",
+   "fieldname": "section_package_field_visibility",
+   "fieldtype": "Section Break",
+   "label": "Package field visibility"
+  },
+  {
+   "fieldname": "package_visibility_modes",
+   "fieldtype": "Table MultiSelect",
+   "label": "Show packages for Mode of Transport",
+   "options": "Mode of Transport Item"
+  },
+  {
+   "fieldname": "package_visibility_cargo_types",
+   "fieldtype": "Table MultiSelect",
+   "label": "Show packages for Cargo Type",
+   "options": "Cargo Type Item"
+  },
+  {
    "fieldname": "tab_container_port_settings",
    "fieldtype": "Tab Break",
    "label": "Container & Port Settings"
@@ -453,7 +474,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-21 10:20:40.823928",
+ "modified": "2026-08-28 00:10:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

@@ -172,7 +172,19 @@ def build_intake_wizard_html(stage: str, readiness: dict | None = None) -> str:
 		else:
 			message = _("Upload and verify all required client documents, then submit for approval.")
 	elif stage == STAGE_AUTHORIZATION:
-		message = _("All requirements met. Approve this record, then click <b>Start Shipment</b>.")
+		state = (flags.get("workflow_state") or "").strip()
+		if flags.get("transport_docs_deferred"):
+			message = _(
+				"Transport documents can be attached later on the Project. "
+				"Approve this record, then click <b>Start Shipment</b>."
+			)
+		elif state and state != "Approved":
+			message = _(
+				"All requirements met. Approve this record (currently {0}), "
+				"then click <b>Start Shipment</b>."
+			).format(frappe.utils.escape_html(state))
+		else:
+			message = _("Approved. Click <b>Start Shipment</b> to create the project.")
 
 	if message:
 		parts.append(f'<div class="cgm-shipment-intake-message">{message}</div>')
