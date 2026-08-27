@@ -1948,7 +1948,7 @@
    "columns": 0,
    "creation": "2026-06-05 15:14:03.334731",
    "default": null,
-   "depends_on": "eval:['documents','authorization'].includes(doc.custom_intake_stage) || doc.custom_primary_doc_linked || doc.custom_booking_confirmation || doc.custom_bill_of_lading",
+   "depends_on": "eval:['documents','authorization'].includes(doc.custom_intake_stage) || doc.custom_primary_doc_linked || doc.custom_booking_confirmation || doc.custom_bill_of_lading || doc.custom_air_waybill",
    "description": null,
    "docstatus": 0,
    "dt": "Opportunity",

@@ -34,6 +34,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	copy_carrier_fields_from_source,
 	copy_shipment_classification_from_source,
 	copy_tracking_fields_from_source,
+	awb_quantity_summary,
 	get_awb_value_from_doc,
 	get_bl_quantity_summary,
 	get_project_awb_field,
@@ -718,6 +719,11 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 				project.set(
 					quantity_field,
 					get_bl_quantity_summary(frappe.get_doc("Bill of Lading", bl_name)),
+				)
+			elif awb_name and frappe.db.exists("Air Waybill", awb_name):
+				project.set(
+					quantity_field,
+					awb_quantity_summary(frappe.get_doc("Air Waybill", awb_name)),
 				)
 
 def apply_opportunity_to_project_mappings(project, opp) -> None:

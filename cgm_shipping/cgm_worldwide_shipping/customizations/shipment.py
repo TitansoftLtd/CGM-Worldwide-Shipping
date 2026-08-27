@@ -565,6 +565,25 @@ def apply_bl_fields_to_doc(target_doc, bl_doc) -> bool:
 	return classification_changed or shipping_changed or tracking_changed or detail_changed
 
 
+def package_count_quantity_summary(pkgs, ptype) -> str:
+	"""Same summary LCL uses: '12 Cartons' from package count + type."""
+	count = str(pkgs or "").strip()
+	if count in {"0", "0.0"}:
+		count = ""
+	kind = str(ptype or "").strip()
+	if count and kind:
+		return f"{count} {kind}"
+	return count or kind
+
+
+def awb_quantity_summary(awb_doc) -> str:
+	"""Quantity text for Opportunity / Project from Air Waybill packages."""
+	return package_count_quantity_summary(
+		awb_doc.get("number_of_packages"),
+		awb_doc.get("package_type"),
+	)
+
+
 def apply_awb_scalar_fields_to_doc(target_doc, awb_doc) -> bool:
 	"""Copy Air Waybill scalars onto Opportunity or Project."""
 	changed = False
@@ -584,6 +603,8 @@ def apply_awb_scalar_fields_to_doc(target_doc, awb_doc) -> bool:
 	for src_field, dest_field in alternates:
 		if _set_doc_field_if_changed(target_doc, dest_field, awb_doc.get(src_field)):
 			changed = True
+	if _set_doc_field_if_changed(target_doc, "custom_quantity", awb_quantity_summary(awb_doc)):
+		changed = True
 	return changed
 
 
@@ -620,6 +641,10 @@ def awb_propagation_payload(awb_doc) -> dict:
 			continue
 		payload[dest_field] = value
 		payload[src_field] = value
+	quantity = awb_quantity_summary(awb_doc)
+	if quantity:
+		payload["custom_quantity"] = quantity
+		payload["quantity"] = quantity
 	return payload
 
 

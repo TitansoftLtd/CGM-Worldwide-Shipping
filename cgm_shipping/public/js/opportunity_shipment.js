@@ -544,45 +544,52 @@ cgm_shipping.opportunity_shipment.render_transport_documents_dashboard = functio
 
 	cgm_shipping.opportunity_shipment._reveal_transport_documents_html(frm);
 
+	const deferred =
+		cint(frm.doc.custom_transport_docs_deferred) ||
+		Boolean(readiness.transport_docs_deferred);
+	const anyLinked = docs.some((doc) => doc.linked_name);
+
 	const parts = ['<div class="cgm-transport-documents">'];
 	parts.push(`<div class="cgm-transport-documents-title">${__("Transport Documents")}</div>`);
-	parts.push('<div class="cgm-transport-doc-actions">');
 
-	docs.forEach((doc) => {
-		const label = frappe.utils.escape_html(doc.transport_document || "");
-		const linked = doc.linked_name;
-		const required =
-			doc.is_required_for_start &&
-			!(
-				doc.transport_document === "Booking Confirmation" &&
-				(flags || frm._cgm_intake_context?.readiness || {}).has_bl_or_awb
-			)
-				? " cgm-transport-doc-required"
-				: "";
-		if (linked) {
+	if (!deferred) {
+		parts.push('<div class="cgm-transport-doc-actions">');
+
+		docs.forEach((doc) => {
+			const label = frappe.utils.escape_html(doc.transport_document || "");
+			const linked = doc.linked_name;
+			const required =
+				doc.is_required_for_start &&
+				!(
+					doc.transport_document === "Booking Confirmation" &&
+					(flags || frm._cgm_intake_context?.readiness || {}).has_bl_or_awb
+				)
+					? " cgm-transport-doc-required"
+					: "";
+			if (linked) {
+				parts.push(
+					`<button type="button" class="btn btn-sm btn-default cgm-transport-doc-linked${required}" ` +
+						`data-action="open" data-doctype="${frappe.utils.escape_html(doc.doctype)}" ` +
+						`data-name="${frappe.utils.escape_html(linked)}">` +
+						`<span class="cgm-transport-doc-check">✓</span> ${label}</button>`
+				);
+				return;
+			}
+			if (!doc.doctype || !doc.opp_field) {
+				return;
+			}
 			parts.push(
-				`<button type="button" class="btn btn-sm btn-default cgm-transport-doc-linked${required}" ` +
-					`data-action="open" data-doctype="${frappe.utils.escape_html(doc.doctype)}" ` +
-					`data-name="${frappe.utils.escape_html(linked)}">` +
-					`<span class="cgm-transport-doc-check">✓</span> ${label}</button>`
+				`<button type="button" class="btn btn-sm btn-primary cgm-add-transport-doc${required}" ` +
+					`data-doctype="${frappe.utils.escape_html(doc.doctype)}" ` +
+					`data-label="${label}" data-opp-field="${frappe.utils.escape_html(doc.opp_field)}">` +
+					`+ ${__("Add {0}", [label])}</button>`
 			);
-			return;
-		}
-		if (!doc.doctype || !doc.opp_field) {
-			return;
-		}
-		parts.push(
-			`<button type="button" class="btn btn-sm btn-primary cgm-add-transport-doc${required}" ` +
-				`data-doctype="${frappe.utils.escape_html(doc.doctype)}" ` +
-				`data-label="${label}" data-opp-field="${frappe.utils.escape_html(doc.opp_field)}">` +
-				`+ ${__("Add {0}", [label])}</button>`
-		);
-	});
+		});
 
-	parts.push("</div></div>");
+		parts.push("</div>");
+	}
 
-	const anyLinked = docs.some((doc) => doc.linked_name);
-	const deferred = cint(frm.doc.custom_transport_docs_deferred);
+	parts.push("</div>");
 	if (!anyLinked) {
 		parts.push('<div class="cgm-transport-docs-defer" style="margin-top: 10px;">');
 		if (deferred) {
@@ -890,6 +897,10 @@ cgm_shipping.opportunity_shipment.apply_awb_payload = function (frm, pending) {
 		set_if("custom_number_of_packages", String(packages));
 	}
 	set_if("custom_package_type", pending.custom_package_type || pending.package_type);
+	set_if("custom_quantity", pending.custom_quantity || pending.quantity);
+	if (frm.fields_dict.custom_quantity) {
+		frm.toggle_display("custom_quantity", true);
+	}
 
 	cgm_shipping.opportunity_shipment.toggle_package_fields(frm);
 };

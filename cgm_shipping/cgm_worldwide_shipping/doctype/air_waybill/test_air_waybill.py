@@ -1,13 +1,50 @@
 # Copyright (c) 2026, Titansoft Limited and Contributors
 # See license.txt
 
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	AWB_TO_OPPORTUNITY_FIELDS,
 	apply_awb_fields_to_doc,
 	awb_propagation_payload,
+	awb_quantity_summary,
 )
+
+
+class TestAwbQuantitySummary(UnitTestCase):
+	def test_awb_quantity_matches_lcl_package_summary(self):
+		class FakeAWB:
+			def get(self, fieldname):
+				return {"number_of_packages": 12, "package_type": "Cartons"}.get(fieldname)
+
+		self.assertEqual(awb_quantity_summary(FakeAWB()), "12 Cartons")
+
+	def test_awb_propagation_payload_includes_quantity(self):
+		class FakeAWB:
+			name = "AWB-001"
+			shipment_type = None
+
+			def get(self, fieldname):
+				values = {
+					"client_reference_no": "REF-1",
+					"description": "Electronics",
+					"airline": "KQ",
+					"eta": "2026-08-01",
+					"etd": "2026-07-30",
+					"weight_uom": "Kg",
+					"net_weight": 100,
+					"gross_weight": 120,
+					"port_of_loading": "NBO",
+					"port_of_discharge": "DXB",
+					"number_of_packages": 12,
+					"package_type": "Cartons",
+				}
+				return values.get(fieldname)
+
+		payload = awb_propagation_payload(FakeAWB())
+		self.assertEqual(payload["custom_quantity"], "12 Cartons")
+		self.assertEqual(payload["quantity"], "12 Cartons")
+		self.assertEqual(payload["custom_number_of_packages"], 12)
 
 
 class TestAirWaybillSync(IntegrationTestCase):
@@ -58,6 +95,8 @@ class TestAirWaybillSync(IntegrationTestCase):
 		self.assertEqual(payload["custom_port_of_loading"], "NBO")
 		self.assertEqual(payload["custom_number_of_packages"], 12)
 		self.assertEqual(payload["custom_package_type"], "Cartons")
+		self.assertEqual(payload["custom_quantity"], "12 Cartons")
+		self.assertEqual(payload["quantity"], "12 Cartons")
 
 	def test_build_awb_seed_from_opportunity(self):
 		class FakeMeta:
@@ -175,3 +214,4 @@ class TestAirWaybillSync(IntegrationTestCase):
 		self.assertEqual(opp.get("custom_mode_of_transport"), "Air")
 		self.assertEqual(opp.get("custom_number_of_packages"), "8")
 		self.assertEqual(opp.get("custom_package_type"), "Pallets")
+		self.assertEqual(opp.get("custom_quantity"), "8 Pallets")
