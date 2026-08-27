@@ -685,6 +685,10 @@ def _free_days_expiring(row: dict, ref) -> bool:
 	free_end = row.get("free_days_end_date")
 	if not free_end or row.get("gate_out_date_port"):
 		return False
+	if row.get("status") in CLOSED_CONTAINER_STATUSES:
+		return False
+	if row.get("actual_empty_return") or row.get("interchange_date"):
+		return False
 	remaining = (getdate(free_end) - ref).days
 	return 0 <= remaining <= 2
 

@@ -499,14 +499,6 @@ def _validate_operational_expense_request(doc) -> None:
 		frappe.throw(
 			_("Set Employee on Operational Expense requests. Link your user on the Employee record, or pick the employee who receives the cash.")
 		)
-	for item in doc.get("items") or []:
-		if not strip_html((item.get("description") or "").strip()):
-			frappe.throw(
-				_("Row {0}: add a Description on the item — this is the note Finance and the Funding Approver see.").format(
-					item.idx
-				)
-			)
-			break
 
 
 def _copy_header_project_to_items(doc) -> None:

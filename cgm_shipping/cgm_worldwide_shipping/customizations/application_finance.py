@@ -688,7 +688,7 @@ def invoice_verified(task, profile: ApplicationFinanceProfile) -> bool:
 
 def receipt_verified(task, profile: ApplicationFinanceProfile) -> bool:
 	line = get_receipt_line(task, profile)
-	return bool(line and line.verified)
+	return bool(line and line.attachment and line.verified)
 
 
 def _ensure_line(task, line_type: str, profile: ApplicationFinanceProfile):
@@ -1957,6 +1957,11 @@ def normalize_application_finance_verification(task, profile: ApplicationFinance
 		return
 	# Non-POP flows: Finance upload of the receipt is confirmation — auto-stamp verified.
 	# Shipping Line: Documentation attaches receipt; Finance verifies manually — do not auto-stamp.
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		clear_verification_without_attachment,
+	)
+
+	clear_verification_without_attachment(task)
 	if task_matches_application_finance(task, profile) and not profile.requires_pop:
 		rec = get_receipt_line(task, profile)
 		if rec and rec.attachment and not cint(rec.verified):
@@ -1986,11 +1991,16 @@ def normalize_application_finance_verification(task, profile: ApplicationFinance
 			setattr(task, profile.application_invoice_verified_field, 1)
 		if (
 			rec
+			and rec.attachment
 			and rec.verified
 			and profile.application_receipt_verified_field
 			and task.meta.has_field(profile.application_receipt_verified_field)
 		):
 			setattr(task, profile.application_receipt_verified_field, 1)
+		elif profile.application_receipt_verified_field and task.meta.has_field(
+			profile.application_receipt_verified_field
+		):
+			setattr(task, profile.application_receipt_verified_field, 0)
 
 
 def enforce_application_finance_line_permissions(
@@ -2118,13 +2128,11 @@ def enforce_application_finance_line_permissions(
 					)
 			continue
 
-		# Legacy non-POP flows: receipt on finance after payment.
-		if task_matches_application(task, profile):
-			frappe.throw(
-				f"The <b>{profile.receipt_label}</b> is uploaded on the finance payment task "
-				"after recording payment. Attach only the invoice (and certificate) here."
-			)
-		if task_matches_application_finance(task, profile):
+		# Non-POP flows: Upload Receipt role (UCR → Declarant) attaches after payment
+		# on the application task or the finance payment task.
+		if task_matches_application(task, profile) or task_matches_application_finance(
+			task, profile
+		):
 			if not can_receipt:
 				frappe.throw(
 					f"Only the configured <b>Upload Receipt</b> role group can attach the "
