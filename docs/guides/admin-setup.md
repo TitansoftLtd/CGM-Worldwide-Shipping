@@ -108,6 +108,7 @@ All patches in `cgm_shipping/patches.txt` run on `bench migrate`.
 | Schedule | Job |
 |----------|-----|
 | Daily | `container_tracker.refresh_open_container_metrics` |
+| Daily | `license_reminders.send_license_expiry_reminders` — licence expiry reminders ([guide](licences.md)) |
 
 Ensure scheduler is running: `bench doctor` / supervisor.
 
@@ -153,3 +154,4 @@ bench --site <site> clear-cache
 - [Developer](developer.md)
 - [Operations](operations.md)
 - [Finance](finance.md)
+- [Licence & Permit Register](licences.md)

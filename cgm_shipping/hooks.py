@@ -39,6 +39,7 @@ app_include_js = [
 	"/assets/cgm_shipping/js/operational_updates_ui.js",
 	"/assets/cgm_shipping/js/cgm_shipping_workspace.js",
 	"/assets/cgm_shipping/js/supplier_link_filters.js",
+	"/assets/cgm_shipping/js/item_link_display.js",
 ]
 
 # include js, css files in header of web template
@@ -104,6 +105,7 @@ doctype_js = {
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 	"Material Request": "public/js/material_request.js",
 	"Employee Advance": "public/js/employee_advance.js",
+	"Job Applicant": "public/js/job_applicant.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
@@ -296,6 +298,12 @@ doc_events = {
 	"Leave Application": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 	},
+	"Job Applicant": {
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_territory",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_opening",
+		],
+	},
 	"Material Request": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_validate",
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
@@ -358,6 +366,8 @@ scheduler_events = {
     "daily": [
         "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
         "cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.post_all_container_charge_accruals",
+        # Licence & permit expiry reminders. Periods and recipients live in License Settings.
+        "cgm_shipping.cgm_worldwide_shipping.customizations.license_reminders.send_license_expiry_reminders",
     ],
 }
 

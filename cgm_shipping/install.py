@@ -16,9 +16,16 @@ def before_migrate() -> None:
 
 def after_install() -> None:
 	"""Seed default masters and CGM Shipping Settings on a fresh site."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.license_roles import (
+		seed_license_settings,
+	)
 	from cgm_shipping.default_seed_data import seed_all_defaults
 
 	seed_all_defaults()
+	ensure_license_setup()
+	# Reminder schedule defaults are fresh-install only, so removing a period on a
+	# live site is not undone by the next migrate.
+	seed_license_settings()
 
 
 def after_migrate() -> None:
@@ -28,6 +35,9 @@ def after_migrate() -> None:
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		check_project_layout_export_drift,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.recruitment import (
+		ensure_recruitment_schema,
 	)
 
 	missing_layout_fields = check_project_layout_export_drift()
@@ -53,6 +63,8 @@ def after_migrate() -> None:
 		("transporter portal setup", ensure_transporter_portal_setup),
 		("task workflow masters", ensure_task_workflow_masters),
 		("package field visibility", ensure_package_field_visibility),
+		("licence register roles", ensure_license_setup),
+		("recruitment schema", ensure_recruitment_schema),
 	):
 		try:
 			fn()
@@ -97,6 +109,17 @@ def ensure_package_field_visibility() -> None:
 
 	seed_package_visibility_defaults()
 	apply_package_field_depends_on()
+def ensure_license_setup() -> None:
+	"""Roles the licence & permit register doctypes grant permissions to.
+
+	Licence types and the permit rows themselves are entered by hand or via Data
+	Import, which is enabled on both doctypes - nothing seeds them from code.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.license_roles import (
+		ensure_license_roles,
+	)
+
+	ensure_license_roles()
 	frappe.db.commit()
 
 
