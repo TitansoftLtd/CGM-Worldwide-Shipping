@@ -193,6 +193,23 @@ def _effective_return_date(actual_return, interchange):
 	return interchange or actual_return
 
 
+def _left_mombasa_port_date(gate_out, offloading, gate_in_wh, actual_return, interchange):
+	"""Date the box left Mombasa port (KPA storage ends).
+
+	KPA charges overstay at the port, not empty return to the shipping line.
+	Gate-out from Mombasa is the real event. Offload / warehouse gate-in / empty
+	return are only used when gate-out was not recorded, so we do not keep
+	charging until today after the box has already left.
+	"""
+	if gate_out:
+		return gate_out
+	if offloading:
+		return offloading
+	if gate_in_wh:
+		return gate_in_wh
+	return _effective_return_date(actual_return, interchange)
+
+
 def _inclusive_days_between(start, end) -> int | None:
 	start_date = _optional_date(start)
 	end_date = _optional_date(end)
@@ -321,25 +338,29 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		"alert_status": "",
 	}
 
+	effective_return = _effective_return_date(actual_return, interchange)
+	left_port = _left_mombasa_port_date(
+		gate_out, offloading, gate_in_wh, actual_return, interchange
+	)
+	# KPA / days in port: still in Mombasa → count to today; otherwise stop at exit.
+	port_clock_end = left_port or ref_date
+
 	if free_end:
+		# Shipping-line demurrage/detention: empty return / interchange, not KPA.
 		dem_start = free_end + timedelta(days=1)
-		effective_return = _effective_return_date(actual_return, interchange)
 		charge_end = effective_return or ref_date
 		if charge_end >= dem_start:
 			out["demurrage_days"] = (charge_end - dem_start).days + 1
 
 	if free_start:
-		end_port = gate_out or ref_date
-		out["port_days_used"] = max(0, (end_port - free_start).days + 1)
+		out["port_days_used"] = max(0, (port_clock_end - free_start).days + 1)
 
 	if kpa_free_end:
 		kpa_charge_start = kpa_free_end + timedelta(days=1)
-		kpa_charge_end = gate_out or ref_date
-		if kpa_charge_end >= kpa_charge_start:
-			out["kpa_days"] = (kpa_charge_end - kpa_charge_start).days + 1
+		if port_clock_end >= kpa_charge_start:
+			out["kpa_days"] = (port_clock_end - kpa_charge_start).days + 1
 
 	expected = _optional_date(out.get("expected_empty_return"))
-	effective_return = _effective_return_date(actual_return, interchange)
 	if expected and not effective_return and ref_date > expected:
 		out["days_outstanding"] = (ref_date - expected).days
 
@@ -468,15 +489,17 @@ def _derive_alert_status(
 	free_configured=True,
 ) -> str:
 	"""Urgency overlay on operational status. Not stored in DB."""
-	if free_configured and free_end and not gate_out:
+	effective_return = _effective_return_date(actual_return, interchange)
+
+	# Still at port (no gate-out and not yet returned): count against today.
+	# Once empty return / interchange is set, do not keep accruing vs today.
+	if free_configured and free_end and not gate_out and not effective_return:
 		if ref_date > free_end:
 			overdue = (ref_date - free_end).days
 			return f"🔴 Demurrage Accruing ({overdue} day(s) past free period)"
 		days_remaining = (free_end - ref_date).days
 		if 0 <= days_remaining <= 2:
 			return "⚠️ Free Days Expiring Soon"
-
-	effective_return = _effective_return_date(actual_return, interchange)
 
 	if not effective_return and expected_return:
 		if ref_date > expected_return:
@@ -1298,7 +1321,14 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 			"css": "cgm-tl-red",
 		}
 
-	if free_end and not metrics.get("gate_out_date_port"):
+	if (
+		free_end
+		and not metrics.get("gate_out_date_port")
+		and not _effective_return_date(
+			_optional_date(metrics.get("actual_empty_return")),
+			_optional_date(metrics.get("interchange_date")),
+		)
+	):
 		days_remaining = (free_end - ref_date).days
 		if 0 < days_remaining <= 2:
 			return {"level": "amber", "label": _("ALMOST DUE"), "css": "cgm-tl-amber"}
