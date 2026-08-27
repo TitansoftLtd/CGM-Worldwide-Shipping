@@ -766,6 +766,17 @@ function format_currency_totals_label(totals) {
 		.join(" · ");
 }
 
+function container_still_open_for_charges(c) {
+	return !(c.actual_empty_return || c.interchange_date);
+}
+
+function container_has_active_charges(c) {
+	if (!container_still_open_for_charges(c)) {
+		return false;
+	}
+	return cint(c.demurrage_days) > 0 || cint(c.kpa_days) > 0;
+}
+
 function container_status_dot(status, alert_status) {
 	const alert = alert_status || "";
 	if (alert.includes("🔴") || alert.includes("🚨") || status === "Return Overdue") {
@@ -891,7 +902,13 @@ function render_container_card_body(c) {
 
 	const slFreeEnd = container_card_format_date(c.free_days_end_date);
 	let slFreeEndDisplay = slFreeEnd;
-	if (slFreeEnd && !c.gate_out_date_port && c.free_days_end_date) {
+	const stillCountingReturn = !c.actual_empty_return && !c.interchange_date;
+	const stillAtMombasa =
+		!c.gate_out_date_port &&
+		!c.offloading_date &&
+		!c.gate_in_date_warehouse &&
+		stillCountingReturn;
+	if (slFreeEnd && stillCountingReturn && c.free_days_end_date) {
 		const slRemaining = frappe.datetime.get_diff(c.free_days_end_date, today);
 		if (slRemaining >= 0) {
 			slFreeEndDisplay = `${slFreeEnd} (${__("{0} days left", [slRemaining])})`;
@@ -942,7 +959,7 @@ function render_container_card_body(c) {
 
 	const kpaFreeEnd = container_card_format_date(c.kpa_free_days_end_date);
 	let kpaFreeEndDisplay = kpaFreeEnd;
-	if (kpaFreeEnd && !c.gate_out_date_port && c.kpa_free_days_end_date) {
+	if (kpaFreeEnd && stillAtMombasa && c.kpa_free_days_end_date) {
 		const kpaRemaining = frappe.datetime.get_diff(c.kpa_free_days_end_date, today);
 		if (kpaRemaining >= 0) {
 			kpaFreeEndDisplay = `${kpaFreeEnd} (${__("{0} days left", [kpaRemaining])})`;
@@ -979,7 +996,7 @@ function render_container_card_body(c) {
 	}
 	sections.push(`
 		<div class="cgm-container-card-section">
-			<div class="cgm-container-card-section-title">${__("KPA port")}</div>
+			<div class="cgm-container-card-section-title">${__("KPA (Mombasa port)")}</div>
 			${kpaRows.filter(Boolean).join("")}
 		</div>
 	`);
@@ -1077,14 +1094,13 @@ function render_container_tracking_table(frm, dashboard) {
 								: ""
 						}</div>`
 					: "";
-				const chargeBadge =
-					cint(c.demurrage_days) > 0 || cint(c.kpa_days) > 0
-						? `<span class="cgm-container-card-charge-badge">${__(
-								"Incurring charges"
-							)}</span>`
-						: "";
+				const chargeBadge = container_has_active_charges(c)
+					? `<span class="cgm-container-card-charge-badge">${__(
+							"Incurring charges"
+						)}</span>`
+					: "";
 				return `<div class="cgm-container-card${
-					cint(c.demurrage_days) > 0 || cint(c.kpa_days) > 0 ? " cgm-container-card--charges" : ""
+					container_has_active_charges(c) ? " cgm-container-card--charges" : ""
 				}">
 					<div class="cgm-container-card-head">
 						<span class="cgm-container-card-id">${dot} <b>${frappe.utils.escape_html(

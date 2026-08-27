@@ -326,8 +326,10 @@ function render_container_tracker_alerts(frm) {
 	frm.dashboard.clear_comment();
 	const d = frm.doc;
 	let alert = null;
+	const return_done = d.interchange_date || d.actual_empty_return;
 
-	if ((d.free_days_end_date || d.free_days_start_date) && !d.gate_out_date_port) {
+	// Still at port only: do not keep accruing against today after empty return / interchange.
+	if ((d.free_days_end_date || d.free_days_start_date) && !d.gate_out_date_port && !return_done) {
 		const today = frappe.datetime.get_today();
 		if (d.free_days_end_date) {
 			const remaining = frappe.datetime.get_diff(d.free_days_end_date, today);
@@ -359,7 +361,6 @@ function render_container_tracker_alerts(frm) {
 		}
 	}
 
-	const return_done = d.interchange_date || d.actual_empty_return;
 	if (d.expected_empty_return && !return_done) {
 		const diff = frappe.datetime.get_diff(
 			frappe.datetime.get_today(),
