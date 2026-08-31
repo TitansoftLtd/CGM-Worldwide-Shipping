@@ -106,6 +106,7 @@ doctype_js = {
 	"Material Request": "public/js/material_request.js",
 	"Employee Advance": "public/js/employee_advance.js",
 	"Job Applicant": "public/js/job_applicant.js",
+	"Salary Component": "public/js/salary_component.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
@@ -225,6 +226,8 @@ override_doctype_class = {
     ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
     "Quotation":
     "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
+    "Salary Slip":
+    "cgm_shipping.cgm_worldwide_shipping.overrides.salary_slip.CGMSalarySlip",
 }
 
 # Document Events
@@ -232,6 +235,17 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	"Salary Component": {
+		"validate": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.validate_net_pay_only_component"
+		),
+		"on_update": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
+		),
+		"on_trash": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
+		),
+	},
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
 		"after_insert": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_after_insert",
