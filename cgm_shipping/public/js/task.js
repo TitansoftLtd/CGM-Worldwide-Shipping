@@ -199,14 +199,14 @@ frappe.ui.form.on("Task", {
 					? __(
 							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
 								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional) · " +
-								"<b>3</b> Attach <b>UCR Receipt</b> · <b>4</b> Verify the receipt. " +
+								"<b>3</b> Declarant attaches <b>UCR Receipt</b> (here or on Create UCR) · <b>4</b> Verify the receipt. " +
 								"Task completes only after the receipt is verified. " +
 								"Declarant attaches the IDF certificate on <b>Create UCR (IDF)</b>."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify each <b>UCR Invoice</b> · " +
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row) · " +
-								"<b>3</b> Attach <b>UCR Receipt</b> · <b>4</b> Verify the receipt. " +
+								"<b>3</b> Declarant attaches <b>UCR Receipt</b> (here or on Create UCR) · <b>4</b> Verify the receipt. " +
 								"Task completes only after the receipt is verified. " +
 								"Declarant attaches the IDF certificate on <b>Create UCR (IDF)</b>."
 						);
@@ -446,6 +446,8 @@ const CGM_TASK_PERMISSIONS_FALLBACK = {
 		"System Manager",
 		"CGM Documentation",
 		"Documentation",
+		"Declarant",
+		"Declaration User",
 	],
 	can_upload_pop: [
 		"Finance Manager",
@@ -2502,7 +2504,8 @@ function apply_ucr_application_intro(frm, status) {
 	} else if (status.client_paid_directly && !status.idf_certificate_attached) {
 		intro = __(
 			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
-				"Finance verifies the invoice and uploads the client's receipt. " +
+				"Finance verifies the invoice. After the client pays, attach their <b>UCR Receipt</b> " +
+				"on <b>Invoices & Receipts</b>. " +
 				"Attach the <b>IDF/UCR certificate</b> under <b>Clearance Documents</b> to complete this task."
 		);
 	} else if (status.application_ready_to_complete && !frm.is_dirty()) {
@@ -2513,29 +2516,29 @@ function apply_ucr_application_intro(frm, status) {
 		);
 	} else if (status.receipt_attached) {
 		intro = __(
-			"<b>UCR receipt uploaded by Finance.</b> Attach the IDF/UCR certificate under <b>Clearance Documents</b> to complete this task."
+			"<b>UCR receipt is attached.</b> Attach the IDF/UCR certificate under <b>Clearance Documents</b> to complete this task."
 		);
 	} else if (status.payment_made) {
 		intro = __(
-			"<b>Finance has paid the UCR invoice.</b> Upload the supplier <b>UCR Receipt</b> on the finance payment task " +
+			"<b>Finance has paid the UCR invoice.</b> Attach the supplier <b>UCR Receipt</b> on <b>Invoices & Receipts</b> " +
 				"(same department that attached the invoice). " +
 				"When the certificate is issued, attach it under <b>Clearance Documents</b>."
 		);
 	} else if (status.invoice_verified) {
 		intro = __(
-			"<b>UCR invoice verified by Finance.</b> Waiting for payment. After payment, Finance uploads the " +
-				"<b>UCR Receipt</b>; attach the certificate under <b>Clearance Documents</b> when issued."
+			"<b>UCR invoice verified by Finance.</b> Waiting for payment. After payment, attach the " +
+				"<b>UCR Receipt</b> here; attach the certificate under <b>Clearance Documents</b> when issued."
 		);
 	} else if (status.invoice_submitted) {
 		intro = __(
 			"<b>UCR invoice submitted to Finance.</b> Waiting for Finance to verify and pay. " +
-				"After payment, Finance uploads the supplier receipt on the finance task."
+				"After payment, attach the supplier receipt here on <b>Invoices & Receipts</b>."
 		);
 	} else {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>UCR Invoice</b> and save on " +
-				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, Finance uploads the " +
-				"supplier receipt; attach the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
+				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, attach the " +
+				"supplier <b>UCR Receipt</b> on the same table; attach the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
 		);
 	}
 	set_task_intro(frm, intro);
@@ -2691,6 +2694,10 @@ frappe.ui.form.on("Task Finance Line", {
 			if (is_shipping_line_application_step(frm, seq) && row.line_type === "Receipt") {
 				attachment_editable = user_can_upload_receipt(frm);
 				verified_editable = false;
+			} else if (user_may_attach_receipt_on_application(frm, row)) {
+				// UCR: Declarant attaches the supplier receipt on Create UCR after payment.
+				attachment_editable = true;
+				verified_editable = false;
 			} else {
 				attachment_editable = false;
 				verified_editable = false;
@@ -2712,8 +2719,10 @@ frappe.ui.form.on("Task Finance Line", {
 			return;
 		}
 		grid_row._cgm_finance_edit_key = edit_key;
+		// Do not toggle_editable on Attach when a file is present — field.refresh()
+		// rebuilds the control and can wipe a just-uploaded receipt.
 		if (attachment_editable !== null) {
-			grid_row.toggle_editable("attachment", attachment_editable);
+			set_finance_line_attach_editable(grid_row, attachment_editable, !!row.attachment);
 		}
 		if (verified_editable !== null) {
 			grid_row.toggle_editable("verified", verified_editable);
@@ -2732,6 +2741,8 @@ frappe.ui.form.on("Task Finance Line", {
 		)) {
 			if (is_shipping_line_application_step(frm) && row.line_type === "Receipt") {
 				// Documentation attaches receipt here after POP is mirrored from Finance.
+			} else if (user_may_attach_receipt_on_application(frm, row)) {
+				// Declarant attaches UCR receipt here after Finance records payment.
 			} else if (is_shipping_line_application_step(frm) && row.line_type === "POP") {
 				frappe.show_alert({
 					message: __(
@@ -2742,15 +2753,14 @@ frappe.ui.form.on("Task Finance Line", {
 				return;
 			} else {
 				frappe.show_alert({
-					message: is_shipping_line_application_step(frm)
-						? __(
-								"POP and receipt are attached on the finance payment task after payment."
-							)
-						: __(
-								"Finance uploads payment receipts on the finance payment task after paying."
-							),
+					message: __(
+						"This receipt is attached after payment by the configured Upload Receipt role."
+					),
 					indicator: "orange",
 				});
+				if (row.attachment) {
+					frappe.model.set_value(cdt, cdn, "attachment", "");
+				}
 				return;
 			}
 		}
@@ -2763,6 +2773,11 @@ frappe.ui.form.on("Task Finance Line", {
 			if (row.line_type === "Invoice") {
 				frappe.show_alert({
 					message: __("UCR invoice saved - Finance will be notified when you save."),
+					indicator: "green",
+				});
+			} else if (row.line_type === "Receipt") {
+				frappe.show_alert({
+					message: __("UCR receipt saved — Finance will see it on Finance pays UCR."),
 					indicator: "green",
 				});
 			}
@@ -2811,6 +2826,9 @@ frappe.ui.form.on("Task Finance Line", {
 		// Skip while soft-sync is applying remote rows (avoids TimestampMismatchError),
 		// but queue a retry — otherwise the paperclip stays only in the open form.
 		if (!row.attachment) {
+			if (cint(row.verified)) {
+				frappe.model.set_value(cdt, cdn, "verified", 0);
+			}
 			return;
 		}
 		// Attach in child grids sometimes updates the control without dirtying the form.
@@ -4066,6 +4084,32 @@ function user_can_upload_receipt(frm) {
 	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_receipt.some((role) =>
 		(frappe.user_roles || []).includes(role)
 	);
+}
+
+function user_may_attach_receipt_on_application(frm, row) {
+	if ((row?.line_type || "") !== "Receipt") {
+		return false;
+	}
+	if (!user_can_upload_receipt(frm)) {
+		return false;
+	}
+	return is_ucr_application_step(frm) || is_shipping_line_application_step(frm);
+}
+
+function set_finance_line_attach_editable(grid_row, editable, has_file) {
+	const targets = [
+		grid_row.on_grid_fields_dict?.attachment,
+		grid_row.grid_form?.fields_dict?.attachment,
+	];
+	targets.forEach((field) => {
+		if (!field?.df) {
+			return;
+		}
+		field.df.read_only = editable ? 0 : 1;
+		if (!has_file && typeof field.refresh === "function") {
+			field.refresh();
+		}
+	});
 }
 
 function user_can_upload_pop(frm) {

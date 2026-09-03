@@ -2,7 +2,7 @@
 
 frappe.provide("cgm_shipping.attachment_approval");
 
-const CGM_ATTACHMENT_APPROVAL_PARENT_DOCTYPES = ["Task", "Project", "Opportunity"];
+const CGM_ATTACHMENT_APPROVAL_PARENT_DOCTYPES = ["Task", "Project"];
 
 cgm_shipping.attachment_approval = {
 	refresh(frm) {

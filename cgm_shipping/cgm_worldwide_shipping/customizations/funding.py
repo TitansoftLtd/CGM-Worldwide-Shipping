@@ -12,136 +12,162 @@ from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate, strip_html
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-	DIRECTOR_ROLE,
-	FUNDING_REQUEST_ACTION_APPROVE,
-	FUNDING_REQUEST_ACTION_CANCEL,
-	FUNDING_REQUEST_ACTION_COMPLETE,
-	FUNDING_REQUEST_ACTION_MARK_FUNDED,
-	FUNDING_REQUEST_ACTION_REJECT,
-	FUNDING_REQUEST_ACTION_START_FUNDING,
-	FUNDING_REQUEST_ACTION_SUBMIT,
-	FUNDING_REQUEST_APPROVED_STATES,
-	FUNDING_REQUEST_STATE_APPROVED,
-	FUNDING_REQUEST_STATE_CANCELLED,
-	FUNDING_REQUEST_STATE_COMPLETED,
-	FUNDING_REQUEST_STATE_DRAFT,
-	FUNDING_REQUEST_STATE_FUNDED,
-	FUNDING_REQUEST_STATE_FUNDING,
-	FUNDING_REQUEST_STATE_PENDING,
-	FUNDING_REQUEST_STATE_REJECTED,
-	FUNDING_REQUEST_WORKFLOW_NAME,
+	FR_ROW_DECISION_APPROVED,
+	FR_ROW_DECISION_PENDING,
+	FR_ROW_DECISION_REJECTED,
 	MATERIAL_REQUEST_TYPE_OPERATIONAL,
-	MR_FUNDING_ACTION_CANCEL,
-	MR_FUNDING_ACTION_SUBMIT,
-	MR_FUNDING_ACTION_SUBMIT_REQUEST,
-	MR_FUNDING_STATE_APPROVED,
-	MR_FUNDING_STATE_CANCELLED,
-	MR_FUNDING_STATE_DRAFT,
-	MR_FUNDING_STATE_FUNDED,
-	MR_FUNDING_STATE_ON_REQUEST,
-	MR_FUNDING_STATE_PENDING,
-	MR_FUNDING_STATE_REJECTED,
-	MR_FUNDING_STATE_SUBMITTED,
-	MR_FUNDING_STATE_UNFUNDED,
-	MR_FUNDING_WORKFLOW_NAME,
-	MR_FUNDING_WORKFLOW_STATE_FIELD,
+	MR_WORKFLOW_STATE_APPROVED,
+	MR_WORKFLOW_STATE_DRAFT,
+	MR_WORKFLOW_STATE_DISBURSED,
+	MR_WORKFLOW_STATE_FIELD,
+	MR_WORKFLOW_STATE_ON_FUNDING_REQUEST,
+	MR_WORKFLOW_STATE_REJECTED,
+	MR_WORKFLOW_STATE_SUBMITTED,
+	MR_WORKFLOW_STATE_UNFUNDED,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import _ensure_cf, _upsert_cf
-
-MODULE = "CGM Worldwide Shipping"
-
-INACTIVE_FUNDING_STATES = frozenset(
-	{FUNDING_REQUEST_STATE_REJECTED, FUNDING_REQUEST_STATE_CANCELLED}
+from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+	get_funding_workflow_map,
+	get_material_request_state_names,
+	pick_workflow_state,
 )
 
-OE_WORKFLOW_CONDITION = f'doc.material_request_type=="{MATERIAL_REQUEST_TYPE_OPERATIONAL}"'
-NON_OE_WORKFLOW_CONDITION = f'doc.material_request_type!="{MATERIAL_REQUEST_TYPE_OPERATIONAL}"'
+
+def mr_workflow_state_from_funding_request(
+	fr_workflow_state: str | None, workflow=None, mr_workflow=None
+) -> str:
+	"""Write a Material Request workflow_state that exists on the live MR workflow."""
+	wf = get_funding_workflow_map(workflow)
+	mr_states = get_material_request_state_names(mr_workflow)
+	if wf.is_rejected(fr_workflow_state):
+		return pick_workflow_state(mr_states, "Rejected", default=MR_WORKFLOW_STATE_REJECTED)
+	if wf.is_pending(fr_workflow_state):
+		return pick_workflow_state(
+			mr_states,
+			fr_workflow_state,
+			*wf.pending_states,
+			"Pending",
+			"Pending Approval",
+			default=fr_workflow_state or "Pending",
+		)
+	if wf.is_disbursed(fr_workflow_state) or wf.is_completed(fr_workflow_state):
+		return pick_workflow_state(mr_states, "Disbursed", default=MR_WORKFLOW_STATE_DISBURSED)
+	if wf.is_partial(fr_workflow_state):
+		return pick_workflow_state(
+			mr_states,
+			wf.partial_state,
+			"Partially Approved",
+			"Approved",
+			default=MR_WORKFLOW_STATE_APPROVED,
+		)
+	if wf.approval_is_recorded(fr_workflow_state):
+		return pick_workflow_state(
+			mr_states,
+			fr_workflow_state,
+			"Approved",
+			default=MR_WORKFLOW_STATE_APPROVED,
+		)
+	return pick_workflow_state(
+		mr_states, "On Funding Request", default=MR_WORKFLOW_STATE_ON_FUNDING_REQUEST
+	)
 
 
-def mr_funding_state_for_funding_request(workflow_state: str | None) -> str:
-	"""Map Funding Request workflow_state → Material Request funding Workflow State."""
-	return {
-		FUNDING_REQUEST_STATE_DRAFT: MR_FUNDING_STATE_ON_REQUEST,
-		FUNDING_REQUEST_STATE_PENDING: MR_FUNDING_STATE_PENDING,
-		FUNDING_REQUEST_STATE_APPROVED: MR_FUNDING_STATE_APPROVED,
-		FUNDING_REQUEST_STATE_FUNDING: MR_FUNDING_STATE_APPROVED,
-		FUNDING_REQUEST_STATE_FUNDED: MR_FUNDING_STATE_FUNDED,
-		FUNDING_REQUEST_STATE_COMPLETED: MR_FUNDING_STATE_FUNDED,
-		FUNDING_REQUEST_STATE_REJECTED: MR_FUNDING_STATE_REJECTED,
-	}.get(workflow_state or "", MR_FUNDING_STATE_ON_REQUEST)
-
-
-def mr_row_funding_state(
-	fr_workflow_state: str | None, approved_amount, funded_amount
+def mr_row_workflow_state(
+	fr_workflow_state: str | None, approved_amount, funded_amount, workflow=None, mr_workflow=None
 ) -> str:
 	"""Operational Expense completes per request when that request is paid, not via PO."""
-	state = mr_funding_state_for_funding_request(fr_workflow_state)
+	mr_states = get_material_request_state_names(mr_workflow)
+	state = mr_workflow_state_from_funding_request(
+		fr_workflow_state, workflow=workflow, mr_workflow=mr_workflow
+	)
+	approved = pick_workflow_state(mr_states, "Approved", default=MR_WORKFLOW_STATE_APPROVED)
+	disbursed = pick_workflow_state(mr_states, "Disbursed", default=MR_WORKFLOW_STATE_DISBURSED)
 	if (
-		state == MR_FUNDING_STATE_APPROVED
+		state == approved
 		and flt(approved_amount) > 0
 		and flt(funded_amount) + 0.005 >= flt(approved_amount)
 	):
-		return MR_FUNDING_STATE_FUNDED
+		return disbursed
 	return state
 
 
-def released_mr_funding_state(material_request: str) -> str:
+def released_mr_workflow_state(material_request: str, mr_workflow=None) -> str:
 	"""State to restore on a Material Request when it leaves a Funding Request."""
+	mr_states = get_material_request_state_names(mr_workflow)
 	mr_type = frappe.db.get_value("Material Request", material_request, "material_request_type")
 	if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
-		return MR_FUNDING_STATE_UNFUNDED
-	return MR_FUNDING_STATE_SUBMITTED
+		return pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED)
+	return pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED)
 
 
-def reduction_amount(requested, approved) -> float:
-	"""Director reduction. Never mutates the original requested amount."""
-	return flt(requested) - flt(approved)
+def variance_amount(requested, approved) -> float:
+	"""Approved minus requested. Negative = reduction, positive = increase."""
+	return flt(approved) - flt(requested)
 
 
-def funding_approval_is_recorded(workflow_state: str | None) -> bool:
-	"""True only after the Director has approved. Draft/Pending are not approved."""
-	return workflow_state in FUNDING_REQUEST_APPROVED_STATES
+def funding_is_pending(workflow_state: str | None, workflow=None) -> bool:
+	"""True while the Funding Request is waiting for the Funding Approver."""
+	return get_funding_workflow_map(workflow).is_pending(workflow_state)
 
 
-def funding_is_approved(workflow_state: str | None, docstatus: int | None = 0) -> bool:
-	if workflow_state in INACTIVE_FUNDING_STATES:
+@frappe.whitelist()
+def funding_request_is_pending_approval(workflow_state=None) -> bool:
+	"""Form helper: unlock row decisions from the live workflow, not a label list."""
+	return funding_is_pending(workflow_state)
+
+
+def apply_batch_approve_to_pending_rows(rows) -> None:
+	"""Header Approve means approve every row that was not explicitly rejected."""
+	for row in rows:
+		if row.get("decision") != FR_ROW_DECISION_PENDING:
+			continue
+		row.decision = FR_ROW_DECISION_APPROVED
+		if flt(row.get("approved_amount")) == 0:
+			row.approved_amount = flt(row.get("requested_amount"))
+
+
+def funding_approval_is_recorded(workflow_state: str | None, workflow=None) -> bool:
+	"""True only after a Funding Approver has approved the batch."""
+	return get_funding_workflow_map(workflow).approval_is_recorded(workflow_state)
+
+
+def funding_is_approved(workflow_state: str | None, docstatus: int | None = 0, workflow=None) -> bool:
+	wf = get_funding_workflow_map(workflow)
+	if wf.is_terminal(workflow_state):
 		return False
-	if not funding_approval_is_recorded(workflow_state):
+	if not wf.approval_is_recorded(workflow_state):
 		return False
 	return cint_docstatus(docstatus) == 1
 
 
 def funding_progress_state(
-	current: str | None, total_funded: float, total_approved: float
+	current: str | None, total_funded: float, total_approved: float, workflow=None
 ) -> str | None:
 	"""Payment-driven Funding Request state.
 
 	Creating a draft Journal Entry is not payment, so paid can stay 0.
-	Never reverse Funding in Progress back to Director Approved — that transition
+	Never reverse Disbursement in Progress back to Approved — that transition
 	is not in the workflow.
 	"""
-	if current not in (
-		FUNDING_REQUEST_STATE_APPROVED,
-		FUNDING_REQUEST_STATE_FUNDING,
-		FUNDING_REQUEST_STATE_FUNDED,
-	):
+	wf = get_funding_workflow_map(workflow)
+	if current not in wf.progress_states():
 		return current
 	funded = flt(total_funded)
 	approved = flt(total_approved)
+	disbursed = next(iter(wf.complete_from_states), None)
 	if approved > 0 and funded + 0.005 >= approved:
-		return FUNDING_REQUEST_STATE_FUNDED
+		return disbursed or current
 	if funded > 0:
-		return FUNDING_REQUEST_STATE_FUNDING
-	if current == FUNDING_REQUEST_STATE_FUNDED:
-		return FUNDING_REQUEST_STATE_FUNDING
+		return wf.disbursement_state or current
+	if wf.is_disbursed(current):
+		return wf.disbursement_state or current
 	return current
 
 
 PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING = frozenset({"Purchase", "Subcontracting"})
 
 
-def material_request_purchase_is_director_approved(material_request: str) -> bool:
-	"""Purchase/Subcontracting may create a PO only after Director-approved funding."""
+def material_request_purchase_is_funding_approved(material_request: str) -> bool:
+	"""Purchase/Subcontracting may create a PO only after approved funding."""
 	if not material_request:
 		return True
 	mr = frappe.db.get_value(
@@ -164,11 +190,11 @@ def material_request_purchase_is_director_approved(material_request: str) -> boo
 
 
 def assert_material_request_may_create_purchase_document(material_request: str) -> None:
-	if material_request_purchase_is_director_approved(material_request):
+	if material_request_purchase_is_funding_approved(material_request):
 		return
 	frappe.throw(
 		_(
-			"Material Request {0} must be on a Director-approved Funding Request "
+			"Material Request {0} must be on an approved Funding Request "
 			"before a Purchase Order or quotation can be created."
 		).format(frappe.bold(material_request))
 	)
@@ -367,6 +393,29 @@ def get_material_request_description(material_request) -> str:
 	return legacy or get_material_request_item_summary(material_request)
 
 
+def get_material_request_requester_name(material_request) -> str | None:
+	"""Display name for Funding Request Requester column.
+
+	Operational Expense uses Employee; Purchase/Subcontracting use Requested By.
+	"""
+	if not material_request:
+		return None
+	if isinstance(material_request, str):
+		fields = ["custom_employee", "custom_requested_by", "custom_requested_by_name"]
+		mr = frappe.db.get_value("Material Request", material_request, fields, as_dict=True)
+	else:
+		mr = material_request
+	if not mr:
+		return None
+	if mr.get("custom_employee"):
+		return frappe.db.get_value("Employee", mr.custom_employee, "employee_name")
+	if mr.get("custom_requested_by_name"):
+		return mr.custom_requested_by_name
+	if mr.get("custom_requested_by"):
+		return frappe.db.get_value("User", mr.custom_requested_by, "full_name")
+	return None
+
+
 def get_material_request_project(material_request) -> str | None:
 	"""Header custom_project, else the item-level Project accounting dimension."""
 	if not material_request:
@@ -399,27 +448,32 @@ def on_material_request_validate(doc, method=None) -> None:
 
 def on_material_request_on_submit(doc, method=None) -> None:
 	"""Align funding Workflow State after ERPNext submit (does not replace ERPNext status)."""
-	if not doc.meta.has_field(MR_FUNDING_WORKFLOW_STATE_FIELD):
+	if not doc.meta.has_field(MR_WORKFLOW_STATE_FIELD):
 		return
-	current = (doc.get(MR_FUNDING_WORKFLOW_STATE_FIELD) or "").strip()
-	if current and current not in {MR_FUNDING_STATE_DRAFT, ""}:
+	current = (doc.get(MR_WORKFLOW_STATE_FIELD) or "").strip()
+	mr_states = get_material_request_state_names()
+	draft = pick_workflow_state(mr_states, "Draft", default=MR_WORKFLOW_STATE_DRAFT)
+	if current and current not in {draft, ""}:
 		return
 	next_state = (
-		MR_FUNDING_STATE_UNFUNDED
+		pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED)
 		if doc.get("material_request_type") == MATERIAL_REQUEST_TYPE_OPERATIONAL
-		else MR_FUNDING_STATE_SUBMITTED
+		else pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED)
 	)
-	doc.db_set(MR_FUNDING_WORKFLOW_STATE_FIELD, next_state, update_modified=False)
+	doc.db_set(MR_WORKFLOW_STATE_FIELD, next_state, update_modified=False)
 
 
 def _set_default_funding_workflow_state(doc) -> None:
-	if not doc.meta.has_field(MR_FUNDING_WORKFLOW_STATE_FIELD):
+	if not doc.meta.has_field(MR_WORKFLOW_STATE_FIELD):
 		return
-	if doc.get(MR_FUNDING_WORKFLOW_STATE_FIELD):
+	if doc.get(MR_WORKFLOW_STATE_FIELD):
 		return
 	if cint_docstatus(doc.docstatus) >= 1:
 		return
-	doc.set(MR_FUNDING_WORKFLOW_STATE_FIELD, MR_FUNDING_STATE_DRAFT)
+	doc.set(
+		MR_WORKFLOW_STATE_FIELD,
+		pick_workflow_state(get_material_request_state_names(), "Draft", default=MR_WORKFLOW_STATE_DRAFT),
+	)
 
 
 def _set_requester_defaults(doc) -> None:
@@ -445,14 +499,6 @@ def _validate_operational_expense_request(doc) -> None:
 		frappe.throw(
 			_("Set Employee on Operational Expense requests. Link your user on the Employee record, or pick the employee who receives the cash.")
 		)
-	for item in doc.get("items") or []:
-		if not strip_html((item.get("description") or "").strip()):
-			frappe.throw(
-				_("Row {0}: add a Description on the item — this is the note Finance and the Director see.").format(
-					item.idx
-				)
-			)
-			break
 
 
 def _copy_header_project_to_items(doc) -> None:
@@ -497,21 +543,6 @@ def copy_project_to_stock_entry(doc, method=None) -> None:
 			row.project = doc.project
 
 
-def copy_project_from_employee_advance(doc, method=None) -> None:
-	"""Payment Entry against an Employee Advance inherits the shipment Project."""
-	if doc.get("project"):
-		return
-	for ref in doc.get("references") or []:
-		if ref.reference_doctype != "Employee Advance" or not ref.reference_name:
-			continue
-		project = frappe.db.get_value(
-			"Employee Advance", ref.reference_name, "custom_project"
-		)
-		if project:
-			doc.project = project
-			return
-
-
 def on_payment_entry_on_submit(doc, method=None) -> None:
 	sync_funding_requests_touched_by_payment_entry(doc)
 
@@ -528,130 +559,12 @@ def on_journal_entry_on_cancel(doc, method=None) -> None:
 	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
 
 
-# ── Employee Advance ─────────────────────────────────────────────────────────
-
-
-def on_employee_advance_validate(doc, method=None) -> None:
-	_populate_employee_advance_from_request(doc)
-	_validate_employee_advance_funding_gate(doc)
-	if doc.get("custom_funding_request"):
-		doc.repay_unclaimed_amount_from_salary = 0
-
-
-def on_employee_advance_on_submit(doc, method=None) -> None:
-	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
-
-
-def on_employee_advance_on_cancel(doc, method=None) -> None:
-	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
-
-
-def _populate_employee_advance_from_request(doc) -> None:
-	mr_name = doc.get("custom_material_request")
-	if not mr_name:
-		return
-	mr = frappe.db.get_value(
-		"Material Request",
-		mr_name,
-		[
-			"custom_employee",
-			"custom_request_description",
-			"custom_project",
-			"custom_funding_request",
-			"custom_approved_amount",
-		],
-		as_dict=True,
-	)
-	if not mr:
-		return
-	if not doc.get("custom_funding_request") and mr.custom_funding_request:
-		doc.custom_funding_request = mr.custom_funding_request
-	if not doc.get("custom_project") and mr.custom_project:
-		doc.custom_project = mr.custom_project
-	if not doc.get("employee") and mr.custom_employee:
-		doc.employee = mr.custom_employee
-	if not doc.get("purpose"):
-		summary = get_material_request_item_summary(mr_name)
-		description = mr.custom_request_description or ""
-		doc.purpose = " — ".join(part for part in (summary, description) if part)
-	if not flt(doc.advance_amount):
-		approved = flt(mr.custom_approved_amount)
-		if approved:
-			doc.advance_amount = approved
-			return
-		row = _funding_request_row(doc.get("custom_funding_request") or "", mr_name)
-		if row:
-			doc.advance_amount = max(flt(row.approved_amount) - flt(row.funded_amount), 0)
-
-
-def _validate_employee_advance_funding_gate(doc) -> None:
-	fr_name = doc.get("custom_funding_request")
-	if not fr_name:
-		return
-
-	fr = frappe.db.get_value(
-		"Funding Request",
-		fr_name,
-		["workflow_state", "docstatus"],
-		as_dict=True,
-	)
-	if not fr or not funding_is_approved(fr.workflow_state, fr.docstatus):
-		frappe.throw(
-			_("Cannot create an Employee Advance for an unapproved Funding Request {0}.").format(
-				frappe.bold(fr_name)
-			)
-		)
-
-	mr_name = doc.get("custom_material_request")
-	if not mr_name:
-		return
-	row = _funding_request_row(fr_name, mr_name)
-	if not row:
-		frappe.throw(
-			_("Material Request {0} is not on Funding Request {1}.").format(
-				frappe.bold(mr_name), frappe.bold(fr_name)
-			)
-		)
-	approved = flt(row.approved_amount)
-	already_funded = flt(row.funded_amount)
-	# When submitting, this document's amount is not yet in funded_amount.
-	remaining = approved - already_funded
-	if flt(doc.advance_amount) > remaining + 0.005:
-		frappe.throw(
-			_(
-				"Employee Advance amount {0} exceeds the Director-approved remaining "
-				"amount {1} for Material Request {2}."
-			).format(
-				frappe.bold(doc.advance_amount),
-				frappe.bold(remaining),
-				frappe.bold(mr_name),
-			)
-		)
-
-
-def _funding_request_row(funding_request: str, material_request: str):
-	rows = frappe.get_all(
-		"Funding Request Material Request",
-		filters={"parent": funding_request, "material_request": material_request},
-		fields=["name", "approved_amount", "funded_amount", "requested_amount"],
-		limit=1,
-	)
-	return rows[0] if rows else None
-
-
-def _apply_employee_advance_to_funding_request(doc, sign: int) -> None:
-	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
-
-
 def sync_funding_requests_touched_by_payment_entry(doc) -> None:
+	"""Purchase Invoice payments only — Operational Expense is paid via Journal Entry."""
 	seen = set()
 	for ref in doc.get("references") or []:
 		fr_name = None
-		if ref.reference_doctype == "Employee Advance" and ref.reference_name:
-			fr_name = frappe.db.get_value(
-				"Employee Advance", ref.reference_name, "custom_funding_request"
-			)
-		elif ref.reference_doctype == "Purchase Invoice" and ref.reference_name:
+		if ref.reference_doctype == "Purchase Invoice" and ref.reference_name:
 			fr_name = _funding_request_from_purchase_invoice(ref.reference_name)
 		if fr_name and fr_name not in seen:
 			seen.add(fr_name)
@@ -659,7 +572,7 @@ def sync_funding_requests_touched_by_payment_entry(doc) -> None:
 
 
 def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
-	"""Funded Amount is cash actually paid, not the Employee Advance / PO draft."""
+	"""Funded Amount is cash actually paid, not draft Journal Entries or POs."""
 	if not funding_request or not frappe.db.exists("Funding Request", funding_request):
 		return
 	fr = frappe.get_doc("Funding Request", funding_request)
@@ -683,7 +596,7 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 		fr.save(ignore_permissions=True)
 	if state_changed:
 		# Payment-driven states are not workflow Actions; set_value skips
-		# "transition not allowed" (e.g. Funding in Progress → Director Approved).
+		# "transition not allowed" when reversing partial payment.
 		frappe.db.set_value(
 			"Funding Request",
 			fr.name,
@@ -698,10 +611,7 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 def paid_amount_for_material_request(funding_request: str, material_request: str) -> float:
 	mr_type = frappe.db.get_value("Material Request", material_request, "material_request_type")
 	if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
-		journal_paid = _paid_against_journal_entries(funding_request, material_request)
-		if journal_paid:
-			return journal_paid
-		return _paid_against_employee_advances(funding_request, material_request)
+		return _paid_against_journal_entries(funding_request, material_request)
 	if mr_type in PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING:
 		return _paid_against_purchase_orders(material_request)
 	return 0.0
@@ -731,32 +641,6 @@ def _paid_against_journal_entries(funding_request: str, material_request: str) -
 			and jea.debit_in_account_currency > 0
 		""",
 		{"entries": entries},
-	)
-	return flt(paid[0][0] if paid else 0)
-
-
-def _paid_against_employee_advances(funding_request: str, material_request: str) -> float:
-	advances = frappe.get_all(
-		"Employee Advance",
-		filters={
-			"custom_funding_request": funding_request,
-			"custom_material_request": material_request,
-			"docstatus": 1,
-		},
-		pluck="name",
-	)
-	if not advances:
-		return 0.0
-	paid = frappe.db.sql(
-		"""
-		select coalesce(sum(per.allocated_amount), 0)
-		from `tabPayment Entry Reference` per
-		inner join `tabPayment Entry` pe on pe.name = per.parent
-		where pe.docstatus = 1
-			and per.reference_doctype = 'Employee Advance'
-			and per.reference_name in %(advances)s
-		""",
-		{"advances": advances},
 	)
 	return flt(paid[0][0] if paid else 0)
 
@@ -821,21 +705,24 @@ def fetch_material_request_details(material_request: str) -> dict:
 	requested = get_material_request_total(mr)
 	description = get_material_request_description(mr)
 	item_summary = get_material_request_item_summary(mr)
-	employee_name = None
-	if mr.get("custom_employee"):
-		employee_name = frappe.db.get_value("Employee", mr.custom_employee, "employee_name")
+	requester_name = get_material_request_requester_name(mr)
 	return {
 		"material_request": mr.name,
 		"employee": mr.get("custom_employee"),
-		"employee_name": employee_name,
+		"employee_name": requester_name,
 		"item_summary": item_summary,
 		"description": description,
 		"project": mr.get("custom_project") or get_material_request_project(mr.name),
 		"requested_amount": requested,
 		"approved_amount": 0,
-		"reduction_amount": 0,
+		"variance": 0,
 		"funded_amount": 0,
-		"status": MR_FUNDING_STATE_ON_REQUEST,
+		"status": pick_workflow_state(
+			get_material_request_state_names(),
+			"On Funding Request",
+			default=MR_WORKFLOW_STATE_ON_FUNDING_REQUEST,
+		),
+		"decision": FR_ROW_DECISION_PENDING,
 		"material_request_type": mr.material_request_type,
 	}
 
@@ -863,9 +750,13 @@ def get_unfunded_material_requests(
 	elif to_date:
 		filters["transaction_date"] = ["<=", to_date]
 
-	filters[MR_FUNDING_WORKFLOW_STATE_FIELD] = [
+	mr_states = get_material_request_state_names()
+	filters[MR_WORKFLOW_STATE_FIELD] = [
 		"in",
-		[MR_FUNDING_STATE_UNFUNDED, MR_FUNDING_STATE_SUBMITTED],
+		[
+			pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED),
+			pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED),
+		],
 	]
 	blocked = set(_material_requests_on_active_funding_requests())
 	rows = frappe.get_all(
@@ -893,7 +784,10 @@ def get_unfunded_material_requests(
 
 
 def _material_requests_on_active_funding_requests(exclude_parent: str | None = None) -> list[str]:
-	fr_filters: dict = {"workflow_state": ["not in", list(INACTIVE_FUNDING_STATES)]}
+	terminal = list(get_funding_workflow_map().terminal_states)
+	fr_filters: dict = {}
+	if terminal:
+		fr_filters["workflow_state"] = ["not in", terminal]
 	if exclude_parent:
 		fr_filters["name"] = ["!=", exclude_parent]
 	parents = frappe.get_all("Funding Request", filters=fr_filters, pluck="name")
@@ -937,13 +831,6 @@ def make_funding_request(material_request: str):
 
 
 @frappe.whitelist()
-def make_employee_advance(funding_request: str, material_request: str | None = None):
-	frappe.throw(
-		_("Operational expense is funded by Journal Entry, not Employee Advance.")
-	)
-
-
-@frappe.whitelist()
 def make_journal_entries(funding_request: str) -> list[str]:
 	"""Create one draft Journal Entry per remaining operational-expense row."""
 	frappe.has_permission("Journal Entry", "create", throw=True)
@@ -984,30 +871,16 @@ def make_purchase_orders(funding_request: str) -> list[str]:
 	return created
 
 
-@frappe.whitelist()
-def make_funding_payments(funding_request: str) -> list[str]:
-	"""Create draft Payment Entries for submitted unpaid Employee Advances."""
-	frappe.has_permission("Payment Entry", "create", throw=True)
-	fr = frappe.get_doc("Funding Request", funding_request)
-	_assert_funding_request_approved(fr)
-	from hrms.overrides.employee_payment_entry import get_payment_entry_for_employee
-
-	created = []
-	for adv_name in _unpaid_employee_advances(fr.name):
-		pe = get_payment_entry_for_employee("Employee Advance", adv_name)
-		if isinstance(pe, dict):
-			pe = frappe.get_doc(pe)
-		pe.insert(ignore_permissions=True, ignore_mandatory=True)
-		created.append(pe.name)
-	if not created:
-		frappe.throw(_("No payments to create."))
-	return created
-
-
 def _assert_funding_request_approved(fr) -> None:
+	if cint_docstatus(fr.docstatus) != 1:
+		frappe.throw(
+			_("Submit Funding Request {0} before creating payment documents.").format(
+				frappe.bold(fr.name)
+			)
+		)
 	if not funding_is_approved(fr.workflow_state, fr.docstatus):
 		frappe.throw(
-			_("Cannot create payment documents before Director approval of {0}.").format(
+			_("Cannot create payment documents before approval of {0}.").format(
 				frappe.bold(fr.name)
 			)
 		)
@@ -1021,8 +894,8 @@ def _build_operational_journal_entry(fr, row):
 	if not expense_account:
 		frappe.throw(
 			_(
-				"Set Expense Account on Material Request {0} items to a posting account. "
-				"Transport Expense is a group — pick the leaf account under it."
+				"Set Expense Account on Material Request {0} items, or configure "
+				"Default Operational Expense Account in CGM Shipping Settings."
 			).format(frappe.bold(row.material_request))
 		)
 	bank_account = _company_bank_or_cash_account(fr.company)
@@ -1086,12 +959,18 @@ def _material_request_expense_account(material_request: str, company: str | None
 	):
 		if account and not cint(frappe.db.get_value("Account", account, "is_group")):
 			return account
-	if not company:
+	return _default_operational_expense_account(company)
+
+
+def _default_operational_expense_account(company: str | None) -> str | None:
+	if not company or not frappe.db.exists("DocType", "CGM Shipping Settings"):
 		return None
-	return frappe.db.get_value(
-		"Account",
-		{"account_name": "Transport Expense", "company": company, "is_group": 0},
-	)
+	if not frappe.db.has_column("CGM Shipping Settings", "default_operational_expense_account"):
+		return None
+	account = frappe.db.get_single_value("CGM Shipping Settings", "default_operational_expense_account")
+	if account and not cint(frappe.db.get_value("Account", account, "is_group")):
+		return account
+	return None
 
 
 def _company_bank_or_cash_account(company: str | None) -> str | None:
@@ -1102,72 +981,12 @@ def _company_bank_or_cash_account(company: str | None) -> str | None:
 	)
 
 
-def _employee_advance_target_row(fr, material_request: str | None):
-	targets = [
-		row
-		for row in fr.material_requests
-		if row.material_request and (not material_request or row.material_request == material_request)
-	]
-	if material_request and not targets:
-		frappe.throw(
-			_("Material Request {0} is not on Funding Request {1}.").format(
-				frappe.bold(material_request), frappe.bold(fr.name)
-			)
-		)
-	if not material_request:
-		targets = [
-			row for row in targets if flt(row.approved_amount) - flt(row.funded_amount) > 0
-		]
-	if not targets:
-		frappe.throw(_("No remaining approved amount to advance."))
-	return targets[0]
-
-
-def _build_employee_advance(fr, row):
-	remaining = flt(row.approved_amount) - flt(row.funded_amount)
-	if remaining <= 0:
-		frappe.throw(_("No remaining approved amount to advance."))
-	if not row.employee:
-		frappe.throw(
-			_("Set Employee on Material Request {0} before creating an Employee Advance.").format(
-				frappe.bold(row.material_request)
-			)
-		)
-	adv = frappe.new_doc("Employee Advance")
-	adv.employee = row.employee
-	adv.posting_date = nowdate()
-	adv.purpose = " — ".join(
-		part for part in (get_material_request_item_summary(row.material_request), row.description) if part
-	) or row.material_request
-	adv.advance_amount = remaining
-	adv.custom_material_request = row.material_request
-	adv.custom_funding_request = fr.name
-	adv.custom_project = row.project
-	adv.company = fr.company
-	adv.repay_unclaimed_amount_from_salary = 0
-	adv.advance_account = _employee_advance_receivable_account(row.employee, fr.company)
-	return adv
-
-
-def _employee_advance_receivable_account(employee: str | None, company: str | None) -> str | None:
-	"""HRMS requires account_type Receivable. Skip Holding / Payable defaults."""
-	candidates = []
-	if employee:
-		candidates.append(frappe.db.get_value("Employee", employee, "employee_advance_account"))
-	if company:
-		candidates.append(
-			frappe.db.get_value("Company", company, "default_employee_advance_account")
-		)
-	for account in candidates:
-		if account and frappe.db.get_value("Account", account, "account_type") == "Receivable":
-			return account
-	return None
-
-
 def _outstanding_rows(fr, request_type: str | None, purchase: bool = False):
 	out = []
 	for row in fr.material_requests:
 		if not row.material_request:
+			continue
+		if getattr(row, "decision", None) != FR_ROW_DECISION_APPROVED:
 			continue
 		if flt(row.approved_amount) - flt(row.funded_amount) <= 0:
 			continue
@@ -1196,19 +1015,6 @@ def _open_journal_entry_exists(funding_request: str, material_request: str) -> b
 	)
 
 
-def _open_employee_advance_exists(funding_request: str, material_request: str) -> bool:
-	return bool(
-		frappe.db.exists(
-			"Employee Advance",
-			{
-				"custom_funding_request": funding_request,
-				"custom_material_request": material_request,
-				"docstatus": ["<", 2],
-			},
-		)
-	)
-
-
 def _open_purchase_order_exists(material_request: str) -> bool:
 	return bool(
 		frappe.db.exists(
@@ -1216,17 +1022,6 @@ def _open_purchase_order_exists(material_request: str) -> bool:
 			{"material_request": material_request, "docstatus": ["<", 2]},
 		)
 	)
-
-
-def _unpaid_employee_advances(funding_request: str) -> list[str]:
-	rows = frappe.get_all(
-		"Employee Advance",
-		filters={"custom_funding_request": funding_request, "docstatus": 1},
-		fields=["name", "advance_amount", "paid_amount"],
-	)
-	return [
-		row.name for row in rows if flt(row.advance_amount) - flt(row.paid_amount) > 0.005
-	]
 
 
 @frappe.whitelist()
@@ -1240,6 +1035,8 @@ def get_funding_pay_options(funding_request: str) -> dict:
 	purchase = []
 	for row in fr.material_requests:
 		if not row.material_request:
+			continue
+		if getattr(row, "decision", None) != FR_ROW_DECISION_APPROVED:
 			continue
 		remaining = flt(row.approved_amount) - flt(row.funded_amount)
 		if remaining <= 0:
@@ -1264,25 +1061,7 @@ def get_funding_pay_options(funding_request: str) -> dict:
 		elif mr_type in PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING:
 			if not _open_purchase_order_exists(row.material_request):
 				purchase.append(payload)
-	payments = []
-	for adv_name in _unpaid_employee_advances(fr.name):
-		adv = frappe.db.get_value(
-			"Employee Advance",
-			adv_name,
-			["name", "employee", "advance_amount", "paid_amount"],
-			as_dict=True,
-		)
-		if not adv:
-			continue
-		employee_name = frappe.db.get_value("Employee", adv.employee, "employee_name")
-		payments.append(
-			{
-				"employee_advance": adv.name,
-				"employee_name": employee_name or adv.employee,
-				"remaining": flt(adv.advance_amount) - flt(adv.paid_amount),
-			}
-		)
-	return {"operational": operational, "purchase": purchase, "payments": payments}
+	return {"operational": operational, "purchase": purchase}
 
 
 def _pay_option_label(row, remaining) -> str:
@@ -1327,751 +1106,3 @@ def get_material_request_dashboard_data(data):
 	internal["Funding Request"] = "custom_funding_request"
 	return data
 
-
-def get_employee_advance_dashboard_data(data):
-	transactions = data.setdefault("transactions", [])
-	transactions.append(
-		{"label": _("Requisition"), "items": ["Material Request", "Funding Request"]}
-	)
-	internal = data.setdefault("internal_links", {})
-	internal["Material Request"] = "custom_material_request"
-	internal["Funding Request"] = "custom_funding_request"
-	return data
-
-
-# ── Setup (idempotent) ───────────────────────────────────────────────────────
-
-
-def ensure_funding_request_setup() -> None:
-	"""Role, custom fields, workflow. Safe to re-run."""
-	if not frappe.db.exists("DocType", "Material Request"):
-		return
-	_ensure_director_role()
-	ensure_funding_custom_fields()
-	_preserve_legacy_purpose_in_description()
-	ensure_material_request_type_label()
-	ensure_material_request_type_options()
-	if frappe.db.exists("DocType", "Funding Request") and frappe.db.exists("DocType", "Workflow"):
-		ensure_funding_request_workflow()
-	ensure_material_request_workflow_state_visible()
-
-
-def _ensure_director_role() -> None:
-	if frappe.db.exists("Role", DIRECTOR_ROLE):
-		return
-	frappe.get_doc(
-		{
-			"doctype": "Role",
-			"role_name": DIRECTOR_ROLE,
-			"desk_access": 1,
-		}
-	).insert(ignore_permissions=True)
-
-
-def _preserve_legacy_purpose_in_description() -> None:
-	"""Keep historical Purpose text on Request Description. Do not delete data."""
-	if not frappe.db.has_column("Material Request", "custom_purpose"):
-		return
-	if not frappe.db.has_column("Material Request", "custom_request_description"):
-		return
-	frappe.db.sql(
-		"""
-		UPDATE `tabMaterial Request`
-		SET custom_request_description = custom_purpose
-		WHERE IFNULL(custom_request_description, '') = ''
-		  AND IFNULL(custom_purpose, '') != ''
-		"""
-	)
-
-
-def ensure_funding_custom_fields() -> None:
-	_ensure_material_request_fields()
-	_ensure_employee_advance_fields()
-	_ensure_purchase_order_fields()
-	_ensure_journal_entry_fields()
-
-
-OE_FIELD_DEPENDS = "eval:doc.material_request_type=='Operational Expense'"
-
-def _ensure_material_request_fields() -> None:
-	fields = [
-		{
-			"fieldname": "custom_employee",
-			"label": "Employee",
-			"fieldtype": "Link",
-			"options": "Employee",
-			"insert_after": "custom_requested_by_name",
-			"in_standard_filter": 1,
-			"depends_on": OE_FIELD_DEPENDS,
-			"mandatory_depends_on": OE_FIELD_DEPENDS,
-			"description": "",
-		},
-		{
-			"fieldname": "custom_purpose",
-			"label": "Purpose (legacy)",
-			"fieldtype": "Link",
-			"options": "Material Request Purpose",
-			"insert_after": "custom_employee",
-			"hidden": 1,
-			"read_only": 1,
-			"in_list_view": 0,
-			"in_standard_filter": 0,
-			"description": "Historical classification. New requests use Item on the Items table.",
-		},
-		{
-			"fieldname": "custom_request_description",
-			"label": "Request Description (legacy)",
-			"fieldtype": "Small Text",
-			"insert_after": "custom_purpose",
-			"hidden": 1,
-			"read_only": 1,
-			"description": "Use Description on each item row instead.",
-		},
-		{
-			"fieldname": "custom_project",
-			"label": "Project / Shipment",
-			"fieldtype": "Link",
-			"options": "Project",
-			"insert_after": "buying_price_list",
-			"in_standard_filter": 1,
-			"in_list_view": 1,
-			"depends_on": OE_FIELD_DEPENDS,
-		},
-		{
-			"fieldname": "custom_requested_amount",
-			"label": "Requested Amount (legacy)",
-			"fieldtype": "Currency",
-			"insert_after": "custom_project",
-			"read_only": 1,
-			"hidden": 1,
-			"in_list_view": 0,
-			"description": "Historical header total. Requested amount is now sum(Items.amount).",
-		},
-		{
-			"fieldname": "custom_approved_amount",
-			"label": "Approved Amount",
-			"fieldtype": "Currency",
-			"insert_after": "custom_requested_amount",
-			"read_only": 1,
-			"allow_on_submit": 1,
-			"no_copy": 1,
-		},
-		{
-			"fieldname": "custom_funding_request",
-			"label": "Funding Request",
-			"fieldtype": "Link",
-			"options": "Funding Request",
-			"insert_after": "custom_approved_amount",
-			"read_only": 1,
-			"allow_on_submit": 1,
-			"no_copy": 1,
-			"in_standard_filter": 1,
-		},
-		{
-			"fieldname": "custom_funding_status",
-			"label": "Funding Status (legacy)",
-			"fieldtype": "Link",
-			"options": "Workflow State",
-			"insert_after": "custom_funding_request",
-			"read_only": 1,
-			"hidden": 1,
-			"allow_on_submit": 1,
-			"no_copy": 1,
-			"in_standard_filter": 0,
-			"description": "Replaced by standard workflow_state on Material Request.",
-		},
-	]
-	for values in fields:
-		if values["fieldname"] in (
-			"custom_funding_status",
-			"custom_purpose",
-			"custom_requested_amount",
-			"custom_employee",
-			"custom_project",
-			"custom_request_description",
-		):
-			_upsert_cf("Material Request", values)
-		else:
-			_ensure_cf("Material Request", values)
-
-
-def _ensure_purchase_order_fields() -> None:
-	if not frappe.db.exists("DocType", "Purchase Order"):
-		return
-	_ensure_cf(
-		"Purchase Order",
-		{
-			"fieldname": "custom_funding_request",
-			"label": "Funding Request",
-			"fieldtype": "Link",
-			"options": "Funding Request",
-			"insert_after": "company",
-			"read_only": 1,
-			"allow_on_submit": 1,
-			"no_copy": 1,
-			"in_standard_filter": 1,
-		},
-	)
-	if not frappe.db.has_column("Purchase Order", "custom_funding_request"):
-		return
-	if not frappe.db.has_column("Material Request", "custom_funding_request"):
-		return
-	frappe.db.sql(
-		"""
-		UPDATE `tabPurchase Order` po
-		INNER JOIN `tabPurchase Order Item` poi ON poi.parent = po.name
-		INNER JOIN `tabMaterial Request` mr ON mr.name = poi.material_request
-		SET po.custom_funding_request = mr.custom_funding_request
-		WHERE IFNULL(po.custom_funding_request, '') = ''
-		  AND IFNULL(mr.custom_funding_request, '') != ''
-		"""
-	)
-
-
-def _ensure_journal_entry_fields() -> None:
-	if not frappe.db.exists("DocType", "Journal Entry"):
-		return
-	for values in (
-		{
-			"fieldname": "custom_funding_request",
-			"label": "Funding Request",
-			"fieldtype": "Link",
-			"options": "Funding Request",
-			"insert_after": "custom_cgm_source_task",
-			"read_only": 1,
-			"allow_on_submit": 1,
-			"no_copy": 1,
-			"in_standard_filter": 1,
-		},
-		{
-			"fieldname": "custom_material_request",
-			"label": "Material Request",
-			"fieldtype": "Link",
-			"options": "Material Request",
-			"insert_after": "custom_funding_request",
-			"read_only": 1,
-			"allow_on_submit": 1,
-			"no_copy": 1,
-			"in_standard_filter": 1,
-		},
-		{
-			"fieldname": "custom_project",
-			"label": "Project / Shipment",
-			"fieldtype": "Link",
-			"options": "Project",
-			"insert_after": "custom_material_request",
-			"read_only": 1,
-			"in_standard_filter": 1,
-		},
-		{
-			"fieldname": "custom_employee",
-			"label": "Employee",
-			"fieldtype": "Link",
-			"options": "Employee",
-			"insert_after": "custom_project",
-			"read_only": 1,
-			"in_standard_filter": 1,
-		},
-	):
-		_ensure_cf("Journal Entry", values)
-
-
-def _ensure_employee_advance_fields() -> None:
-	if not frappe.db.exists("DocType", "Employee Advance"):
-		return
-	for values in (
-		{
-			"fieldname": "custom_material_request",
-			"label": "Material Request",
-			"fieldtype": "Link",
-			"options": "Material Request",
-			"insert_after": "purpose",
-			"in_standard_filter": 1,
-		},
-		{
-			"fieldname": "custom_funding_request",
-			"label": "Funding Request",
-			"fieldtype": "Link",
-			"options": "Funding Request",
-			"insert_after": "custom_material_request",
-			"in_standard_filter": 1,
-		},
-		{
-			"fieldname": "custom_project",
-			"label": "Project / Shipment",
-			"fieldtype": "Link",
-			"options": "Project",
-			"insert_after": "custom_funding_request",
-			"in_standard_filter": 1,
-		},
-	):
-		_ensure_cf("Employee Advance", values)
-
-
-def ensure_material_request_type_label() -> None:
-	"""Keep ERPNext fulfillment type, but stop calling it Purpose."""
-	name = "Material Request-material_request_type-label"
-	if frappe.db.exists("Property Setter", name):
-		current = frappe.db.get_value("Property Setter", name, "value")
-		if current == "Request Type":
-			return
-		frappe.db.set_value("Property Setter", name, "value", "Request Type", update_modified=False)
-		return
-	frappe.get_doc(
-		{
-			"doctype": "Property Setter",
-			"doctype_or_field": "DocField",
-			"doc_type": "Material Request",
-			"field_name": "material_request_type",
-			"property": "label",
-			"property_type": "Data",
-			"value": "Request Type",
-			"module": MODULE,
-			"name": name,
-		}
-	).insert(ignore_permissions=True)
-
-
-def ensure_material_request_workflow_state_visible() -> None:
-	"""Show standard workflow_state as Funding Status (Frappe creates it hidden)."""
-	name = f"Material Request-{MR_FUNDING_WORKFLOW_STATE_FIELD}"
-	if not frappe.db.exists("Custom Field", name):
-		return
-	doc = frappe.get_doc("Custom Field", name)
-	changed = False
-	if doc.hidden:
-		doc.hidden = 0
-		changed = True
-	if doc.label != "Funding Status":
-		doc.label = "Funding Status"
-		changed = True
-	if not doc.in_standard_filter:
-		doc.in_standard_filter = 1
-		changed = True
-	if not doc.read_only:
-		doc.read_only = 1
-		changed = True
-	if changed:
-		doc.save(ignore_permissions=True)
-
-
-def _select_option_list(options: str | None) -> list[str]:
-	return [line.strip() for line in (options or "").replace("\r\n", "\n").split("\n") if line.strip()]
-
-
-def erpnext_material_request_type_options() -> str:
-	"""ERPNext Material Request.material_request_type options (DocField, not Property Setter)."""
-	return (
-		frappe.db.get_value(
-			"DocField",
-			{"parent": "Material Request", "fieldname": "material_request_type"},
-			"options",
-		)
-		or ""
-	)
-
-
-def with_operational_expense_request_type(options: str | None = None) -> str:
-	"""Keep ERPNext Request Types and append Operational Expense if missing."""
-	values = _select_option_list(
-		erpnext_material_request_type_options() if options is None else options
-	)
-	if MATERIAL_REQUEST_TYPE_OPERATIONAL not in values:
-		values.append(MATERIAL_REQUEST_TYPE_OPERATIONAL)
-	return "\n".join(values)
-
-
-def ensure_material_request_type_options() -> None:
-	"""Property Setter: extend ERPNext's Select options with Operational Expense only."""
-	desired = with_operational_expense_request_type()
-	name = "Material Request-material_request_type-options"
-	if frappe.db.exists("Property Setter", name):
-		current = frappe.db.get_value("Property Setter", name, "value")
-		if current == desired:
-			return
-		frappe.db.set_value("Property Setter", name, "value", desired, update_modified=False)
-		return
-	frappe.get_doc(
-		{
-			"doctype": "Property Setter",
-			"doctype_or_field": "DocField",
-			"doc_type": "Material Request",
-			"field_name": "material_request_type",
-			"property": "options",
-			"property_type": "Text",
-			"value": desired,
-			"module": MODULE,
-			"name": name,
-		}
-	).insert(ignore_permissions=True)
-
-
-def ensure_funding_request_workflow() -> None:
-	if not frappe.db.exists("DocType", "Workflow"):
-		return
-	_ensure_workflow_states()
-	_ensure_workflow_actions()
-	_sync_funding_request_workflow()
-	_sync_material_request_funding_workflow()
-	_backfill_material_request_funding_states()
-
-
-def _ensure_workflow_states() -> None:
-	styles = {
-		FUNDING_REQUEST_STATE_DRAFT: "Primary",
-		FUNDING_REQUEST_STATE_PENDING: "Warning",
-		FUNDING_REQUEST_STATE_APPROVED: "Success",
-		FUNDING_REQUEST_STATE_FUNDING: "Info",
-		FUNDING_REQUEST_STATE_FUNDED: "Success",
-		FUNDING_REQUEST_STATE_COMPLETED: "Success",
-		FUNDING_REQUEST_STATE_REJECTED: "Danger",
-		FUNDING_REQUEST_STATE_CANCELLED: "Inverse",
-		MR_FUNDING_STATE_SUBMITTED: "Primary",
-		MR_FUNDING_STATE_UNFUNDED: "Warning",
-		MR_FUNDING_STATE_ON_REQUEST: "Info",
-	}
-	for state_name, style in styles.items():
-		if frappe.db.exists("Workflow State", state_name):
-			continue
-		frappe.get_doc(
-			{
-				"doctype": "Workflow State",
-				"workflow_state_name": state_name,
-				"style": style,
-			}
-		).insert(ignore_permissions=True)
-
-
-def _ensure_workflow_actions() -> None:
-	for action_name in (
-		FUNDING_REQUEST_ACTION_SUBMIT,
-		FUNDING_REQUEST_ACTION_APPROVE,
-		FUNDING_REQUEST_ACTION_REJECT,
-		FUNDING_REQUEST_ACTION_START_FUNDING,
-		FUNDING_REQUEST_ACTION_MARK_FUNDED,
-		FUNDING_REQUEST_ACTION_COMPLETE,
-		FUNDING_REQUEST_ACTION_CANCEL,
-		MR_FUNDING_ACTION_SUBMIT,
-		MR_FUNDING_ACTION_SUBMIT_REQUEST,
-		MR_FUNDING_ACTION_CANCEL,
-	):
-		if frappe.db.exists("Workflow Action Master", action_name):
-			continue
-		frappe.get_doc(
-			{"doctype": "Workflow Action Master", "workflow_action_name": action_name}
-		).insert(ignore_permissions=True)
-
-
-def _sync_funding_request_workflow() -> None:
-	if frappe.db.exists("Workflow", FUNDING_REQUEST_WORKFLOW_NAME):
-		workflow = frappe.get_doc("Workflow", FUNDING_REQUEST_WORKFLOW_NAME)
-	else:
-		workflow = frappe.new_doc("Workflow")
-		workflow.workflow_name = FUNDING_REQUEST_WORKFLOW_NAME
-
-	workflow.document_type = "Funding Request"
-	workflow.workflow_state_field = "workflow_state"
-	workflow.is_active = 1
-	workflow.send_email_alert = 0
-	workflow.override_status = 0
-
-	workflow.states = []
-	for row in _funding_workflow_states():
-		workflow.append("states", row)
-	workflow.transitions = []
-	for row in _funding_workflow_transitions():
-		workflow.append("transitions", row)
-	workflow.save(ignore_permissions=True)
-
-
-def _finance_roles() -> tuple[str, ...]:
-	return ("Finance User", "Finance Manager", "Accounts User", "Accounts Manager")
-
-
-def _state(state, doc_status, allow_edit) -> dict:
-	return {
-		"state": state,
-		"doc_status": str(doc_status),
-		"allow_edit": allow_edit,
-		"is_optional_state": 0,
-	}
-
-
-def _transition(state, action, next_state, allowed, condition=None) -> dict:
-	row = {
-		"state": state,
-		"action": action,
-		"next_state": next_state,
-		"allowed": allowed,
-		"allow_self_approval": 1,
-	}
-	if condition:
-		row["condition"] = condition
-	return row
-
-
-def _funding_workflow_states() -> list[dict]:
-	return [
-		_state(FUNDING_REQUEST_STATE_DRAFT, 0, "Finance User"),
-		_state(FUNDING_REQUEST_STATE_PENDING, 0, DIRECTOR_ROLE),
-		_state(FUNDING_REQUEST_STATE_APPROVED, 1, "Finance User"),
-		_state(FUNDING_REQUEST_STATE_FUNDING, 1, "Finance User"),
-		_state(FUNDING_REQUEST_STATE_FUNDED, 1, "Finance User"),
-		_state(FUNDING_REQUEST_STATE_COMPLETED, 1, "Finance User"),
-		_state(FUNDING_REQUEST_STATE_REJECTED, 0, "Finance User"),
-		_state(FUNDING_REQUEST_STATE_CANCELLED, 2, "System Manager"),
-	]
-
-
-def _funding_workflow_transitions() -> list[dict]:
-	rows: list[dict] = []
-	for role in _finance_roles():
-		rows.append(
-			_transition(
-				FUNDING_REQUEST_STATE_DRAFT,
-				FUNDING_REQUEST_ACTION_SUBMIT,
-				FUNDING_REQUEST_STATE_PENDING,
-				role,
-			)
-		)
-		rows.append(
-			_transition(
-				FUNDING_REQUEST_STATE_REJECTED,
-				FUNDING_REQUEST_ACTION_SUBMIT,
-				FUNDING_REQUEST_STATE_PENDING,
-				role,
-			)
-		)
-		rows.append(
-			_transition(
-				FUNDING_REQUEST_STATE_FUNDED,
-				FUNDING_REQUEST_ACTION_COMPLETE,
-				FUNDING_REQUEST_STATE_COMPLETED,
-				role,
-			)
-		)
-		rows.append(
-			_transition(
-				FUNDING_REQUEST_STATE_APPROVED,
-				FUNDING_REQUEST_ACTION_CANCEL,
-				FUNDING_REQUEST_STATE_CANCELLED,
-				role,
-			)
-		)
-		rows.append(
-			_transition(
-				FUNDING_REQUEST_STATE_FUNDING,
-				FUNDING_REQUEST_ACTION_CANCEL,
-				FUNDING_REQUEST_STATE_CANCELLED,
-				role,
-			)
-		)
-	rows.append(
-		_transition(
-			FUNDING_REQUEST_STATE_PENDING,
-			FUNDING_REQUEST_ACTION_APPROVE,
-			FUNDING_REQUEST_STATE_APPROVED,
-			DIRECTOR_ROLE,
-		)
-	)
-	rows.append(
-		_transition(
-			FUNDING_REQUEST_STATE_PENDING,
-			FUNDING_REQUEST_ACTION_REJECT,
-			FUNDING_REQUEST_STATE_REJECTED,
-			DIRECTOR_ROLE,
-		)
-	)
-	return rows
-
-
-def _sync_material_request_funding_workflow() -> None:
-	if frappe.db.exists("Workflow", MR_FUNDING_WORKFLOW_NAME):
-		workflow = frappe.get_doc("Workflow", MR_FUNDING_WORKFLOW_NAME)
-	else:
-		workflow = frappe.new_doc("Workflow")
-		workflow.workflow_name = MR_FUNDING_WORKFLOW_NAME
-
-	frappe.clear_cache(doctype="Material Request")
-	workflow.document_type = "Material Request"
-	workflow.workflow_state_field = MR_FUNDING_WORKFLOW_STATE_FIELD
-	workflow.is_active = 1
-	workflow.send_email_alert = 0
-	# Don't Override Status: keep ERPNext Material Request.status (Draft/Submitted/Ordered/…).
-	workflow.override_status = 1
-
-	workflow.states = []
-	for row in _mr_funding_workflow_states():
-		workflow.append("states", row)
-	workflow.transitions = []
-	for row in _mr_funding_workflow_transitions():
-		workflow.append("transitions", row)
-	workflow.save(ignore_permissions=True)
-
-
-def _backfill_material_request_funding_states() -> None:
-	"""Copy legacy custom_funding_status onto workflow_state; fill missing states."""
-	field = MR_FUNDING_WORKFLOW_STATE_FIELD
-	if not frappe.db.has_column("Material Request", field):
-		return
-	if frappe.db.has_column("Material Request", "custom_funding_status"):
-		frappe.db.sql(
-			f"""
-			UPDATE `tabMaterial Request`
-			SET `{field}` = custom_funding_status
-			WHERE IFNULL(`{field}`, '') = ''
-			  AND IFNULL(custom_funding_status, '') != ''
-			"""
-		)
-	frappe.db.sql(
-		f"""
-		UPDATE `tabMaterial Request`
-		SET `{field}` = %(draft)s
-		WHERE docstatus = 0
-		  AND IFNULL(`{field}`, '') IN ('', %(unfunded)s)
-		""",
-		{"draft": MR_FUNDING_STATE_DRAFT, "unfunded": MR_FUNDING_STATE_UNFUNDED},
-	)
-	frappe.db.sql(
-		f"""
-		UPDATE `tabMaterial Request`
-		SET `{field}` = %(submitted)s
-		WHERE docstatus = 1
-		  AND IFNULL(custom_funding_request, '') = ''
-		  AND IFNULL(material_request_type, '') != %(oe)s
-		  AND IFNULL(`{field}`, '') IN ('', %(unfunded)s)
-		""",
-		{
-			"submitted": MR_FUNDING_STATE_SUBMITTED,
-			"oe": MATERIAL_REQUEST_TYPE_OPERATIONAL,
-			"unfunded": MR_FUNDING_STATE_UNFUNDED,
-		},
-	)
-	frappe.db.sql(
-		f"""
-		UPDATE `tabMaterial Request`
-		SET `{field}` = %(unfunded)s
-		WHERE docstatus = 1
-		  AND IFNULL(custom_funding_request, '') = ''
-		  AND material_request_type = %(oe)s
-		  AND IFNULL(`{field}`, '') = ''
-		""",
-		{"unfunded": MR_FUNDING_STATE_UNFUNDED, "oe": MATERIAL_REQUEST_TYPE_OPERATIONAL},
-	)
-	frappe.db.sql(
-		f"""
-		UPDATE `tabMaterial Request`
-		SET `{field}` = %(cancelled)s
-		WHERE docstatus = 2
-		  AND IFNULL(`{field}`, '') IN ('', %(unfunded)s, %(draft)s)
-		""",
-		{
-			"cancelled": MR_FUNDING_STATE_CANCELLED,
-			"unfunded": MR_FUNDING_STATE_UNFUNDED,
-			"draft": MR_FUNDING_STATE_DRAFT,
-		},
-	)
-	if frappe.db.exists("DocType", "Funding Request Material Request"):
-		frappe.db.sql(
-			"""
-			UPDATE `tabFunding Request Material Request`
-			SET status = %(approved)s
-			WHERE status = 'Reduced'
-			""",
-			{"approved": MR_FUNDING_STATE_APPROVED},
-		)
-
-
-def _requester_roles() -> tuple[str, ...]:
-	return (
-		"Stock User",
-		"Purchase User",
-		"Stock Manager",
-		"Purchase Manager",
-		"Employee",
-		"System Manager",
-	)
-
-
-def _mr_funding_workflow_states() -> list[dict]:
-	return [
-		_state(MR_FUNDING_STATE_DRAFT, 0, "Stock User"),
-		_state(MR_FUNDING_STATE_SUBMITTED, 1, "Stock User"),
-		_state(MR_FUNDING_STATE_UNFUNDED, 1, "Finance User"),
-		_state(MR_FUNDING_STATE_ON_REQUEST, 1, "Finance User"),
-		_state(MR_FUNDING_STATE_PENDING, 1, DIRECTOR_ROLE),
-		_state(MR_FUNDING_STATE_APPROVED, 1, "Finance User"),
-		_state(MR_FUNDING_STATE_FUNDED, 1, "Finance User"),
-		_state(MR_FUNDING_STATE_REJECTED, 1, "Finance User"),
-		_state(MR_FUNDING_STATE_CANCELLED, 2, "System Manager"),
-	]
-
-
-def _mr_funding_workflow_transitions() -> list[dict]:
-	rows: list[dict] = []
-	for role in _requester_roles():
-		rows.append(
-			_transition(
-				MR_FUNDING_STATE_DRAFT,
-				MR_FUNDING_ACTION_SUBMIT,
-				MR_FUNDING_STATE_SUBMITTED,
-				role,
-				condition=NON_OE_WORKFLOW_CONDITION,
-			)
-		)
-		rows.append(
-			_transition(
-				MR_FUNDING_STATE_DRAFT,
-				MR_FUNDING_ACTION_SUBMIT_REQUEST,
-				MR_FUNDING_STATE_UNFUNDED,
-				role,
-				condition=OE_WORKFLOW_CONDITION,
-			)
-		)
-		rows.append(
-			_transition(
-				MR_FUNDING_STATE_SUBMITTED,
-				MR_FUNDING_ACTION_CANCEL,
-				MR_FUNDING_STATE_CANCELLED,
-				role,
-				condition=NON_OE_WORKFLOW_CONDITION,
-			)
-		)
-		rows.append(
-			_transition(
-				MR_FUNDING_STATE_UNFUNDED,
-				MR_FUNDING_ACTION_CANCEL,
-				MR_FUNDING_STATE_CANCELLED,
-				role,
-				condition=OE_WORKFLOW_CONDITION,
-			)
-		)
-		rows.append(
-			_transition(
-				MR_FUNDING_STATE_REJECTED,
-				MR_FUNDING_ACTION_CANCEL,
-				MR_FUNDING_STATE_CANCELLED,
-				role,
-				condition=OE_WORKFLOW_CONDITION,
-			)
-		)
-	for role in _finance_roles():
-		rows.append(
-			_transition(
-				MR_FUNDING_STATE_DRAFT,
-				MR_FUNDING_ACTION_SUBMIT_REQUEST,
-				MR_FUNDING_STATE_UNFUNDED,
-				role,
-				condition=OE_WORKFLOW_CONDITION,
-			)
-		)
-		rows.append(
-			_transition(
-				MR_FUNDING_STATE_UNFUNDED,
-				MR_FUNDING_ACTION_CANCEL,
-				MR_FUNDING_STATE_CANCELLED,
-				role,
-				condition=OE_WORKFLOW_CONDITION,
-			)
-		)
-	return rows

@@ -9,8 +9,12 @@ frappe.listview_settings["Material Request"] = Object.assign(cgm_mr_list_setting
 		new Set([...(cgm_mr_list_settings.add_fields || []), "workflow_state", "material_request_type"])
 	),
 	get_indicator(doc) {
-		if (doc.material_request_type === "Operational Expense") {
-			return cgm_operational_expense_indicator(doc);
+		if (
+			doc.material_request_type === "Operational Expense" ||
+			doc.material_request_type === "Purchase" ||
+			doc.material_request_type === "Subcontracting"
+		) {
+			return cgm_funding_workflow_indicator(doc);
 		}
 		if (cgm_mr_erpnext_indicator) {
 			return cgm_mr_erpnext_indicator(doc);
@@ -19,7 +23,7 @@ frappe.listview_settings["Material Request"] = Object.assign(cgm_mr_list_setting
 	},
 });
 
-function cgm_operational_expense_indicator(doc) {
+function cgm_funding_workflow_indicator(doc) {
 	if (cint(doc.docstatus) === 2 || doc.workflow_state === "Cancelled") {
 		return [__("Cancelled"), "red", "docstatus,=,2"];
 	}
@@ -28,9 +32,12 @@ function cgm_operational_expense_indicator(doc) {
 		Draft: "gray",
 		Unfunded: "orange",
 		"On Funding Request": "blue",
-		"Pending Director Approval": "orange",
-		"Director Approved": "blue",
-		Funded: "green",
+		"Pending Approval": "orange",
+		Pending: "orange",
+		Approved: "blue",
+		"Partially Approved": "orange",
+		"Disbursement in Progress": "blue",
+		Disbursed: "green",
 		Rejected: "red",
 		Submitted: "blue",
 	};

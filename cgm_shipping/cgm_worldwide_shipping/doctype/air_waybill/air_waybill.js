@@ -40,6 +40,8 @@ const AWB_SEED_SCALAR_FIELDS = [
 	"port_of_loading",
 	"port_of_discharge",
 	"description",
+	"number_of_packages",
+	"package_type",
 	"linked_opportunity",
 ];
 

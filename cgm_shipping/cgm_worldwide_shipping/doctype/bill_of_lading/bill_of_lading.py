@@ -90,7 +90,6 @@ OPPORTUNITY_TO_BL_FIELDS = (
 	("custom_weight_uom_", "weight_uom"),
 	("custom_number_of_packages", "number_of_packages"),
 	("custom_package_type", "package_type"),
-	("custom_draft_bl_number", "bl_number"),
 )
 
 

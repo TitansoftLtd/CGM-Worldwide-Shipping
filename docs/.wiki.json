@@ -11,6 +11,7 @@
 				{"CRM & Intake": "guides/crm-intake.md"},
 				{"Transport & Containers": "guides/transport-containers.md"},
 				{"Customer & Transporter Portal": "guides/portals.md"},
+				{"Licence & Permit Register": "guides/licences.md"},
 				{"Admin & Setup": "guides/admin-setup.md"},
 				{"Developer reference": "guides/developer.md"}
 			]

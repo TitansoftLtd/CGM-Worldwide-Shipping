@@ -471,10 +471,19 @@ function project_cargo_type_code(frm) {
 	return (frm.doc.custom_cargo_type || "").trim().toUpperCase();
 }
 
+function project_is_air(frm) {
+	const mode = String(frm.doc.custom_mode_of_transport || "").trim().toLowerCase();
+	if (mode === "air") {
+		return true;
+	}
+	return String(frm.doc.custom_shipment_type || "").trim().toLowerCase().startsWith("air");
+}
+
 function toggle_project_cargo_fields(frm) {
 	const is_lcl = project_cargo_type_code(frm) === "LCL";
-	const show_fcl = !is_lcl;
-	const show_packages = is_lcl;
+	const is_air = project_is_air(frm);
+	const show_fcl = !is_lcl && !is_air;
+	const show_packages = cgm_shipping.package_visibility.should_show(frm);
 	const showRequestedCargo = show_fcl && !frm.doc.custom_bill_of_lading;
 
 	[
@@ -489,7 +498,10 @@ function toggle_project_cargo_fields(frm) {
 	});
 
 	if (frm.fields_dict.custom_booking_confirmation) {
-		frm.set_df_property("custom_booking_confirmation", "hidden", 0);
+		const showBooking = Boolean(frm.doc.custom_booking_confirmation);
+		frm.set_df_property("custom_booking_confirmation", "depends_on", "eval:doc.custom_booking_confirmation");
+		frm.set_df_property("custom_booking_confirmation", "hidden", showBooking ? 0 : 1);
+		frm.toggle_display("custom_booking_confirmation", showBooking);
 	}
 	if (frm.fields_dict.custom_cargo_type) {
 		frm.set_df_property("custom_cargo_type", "hidden", 0);
@@ -725,8 +737,11 @@ function paint_shipment_progress_chart(frm, field, payload) {
 				: "";
 	const legendLine = d.uses_clearance_states
 		? `<div class="cgm-tracking-legend">
-				${__("Berth phase")}: <b>${berth}</b> ·
-				${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
+				${
+					d.show_berth_phase
+						? `${__("Berth phase")}: <b>${berth}</b> · `
+						: ""
+				}${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current${wfNote}
 			</div>`
 		: `<div class="cgm-tracking-legend">
 				${__("Green")} = passed · <b>${frappe.utils.escape_html(d.current_status)}</b> = current
@@ -766,13 +781,10 @@ function paint_shipment_progress_chart(frm, field, payload) {
 			${legendLine}
 		</div>
 	`);
-	if (
-		d.uses_clearance_states &&
-		d.current_status &&
-		frm.doc.custom_shipment_status !== d.current_status
-	) {
-		// Keep UI in sync without dirtying — unsaved docs hide workflow Actions.
-		frm.set_value("custom_shipment_status", d.current_status, false, true);
+	// Task-derived progress lives in the chart only — do not write custom_shipment_status
+	// into frm.doc. A silent set_value (even no_dirty) still persists on the next save and
+	// triggers CI/PKL validation when intake docs are missing.
+	if (d.uses_clearance_states && d.current_status) {
 		const indicator = project_clearance_indicator({
 			custom_shipment_status: d.current_status,
 		});
@@ -815,6 +827,17 @@ function format_currency_totals_label(totals) {
 		.filter(([, amount]) => flt(amount) > 0)
 		.map(([currency, amount]) => format_currency_amount(amount, currency))
 		.join(" · ");
+}
+
+function container_still_open_for_charges(c) {
+	return !(c.actual_empty_return || c.interchange_date);
+}
+
+function container_has_active_charges(c) {
+	if (!container_still_open_for_charges(c)) {
+		return false;
+	}
+	return cint(c.demurrage_days) > 0 || cint(c.kpa_days) > 0;
 }
 
 function container_status_dot(status, alert_status) {
@@ -942,7 +965,13 @@ function render_container_card_body(c) {
 
 	const slFreeEnd = container_card_format_date(c.free_days_end_date);
 	let slFreeEndDisplay = slFreeEnd;
-	if (slFreeEnd && !c.gate_out_date_port && c.free_days_end_date) {
+	const stillCountingReturn = !c.actual_empty_return && !c.interchange_date;
+	const stillAtMombasa =
+		!c.gate_out_date_port &&
+		!c.offloading_date &&
+		!c.gate_in_date_warehouse &&
+		stillCountingReturn;
+	if (slFreeEnd && stillCountingReturn && c.free_days_end_date) {
 		const slRemaining = frappe.datetime.get_diff(c.free_days_end_date, today);
 		if (slRemaining >= 0) {
 			slFreeEndDisplay = `${slFreeEnd} (${__("{0} days left", [slRemaining])})`;
@@ -993,7 +1022,7 @@ function render_container_card_body(c) {
 
 	const kpaFreeEnd = container_card_format_date(c.kpa_free_days_end_date);
 	let kpaFreeEndDisplay = kpaFreeEnd;
-	if (kpaFreeEnd && !c.gate_out_date_port && c.kpa_free_days_end_date) {
+	if (kpaFreeEnd && stillAtMombasa && c.kpa_free_days_end_date) {
 		const kpaRemaining = frappe.datetime.get_diff(c.kpa_free_days_end_date, today);
 		if (kpaRemaining >= 0) {
 			kpaFreeEndDisplay = `${kpaFreeEnd} (${__("{0} days left", [kpaRemaining])})`;
@@ -1030,7 +1059,7 @@ function render_container_card_body(c) {
 	}
 	sections.push(`
 		<div class="cgm-container-card-section">
-			<div class="cgm-container-card-section-title">${__("KPA port")}</div>
+			<div class="cgm-container-card-section-title">${__("KPA (Mombasa port)")}</div>
 			${kpaRows.filter(Boolean).join("")}
 		</div>
 	`);
@@ -1179,12 +1208,11 @@ function render_container_tracking_table(frm, dashboard) {
 								: ""
 						}</div>`
 					: "";
-				const chargeBadge =
-					cint(c.demurrage_days) > 0 || cint(c.kpa_days) > 0
-						? `<span class="cgm-container-card-charge-badge">${__(
-								"Incurring charges"
-							)}</span>`
-						: "";
+				const chargeBadge = container_has_active_charges(c)
+					? `<span class="cgm-container-card-charge-badge">${__(
+							"Incurring charges"
+						)}</span>`
+					: "";
 				const depositBadge = container_deposit_badge_class(c);
 				const depositBadgeHtml =
 					depositBadge.label !== __("No Deposit") ||
@@ -1194,7 +1222,7 @@ function render_container_tracking_table(frm, dashboard) {
 							)}</span>`
 						: "";
 				return `<div class="cgm-container-card${
-					cint(c.demurrage_days) > 0 || cint(c.kpa_days) > 0 ? " cgm-container-card--charges" : ""
+					container_has_active_charges(c) ? " cgm-container-card--charges" : ""
 				}">
 					<div class="cgm-container-card-head">
 						<span class="cgm-container-card-id">${dot} <b>${frappe.utils.escape_html(

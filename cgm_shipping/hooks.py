@@ -85,6 +85,7 @@ doctype_js = {
 		"public/js/attachment_approval_workflow.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
+		"public/js/package_field_visibility.js",
 		"public/js/project.js",
 	],
 	"Lead": [
@@ -95,11 +96,11 @@ doctype_js = {
 	"Customer": "public/js/crm_customer.js",
 	"Item": "public/js/item_pricing_rule.js",
 	"Opportunity": [
+		"public/js/package_field_visibility.js",
 		"public/js/opportunity_shipment.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/shipment_document_grid.js",
-		"public/js/attachment_approval_workflow.js",
 		"public/js/crm_opportunity.js",
 		"public/js/opportunity.js",
 	],
@@ -110,6 +111,8 @@ doctype_js = {
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 	"Material Request": "public/js/material_request.js",
 	"Employee Advance": "public/js/employee_advance.js",
+	"Job Applicant": "public/js/job_applicant.js",
+	"Salary Component": "public/js/salary_component.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
@@ -175,6 +178,9 @@ after_install = "cgm_shipping.install.after_install"
 before_migrate = ["cgm_shipping.install.before_migrate"]
 after_migrate = ["cgm_shipping.install.after_migrate"]
 
+# Desk boot: package-field visibility lists from CGM Shipping Settings.
+extend_bootinfo = "cgm_shipping.boot.extend_bootinfo"
+
 # Uninstallation
 # ------------
 
@@ -226,6 +232,8 @@ override_doctype_class = {
     ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
     "Quotation":
     "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
+    "Salary Slip":
+    "cgm_shipping.cgm_worldwide_shipping.overrides.salary_slip.CGMSalarySlip",
 }
 
 # Document Events
@@ -233,6 +241,17 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	"Salary Component": {
+		"validate": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.validate_net_pay_only_component"
+		),
+		"on_update": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
+		),
+		"on_trash": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
+		),
+	},
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
 		"after_insert": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_after_insert",
@@ -257,7 +276,6 @@ doc_events = {
 	"Payment Entry": {
 		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
-			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.copy_project_from_employee_advance",
 		],
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_submit",
 		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_cancel",
@@ -307,6 +325,12 @@ doc_events = {
 	"Leave Application": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 	},
+	"Job Applicant": {
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_territory",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_opening",
+		],
+	},
 	"Material Request": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_validate",
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
@@ -323,11 +347,6 @@ doc_events = {
 	"Stock Entry": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.copy_project_to_stock_entry",
 	},
-	"Employee Advance": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_validate",
-		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_on_submit",
-		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_employee_advance_on_cancel",
-	},
 	"Opportunity": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.documents.on_opportunity_onload",
 		"before_insert": [
@@ -343,6 +362,7 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.documents.normalize_opportunity_clients_documents",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.seed_required_documents_on_opportunity",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_bl_from_clients_documents",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_from_linked_awb",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_linked_project_from_opportunity",
@@ -374,6 +394,8 @@ scheduler_events = {
         "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
         "cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.post_all_container_charge_accruals",
         "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.send_deposit_refund_reminders",
+        # Licence & permit expiry reminders. Periods and recipients live in License Settings.
+        "cgm_shipping.cgm_worldwide_shipping.customizations.license_reminders.send_license_expiry_reminders",
     ],
     "hourly": [
         "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.send_deposit_refund_reminders",
@@ -441,8 +463,6 @@ override_doctype_dashboards = {
     "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_project_dashboard_data",
     "Material Request":
     "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_material_request_dashboard_data",
-    "Employee Advance":
-    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_employee_advance_dashboard_data",
 }
 
 # exempt linked doctypes from being automatically cancelled

@@ -49,10 +49,17 @@ cgm_shipping.patches.sync_notification_shipment_display_name
 cgm_shipping.patches.ensure_workflow_notification_settings
 cgm_shipping.patches.ensure_cargo_master_select_permissions
 cgm_shipping.patches.sync_road_transit_inbound_template
+cgm_shipping.patches.sync_sea_transit_import_template
 # Clearance charge seed/repair + sea requirement reseed live in install.after_migrate
 # (repair_clearance_charge_item_setup / seed_cgm_shipping_settings) — do not re-add
 # thin alias patches for that work.
 cgm_shipping.patches.sync_task_template_behaviour
 cgm_shipping.patches.fix_cgm_task_template_item_nested_table
 cgm_shipping.patches.sync_template_required_document_types
-cgm_shipping.patches.ensure_funding_request_workflow
+cgm_shipping.patches.migrate_funding_legacy_data
+cgm_shipping.patches.migrate_funding_approval_v2
+cgm_shipping.patches.restore_cgm_company_branding
+cgm_shipping.patches.show_air_package_fields
+cgm_shipping.patches.apply_package_field_visibility
+cgm_shipping.patches.remove_duplicate_opportunity_cargo_cutoff
+cgm_shipping.patches.delete_opportunity_draft_bl_number

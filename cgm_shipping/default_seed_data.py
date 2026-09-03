@@ -97,8 +97,15 @@ def seed_cgm_shipping_settings() -> None:
 			changed = True
 
 	if changed:
+		settings.flags.skip_package_visibility_apply = True
 		settings.save(ignore_permissions=True)
 		frappe.clear_cache()
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.package_field_visibility import (
+		seed_package_visibility_defaults,
+	)
+
+	seed_package_visibility_defaults()
 
 
 def seed_document_responsibility_defaults() -> None:
@@ -124,17 +131,6 @@ def seed_all_defaults() -> None:
 	seed_document_responsibility_defaults()
 	seed_task_workflow_masters()
 	ensure_clearance_charge_items()
-	try:
-		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
-			ensure_funding_request_setup,
-		)
-
-		ensure_funding_request_setup()
-	except Exception:
-		frappe.log_error(
-			title="CGM seed funding request setup failed",
-			message=frappe.get_traceback(),
-		)
 	try:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
 			ensure_sea_task_notifications,

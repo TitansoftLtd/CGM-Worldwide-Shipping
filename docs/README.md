@@ -13,6 +13,7 @@ Welcome to the CGM Worldwide Shipping documentation. This wiki covers freight fo
 | [CRM & Intake Guide](guides/crm-intake.md) | Sales, CRM | Lead → Opportunity → Project |
 | [Transport & Containers Guide](guides/transport-containers.md) | Transport, ops | Container Tracker, Ops Board, allocations, demurrage |
 | [Customer & Transporter Portal](guides/portals.md) | Portal users, support | Customer and transporter website |
+| [Licence & Permit Register](guides/licences.md) | Admin, compliance | Company licences, expiry reminders, recipients |
 | [Admin & Setup Guide](guides/admin-setup.md) | System admins | Masters, CGM Shipping Settings, patches, go-live |
 | [Developer Guide](guides/developer.md) | Developers | Hooks, modules, extending the app |
 

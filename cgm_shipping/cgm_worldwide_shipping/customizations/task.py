@@ -1185,13 +1185,46 @@ def ucr_invoice_verified(task) -> bool:
 
 def ucr_receipt_verified(task) -> bool:
 	line = get_ucr_receipt_line(task)
-	return bool(line and line.verified)
+	return bool(line and line.attachment and line.verified)
+
+
+def clear_verification_without_attachment(task) -> bool:
+	"""Verified-by-Finance is meaningless once the file is gone. Persist the fix."""
+	if not task_has_finance_table(task):
+		return False
+	changed = False
+	for row in task.get(TASK_FINANCE_FIELD) or []:
+		if row.line_type != LINE_RECEIPT:
+			continue
+		if row.attachment or not (cint(row.verified) or row.verified_by or row.verified_on):
+			continue
+		row.verified = 0
+		row.verified_by = None
+		row.verified_on = None
+		if row.name:
+			frappe.db.set_value(
+				"Task Finance Line",
+				row.name,
+				{"verified": 0, "verified_by": None, "verified_on": None},
+				update_modified=False,
+			)
+		changed = True
+	if changed and task.meta.has_field("custom_ucr_receipt_verified") and task.get(
+		"custom_ucr_receipt_verified"
+	):
+		task.custom_ucr_receipt_verified = 0
+		if task.name:
+			frappe.db.set_value(
+				"Task", task.name, "custom_ucr_receipt_verified", 0, update_modified=False
+			)
+	return changed
 
 
 def normalize_finance_line_verification(task) -> None:
 	"""Set verified_by / verified_on when Finance ticks Verified."""
 	if not task_has_finance_table(task):
 		return
+	clear_verification_without_attachment(task)
 	seq = _task_seq(task)
 	# Finance upload of the UCR receipt is confirmation — auto-stamp verified.
 	if is_ucr_finance_payment_task(seq):
@@ -1201,22 +1234,26 @@ def normalize_finance_line_verification(task) -> None:
 			rec.verified_by = rec.verified_by or frappe.session.user
 			rec.verified_on = rec.verified_on or now_datetime()
 	for row in task.get(TASK_FINANCE_FIELD) or []:
-		if row.verified:
+		if row.verified and row.attachment:
 			if not row.verified_by:
 				row.verified_by = frappe.session.user
 			if not row.verified_on:
 				row.verified_on = now_datetime()
-		elif row.verified_by or row.verified_on:
-			row.verified_by = None
-			row.verified_on = None
+		elif not row.attachment or not row.verified:
+			row.verified = 0 if not row.attachment else row.verified
+			if not row.verified:
+				row.verified_by = None
+				row.verified_on = None
 
 	if is_ucr_finance_payment_task(seq):
 		inv = get_ucr_invoice_line(task)
 		rec = get_ucr_receipt_line(task)
 		if inv and inv.verified and task.meta.has_field("custom_ucr_invoice_verified"):
 			task.custom_ucr_invoice_verified = 1
-		if rec and rec.verified and task.meta.has_field("custom_ucr_receipt_verified"):
+		if rec and rec.attachment and rec.verified and task.meta.has_field("custom_ucr_receipt_verified"):
 			task.custom_ucr_receipt_verified = 1
+		elif task.meta.has_field("custom_ucr_receipt_verified"):
+			task.custom_ucr_receipt_verified = 0
 
 
 def _find_line_in_task(task, line_type: str, payment_item: str = PAYMENT_UCR):
@@ -1282,12 +1319,7 @@ def enforce_finance_line_permissions(task) -> None:
 		# Keep existing attachments (open projects that used the old handoff).
 		if row.attachment == prev_attachment:
 			continue
-		if is_ucr_application_task(seq):
-			frappe.throw(
-				"The <b>UCR Receipt</b> is uploaded on <b>Finance pays UCR</b> after recording payment. "
-				"Attach only the invoice (and IDF certificate) here."
-			)
-		if is_ucr_finance_payment_task(seq):
+		if is_ucr_application_task(seq) or is_ucr_finance_payment_task(seq):
 			if not can_receipt:
 				frappe.throw(
 					"Only the configured <b>Upload Receipt</b> role group can attach the "
@@ -1412,7 +1444,7 @@ def _sync_ucr_line_verification_to_application(
 	if seed:
 		seed_ucr_finance_lines(finance_task)
 	fin_line = line_getter(finance_task)
-	if not fin_line or not fin_line.verified:
+	if not fin_line or not fin_line.verified or not fin_line.attachment:
 		return False
 
 	app_line_name = frappe.db.get_value(
@@ -1430,6 +1462,17 @@ def _sync_ucr_line_verification_to_application(
 		return False
 
 	changed = False
+	if (fin_line.attachment or "") != (
+		frappe.db.get_value("Task Finance Line", app_line_name, "attachment") or ""
+	):
+		frappe.db.set_value(
+			"Task Finance Line",
+			app_line_name,
+			"attachment",
+			fin_line.attachment,
+			update_modified=False,
+		)
+		changed = True
 	if not frappe.db.get_value("Task Finance Line", app_line_name, "verified"):
 		frappe.db.set_value(
 			"Task Finance Line",
@@ -3595,6 +3638,7 @@ def on_task_onload(doc, _method=None):
 		)
 
 		changed = ensure_ucr_finance_lines_saved(doc)
+		changed = clear_verification_without_attachment(doc) or changed
 		if task_is_ucr_application(doc):
 			changed = sync_ucr_status_from_finance_to_application(doc) or changed
 			if doc.status not in ("Completed", "Cancelled"):

@@ -1,39 +1,43 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 // For license information, please see license.txt
 
+const MATERIAL_REQUEST_LINK_PLACEHOLDER = __("Material Request");
+
 frappe.ui.form.on("Funding Request", {
 	setup(frm) {
-		frm.set_query("material_request", "material_requests", () => {
-			return {
-				filters: {
-					docstatus: 1,
-					status: ["!=", "Stopped"],
-					company: frm.doc.company || undefined,
-				},
-			};
-		});
-	},
-
-	onload(frm) {
-		remove_blank_material_request_rows(frm, false);
-	},
-
-	before_save(frm) {
-		remove_blank_material_request_rows(frm, false);
+		frm.set_query("material_request", "material_requests", () => ({
+			filters: {
+				docstatus: 1,
+				status: ["!=", "Stopped"],
+				company: frm.doc.company || undefined,
+			},
+		}));
 	},
 
 	refresh(frm) {
 		frm.dashboard.clear_headline();
-		if (frm.doc.total_requests) {
+		const rows = get_valid_material_request_rows(frm);
+		if (rows.length) {
+			let total_requested = 0;
+			let total_approved = 0;
+			let total_funded = 0;
+			rows.forEach((row) => {
+				total_requested += flt(row.requested_amount);
+				if (row.decision === "Approved") {
+					total_approved += flt(row.approved_amount);
+					total_funded += flt(row.funded_amount);
+				}
+			});
+			const recorded = funding_totals_are_recorded(frm);
 			frm.dashboard.set_headline(
 				__(
 					"Total Requests: {0} | Requested: {1} | Approved: {2} | Paid: {3} | Outstanding: {4}",
 					[
-						frm.doc.total_requests,
-						format_currency(frm.doc.total_requested),
-						format_currency(frm.doc.total_approved),
-						format_currency(frm.doc.total_funded),
-						format_currency(frm.doc.outstanding),
+						rows.length,
+						format_currency(total_requested),
+						format_currency(recorded ? total_approved : 0),
+						format_currency(total_funded),
+						format_currency(recorded ? total_approved - total_funded : 0),
 					]
 				)
 			);
@@ -47,28 +51,24 @@ frappe.ui.form.on("Funding Request", {
 			});
 		}
 
-		toggle_approved_amount_editable(frm);
-		remove_blank_material_request_rows(frm, false);
-		strip_duplicate_grid_headers(frm);
+		toggle_approval_row_fields(frm);
 	},
 
 	company(frm) {
-		frm.set_query("material_request", "material_requests", () => {
-			return {
-				filters: {
-					docstatus: 1,
-					status: ["!=", "Stopped"],
-					company: frm.doc.company || undefined,
-				},
-			};
-		});
+		frm.set_query("material_request", "material_requests", () => ({
+			filters: {
+				docstatus: 1,
+				status: ["!=", "Stopped"],
+				company: frm.doc.company || undefined,
+			},
+		}));
 	},
 });
 
 frappe.ui.form.on("Funding Request Material Request", {
 	material_request(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
-		if (!row.material_request) {
+		if (!is_valid_material_request_row(row)) {
 			return;
 		}
 		frappe.call({
@@ -87,18 +87,35 @@ frappe.ui.form.on("Funding Request Material Request", {
 					project: details.project,
 					requested_amount: details.requested_amount,
 					approved_amount: details.approved_amount,
-					reduction_amount: 0,
+					variance: 0,
+					decision: details.decision || "Pending",
 					status: details.status,
 				});
+				update_row_variance(frm, cdt, cdn);
+				recalc_totals(frm);
 			},
 		});
 	},
 
-	approved_amount(frm, cdt, cdn) {
+	decision(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
-		const requested = flt(row.requested_amount);
-		const approved = flt(row.approved_amount);
-		frappe.model.set_value(cdt, cdn, "reduction_amount", requested - approved);
+		if (row.decision === "Rejected") {
+			frappe.model.set_value(cdt, cdn, {
+				approved_amount: 0,
+				variance: 0 - flt(row.requested_amount),
+			});
+		} else if (row.decision === "Approved") {
+			const approved = flt(row.approved_amount) || flt(row.requested_amount);
+			frappe.model.set_value(cdt, cdn, {
+				approved_amount: approved,
+				variance: approved - flt(row.requested_amount),
+			});
+		}
+		recalc_totals(frm);
+	},
+
+	approved_amount(frm, cdt, cdn) {
+		update_row_variance(frm, cdt, cdn);
 		recalc_totals(frm);
 	},
 
@@ -107,80 +124,83 @@ frappe.ui.form.on("Funding Request Material Request", {
 	},
 });
 
+function update_row_variance(frm, cdt, cdn) {
+	const row = locals[cdt][cdn];
+	frappe.model.set_value(
+		cdt,
+		cdn,
+		"variance",
+		flt(row.approved_amount) - flt(row.requested_amount)
+	);
+}
+
+function get_approved_material_request_rows(frm) {
+	return get_valid_material_request_rows(frm).filter((row) => row.decision === "Approved");
+}
+
+function is_valid_material_request_row(row) {
+	const mr = (row?.material_request || "").trim();
+	if (!mr) {
+		return false;
+	}
+	return mr !== MATERIAL_REQUEST_LINK_PLACEHOLDER && mr !== "Material Request";
+}
+
+function get_valid_material_request_rows(frm) {
+	return (frm.doc.material_requests || []).filter(is_valid_material_request_row);
+}
+
+function funding_totals_are_recorded(frm) {
+	return cint(frm.doc.docstatus) === 1;
+}
+
 function recalc_totals(frm) {
+	const rows = get_valid_material_request_rows(frm);
+	const approved_rows = get_approved_material_request_rows(frm);
 	let total_requested = 0;
 	let total_approved = 0;
+	let total_variance = 0;
 	let total_funded = 0;
-	(frm.doc.material_requests || []).forEach((row) => {
+	rows.forEach((row) => {
 		total_requested += flt(row.requested_amount);
+	});
+	approved_rows.forEach((row) => {
 		total_approved += flt(row.approved_amount);
+		total_variance += flt(row.approved_amount) - flt(row.requested_amount);
 		total_funded += flt(row.funded_amount);
 	});
-	const recorded = [
-		"Director Approved",
-		"Funding in Progress",
-		"Funded",
-		"Completed",
-	].includes(frm.doc.workflow_state);
-	frm.set_value("total_requests", (frm.doc.material_requests || []).length);
+	const recorded = funding_totals_are_recorded(frm);
+	frm.set_value("total_requests", rows.length);
 	frm.set_value("total_requested", total_requested);
 	frm.set_value("total_approved", recorded ? total_approved : 0);
-	frm.set_value("total_reduction", recorded ? total_requested - total_approved : 0);
+	if (frm.fields_dict.total_variance) {
+		frm.set_value("total_variance", recorded ? total_variance : 0);
+	}
 	frm.set_value("total_funded", total_funded);
 	frm.set_value("outstanding", recorded ? total_approved - total_funded : 0);
 }
 
-function toggle_approved_amount_editable(frm) {
-	const editable = frm.doc.workflow_state === "Pending Director Approval";
+function toggle_approval_row_fields(frm) {
 	const grid = frm.fields_dict.material_requests?.grid;
 	if (!grid) {
 		return;
 	}
-	const df = (grid.docfields || []).find((d) => d.fieldname === "approved_amount");
-	const want_read_only = editable ? 0 : 1;
-	if (df && cint(df.read_only) === want_read_only) {
-		return;
-	}
-	grid.update_docfield_property("approved_amount", "read_only", want_read_only);
-	grid.update_docfield_property("reduction_reason", "read_only", want_read_only);
-}
-
-function strip_duplicate_grid_headers(frm) {
-	const run = () => {
-		const grid = frm.fields_dict.material_requests?.grid;
-		const $heading = grid?.wrapper?.find(".grid-heading-row");
-		if (!$heading?.length) {
-			return;
-		}
-		$heading.find(".grid-row.filter-row").remove();
-		$heading.find(".grid-row").slice(1).remove();
-		$heading.removeClass("with-filter");
-		remove_blank_material_request_rows(frm, false);
+	const set_read_only = (read_only) => {
+		["decision", "approved_amount", "adjustment_reason", "rejection_reason"].forEach((fieldname) => {
+			grid.update_docfield_property(fieldname, "read_only", read_only);
+		});
 	};
-	run();
-	setTimeout(run, 50);
-	setTimeout(run, 250);
-	setTimeout(run, 600);
-}
-
-function remove_blank_material_request_rows(frm, refresh) {
-	const rows = frm.doc.material_requests || [];
-	const drop = rows.filter((row) => !row.material_request);
-	if (!drop.length) {
+	if (!frm.doc.workflow_state) {
+		set_read_only(1);
 		return;
 	}
-	drop.forEach((row) => {
-		if (row.doctype && row.name) {
-			frappe.model.clear_doc(row.doctype, row.name);
-		}
+	frappe.call({
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.funding.funding_request_is_pending_approval",
+		args: { workflow_state: frm.doc.workflow_state },
+		callback(r) {
+			set_read_only(r.message ? 0 : 1);
+		},
 	});
-	frm.doc.material_requests = rows.filter((row) => row.material_request);
-	(frm.doc.material_requests || []).forEach((row, i) => {
-		row.idx = i + 1;
-	});
-	if (refresh !== false) {
-		frm.refresh_field("material_requests");
-	}
 }
 
 function get_material_requests(frm) {
@@ -209,11 +229,8 @@ function get_material_requests(frm) {
 				},
 				callback(r) {
 					d.hide();
-					remove_blank_material_request_rows(frm, false);
 					const existing = new Set(
-						(frm.doc.material_requests || [])
-							.map((row) => row.material_request)
-							.filter(Boolean)
+						get_valid_material_request_rows(frm).map((row) => row.material_request)
 					);
 					(r.message || []).forEach((details) => {
 						if (!details.material_request || existing.has(details.material_request)) {
@@ -223,7 +240,6 @@ function get_material_requests(frm) {
 						add_material_request_row(frm, details);
 					});
 					frm.refresh_field("material_requests");
-					strip_duplicate_grid_headers(frm);
 					recalc_totals(frm);
 				},
 			});
@@ -236,6 +252,7 @@ function add_material_request_row(frm, details) {
 	const row = frm.add_child("material_requests");
 	[
 		"material_request",
+		"decision",
 		"employee",
 		"employee_name",
 		"item_summary",
@@ -243,10 +260,11 @@ function add_material_request_row(frm, details) {
 		"project",
 		"requested_amount",
 		"approved_amount",
-		"reduction_amount",
+		"variance",
 		"funded_amount",
 		"status",
-		"reduction_reason",
+		"adjustment_reason",
+		"rejection_reason",
 	].forEach((field) => {
 		if (details[field] !== undefined && details[field] !== null) {
 			row[field] = details[field];
@@ -255,19 +273,16 @@ function add_material_request_row(frm, details) {
 	if (row.approved_amount === undefined || row.approved_amount === null) {
 		row.approved_amount = 0;
 	}
-	if (row.reduction_amount === undefined || row.reduction_amount === null) {
-		row.reduction_amount = 0;
+	if (!row.decision) {
+		row.decision = "Pending";
+	}
+	if (row.variance === undefined || row.variance === null) {
+		row.variance = flt(row.approved_amount) - flt(row.requested_amount);
 	}
 }
 
 function setup_funding_pay_buttons(frm) {
-	const approved_states = [
-		"Director Approved",
-		"Funding in Progress",
-		"Funded",
-		"Completed",
-	];
-	if (frm.is_new() || frm.doc.docstatus !== 1 || !approved_states.includes(frm.doc.workflow_state)) {
+	if (frm.is_new() || frm.doc.docstatus !== 1) {
 		return;
 	}
 	frappe.call({

@@ -9,6 +9,9 @@
   "section_task_workflow_settings",
   "default_company",
   "sea_import_template",
+  "section_package_field_visibility",
+  "package_visibility_modes",
+  "package_visibility_cargo_types",
   "tab_container_port_settings",
   "section_container_port_settings",
   "kpa_default_free_days",
@@ -21,9 +24,13 @@
   "column_break_accrual_accounts",
   "kpa_port_accrual_expense_account",
   "kpa_port_accrual_payable_account",
+  "section_funding_settings",
+  "default_operational_expense_account",
   "tab_notification_settings",
   "section_notification_settings",
   "inspection_reminder_hours",
+  "portal_url",
+  "ops_notification_email",
   "section_container_deposit_settings",
   "container_deposit_account",
   "container_deposit_sales_item",
@@ -335,6 +342,24 @@
    "options": "CGM Task Template"
   },
   {
+   "description": "Show Number of Packages and Package Type when Mode of Transport or Cargo Type matches a value listed here. Changing this list updates Opportunity and Project forms on save.",
+   "fieldname": "section_package_field_visibility",
+   "fieldtype": "Section Break",
+   "label": "Package field visibility"
+  },
+  {
+   "fieldname": "package_visibility_modes",
+   "fieldtype": "Table MultiSelect",
+   "label": "Show packages for Mode of Transport",
+   "options": "Mode of Transport Item"
+  },
+  {
+   "fieldname": "package_visibility_cargo_types",
+   "fieldtype": "Table MultiSelect",
+   "label": "Show packages for Cargo Type",
+   "options": "Cargo Type Item"
+  },
+  {
    "fieldname": "tab_container_port_settings",
    "fieldtype": "Tab Break",
    "label": "Container & Port Settings"
@@ -403,6 +428,18 @@
    "options": "Account"
   },
   {
+   "description": "Fallback expense account for Operational Expense Journal Entries when Material Request items have no Expense Account.",
+   "fieldname": "section_funding_settings",
+   "fieldtype": "Section Break",
+   "label": "Funding"
+  },
+  {
+   "fieldname": "default_operational_expense_account",
+   "fieldtype": "Link",
+   "label": "Default Operational Expense Account",
+   "options": "Account"
+  },
+  {
    "fieldname": "tab_notification_settings",
    "fieldtype": "Tab Break",
    "label": "Notification Settings"
@@ -418,6 +455,16 @@
    "fieldname": "inspection_reminder_hours",
    "fieldtype": "Int",
    "label": "Inspection Reminder (hours)"
+  },
+  {
+   "fieldname": "portal_url",
+   "fieldtype": "Data",
+   "label": "Client Portal URL"
+  },
+  {
+   "fieldname": "ops_notification_email",
+   "fieldtype": "Data",
+   "label": "Operations Notification Email"
   },
   {
    "fieldname": "section_container_deposit_settings",
@@ -494,7 +541,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-19 12:18:39.567783",
+ "modified": "2026-09-03 22:08:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
@@ -516,7 +563,8 @@
    "print": 1,
    "read": 1,
    "role": "Desk User",
-   "select": 1
+   "select": 1,
+   "share": 0
   }
  ],
  "row_format": "Dynamic",

@@ -13,7 +13,8 @@
   "posting_date",
   "column_break_head",
   "workflow_state",
-  "director",
+  "submitted_by",
+  "approved_by",
   "approval_date",
   "amended_from",
   "requests_section",
@@ -23,7 +24,7 @@
   "total_requested",
   "column_break_tot",
   "total_approved",
-  "total_reduction",
+  "total_variance",
   "column_break_fund",
   "total_funded",
   "outstanding",
@@ -71,10 +72,19 @@
   },
   {
    "allow_on_submit": 1,
-   "fieldname": "director",
+   "fieldname": "submitted_by",
+   "fieldtype": "Link",
+   "label": "Submitted By",
+   "no_copy": 1,
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "approved_by",
    "fieldtype": "Link",
    "in_standard_filter": 1,
-   "label": "Director",
+   "label": "Approved By",
    "no_copy": 1,
    "options": "User",
    "read_only": 1
@@ -138,9 +148,9 @@
    "read_only": 1
   },
   {
-   "fieldname": "total_reduction",
+   "fieldname": "total_variance",
    "fieldtype": "Currency",
-   "label": "Total Reduction",
+   "label": "Total Variance",
    "read_only": 1
   },
   {
@@ -152,7 +162,7 @@
    "fieldname": "total_funded",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Total Funded",
+   "label": "Total Disbursed",
    "read_only": 1
   },
   {
@@ -255,10 +265,19 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Director",
+   "role": "Funding Approver",
    "share": 1,
    "submit": 1,
    "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Director",
+   "share": 1
   },
   {
    "email": 1,

@@ -9,6 +9,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	get_task_template_for_shipment_type,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	AIR_EXPORT_TEMPLATE,
+	AIR_IMPORT_TEMPLATE,
 	ALL_TEMPLATE_NAMES,
 	ROAD_TRANSIT_INBOUND_TEMPLATE,
 	SEA_IMPORT_TEMPLATE,
@@ -88,20 +90,26 @@ def get_project_workflow_flow_keys_api(project: str) -> list[str]:
 
 
 def project_uses_clearance_workflow_states(project) -> bool:
-	"""Sea import / transit import / road transit inbound use clearance status pills."""
+	"""Import / transit / air flows use clearance status pills (not Draft/In Progress/Completed)."""
 	for key in get_project_workflow_flow_keys(project):
 		normalized = normalize_template_name(key)
 		if normalized in (
 			SEA_IMPORT_TEMPLATE,
 			SEA_TRANSIT_IMPORT_TEMPLATE,
 			ROAD_TRANSIT_INBOUND_TEMPLATE,
+			AIR_IMPORT_TEMPLATE,
+			AIR_EXPORT_TEMPLATE,
 		):
 			return True
 	# Shipment type alone (tasks not yet created / flow key missing).
 	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
 	if shipment_type:
 		template = get_task_template_for_shipment_type(shipment_type)
-		if template == ROAD_TRANSIT_INBOUND_TEMPLATE:
+		if template in (
+			ROAD_TRANSIT_INBOUND_TEMPLATE,
+			AIR_IMPORT_TEMPLATE,
+			AIR_EXPORT_TEMPLATE,
+		):
 			return True
 	return False
 
@@ -116,6 +124,26 @@ def project_is_road_transit_inbound(project) -> bool:
 	return False
 
 
+def project_is_air_import(project) -> bool:
+	for key in get_project_workflow_flow_keys(project):
+		if normalize_template_name(key) == AIR_IMPORT_TEMPLATE:
+			return True
+	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
+	if shipment_type and get_task_template_for_shipment_type(shipment_type) == AIR_IMPORT_TEMPLATE:
+		return True
+	return False
+
+
+def project_is_air_export(project) -> bool:
+	for key in get_project_workflow_flow_keys(project):
+		if normalize_template_name(key) == AIR_EXPORT_TEMPLATE:
+			return True
+	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
+	if shipment_type and get_task_template_for_shipment_type(shipment_type) == AIR_EXPORT_TEMPLATE:
+		return True
+	return False
+
+
 def get_clearance_workflow_states_for_project(project) -> list[str]:
 	"""Ordered status pills for the Project clearance chart."""
 	if project_is_road_transit_inbound(project):
@@ -124,6 +152,18 @@ def get_clearance_workflow_states_for_project(project) -> list[str]:
 		)
 
 		return get_road_transit_inbound_workflow_states()
+	if project_is_air_import(project):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
+			get_air_import_workflow_states,
+		)
+
+		return get_air_import_workflow_states()
+	if project_is_air_export(project):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
+			get_air_export_workflow_states,
+		)
+
+		return get_air_export_workflow_states()
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 		get_tracking_workflow_states,
 	)
@@ -139,6 +179,18 @@ def get_clearance_workflow_gates_for_project(project) -> dict[str, dict]:
 		)
 
 		return get_road_transit_inbound_workflow_gates()
+	if project_is_air_import(project):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
+			get_air_import_workflow_gates,
+		)
+
+		return get_air_import_workflow_gates()
+	if project_is_air_export(project):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
+			get_air_export_workflow_gates,
+		)
+
+		return get_air_export_workflow_gates()
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		get_workflow_task_gates,
 	)

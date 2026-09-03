@@ -24,8 +24,8 @@ def execute(filters=None):
 			"width": 180,
 		},
 		{
-			"fieldname": "director",
-			"label": _("Director"),
+			"fieldname": "approved_by",
+			"label": _("Approved By"),
 			"fieldtype": "Link",
 			"options": "User",
 			"width": 160,
@@ -78,7 +78,7 @@ def execute(filters=None):
 	where = (" where " + " and ".join(conditions)) if conditions else ""
 	data = frappe.db.sql(
 		f"""
-		select name, posting_date, workflow_state, director, approval_date,
+		select name, posting_date, workflow_state, approved_by, approval_date,
 			total_requested, total_approved, total_funded, outstanding
 		from `tabFunding Request`
 		{where}
