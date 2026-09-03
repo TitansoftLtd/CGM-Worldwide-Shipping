@@ -209,6 +209,11 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	states = get_clearance_workflow_states_for_project(proj)
 	gates = get_clearance_workflow_gates_for_project(proj)
 	progress_status, _ = derive_workflow_progress_from_tasks(tasks, states=states, gates=gates)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+		cap_workflow_status_for_intake,
+	)
+
+	progress_status = cap_workflow_status_for_intake(proj, progress_status, states)
 	current = frappe.db.get_value("Project", project, "custom_shipment_status") or "Draft"
 	if not states:
 		return None

@@ -106,6 +106,40 @@ def hydrate_project_ata_on_load(doc, _method=None) -> None:
 def get_documents(doc):
 	return doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
 
+
+def find_shipment_row_for_intake_code(doc, intake_code: str):
+	"""Resolve a Client Documents row for CI/PKL intake codes (name or master code)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		document_type_match_tokens,
+		required_document_code_is_attached,
+	)
+
+	for row in get_documents(doc):
+		if not row.document_type:
+			continue
+		attached = document_type_match_tokens(row.document_type)
+		if required_document_code_is_attached(intake_code, attached):
+			return row
+	return None
+
+
+def intake_shipment_row_is_present(row) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
+
+	if not row:
+		return False
+	if not primary_attachment(row):
+		return False
+	return (row.status or "").strip() != "Missing"
+
+
+def intake_document_label(intake_code: str) -> str:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		get_document_type_link_name,
+	)
+
+	return get_document_type_link_name(intake_code) or intake_code
+
 # ─── Workflow Stage Requirements ─────────────────────────────────────────────
 def get_stage_requirements():
 	"""Map Project shipment status to required Document Type stages (from CGM Shipping Settings)."""
@@ -369,18 +403,10 @@ def enforce_intake_documents_before_documents_received(doc):
 	if doc.get("custom_shipment_status") != "Documents Received":
 		return
 	missing = []
-	rows_by_code = {}
-	for row in get_documents(doc):
-		if not row.document_type:
-			continue
-		code = frappe.db.get_value("Document Type", row.document_type, "code")
-		if code:
-			rows_by_code[code] = row
 	for code in INTAKE_DOCUMENT_CODES:
-		row = rows_by_code.get(code)
-		if not row or not row.attachment or row.status == "Missing":
-			label = frappe.db.get_value("Document Type", {"code": code}, "name") or code
-			missing.append(label)
+		row = find_shipment_row_for_intake_code(doc, code)
+		if not intake_shipment_row_is_present(row):
+			missing.append(intake_document_label(code))
 	if missing:
 		frappe.throw(
 			f"Upload client documents in <b>Client Documents</b> first: {', '.join(missing)}. "
@@ -532,16 +558,9 @@ def project_has_intake_documents(project_doc) -> bool:
 	shipment_field = get_project_shipment_documents_field()
 	if not shipment_field or not project_doc.meta.has_field(shipment_field):
 		return False
-	rows_by_code = {}
-	for row in project_doc.get(shipment_field) or []:
-		if not row.document_type:
-			continue
-		code = frappe.db.get_value("Document Type", row.document_type, "code")
-		if code:
-			rows_by_code[code] = row
 	for code in INTAKE_DOCUMENT_CODES:
-		row = rows_by_code.get(code)
-		if not row or not row.attachment:
+		row = find_shipment_row_for_intake_code(project_doc, code)
+		if not intake_shipment_row_is_present(row):
 			return False
 	return True
 
@@ -603,6 +622,22 @@ def project_ready_for_documents_received(project_doc) -> bool:
 			)
 		return project_has_verified_client_documents(project_doc)
 	return project_has_intake_documents(project_doc)
+
+
+def cap_workflow_status_for_intake(project_doc, progress_status: str, states: list[str]) -> str:
+	"""Do not advance to Documents Received (or beyond) until CI/PKL intake is satisfied."""
+	if not progress_status or progress_status not in states:
+		return progress_status
+	if project_ready_for_documents_received(project_doc):
+		return progress_status
+	try:
+		documents_received_index = states.index("Documents Received")
+		progress_index = states.index(progress_status)
+	except ValueError:
+		return progress_status
+	if progress_index >= documents_received_index:
+		return states[0]
+	return progress_status
 
 
 def bootstrap_project_workflow_status(project_name: str) -> None:
