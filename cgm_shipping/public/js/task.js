@@ -321,6 +321,10 @@ frappe.ui.form.on("Task", {
 			ensure_entry_finance_task_completed_on_form(frm);
 		}
 
+		if (ui.is_shipping_line_finance && frm.doc.project) {
+			configure_shipping_line_finance_container_grid(frm);
+		}
+
 		if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
 			ensure_app_finance_lines_on_form(frm, "shipping_line");
 			ensure_app_finance_task_completed_on_form(frm, "shipping_line");
@@ -1865,6 +1869,7 @@ function reset_cgm_task_sea_ui_state_if_needed(frm) {
 	frm._cgm_finance_grid_ready = false;
 	frm._cgm_status_grids_ready = false;
 	frm._cgm_shipping_line_deposit_grid_ready = false;
+	frm._cgm_shipping_line_finance_container_grid_ready = false;
 	frm._cgm_toolbar_fingerprint = null;
 	frm._cgm_shipping_line_finance_lines_ensured = false;
 	frm._cgm_kpa_finance_lines_ensured = false;
@@ -2306,6 +2311,15 @@ function mount_cgm_task_toolbar_buttons(frm) {
 				open_journal_entry_payment_dialog(frm)
 			);
 		}
+	}
+
+	if (
+		is_finance_department_task(frm) &&
+		user_can_make_payment(frm) &&
+		frm.doc.status !== "Cancelled" &&
+		get_sea_task_ui(frm).is_shipping_line_finance
+	) {
+		setup_shipping_line_deposit_payment_buttons(frm);
 	}
 
 	setup_client_inspection_buttons(frm);
@@ -3670,16 +3684,55 @@ function configure_shipping_line_deposit_grid(frm) {
 	}
 	frm.toggle_display("custom_section_container_updates", true);
 	frm.toggle_display("custom_container_updates", true);
+	if (frm.fields_dict.custom_bl_deposit_arrangement) {
+		frm.toggle_display("custom_bl_deposit_arrangement", true);
+		frm.set_df_property("custom_bl_deposit_arrangement", "read_only", 1);
+	}
+	if (frm.fields_dict.custom_bl_has_deposit) {
+		frm.toggle_display("custom_bl_has_deposit", false);
+	}
 	// Configure once per form open — grid.refresh() on every Task.refresh
 	// re-renders rows, fires render_complete, and makes toolbar buttons flicker.
 	if (frm._cgm_shipping_line_deposit_grid_ready) {
 		return;
 	}
-	["has_deposit", "deposit_amount"].forEach((fn) => {
+	["deposit_amount"].forEach((fn) => {
 		grid.update_docfield_property(fn, "hidden", 0);
 		grid.update_docfield_property(fn, "in_list_view", 1);
+		grid.update_docfield_property(fn, "read_only", 1);
 	});
 	frm._cgm_shipping_line_deposit_grid_ready = true;
+	if (grid.wrapper) {
+		grid.refresh();
+	}
+}
+
+function configure_shipping_line_finance_container_grid(frm) {
+	const grid = frm.fields_dict.custom_container_updates?.grid;
+	if (!grid) {
+		return;
+	}
+	frm.toggle_display("custom_section_container_updates", true);
+	frm.toggle_display("custom_container_updates", true);
+	if (frm.fields_dict.custom_bl_deposit_arrangement) {
+		frm.toggle_display("custom_bl_deposit_arrangement", true);
+		frm.set_df_property("custom_bl_deposit_arrangement", "read_only", 1);
+	}
+	if (frm.fields_dict.custom_bl_has_deposit) {
+		frm.toggle_display("custom_bl_has_deposit", false);
+	}
+	if (frm.fields_dict.custom_deposit_payer) {
+		frm.toggle_display("custom_deposit_payer", true);
+	}
+	if (frm._cgm_shipping_line_finance_container_grid_ready) {
+		return;
+	}
+	["container_number", "cargo_size", "current_status", "deposit_amount"].forEach((fn) => {
+		grid.update_docfield_property(fn, "hidden", 0);
+		grid.update_docfield_property(fn, "in_list_view", 1);
+		grid.update_docfield_property(fn, "read_only", 1);
+	});
+	frm._cgm_shipping_line_finance_container_grid_ready = true;
 	if (grid.wrapper) {
 		grid.refresh();
 	}
@@ -3868,9 +3921,10 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 			intro +=
 				"<br><br>" +
 				__(
-					"<b>Container deposits:</b> On <b>Container Updates</b>, tick <b>Has Deposit</b> " +
-						"and enter the amount for each container that has a deposit. Leave unticked " +
-						"when there is no deposit. Payment status updates automatically after Shipping Line finance is completed."
+					"<b>Container deposits:</b> Admin selects <b>Container Deposit</b> or <b>Revolving Fund</b> " +
+						"on the <b>Bill of Lading</b> and enters per-container amounts (one currency). " +
+						"On the Shipping Line finance task, confirm who pays (<b>Agent</b>, <b>Customer</b>, " +
+						"or <b>Company</b>) and follow the matching payment path."
 				);
 		}
 	}
@@ -4112,14 +4166,47 @@ function setup_permit_finance_make_payment_buttons(frm) {
 }
 
 function setup_app_finance_make_payment_buttons(frm, unpaid_lines) {
+	const ui = get_sea_task_ui(frm);
 	(unpaid_lines || unpaid_verified_invoice_lines_on_form(frm)).forEach((row) => {
 		const label = finance_line_display_label(row);
-		add_cgm_toolbar_button(frm, __("Make Payment — {0}", [label]), () =>
-			open_journal_entry_payment_dialog(frm, {
+		add_cgm_toolbar_button(frm, __("Make Payment — {0}", [label]), () => {
+			const opts = {
 				finance_line_name: row.name,
 				title_suffix: label,
-			})
-		);
+			};
+			if (ui.is_shipping_line_finance && !cint(row.is_amendment)) {
+				open_shipping_line_expense_payment_dialog(frm, opts);
+				return;
+			}
+			open_journal_entry_payment_dialog(frm, opts);
+		});
+	});
+}
+
+function open_shipping_line_expense_payment_dialog(frm, opts = {}) {
+	if (!frm.doc.name || frm.is_new()) {
+		frappe.msgprint(__("Save the task before making a payment."));
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_shipping_line_expense_payment_defaults",
+		args: {
+			task_name: frm.doc.name,
+			finance_line_name: opts.finance_line_name || null,
+		},
+		callback(r) {
+			if (r.exc) {
+				return;
+			}
+			const defaults = r.message || {};
+			open_journal_entry_payment_dialog(frm, {
+				...opts,
+				default_amount: defaults.amount || undefined,
+				default_user_remark: defaults.default_remark || undefined,
+				help_html: defaults.help_html || undefined,
+			});
+		},
 	});
 }
 
@@ -4244,12 +4331,17 @@ function open_journal_entry_payment_dialog(frm, opts = {}) {
 		frappe.msgprint(__("Save the task before making a payment."));
 		return;
 	}
-	const dialog = new frappe.ui.Dialog({
-		title: __("Make Payment - Journal Entry{0}", [title_suffix]),
-		size: "large",
-		fields: [
-			{ fieldname: "posting_date", label: __("Posting Date"), fieldtype: "Date", default: frappe.datetime.get_today(), reqd: 1 },
-			{ fieldname: "amount", label: __("Amount"), fieldtype: "Currency", reqd: 1, default: opts.default_amount || undefined },
+	const dialog_fields = [];
+	if (opts.help_html) {
+		dialog_fields.push({
+			fieldname: "payment_help",
+			fieldtype: "HTML",
+			options: opts.help_html,
+		});
+	}
+	dialog_fields.push(
+		{ fieldname: "posting_date", label: __("Posting Date"), fieldtype: "Date", default: frappe.datetime.get_today(), reqd: 1 },
+		{ fieldname: "amount", label: __("Amount"), fieldtype: "Currency", reqd: 1, default: opts.default_amount || undefined },
 			{ fieldname: "cb1", fieldtype: "Column Break" },
 			{ fieldname: "cheque_no", label: __("Reference No"), fieldtype: "Data" },
 			{ fieldname: "cheque_date", label: __("Reference Date"), fieldtype: "Date" },
@@ -4275,8 +4367,17 @@ function open_journal_entry_payment_dialog(frm, opts = {}) {
 			{ fieldname: "party_type", label: __("Party Type"), fieldtype: "Link", options: "Party Type" },
 			{ fieldname: "party", label: __("Party"), fieldtype: "Dynamic Link", options: "party_type" },
 			{ fieldname: "sec_remark", fieldtype: "Section Break" },
-			{ fieldname: "user_remark", label: __("Remark"), fieldtype: "Small Text" },
-		],
+			{
+				fieldname: "user_remark",
+				label: __("Remark"),
+				fieldtype: "Small Text",
+				default: opts.default_user_remark || undefined,
+			}
+	);
+	const dialog = new frappe.ui.Dialog({
+		title: __("Make Payment - Journal Entry{0}", [title_suffix]),
+		size: "large",
+		fields: dialog_fields,
 		primary_action_label: __("Create Journal Entry"),
 		primary_action(values) {
 			frappe.call({
@@ -4313,6 +4414,232 @@ function open_journal_entry_payment_dialog(frm, opts = {}) {
 		},
 	});
 	dialog.show();
+}
+
+function setup_shipping_line_deposit_payment_buttons(frm) {
+	if (!user_can_make_payment(frm) || !frm.doc.project || frm.is_new()) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_deposit_bl_for_task",
+		args: { task_name: frm.doc.name },
+		callback(r) {
+			if (r.exc || cur_frm !== frm) {
+				return;
+			}
+			const bl = r.message;
+			if (!bl || (bl.deposit_arrangement || "").trim() !== "Container Deposit") {
+				return;
+			}
+			const payer = (frm.doc.custom_deposit_payer || bl.deposit_payer || "").trim();
+			if (!payer) {
+				["Agent", "Customer", "Company"].forEach((option) => {
+					add_cgm_toolbar_button(frm, __("Deposit paid by {0}", [option]), () =>
+						set_bl_deposit_payer(frm, option)
+					);
+				});
+				return;
+			}
+			if (
+				frm.fields_dict.custom_deposit_payer &&
+				payer !== (frm.doc.custom_deposit_payer || "").trim()
+			) {
+				frm.set_value("custom_deposit_payer", payer);
+			}
+
+			const paymentStatus = (bl.deposit_payment_status || "").trim();
+			const je = bl.deposit_payment_journal_entry;
+			const si = bl.deposit_sales_invoice;
+			const cn = bl.deposit_credit_note;
+
+			if (payer === "Customer" && !si) {
+				add_cgm_toolbar_button(frm, __("Sales Invoice (SL + Deposit)"), () =>
+					open_customer_deposit_sales_invoice(frm)
+				);
+			}
+			if (si) {
+				add_cgm_toolbar_button(frm, __("View Deposit Sales Invoice"), () => {
+					frappe.set_route("Form", "Sales Invoice", si);
+				});
+			}
+			if (cn) {
+				add_cgm_toolbar_button(frm, __("View Deposit Credit Note"), () => {
+					frappe.set_route("Form", "Sales Invoice", cn);
+				});
+			}
+
+			const unpaidNoJe = paymentStatus === "Unpaid" && !je;
+			const canPayJe =
+				unpaidNoJe &&
+				(payer === "Agent" || payer === "Company" || (payer === "Customer" && si));
+			if (canPayJe) {
+				add_cgm_toolbar_button(frm, __("Make Deposit Payment"), () =>
+					open_deposit_payment_dialog(frm)
+				);
+			}
+			if (je) {
+				add_cgm_toolbar_button(frm, __("View Deposit JE"), () => {
+					frappe.set_route("Form", "Journal Entry", je);
+				});
+			}
+		},
+	});
+}
+
+function set_bl_deposit_payer(frm, payer) {
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.set_bl_deposit_payer",
+		args: { task_name: frm.doc.name, payer },
+		freeze: true,
+		callback(r) {
+			if (r.exc) {
+				return;
+			}
+			frappe.show_alert({
+				message: __("Container deposit payer set to {0}", [payer]),
+				indicator: "green",
+			});
+			frm.reload_doc();
+		},
+	});
+}
+
+function open_customer_deposit_sales_invoice(frm) {
+	if (!frm.doc.name || frm.is_new()) {
+		frappe.msgprint(__("Save the task before creating a Sales Invoice."));
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.make_customer_deposit_sales_invoice",
+		args: { task_name: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Preparing Sales Invoice…"),
+		callback(r) {
+			if (r.exc || !r.message || cur_frm !== frm) {
+				return;
+			}
+			frappe.model.with_doctype("Sales Invoice", () => {
+				frappe.model.sync(r.message);
+				frappe.set_route("Form", r.message.doctype, r.message.name);
+			});
+		},
+	});
+}
+
+function open_customer_deposit_sales_invoice_dialog(frm, bl) {
+	open_customer_deposit_sales_invoice(frm);
+}
+
+function open_deposit_payment_dialog(frm) {
+	if (!frm.doc.name || frm.is_new()) {
+		frappe.msgprint(__("Save the task before making a deposit payment."));
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_deposit_payment_defaults",
+		args: { task_name: frm.doc.name },
+		callback(defaults_r) {
+			if (defaults_r.exc) {
+				return;
+			}
+			const deposit_account = defaults_r.message?.deposit_account;
+			const default_amount = defaults_r.message?.amount;
+			const bl = defaults_r.message?.bill_of_lading;
+			const blLabel = bl?.bl_number || bl?.name || "";
+			const dialog = new frappe.ui.Dialog({
+				title: blLabel
+					? __("Make Deposit Payment - BL {0}", [blLabel])
+					: __("Make Deposit Payment - Journal Entry"),
+				size: "large",
+				fields: [
+					{
+						fieldname: "posting_date",
+						label: __("Posting Date"),
+						fieldtype: "Date",
+						default: frappe.datetime.get_today(),
+						reqd: 1,
+					},
+					{
+						fieldname: "amount",
+						label: __("Amount (BL total)"),
+						fieldtype: "Currency",
+						reqd: 1,
+						default: default_amount || undefined,
+					},
+					{ fieldname: "cb1", fieldtype: "Column Break" },
+					{ fieldname: "cheque_no", label: __("Reference No"), fieldtype: "Data" },
+					{ fieldname: "cheque_date", label: __("Reference Date"), fieldtype: "Date" },
+					{ fieldname: "sec_accounts", fieldtype: "Section Break", label: __("Accounts") },
+					{
+						fieldname: "pay_to_account",
+						label: __("Pay To: Container Deposit (Debit)"),
+						fieldtype: "Link",
+						options: "Account",
+						reqd: 1,
+						default: deposit_account || undefined,
+						get_query: () => ({ filters: journal_account_filters(frm, false) }),
+					},
+					{ fieldname: "cb2", fieldtype: "Column Break" },
+					{
+						fieldname: "pay_from_account",
+						label: __("Pay From: Bank/Cash (Credit)"),
+						fieldtype: "Link",
+						options: "Account",
+						reqd: 1,
+						get_query: () => ({ filters: journal_account_filters(frm, true) }),
+					},
+					{
+						fieldname: "sec_party",
+						fieldtype: "Section Break",
+						label: __("Party (only for Payable/Receivable accounts)"),
+						collapsible: 1,
+					},
+					{ fieldname: "party_type", label: __("Party Type"), fieldtype: "Link", options: "Party Type" },
+					{ fieldname: "party", label: __("Party"), fieldtype: "Dynamic Link", options: "party_type" },
+					{ fieldname: "sec_remark", fieldtype: "Section Break" },
+					{ fieldname: "user_remark", label: __("Remark"), fieldtype: "Small Text" },
+				],
+				primary_action_label: __("Create Journal Entry"),
+				primary_action(values) {
+					frappe.call({
+						method:
+							"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.create_deposit_payment_from_task",
+						args: {
+							task_name: frm.doc.name,
+							amount: values.amount,
+							pay_from_account: values.pay_from_account,
+							pay_to_account: values.pay_to_account,
+							posting_date: values.posting_date,
+							party_type: values.party_type,
+							party: values.party,
+							cheque_no: values.cheque_no,
+							cheque_date: values.cheque_date,
+							user_remark: values.user_remark,
+						},
+						freeze: true,
+						freeze_message: __("Creating Journal Entry…"),
+						callback(je_r) {
+							if (je_r.exc || !je_r.message) {
+								return;
+							}
+							dialog.hide();
+							frappe.show_alert({
+								message: __("Draft Journal Entry {0} created", [je_r.message]),
+								indicator: "green",
+							});
+							frm.reload_doc();
+							frappe.set_route("Form", "Journal Entry", je_r.message);
+						},
+					});
+				},
+			});
+			dialog.show();
+		},
+	});
 }
 
 function user_can_record_purchase_invoice(frm) {

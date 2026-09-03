@@ -9,7 +9,6 @@
   "container_number",
   "cargo_size",
   "current_status",
-  "has_deposit",
   "deposit_amount",
   "column_break_identity",
   "discharging_date",
@@ -60,7 +59,7 @@
    "label": "Cargo Size",
    "read_only": 1
   },
-   {
+  {
    "fetch_from": "container_tracker.status",
    "fieldname": "current_status",
    "fieldtype": "Data",
@@ -69,20 +68,12 @@
    "read_only": 1
   },
   {
-   "default": "0",
-   "description": "Tick when this container has a shipping-line deposit. Leave unticked when there is no deposit.",
-   "fieldname": "has_deposit",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Has Deposit"
-  },
-  {
-   "depends_on": "has_deposit",
    "fieldname": "deposit_amount",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Deposit Amount",
-   "mandatory_depends_on": "has_deposit"
+   "read_only": 1,
+   "description": "Mirrored from Bill of Lading container row."
   },
   {
    "fieldname": "column_break_identity",
@@ -167,7 +158,7 @@
    "depends_on": "eval:parent.custom_sequence_no == 22",
    "fieldname": "container_not_emptied_reason",
    "fieldtype": "Small Text",
-   "label": "If container not exiting today — reason"
+   "label": "If container not exiting today \u2014 reason"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 23",
@@ -202,7 +193,7 @@
    "depends_on": "eval:parent.custom_sequence_no == 24",
    "fieldname": "offloading_exception_reason",
    "fieldtype": "Small Text",
-   "label": "If not offloaded — reason"
+   "label": "If not offloaded \u2014 reason"
   },
   {
    "depends_on": "eval:parent.custom_sequence_no == 25",
@@ -241,7 +232,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-12 15:00:00",
+ "modified": "2026-08-28 05:30:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Task Container Update",
