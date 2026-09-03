@@ -1,3 +1,6 @@
+const CGM_SI_NAMING_SERIES = "INV-.MMYY.-.####";
+const CGM_SI_CREDIT_NOTE_NAMING_SERIES = "CR-.MMYY.-.####";
+
 const CGM_SI_DRAFT_STATE = "Draft";
 const CGM_SI_PENDING_STATE = "Pending Approval";
 const CGM_SI_REJECTED_STATE = "Rejected";
@@ -20,6 +23,11 @@ frappe.ui.form.on("Sales Invoice", {
 	onload(frm) {
 		cgm_toggle_sales_invoice_project_name(frm);
 		cgm_toggle_sales_invoice_project_fetched_fields(frm);
+		cgm_apply_sales_invoice_naming_series(frm);
+	},
+
+	is_return(frm) {
+		cgm_apply_sales_invoice_naming_series(frm);
 	},
 
 	refresh(frm) {
@@ -48,6 +56,18 @@ frappe.ui.form.on("Sales Invoice", {
 		}
 	},
 });
+
+function cgm_apply_sales_invoice_naming_series(frm) {
+	if (frm.doc.docstatus !== 0 || frm.doc.amended_from || !frm.fields_dict.naming_series) {
+		return;
+	}
+	const series = frm.doc.is_return
+		? CGM_SI_CREDIT_NOTE_NAMING_SERIES
+		: CGM_SI_NAMING_SERIES;
+	if (frm.doc.naming_series !== series) {
+		frm.set_value("naming_series", series);
+	}
+}
 
 function cgm_get_sales_invoice_project_fetch_fields() {
 	return Object.keys(CGM_SI_PROJECT_FETCH_MAP);

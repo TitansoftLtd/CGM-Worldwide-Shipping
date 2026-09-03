@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import cstr
+from frappe.utils import cint, cstr, getdate, now_datetime
 from frappe.utils.user import get_users_with_role
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	SALES_INVOICE_APPROVED_BY_FIELD,
+	SALES_INVOICE_CREDIT_NOTE_NAMING_SERIES,
+	SALES_INVOICE_NAMING_SERIES,
 	SALES_INVOICE_REJECTED_BY_FIELD,
 	SALES_INVOICE_REJECTION_REASON_FIELD,
 	SALES_INVOICE_SUBMITTABLE_STATES,
@@ -21,9 +23,48 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 REVIEW_ROLES = ("Accounts Manager", "Accounts User")
 
 
+def before_insert_sales_invoice(doc, method=None) -> None:
+	"""Apply CGM invoice / credit-note naming series before autoname runs."""
+	if doc.get("amended_from"):
+		return
+	doc.naming_series = (
+		SALES_INVOICE_CREDIT_NOTE_NAMING_SERIES
+		if cint(doc.get("is_return"))
+		else SALES_INVOICE_NAMING_SERIES
+	)
+
+
+def parse_mmyy_naming_series_variable(doc, variable):
+	"""Return month+year as MMYY (e.g. 0926 for September 2026)."""
+	if doc and doc.get("posting_date"):
+		dt = getdate(doc.posting_date)
+	else:
+		dt = now_datetime()
+	return dt.strftime("%m%y")
+
+
 def validate_sales_invoice(doc, method=None) -> None:
 	validate_sales_invoice_project_reference(doc)
 	validate_sales_invoice_workflow(doc)
+
+
+def after_insert_sales_invoice(doc, method=None) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		link_deposit_sales_invoice_to_bl,
+	)
+
+	# Credit notes / sales returns must not overwrite the BL deposit Sales Invoice link.
+	if cint(doc.get("is_return")):
+		return
+
+	bl_name = (doc.get("custom_cgm_source_bill_of_lading") or "").strip()
+	if not bl_name:
+		return
+	link_deposit_sales_invoice_to_bl(
+		doc.name,
+		bl_name,
+		(doc.get("custom_cgm_source_task") or "").strip() or None,
+	)
 
 
 def validate_sales_invoice_workflow(doc) -> None:
