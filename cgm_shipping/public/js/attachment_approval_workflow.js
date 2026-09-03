@@ -34,32 +34,61 @@ cgm_shipping.attachment_approval = {
 		frm.__cgm_attachment_state_promise.then((state) => {
 			// Ignore a response that a newer revision has already superseded.
 			if (frm.__cgm_attachment_state_key === key) {
-				cgm_shipping.attachment_approval.configure_buttons(frm, state);
+				cgm_shipping.attachment_approval._schedule_buttons_after_workflow(frm, state);
 			}
 		});
 	},
 
+	_schedule_buttons_after_workflow(frm, state) {
+		const paint = () => cgm_shipping.attachment_approval.configure_buttons(frm, state);
+		const workflow_field = frappe.workflow.get_state_fieldname(frm.doctype);
+		if (workflow_field && !frm.doc.__islocal && !frm.doc.__unsaved) {
+			frappe.workflow.get_transitions(frm.doc).then(() => setTimeout(paint, 50));
+			return;
+		}
+		paint();
+	},
+
 	configure_buttons(frm, state) {
-		frm.remove_custom_button(__("Send Final Documents for Review"));
-		frm.remove_custom_button(__("Review Final Documents"));
-		frm.remove_custom_button(__("Send for Review"));
+		if (frm.doctype === "Opportunity" || frm.doctype === "Project") {
+			return;
+		}
+		const action_group = __("Actions");
+		[
+			__("Send Final Documents for Review"),
+			__("Review Final Documents"),
+			__("Send for Review"),
+			__("Review Documents"),
+		].forEach((label) => {
+			frm.remove_custom_button(label, action_group);
+			frm.remove_custom_button(label);
+		});
+		// Older builds used an inner-toolbar Actions group — remove it when empty so
+		// only the page Actions menu (workflow + these items) remains.
+		const $inner_actions = frm.page.get_inner_group_button?.(action_group);
+		if ($inner_actions?.length && !$inner_actions.find(".dropdown-menu .dropdown-item").length) {
+			$inner_actions.remove();
+		}
+		if (frm.page.inner_toolbar?.children?.().length === 0) {
+			frm.page.inner_toolbar?.addClass("hide");
+		}
 
 		if (state.can_send) {
 			const label =
 				state.profiles?.length === 1
 					? state.profiles[0].send_button_label
 					: __("Send for Review");
-			frm.add_custom_button(label, () => cgm_shipping.attachment_approval.open_send_dialog(frm), __("Actions"));
+			frm.page.add_action_item(label, () =>
+				cgm_shipping.attachment_approval.open_send_dialog(frm)
+			);
 		}
 
 		if (state.can_review) {
 			const label =
 				state.profiles?.find((profile) => profile.pending_count)?.review_button_label ||
 				__("Review Documents");
-			frm.add_custom_button(
-				label,
-				() => cgm_shipping.attachment_approval.open_review_dialog(frm),
-				__("Actions")
+			frm.page.add_action_item(label, () =>
+				cgm_shipping.attachment_approval.open_review_dialog(frm)
 			);
 		}
 	},
