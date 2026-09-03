@@ -730,13 +730,10 @@ function paint_shipment_progress_chart(frm, field, payload) {
 			${legendLine}
 		</div>
 	`);
-	if (
-		d.uses_clearance_states &&
-		d.current_status &&
-		frm.doc.custom_shipment_status !== d.current_status
-	) {
-		// Keep UI in sync without dirtying — unsaved docs hide workflow Actions.
-		frm.set_value("custom_shipment_status", d.current_status, false, true);
+	// Task-derived progress lives in the chart only — do not write custom_shipment_status
+	// into frm.doc. A silent set_value (even no_dirty) still persists on the next save and
+	// triggers CI/PKL validation when intake docs are missing.
+	if (d.uses_clearance_states && d.current_status) {
 		const indicator = project_clearance_indicator({
 			custom_shipment_status: d.current_status,
 		});
