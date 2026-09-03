@@ -213,7 +213,7 @@ cgm_shipping.status_field = {
 		if (doctype === "Task Finance Line" && df.fieldname === "verified") {
 			return (value) => sf.tone_for_verified(value);
 		}
-		if (doctype === "Container Tracker" && df.fieldname === "deposit_payment_status") {
+		if (doctype === "Bill of Lading" && df.fieldname === "deposit_payment_status") {
 			return (value) => sf.tone_for_deposit_payment(value);
 		}
 		return null;
@@ -543,7 +543,7 @@ function cgm_register_global_status_formatters() {
 		(value) => sf.tone_for_verified(value)
 	);
 	sf.register_meta_formatter(
-		"Container Tracker",
+		"Bill of Lading",
 		"deposit_payment_status",
 		(value) => sf.tone_for_deposit_payment(value)
 	);
