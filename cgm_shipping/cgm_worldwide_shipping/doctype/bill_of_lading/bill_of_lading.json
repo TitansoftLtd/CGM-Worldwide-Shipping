@@ -33,7 +33,23 @@
   "column_break_cargo",
   "commodity",
   "section_fcl",
+  "deposit_arrangement",
+  "deposit_currency",
   "container_information",
+  "section_container_deposit",
+  "deposit_payer",
+  "deposit_amount",
+  "deposit_payment_status",
+  "column_break_deposit",
+  "deposit_payment_journal_entry",
+  "deposit_refund_journal_entry",
+  "deposit_refund_status",
+  "deposit_refund_applied_on",
+  "deposit_return_date",
+  "deposit_refund_last_reminded_on",
+  "deposit_sales_invoice",
+  "deposit_credit_note",
+  "deposit_company_invoice_pending",
   "section_lcl",
   "number_of_packages",
   "package_type",
@@ -113,8 +129,7 @@
    "description": "Enter the client batch for this shipment. Prefilled from Booking when linked; otherwise type manually.",
    "fieldname": "batch_no",
    "fieldtype": "Data",
-   "label": "Batch No",
-   "read_only": 0
+   "label": "Batch No"
   },
   {
    "fieldname": "booking_confirmation",
@@ -204,6 +219,24 @@
   },
   {
    "depends_on": "eval:doc.cargo_type!='LCL'",
+   "description": "Select before entering container rows — Container Deposit or Revolving Fund.",
+   "fieldname": "deposit_arrangement",
+   "fieldtype": "Select",
+   "label": "Deposit Arrangement",
+   "options": "\nContainer Deposit\nRevolving Fund"
+  },
+  {
+   "default": "USD",
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "description": "Per-container deposit amounts in the table below are entered in this currency.",
+   "fieldname": "deposit_currency",
+   "fieldtype": "Link",
+   "label": "Deposit Currency",
+   "options": "Currency",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.cargo_type!='LCL'",
    "fieldname": "container_information",
    "fieldtype": "Table",
    "label": "Container Information",
@@ -249,16 +282,124 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "fieldname": "section_container_deposit",
+   "fieldtype": "Section Break",
+   "label": "Deposit Tracking"
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "description": "Sum of per-container deposit amounts (in Deposit Currency).",
+   "fieldname": "deposit_amount",
+   "fieldtype": "Currency",
+   "label": "Deposit Amount (Total)",
+   "options": "deposit_currency",
+   "read_only": 1
+  },
+  {
+   "default": "Not Applicable",
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "description": "Derived from Has Container Deposit + submitted deposit payment Journal Entry.",
+   "fieldname": "deposit_payment_status",
+   "fieldtype": "Select",
+   "label": "Deposit Payment Status",
+   "options": "\nNot Applicable\nUnpaid\nPaid",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_deposit",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "fieldname": "deposit_payment_journal_entry",
+   "fieldtype": "Link",
+   "label": "Deposit Payment Journal Entry",
+   "options": "Journal Entry",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "fieldname": "deposit_refund_journal_entry",
+   "fieldtype": "Link",
+   "label": "Deposit Refund Journal Entry",
+   "options": "Journal Entry",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "fieldname": "deposit_refund_status",
+   "fieldtype": "Select",
+   "label": "Deposit Refund Status",
+   "options": "\nPending\nApplied\nReceived\nForfeited"
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "fieldname": "deposit_refund_applied_on",
+   "fieldtype": "Date",
+   "label": "Deposit Refund Applied On",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "description": "Set when all containers on this BL have empty return or interchange \u2014 starts refund reminders.",
+   "fieldname": "deposit_return_date",
+   "fieldtype": "Date",
+   "label": "Deposit Return Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "deposit_refund_last_reminded_on",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Deposit Refund Last Reminded On",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "description": "Set by Finance on the Shipping Line payment task.",
+   "fieldname": "deposit_payer",
+   "fieldtype": "Select",
+   "label": "Deposit Paid By",
+   "options": "\nAgent\nCustomer\nCompany",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "fieldname": "deposit_sales_invoice",
+   "fieldtype": "Link",
+   "label": "Deposit Sales Invoice",
+   "options": "Sales Invoice",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
+   "fieldname": "deposit_credit_note",
+   "fieldtype": "Link",
+   "label": "Deposit Credit Note",
+   "options": "Sales Invoice",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.deposit_payer=='Company'",
+   "fieldname": "deposit_company_invoice_pending",
+   "fieldtype": "Check",
+   "label": "Company Deposit Invoice Pending",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-16 05:01:39.944824",
+ "modified": "2026-08-28 05:30:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Bill of Lading",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
@@ -289,7 +430,6 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "naming_rule": "By script",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": []
