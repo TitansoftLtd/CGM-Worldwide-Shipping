@@ -1,0 +1,32 @@
+{
+ "custom_fields": [],
+ "custom_perms": [],
+ "doctype": "Job Opening",
+ "links": [],
+ "property_setters": [
+  {
+   "_assign": null,
+   "_comments": null,
+   "_liked_by": null,
+   "_user_tags": null,
+   "creation": "2026-08-27 11:59:22.767612",
+   "default_value": null,
+   "doc_type": "Job Opening",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "job_application_route",
+   "idx": 0,
+   "is_system_generated": 0,
+   "modified": "2026-08-27 11:59:22.767612",
+   "modified_by": "Administrator",
+   "module": null,
+   "name": "Job Opening-job_application_route-default",
+   "owner": "Administrator",
+   "property": "default",
+   "property_type": "Text",
+   "row_name": null,
+   "value": "careers/apply"
+  }
+ ],
+ "sync_on_migrate": 1
+}

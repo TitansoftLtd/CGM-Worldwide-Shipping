@@ -1,0 +1,208 @@
+{
+ "actions": [],
+ "creation": "2026-08-24 12:00:00",
+ "description": "Expiry reminder schedule and recipients for the licence & permit register.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_general",
+  "enable_notifications",
+  "column_break_general",
+  "notify_by_email",
+  "column_break_qqgi",
+  "notify_in_app",
+  "section_periods",
+  "periods_html",
+  "reminder_periods",
+  "section_recipients",
+  "notify_responsible_person",
+  "notify_users",
+  "column_break_recipients",
+  "notify_roles",
+  "additional_emails",
+  "section_expired",
+  "notify_after_expiry",
+  "expired_reminder_frequency",
+  "column_break_expired",
+  "stop_expired_reminders_after",
+  "section_review",
+  "notify_renewal_required",
+  "column_break_review",
+  "renewal_required_frequency"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_general",
+   "fieldtype": "Section Break",
+   "label": "Expiry Notifications"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_notifications",
+   "fieldtype": "Check",
+   "label": "Enable Expiry Notifications"
+  },
+  {
+   "fieldname": "column_break_general",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "enable_notifications",
+   "fieldname": "notify_by_email",
+   "fieldtype": "Check",
+   "label": "Send Email"
+  },
+  {
+   "default": "1",
+   "depends_on": "enable_notifications",
+   "fieldname": "notify_in_app",
+   "fieldtype": "Check",
+   "label": "Send In-App Notification"
+  },
+  {
+   "fieldname": "section_periods",
+   "fieldtype": "Section Break",
+   "label": "Notification Periods"
+  },
+  {
+   "fieldname": "periods_html",
+   "fieldtype": "HTML",
+   "options": "<p class=\"text-muted small\">A reminder goes out on each of the days below, counted back from a licence's expiry date. For example <b>30</b> sends a reminder exactly 30 days before expiry. Each period fires once per expiry date, so renewing a licence resets the whole schedule.</p>"
+  },
+  {
+   "fieldname": "reminder_periods",
+   "fieldtype": "Table",
+   "label": "Reminder Periods",
+   "options": "License Reminder Period"
+  },
+  {
+   "fieldname": "section_recipients",
+   "fieldtype": "Section Break",
+   "label": "Recipients"
+  },
+  {
+   "default": "1",
+   "fieldname": "notify_responsible_person",
+   "fieldtype": "Check",
+   "label": "Also Notify the Licence's Responsible Person"
+  },
+  {
+   "fieldname": "notify_users",
+   "fieldtype": "Table MultiSelect",
+   "label": "Notify Users",
+   "options": "License Notification User"
+  },
+  {
+   "fieldname": "column_break_recipients",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "notify_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Notify Roles",
+   "options": "License Notification Role"
+  },
+  {
+   "description": "Addresses with no user account behind them, comma separated. These get email only, never in-app notifications.",
+   "fieldname": "additional_emails",
+   "fieldtype": "Small Text",
+   "label": "Additional Email Addresses"
+  },
+  {
+   "fieldname": "section_expired",
+   "fieldtype": "Section Break",
+   "label": "Already Expired"
+  },
+  {
+   "default": "1",
+   "fieldname": "notify_after_expiry",
+   "fieldtype": "Check",
+   "label": "Keep Reminding After Expiry"
+  },
+  {
+   "default": "7",
+   "depends_on": "notify_after_expiry",
+   "description": "How often to repeat the reminder while a licence is still expired.",
+   "fieldname": "expired_reminder_frequency",
+   "fieldtype": "Int",
+   "label": "Repeat Every (Days)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_expired",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "180",
+   "depends_on": "notify_after_expiry",
+   "description": "Give up after this many days overdue. Leave at 0 to keep reminding indefinitely.",
+   "fieldname": "stop_expired_reminders_after",
+   "fieldtype": "Int",
+   "label": "Stop After (Days Overdue)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "section_review",
+   "fieldtype": "Section Break",
+   "label": "Renew When Needed"
+  },
+  {
+   "default": "1",
+   "description": "For licences with no fixed expiry date, send a periodic nudge to confirm whether they still need renewing.",
+   "fieldname": "notify_renewal_required",
+   "fieldtype": "Check",
+   "label": "Send Periodic Review Reminders"
+  },
+  {
+   "fieldname": "column_break_review",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "30",
+   "depends_on": "notify_renewal_required",
+   "fieldname": "renewal_required_frequency",
+   "fieldtype": "Int",
+   "label": "Review Reminder Every (Days)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_qqgi",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-24 11:52:39.519586",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "License Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "License Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
