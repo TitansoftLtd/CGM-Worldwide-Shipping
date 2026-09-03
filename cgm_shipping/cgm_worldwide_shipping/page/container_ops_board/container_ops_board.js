@@ -24,7 +24,16 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				</div>
 				<div class="cgm-ops-sticky-chrome">
 					<div class="cgm-ops-filters"></div>
-					<div class="cgm-ops-kpis"></div>
+					<div class="cgm-ops-kpis-section">
+						<button type="button" class="cgm-ops-kpis-toggle" aria-expanded="true">
+							<span class="cgm-ops-kpis-toggle-label">${__("Summary")}</span>
+							<span class="cgm-ops-kpis-toggle-hint">${__("Click to show or hide KPI cards")}</span>
+							<span class="cgm-ops-kpis-toggle-icon" aria-hidden="true">▾</span>
+						</button>
+						<div class="cgm-ops-kpis-collapse">
+							<div class="cgm-ops-kpis"></div>
+						</div>
+					</div>
 					<div class="cgm-ops-filter-hint" style="display:none"></div>
 					<div class="cgm-ops-tabs">
 						<button type="button" class="btn btn-sm btn-default active" data-tab="shipments">${__(
@@ -54,6 +63,27 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		`);
 
 		setup_cgm_ops_breadcrumbs();
+
+		const KPI_COLLAPSE_STORAGE_KEY = "cgm_ops_board_kpis_collapsed";
+
+		function set_kpis_collapsed(collapsed) {
+			const $section = page.main.find(".cgm-ops-kpis-section");
+			const $toggle = $section.find(".cgm-ops-kpis-toggle");
+			$section.toggleClass("is-collapsed", collapsed);
+			$toggle.attr("aria-expanded", collapsed ? "false" : "true");
+			localStorage.setItem(KPI_COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
+		}
+
+		function init_kpis_collapse() {
+			const $section = page.main.find(".cgm-ops-kpis-section");
+			const $toggle = $section.find(".cgm-ops-kpis-toggle");
+			const collapsed = localStorage.getItem(KPI_COLLAPSE_STORAGE_KEY) === "1";
+			set_kpis_collapsed(collapsed);
+
+			$toggle.on("click", () => {
+				set_kpis_collapsed(!$section.hasClass("is-collapsed"));
+			});
+		}
 
 		const filters = {};
 		const filter_controls = {};
@@ -99,6 +129,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				tone: "green",
 				alert: false,
 			},
+			deposit_refund_pending: {
+				label: __("Deposit Refund Pending"),
+				icon: "↩️",
+				tone: "amber",
+				alert: true,
+			},
 		};
 
 		const SHIPMENT_KPI_META = {
@@ -122,6 +158,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			"returned_this_month",
 			"deposit_unpaid",
 			"deposit_paid",
+			"deposit_refund_pending",
 		];
 		const SHIPMENT_KPI_CARDS = [
 			"active_shipments",
@@ -686,7 +723,8 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("ATA")}</th>
 				<th>${__("Container Status")}</th>
 				<th>${__("Container Deposit")}</th>
-				<th>${__("Deposit Payment Status")}</th>
+				<th>${__("Deposit Payment")}</th>
+				<th>${__("Deposit Refund Status")}</th>
 				<th>${__("Vessel")}</th>
 				<th>${__("Gate In Mombasa")}</th>
 				<th>${__("Gate Out Mombasa")}</th>
@@ -706,12 +744,28 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		function depositPaymentStatusCell(row) {
 			const status = row.deposit_payment_status || "";
-			const hasDeposit = cint(row.has_deposit) || flt(row.deposit_amount) > 0;
+			const hasDeposit =
+				flt(row.deposit_amount) > 0 || cint(row.has_deposit);
 			if (!hasDeposit || !status || status === "Not Applicable") {
 				return `<span class="indicator-pill gray ellipsis">${__("No Deposit")}</span>`;
 			}
 			const tone = status === "Paid" ? "success" : status === "Unpaid" ? "warning" : "muted";
 			return `<span class="indicator-pill ${tone} ellipsis">${frappe.utils.escape_html(status)}</span>`;
+		}
+
+		function depositRefundStatusCell(row) {
+			const label = (row.deposit_refund_display || "").trim();
+			if (!label) {
+				return `<span class="cgm-ops-muted">—</span>`;
+			}
+			const toneMap = {
+				success: "success",
+				warning: "warning",
+				blue: "blue",
+				muted: "gray",
+			};
+			const tone = toneMap[row.deposit_refund_display_tone] || "gray";
+			return `<span class="indicator-pill ${tone} ellipsis">${frappe.utils.escape_html(label)}</span>`;
 		}
 
 		function transportTableRow(row, extraCol = "") {
@@ -740,6 +794,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<td>${containerStatusCell(row.container_status)}</td>
 				<td>${frappe.utils.escape_html(row.deposit_amount || 0)}</td>
 				<td>${depositPaymentStatusCell(row)}</td>
+				<td>${depositRefundStatusCell(row)}</td>
 				<td>${frappe.utils.escape_html(row.vessel_name || "—")}</td>
 				<td>${fmtDate(row.gate_in_port)}</td>
 				<td>${fmtDate(row.gate_out_date_port)}</td>
@@ -806,6 +861,8 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<th>${__("ATA")}</th>
 				<th>${__("Container Status")}</th>
 				<th>${__("Container Deposit")}</th>
+				<th>${__("Deposit Payment")}</th>
+				<th>${__("Deposit Refund Status")}</th>
 				<th>${__("Vessel")}</th>
 			`;
 		}
@@ -838,6 +895,8 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<td>${fmtDate(row.ata)}</td>
 				<td>${containerStatusCell(row.container_status_summary)}</td>
 				<td>${frappe.utils.escape_html(row.deposit_amount || 0)}</td>
+				<td>${depositPaymentStatusCell(row)}</td>
+				<td>${depositRefundStatusCell(row)}</td>
 				<td>${frappe.utils.escape_html(row.vessel_name || "—")}</td>
 			</tr>`;
 		}
@@ -910,6 +969,8 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 						${shipmentDetailField(__("Shipping Line"), project.shipping_line)}
 						${shipmentDetailField(__("Clearance Station"), project.clearance_station)}
 						${shipmentDetailField(__("Container Deposit"), project.deposit_amount)}
+						${shipmentDetailField(__("Deposit Payment"), project.deposit_payment_status || "—", { pill: true })}
+						${shipmentDetailField(__("Deposit Refund Status"), project.deposit_refund_display || "—", { pill: true })}
 						${shipmentDetailField(__("Vessel"), project.vessel_name)}
 					</div>
 				</div>`;
@@ -938,10 +999,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 						return;
 					}
 					$body.html(`
-						<table class="cgm-ops-table">
-							<thead><tr>${transportTableHeaders()}</tr></thead>
-							<tbody>${containerRows.map((row) => transportTableRow(row)).join("")}</tbody>
-						</table>`);
+						<div class="cgm-ops-table-scroll">
+							<table class="cgm-ops-table">
+								<thead><tr>${transportTableHeaders()}</tr></thead>
+								<tbody>${containerRows.map((row) => transportTableRow(row)).join("")}</tbody>
+							</table>
+						</div>`);
 				},
 			});
 		}
@@ -1190,6 +1253,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		setTimeout(setup_cgm_ops_breadcrumbs, 0);
 		syncFiltersForTab();
+		init_kpis_collapse();
 		refresh();
 	});
 };

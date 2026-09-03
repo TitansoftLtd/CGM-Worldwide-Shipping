@@ -2006,6 +2006,9 @@ def validate_sea_task_can_complete(task) -> None:
 			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 				APPLICATION_FINANCE_PROFILES,
 			)
+			from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+				validate_shipping_line_deposit_payments,
+			)
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
 				validate_finance_application_payment_task,
 			)
@@ -2013,6 +2016,7 @@ def validate_sea_task_can_complete(task) -> None:
 			validate_finance_application_payment_task(
 				task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
 			)
+			validate_shipping_line_deposit_payments(task)
 		elif is_kpa_finance_payment_task(seq):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 				APPLICATION_FINANCE_PROFILES,

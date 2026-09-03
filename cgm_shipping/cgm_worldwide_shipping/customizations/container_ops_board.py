@@ -5,8 +5,11 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import cint, getdate, today
+from frappe.utils import cint, flt, getdate, today
 
+from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+	bl_all_containers_returned,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	CLOSED_CONTAINER_STATUSES,
 	compute_container_metrics,
@@ -172,6 +175,9 @@ def _build_row(row: dict, projects: dict[str, dict]) -> dict:
 		"vessel_name": project_doc.get("custom_vessel") or "",
 		"deposit_amount": float(enriched.get("deposit_amount") or 0),
 		"deposit_payment_status": enriched.get("deposit_payment_status") or "",
+		"deposit_refund_status": enriched.get("deposit_refund_status") or "",
+		"deposit_refund_display": enriched.get("deposit_refund_display") or "",
+		"deposit_refund_display_tone": enriched.get("deposit_refund_display_tone") or "",
 		"has_deposit": int(enriched.get("has_deposit") or 0),
 		"remarks": alert_status or "",
 		"operational_status": status,
@@ -514,13 +520,12 @@ def _build_shipment_row(project: dict, projects: dict[str, dict], container_rows
 		"operational_status": project.get("custom_shipment_status") or "",
 		"container_status_summary": _container_location_summary(containers),
 		"shipment_status": project.get("custom_shipment_status") or "",
-		"deposit_amount": float(
-			frappe.db.sql(
-				"SELECT SUM(deposit_amount) FROM `tabContainer Tracker` WHERE project=%s",
-				(project.get("name"),),
-				as_list=True,
-			)[0][0] or 0
-		),
+		"deposit_amount": _bl_deposit_amount_for_project(project),
+		"deposit_payment_status": "",
+		"deposit_refund_status": "",
+		"deposit_refund_display": "",
+		"deposit_refund_display_tone": "",
+		"has_deposit": 0,
 		"vessel_name": project.get("custom_vessel") or "",
 		"traffic_light": traffic.get("level"),
 		"traffic_label": traffic.get("label"),
@@ -598,10 +603,12 @@ def get_shipment_tracker(filters=None) -> dict:
 	all_tracker_rows = _enrich_rows_with_transporter_updates(
 		[_build_row(row, project_map) for row in tracker_rows]
 	)
+	all_tracker_rows = _enrich_ops_rows_with_bl_deposits(all_tracker_rows, project_map)
 	kpis = _shipment_kpis(projects, all_tracker_rows)
 	rows: list[dict] = []
 	for project in projects:
 		rows.append(_build_shipment_row(project, project_map, all_tracker_rows))
+	rows = _enrich_ops_rows_with_bl_deposits(rows, project_map)
 	rows = _apply_shipment_kpi_filter(rows, filters.get("kpi_filter"))
 	rows.sort(key=_eta_sort_key)
 	page_rows, total_count, start, page_length = _paginate_rows(rows, filters)
@@ -628,8 +635,11 @@ def get_project_containers_for_board(project: str) -> list[dict]:
 		order_by="container_number asc",
 		limit_page_length=0,
 	)
-	return _enrich_rows_with_transporter_updates(
-		[_build_row(row, projects) for row in raw]
+	return _enrich_ops_rows_with_bl_deposits(
+		_enrich_rows_with_transporter_updates(
+			[_build_row(row, projects) for row in raw]
+		),
+		projects,
 	)
 
 
@@ -715,6 +725,232 @@ def _is_overdue_return(row: dict) -> bool:
 	return False
 
 
+def _bl_deposit_amount_for_project(project: dict) -> float:
+	bl_name = (project.get("custom_bill_of_lading") or "").strip()
+	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
+		return 0.0
+	meta = frappe.get_meta("Bill of Lading")
+	if not meta.has_field("deposit_amount"):
+		return 0.0
+	return flt(frappe.db.get_value("Bill of Lading", bl_name, "deposit_amount"))
+
+
+def _load_bl_deposit_maps(projects: dict[str, dict]) -> tuple[dict, dict, dict]:
+	"""Return (bl_by_name, child_by_tracker, child_by_bl_and_number)."""
+	bl_names = {
+		(p.get("custom_bill_of_lading") or "").strip()
+		for p in projects.values()
+		if (p.get("custom_bill_of_lading") or "").strip()
+	}
+	bl_names = {n for n in bl_names if frappe.db.exists("Bill of Lading", n)}
+	if not bl_names:
+		return {}, {}, {}
+
+	meta = frappe.get_meta("Bill of Lading")
+	if not meta.has_field("deposit_arrangement"):
+		return {}, {}, {}
+
+	fields = [
+		"name",
+		"deposit_arrangement",
+		"deposit_payer",
+		"deposit_amount",
+		"deposit_payment_status",
+		"deposit_refund_status",
+		"deposit_return_date",
+	]
+	fields = [f for f in fields if meta.has_field(f) or f == "name"]
+	bl_by_name = {
+		r.name: r
+		for r in frappe.get_all(
+			"Bill of Lading", filters={"name": ["in", list(bl_names)]}, fields=fields
+		)
+	}
+	child_by_tracker = {}
+	child_by_bl_number = {}
+	for row in frappe.get_all(
+		"Container",
+		filters={"parent": ["in", list(bl_names)], "parenttype": "Bill of Lading"},
+		fields=[
+			"parent",
+			"container_number",
+			"container_tracker",
+			"deposit_amount",
+		],
+	):
+		if row.container_tracker:
+			child_by_tracker[row.container_tracker] = row
+		key = (row.parent, (row.container_number or "").strip().upper())
+		if key[1]:
+			child_by_bl_number[key] = row
+	return bl_by_name, child_by_tracker, child_by_bl_number
+
+
+def _container_return_recorded(row: dict) -> bool:
+	return bool(
+		row.get("interchange_date")
+		or row.get("actual_empty_return")
+		or row.get("effective_return_date")
+	)
+
+
+def _deposit_refund_display(
+	row: dict, bl: dict | None, bl_all_returned: bool, *, is_shipment_row: bool = False
+) -> tuple[str, str]:
+	"""Human label + pill tone for post-interchange deposit refund tracking."""
+	has_deposit = float(row.get("deposit_amount") or 0) > 0 or cint(row.get("has_deposit"))
+	if not has_deposit or not bl:
+		return "", "muted"
+
+	if (bl.get("deposit_arrangement") or "").strip() != "Container Deposit":
+		return "", "muted"
+
+	payer = (bl.get("deposit_payer") or "").strip()
+	payment = (row.get("deposit_payment_status") or "").strip()
+	refund = (row.get("deposit_refund_status") or "").strip()
+
+	if payment != "Paid":
+		return "", "muted"
+
+	if payer == "Agent":
+		return _("Agent Paid (no refund)"), "muted"
+
+	if refund == "Received":
+		return _("Refunded"), "success"
+	if refund == "Forfeited":
+		return _("Forfeited"), "muted"
+	if refund == "Applied":
+		return _("Applied"), "blue"
+	if refund == "Pending":
+		return _("Refund Pending"), "warning"
+
+	if bl_all_returned:
+		return _("Refund Pending"), "warning"
+
+	if is_shipment_row:
+		return _("Awaiting Return"), "muted"
+
+	if _container_return_recorded(row):
+		return _("Awaiting Other Containers"), "blue"
+
+	return _("Awaiting Interchange"), "muted"
+
+
+def _enrich_ops_rows_with_bl_deposits(rows: list[dict], projects: dict[str, dict]) -> list[dict]:
+	"""Overlay BL deposit fields onto tracker/shipment rows (trackers no longer store deposits)."""
+	bl_by_name, child_by_tracker, child_by_bl_number = _load_bl_deposit_maps(projects)
+	bl_return_cache: dict[str, bool] = {}
+	for bl_name in bl_by_name:
+		all_returned, _return_date = bl_all_containers_returned(bl_name)
+		bl_return_cache[bl_name] = all_returned
+
+	if not bl_by_name:
+		for row in rows:
+			row.setdefault("has_deposit", 0)
+			row.setdefault("deposit_amount", 0)
+			row.setdefault("deposit_payment_status", "")
+			row.setdefault("deposit_refund_status", "")
+			row.setdefault("deposit_refund_display", "")
+			row.setdefault("deposit_refund_display_tone", "")
+		return rows
+
+	for row in rows:
+		project = projects.get(row.get("project") or row.get("name") or "") or {}
+		# Shipment rows use project name as row.name
+		bl_name = (
+			(row.get("bl_number") or "").strip()
+			or (project.get("custom_bill_of_lading") or "").strip()
+		)
+		bl = bl_by_name.get(bl_name)
+		bl_all_returned = bl_return_cache.get(bl_name, False)
+		if not bl or (bl.get("deposit_arrangement") or "").strip() != "Container Deposit":
+			row["has_deposit"] = 0
+			row["deposit_amount"] = 0
+			row["deposit_payment_status"] = ""
+			row["deposit_refund_status"] = ""
+			row["deposit_refund_display"] = ""
+			row["deposit_refund_display_tone"] = ""
+			continue
+
+		payer = (bl.get("deposit_payer") or "").strip()
+
+		# Project/shipment card: BL totals
+		if row.get("name") and row.get("name") == project.get("name"):
+			row["has_deposit"] = 1
+			row["deposit_amount"] = flt(bl.get("deposit_amount"))
+			row["deposit_payment_status"] = (bl.get("deposit_payment_status") or "").strip()
+			row["deposit_refund_status"] = (
+				(bl.get("deposit_refund_status") or "").strip() if payer != "Agent" else ""
+			)
+			label, tone = _deposit_refund_display(
+				row, bl, bl_all_returned, is_shipment_row=True
+			)
+			row["deposit_refund_display"] = label
+			row["deposit_refund_display_tone"] = tone
+			continue
+
+		src = child_by_tracker.get(row.get("name"))
+		if not src:
+			src = child_by_bl_number.get(
+				(bl_name, (row.get("container_number") or "").strip().upper())
+			)
+		amount = flt(src.get("deposit_amount")) if src else 0
+		row["has_deposit"] = 1 if amount > 0 else 0
+		row["deposit_amount"] = amount
+		row["deposit_payment_status"] = (bl.get("deposit_payment_status") or "").strip() if amount > 0 else ""
+		row["deposit_refund_status"] = (
+			(bl.get("deposit_refund_status") or "").strip()
+			if amount > 0 and payer != "Agent"
+			else ""
+		)
+		label, tone = _deposit_refund_display(row, bl, bl_all_returned)
+		row["deposit_refund_display"] = label if amount > 0 else ""
+		row["deposit_refund_display_tone"] = tone if amount > 0 else ""
+	return rows
+
+
+def _bl_deposit_project_kpis(projects: dict[str, dict], rows: list[dict] | None = None) -> dict:
+	"""Count distinct BLs (from filtered rows when provided) with unpaid / paid / refund-pending."""
+	bl_by_name, _, _ = _load_bl_deposit_maps(projects)
+	unpaid = paid = refund_pending = 0
+	seen_bl = set()
+
+	if rows is not None:
+		bl_candidates = []
+		for row in rows:
+			bl_name = (row.get("bl_number") or "").strip()
+			if not bl_name:
+				proj = projects.get(row.get("project") or "") or {}
+				bl_name = (proj.get("custom_bill_of_lading") or "").strip()
+			if bl_name:
+				bl_candidates.append(bl_name)
+	else:
+		bl_candidates = [
+			(p.get("custom_bill_of_lading") or "").strip() for p in projects.values()
+		]
+
+	for bl_name in bl_candidates:
+		if not bl_name or bl_name in seen_bl:
+			continue
+		bl = bl_by_name.get(bl_name)
+		if not bl or (bl.get("deposit_arrangement") or "").strip() != "Container Deposit":
+			continue
+		seen_bl.add(bl_name)
+		payment = (bl.get("deposit_payment_status") or "").strip()
+		refund = (bl.get("deposit_refund_status") or "").strip()
+		if payment == "Unpaid":
+			unpaid += 1
+		if payment == "Paid":
+			paid += 1
+		if refund == "Pending":
+			refund_pending += 1
+	return {
+		"deposit_unpaid": unpaid,
+		"deposit_paid": paid,
+		"deposit_refund_pending": refund_pending,
+	}
+
+
 def _has_deposit(row: dict) -> bool:
 	if row.get("has_deposit") is not None:
 		return bool(cint(row.get("has_deposit")))
@@ -725,6 +961,14 @@ def _has_deposit(row: dict) -> bool:
 
 def _deposit_status(row: dict) -> str:
 	return (row.get("deposit_payment_status") or "").strip()
+
+
+def _deposit_refund_pending(row: dict) -> bool:
+	if not _has_deposit(row):
+		return False
+	if _deposit_status(row) != "Paid":
+		return False
+	return (row.get("deposit_refund_status") or "").strip() == "Pending"
 
 
 def _apply_kpi_filter(rows: list[dict], kpi_filter: str | None, ref) -> list[dict]:
@@ -745,23 +989,35 @@ def _apply_kpi_filter(rows: list[dict], kpi_filter: str | None, ref) -> list[dic
 		return [r for r in rows if _has_deposit(r) and _deposit_status(r) == "Unpaid"]
 	if kpi_filter == "deposit_paid":
 		return [r for r in rows if _has_deposit(r) and _deposit_status(r) == "Paid"]
+	if kpi_filter == "deposit_refund_pending":
+		return [r for r in rows if _deposit_refund_pending(r)]
 	return rows
 
 
-def _kpis(rows: list[dict]) -> dict:
+def _kpis(rows: list[dict], projects: dict[str, dict] | None = None) -> dict:
 	ref = getdate(today())
 	month_start = ref.replace(day=1)
 	active = [r for r in rows if r.get("status") not in CLOSED_CONTAINER_STATUSES]
+	deposit_kpis = (
+		_bl_deposit_project_kpis(projects, rows)
+		if projects is not None
+		else {
+			"deposit_unpaid": sum(
+				1 for r in rows if _has_deposit(r) and _deposit_status(r) == "Unpaid"
+			),
+			"deposit_paid": sum(
+				1 for r in rows if _has_deposit(r) and _deposit_status(r) == "Paid"
+			),
+			"deposit_refund_pending": sum(1 for r in rows if _deposit_refund_pending(r)),
+		}
+	)
 	return {
 		"total_active": len(active),
 		"overdue_returns": sum(1 for r in rows if _is_overdue_return(r)),
 		"in_demurrage": sum(1 for r in rows if _is_in_demurrage(r)),
 		"free_days_expiring": sum(1 for r in rows if _free_days_expiring(r, ref)),
 		"returned_this_month": sum(1 for r in rows if _returned_this_month(r, month_start)),
-		"deposit_unpaid": sum(
-			1 for r in rows if _has_deposit(r) and _deposit_status(r) == "Unpaid"
-		),
-		"deposit_paid": sum(1 for r in rows if _has_deposit(r) and _deposit_status(r) == "Paid"),
+		**deposit_kpis,
 	}
 
 
@@ -788,7 +1044,8 @@ def get_container_ops_board(filters=None) -> dict:
 	raw = _fetch_tracker_rows(filters)
 	raw = _apply_container_post_filters(raw, filters, projects)
 	all_rows = _enrich_rows_with_transporter_updates([_build_row(row, projects) for row in raw])
-	kpis = _kpis(all_rows)
+	all_rows = _enrich_ops_rows_with_bl_deposits(all_rows, projects)
+	kpis = _kpis(all_rows, projects)
 
 	rows = list(all_rows)
 	if filters.get("traffic_light"):
@@ -824,8 +1081,9 @@ def get_container_return_tracker(filters=None) -> dict:
 			if _is_return_tracker_row(built, ref, month_start)
 		]
 	)
+	pipeline_rows = _enrich_ops_rows_with_bl_deposits(pipeline_rows, projects)
 	# KPIs always reflect the full return-pipeline under current filters (not the KPI drill-down).
-	kpis = _kpis(pipeline_rows)
+	kpis = _kpis(pipeline_rows, projects)
 	rows = _apply_kpi_filter(list(pipeline_rows), filters.get("kpi_filter"), ref)
 	rows.sort(
 		key=lambda r: (
