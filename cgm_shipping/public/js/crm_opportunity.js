@@ -1,8 +1,11 @@
 frappe.ui.form.on("Opportunity", {
 	onload(frm) {
 		cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
-		run_opportunity_form_syncs(frm, { apply_pending_bl: true });
+		if (!opportunity_awaiting_workflow_review(frm)) {
+			run_opportunity_form_syncs(frm, { apply_pending_bl: true });
+		}
 		configure_opportunity_clients_documents_grid(frm);
+		bind_opportunity_actions_render_complete(frm);
 	},
 
 	before_save(frm) {
@@ -30,8 +33,13 @@ frappe.ui.form.on("Opportunity", {
 				cgm_shipping.attachment_approval.refresh(frm);
 			}
 			setup_opportunity_batch_autocomplete(frm);
-			schedule_shipment_project_create_menu(frm);
+			schedule_opportunity_inner_actions_menu(frm);
 			hide_procurement_create_buttons(frm);
+			return;
+		}
+
+		if (opportunity_awaiting_workflow_review(frm) && !frm._cgm_skip_readonly_sync) {
+			run_opportunity_workflow_review_refresh(frm);
 			return;
 		}
 
@@ -48,7 +56,7 @@ frappe.ui.form.on("Opportunity", {
 		}
 
 		setup_opportunity_batch_autocomplete(frm);
-		schedule_shipment_project_create_menu(frm);
+		schedule_opportunity_inner_actions_menu(frm);
 		hide_procurement_create_buttons(frm);
 	},
 
@@ -56,22 +64,12 @@ frappe.ui.form.on("Opportunity", {
 		frm._cgm_skip_readonly_sync = false;
 		invalidate_opportunity_bl_sync(frm);
 		restore_opportunity_clean_state(frm);
-		// Re-render the Create menu immediately after the workflow state changes
-		// (e.g. Opp Intake → Approved) so the Shipment Project button appears
-		// without needing a manual page refresh.
-		// We also schedule a late pass (900 ms) because the form refresh triggered
-		// by the workflow action will re-run hide_procurement_create_buttons up to
-		// 600 ms later, which can wipe the whole Create group.
-		schedule_shipment_project_create_menu(frm);
+		schedule_opportunity_inner_actions_menu(frm);
 		hide_procurement_create_buttons(frm);
-		setTimeout(() => {
-			schedule_shipment_project_create_menu(frm);
-			hide_procurement_create_buttons(frm);
-		}, 900);
 	},
 
 	workflow_state(frm) {
-		schedule_shipment_project_create_menu(frm);
+		schedule_opportunity_inner_actions_menu(frm);
 		hide_procurement_create_buttons(frm);
 	},
 
@@ -115,6 +113,298 @@ frappe.ui.form.on("Opportunity", {
 		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
 	},
 });
+
+function opportunity_awaiting_workflow_review(frm) {
+	return (frm.doc.workflow_state || "").trim() === "Pending Approval";
+}
+
+function run_opportunity_workflow_review_refresh(frm) {
+	configure_opportunity_clients_documents_grid(frm);
+	cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+	cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm, { skip_writes: true });
+	if (cgm_shipping?.attachment_approval?.refresh) {
+		cgm_shipping.attachment_approval.refresh(frm);
+	}
+	setup_opportunity_batch_autocomplete(frm);
+	schedule_opportunity_inner_actions_menu(frm);
+	hide_procurement_create_buttons(frm);
+}
+
+const CGM_OPPORTUNITY_ACTIONS = __("Actions");
+
+function bind_opportunity_actions_render_complete(frm) {
+	if (frm._cgm_opp_actions_render_bound) {
+		return;
+	}
+	frm._cgm_opp_actions_render_bound = true;
+	$(frm.wrapper).on("render_complete.cgm_opp_inner_actions", () => {
+		schedule_opportunity_inner_actions_menu(frm);
+	});
+}
+
+function configure_opportunity_workflow_actions(frm) {
+	if (frm._cgm_opp_workflow_actions_configured || !frm.states) {
+		return;
+	}
+	frm._cgm_opp_workflow_actions_configured = true;
+
+	const states = frm.states;
+	const original_show_actions = states.show_actions.bind(states);
+	states.show_actions = function () {
+		if (this.frm.doctype !== "Opportunity") {
+			return original_show_actions();
+		}
+		if (this.frm.doc.__islocal || this.frm.doc.__unsaved === 1) {
+			return;
+		}
+		schedule_opportunity_inner_actions_menu(this.frm);
+	};
+
+	const original_setup_btn = states.setup_btn.bind(states);
+	states.setup_btn = function (action_added) {
+		if (this.frm.doctype === "Opportunity") {
+			hide_opportunity_page_actions_menu(this.frm);
+			return;
+		}
+		return original_setup_btn(action_added);
+	};
+}
+
+function hide_opportunity_page_actions_menu(frm) {
+	frm.page.clear_actions_menu();
+	frm.page.hide_actions_menu();
+	frm.page.btn_primary?.removeClass("hide");
+	frm.page.clear_secondary_action();
+}
+
+function schedule_opportunity_inner_actions_menu(frm) {
+	if (frm.is_new()) {
+		return;
+	}
+	configure_opportunity_workflow_actions(frm);
+	clearTimeout(frm._cgm_opp_actions_timer);
+	frm._cgm_opp_actions_timer = setTimeout(() => build_opportunity_inner_actions_menu(frm), 50);
+}
+
+function is_current_opportunity_actions_build(frm, build_id) {
+	return cur_frm === frm && build_id === frm._cgm_opp_actions_build_id;
+}
+
+function opportunity_workflow_transition_allowed(transition, frm) {
+	const user = frappe.session.user;
+	if (!frappe.user_roles.includes(transition.allowed)) {
+		return false;
+	}
+	return (
+		user === "Administrator" ||
+		transition.allow_self_approval ||
+		user !== frm.doc.owner
+	);
+}
+
+function clear_opportunity_inner_actions_group(frm) {
+	const $group = frm.page.get_inner_group_button?.(CGM_OPPORTUNITY_ACTIONS);
+	if (!$group?.length) {
+		return;
+	}
+	$group.find(".dropdown-menu .dropdown-item").remove();
+	if (!$group.find(".dropdown-item").length) {
+		$group.remove();
+	}
+}
+
+function remove_opportunity_standalone_action_buttons(frm) {
+	[
+		__("Close"),
+		__("Reopen"),
+		__("Start Shipment"),
+		__("View Project"),
+		__("Approve"),
+		__("Reject"),
+		__("Return For Amendment"),
+		__("Submit for Review"),
+		__("Send for Review"),
+		__("Review Documents"),
+		__("Send Final Documents for Review"),
+		__("Review Final Documents"),
+	].forEach((label) => {
+		frm.remove_custom_button(label);
+		frm.remove_custom_button(label, CGM_OPPORTUNITY_ACTIONS);
+	});
+}
+
+function add_opportunity_inner_action(frm, label, fn) {
+	frm.add_custom_button(__(label), fn, CGM_OPPORTUNITY_ACTIONS);
+}
+
+function collect_opportunity_status_actions(frm) {
+	const actions = [];
+	if (!frm.perm[0]?.write || frm.doc.docstatus !== 0) {
+		return actions;
+	}
+	if (frm.doc.status === "Open") {
+		actions.push({
+			label: __("Close"),
+			action: () => {
+				frm.set_value("status", "Closed");
+				frm.save();
+			},
+		});
+	} else {
+		actions.push({
+			label: __("Reopen"),
+			action: () => {
+				frm.set_value("lost_reasons", []);
+				frm.set_value("status", "Open");
+				frm.save();
+			},
+		});
+	}
+	return actions;
+}
+
+function collect_opportunity_workflow_actions(frm, transitions) {
+	return transitions
+		.filter((transition) => opportunity_workflow_transition_allowed(transition, frm))
+		.map((transition) => ({
+			label: transition.action,
+			action: () => {
+				if (
+					frappe.workflow?.workflows?.[frm.doctype]?.enable_action_confirmation
+				) {
+					frappe.confirm(__("Are you sure you want to {0}?", [transition.action]), () =>
+						frm.states?.handle_workflow_action(transition)
+					);
+					return;
+				}
+				frm.states?.handle_workflow_action(transition);
+			},
+		}));
+}
+
+function collect_opportunity_attachment_actions(state) {
+	const actions = [];
+	if (state.can_send) {
+		const label =
+			state.profiles?.length === 1
+				? state.profiles[0].send_button_label
+				: __("Send for Review");
+		actions.push({
+			label,
+			action: (frm) => cgm_shipping.attachment_approval.open_send_dialog(frm),
+		});
+	}
+	if (state.can_review) {
+		const label =
+			state.profiles?.find((profile) => profile.pending_count)?.review_button_label ||
+			__("Review Documents");
+		actions.push({
+			label,
+			action: (frm) => cgm_shipping.attachment_approval.open_review_dialog(frm),
+		});
+	}
+	return actions;
+}
+
+async function collect_opportunity_start_shipment_actions(frm) {
+	if (!frm.doc.name || frm.doc.opportunity_from !== "Customer") {
+		return [];
+	}
+	const r = await frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.get_start_shipment_readiness",
+		args: { opportunity: frm.doc.name },
+	});
+	if (r.exc || !r.message) {
+		return [];
+	}
+	const readiness = r.message;
+	if (readiness.existing_project) {
+		return [
+			{
+				label: __("View Project"),
+				action: () => frappe.set_route("Form", "Project", readiness.existing_project),
+			},
+		];
+	}
+	const stage = (frm.doc.custom_intake_stage || "").trim();
+	if (
+		stage !== "authorization" &&
+		stage !== "documents" &&
+		stage !== "awaiting_primary"
+	) {
+		return [];
+	}
+	return [
+		{
+			label: __("Start Shipment"),
+			action: () => cgm_shipping.opportunity_shipment.start_shipment(frm),
+		},
+	];
+}
+
+function paint_opportunity_inner_actions(frm, actions) {
+	clear_opportunity_inner_actions_group(frm);
+	actions.forEach(({ label, action }) => {
+		add_opportunity_inner_action(frm, label, () => action(frm));
+	});
+	const $actions = frm.page.get_inner_group_button?.(CGM_OPPORTUNITY_ACTIONS);
+	if ($actions?.length) {
+		frm.page.inner_toolbar?.removeClass("hide");
+		reposition_opportunity_actions_button(frm);
+	}
+}
+
+function reposition_opportunity_actions_button(frm) {
+	const $toolbar = frm.page.inner_toolbar;
+	if (!$toolbar?.length) {
+		return;
+	}
+	const fetchLabel = encodeURIComponent(__("Fetch Latest Exchange Rate"));
+	const $fetch = $toolbar.find(`button[data-label="${fetchLabel}"]`);
+	const $actions = frm.page.get_inner_group_button?.(CGM_OPPORTUNITY_ACTIONS);
+	if ($fetch.length && $actions?.length) {
+		$actions.insertAfter($fetch);
+	}
+}
+
+async function build_opportunity_inner_actions_menu(frm) {
+	if (cur_frm !== frm || frm.is_new() || frm.doc.__unsaved) {
+		return;
+	}
+
+	const build_id = (frm._cgm_opp_actions_build_id || 0) + 1;
+	frm._cgm_opp_actions_build_id = build_id;
+
+	remove_opportunity_standalone_action_buttons(frm);
+	hide_opportunity_page_actions_menu(frm);
+
+	const transitions = await frappe.workflow.get_transitions(frm.doc);
+	if (!is_current_opportunity_actions_build(frm, build_id)) {
+		return;
+	}
+
+	const attachment_state = frm.__cgm_attachment_state_promise
+		? await frm.__cgm_attachment_state_promise
+		: {};
+	if (!is_current_opportunity_actions_build(frm, build_id)) {
+		return;
+	}
+
+	const start_shipment_actions = await collect_opportunity_start_shipment_actions(frm);
+	if (!is_current_opportunity_actions_build(frm, build_id)) {
+		return;
+	}
+
+	const actions = [
+		...collect_opportunity_workflow_actions(frm, transitions),
+		...collect_opportunity_status_actions(frm),
+		...collect_opportunity_attachment_actions(attachment_state),
+		...start_shipment_actions,
+	];
+
+	paint_opportunity_inner_actions(frm, actions);
+}
 
 frappe.ui.form.on("Shipment Document", {
 	custom_clients_documents_add(frm, cdt, cdn) {
@@ -814,228 +1104,10 @@ function clear_bl_derived_opportunity_fields(frm) {
 	}
 }
 
-const CGM_OPPORTUNITY_CREATE_GROUP = __("Create");
-
-// ─── Shipment Project create menu ─────────────────────────────────────────────
-// Opportunity is NOT a submittable document, so docstatus always stays 0.
-// Gate creation on workflow_state === "Approved" at click time (not docstatus).
-
-function shipment_project_cache_key(opp_name) {
-	return `cgm_shipment_project:${opp_name}`;
-}
-
-function cache_shipment_project_for_opportunity(frm, project_name) {
-	if (!frm?.doc?.name || !project_name) {
-		return;
-	}
-	frm._cgm_shipment_project_name = project_name;
-	try {
-		localStorage.setItem(shipment_project_cache_key(frm.doc.name), project_name);
-	} catch {
-		// ignore quota / private mode
-	}
-}
-
-function read_cached_shipment_project_for_opportunity(opp_name) {
-	if (!opp_name) {
-		return null;
-	}
-	try {
-		return localStorage.getItem(shipment_project_cache_key(opp_name)) || null;
-	} catch {
-		return null;
-	}
-}
-
-function project_name_from_get_value(message) {
-	if (!message) {
-		return null;
-	}
-	if (typeof message === "string") {
-		return message;
-	}
-	return message.name || null;
-}
-
-function finalize_opportunity_create_menu(frm) {
-	frm.page.set_inner_btn_group_as_primary(CGM_OPPORTUNITY_CREATE_GROUP);
-	hide_procurement_create_buttons(frm);
-}
-
-function force_remove_opportunity_create_menu_item(frm, label) {
-	const translated = __(label);
-	frm.remove_custom_button(translated, CGM_OPPORTUNITY_CREATE_GROUP);
-	const $group = frm.page.get_inner_group_button?.(CGM_OPPORTUNITY_CREATE_GROUP);
-	if ($group?.length) {
-		$group
-			.find(`.dropdown-item[data-label="${encodeURIComponent(translated)}"]`)
-			.remove();
-	}
-	delete frm.custom_buttons?.[translated];
-}
-
-function force_add_opportunity_create_menu_item(frm, label, fn) {
-	const translated = __(label);
-	force_remove_opportunity_create_menu_item(frm, label);
-	frm.add_custom_button(translated, fn, CGM_OPPORTUNITY_CREATE_GROUP);
-}
-
-function schedule_shipment_project_create_menu(frm) {
-	if (frm.is_new() || !frm.doc.name || frm.doc.opportunity_from !== "Customer") {
-		return;
-	}
-
-	clearTimeout(frm._cgm_project_btn_timer);
-	clearTimeout(frm._cgm_project_btn_timer_late);
-	clearTimeout(frm._cgm_project_btn_timer_latest);
-	clearTimeout(frm._cgm_project_btn_timer_final);
-
-	// First pass: before ERPNext adds its standard Create items.
-	frm._cgm_project_btn_timer = setTimeout(() => {
-		add_shipment_project_create_menu_item(frm);
-	}, 0);
-
-	// Second pass: after ERPNext's standard items land (~300 ms).
-	frm._cgm_project_btn_timer_late = setTimeout(() => {
-		add_shipment_project_create_menu_item(frm);
-	}, 500);
-
-	// Third pass: after hide_procurement_create_buttons' last interval (600 ms)
-	// to ensure our button survives any group cleanup Frappe does.
-	frm._cgm_project_btn_timer_latest = setTimeout(() => {
-		add_shipment_project_create_menu_item(frm);
-	}, 800);
-
-	// Fourth pass: after workflow-action form reload (~900 ms).
-	frm._cgm_project_btn_timer_final = setTimeout(() => {
-		add_shipment_project_create_menu_item(frm);
-	}, 1200);
-}
-
-function clear_shipment_project_create_menu_items(frm) {
-	force_remove_opportunity_create_menu_item(frm, "Create Shipment Project");
-	force_remove_opportunity_create_menu_item(frm, "Start Shipment");
-	force_remove_opportunity_create_menu_item(frm, "View Project");
-}
-
-function prompt_shipment_project_approval_required(frm) {
-	frappe.msgprint({
-		title: __("Approval required"),
-		message: __(
-			"This Opportunity must be <b>Approved</b> before creating a Shipment Project. Current status: <b>{0}</b>.",
-			[frm.doc.workflow_state || __("Not set")]
-		),
-		indicator: "orange",
-	});
-}
-
-function on_create_shipment_project_click(frm) {
-	// Unified Start Shipment path: document gates + Approved + Project create.
-	cgm_shipping.opportunity_shipment.start_shipment(frm);
-}
-
-function add_shipment_project_create_menu_item(frm) {
-	if (frm.is_new() || !frm.doc.name || frm.doc.opportunity_from !== "Customer") {
-		return;
-	}
-
-	const opp_name = frm.doc.name;
-
-	const add_create_item = () => {
-		if (frm.doc.name !== opp_name) {
-			return;
-		}
-		force_remove_opportunity_create_menu_item(frm, "View Project");
-		force_add_opportunity_create_menu_item(
-			frm,
-			"Start Shipment",
-			() => on_create_shipment_project_click(frm)
-		);
-		finalize_opportunity_create_menu(frm);
-	};
-
-	const add_view_item = (project_name) => {
-		if (frm.doc.name !== opp_name || !project_name) {
-			return;
-		}
-		cache_shipment_project_for_opportunity(frm, project_name);
-		force_remove_opportunity_create_menu_item(frm, "Create Shipment Project");
-		force_add_opportunity_create_menu_item(frm, "View Project", () =>
-			frappe.set_route("Form", "Project", project_name)
-		);
-		finalize_opportunity_create_menu(frm);
-	};
-
-	const project_meta = frappe.get_meta("Project");
-	const has_source_link = Boolean(
-		project_meta &&
-			(project_meta.fields || []).some((df) => df.fieldname === "custom_source_opportunity")
-	);
-
-	const cached =
-		frm._cgm_shipment_project_name || read_cached_shipment_project_for_opportunity(opp_name);
-
-	if (!has_source_link) {
-		add_create_item();
-		return;
-	}
-
-	if (cached) {
-		add_view_item(cached);
-		return;
-	}
-
-	// Paint immediately for Approved opps — do not wait on the DB lookup.
-	if (frm.doc.workflow_state === "Approved") {
-		add_create_item();
-	}
-
-	frappe.db
-		.get_value("Project", { custom_source_opportunity: opp_name }, "name")
-		.then((r) => {
-			if (cur_frm !== frm || frm.doc.name !== opp_name) {
-				return;
-			}
-			const existing = project_name_from_get_value(r?.message);
-			if (existing) {
-				add_view_item(existing);
-				return;
-			}
-			if (frm.doc.workflow_state === "Approved") {
-				add_create_item();
-			}
-		})
-		.catch(() => {
-			if (frm.doc.workflow_state === "Approved") {
-				add_create_item();
-			}
-		});
-}
-
-function create_shipment_project_from_opportunity(frm) {
-	frappe.call({
-		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.project.create_project_from_opportunity",
-		args: { opportunity: frm.doc.name },
-		freeze: true,
-		callback(r) {
-			if (!r.exc && r.message) {
-				cache_shipment_project_for_opportunity(frm, r.message);
-				frappe.show_alert({
-					message: __("Shipment Project created"),
-					indicator: "green",
-				});
-				frappe.set_route("Form", "Project", r.message);
-			}
-		},
-	});
-}
-
 function hide_procurement_create_buttons(frm) {
 	const remove = () => {
 		frm.remove_custom_button(__("Supplier Quotation"), __("Create"));
 		frm.remove_custom_button(__("Request For Quotation"), __("Create"));
-		// NOTE: Do NOT remove "Create Shipment Project" or "View Project" here.
 	};
 	remove();
 	[50, 200, 600, 1000, 1500].forEach((delay) => setTimeout(remove, delay));
@@ -1044,7 +1116,6 @@ function hide_procurement_create_buttons(frm) {
 frappe.provide("cgm_shipping.opportunity_menu");
 
 cgm_shipping.opportunity_menu = {
-	paint: add_shipment_project_create_menu_item,
-	schedule: schedule_shipment_project_create_menu,
+	paint: schedule_opportunity_inner_actions_menu,
 	hide_procurement: hide_procurement_create_buttons,
 };
