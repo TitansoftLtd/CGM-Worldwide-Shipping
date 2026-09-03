@@ -10,6 +10,7 @@ cgm_shipping.patches.capture_running_tax_base_config
 # Patch authoring rules: docs/guides/patches.md
 cgm_shipping.patches.ensure_quotation_workflow
 cgm_shipping.patches.ensure_sales_invoice_workflow_fields
+cgm_shipping.patches.ensure_sales_invoice_naming_series
 cgm_shipping.patches.ensure_sales_invoice_workflow
 cgm_shipping.patches.rename_sales_invoice_approval_fields
 cgm_shipping.patches.ensure_cgm_frappe_wiki
@@ -25,6 +26,9 @@ cgm_shipping.patches.rename_transit_project_types
 cgm_shipping.patches.backfill_bill_of_lading_cargo_type
 cgm_shipping.patches.ensure_sea_import_project_workflow
 cgm_shipping.patches.ensure_container_charge_fields
+cgm_shipping.patches.ensure_container_deposit_fields
+cgm_shipping.patches.migrate_container_deposits_to_bl
+cgm_shipping.patches.migrate_bl_deposit_arrangement
 cgm_shipping.patches.enable_manual_batch_no_fields
 cgm_shipping.patches.enable_manual_batch_on_transport_docs
 cgm_shipping.patches.allow_bill_of_lading_amendment
