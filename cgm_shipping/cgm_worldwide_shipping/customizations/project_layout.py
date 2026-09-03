@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 import frappe
+from frappe.utils import cint, flt
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 	filter_sea_tasks_for_user,
@@ -1332,6 +1333,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	)
 
 	containers = enrich_containers_with_allocation(containers)
+	containers = _enrich_containers_with_bl_deposits(doc, containers)
 
 	berth_phase = doc.get("custom_berth_phase") or "Before Vessel Berth"
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import get_project_ata
@@ -1409,6 +1411,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"total_demurrage_amount": sum(c.get("demurrage_amount") or 0 for c in containers),
 		"total_kpa_amount": sum(c.get("kpa_amount") or 0 for c in containers),
 		"total_detention_amount": sum(c.get("detention_amount") or 0 for c in containers),
+		**_project_bl_deposit_kpis(doc),
 	}
 	if doc.meta.has_field("custom_inspection_notification_status"):
 		payload["inspection_notification_status"] = (
@@ -1422,6 +1425,96 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		payload["port_arrival_confirmed_on"] = doc.get("custom_port_arrival_confirmed_on")
 		payload["port_arrival_confirmed_by"] = doc.get("custom_port_arrival_confirmed_by")
 	return payload
+
+
+def _project_bl_deposit_summary(doc) -> dict | None:
+	"""Load Bill of Lading deposit fields for this project's linked BL."""
+	bl_name = (doc.get("custom_bill_of_lading") or "").strip()
+	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
+		return None
+	meta = frappe.get_meta("Bill of Lading")
+	if not meta.has_field("deposit_arrangement"):
+		return None
+	fields = [
+		"name",
+		"deposit_arrangement",
+		"deposit_payer",
+		"deposit_amount",
+		"deposit_payment_status",
+		"deposit_refund_status",
+		"deposit_return_date",
+	]
+	fields = [f for f in fields if meta.has_field(f) or f == "name"]
+	return frappe.db.get_value("Bill of Lading", bl_name, fields, as_dict=True)
+
+
+def _project_bl_deposit_kpis(doc) -> dict:
+	"""Project dashboard deposit KPIs from the linked Bill of Lading (0 or 1)."""
+	empty = {
+		"deposits_unpaid": 0,
+		"deposits_paid_outstanding": 0,
+		"deposits_refund_pending": 0,
+	}
+	bl = _project_bl_deposit_summary(doc)
+	if not bl or (bl.get("deposit_arrangement") or "").strip() != "Container Deposit":
+		return empty
+	payment = (bl.get("deposit_payment_status") or "").strip()
+	refund = (bl.get("deposit_refund_status") or "").strip()
+	return {
+		"deposits_unpaid": 1 if payment == "Unpaid" else 0,
+		"deposits_paid_outstanding": (
+			1
+			if payment == "Paid" and refund not in ("Received", "Forfeited")
+			else 0
+		),
+		"deposits_refund_pending": 1 if refund == "Pending" else 0,
+	}
+
+
+def _enrich_containers_with_bl_deposits(doc, containers: list[dict]) -> list[dict]:
+	"""Overlay BL deposit amount (per child) + BL payment/refund status onto tracker cards."""
+	bl = _project_bl_deposit_summary(doc)
+	has_arrangement = bl and (bl.get("deposit_arrangement") or "").strip() == "Container Deposit"
+	if not has_arrangement:
+		for c in containers:
+			c.setdefault("deposit_arrangement", "")
+			c.setdefault("has_deposit", 0)
+			c.setdefault("deposit_amount", 0)
+			c.setdefault("deposit_payment_status", "")
+			c.setdefault("deposit_refund_status", "")
+		return containers
+
+	bl_name = bl.name
+	child_by_number = {}
+	child_by_tracker = {}
+	for row in frappe.get_all(
+		"Container",
+		filters={"parent": bl_name, "parenttype": "Bill of Lading"},
+		fields=["container_number", "container_tracker", "deposit_amount"],
+	):
+		key = (row.container_number or "").strip().upper()
+		if key:
+			child_by_number[key] = row
+		if row.container_tracker:
+			child_by_tracker[row.container_tracker] = row
+
+	payment = (bl.get("deposit_payment_status") or "").strip()
+	refund = (bl.get("deposit_refund_status") or "").strip()
+	return_date = bl.get("deposit_return_date")
+	payer = (bl.get("deposit_payer") or "").strip()
+
+	for c in containers:
+		src = child_by_tracker.get(c.get("name")) or child_by_number.get(
+			(c.get("container_number") or "").strip().upper()
+		)
+		amount = flt(src.get("deposit_amount")) if src else 0
+		c["deposit_arrangement"] = "Container Deposit"
+		c["has_deposit"] = 1 if amount > 0 else 0
+		c["deposit_amount"] = amount
+		c["deposit_payment_status"] = payment if amount > 0 else ""
+		c["deposit_refund_status"] = refund if amount > 0 and payer != "Agent" else ""
+		c["deposit_return_date"] = return_date if amount > 0 else None
+	return containers
 
 
 OBSOLETE_FINANCE_COST_PROJECT_FIELDS = (

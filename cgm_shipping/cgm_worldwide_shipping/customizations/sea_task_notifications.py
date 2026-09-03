@@ -14,6 +14,7 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CONTAINER_DEPOSIT_REFUND_REMINDER,
 	DAILY_STATUS_RAG_ALERT,
 	ENTRY_INVOICE_TO_FINANCE,
 	ENTRY_RECEIPT_FOR_DECLARANT,
@@ -387,6 +388,20 @@ def sea_task_notification_definitions() -> list[dict]:
 			),
 			roles=operations,
 			document_type="Daily Status Update",
+		),
+		_def(
+			CONTAINER_DEPOSIT_REFUND_REMINDER,
+			subject=f"Container deposit refund due — BL {{{{ doc.bl_number }}}} / {_SHIPMENT}",
+			message=(
+				f"<p>Bill of Lading <b>{{{{ doc.bl_number }}}}</b> containers have been returned "
+				f"and the deposit of <b>{{{{ doc.deposit_amount }}}}</b> is still pending refund "
+				f"on shipment <b>{_SHIPMENT_BODY}</b>.</p>"
+				"<p>Record the refund Journal Entry when the shipping line returns the deposit.</p>"
+				"<p><a href=\"{{ frappe.utils.get_url_to_form('Bill of Lading', doc.name) }}\">"
+				"Open Bill of Lading</a></p>"
+			),
+			roles=finance,
+			document_type="Bill of Lading",
 		),
 	]
 

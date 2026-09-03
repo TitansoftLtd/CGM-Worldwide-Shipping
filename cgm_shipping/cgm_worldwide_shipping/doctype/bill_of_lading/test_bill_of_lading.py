@@ -5,7 +5,14 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
+from frappe.utils import today
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	DEPOSIT_ARRANGEMENT_CONTAINER,
+	DEPOSIT_ARRANGEMENT_REVOLVING,
+	DEPOSIT_PAYMENT_STATUSES,
+	DEPOSIT_REFUND_STATUSES,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	AUTO_ALLOCATE_FCL_BATCH,
 	allocate_fcl_batch_for_doc,
@@ -17,15 +24,21 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	next_fcl_batch_number,
 	normalize_derived_quantity,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	BL_TO_OPPORTUNITY_DETAIL_FIELDS,
+)
 from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+	DEPOSIT_JE_KIND_OUTBOUND,
 	amended_bill_of_lading_name,
+	bl_is_refundable,
 	build_bill_of_lading_name,
 	ensure_bl_cargo_type,
 	expand_requested_cargo_to_container_stubs,
+	is_deposit_journal_entry,
+	maybe_start_bl_deposit_refund_tracking,
 	parse_batch_number_from_bl_name,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-	BL_TO_OPPORTUNITY_DETAIL_FIELDS,
+	refresh_bl_deposit_payment_status,
+	rollup_bl_deposit_amount,
 )
 
 
@@ -257,3 +270,134 @@ class TestBillOfLadingCargoType(IntegrationTestCase):
 		doc = frappe._dict(number_of_packages="10", package_type="Cartons")
 		ensure_bl_cargo_type(doc)
 		self.assertEqual(doc.cargo_type, "LCL")
+
+
+class TestBillOfLadingDeposits(IntegrationTestCase):
+	def _bl(self, **kwargs):
+		doc = frappe._dict(
+			{
+				"name": "BL-TEST",
+				"deposit_arrangement": DEPOSIT_ARRANGEMENT_CONTAINER,
+				"deposit_payer": "Customer",
+				"deposit_amount": 0,
+				"deposit_payment_journal_entry": None,
+				"deposit_refund_status": None,
+				"deposit_return_date": None,
+				"container_information": [
+					frappe._dict({"deposit_amount": 3000, "container_number": "C1"}),
+					frappe._dict({"deposit_amount": 2000, "container_number": "C2"}),
+					frappe._dict({"deposit_amount": 0, "container_number": "C3"}),
+				],
+			}
+		)
+		doc.update(kwargs)
+		doc.meta = frappe.get_meta("Bill of Lading")
+		return doc
+
+	def test_rollup_bl_deposit_amount(self):
+		bl = self._bl()
+		self.assertEqual(rollup_bl_deposit_amount(bl), 5000)
+
+	def test_bl_is_refundable_customer_not_agent(self):
+		bl = self._bl(deposit_payer="Customer")
+		self.assertTrue(bl_is_refundable(bl))
+		bl.deposit_payer = "Agent"
+		self.assertFalse(bl_is_refundable(bl))
+
+	def test_refresh_bl_deposit_payment_status_not_applicable(self):
+		bl = self._bl(
+			deposit_arrangement=DEPOSIT_ARRANGEMENT_REVOLVING,
+			container_information=[],
+		)
+		refresh_bl_deposit_payment_status(bl)
+		self.assertEqual(bl.deposit_payment_status, DEPOSIT_PAYMENT_STATUSES[0])
+		self.assertEqual(flt_or_zero(bl.deposit_amount), 0)
+
+	def test_refresh_bl_deposit_payment_status_unpaid_without_je(self):
+		bl = self._bl()
+		refresh_bl_deposit_payment_status(bl)
+		self.assertEqual(bl.deposit_payment_status, DEPOSIT_PAYMENT_STATUSES[1])
+		self.assertEqual(flt_or_zero(bl.deposit_amount), 5000)
+
+	def test_refresh_bl_deposit_payment_status_paid_with_submitted_je(self):
+		if not frappe.db.exists("Journal Entry", {"docstatus": 1}):
+			self.skipTest("No submitted Journal Entry on site")
+		je_name = frappe.db.get_value("Journal Entry", {"docstatus": 1}, "name")
+		bl = self._bl(deposit_payment_journal_entry=je_name)
+		refresh_bl_deposit_payment_status(bl)
+		self.assertEqual(bl.deposit_payment_status, DEPOSIT_PAYMENT_STATUSES[2])
+
+	def test_refresh_bl_deposit_payment_status_unpaid_with_draft_je(self):
+		if not frappe.db.exists("Journal Entry", {"docstatus": 0}):
+			self.skipTest("No draft Journal Entry on site")
+		je_name = frappe.db.get_value("Journal Entry", {"docstatus": 0}, "name")
+		bl = self._bl(deposit_payment_journal_entry=je_name)
+		refresh_bl_deposit_payment_status(bl)
+		self.assertEqual(bl.deposit_payment_status, DEPOSIT_PAYMENT_STATUSES[1])
+
+	def test_maybe_start_bl_deposit_refund_tracking_when_all_returned(self):
+		bl = self._bl(
+			deposit_payment_status=DEPOSIT_PAYMENT_STATUSES[2],
+			deposit_payer="Customer",
+			name="BL-REFUND-TEST",
+		)
+		from unittest.mock import patch
+
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.bl_all_containers_returned",
+			return_value=(True, str(today())),
+		):
+			maybe_start_bl_deposit_refund_tracking(bl)
+		self.assertEqual(bl.deposit_refund_status, DEPOSIT_REFUND_STATUSES[0])
+		if bl.meta.has_field("deposit_return_date"):
+			self.assertEqual(str(bl.deposit_return_date), str(today()))
+
+	def test_maybe_start_bl_deposit_refund_tracking_skips_agent(self):
+		bl = self._bl(
+			deposit_payment_status=DEPOSIT_PAYMENT_STATUSES[2],
+			deposit_payer="Agent",
+		)
+		maybe_start_bl_deposit_refund_tracking(bl)
+		self.assertFalse(bl.deposit_refund_status)
+
+	def test_maybe_start_bl_deposit_refund_tracking_skips_revolving_fund(self):
+		bl = self._bl(
+			deposit_arrangement=DEPOSIT_ARRANGEMENT_REVOLVING,
+			deposit_payment_status=DEPOSIT_PAYMENT_STATUSES[2],
+			container_information=[],
+		)
+		maybe_start_bl_deposit_refund_tracking(bl)
+		self.assertFalse(bl.deposit_refund_status)
+
+	def test_is_deposit_journal_entry_by_kind(self):
+		je = frappe._dict({"custom_cgm_deposit_entry_kind": DEPOSIT_JE_KIND_OUTBOUND})
+		je.meta = frappe.get_meta("Journal Entry")
+		self.assertTrue(is_deposit_journal_entry(je))
+
+	def test_is_deposit_journal_entry_by_bl_link(self):
+		je = frappe._dict(
+			{
+				"custom_cgm_deposit_entry_kind": "",
+				"custom_cgm_source_bill_of_lading": "BL-TEST",
+				"custom_cgm_source_container_tracker": "",
+			}
+		)
+		je.meta = frappe.get_meta("Journal Entry")
+		self.assertTrue(is_deposit_journal_entry(je))
+
+	def test_is_deposit_journal_entry_false_for_normal(self):
+		je = frappe._dict(
+			{
+				"custom_cgm_deposit_entry_kind": "",
+				"custom_cgm_source_container_tracker": "",
+				"custom_cgm_source_bill_of_lading": "",
+			}
+		)
+		je.meta = frappe.get_meta("Journal Entry")
+		self.assertFalse(is_deposit_journal_entry(je))
+
+
+def flt_or_zero(value):
+	from frappe.utils import flt
+
+	return flt(value)

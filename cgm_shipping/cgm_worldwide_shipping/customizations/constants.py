@@ -227,6 +227,19 @@ DEPOSIT_PAYMENT_STATUSES = (
 	"Paid",
 )
 
+DEPOSIT_ARRANGEMENT_CONTAINER = "Container Deposit"
+DEPOSIT_ARRANGEMENT_REVOLVING = "Revolving Fund"
+DEPOSIT_ARRANGEMENTS = (
+	DEPOSIT_ARRANGEMENT_CONTAINER,
+	DEPOSIT_ARRANGEMENT_REVOLVING,
+)
+
+DEPOSIT_PAYERS = (
+	"Agent",
+	"Customer",
+	"Company",
+)
+
 # High-level cargo classification (distinct from Container Type size masters).
 CARGO_TYPE_OPTIONS = (
 	"FCL",
@@ -255,6 +268,7 @@ KPA_RECEIPT_VERIFY_FINANCE = "CGM Task - KPA Receipt Verify Finance"
 DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 TRANSPORTER_TRUCK_UPDATE = "CGM Operational Update"  # legacy alias
 OPERATIONAL_UPDATE_NOTIFICATION = "CGM Operational Update"
+CONTAINER_DEPOSIT_REFUND_REMINDER = "CGM Container - Deposit Refund Reminder"
 
 # Per-row decisions on Funding Request Material Request child table.
 FR_ROW_DECISION_PENDING = "Pending"
@@ -296,3 +310,7 @@ SEA_TASK_HIDDEN_FIELDS = (
 	"closing_date",
 	"template_tasks",
 )
+
+# Sales Invoice numbering: INV-MMYY-#### / CR-MMYY-#### (MMYY = month+year from posting date).
+SALES_INVOICE_NAMING_SERIES = "INV-.MMYY.-.####"
+SALES_INVOICE_CREDIT_NOTE_NAMING_SERIES = "CR-.MMYY.-.####"

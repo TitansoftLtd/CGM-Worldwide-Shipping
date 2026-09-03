@@ -1,15 +1,16 @@
-// Runs after crm_opportunity.js — late passes beat ERPNext Opportunity.refresh() re-adding
-// procurement Create items after our first paint.
+// Runs after crm_opportunity.js — late pass removes ERPNext procurement Create items.
 frappe.provide("cgm_shipping.opportunity");
 
-const CGM_OPPORTUNITY_MENU_LATE_DELAYS_MS = [400, 800, 1200, 2000];
+const CGM_OPPORTUNITY_MENU_LATE_DELAYS_MS = [400, 1200];
 
 function cgm_late_paint_opportunity_create_menu(frm) {
-	if (typeof cgm_shipping.opportunity_menu?.paint !== "function") {
-		return;
+	if (typeof cgm_shipping.opportunity_menu?.hide_procurement === "function") {
+		cgm_shipping.opportunity_menu.hide_procurement(frm);
 	}
-	cgm_shipping.opportunity_menu.hide_procurement(frm);
-	cgm_shipping.opportunity_menu.paint(frm);
+	// Inner Actions menu is owned by crm_opportunity.js — one debounced rebuild only.
+	if (typeof cgm_shipping.opportunity_menu?.paint === "function") {
+		cgm_shipping.opportunity_menu.paint(frm);
+	}
 }
 
 frappe.ui.form.on("Opportunity", {

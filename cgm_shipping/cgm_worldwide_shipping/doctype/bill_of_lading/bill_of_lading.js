@@ -52,7 +52,10 @@ function toggle_cargo_fields(frm) {
 
 	[
 		["section_fcl", show_fcl],
+		["deposit_arrangement", show_fcl],
+		["deposit_currency", show_fcl && bl_has_container_deposit(frm)],
 		["container_information", show_fcl],
+		["section_container_deposit", show_fcl && bl_has_container_deposit(frm)],
 		["section_lcl", is_lcl],
 		["number_of_packages", is_lcl],
 		["package_type", is_lcl],
@@ -103,6 +106,7 @@ frappe.ui.form.on("Bill of Lading", {
 		}
 		clear_draft_linked_opportunity_link(frm);
 		hide_linked_opportunity_field(frm);
+		apply_bl_deposit_currency(frm);
 	},
 
 	refresh(frm) {
@@ -114,6 +118,27 @@ frappe.ui.form.on("Bill of Lading", {
 			add_create_opportunity_button(frm);
 		}
 		setup_bill_of_lading_shipment_type_query(frm);
+		toggle_bl_deposit_fields(frm);
+		apply_bl_deposit_currency(frm);
+		setup_bl_deposit_action_buttons(frm);
+	},
+
+	deposit_arrangement(frm) {
+		if (bl_has_container_deposit(frm) && !frm.doc.deposit_currency) {
+			frm.set_value("deposit_currency", "USD");
+		}
+		toggle_cargo_fields(frm);
+		toggle_bl_deposit_fields(frm);
+		apply_bl_deposit_currency(frm);
+		setup_bl_deposit_action_buttons(frm);
+	},
+
+	deposit_currency(frm) {
+		apply_bl_deposit_currency(frm);
+	},
+
+	deposit_payer(frm) {
+		setup_bl_deposit_action_buttons(frm);
 	},
 
 	cargo_type(frm) {
@@ -147,6 +172,93 @@ frappe.ui.form.on("Bill of Lading", {
 const CGM_RETURN_OPPORTUNITY_KEY = "cgm_return_opportunity";
 const CGM_PENDING_BL_LINK_KEY = "cgm_pending_bl_link";
 const CGM_BL_SEED_OPPORTUNITY_KEY = "cgm_bl_seed_opportunity";
+
+const CGM_BL_DEPOSIT_ARRANGEMENT = "Container Deposit";
+
+function bl_has_container_deposit(frm) {
+	return (frm.doc.deposit_arrangement || "").trim() === CGM_BL_DEPOSIT_ARRANGEMENT;
+}
+
+function bl_deposit_is_refundable(frm) {
+	const payer = (frm.doc.deposit_payer || "").trim();
+	return bl_has_container_deposit(frm) && (payer === "Customer" || payer === "Company");
+}
+
+function toggle_bl_deposit_fields(frm) {
+	const show = bl_has_container_deposit(frm);
+	[
+		"deposit_payer",
+		"deposit_amount",
+		"deposit_payment_status",
+		"deposit_payment_journal_entry",
+		"deposit_refund_journal_entry",
+		"deposit_refund_status",
+		"deposit_refund_applied_on",
+		"deposit_return_date",
+		"deposit_sales_invoice",
+		"deposit_credit_note",
+		"deposit_company_invoice_pending",
+	].forEach((fieldname) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.toggle_display(fieldname, show);
+		}
+	});
+	if (frm.fields_dict.deposit_currency) {
+		frm.toggle_display("deposit_currency", show);
+	}
+	if (frm.fields_dict.container_information?.grid) {
+		frm.fields_dict.container_information.grid.toggle_display("deposit_amount", show);
+	}
+}
+
+function apply_bl_deposit_currency(frm) {
+	const currency = (frm.doc.deposit_currency || "").trim();
+	if (frm.fields_dict.deposit_amount) {
+		frm.set_df_property("deposit_amount", "options", "deposit_currency");
+	}
+	const grid = frm.fields_dict.container_information?.grid;
+	if (!grid) {
+		return;
+	}
+	grid.update_docfield_property("deposit_amount", "options", "deposit_currency");
+	if (grid.grid_rows?.length) {
+		grid.grid_rows.forEach((row) => {
+			const control = row.on_grid_fields_dict?.deposit_amount;
+			if (control) {
+				control.refresh();
+			}
+		});
+	}
+	if (currency) {
+		grid.refresh();
+	}
+}
+
+function setup_bl_deposit_action_buttons(frm) {
+	if (frm.is_new() || !bl_has_container_deposit(frm)) {
+		return;
+	}
+	if (frm.doc.deposit_payment_journal_entry) {
+		frm.add_custom_button(__("View Deposit JE"), () => {
+			frappe.set_route("Form", "Journal Entry", frm.doc.deposit_payment_journal_entry);
+		});
+	}
+	if (frm.doc.deposit_sales_invoice) {
+		frm.add_custom_button(__("View Deposit Sales Invoice"), () => {
+			frappe.set_route("Form", "Sales Invoice", frm.doc.deposit_sales_invoice);
+		});
+	}
+	if (frm.doc.deposit_credit_note) {
+		frm.add_custom_button(__("View Deposit Credit Note"), () => {
+			frappe.set_route("Form", "Sales Invoice", frm.doc.deposit_credit_note);
+		});
+	}
+	if (frm.doc.deposit_refund_journal_entry) {
+		frm.add_custom_button(__("View Refund JE"), () => {
+			frappe.set_route("Form", "Journal Entry", frm.doc.deposit_refund_journal_entry);
+		});
+	}
+}
 
 const BL_SEED_SCALAR_FIELDS = [
 	"customer",
