@@ -100,37 +100,16 @@ def project_shipping_line_finance_paid(project: str | None) -> bool:
 
 
 def refresh_deposit_payment_status(ct) -> None:
-	"""Derive deposit_payment_status from has_deposit + SL finance payment."""
-	if not ct.meta.has_field("deposit_payment_status"):
-		return
-	has_deposit = cint(ct.get("has_deposit")) if ct.meta.has_field("has_deposit") else 0
-	if not has_deposit:
-		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[0]  # Not Applicable
-		return
-	if project_shipping_line_finance_paid(ct.get("project")):
-		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[2]  # Paid
-	else:
-		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[1]  # Unpaid
+	"""No-op: deposits are tracked on Bill of Lading, not Container Tracker."""
+	return
 
 
 def sync_project_deposit_payment_statuses(project: str | None) -> int:
-	"""Recompute deposit_payment_status on all trackers for a project. Returns updated count."""
-	if not project or not frappe.db.exists("DocType", "Container Tracker"):
-		return 0
-	meta = frappe.get_meta("Container Tracker")
-	if not meta.has_field("deposit_payment_status"):
-		return 0
-	updated = 0
-	for name in frappe.get_all(
-		"Container Tracker", filters={"project": project}, pluck="name"
-	):
-		ct = frappe.get_doc("Container Tracker", name)
-		before = ct.get("deposit_payment_status")
-		refresh_deposit_payment_status(ct)
-		if ct.get("deposit_payment_status") != before:
-			ct.db_set("deposit_payment_status", ct.deposit_payment_status, update_modified=False)
-			updated += 1
-	return updated
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		sync_project_deposit_payment_statuses as _sync_project_deposit_payment_statuses,
+	)
+
+	return _sync_project_deposit_payment_statuses(project)
 
 
 def get_gate_out_task_sequence() -> int:
@@ -1056,8 +1035,6 @@ def _apply_empty_return(ct, today_date) -> None:
 def _apply_interchange(ct, today_date, task_doc) -> None:
 	if not ct.interchange_date:
 		ct.interchange_date = today_date
-	if not ct.deposit_refund_status:
-		ct.deposit_refund_status = DEPOSIT_REFUND_STATUSES[0]
 	if task_doc:
 		meta = frappe.get_meta("Task")
 		if meta.has_field("custom_interchange_document") and task_doc.get(
@@ -1350,8 +1327,7 @@ def confirm_shipment_arrival_at_port(
 	if project.get("custom_port_arrival_confirmed"):
 		frappe.throw(_("Port arrival has already been confirmed for this project."))
 
-	# Ignore task_name — confirmation is Project-owned. Keep arg for old clients.
-	_ = task_name
+	# task_name is accepted for backward compatibility but is ignored.
 
 	return ensure_container_trackers_at_port_arrival(
 		project_name,
