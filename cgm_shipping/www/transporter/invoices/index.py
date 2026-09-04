@@ -23,7 +23,7 @@ def get_context(context):
 		transporter = portal_context_base(context)
 		if not transporter:
 			return
-		context.title = _("Invoices from CGM")
+		context.title = _("Invoices to CGM")
 		context.update(get_transporter_invoice_summary(transporter))
 	except frappe.Redirect:
 		raise

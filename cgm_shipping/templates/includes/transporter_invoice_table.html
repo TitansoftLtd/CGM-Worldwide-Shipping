@@ -20,7 +20,7 @@
       <tr>
         <td data-label="{{ _('Posting Date') }}">{% if i.posting_date %}{{ local_date(i.posting_date) }}{% else %}-{% endif %}</td>
         <td data-label="{{ _('Invoice') }}"><span class="ref-link">{{ i.name }}</span></td>
-        <td data-label="{{ _('Supplier Invoice No') }}">{% if i.bill_no %}{{ i.bill_no }}{% else %}—{% endif %}</td>
+        <td data-label="{{ _('Supplier Invoice No') }}">{{ i.bill_no or "—" }}</td>
         <td data-label="{{ _('Supplier Invoice Date') }}">{% if i.bill_date %}{{ local_date(i.bill_date) }}{% else %}—{% endif %}</td>
         <td data-label="{{ _('Shipment') }}">
           {% if i.allocation_url and (i.project_ref or i.project) %}

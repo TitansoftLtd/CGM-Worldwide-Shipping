@@ -38,6 +38,7 @@ _DEFAULTS = {
 	"stat_delivered": 0,
 	"stat_demurrage": 0,
 	"stat_open_quotations": 0,
+	"stat_unread_updates": 0,
 	"stat_amount_due": 0,
 	"amount_due_currency": None,
 	"amount_due_display": None,
@@ -179,6 +180,12 @@ def _populate(context, customer):
 		)
 	else:
 		context.amount_due_display = fmt_money(0, currency=context.amount_due_currency)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		count_unread_customer_updates,
+	)
+
+	context.stat_unread_updates = count_unread_customer_updates(customer)
 
 	recent = []
 	for s in shipments[:8]:

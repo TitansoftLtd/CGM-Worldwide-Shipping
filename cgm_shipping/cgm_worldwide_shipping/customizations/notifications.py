@@ -110,6 +110,108 @@ def send_notification(notification_name: str, doc, *, audience: str = "users") -
 	}
 
 
+def send_notification_to(
+	notification_name: str,
+	doc,
+	recipients: list[str] | None,
+	*,
+	audience: str = "users",
+) -> dict:
+	"""Send a Notification's own template to an explicit recipient list.
+
+	`send_notification` resolves recipients from roles configured on the
+	Notification doc, which cannot express "the portal users of this
+	document's customer". This renders the same admin-editable subject and
+	message, then mails the addresses the caller worked out - one message per
+	recipient, so a customer never sees a transporter's address.
+	"""
+	recipients = [r for r in (recipients or []) if r]
+	if not notification_name or not doc or not recipients:
+		return {"notified": 0, "emails_sent": 0}
+
+	from frappe.email.doctype.notification.notification import get_context
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_notifications import (
+		resolve_notification_name,
+	)
+
+	notification_name = resolve_notification_name(notification_name) or notification_name
+
+	if not frappe.db.exists("Notification", notification_name):
+		frappe.log_error(
+			title="CGM notification missing",
+			message=f"Create Notification '{notification_name}' (run bench migrate).",
+		)
+		return {
+			"notified": 0,
+			"emails_sent": 0,
+			"message": f"Notification <b>{notification_name}</b> is not installed on this site.",
+		}
+
+	notification = frappe.get_doc("Notification", notification_name)
+	if not notification.enabled:
+		return {
+			"notified": 0,
+			"emails_sent": 0,
+			"message": f"Notification <b>{notification_name}</b> is disabled.",
+		}
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+		stamp_shipment_name_on_doc,
+	)
+
+	try:
+		stamp_shipment_name_on_doc(doc)
+	except Exception:
+		frappe.log_error(
+			title="CGM shipment name stamp failed",
+			message=frappe.get_traceback(),
+		)
+
+	context = get_context(doc)
+	try:
+		subject = frappe.render_template(notification.subject or "", context)
+		message = frappe.render_template(notification.message or "", context)
+	except Exception:
+		frappe.log_error(
+			title=f"CGM notification render failed: {notification_name}",
+			message=frappe.get_traceback(),
+		)
+		return {"notified": 0, "emails_sent": 0}
+
+	try:
+		frappe.sendmail(
+			recipients=recipients,
+			subject=subject,
+			message=message,
+			reference_doctype=doc.doctype,
+			reference_name=doc.name,
+		)
+	except Exception as exc:
+		frappe.log_error(title=f"CGM notification failed: {notification_name}", message=str(exc))
+		return {
+			"notified": 0,
+			"emails_sent": 0,
+			"email_error": str(exc),
+			"message": f"Could not send notification: {exc}",
+		}
+
+	return {
+		"notified": 1,
+		"emails_sent": len(recipients),
+		"recipient_count": len(recipients),
+		"message": workflow_notify_message(
+			f"Notification <b>{notification_name}</b> sent.",
+			{
+				"notified": 1,
+				"emails_sent": len(recipients),
+				"recipient_count": len(recipients),
+			},
+			audience=audience,
+		),
+	}
+
+
 def notify_finance_for_task(task_name: str, *, action_label: str = "Payment action needed") -> dict:
 	if not task_name or not frappe.db.exists("Task", task_name):
 		return {"notified": 0, "emails_sent": 0}

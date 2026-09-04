@@ -70,7 +70,7 @@
       <div class="cp-avatar" aria-hidden="true">{{ (first_name or "?")[0]|upper }}</div>
       <div style="flex:1; min-width:0;">
         <h1>{{ _("Transporter Portal") }}</h1>
-        <p class="cp-sub">{{ _("Manage container allocations, truck assignments, interchange receipts, and invoices from CGM.") }}</p>
+        <p class="cp-sub">{{ _("Manage container allocations, truck assignments, interchange receipts, and invoices to CGM.") }}</p>
         {% if is_transporter %}
         <span class="cp-chip"><span class="dot"></span>{{ transporter_name }}</span>
         {% endif %}
@@ -128,7 +128,7 @@
         <div class="cp-kpi-label">{{ _("Completed Jobs") }}</div>
       </div>
     </button>
-    <a class="cp-kpi rose" href="/transporter/invoices" aria-label="{{ _('View invoices from CGM') }}">
+    <a class="cp-kpi rose" href="/transporter/invoices" aria-label="{{ _('View invoices to CGM') }}">
       <div class="cp-kpi-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>
       </div>
@@ -139,15 +139,30 @@
         <div class="cp-kpi-label">{{ _("CGM owes you") }}</div>
       </div>
     </a>
+    {% if stat_unread_updates %}
+    <a class="cp-kpi teal" href="/transporter/messages" aria-label="{{ _('View messages from CGM') }}">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_unread_updates }}</div>
+        <div class="cp-kpi-label">{{ _("Unread from CGM") }}</div>
+      </div>
+    </a>
+    {% endif %}
   </section>
 
   <nav class="cp-actions" style="margin-bottom:1.5rem;">
+    <a class="cp-action" href="/transporter/messages">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+      <div><h3>{{ _("Messages") }}</h3><p>{{ _("Talk to CGM about a job, or anything else.") }}</p></div>
+    </a>
     <a class="cp-action" href="/transporter/invoices">
       <span class="cp-action-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>
       </span>
       <div>
-        <h3>{{ _("Invoices from CGM") }}</h3>
+        <h3>{{ _("Invoices to CGM") }}</h3>
         <p>{{ _("See what CGM owes you, and which invoices have been paid.") }}</p>
       </div>
     </a>

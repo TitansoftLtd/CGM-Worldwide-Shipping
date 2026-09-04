@@ -1,139 +1,283 @@
-/* Operational Updates — native Frappe list spacing + typography (Desk + portal) */
+/* Copyright (c) 2026, Titansoft Limited and contributors */
+/* Update cards: the Desk feed and the server-rendered transporter portal
+   share this markup, so both are styled here. */
 
 .cgm-updates-list {
 	display: flex;
 	flex-direction: column;
-	gap: var(--margin-sm, 0.5rem);
+	gap: 0.4rem;
 }
 
-.cgm-updates-list .list-row-container {
-	border: 1px solid var(--border-color, var(--cp-border, #e5e7eb));
-	border-radius: var(--border-radius-md, var(--border-radius, 8px));
-	background: var(--fg-color, var(--card-bg, var(--cp-surface, #fff)));
-	padding: var(--padding-md, 1rem);
+/* A flex child shrinks by default. In a scrolling column that squeezed every
+   card below its content height - which only became visible once the card
+   clipped its overflow. Cards keep their natural height; the list scrolls. */
+.cgm-updates-list > .cgm-upd-card {
+	flex: 0 0 auto;
 }
 
-.cgm-updates-list .list-row-container.is-unread {
-	background-color: var(--highlight-color, #fffce7);
+/* The whole row opens the conversation. An "Open" button pinned to the right
+   edge of a wide screen ended up metres from the message it belonged to; a
+   clickable row uses the width for the message instead, the way a mail list
+   does. */
+.cgm-upd-card {
+	position: relative;
+	/* The extra left padding is the width of the accent bar below, so text
+	   starts in the same place whether or not a card carries one. */
+	padding: 0.75rem 1rem 0.75rem calc(1rem + 3px);
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md, 8px);
+	background: var(--card-bg, var(--fg-color));
+	cursor: pointer;
+	/* Clips the accent bar to the rounded corners. */
+	overflow: hidden;
+	transition: border-color 0.12s ease, background 0.12s ease;
+}
+.cgm-upd-card:hover {
+	border-color: var(--gray-300, #d1d5db);
+	background: var(--bg-light-gray, var(--subtle-fg, #fafbfc));
+}
+.cgm-upd-card:focus-visible {
+	outline: 2px solid var(--primary, #2490ef);
+	outline-offset: 2px;
 }
 
-.cgm-updates-head {
+/* The state accent is a bar drawn inside the card, not a thick left border.
+   As a border it replaced the 1px edge, so a card with no state rendered with
+   its left side missing and one corner radius out of step with the other. */
+.cgm-upd-card::before {
+	content: "";
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 3px;
+	background: transparent;
+}
+/* Every conversation carries its state on the bar, so no row reads as
+   colourless. State wins over unread: what the row needs matters more than
+   whether it has been looked at. */
+.cgm-upd-card.is-unread::before { background: var(--blue-400, #5e94ec); }
+.cgm-upd-card.is-answered::before { background: var(--green-400, #48bb74); }
+.cgm-upd-card.is-closed::before { background: var(--green-400, #48bb74); }
+/* A question nobody has answered is the one to act on. */
+.cgm-upd-card.is-awaiting::before { background: var(--orange-400, #f0932b); }
+
+.cgm-upd-headline {
 	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--margin-sm, 0.5rem);
-	margin-bottom: var(--margin-sm, 0.5rem);
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0.35rem 0.5rem;
 }
+.cgm-upd-title {
+	font-weight: 600;
+	font-size: var(--text-base);
+	color: var(--text-color);
+	overflow-wrap: anywhere;
+}
+/* Reference and time sit at the end of the title row, like a mail list. */
+.cgm-upd-stamp {
+	margin-left: auto;
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	white-space: nowrap;
+	font-size: var(--text-xs);
+	color: var(--text-muted);
+}
+.cgm-upd-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-.cgm-updates-badges {
+.cgm-upd-tag {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.1rem 0.45rem;
+	border-radius: 999px;
+	font-size: var(--text-xs);
+	font-weight: 600;
+	line-height: 1.5;
+	white-space: nowrap;
+}
+/* Two kinds of tag sit on the same row, so they are told apart by shape rather
+   than hue: who wrote it is a filled pill, the state is a dot and a word. That
+   keeps both in colour without either reading as the other. */
+.cgm-upd-tag.is-source.is-customer {
+	background: var(--blue-100, #e7f0fd);
+	color: var(--blue-600, #2d6ecb);
+}
+.cgm-upd-tag.is-source.is-transporter {
+	background: var(--orange-100, #fdf0e5);
+	color: var(--orange-600, #b45309);
+}
+.cgm-upd-tag.is-source.is-internal {
+	background: var(--gray-100, #f4f5f6);
+	color: var(--text-muted);
+}
+/* State: no fill, a coloured dot and the word. Amber is the only one asking
+   for action; answered and closed are both settled from CGM's side, so they
+   share green and the word carries the difference. */
+.cgm-upd-tag.is-awaiting,
+.cgm-upd-tag.is-answered,
+.cgm-upd-tag.is-closed {
+	background: transparent;
+	padding-left: 0.1rem;
+	gap: 0.35rem;
+	font-weight: 600;
+}
+.cgm-upd-tag.is-awaiting::before,
+.cgm-upd-tag.is-answered::before,
+.cgm-upd-tag.is-closed::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+	flex-shrink: 0;
+}
+.cgm-upd-tag.is-awaiting { color: var(--orange-600, #b45309); }
+.cgm-upd-tag.is-answered { color: var(--green-600, #167f3d); }
+.cgm-upd-tag.is-closed { color: var(--green-600, #167f3d); }
+
+.cgm-upd-meta {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: center;
-	gap: var(--margin-xs, 0.25rem);
-	min-width: 0;
+	gap: 0.2rem 0.4rem;
+	margin-top: 0.3rem;
+}
+.cgm-upd-chip {
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+.cgm-upd-chip + .cgm-upd-chip::before {
+	content: "·";
+	margin-right: 0.4rem;
+	color: var(--gray-400, #9ca3af);
+}
+.cgm-upd-chip.is-ref {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	color: var(--text-color);
 }
 
-/* Portal-safe badge colors when desk indicator tokens are missing */
-.cgm-updates-list .indicator-pill.red {
-	background: var(--bg-red, var(--cp-red-soft, #fee2e2));
-	color: var(--text-on-red, var(--cp-red, #dc2626));
-}
-
-.cgm-updates-list .indicator-pill.orange {
-	background: var(--bg-orange, var(--cp-amber-soft, #fef3c7));
-	color: var(--text-on-orange, var(--cp-amber, #d97706));
-}
-
-.cgm-updates-list .indicator-pill.blue {
-	background: var(--bg-blue, var(--cp-blue-soft, #dbeafe));
-	color: var(--text-on-blue, var(--cp-blue, #2563eb));
-}
-
-.cgm-updates-list .indicator-pill.gray,
-.cgm-updates-list .indicator-pill.grey {
-	background: var(--bg-gray, var(--cp-surface-alt, #f8fafc));
-	color: var(--text-on-gray, var(--cp-text-muted, #64748b));
-}
-
-.cgm-updates-list .indicator-pill.cyan {
-	background: var(--bg-cyan, var(--cp-teal-soft, #ccfbf1));
-	color: var(--text-on-cyan, var(--cp-teal, #0d9488));
-}
-
-.cgm-updates-list .indicator-pill.yellow {
-	background: var(--bg-yellow, #fef9c3);
-	color: var(--text-on-yellow, #a16207);
-}
-
-.cgm-updates-list .cgm-upd-subject {
-	font-weight: var(--weight-semibold, 600);
-	height: auto;
-	min-height: 20px;
-	line-height: 1.2;
-	white-space: nowrap;
-}
-
-.cgm-updates-list .cgm-upd-source {
-	font-size: var(--text-xs, 0.75rem);
-	font-weight: var(--weight-semibold, 600);
-	letter-spacing: 0.03em;
-}
-
-.cgm-updates-when {
-	flex-shrink: 0;
-	white-space: nowrap;
-	color: var(--text-muted, var(--cp-text-muted, #64748b));
-}
-
-.cgm-updates-body {
-	display: flex;
-	justify-content: space-between;
-	align-items: flex-end;
-	gap: var(--margin-md, 1rem);
-}
-
-.cgm-updates-list .list-row-left {
-	flex: 1;
-	min-width: 0;
-}
-
-.cgm-updates-list .list-row-right {
-	flex-shrink: 0;
-	display: flex;
-	align-items: flex-end;
-}
-
-.cgm-updates-meta {
-	margin-bottom: var(--margin-sm, 0.5rem);
-}
-
-.cgm-updates-meta-line {
-	font-size: var(--text-sm, 0.875rem);
+.cgm-upd-preview {
+	margin: 0.3rem 0 0;
+	font-size: var(--text-sm);
+	color: var(--text-color);
 	line-height: 1.5;
-	margin-bottom: var(--margin-xs, 0.25rem);
-}
-
-.cgm-updates-meta-line:last-child {
-	margin-bottom: 0;
-}
-
-.cgm-updates-meta-label {
-	color: var(--text-color, var(--cp-text, #0f172a));
-	font-weight: var(--weight-bold, 700);
-}
-
-.cgm-updates-meta-value {
-	color: var(--text-color, var(--cp-text, #0f172a));
-	font-weight: var(--weight-medium, 500);
-}
-
-.cgm-updates-preview {
-	margin-top: var(--margin-sm, 0.5rem);
-	color: var(--text-color, var(--cp-text, #0f172a));
-	font-size: var(--text-sm, 0.875rem);
-	line-height: 1.5;
+	/* One line: the card is a pointer to the conversation, not the conversation. */
 	display: -webkit-box;
+	-webkit-line-clamp: 2;
 	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 3;
 	overflow: hidden;
+	overflow-wrap: anywhere;
 }
+.cgm-upd-answer {
+	margin-top: 0.3rem;
+	font-size: var(--text-xs);
+	color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+	.cgm-upd-stamp {
+		margin-left: 0;
+		width: 100%;
+	}
+}
+
+/* ── Conversation transcript in the View More dialog ─────────────────── */
+
+.cgm-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.25rem 0.1rem;
+}
+/* Only the dialog needs to cap its height; the form has the room to show the
+   whole exchange without clipping the first message. */
+.modal .cgm-thread {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+.cgm-thread-msg {
+  /* Same reason as the cards: a scrolling flex column would squeeze
+     these below their content height. */
+  flex: 0 0 auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md, 8px);
+  padding: 0.6rem 0.75rem;
+  background: var(--card-bg, var(--fg-color));
+  max-width: 88%;
+}
+/* The party asked; CGM answered - sides make that readable at a glance. */
+.cgm-thread-msg.is-party { align-self: flex-start; }
+.cgm-thread-msg.is-cgm {
+  align-self: flex-end;
+  background: var(--bg-light-gray, var(--subtle-fg));
+}
+/* The message View More was opened on. */
+.cgm-thread-msg.is-current { border-color: var(--primary, #2490ef); }
+.cgm-thread-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.cgm-thread-author {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.cgm-thread-when { margin-left: auto; white-space: nowrap; }
+.cgm-thread-subject {
+  margin-top: 0.2rem;
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.cgm-thread-body {
+  margin-top: 0.2rem;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.cgm-thread-note {
+  margin-top: 0.35rem;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ── Inline reply box on the Shipment Update form ─────────────────────── */
+
+.cgm-reply-box {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-color);
+}
+.cgm-reply-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+.cgm-reply-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.cgm-reply-audience {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.cgm-reply-audience input { margin: 0; }
+.cgm-reply-actions .cgm-reply-send { margin-left: auto; }
+
+/* Message reference number, quotable in an email or on the phone. */
+.cgm-updates-ref,
+.cgm-thread-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.01em;
+}
+.cgm-updates-ref { margin-left: auto; }
+.cgm-thread-ref { margin-left: auto; }
+.cgm-thread-when { margin-left: 0.5rem; }

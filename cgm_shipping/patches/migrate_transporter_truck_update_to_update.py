@@ -6,7 +6,7 @@ import frappe
 
 
 def execute() -> None:
-	if not frappe.db.exists("DocType", "Update"):
+	if not frappe.db.exists("DocType", "Shipment Update"):
 		return
 
 	_migrate_rows()
@@ -33,14 +33,14 @@ def _migrate_rows() -> None:
 		as_dict=True,
 	)
 	for row in old_rows:
-		if frappe.db.exists("Update", row.name):
+		if frappe.db.exists("Shipment Update", row.name):
 			continue
 		customer = None
 		if row.project:
 			customer = frappe.db.get_value("Project", row.project, "customer")
 		doc = frappe.get_doc(
 			{
-				"doctype": "Update",
+				"doctype": "Shipment Update",
 				"name": row.name,
 				"update_source": "Transporter",
 				"subject": row.update_type or "Other",
@@ -60,8 +60,6 @@ def _migrate_rows() -> None:
 				"driver_name": row.driver_name,
 				"driver_contact": row.driver_contact,
 				"attachment": row.attachment,
-				"related_doctype": "Container Allocation" if row.allocation else None,
-				"related_name": row.allocation,
 			}
 		)
 		doc.flags.name_set = True
@@ -80,7 +78,7 @@ def _migrate_notification() -> None:
 
 	if frappe.db.exists("Notification", new_name):
 		doc = frappe.get_doc("Notification", new_name)
-		doc.document_type = "Update"
+		doc.document_type = "Shipment Update"
 		doc.enabled = 1
 		doc.subject = "{{ doc.update_source }} update: {{ doc.subject }}"
 		doc.message = (
@@ -100,7 +98,7 @@ def _migrate_notification() -> None:
 	notification = frappe.new_doc("Notification")
 	notification.name = new_name
 	notification.subject = "{{ doc.update_source }} update: {{ doc.subject }}"
-	notification.document_type = "Update"
+	notification.document_type = "Shipment Update"
 	notification.channel = "Email"
 	notification.event = "Custom"
 	notification.enabled = 1

@@ -636,8 +636,14 @@
   }
  ],
  "index_web_pages_for_search": 1,
- "links": [],
- "modified": "2026-08-25 12:00:00.000000",
+ "links": [
+  {
+   "group": "Portal",
+   "link_doctype": "Shipment Update",
+   "link_fieldname": "container_tracker"
+  }
+ ],
+ "modified": "2026-09-04 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

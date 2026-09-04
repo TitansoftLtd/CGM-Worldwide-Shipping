@@ -1,0 +1,419 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-07-13 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "update_source",
+  "subject",
+  "posted_by",
+  "column_break_meta",
+  "posted_on",
+  "last_activity_on",
+  "is_read",
+  "section_links",
+  "project",
+  "customer",
+  "column_break_links",
+  "container_tracker",
+  "container_number",
+  "section_conversation",
+  "conversation_html",
+  "section_visibility",
+  "visible_to_customer",
+  "visible_to_transporter",
+  "column_break_visibility",
+  "parent_update",
+  "customer_read_on",
+  "transporter_read_on",
+  "section_response",
+  "response_status",
+  "responded_by",
+  "column_break_response",
+  "responded_on",
+  "response_update",
+  "closed_by",
+  "closed_on",
+  "section_message",
+  "message",
+  "attachment",
+  "section_transporter",
+  "transporter",
+  "allocation",
+  "allocation_item",
+  "column_break_transport",
+  "event_date",
+  "truck_number",
+  "driver_name",
+  "driver_contact"
+ ],
+ "fields": [
+  {
+   "default": "MSG.YY.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "no_copy": 1,
+   "options": "MSG.YY.#####",
+   "print_hide": 1,
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "default": "Internal",
+   "description": "Who wrote this. Customer and Transporter are questions from a portal; Internal is CGM's own message. This drives which portal sees it and whether an answer is owed.",
+   "fieldname": "update_source",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Update Source",
+   "options": "Customer\nTransporter\nInternal",
+   "reqd": 1
+  },
+  {
+   "description": "Taken from the first line of the message when left blank.",
+   "fieldname": "subject",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Subject"
+  },
+  {
+   "fieldname": "column_break_meta",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "posted_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Posted On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "posted_by",
+   "fieldtype": "Link",
+   "label": "Posted By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "Newest message in this thread - this message, or its latest reply. Orders the ops feed.",
+   "fieldname": "last_activity_on",
+   "fieldtype": "Datetime",
+   "label": "Last Activity On",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_read",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Read",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:true",
+   "depends_on": "eval:!doc.__islocal",
+   "fieldname": "section_conversation",
+   "fieldtype": "Section Break",
+   "label": "Conversation"
+  },
+  {
+   "fieldname": "conversation_html",
+   "fieldtype": "HTML",
+   "label": "Conversation"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_links",
+   "fieldtype": "Section Break",
+   "label": "Links"
+  },
+  {
+   "description": "Blank on a general enquiry that is not about a shipment.",
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Shipment",
+   "options": "Project"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "column_break_links",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "container_tracker",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Container Tracker",
+   "options": "Container Tracker"
+  },
+  {
+   "fieldname": "container_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Container Number",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "Which portal this message appears on. A party's own message is always visible to that party.",
+   "fieldname": "section_visibility",
+   "fieldtype": "Section Break",
+   "label": "Portal Visibility"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.update_source != 'Transporter'",
+   "description": "Show on the customer portal.",
+   "fieldname": "visible_to_customer",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Customer Portal"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.update_source != 'Customer'",
+   "description": "Show on the supplier (transporter) portal.",
+   "fieldname": "visible_to_transporter",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Supplier Portal"
+  },
+  {
+   "fieldname": "column_break_visibility",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The message this one answers.",
+   "fieldname": "parent_update",
+   "fieldtype": "Link",
+   "label": "In Reply To",
+   "options": "Shipment Update",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.visible_to_customer",
+   "fieldname": "customer_read_on",
+   "fieldtype": "Datetime",
+   "label": "Read by Customer On",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.visible_to_transporter",
+   "fieldname": "transporter_read_on",
+   "fieldtype": "Datetime",
+   "label": "Read by Transporter On",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.update_source=='Customer' || doc.update_source=='Transporter'",
+   "fieldname": "section_response",
+   "fieldtype": "Section Break",
+   "label": "Response Tracking"
+  },
+  {
+   "description": "Open while CGM owes an answer, Answered once they reply, Closed when the customer or transporter says the matter is settled. Blank on CGM's own updates.",
+   "fieldname": "response_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Response Status",
+   "options": "Open\nAnswered\nClosed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "responded_by",
+   "fieldtype": "Link",
+   "label": "Responded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_response",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "responded_on",
+   "fieldtype": "Datetime",
+   "label": "Responded On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "response_update",
+   "fieldtype": "Link",
+   "label": "Answered By",
+   "options": "Shipment Update",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.response_status=='Closed'",
+   "fieldname": "closed_by",
+   "fieldtype": "Link",
+   "label": "Closed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.response_status=='Closed'",
+   "fieldname": "closed_on",
+   "fieldtype": "Datetime",
+   "label": "Closed On",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.__islocal",
+   "fieldname": "section_message",
+   "fieldtype": "Section Break",
+   "label": "Message"
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Text",
+   "label": "Message",
+   "reqd": 1
+  },
+  {
+   "fieldname": "attachment",
+   "fieldtype": "Attach",
+   "label": "Attachment"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.update_source=='Transporter'",
+   "fieldname": "section_transporter",
+   "fieldtype": "Section Break",
+   "label": "Transporter Details"
+  },
+  {
+   "fieldname": "transporter",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Transporter",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "allocation",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Container Allocation",
+   "options": "Container Allocation"
+  },
+  {
+   "fieldname": "allocation_item",
+   "fieldtype": "Data",
+   "label": "Allocation Row",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_transport",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "event_date",
+   "fieldtype": "Date",
+   "label": "Event Date"
+  },
+  {
+   "fieldname": "truck_number",
+   "fieldtype": "Data",
+   "label": "Truck Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "label": "Driver Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "driver_contact",
+   "fieldtype": "Data",
+   "label": "Driver Contact",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-04 17:55:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Shipment Update",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Operations Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Transport Officer",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Customer",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Supplier",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "last_activity_on",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "subject",
+ "track_changes": 1
+}

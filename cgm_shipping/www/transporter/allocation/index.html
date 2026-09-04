@@ -1,6 +1,22 @@
 {% extends "templates/web.html" %}
+{% from "templates/includes/portal_localize.html" import local_datetime %}
 
 {% block title %}{{ _("Allocation Detail") }}{% endblock %}
+
+{% block head_include %}
+<style>
+  /* Conversation rows, matching the customer's /my-messages list. */
+  .mm-row { display:flex; align-items:flex-start; gap:1rem; padding:1rem 1.25rem; border-bottom:1px solid var(--cp-border); text-decoration:none; color:inherit; transition:background .12s ease; }
+  .mm-row:last-child { border-bottom:none; }
+  .mm-row:hover { background:var(--cp-surface-alt); text-decoration:none; }
+  .mm-icon { flex-shrink:0; width:38px; height:38px; border-radius:10px; background:var(--cp-brand-soft); color:var(--cp-brand); display:inline-flex; align-items:center; justify-content:center; }
+  .mm-body { flex:1; min-width:0; }
+  .mm-subject { font-size:.9rem; font-weight:600; }
+  .mm-preview { font-size:.82rem; color:var(--cp-text-muted); margin-top:.15rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mm-end { flex-shrink:0; text-align:right; font-size:.75rem; color:var(--cp-text-muted); }
+  .mm-end .cp-unread-pill { margin-top:.35rem; display:inline-block; }
+</style>
+{% endblock %}
 
 {% block page_content %}
 <div class="cp-page" id="tp-allocation-page" data-allocation="{{ allocation_name|e }}">
@@ -48,8 +64,16 @@
       {% if allocation.containers %}<span class="cp-tab-count">{{ allocation.containers|length }}</span>{% endif %}
     </button>
     <button type="button" class="cp-tab" data-cp-tab="updates" role="tab" aria-selected="false">
-      {{ _("Updates") }}
+      {{ _("Truck Updates") }}
       {% if allocation.my_updates %}<span class="cp-tab-count">{{ allocation.my_updates|length }}</span>{% endif %}
+    </button>
+    <button type="button" class="cp-tab" data-cp-tab="messages" role="tab" aria-selected="false">
+      {{ _("Messages") }}
+      {% if allocation.thread %}<span class="cp-tab-count">{{ allocation.thread|length }}</span>{% endif %}
+      {% if allocation.unread_count %}<span class="cp-unread-pill">{{ allocation.unread_count }}</span>{% endif %}
+    </button>
+    <button type="button" class="cp-tab" data-cp-tab="feedback" role="tab" aria-selected="false">
+      {{ _("Feedback") }}
     </button>
   </div>
 
@@ -213,6 +237,85 @@
     </div>
   </div>
 
+  <div class="cp-tab-panel" data-cp-panel="messages" role="tabpanel">
+    {% if open_thread %}
+    <!-- ONE CONVERSATION -->
+    <p style="margin:0 0 1rem;">
+      <a class="cp-link" href="/transporter/allocation?name={{ allocation_name|urlencode }}#messages">&larr; {{ _("All messages") }}</a>
+    </p>
+    <div class="cp-card" style="margin-bottom:1rem;">
+      <div class="cp-card-head"><h3>{{ open_thread_subject }}</h3></div>
+      <div class="cp-card-body" id="tp-thread-mount">
+        <div class="cp-thread-empty">{{ _("Loading messages…") }}</div>
+      </div>
+    </div>
+    <div class="cp-card">
+      <div class="cp-card-head"><h3>{{ _("Reply") }}</h3></div>
+      <div class="cp-card-body"><div id="tp-message-form-mount"></div></div>
+    </div>
+
+    {% else %}
+    <!-- CONVERSATION LIST -->
+    <div class="cp-section-h" style="margin-top:0;">
+      <h2>{{ _("Conversations") }}</h2>
+      <a class="cp-link" href="#tp-new-message">{{ _("Start a new message") }}</a>
+    </div>
+    <div class="cp-card" style="margin-bottom:1rem;">
+      {% if allocation.conversations %}
+        {% for c in allocation.conversations %}
+          <a class="mm-row" href="{{ c.url }}">
+            <span class="mm-icon">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+            <div class="mm-body">
+              <div class="mm-subject" style="margin-top:0;">{{ c.subject }}</div>
+              <div class="mm-preview">
+                {% if c.container_number %}<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ c.container_number }}</span> · {% endif %}
+                {{ c.last_from }}: {{ c.last_preview }}
+              </div>
+            </div>
+            <div class="mm-end">
+              {% if c.last_posted_on %}{{ local_datetime(c.last_posted_on) }}{% endif %}
+              <div>{{ _("{0} message(s)").format(c.message_count) }}</div>
+              {% if c.unread_count %}<span class="cp-unread-pill">{{ c.unread_count }}</span>
+              {% elif c.awaiting_response %}<div style="color:var(--cp-amber);font-weight:600;">{{ _("Awaiting reply") }}</div>
+              {% elif c.status == 'Closed' %}<div style="color:var(--cp-green);font-weight:600;">{{ _("Closed") }}</div>{% endif %}
+            </div>
+          </a>
+        {% endfor %}
+      {% else %}
+        <div class="cp-card-body">
+          <p style="margin:0;color:var(--cp-text-muted);font-size:.88rem;">
+            {{ _("No messages yet. Ask CGM anything about this job below.") }}
+          </p>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="cp-card" id="tp-new-message">
+      <div class="cp-card-head"><h3>{{ _("Start a new message") }}</h3></div>
+      <div class="cp-card-body">
+        <p class="text-muted" style="margin:0 0 1rem; font-size:.88rem;">
+          {{ _("Each message is its own conversation. Use Truck Updates for movement events - those also move the container's tracking dates.") }}
+        </p>
+        <div id="tp-message-form-mount"></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="cp-tab-panel" data-cp-panel="feedback" role="tabpanel">
+    <div class="cp-card" style="margin-bottom:1rem;">
+      <div class="cp-card-head"><h3>{{ _("How was this job?") }}</h3></div>
+      <div class="cp-card-body">
+        <p class="text-muted" style="margin:0 0 1rem; font-size:.88rem;">
+          {{ _("Rate working this shipment with CGM - instructions, turnaround at the port, and payment. Tick the containers it is about if it only concerns some of them.") }}
+        </p>
+        <div id="tp-feedback-mount"></div>
+      </div>
+    </div>
+  </div>
+
   {% endif %}
 </div>
 
@@ -220,6 +323,11 @@
 <script type="application/json" id="tp-update-types-json">{{ allocation.update_types_json | safe }}</script>
 <script type="application/json" id="tp-container-options-json">{{ allocation.container_options_json | safe }}</script>
 <script type="application/json" id="tp-my-updates-json">{{ allocation.my_updates_json | safe }}</script>
+<script type="application/json" id="tp-message-containers-json">{{ allocation.message_container_options_json | safe }}</script>
+<script type="application/json" id="tp-thread-json">{{ open_thread_json | default("[]") | safe }}</script>
+<script type="application/json" id="tp-feedback-categories-json">{{ allocation.feedback_categories_json | safe }}</script>
+<script type="application/json" id="tp-my-feedback-json">{{ allocation.my_feedback | tojson }}</script>
+<script type="application/json" id="tp-feedback-containers-json">{{ allocation.feedback_containers_json | safe }}</script>
 <script>
 frappe.ready(function () {
 	const page = document.getElementById("tp-allocation-page");
@@ -240,6 +348,105 @@ frappe.ready(function () {
 				panel.classList.toggle("active", panel.getAttribute("data-cp-panel") === key);
 			});
 		});
+	});
+
+	// ── Conversation + feedback (portal_conversation.js is loaded site-wide) ──
+	const ALLOCATION = page.dataset.allocation;
+	const TP = "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal.";
+
+	function readJSON(id, fallback) {
+		try {
+			return JSON.parse((document.getElementById(id) || {}).textContent || "null") || fallback;
+		} catch (e) {
+			return fallback;
+		}
+	}
+
+	// Set when one conversation is open; empty on the list view.
+	const OPEN_THREAD = {{ (open_thread or "") | tojson }};
+
+	const mount = document.getElementById("tp-thread-mount");
+	const thread = mount
+		? cgm.portal.mountThread(mount, readJSON("tp-thread-json", []), {
+				emptyText: __("No messages on this conversation yet."),
+				markReadMethod: TP + "mark_allocation_updates_read",
+				markReadArgs: { allocation_name: ALLOCATION },
+				statusMethod: TP + "set_conversation_status",
+				statusArgs: { allocation_name: ALLOCATION },
+				onStatusChanged: refreshThread,
+			})
+		: null;
+
+	function refreshThread() {
+		if (!thread) {
+			// Starting a conversation from the list: show it straight away.
+			window.location.reload();
+			return;
+		}
+		frappe.call({
+			method: TP + "get_allocation_conversation",
+			args: { allocation_name: ALLOCATION, thread: OPEN_THREAD },
+			callback(r) {
+				if (r.exc) return;
+				thread.setMessages(r.message || []);
+			},
+		});
+	}
+
+	cgm.portal.mountComposer(document.getElementById("tp-message-form-mount"), {
+		// Inside a conversation this is a reply; from the list it starts one.
+		containers: OPEN_THREAD ? [] : readJSON("tp-message-containers-json", []),
+		replyTo: OPEN_THREAD,
+		subjectPlaceholder: __("e.g. Gate pass not released"),
+		sendLabel: OPEN_THREAD ? __("Send reply") : __("Send message"),
+		onSend(values, done) {
+			let sent = false;
+			frappe.call({
+				method: TP + "post_allocation_message",
+				args: {
+					allocation_name: ALLOCATION,
+					subject: values.subject,
+					message: values.message,
+					item_name: values.item_name || "",
+					parent_update: values.parent_update,
+				},
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Message sent."),
+						indicator: "green",
+					});
+					sent = true;
+					refreshThread();
+				},
+				always() { done(sent); },
+			});
+		},
+	});
+
+	const feedbackCategories = readJSON("tp-feedback-categories-json", ["Overall Service"]);
+
+	cgm.portal.mountFeedback(document.getElementById("tp-feedback-mount"), {
+		categories: feedbackCategories,
+		containers: readJSON("tp-feedback-containers-json", []),
+		value: readJSON("tp-my-feedback-json", null),
+		onSubmit(values, done) {
+			frappe.call({
+				method: TP + "submit_allocation_feedback",
+				args: Object.assign({ allocation_name: ALLOCATION }, values),
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Thanks for your feedback."),
+						indicator: "green",
+					});
+					window.location.reload();
+				},
+				always() { done(); },
+			});
+		},
 	});
 
 	frappe.require(["dialog.bundle.js", "/assets/cgm_shipping/js/operational_updates_ui.js"], function () {
@@ -469,7 +676,6 @@ frappe.ready(function () {
 				args: {
 					allocation_name: allocationName,
 					item_name: itemName,
-					subject: values.subject,
 					update_type: values.subject,
 					message: values.message,
 					event_date: values.event_date || null,

@@ -9,21 +9,25 @@ from frappe.utils import cint, get_datetime, getdate, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	OPERATIONAL_UPDATE_NOTIFICATION,
+	PORTAL_UPDATE_PUBLISHED_NOTIFICATION,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
 	_update_allocation_item_row,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import send_notification
+from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
+	send_notification,
+	send_notification_to,
+)
 
-UPDATE_DOCTYPE = "Update"
+UPDATE_DOCTYPE = "Shipment Update"
 
+# Who wrote a message. Customs / Finance / Other were carried over from the
+# original DocType and no code path ever produced them, so a filter on them
+# always came back empty.
 UPDATE_SOURCES = (
-	"Transporter",
 	"Customer",
+	"Transporter",
 	"Internal",
-	"Customs",
-	"Finance",
-	"Other",
 )
 
 TRANSPORTER_SUBJECTS = (
@@ -55,12 +59,64 @@ _UPDATE_LIST_FIELDS = [
 	"container_number",
 	"transporter",
 	"allocation",
+	"allocation_item",
 	"attachment",
 	"event_date",
 	"truck_number",
 	"driver_name",
 	"driver_contact",
+	"visible_to_customer",
+	"visible_to_transporter",
+	"parent_update",
+	"customer_read_on",
+	"transporter_read_on",
+	"last_activity_on",
+	"response_status",
+	"responded_by",
+	"responded_on",
+	"response_update",
+	"closed_by",
+	"closed_on",
 ]
+
+# Sources that represent CGM speaking to a portal party (as opposed to the
+# party speaking to CGM). Used to work out which side of a thread a message
+# sits on, and which audience flags may be set on it.
+CGM_SOURCES = ("Internal",)
+
+# The two portal parties. A message from either is a question CGM owes an
+# answer to, which is what `response_status` on those rows tracks.
+PARTY_SOURCES = ("Customer", "Transporter")
+
+# A thread's life: CGM owes an answer, has given one, or the party has said the
+# matter is settled. Only the party closes and reopens - it is their question.
+STATUS_OPEN = "Open"
+STATUS_ANSWERED = "Answered"
+STATUS_CLOSED = "Closed"
+
+# Subjects offered to CGM staff when publishing an update to a portal party.
+PUBLISHED_SUBJECTS = (
+	"Shipment Update",
+	"Documents",
+	"Customs & Clearance",
+	"Container Update",
+	"Transport & Delivery",
+	"Finance",
+	"Reply",
+	"Other",
+)
+
+AUDIENCE_CUSTOMER = "customer"
+AUDIENCE_TRANSPORTER = "transporter"
+
+
+def default_audience_for_source(update_source: str) -> tuple[bool, bool]:
+	"""Which portals an update reaches when the caller does not say.
+
+	A party's own message is always visible to that party; CGM-authored
+	updates stay internal unless the caller explicitly publishes them.
+	"""
+	return update_source == "Customer", update_source == "Transporter"
 
 
 def _customer_for_project(project: str | None) -> str | None:
@@ -98,6 +154,33 @@ def serialize_update(doc) -> dict:
 		"truck_number": doc.get("truck_number") or "",
 		"driver_name": doc.get("driver_name") or "",
 		"driver_contact": doc.get("driver_contact") or "",
+		"allocation_item": doc.get("allocation_item") or "",
+		"parent_update": doc.get("parent_update") or "",
+		"visible_to_customer": cint(doc.get("visible_to_customer")),
+		"visible_to_transporter": cint(doc.get("visible_to_transporter")),
+		"customer_read_on": str(doc.get("customer_read_on") or "") or "",
+		"transporter_read_on": str(doc.get("transporter_read_on") or "") or "",
+		"response_status": doc.get("response_status") or "",
+		"responded_by": doc.get("responded_by") or "",
+		"responded_by_name": (
+			frappe.utils.get_fullname(doc.get("responded_by")) if doc.get("responded_by") else ""
+		),
+		"responded_on": str(doc.get("responded_on") or "") or "",
+		"response_update": doc.get("response_update") or "",
+		"closed_by": doc.get("closed_by") or "",
+		"closed_by_name": (
+			frappe.utils.get_fullname(doc.get("closed_by")) if doc.get("closed_by") else ""
+		),
+		"closed_on": str(doc.get("closed_on") or "") or "",
+		"is_closed": doc.get("response_status") == STATUS_CLOSED,
+		"last_activity_on": str(doc.get("last_activity_on") or doc.get("posted_on") or "") or "",
+		# True when a party raised this and CGM has not answered it yet.
+		"awaiting_response": (
+			doc.update_source in PARTY_SOURCES
+			and doc.get("response_status") not in (STATUS_ANSWERED, STATUS_CLOSED)
+		),
+		# True when CGM posted the update, False when the portal party did.
+		"from_cgm": doc.update_source in CGM_SOURCES,
 		# Backward-compatible aliases used by older portal/ops UI.
 		"update_type": doc.subject,
 	}
@@ -173,8 +256,9 @@ def create_update(
 	truck_number: str = "",
 	driver_name: str = "",
 	driver_contact: str = "",
-	related_doctype: str | None = None,
-	related_name: str | None = None,
+	visible_to_customer: bool | None = None,
+	visible_to_transporter: bool | None = None,
+	parent_update: str | None = None,
 	notify: bool = True,
 ) -> dict:
 	"""Create a generic Update record — single write path for all sources."""
@@ -188,6 +272,17 @@ def create_update(
 
 	if not customer and project:
 		customer = _customer_for_project(project)
+
+	# A reply inherits the party it is addressed to. Without a project there is
+	# nothing else to derive it from, and an unscoped reply would drop out of
+	# the customer's thread and out of the notification recipients.
+	if parent_update and not (customer and transporter):
+		parent = frappe.db.get_value(
+			UPDATE_DOCTYPE, parent_update, ["customer", "transporter"], as_dict=True
+		)
+		if parent:
+			customer = customer or parent.customer
+			transporter = transporter or parent.transporter
 
 	if container_tracker and not container_number:
 		container_number = frappe.db.get_value(
@@ -217,15 +312,46 @@ def create_update(
 	doc.truck_number = (truck_number or "").strip()
 	doc.driver_name = (driver_name or "").strip()
 	doc.driver_contact = (driver_contact or "").strip()
-	doc.related_doctype = related_doctype
-	doc.related_name = related_name
+	default_customer, default_transporter = default_audience_for_source(update_source)
+	if visible_to_customer is None:
+		visible_to_customer = default_customer
+	if visible_to_transporter is None:
+		visible_to_transporter = default_transporter
+	doc.visible_to_customer = 1 if visible_to_customer else 0
+	doc.visible_to_transporter = 1 if visible_to_transporter else 0
+	doc.parent_update = parent_update or None
+	# A message from a portal party is a question until CGM answers it; CGM's
+	# own updates carry no response state.
+	doc.response_status = "Open" if update_source in PARTY_SOURCES else None
 	doc.posted_on = now_datetime()
+	doc.last_activity_on = doc.posted_on
 	doc.posted_by = frappe.session.user
 	doc.is_read = 0
 	doc.insert(ignore_permissions=True)
 
+	# A reply is the thread's newest message, so the question it hangs off has
+	# to move with it - that is what orders the ops feed.
+	if doc.parent_update:
+		values = {"last_activity_on": doc.posted_on}
+		if doc.update_source in PARTY_SOURCES:
+			# The party came back, so the thread needs an answer again - this is
+			# also how a closed thread reopens. Who first responded is left
+			# alone; that history still stands.
+			values["response_status"] = STATUS_OPEN
+			values["is_read"] = 0
+			values["closed_by"] = None
+			values["closed_on"] = None
+		frappe.db.set_value(
+			UPDATE_DOCTYPE, doc.parent_update, values, update_modified=False
+		)
+
 	if notify:
-		notify_operations(doc)
+		if doc.update_source in CGM_SOURCES and (
+			doc.visible_to_customer or doc.visible_to_transporter
+		):
+			notify_portal_audience(doc)
+		else:
+			notify_operations(doc)
 
 	return {
 		"ok": True,
@@ -289,8 +415,6 @@ def post_truck_update(
 		truck_number=truck_number,
 		driver_name=driver_name,
 		driver_contact=driver_contact,
-		related_doctype="Container Allocation",
-		related_name=allocation_name,
 		notify=True,
 	)
 
@@ -306,20 +430,38 @@ def post_customer_update(
 	message: str,
 	*,
 	customer: str | None = None,
+	container_tracker: str | None = None,
+	parent_update: str | None = None,
+	attachment: str = "",
 ) -> dict:
-	"""Customer portal entry point — creates an Update with source=Customer."""
+	"""Customer portal entry point — creates an Update with source=Customer.
+
+	`project` may be empty: a general enquiry is a conversation with operations
+	that is not about any one shipment. A message continuing a conversation
+	needs no subject - it inherits the one it is answering.
+	"""
 	subject = (subject or "").strip()
 	message = (message or "").strip()
-	if not subject:
-		frappe.throw(_("Subject is required."))
 	if not message:
 		frappe.throw(_("Please enter a message."))
-	if not project or not frappe.db.exists("Project", project):
+
+	parent_update = _validated_parent(parent_update, project=project)
+	if not subject:
+		if not parent_update:
+			frappe.throw(_("Give this message a subject so operations can pick it up."))
+		subject = _reply_subject(parent_update)
+
+	if project and not frappe.db.exists("Project", project):
 		frappe.throw(_("Shipment not found."), frappe.DoesNotExistError)
 
-	project_customer = _customer_for_project(project)
+	project_customer = _customer_for_project(project) if project else None
 	if customer and project_customer and customer != project_customer:
 		frappe.throw(_("You do not have access to this shipment."), frappe.PermissionError)
+
+	if container_tracker:
+		tracker_project = frappe.db.get_value("Container Tracker", container_tracker, "project")
+		if tracker_project != project:
+			frappe.throw(_("This container is not on that shipment."), frappe.PermissionError)
 
 	return create_update(
 		update_source="Customer",
@@ -327,10 +469,51 @@ def post_customer_update(
 		message=message,
 		project=project,
 		customer=customer or project_customer,
-		related_doctype="Project",
-		related_name=project,
+		container_tracker=container_tracker,
+		attachment=attachment,
+		visible_to_customer=True,
+		parent_update=parent_update,
 		notify=True,
 	)
+
+
+def derive_subject(message: str) -> str:
+	"""A subject taken from the message itself.
+
+	A record created by hand in Desk skips the portal's subject field, and a
+	blank subject reads as nothing in every feed - so the first line of the
+	message stands in. Portal messages set their own: the first one asks for a
+	subject, and replies inherit it.
+	"""
+	for line in (message or "").splitlines():
+		line = line.strip()
+		if line:
+			return line if len(line) <= 80 else line[:79].rstrip() + "…"
+	return _("Message")
+
+
+def _reply_subject(parent_update: str) -> str:
+	"""`Re: <original>`, without stacking `Re: Re: Re:` down a long thread."""
+	parent = frappe.db.get_value(UPDATE_DOCTYPE, parent_update, "subject")
+	subject = (parent or "").strip() or _("Message")
+	if subject.lower().startswith("re:"):
+		return subject
+	return _("Re: {0}").format(subject)
+
+
+def _validated_parent(parent_update: str | None, *, project: str | None = None) -> str | None:
+	"""Only allow threading onto an Update that sits on the same shipment."""
+	parent_update = (parent_update or "").strip()
+	if not parent_update:
+		return None
+	parent = frappe.db.get_value(
+		UPDATE_DOCTYPE, parent_update, ["name", "project"], as_dict=True
+	)
+	if not parent:
+		return None
+	if project and parent.project and parent.project != project:
+		return None
+	return parent.name
 
 
 def _get_allocation_item(allocation, item_name: str):
@@ -382,8 +565,274 @@ def _apply_tracker_date(doc) -> None:
 	frappe.clear_document_cache("Container Tracker", doc.container_tracker)
 
 
+def is_portal_user(user: str | None = None) -> bool:
+	"""True for a Website User - a customer or transporter portal account."""
+	user = user or frappe.session.user
+	if not user or user == "Guest":
+		return True
+	return frappe.db.get_value("User", user, "user_type") == "Website User"
+
+
+def require_desk_access(ptype: str = "read", doc: str | None = None) -> None:
+	"""Gate for the Desk-side Update endpoints.
+
+	Role permissions alone are not enough here. Sites hand the Customer /
+	Transporter roles a DocPerm on Update so staff who also hold those roles
+	can work the ops board, which would otherwise let a portal account read
+	another party's updates - or post one as CGM. Portal accounts are Website
+	Users and belong on the portal-scoped APIs, so they are refused outright.
+	"""
+	if is_portal_user():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	frappe.has_permission(UPDATE_DOCTYPE, ptype=ptype, doc=doc, throw=True)
+
+
 def notify_operations(doc) -> dict:
 	return send_notification(OPERATIONAL_UPDATE_NOTIFICATION, doc, audience="Operations")
+
+
+def notify_portal_audience(doc) -> dict:
+	"""Email the customer and/or transporter when CGM publishes an update to them."""
+	recipients = portal_recipients_for_update(doc)
+	if not recipients:
+		return {"notified": 0, "emails_sent": 0}
+	return send_notification_to(
+		PORTAL_UPDATE_PUBLISHED_NOTIFICATION,
+		doc,
+		recipients,
+		audience="Portal",
+	)
+
+
+def portal_recipients_for_update(doc) -> list[str]:
+	"""Portal user emails that should be told about this published update."""
+	emails: list[str] = []
+	if cint(doc.get("visible_to_customer")) and doc.get("customer"):
+		emails.extend(_portal_user_emails("Customer", doc.get("customer")))
+	if cint(doc.get("visible_to_transporter")):
+		transporter = doc.get("transporter")
+		if not transporter and doc.get("allocation"):
+			transporter = frappe.db.get_value(
+				"Container Allocation", doc.get("allocation"), "transporter"
+			)
+		if transporter:
+			emails.extend(_portal_user_emails("Supplier", transporter))
+	seen: set[str] = set()
+	ordered: list[str] = []
+	for email in emails:
+		if email and email not in seen:
+			seen.add(email)
+			ordered.append(email)
+	return ordered
+
+
+def _portal_user_emails(parenttype: str, parent: str) -> list[str]:
+	if not parent:
+		return []
+	users = frappe.get_all(
+		"Portal User",
+		filters={"parenttype": parenttype, "parent": parent},
+		pluck="user",
+		ignore_permissions=True,
+	)
+	enabled = []
+	for user in users:
+		if not user or user == "Guest":
+			continue
+		if frappe.db.get_value("User", user, "enabled"):
+			enabled.append(user)
+	return enabled
+
+
+def post_transporter_message(
+	*,
+	transporter: str,
+	subject: str,
+	message: str,
+	allocation: str | None = None,
+	allocation_item: str | None = None,
+	container_tracker: str | None = None,
+	project: str | None = None,
+	parent_update: str | None = None,
+	attachment: str = "",
+) -> dict:
+	"""Transporter portal free-text message to CGM (not a structured truck event)."""
+	subject = (subject or "").strip()
+	message = (message or "").strip()
+	if not message:
+		frappe.throw(_("Please enter a message."))
+
+	parent_update = _validated_parent(parent_update, project=project)
+	if not subject:
+		if not parent_update:
+			frappe.throw(_("Give this message a subject so CGM can pick it up."))
+		subject = _reply_subject(parent_update)
+
+	return create_update(
+		update_source="Transporter",
+		subject=subject,
+		message=message,
+		project=project,
+		container_tracker=container_tracker,
+		transporter=transporter,
+		allocation=allocation,
+		allocation_item=allocation_item,
+		attachment=attachment,
+		visible_to_transporter=True,
+		parent_update=parent_update,
+		notify=True,
+	)
+
+
+def post_published_update(
+	*,
+	subject: str,
+	message: str,
+	project: str | None = None,
+	container_tracker: str | None = None,
+	to_customer: bool = False,
+	to_transporter: bool = False,
+	update_source: str = "Internal",
+	transporter: str | None = None,
+	allocation: str | None = None,
+	parent_update: str | None = None,
+	attachment: str = "",
+	event_date: str | None = None,
+) -> dict:
+	"""CGM publishes an update to the customer and/or transporter portal."""
+	subject = (subject or "").strip()
+	message = (message or "").strip()
+	if not subject:
+		frappe.throw(_("Subject is required."))
+	if not message:
+		frappe.throw(_("Please enter a message."))
+	if not (to_customer or to_transporter):
+		frappe.throw(_("Choose at least one audience: customer or transporter."))
+	if update_source not in CGM_SOURCES:
+		frappe.throw(_("Published updates must come from a CGM source."))
+	if not project and container_tracker:
+		project = frappe.db.get_value("Container Tracker", container_tracker, "project")
+	# A reply inherits its context; only a fresh post has to name a shipment.
+	if not project and not parent_update:
+		frappe.throw(_("Select the shipment this update belongs to."))
+
+	if to_transporter and not transporter:
+		transporter = _transporter_for_context(
+			project=project, container_tracker=container_tracker, allocation=allocation
+		)
+
+	return create_update(
+		update_source=update_source,
+		subject=subject,
+		message=message,
+		project=project,
+		container_tracker=container_tracker,
+		transporter=transporter,
+		allocation=allocation,
+		attachment=attachment,
+		event_date=event_date,
+		visible_to_customer=bool(to_customer),
+		visible_to_transporter=bool(to_transporter),
+		parent_update=_validated_parent(parent_update, project=project),
+		notify=True,
+	)
+
+
+def _transporter_for_context(
+	*,
+	project: str | None = None,
+	container_tracker: str | None = None,
+	allocation: str | None = None,
+) -> str | None:
+	"""Best-effort transporter for an update CGM is publishing to transport."""
+	if allocation:
+		return frappe.db.get_value("Container Allocation", allocation, "transporter")
+	if container_tracker:
+		transporter = frappe.db.get_value("Container Tracker", container_tracker, "transporter")
+		if transporter:
+			return transporter
+	if project:
+		return frappe.db.get_value(
+			"Container Allocation",
+			{"project": project, "docstatus": 1},
+			"transporter",
+			order_by="modified desc",
+		)
+	return None
+
+
+def post_update_reply(
+	parent_update: str,
+	message: str,
+	*,
+	subject: str | None = None,
+	to_customer: bool | None = None,
+	to_transporter: bool | None = None,
+	attachment: str = "",
+) -> dict:
+	"""CGM replies to a customer or transporter message, keeping the thread links."""
+	parent = frappe.get_doc(UPDATE_DOCTYPE, parent_update, ignore_permissions=True)
+
+	# Default the audience to whoever started the thread.
+	if to_customer is None:
+		to_customer = parent.update_source == "Customer" or bool(parent.visible_to_customer)
+	if to_transporter is None:
+		to_transporter = parent.update_source == "Transporter" or bool(
+			parent.visible_to_transporter
+		)
+
+	reply_subject = (subject or "").strip() or _("Re: {0}").format(parent.subject)
+
+	result = post_published_update(
+		subject=reply_subject,
+		message=message,
+		project=parent.project,
+		container_tracker=parent.container_tracker,
+		to_customer=bool(to_customer),
+		to_transporter=bool(to_transporter),
+		transporter=parent.transporter,
+		allocation=parent.allocation,
+		parent_update=parent.name,
+		attachment=attachment,
+	)
+	stamp_response_on_question(parent.name, result["name"])
+	result["update"] = serialize_update(
+		frappe.get_doc(UPDATE_DOCTYPE, result["name"], ignore_permissions=True)
+	)
+	return result
+
+
+def stamp_response_on_question(question: str, reply: str) -> bool:
+	"""Record who at CGM answered a party's question, and when.
+
+	Only the first answer is recorded - the point is accountability for the
+	question being picked up, so a later follow-up must not overwrite who
+	actually responded.
+	"""
+	row = frappe.db.get_value(
+		UPDATE_DOCTYPE,
+		question,
+		["name", "update_source", "response_status", "responded_by"],
+		as_dict=True,
+	)
+	if not row or row.update_source not in PARTY_SOURCES:
+		return False
+	if row.response_status == "Answered" and row.responded_by:
+		return False
+
+	frappe.db.set_value(
+		UPDATE_DOCTYPE,
+		question,
+		{
+			"response_status": "Answered",
+			"responded_by": frappe.session.user,
+			"responded_on": now_datetime(),
+			"response_update": reply,
+		},
+		update_modified=False,
+	)
+	frappe.clear_document_cache(UPDATE_DOCTYPE, question)
+	return True
 
 
 def get_updates_for_allocation_item(
@@ -434,32 +883,37 @@ def _preview_message(message: str, max_len: int = 180) -> str:
 
 
 def render_updates_list_html(rows: list[dict] | None, *, show_source: bool = False) -> str:
-	"""Ops-board style update cards for portal/server templates (same CSS as Desk)."""
+	"""Update cards for server-rendered pages - same markup as the Desk feed.
+
+	The transporter portal renders its truck updates without JavaScript, so the
+	structure here has to match `cgm.updates.renderListItem` or the two would
+	drift apart visually.
+	"""
 	from frappe.utils import escape_html, pretty_date
 
 	rows = rows or []
 	if not rows:
 		return ""
 
-	source_class = {
-		"Customer": "blue",
-		"Transporter": "orange",
-		"Internal": "gray",
-		"Customs": "cyan",
-		"Finance": "yellow",
-		"Other": "gray",
-	}
-
 	cards: list[str] = []
 	for row in rows:
 		subject = escape_html(row.get("subject") or row.get("update_type") or _("Update"))
 		source = (row.get("update_source") or "").strip() if show_source else ""
-		source_pill = (
-			f'<span class="indicator-pill {source_class.get(source, "gray")} no-indicator-dot cgm-upd-source">'
-			f"{escape_html(source.upper())}</span>"
+		source_tag = (
+			f'<span class="cgm-upd-tag is-source is-{escape_html(source.lower())}">'
+			f"{escape_html(source)}</span>"
 			if source
 			else ""
 		)
+
+		status = row.get("response_status") or ""
+		if status == "Open":
+			state_tag = f'<span class="cgm-upd-tag is-awaiting">{escape_html(_("Awaiting reply"))}</span>'
+		elif status == "Answered":
+			state_tag = f'<span class="cgm-upd-tag is-answered">{escape_html(_("Answered"))}</span>'
+		else:
+			state_tag = ""
+
 		when = ""
 		if row.get("posted_on"):
 			try:
@@ -467,58 +921,55 @@ def render_updates_list_html(rows: list[dict] | None, *, show_source: bool = Fal
 			except Exception:
 				when = escape_html(str(row["posted_on"]))
 
-		meta_bits = []
+		chips: list[str] = []
 		shipment = row.get("project_ref") or row.get("project")
 		if shipment:
-			meta_bits.append(
-				f'<div class="cgm-updates-meta-line">'
-				f'<span class="cgm-updates-meta-label">{escape_html(_("Shipment"))}:</span> '
-				f'<span class="cgm-updates-meta-value">{escape_html(shipment)}</span></div>'
-			)
+			chips.append(f'<span class="cgm-upd-chip is-ref">{escape_html(shipment)}</span>')
 		customer = row.get("customer_name") or row.get("customer")
 		if customer:
-			meta_bits.append(
-				f'<div class="cgm-updates-meta-line">'
-				f'<span class="cgm-updates-meta-label">{escape_html(_("Customer"))}:</span> '
-				f'<span class="cgm-updates-meta-value">{escape_html(customer)}</span></div>'
-			)
+			chips.append(f'<span class="cgm-upd-chip">{escape_html(customer)}</span>')
 		if row.get("container_number"):
-			meta_bits.append(
-				f'<div class="cgm-updates-meta-line">'
-				f'<span class="cgm-updates-meta-label">{escape_html(_("Container"))}:</span> '
-				f'<span class="cgm-updates-meta-value">{escape_html(row["container_number"])}</span></div>'
+			chips.append(
+				f'<span class="cgm-upd-chip is-ref">{escape_html(row["container_number"])}</span>'
 			)
-		meta_html = f'<div class="cgm-updates-meta">{"".join(meta_bits)}</div>' if meta_bits else ""
+		meta_html = f'<div class="cgm-upd-meta">{"".join(chips)}</div>' if chips else ""
 
 		preview = _preview_message(row.get("message") or "")
 		preview_html = (
-			f'<div class="cgm-updates-preview">{escape_html(preview)}</div>' if preview else ""
-		)
-		name = escape_html(row.get("name") or "")
-		unread = "" if cint(row.get("is_read")) else " is-unread"
-		when_html = (
-			f'<span class="cgm-updates-when text-muted small">{when}</span>' if when else ""
+			f'<p class="cgm-upd-preview">{escape_html(preview)}</p>' if preview else ""
 		)
 
+		answered_html = ""
+		if status == "Answered" and row.get("responded_by_name"):
+			answered_html = (
+				f'<div class="cgm-upd-answer">'
+				f'{escape_html(_("Answered by {0}").format(row["responded_by_name"]))}</div>'
+			)
+
+		name = escape_html(row.get("name") or "")
+		classes = "cgm-upd-card"
+		if not cint(row.get("is_read")):
+			classes += " is-unread"
+		if status == STATUS_OPEN:
+			classes += " is-awaiting"
+		elif status == STATUS_ANSWERED:
+			classes += " is-answered"
+		elif status == STATUS_CLOSED:
+			classes += " is-closed"
+
 		cards.append(
-			f'<div class="list-row-container{unread}" data-update="{name}">'
-			f'<div class="cgm-updates-head">'
-			f'<div class="cgm-updates-badges">'
-			f'<span class="indicator-pill red no-indicator-dot cgm-upd-subject">{subject}</span>'
-			f"{source_pill}"
+			f'<div class="{classes}" data-update="{name}" role="button" tabindex="0">'
+			f'<div class="cgm-upd-headline">'
+			f'<span class="cgm-upd-title">{subject}</span>{source_tag}{state_tag}'
+			f'<span class="cgm-upd-stamp">'
+			f'<span class="cgm-upd-ref">{name}</span>'
+			+ (f'<span class="cgm-upd-when">{when}</span>' if when else "")
+			+ f"</span></div>"
+			f"{meta_html}{preview_html}{answered_html}"
 			f"</div>"
-			f"{when_html}"
-			f"</div>"
-			f'<div class="cgm-updates-body">'
-			f'<div class="list-row-left">{meta_html}{preview_html}</div>'
-			f'<div class="list-row-right">'
-			f'<button type="button" class="btn btn-xs btn-default cgm-upd-view-more" data-update="{name}">'
-			f'{escape_html(_("View More"))}</button>'
-			f"</div></div></div>"
 		)
 
 	return f'<div class="cgm-updates-list">{"".join(cards)}</div>'
-
 
 
 def get_updates_for_container_tracker(container_tracker: str, limit: int = 50) -> list[dict]:
@@ -541,24 +992,6 @@ def get_updates_for_project(project: str, limit: int = 100) -> list[dict]:
 	rows = frappe.get_all(
 		UPDATE_DOCTYPE,
 		filters={"project": project},
-		fields=_UPDATE_LIST_FIELDS,
-		order_by="posted_on desc",
-		limit_page_length=limit,
-		ignore_permissions=True,
-	)
-	return [serialize_update(frappe._dict(row)) for row in rows]
-
-
-def get_my_updates_for_project(project: str, limit: int = 100) -> list[dict]:
-	"""Updates posted by the current user on a shipment (customer portal)."""
-	if not project or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
-		return []
-	user = frappe.session.user
-	if not user or user == "Guest":
-		return []
-	rows = frappe.get_all(
-		UPDATE_DOCTYPE,
-		filters={"project": project, "posted_by": user},
 		fields=_UPDATE_LIST_FIELDS,
 		order_by="posted_on desc",
 		limit_page_length=limit,
@@ -600,10 +1033,10 @@ def get_latest_updates_for_trackers(tracker_names: list[str]) -> dict[str, dict]
 			t.posted_on,
 			t.event_date,
 			t.update_source
-		FROM `tabUpdate` t
+		FROM `tabShipment Update` t
 		INNER JOIN (
 			SELECT container_tracker, MAX(posted_on) AS max_posted
-			FROM `tabUpdate`
+			FROM `tabShipment Update`
 			WHERE container_tracker IN ({placeholders})
 			GROUP BY container_tracker
 		) latest
@@ -633,6 +1066,7 @@ def format_latest_update_summary(update: dict | None) -> str:
 @frappe.whitelist()
 def get_allocation_truck_updates(allocation_name: str) -> list[dict]:
 	"""Updates linked to this allocation, its containers, or its shipment."""
+	require_desk_access()
 	frappe.has_permission("Container Allocation", ptype="read", doc=allocation_name, throw=True)
 	if not allocation_name or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
 		return []
@@ -681,12 +1115,14 @@ def get_allocation_truck_updates(allocation_name: str) -> list[dict]:
 
 @frappe.whitelist()
 def get_tracker_truck_updates(container_tracker: str) -> list[dict]:
+	require_desk_access()
 	frappe.has_permission("Container Tracker", ptype="read", doc=container_tracker, throw=True)
 	return get_updates_for_container_tracker(container_tracker)
 
 
 @frappe.whitelist()
 def get_project_updates(project: str) -> list[dict]:
+	require_desk_access()
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
 	return get_updates_for_project(project)
 
@@ -694,7 +1130,7 @@ def get_project_updates(project: str) -> list[dict]:
 @frappe.whitelist()
 def get_ops_updates(filters=None) -> dict:
 	"""Paginated updates feed for the Container Ops Board Updates tab."""
-	frappe.has_permission(UPDATE_DOCTYPE, ptype="read", throw=True)
+	require_desk_access()
 	if isinstance(filters, str):
 		filters = frappe.parse_json(filters) if filters else {}
 	filters = frappe._dict(filters or {})
@@ -709,6 +1145,12 @@ def get_ops_updates(filters=None) -> dict:
 	else:
 		# Default ops feed: transporter + customer (extensible later).
 		query_filters["update_source"] = ("in", ["Transporter", "Customer"])
+
+	# Replies belong to the question they answer, and the card's View More
+	# shows the whole exchange - listing them separately doubles every thread.
+	# `include_replies` opts back in.
+	if not cint(filters.get("include_replies")):
+		query_filters["parent_update"] = ("is", "not set")
 
 	if filters.get("customer"):
 		query_filters["customer"] = filters.customer
@@ -729,6 +1171,13 @@ def get_ops_updates(filters=None) -> dict:
 		query_filters["is_read"] = 0
 	elif status in ("Read", "read"):
 		query_filters["is_read"] = 1
+	elif status in ("Awaiting Reply", "awaiting reply", "Open"):
+		query_filters["response_status"] = STATUS_OPEN
+		query_filters["update_source"] = ("in", list(PARTY_SOURCES))
+	elif status in ("Answered", "answered"):
+		query_filters["response_status"] = STATUS_ANSWERED
+	elif status in ("Closed", "closed"):
+		query_filters["response_status"] = STATUS_CLOSED
 	elif filters.get("is_read") in (0, 1, "0", "1"):
 		query_filters["is_read"] = cint(filters.is_read)
 
@@ -765,7 +1214,10 @@ def get_ops_updates(filters=None) -> dict:
 		UPDATE_DOCTYPE,
 		filters=query_filters,
 		fields=_UPDATE_LIST_FIELDS,
-		order_by="posted_on desc",
+		# Newest activity first: a thread rises when a reply lands on it, not
+		# only when the question was first raised. `last_activity_on` is set on
+		# every insert and backfilled, so posted_on is only a tiebreak.
+		order_by="last_activity_on desc, posted_on desc",
 		limit_start=start,
 		limit_page_length=page_length,
 	)
@@ -780,7 +1232,7 @@ def get_ops_updates(filters=None) -> dict:
 
 @frappe.whitelist()
 def get_unread_update_count() -> int:
-	frappe.has_permission(UPDATE_DOCTYPE, ptype="read", throw=True)
+	require_desk_access()
 	return frappe.db.count(
 		UPDATE_DOCTYPE,
 		{"is_read": 0, "update_source": ("in", ["Transporter", "Customer"])},
@@ -788,7 +1240,24 @@ def get_unread_update_count() -> int:
 
 
 @frappe.whitelist()
+def get_awaiting_reply_count() -> int:
+	"""Questions from customers and transporters that CGM has not answered."""
+	require_desk_access()
+	return frappe.db.count(
+		UPDATE_DOCTYPE,
+		{
+			"response_status": "Open",
+			"update_source": ("in", list(PARTY_SOURCES)),
+			# One row per thread, so the badge matches the Awaiting Reply filter.
+			"parent_update": ("is", "not set"),
+		},
+	)
+
+
+@frappe.whitelist()
 def mark_update_read(name: str) -> dict:
+	if is_portal_user():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	if not frappe.has_permission(UPDATE_DOCTYPE, ptype="write", doc=name):
 		# Still allow ops users with read access to clear the badge.
 		if not frappe.has_permission(UPDATE_DOCTYPE, ptype="read", doc=name):
@@ -817,6 +1286,18 @@ def _detail_field(
 
 	# Portal Dialog must not use Link/Date/Datetime/Attach controls — website users
 	# lack DocType permissions and date parsers differ from Desk.
+	if not portal and fieldtype in ("Date", "Datetime"):
+		# Desk keeps the real control (it shows the timezone hint), but the
+		# control parses strictly: a datetime carrying microseconds fails
+		# validation with "must be in format: dd-mm-yyyy".
+		try:
+			if fieldtype == "Datetime":
+				display = get_datetime(value).strftime("%Y-%m-%d %H:%M:%S")
+			else:
+				display = getdate(value).strftime("%Y-%m-%d")
+		except Exception:
+			display = str(value)
+
 	if portal:
 		if fieldtype in ("Date", "Datetime"):
 			try:
@@ -860,9 +1341,18 @@ def _column_break(fieldname: str) -> dict:
 
 
 def _build_update_detail_sections(
-	doc, *, include_source: bool = True, portal: bool = False
+	doc,
+	*,
+	include_source: bool = True,
+	portal: bool = False,
+	with_transcript: bool = False,
 ) -> list[dict]:
-	"""Data-driven dialog sections — only fields with values, source-aware."""
+	"""Data-driven dialog sections — only fields with values, source-aware.
+
+	`with_transcript` means the dialog is also rendering the conversation, which
+	already carries every message and who answered - so the Message and
+	Response blocks are dropped rather than repeated.
+	"""
 	sections: list[dict] = []
 
 	general_parts = [
@@ -1011,7 +1501,40 @@ def _build_update_detail_sections(
 				)
 			sections.append({"label": _("Transport Details"), "fields": transport_fields})
 
-	message_fields = [
+	# CGM's own updates are not questions, so they carry no response state.
+	# The transcript states who answered, so this only appears without one.
+	response_fields = [] if with_transcript else [
+		f
+		for f in (
+
+			_detail_field(
+				"response_status", _("Response Status"), "Data", doc.get("response_status"),
+				portal=portal,
+			),
+			_detail_field(
+				"responded_by",
+				_("Responded By"),
+				"Link",
+				doc.get("responded_by"),
+				options="User",
+				portal=portal,
+			),
+			_column_break("column_break_response_detail"),
+			_detail_field(
+				"responded_on", _("Responded On"), "Datetime", doc.get("responded_on"),
+				portal=portal,
+			),
+		)
+		if f
+	]
+	# Only a party's message carries response state, and a lone column break
+	# is not worth a section.
+	if doc.update_source in PARTY_SOURCES and [
+		f for f in response_fields if f["fieldtype"] != "Column Break"
+	]:
+		sections.append({"label": _("Response"), "fields": response_fields})
+
+	message_fields = [] if with_transcript else [
 		f
 		for f in (
 			_detail_field(
@@ -1038,6 +1561,9 @@ def _transporter_can_access_update(doc) -> bool:
 	transporter = get_transporter_for_user()
 	if not transporter:
 		return False
+	if not cint(doc.get("visible_to_transporter")):
+		# Internal notes stay internal even on the transporter's own allocation.
+		return False
 	if doc.get("transporter") == transporter:
 		return True
 	allocation = doc.get("allocation")
@@ -1055,6 +1581,9 @@ def _customer_can_access_update(doc) -> bool:
 
 	customer = customer_for_user(frappe.session.user)
 	if not customer:
+		return False
+	if not cint(doc.get("visible_to_customer")):
+		# Internal notes stay internal even on the customer's own shipment.
 		return False
 	if doc.get("customer") == customer:
 		return True
@@ -1076,6 +1605,12 @@ def get_update_detail(name: str, include_source: int | str | None = 1) -> dict:
 	customer_ok = _customer_can_access_update(doc)
 	portal = bool(transporter_ok or customer_ok)
 
+	if not portal and is_portal_user():
+		# A portal account that fails both ownership rules is done here; the
+		# desk check below would otherwise pass for portal roles that carry a
+		# DocPerm on Update and hand over an internal note.
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
 	if not portal:
 		# Desk: require Update read. clear_messages — nested role checks may msgprint denials.
 		can_read = frappe.has_permission(UPDATE_DOCTYPE, ptype="read", doc=name)
@@ -1088,10 +1623,365 @@ def get_update_detail(name: str, include_source: int | str | None = 1) -> dict:
 
 	show_source = bool(cint(include_source if include_source is not None else 1)) and not portal
 	payload = serialize_update(doc)
+	# Desk gets the whole conversation so ops can read what was asked and what
+	# was answered without leaving the dialog. The portals render their own
+	# threads and must not receive messages published to the other party.
+	payload["thread"] = [] if portal else message_thread(doc.name)
 	payload["sections"] = _build_update_detail_sections(
-		doc, include_source=show_source, portal=portal or not show_source
+		doc,
+		include_source=show_source,
+		portal=portal or not show_source,
+		with_transcript=bool(payload["thread"]),
 	)
 	return payload
 
 
 
+
+
+# ─── Portal conversation threads ─────────────────────────────────────────────
+#
+# A "thread" is the two-way conversation one portal party can see on a
+# shipment or on a single container: everything that party posted plus every
+# CGM update published to them. Visibility is driven entirely by the
+# `visible_to_customer` / `visible_to_transporter` flags, so an internal note
+# can never reach a portal by accident.
+
+
+def _thread_rows(filters: dict, limit: int = 100) -> list[dict]:
+	return frappe.get_all(
+		UPDATE_DOCTYPE,
+		filters=filters,
+		fields=_UPDATE_LIST_FIELDS,
+		order_by="posted_on asc",
+		limit_page_length=limit,
+		ignore_permissions=True,
+	)
+
+
+def _thread_payload(rows: list[dict], *, audience: str) -> list[dict]:
+	"""Serialize rows oldest-first and tag each message with its direction."""
+	seen: set[str] = set()
+	messages: list[dict] = []
+	for row in rows:
+		if row["name"] in seen:
+			continue
+		seen.add(row["name"])
+		message = serialize_update(frappe._dict(row))
+		message["direction"] = "in" if message["from_cgm"] else "out"
+		read_field = "customer_read_on" if audience == AUDIENCE_CUSTOMER else "transporter_read_on"
+		message["unread"] = bool(message["from_cgm"] and not row.get(read_field))
+		messages.append(message)
+	messages.sort(key=lambda m: m.get("posted_on") or "")
+	return messages
+
+
+def get_customer_thread_for_project(
+	project: str, *, container_tracker: str | None = None, limit: int = 200
+) -> list[dict]:
+	"""Customer-visible conversation on a shipment (or one of its containers).
+
+	Callers must have already verified that the shipment belongs to the
+	logged-in customer.
+	"""
+	if not project or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
+		return []
+	filters: dict = {"project": project, "visible_to_customer": 1}
+	if container_tracker:
+		filters["container_tracker"] = container_tracker
+	return _thread_payload(_thread_rows(filters, limit), audience=AUDIENCE_CUSTOMER)
+
+
+def get_customer_general_thread(customer: str, limit: int = 200) -> list[dict]:
+	"""The customer's conversation with operations that is not about a shipment."""
+	if not customer or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
+		return []
+	rows = _thread_rows(
+		{"customer": customer, "project": ("is", "not set"), "visible_to_customer": 1}, limit
+	)
+	return _thread_payload(rows, audience=AUDIENCE_CUSTOMER)
+
+
+def get_transporter_general_thread(transporter: str, limit: int = 200) -> list[dict]:
+	"""The transporter's conversation with CGM that is not about a job."""
+	if not transporter or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
+		return []
+	rows = _thread_rows(
+		{
+			"transporter": transporter,
+			"allocation": ("is", "not set"),
+			"project": ("is", "not set"),
+			"visible_to_transporter": 1,
+		},
+		limit,
+	)
+	return _thread_payload(rows, audience=AUDIENCE_TRANSPORTER)
+
+
+def get_transporter_thread_for_allocation(
+	allocation_name: str,
+	transporter: str,
+	*,
+	container_tracker: str | None = None,
+	limit: int = 200,
+) -> list[dict]:
+	"""Transporter-visible conversation on an allocation (or one container).
+
+	Built from three scopes that are each safe on their own - the allocation,
+	its containers, and shipment-level updates addressed to this transporter -
+	rather than one broad "same project" filter, which would show a shipment's
+	other hauliers' messages.
+	"""
+	if not allocation_name or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
+		return []
+
+	allocation = frappe.db.get_value(
+		"Container Allocation", allocation_name, ["name", "project", "transporter"], as_dict=True
+	)
+	if not allocation or allocation.transporter != transporter:
+		return []
+
+	trackers = [
+		t
+		for t in frappe.get_all(
+			"Container Allocation Item",
+			filters={"parent": allocation_name, "parenttype": "Container Allocation"},
+			pluck="container_tracker",
+			ignore_permissions=True,
+		)
+		if t
+	]
+	if container_tracker:
+		if container_tracker not in trackers:
+			return []
+		trackers = [container_tracker]
+
+	scopes: list[dict] = []
+	if container_tracker:
+		scopes.append({"visible_to_transporter": 1, "container_tracker": container_tracker})
+	else:
+		scopes.append({"visible_to_transporter": 1, "allocation": allocation_name})
+		if trackers:
+			scopes.append({"visible_to_transporter": 1, "container_tracker": ("in", trackers)})
+		if allocation.project:
+			scopes.append(
+				{
+					"visible_to_transporter": 1,
+					"project": allocation.project,
+					"transporter": transporter,
+				}
+			)
+
+	rows: list[dict] = []
+	for scope in scopes:
+		rows.extend(_thread_rows(scope, limit))
+	return _thread_payload(rows, audience=AUDIENCE_TRANSPORTER)
+
+
+def mark_thread_read(names: list[str] | str, audience: str) -> int:
+	"""Stamp the audience's read timestamp on CGM messages they just opened."""
+	if isinstance(names, str):
+		names = frappe.parse_json(names) if names.strip().startswith("[") else [names]
+	names = [n for n in (names or []) if n]
+	if not names:
+		return 0
+
+	field = "customer_read_on" if audience == AUDIENCE_CUSTOMER else "transporter_read_on"
+	flag = "visible_to_customer" if audience == AUDIENCE_CUSTOMER else "visible_to_transporter"
+	stamped = now_datetime()
+	count = 0
+	for name in names:
+		row = frappe.db.get_value(
+			UPDATE_DOCTYPE, name, ["name", field, flag, "update_source"], as_dict=True
+		)
+		if not row or row.get(field) or not cint(row.get(flag)):
+			continue
+		if row.update_source not in CGM_SOURCES:
+			continue
+		frappe.db.set_value(UPDATE_DOCTYPE, name, field, stamped, update_modified=False)
+		count += 1
+	return count
+
+
+def count_unread_customer_updates(customer: str, project: str | None = None) -> int:
+	"""CGM messages published to this customer that they have not opened yet."""
+	if not customer or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
+		return 0
+
+	source_placeholders = ", ".join(["%s"] * len(CGM_SOURCES))
+	conditions = [
+		"u.visible_to_customer = 1",
+		"u.customer_read_on IS NULL",
+		"p.customer = %s",
+		f"u.update_source IN ({source_placeholders})",
+	]
+	values: list = [customer, *CGM_SOURCES]
+	if project:
+		conditions.append("u.project = %s")
+		values.append(project)
+
+	rows = frappe.db.sql(
+		f"""
+		SELECT COUNT(*)
+		FROM `tabShipment Update` u
+		JOIN `tabProject` p ON p.name = u.project
+		WHERE {" AND ".join(conditions)}
+		""",
+		tuple(values),
+	)
+	return (rows[0][0] if rows else 0) or 0
+
+
+def count_unread_transporter_updates(transporter: str, allocation: str | None = None) -> int:
+	"""CGM messages published to this transporter that they have not opened yet."""
+	if not transporter or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
+		return 0
+	filters: dict = {
+		"visible_to_transporter": 1,
+		"transporter_read_on": ("is", "not set"),
+		"transporter": transporter,
+		"update_source": ("in", list(CGM_SOURCES)),
+	}
+	if allocation:
+		filters["allocation"] = allocation
+	return frappe.db.count(UPDATE_DOCTYPE, filters)
+
+
+# ─── Desk endpoints: publishing and replying to portal parties ───────────────
+
+
+@frappe.whitelist()
+def publish_update(
+	subject: str,
+	message: str,
+	project: str | None = None,
+	container_tracker: str | None = None,
+	to_customer: int | str = 0,
+	to_transporter: int | str = 0,
+	update_source: str = "Internal",
+	allocation: str | None = None,
+	attachment: str = "",
+	event_date: str | None = None,
+) -> dict:
+	"""Desk: post an update that the customer and/or transporter can read."""
+	require_desk_access(ptype="create")
+	return post_published_update(
+		subject=subject,
+		message=message,
+		project=project,
+		container_tracker=container_tracker,
+		to_customer=bool(cint(to_customer)),
+		to_transporter=bool(cint(to_transporter)),
+		update_source=update_source,
+		allocation=allocation,
+		attachment=attachment,
+		event_date=event_date,
+	)
+
+
+@frappe.whitelist()
+def reply_to_update(
+	name: str,
+	message: str,
+	subject: str | None = None,
+	to_customer: int | str | None = None,
+	to_transporter: int | str | None = None,
+	attachment: str = "",
+) -> dict:
+	"""Desk: reply to a customer or transporter message inside its thread."""
+	require_desk_access(ptype="create")
+	if not frappe.db.exists(UPDATE_DOCTYPE, name):
+		frappe.throw(_("Update not found."), frappe.DoesNotExistError)
+
+	result = post_update_reply(
+		name,
+		message,
+		subject=subject,
+		to_customer=None if to_customer is None else bool(cint(to_customer)),
+		to_transporter=None if to_transporter is None else bool(cint(to_transporter)),
+		attachment=attachment,
+	)
+	# The message being answered has now been dealt with.
+	frappe.db.set_value(UPDATE_DOCTYPE, name, "is_read", 1, update_modified=False)
+	result["message"] = _("Reply sent.")
+	return result
+
+
+def thread_root(name: str) -> str | None:
+	"""The message a thread hangs off - replies attach to it, as does status."""
+	row = frappe.db.get_value(UPDATE_DOCTYPE, name, ["name", "parent_update"], as_dict=True)
+	if not row:
+		return None
+	return row.parent_update or row.name
+
+
+def set_thread_status(name: str, status: str) -> dict:
+	"""Close or reopen a conversation.
+
+	Status lives on the thread's root, which is the row the ops feed lists and
+	the row every reply hangs off.
+	"""
+	if status not in (STATUS_OPEN, STATUS_CLOSED):
+		frappe.throw(_("Unknown conversation status."))
+
+	root = thread_root(name)
+	if not root:
+		frappe.throw(_("Conversation not found."), frappe.DoesNotExistError)
+
+	row = frappe.db.get_value(
+		UPDATE_DOCTYPE, root, ["update_source", "responded_by"], as_dict=True
+	)
+	if not row or row.update_source not in PARTY_SOURCES:
+		frappe.throw(_("Only a customer or transporter question can be closed."))
+
+	if status == STATUS_CLOSED:
+		values = {
+			"response_status": STATUS_CLOSED,
+			"closed_by": frappe.session.user,
+			"closed_on": now_datetime(),
+		}
+		message = _("Conversation closed.")
+	else:
+		# Reopening returns it to whichever side of the exchange it was on:
+		# answered before means CGM owes nothing until the party writes again.
+		values = {
+			"response_status": STATUS_ANSWERED if row.responded_by else STATUS_OPEN,
+			"closed_by": None,
+			"closed_on": None,
+		}
+		message = _("Conversation reopened.")
+
+	frappe.db.set_value(UPDATE_DOCTYPE, root, values, update_modified=False)
+	frappe.clear_document_cache(UPDATE_DOCTYPE, root)
+	return {"ok": True, "name": root, "status": values["response_status"], "message": message}
+
+
+def message_thread(name: str) -> list[dict]:
+	"""The whole conversation a message belongs to, oldest first.
+
+	A thread is one root message plus every reply pointing at it, so opening
+	any message in it returns the same transcript.
+	"""
+	root = frappe.db.get_value(UPDATE_DOCTYPE, name, ["name", "parent_update"], as_dict=True)
+	if not root:
+		return []
+	root_name = root.parent_update or root.name
+
+	rows = _thread_rows({"name": root_name})
+	rows.extend(_thread_rows({"parent_update": root_name}))
+	seen: set[str] = set()
+	messages: list[dict] = []
+	for row in rows:
+		if row["name"] in seen:
+			continue
+		seen.add(row["name"])
+		messages.append(serialize_update(frappe._dict(row)))
+	messages.sort(key=lambda m: m.get("posted_on") or "")
+	return messages
+
+
+@frappe.whitelist()
+def get_update_thread(name: str) -> list[dict]:
+	"""Desk: the whole conversation a message belongs to, oldest first."""
+	require_desk_access(doc=name)
+	return message_thread(name)

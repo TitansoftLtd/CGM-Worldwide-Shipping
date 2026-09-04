@@ -4,6 +4,9 @@
 cgm_shipping.patches.capture_customs_tax_type_config
 cgm_shipping.patches.capture_running_tax_base_config
 
+cgm_shipping.patches.rename_update_to_shipment_message
+cgm_shipping.patches.rename_shipment_message_to_shipment_update
+
 [post_model_sync]
 # Idempotent patches — re-apply config from source on every migrate.
 # One-time migrations already applied on existing sites live in git history only.
@@ -71,3 +74,14 @@ cgm_shipping.patches.migrate_ui_text_em_dash_to_hyphen
 cgm_shipping.patches.allow_accounts_user_edit_approved_sales_invoice
 cgm_shipping.patches.ensure_funding_workflow_self_submit
 cgm_shipping.patches.remove_lead_customizations
+cgm_shipping.patches.backfill_portal_update_visibility
+cgm_shipping.patches.ensure_portal_engagement_notifications
+cgm_shipping.patches.drop_update_related_document_fields
+cgm_shipping.patches.move_portal_feedback_to_project
+cgm_shipping.patches.clear_response_status_on_cgm_updates
+cgm_shipping.patches.backfill_shipment_update_last_activity
+cgm_shipping.patches.backfill_reply_party_links
+cgm_shipping.patches.rename_shipment_updates_to_series
+cgm_shipping.patches.renumber_shipment_updates_compact
+cgm_shipping.patches.reopen_threads_with_unanswered_followups
+cgm_shipping.patches.normalise_shipment_update_sources
