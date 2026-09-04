@@ -584,6 +584,60 @@ def _paginate_rows(rows: list[dict], filters) -> tuple[list[dict], int, int, int
 	return rows[start : start + page_length], total, start, page_length
 
 
+# Fields the Shipments tab may be sorted by, mapped to the row key that holds
+# the value. Whitelisted deliberately: the sort field arrives from the browser
+# and is used to read row data, so it must never be free-form.
+_SHIPMENT_SORT_FIELDS = {
+	"client_name": "customer",
+	"client_reference_no": "client_reference_no",
+	"cgm_ref_no": "cgm_ref_no",
+	"bill_of_lading": "bl_number",
+	"project_ref": "project_ref",
+	"eta": "eta",
+	"ata": "ata",
+	"operational_status": "operational_status",
+	"batch_no": "batch_no",
+	"shipping_line": "shipping_line",
+	"country_of_origin": "country_of_origin",
+	"clearance_station": "clearance_station",
+	"container_count": "quantity",
+	"vessel": "vessel_name",
+}
+
+
+def _sort_shipment_rows(rows: list[dict], filters) -> list[dict]:
+	"""Order rows by the requested column, or by the default traffic/ETA rank.
+
+	Sorting happens before pagination, so it orders the whole result set rather
+	than only the page on screen.
+	"""
+	field = _SHIPMENT_SORT_FIELDS.get(filters.get("sort_by") or "")
+	if not field:
+		rows.sort(key=_eta_sort_key)
+		return rows
+
+	descending = (filters.get("sort_dir") or "asc").lower() == "desc"
+
+	def is_blank(row) -> bool:
+		value = row.get(field)
+		return value is None or value == ""
+
+	def key(row):
+		value = row.get(field)
+		if isinstance(value, (int, float)):
+			return value
+		return str(value).casefold()
+
+	# Blanks are partitioned out rather than given a sentinel key. A sentinel
+	# gets reversed along with everything else, which put every empty ETA at
+	# the TOP on a descending sort. An empty B/L is missing information, not
+	# the largest value, so it belongs last whichever way the column is sorted.
+	present = [row for row in rows if not is_blank(row)]
+	blanks = [row for row in rows if is_blank(row)]
+	present.sort(key=key, reverse=descending)
+	return present + blanks
+
+
 @frappe.whitelist()
 def get_shipment_tracker(filters=None) -> dict:
 	frappe.has_permission("Container Tracker", ptype="read", throw=True)
@@ -610,7 +664,7 @@ def get_shipment_tracker(filters=None) -> dict:
 		rows.append(_build_shipment_row(project, project_map, all_tracker_rows))
 	rows = _enrich_ops_rows_with_bl_deposits(rows, project_map)
 	rows = _apply_shipment_kpi_filter(rows, filters.get("kpi_filter"))
-	rows.sort(key=_eta_sort_key)
+	rows = _sort_shipment_rows(rows, filters)
 	page_rows, total_count, start, page_length = _paginate_rows(rows, filters)
 	return {
 		"kpis": kpis,
