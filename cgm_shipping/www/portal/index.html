@@ -80,6 +80,14 @@
         <div class="cp-kpi-label">{{ _("Amount Due") }}</div>
       </div>
     </a>
+    {% if stat_unread_updates %}
+    <a class="cp-kpi blue" href="/my-messages">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <div><div class="cp-kpi-num">{{ stat_unread_updates }}</div><div class="cp-kpi-label">{{ _("New Messages") }}</div></div>
+    </a>
+    {% endif %}
   </section>
   {% endif %}
 
@@ -97,6 +105,10 @@
     <a class="cp-action" href="/my-invoices">
       <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg></span>
       <div><h3>{{ _("Invoices") }}</h3><p>{{ _("Sales invoices and clearance fees shared for payment.") }}</p></div>
+    </a>
+    <a class="cp-action" href="/my-messages">
+      <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+      <div><h3>{{ _("Messages") }}</h3><p>{{ _("Talk to the operations team about any shipment.") }}</p></div>
     </a>
     <a class="cp-action" href="/documents">
       <span class="cp-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg></span>

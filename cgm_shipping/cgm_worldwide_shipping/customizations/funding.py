@@ -1089,6 +1089,13 @@ def get_project_dashboard_data(data):
 			items = group.setdefault("items", [])
 			if "Payment Entry" not in items:
 				items.append("Payment Entry")
+	if _("Portal") not in labels and "Portal" not in labels:
+		transactions.append(
+			{
+				"label": _("Portal"),
+				"items": ["Shipment Update", "Portal Feedback"],
+			}
+		)
 	non_standard = data.setdefault("non_standard_fieldnames", {})
 	non_standard["Material Request"] = "custom_project"
 	non_standard["Journal Entry"] = "custom_project"

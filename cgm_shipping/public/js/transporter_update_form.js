@@ -1,6 +1,8 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 /**
- * Portal update forms — standard Frappe FieldGroup controls (transporter + customer).
+ * Transporter truck-update form — standard Frappe FieldGroup controls.
+ *
+ * Free-text portal messages and feedback live in portal_conversation.js.
  */
 frappe.provide("cgm.updates");
 
@@ -96,24 +98,6 @@ frappe.provide("cgm.updates");
 			}
 		);
 		return fields;
-	}
-
-	function getCustomerFieldDefs() {
-		return [
-			{
-				fieldname: "subject",
-				label: __("Subject"),
-				fieldtype: "Data",
-				reqd: 1,
-			},
-			{ fieldtype: "Section Break" },
-			{
-				fieldname: "message",
-				label: __("Message"),
-				fieldtype: "Small Text",
-				reqd: 1,
-			},
-		];
 	}
 
 	function applyAttachOptions(fg, options = {}) {
@@ -286,58 +270,6 @@ frappe.provide("cgm.updates");
 		};
 	};
 
-	cgm.updates.buildCustomerForm = function (wrapper, options = {}) {
-		const built = buildFieldGroup(wrapper, getCustomerFieldDefs(), options);
-		if (!built) {
-			return null;
-		}
-		const { fg, fieldsRoot, $wrapper } = built;
-
-		const actions = $('<div class="tp-update-actions">').appendTo($wrapper);
-		const $btn = $(
-			`<button type="button" class="cp-btn cp-btn-primary" id="cgm-post-update-btn">
-				<span class="tp-btn-label">${__("Send update")}</span>
-			</button>`
-		).appendTo(actions);
-
-		return {
-			field_group: fg,
-			$btn,
-			getValues() {
-				const values = fg.get_values(true) || {};
-				return {
-					subject: (values.subject || "").trim(),
-					message: (values.message || "").trim(),
-				};
-			},
-			validate() {
-				const values = this.getValues();
-				if (!values.subject) {
-					frappe.msgprint({
-						title: __("Subject"),
-						indicator: "orange",
-						message: __("Enter a subject."),
-					});
-					return null;
-				}
-				if (!values.message) {
-					frappe.msgprint({
-						title: __("Message"),
-						indicator: "orange",
-						message: __("Enter a message."),
-					});
-					return null;
-				}
-				return values;
-			},
-			clear() {
-				fg.set_values({ subject: "", message: "" });
-				fg.refresh_dependency();
-				hideEmptySectionHeads(fieldsRoot);
-			},
-		};
-	};
-
 	cgm.updates.mountTransporterForms = function (root, options = {}) {
 		const page = root && root.jquery ? root[0] : root;
 		if (!page) {
@@ -355,15 +287,4 @@ frappe.provide("cgm.updates");
 		});
 	};
 
-	cgm.updates.mountCustomerForm = function (root, options = {}) {
-		const el = root && root.jquery ? root[0] : root;
-		if (!el) {
-			return null;
-		}
-		const form = cgm.updates.buildCustomerForm(el, options);
-		if (form) {
-			el._cgmUpdateForm = form;
-		}
-		return form;
-	};
 })();

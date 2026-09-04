@@ -1724,19 +1724,44 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			renderListChrome(rows);
 		}
 
+		function renderUpdatesHeader() {
+			const $header = page.main.find(".cgm-ops-list-header");
+			$header.html(
+				`<div class="cgm-ops-updates-actions" style="display:flex;justify-content:flex-end;padding:.25rem 0 .5rem;">
+					<button type="button" class="btn btn-sm btn-primary cgm-ops-post-update">
+						${__("Post update to portal")}
+					</button>
+				</div>`
+			);
+			$header.find(".cgm-ops-post-update").on("click", () => {
+				cgm.updates.openPublishDialog({
+					project: filters.project || "",
+					onSent() {
+						refresh();
+					},
+				});
+			});
+		}
+
 		function renderUpdates(data) {
 			applyPageMeta(data);
 			updateUpdatesTabBadge(data.unread_count);
 			updatesRows = data.rows || [];
 			if (!totalCount) {
 				renderEmptyState(__("No updates yet. Transporter and customer posts appear here."), "💬");
+				// Keep the publish action reachable on an empty feed - it is how
+				// ops starts a conversation rather than only answering one.
+				renderUpdatesHeader();
 				return;
 			}
-			page.main.find(".cgm-ops-list-header").empty();
+			renderUpdatesHeader();
 			$tableWrap.html(cgm.updates.renderList(updatesRows));
 			cgm.updates.bindListClicks($tableWrap, {
 				onOpened() {
 					refreshUnreadBadge();
+				},
+				onReplied() {
+					refresh();
 				},
 			});
 			renderListChrome(updatesRows);

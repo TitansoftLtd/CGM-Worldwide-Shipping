@@ -30,19 +30,19 @@ def operational_update_message() -> str:
 			("Subject", "{{ doc.subject }}"),
 		),
 		extra=notification_paragraph("Update", "{{ doc.message or '-' }}"),
-		link=notification_link("Update", "Open update"),
+		link=notification_link("Shipment Update", "Open update"),
 	)
 
 
 def execute() -> None:
 	if not frappe.db.exists("DocType", "Notification"):
 		return
-	if not frappe.db.exists("DocType", "Update"):
+	if not frappe.db.exists("DocType", "Shipment Update"):
 		return
 
 	if frappe.db.exists("Notification", OPERATIONAL_UPDATE_NOTIFICATION):
 		doc = frappe.get_doc("Notification", OPERATIONAL_UPDATE_NOTIFICATION)
-		doc.document_type = "Update"
+		doc.document_type = "Shipment Update"
 		doc.enabled = 1
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -51,7 +51,7 @@ def execute() -> None:
 	notification = frappe.new_doc("Notification")
 	notification.name = OPERATIONAL_UPDATE_NOTIFICATION
 	notification.subject = "{{ doc.update_source }} update: {{ doc.subject }}"
-	notification.document_type = "Update"
+	notification.document_type = "Shipment Update"
 	notification.channel = "Email"
 	notification.event = "Custom"
 	notification.enabled = 1
