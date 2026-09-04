@@ -257,6 +257,21 @@ frappe.provide("cgm.updates");
 		const { fields, values } = sectionsToDialogFields(detail.sections);
 		const thread = detail.thread || [];
 		const question = answerableQuestion(thread);
+		// Threads are flat, so the oldest message is the root every reply hangs
+		// off and the row that carries the audience flags.
+		const root = thread.length ? thread[0] : null;
+		// CGM can carry on a thread it opened itself, not only answer one it was
+		// asked - but only where that thread reaches a portal, since a reply with
+		// no audience has nowhere to go.
+		const replyTo =
+			question ||
+			(root && (cintSafe(root.visible_to_customer) || cintSafe(root.visible_to_transporter))
+				? root
+				: null);
+		const replyLabel =
+			replyTo && PARTY_SOURCES.includes(replyTo.update_source)
+				? __("Reply to {0}", [replyTo.update_source.toLowerCase()])
+				: __("Add to this conversation");
 
 		if (!fields.length && !thread.length) {
 			frappe.msgprint(__("No details available."));
@@ -281,14 +296,14 @@ frappe.provide("cgm.updates");
 			);
 		}
 
-		if (question) {
-			// A reply goes back to whoever asked - the server works the audience
-			// out from the question, so there is nothing to choose here.
+		if (replyTo) {
+			// A reply goes back to whoever the thread is with - the server works
+			// the audience out from it, so there is nothing to choose here.
 			fields.push(
 				{
 					fieldtype: "Section Break",
 					fieldname: "section_reply",
-					label: __("Reply to {0}", [question.update_source.toLowerCase()]),
+					label: replyLabel,
 				},
 				{
 					fieldtype: "Small Text",
@@ -303,16 +318,16 @@ frappe.provide("cgm.updates");
 			title: `${detail.name} · ${detail.subject || __("Message")}`,
 			fields,
 			size: "extra-large",
-			primary_action_label: question ? __("Send reply") : __("Close"),
+			primary_action_label: replyTo ? __("Send reply") : __("Close"),
 			primary_action(v) {
-				if (!question) {
+				if (!replyTo) {
 					d.hide();
 					return;
 				}
-				sendReply(d, detail, question, v, options);
+				sendReply(d, detail, replyTo, v, options);
 			},
-			secondary_action_label: question ? __("Close") : undefined,
-			secondary_action: question ? () => d.hide() : undefined,
+			secondary_action_label: replyTo ? __("Close") : undefined,
+			secondary_action: replyTo ? () => d.hide() : undefined,
 		});
 
 		// Tooltips are created in Control.make() during Dialog construction.
@@ -336,6 +351,14 @@ frappe.provide("cgm.updates");
 		if (row.container_number) {
 			chips.push(`<span class="cgm-upd-chip is-ref">${esc(row.container_number)}</span>`);
 		}
+		const replies = cintSafe(row.reply_count);
+		if (replies) {
+			chips.push(
+				`<span class="cgm-upd-chip">${
+					replies === 1 ? __("1 reply") : __("{0} replies", [replies])
+				}</span>`
+			);
+		}
 		return chips.length ? `<div class="cgm-upd-meta">${chips.join("")}</div>` : "";
 	}
 
@@ -346,8 +369,12 @@ frappe.provide("cgm.updates");
 		const closed = row.response_status === "Closed";
 		const subject = row.subject || row.update_type || __("Update");
 		const source = options.showSource === false ? "" : row.update_source || "";
-		const when = relativeTime(row.posted_on);
-		const preview = previewMessage(row.message);
+		// A conversation row carries its thread's latest message. Show that and
+		// the time it landed - the opening message is history, what came last is
+		// what needs acting on. Feeds without replies fold back to the message.
+		const hasReplies = cintSafe(row.reply_count) > 0;
+		const when = relativeTime(row.last_posted_on || row.posted_on);
+		const preview = previewMessage(hasReplies && row.last_preview ? row.last_preview : row.message);
 		const name = row.name || "";
 
 		// Only a party's message carries response state - CGM's own posts are
@@ -577,6 +604,110 @@ frappe.provide("cgm.updates");
 				},
 			});
 		});
+	};
+
+	/**
+	 * Desk: the Shipment Updates tab on a form.
+	 *
+	 * One card per conversation, not per message. Opening a card shows the whole
+	 * exchange and replies inside the dialog; the list reloads underneath so the
+	 * counts, previews and statuses on it stay true.
+	 */
+	cgm.updates.mountConversations = function (wrapper, options = {}) {
+		const $wrap = wrapper && wrapper.jquery ? wrapper : $(wrapper);
+		if (!$wrap.length || !options.method) {
+			return null;
+		}
+
+		const emptyText = options.emptyText || __("No shipment updates yet.");
+		$wrap.html(`
+			<div class="cgm-conv">
+				<div class="cgm-conv-toolbar">
+					<div class="cgm-conv-summary">${esc(__("Loading shipment updates…"))}</div>
+					<div class="cgm-conv-actions">
+						${
+							options.postDefaults
+								? `<button type="button" class="btn btn-xs btn-default cgm-conv-post">${esc(
+										__("Post update")
+									)}</button>`
+								: ""
+						}
+						<button type="button" class="btn btn-xs btn-default cgm-conv-refresh">${esc(
+							__("Refresh")
+						)}</button>
+						${
+							options.logRoute
+								? `<a class="btn btn-xs btn-default" href="${esc(
+										options.logRoute
+									)}">${esc(__("Open full log"))}</a>`
+								: ""
+						}
+					</div>
+				</div>
+				<div class="cgm-conv-body"></div>
+			</div>`);
+
+		const $summary = $wrap.find(".cgm-conv-summary");
+		const $body = $wrap.find(".cgm-conv-body");
+
+		function summaryText(data) {
+			const total = cintSafe(data.total_count);
+			if (!total) {
+				return emptyText;
+			}
+			const parts = [
+				total === 1 ? __("1 conversation") : __("{0} conversations", [total]),
+			];
+			if (cintSafe(data.awaiting_count)) {
+				parts.push(__("{0} awaiting reply", [cintSafe(data.awaiting_count)]));
+			}
+			if (cintSafe(data.unread_count)) {
+				parts.push(__("{0} unread", [cintSafe(data.unread_count)]));
+			}
+			return parts.join(" · ");
+		}
+
+		function load() {
+			frappe.call({
+				method: options.method,
+				args: options.args || {},
+				callback(r) {
+					if (r.exc) {
+						$summary.text(__("Could not load shipment updates."));
+						$body.html(
+							`<div class="cgm-conv-empty text-danger">${esc(
+								__("Refresh the page and try again.")
+							)}</div>`
+						);
+						return;
+					}
+					const data = r.message || {};
+					const rows = data.rows || [];
+					$summary.text(summaryText(data));
+					if (!rows.length) {
+						$body.html(`<div class="cgm-conv-empty">${esc(emptyText)}</div>`);
+						return;
+					}
+					$body.html(cgm.updates.renderList(rows, options.listOptions || {}));
+					cgm.updates.bindListClicks($body, {
+						...(options.listOptions || {}),
+						// A reply changes the preview, the timestamp and the
+						// status of the card behind the dialog.
+						onReplied() {
+							load();
+						},
+					});
+				},
+			});
+		}
+
+		$wrap.find(".cgm-conv-refresh").on("click", load);
+		$wrap.find(".cgm-conv-post").on("click", () => {
+			cgm.updates.openPublishDialog({ ...(options.postDefaults || {}), onSent: load });
+		});
+
+		load();
+		return { refresh: load };
 	};
 
 	cgm.updates.mount = function (root, rows, options = {}) {

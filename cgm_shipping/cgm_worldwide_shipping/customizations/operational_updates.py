@@ -507,13 +507,16 @@ def _validated_parent(parent_update: str | None, *, project: str | None = None) 
 	if not parent_update:
 		return None
 	parent = frappe.db.get_value(
-		UPDATE_DOCTYPE, parent_update, ["name", "project"], as_dict=True
+		UPDATE_DOCTYPE, parent_update, ["name", "project", "parent_update"], as_dict=True
 	)
 	if not parent:
 		return None
 	if project and parent.project and parent.project != project:
 		return None
-	return parent.name
+	# Threads are flat: one root plus the replies pointing at it. Hanging a
+	# reply off another reply makes a grandchild that message_thread() never
+	# returns, so it would vanish from every transcript. Always attach to root.
+	return parent.parent_update or parent.name
 
 
 def _get_allocation_item(allocation, item_name: str):
@@ -796,10 +799,33 @@ def post_update_reply(
 		attachment=attachment,
 	)
 	stamp_response_on_question(parent.name, result["name"])
+	_settle_thread_root(parent.parent_update or parent.name, result["name"])
 	result["update"] = serialize_update(
 		frappe.get_doc(UPDATE_DOCTYPE, result["name"], ignore_permissions=True)
 	)
 	return result
+
+
+def _settle_thread_root(root: str, reply: str) -> None:
+	"""A CGM reply settles the row the conversation lists actually show.
+
+	`stamp_response_on_question` only records against a party's own message.
+	When CGM opened the thread and the party answered on it, the root is still
+	the row that gets listed, ranked and coloured - left Open it would read as
+	awaiting a reply forever. Who first responded is never overwritten.
+	"""
+	row = frappe.db.get_value(
+		UPDATE_DOCTYPE, root, ["name", "response_status", "responded_by"], as_dict=True
+	)
+	if not row or row.response_status != STATUS_OPEN:
+		return
+
+	values: dict = {"response_status": STATUS_ANSWERED, "response_update": reply}
+	if not row.responded_by:
+		values["responded_by"] = frappe.session.user
+		values["responded_on"] = now_datetime()
+	frappe.db.set_value(UPDATE_DOCTYPE, root, values, update_modified=False)
+	frappe.clear_document_cache(UPDATE_DOCTYPE, root)
 
 
 def stamp_response_on_question(question: str, reply: str) -> bool:
@@ -1063,13 +1089,15 @@ def format_latest_update_summary(update: dict | None) -> str:
 	return label
 
 
-@frappe.whitelist()
-def get_allocation_truck_updates(allocation_name: str) -> list[dict]:
-	"""Updates linked to this allocation, its containers, or its shipment."""
-	require_desk_access()
-	frappe.has_permission("Container Allocation", ptype="read", doc=allocation_name, throw=True)
+def allocation_scope_filters(allocation_name: str) -> list[list] | None:
+	"""`or_filters` matching every update that belongs to an allocation.
+
+	An allocation's conversation can be linked three ways: to the allocation
+	itself, to one of the containers on it, or to the shipment it serves. None
+	returned means the allocation does not exist.
+	"""
 	if not allocation_name or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
-		return []
+		return None
 
 	allocation = frappe.db.get_value(
 		"Container Allocation",
@@ -1078,7 +1106,7 @@ def get_allocation_truck_updates(allocation_name: str) -> list[dict]:
 		as_dict=True,
 	)
 	if not allocation:
-		return []
+		return None
 
 	tracker_names = frappe.get_all(
 		"Container Allocation Item",
@@ -1093,6 +1121,17 @@ def get_allocation_truck_updates(allocation_name: str) -> list[dict]:
 		or_filters.append(["container_tracker", "in", tracker_names])
 	if allocation.project:
 		or_filters.append(["project", "=", allocation.project])
+	return or_filters
+
+
+@frappe.whitelist()
+def get_allocation_truck_updates(allocation_name: str) -> list[dict]:
+	"""Updates linked to this allocation, its containers, or its shipment."""
+	require_desk_access()
+	frappe.has_permission("Container Allocation", ptype="read", doc=allocation_name, throw=True)
+	or_filters = allocation_scope_filters(allocation_name)
+	if or_filters is None:
+		return []
 
 	rows = frappe.get_all(
 		UPDATE_DOCTYPE,
@@ -1125,6 +1164,132 @@ def get_project_updates(project: str) -> list[dict]:
 	require_desk_access()
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
 	return get_updates_for_project(project)
+
+
+# ─── Desk conversation lists ─────────────────────────────────────────────────
+#
+# The Project and Container Allocation forms each carry a Conversations tab.
+# Those list one row per *conversation*, not per message: a thread root with
+# its replies folded in, so a long exchange reads as one entry and opens as one
+# transcript. The ops board's own feed is built the same way (roots only) but
+# is paginated and filterable, so it keeps its own endpoint.
+
+_CONVERSATION_REPLY_FIELDS = [
+	"name",
+	"parent_update",
+	"posted_on",
+	"posted_by",
+	"message",
+	"update_source",
+	"is_read",
+]
+
+_EMPTY_CONVERSATIONS = {
+	"rows": [],
+	"total_count": 0,
+	"unread_count": 0,
+	"awaiting_count": 0,
+}
+
+
+def _conversation_replies(root_names: list[str]) -> dict[str, list[dict]]:
+	"""Replies grouped under the root they hang off, oldest first."""
+	if not root_names:
+		return {}
+	replies = frappe.get_all(
+		UPDATE_DOCTYPE,
+		filters={"parent_update": ("in", root_names)},
+		fields=_CONVERSATION_REPLY_FIELDS,
+		order_by="posted_on asc",
+		limit_page_length=0,
+		ignore_permissions=True,
+	)
+	grouped: dict[str, list[dict]] = {}
+	for reply in replies:
+		grouped.setdefault(reply.parent_update, []).append(reply)
+	return grouped
+
+
+def conversation_list(
+	*,
+	filters: dict | None = None,
+	or_filters: list | None = None,
+	limit: int = 200,
+) -> dict:
+	"""Conversations in a scope, most recently active first."""
+	if not frappe.db.exists("DocType", UPDATE_DOCTYPE):
+		return dict(_EMPTY_CONVERSATIONS)
+
+	root_filters = dict(filters or {})
+	# Roots only. A reply listed beside its own question reads as two
+	# conversations, and both open the same transcript.
+	root_filters["parent_update"] = ("is", "not set")
+
+	roots = frappe.get_all(
+		UPDATE_DOCTYPE,
+		filters=root_filters,
+		or_filters=or_filters or None,
+		fields=_UPDATE_LIST_FIELDS,
+		# A thread rises when a reply lands on it, not only when it was opened.
+		order_by="last_activity_on desc, posted_on desc",
+		limit_page_length=limit,
+		ignore_permissions=True,
+	)
+	if not roots:
+		return dict(_EMPTY_CONVERSATIONS)
+
+	by_root = _conversation_replies([row["name"] for row in roots])
+
+	rows: list[dict] = []
+	for root in roots:
+		row = serialize_update(frappe._dict(root))
+		replies = by_root.get(root["name"], [])
+		last = replies[-1] if replies else None
+		row["reply_count"] = len(replies)
+		# Unread is a property of the whole exchange - a read question with an
+		# unread reply still needs looking at.
+		row["thread_unread"] = (0 if cint(root.get("is_read")) else 1) + sum(
+			1 for reply in replies if not cint(reply.get("is_read"))
+		)
+		row["last_posted_on"] = str(last["posted_on"]) if last and last.get("posted_on") else row["posted_on"]
+		row["last_preview"] = _preview_message(last["message"]) if last else ""
+		row["last_source"] = last["update_source"] if last else row["update_source"]
+		row["last_from"] = (
+			frappe.utils.get_fullname(last["posted_by"])
+			if last and last.get("posted_by")
+			else row["posted_by_name"]
+		)
+		rows.append(row)
+
+	return {
+		"rows": rows,
+		"total_count": len(rows),
+		"unread_count": sum(1 for row in rows if row["thread_unread"]),
+		"awaiting_count": sum(1 for row in rows if row["response_status"] == STATUS_OPEN),
+	}
+
+
+@frappe.whitelist()
+def get_project_conversations(project: str) -> dict:
+	"""Conversations tab on the shipment (Project) form."""
+	require_desk_access()
+	if not project:
+		return dict(_EMPTY_CONVERSATIONS)
+	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
+	return conversation_list(filters={"project": project})
+
+
+@frappe.whitelist()
+def get_allocation_conversations(allocation_name: str) -> dict:
+	"""Conversations tab on the Container Allocation form."""
+	require_desk_access()
+	if not allocation_name:
+		return dict(_EMPTY_CONVERSATIONS)
+	frappe.has_permission("Container Allocation", ptype="read", doc=allocation_name, throw=True)
+	or_filters = allocation_scope_filters(allocation_name)
+	if or_filters is None:
+		return dict(_EMPTY_CONVERSATIONS)
+	return conversation_list(or_filters=or_filters)
 
 
 @frappe.whitelist()

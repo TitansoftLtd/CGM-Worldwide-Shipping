@@ -14,6 +14,7 @@ Welcome to the CGM Worldwide Shipping documentation. This wiki covers freight fo
 | [Transport & Containers Guide](guides/transport-containers.md) | Transport, ops | Container Tracker, Ops Board, allocations, demurrage |
 | [Customer & Transporter Portal](guides/portals.md) | Portal users, support | Customer and transporter website |
 | [Licence & Permit Register](guides/licences.md) | Admin, compliance | Company licences, expiry reminders, recipients |
+| [Job Groups & Per Diems](guides/per-diems.md) | HR, all employees | Job group structure, per diem rates, claiming a per diem |
 | [Admin & Setup Guide](guides/admin-setup.md) | System admins | Masters, CGM Shipping Settings, patches, go-live |
 | [Developer Guide](guides/developer.md) | Developers | Hooks, modules, extending the app |
 

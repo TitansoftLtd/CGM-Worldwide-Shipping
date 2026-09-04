@@ -12,6 +12,7 @@
 				{"Transport & Containers": "guides/transport-containers.md"},
 				{"Customer & Transporter Portal": "guides/portals.md"},
 				{"Licence & Permit Register": "guides/licences.md"},
+				{"Job Groups & Per Diems": "guides/per-diems.md"},
 				{"Admin & Setup": "guides/admin-setup.md"},
 				{"Developer reference": "guides/developer.md"}
 			]

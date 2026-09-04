@@ -1,0 +1,31 @@
+{
+ "custom_fields": [
+  {
+   "dt": "Employee Grade",
+   "fieldname": "custom_job_group_designations",
+   "fieldtype": "Table",
+   "label": "Designations in this Job Group",
+   "insert_after": "custom_per_diem_rate",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Grade-custom_job_group_designations",
+   "options": "CGM Job Group Designation"
+  },
+  {
+   "dt": "Employee Grade",
+   "fieldname": "custom_per_diem_rate",
+   "fieldtype": "Currency",
+   "label": "Per Diem Rate (per Day)",
+   "insert_after": "default_base_pay",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Grade-custom_per_diem_rate",
+   "description": "Daily subsistence rate for this job group, per the signed CGM Job Group Structure.",
+   "non_negative": 1,
+   "in_list_view": 1
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "Employee Grade",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}

@@ -472,7 +472,7 @@
    "label": "Shipping Line Free Day Start Date"
   },
   {
-   "description": "Last shipping-line free day \u2014 demurrage/detention starts the day after",
+   "description": "Last shipping-line free day - demurrage/detention starts the day after",
    "fieldname": "free_days_end_date",
    "fieldtype": "Date",
    "label": "Shipping Line Free Day End Date"
@@ -512,7 +512,7 @@
    "label": "KPA Free Day Start Date"
   },
   {
-   "description": "Last KPA free day \u2014 KPA storage charges start the day after",
+   "description": "Last KPA free day - KPA storage charges start the day after",
    "fieldname": "kpa_free_days_end_date",
    "fieldtype": "Date",
    "label": "KPA Free Day End Date"
@@ -619,7 +619,7 @@
    "label": "Get In Mombasa"
   },
   {
-   "description": "First chargeable day \u2014 the day after Shipping Line Free Day End Date",
+   "description": "First chargeable day - the day after Shipping Line Free Day End Date",
    "fieldname": "demurrage_start_date",
    "fieldtype": "Date",
    "label": "Demurrage Start Date",
