@@ -55,10 +55,10 @@
 
   <div class="cp-tab-panel active" data-cp-panel="trucks" role="tabpanel">
     {% if not allocation.is_completed %}
-    <div class="cp-card" style="margin-bottom:1rem; padding:1rem;">
+    <div class="cp-card tp-offer-form-card" style="margin-bottom:1rem; padding:1rem;{% if allocation.offered_trucks %} display:none;{% endif %}">
       <h4 style="margin-top:0;">{{ _("Offer trucks") }}</h4>
       <p class="text-muted" style="margin:0 0 1rem; font-size:.88rem;">
-        {{ _("Add as many trucks as you can provide. Include truck number and driver details for each row, then submit once.") }}
+        {{ _("Add truck and driver details, then submit. Use Add another truck if you can provide more than one.") }}
       </p>
       <div id="tp-offer-rows"></div>
       <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:1rem;">
@@ -68,8 +68,20 @@
         <button type="button" class="btn btn-primary btn-sm" id="tp-submit-offered-trucks">
           <span class="tp-btn-label">{{ _("Submit offered trucks") }}</span>
         </button>
+        {% if allocation.offered_trucks %}
+        <button type="button" class="btn btn-default btn-sm" id="tp-cancel-offer-form">
+          {{ _("Cancel") }}
+        </button>
+        {% endif %}
       </div>
     </div>
+    {% if allocation.offered_trucks %}
+    <div class="cp-card tp-offer-more-card" style="margin-bottom:1rem; padding:1rem;">
+      <button type="button" class="btn btn-default btn-sm" id="tp-show-offer-form">
+        {{ _("Offer more trucks") }}
+      </button>
+    </div>
+    {% endif %}
     {% endif %}
 
     {% if allocation.offered_trucks %}
@@ -92,7 +104,7 @@
       </div>
     </div>
     {% endfor %}
-    {% else %}
+    {% elif allocation.is_completed %}
     <div class="cp-card" style="padding:1rem;">
       <p class="text-muted" style="margin:0;">{{ _("No trucks offered yet.") }}</p>
     </div>
@@ -298,13 +310,37 @@ frappe.ready(function () {
 		offerMount.insertAdjacentHTML("beforeend", truckRowHtml());
 	}
 
-	if (offerMount) {
+	function resetOfferForm() {
+		if (!offerMount) return;
+		offerMount.innerHTML = "";
 		addOfferRow();
-		const booked = {{ allocation.trucks_booked or 1 }};
-		for (let i = 1; i < Math.min(booked, 10); i++) {
-			addOfferRow();
+	}
+
+	function showOfferForm() {
+		document.querySelector(".tp-offer-form-card")?.style.setProperty("display", "block");
+		document.querySelector(".tp-offer-more-card")?.style.setProperty("display", "none");
+		if (!offerMount?.querySelector(".tp-offer-row")) {
+			resetOfferForm();
 		}
 	}
+
+	function hideOfferForm() {
+		document.querySelector(".tp-offer-form-card")?.style.setProperty("display", "none");
+		document.querySelector(".tp-offer-more-card")?.style.setProperty("display", "block");
+		resetOfferForm();
+	}
+
+	if (offerMount) {
+		resetOfferForm();
+	}
+
+	document.getElementById("tp-show-offer-form")?.addEventListener("click", function () {
+		showOfferForm();
+	});
+
+	document.getElementById("tp-cancel-offer-form")?.addEventListener("click", function () {
+		hideOfferForm();
+	});
 
 	document.getElementById("tp-add-truck-row")?.addEventListener("click", function () {
 		addOfferRow();

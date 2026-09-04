@@ -46,6 +46,11 @@ def parse_mmyy_naming_series_variable(doc, variable):
 def validate_sales_invoice(doc, method=None) -> None:
 	validate_sales_invoice_project_reference(doc)
 	validate_sales_invoice_workflow(doc)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share import (
+		validate_share_with_customer,
+	)
+
+	validate_share_with_customer(doc)
 
 
 def after_insert_sales_invoice(doc, method=None) -> None:

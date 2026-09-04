@@ -26,6 +26,16 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+# ─── Page layout ─────────────────────────────────────────────────────────────
+
+
+def apply_customer_portal_layout(context) -> None:
+	"""Let portal pages use the viewport instead of Bootstrap's ~1170px container."""
+	context.no_cache = 1
+	context.show_sidebar = False
+	context.full_width = True
+
+
 # ─── Customer resolution ─────────────────────────────────────────────────────
 
 
@@ -474,15 +484,21 @@ def outstanding_totals_by_currency(invoices: list[dict]) -> list[dict]:
 
 
 def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
-	"""Submitted Sales Invoices for this customer, newest first.
+	"""Submitted Sales Invoices CGM has shared with this customer.
 
-	Only submitted invoices (docstatus 1) are shown - drafts are internal.
-	Each row carries a tone + guarded PDF download URL.
+	Only submitted, non-return invoices with **Share with Customer** ticked
+	appear. Drafts stay internal. Each row carries a tone + guarded PDF URL.
 	Outstanding is converted to the invoice currency for portal display.
 	"""
 	if not customer:
 		return []
+	from cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share import (
+		SHARE_FIELD,
+	)
+
 	si_meta = frappe.get_meta("Sales Invoice")
+	if not si_meta.has_field(SHARE_FIELD):
+		return []
 	fields = [
 		"name",
 		"posting_date",
@@ -497,12 +513,20 @@ def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
 	]
 	if si_meta.has_field("custom_project_name"):
 		fields.append("custom_project_name")
+	filters: dict = {
+		"customer": customer,
+		"docstatus": 1,
+		SHARE_FIELD: 1,
+	}
+	if si_meta.has_field("is_return"):
+		filters["is_return"] = 0
 	rows = frappe.get_all(
 		"Sales Invoice",
-		filters={"customer": customer, "docstatus": 1},
+		filters=filters,
 		fields=fields,
 		order_by="posting_date desc, creation desc",
 		limit=limit,
+		ignore_permissions=True,
 	)
 	refs = _project_refs([r.project for r in rows if r.get("project")])
 	for r in rows:
@@ -562,12 +586,12 @@ def _pdf_url(doctype: str, name: str, disposition: str = "attachment") -> str:
 
 @frappe.whitelist()
 def download_transaction_pdf(doctype: str, name: str, disposition: str = "attachment"):
-	"""Stream a customer's own Quotation / Sales Invoice as a PDF.
+	"""Stream a customer's own Quotation / shared Sales Invoice as a PDF.
 
 	Portal users hold no desk read perm on these doctypes, so a direct
 	print URL would 403. This re-derives the customer from the session,
-	confirms the document is addressed to them, then renders and streams
-	the PDF. Only Quotation and Sales Invoice are served here.
+	confirms the document is addressed to them (and, for Sales Invoice,
+	that it has been shared), then renders and streams the PDF.
 
 	``disposition`` controls how the browser handles it:
 	  - "inline"     → preview in a new tab (Content-Disposition: inline)
@@ -581,17 +605,25 @@ def download_transaction_pdf(doctype: str, name: str, disposition: str = "attach
 		raise frappe.PermissionError(_("No customer is linked to your account."))
 
 	if doctype == "Sales Invoice":
-		owner = frappe.db.get_value("Sales Invoice", name, "customer")
+		from cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share import (
+			assert_shared_sales_invoice_for_customer,
+		)
+
+		assert_shared_sales_invoice_for_customer(name, customer)
+		doc = frappe.get_doc("Sales Invoice", name, ignore_permissions=True)
+		frappe.flags.ignore_print_permissions = True
+		try:
+			pdf = frappe.get_print(doctype, name, doc=doc, as_pdf=True)
+		finally:
+			frappe.flags.ignore_print_permissions = False
 	else:
 		row = frappe.db.get_value(
 			"Quotation", name, ["quotation_to", "party_name"], as_dict=True
 		)
 		owner = row.party_name if (row and row.quotation_to == "Customer") else None
-
-	if not owner or owner != customer:
-		raise frappe.PermissionError(_("You can only access your own documents."))
-
-	pdf = frappe.get_print(doctype, name, as_pdf=True)
+		if not owner or owner != customer:
+			raise frappe.PermissionError(_("You can only access your own documents."))
+		pdf = frappe.get_print(doctype, name, as_pdf=True)
 	frappe.local.response.filename = f"{name}.pdf"
 	frappe.local.response.filecontent = pdf
 	# "pdf" → inline preview; "download" → save-as. Frappe's response
