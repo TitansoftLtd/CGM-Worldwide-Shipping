@@ -86,3 +86,4 @@ cgm_shipping.patches.renumber_shipment_updates_compact
 cgm_shipping.patches.reopen_threads_with_unanswered_followups
 cgm_shipping.patches.normalise_shipment_update_sources
 cgm_shipping.patches.backfill_employee_job_groups
+cgm_shipping.patches.name_container_allocations_with_series
