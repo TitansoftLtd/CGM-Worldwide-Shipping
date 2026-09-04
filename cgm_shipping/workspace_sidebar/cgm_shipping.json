@@ -281,6 +281,18 @@
   {
    "child": 1,
    "collapsible": 0,
+   "icon": "dashboard",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Operations Overview",
+   "link_to": "operations-overview",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
    "icon": "lock",
    "indent": 0,
    "keep_closed": 0,

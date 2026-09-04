@@ -24,11 +24,6 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				<div class="cgm-ops-sticky-chrome">
 					<div class="cgm-ops-filters"></div>
 					<div class="cgm-ops-kpis-section is-collapsed">
-						<button type="button" class="cgm-ops-kpis-toggle" aria-expanded="false">
-							<span class="cgm-ops-kpis-toggle-label">${__("Summary")}</span>
-							<span class="cgm-ops-kpis-toggle-hint">${__("Show or hide KPI cards")}</span>
-							<span class="cgm-ops-kpis-toggle-icon" aria-hidden="true">▾</span>
-						</button>
 						<div class="cgm-ops-kpis-collapse">
 							<div class="cgm-ops-kpis"></div>
 						</div>
@@ -48,6 +43,10 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 							<span class="cgm-ops-updates-tab-label">${__("Updates")}</span>
 							<span class="cgm-ops-updates-badge" style="display:none"></span>
 						</button>
+						<label class="cgm-ops-kpis-check">
+							<input type="checkbox" class="cgm-ops-kpis-checkbox">
+							<span>${__("Show KPIs")}</span>
+						</label>
 						<span class="cgm-ops-list-count cgm-ops-tabs-count" style="display:none"></span>
 					</div>
 				</div>
@@ -83,8 +82,29 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		function fit_board_height() {
 			const el = page.main.get(0);
 			if (!el) return;
-			const top = el.getBoundingClientRect().top + window.scrollY;
+			const rect = el.getBoundingClientRect();
+			const top = rect.top + window.scrollY;
 			el.style.setProperty("--cgm-ops-board-offset", `${Math.max(0, Math.round(top))}px`);
+
+			/* Whatever the desk leaves BELOW the board — page padding, a footer,
+			   the margin under the main section — is still part of the document,
+			   so sizing the board to the viewport minus its own top left the page
+			   itself scrollable by exactly that much. That is the scroll you get
+			   above and below a board that is supposed to be fixed to the
+			   screen. Measure the leftover and hand it back to the offset.
+
+			   Read after the first assignment so the board is already at its
+			   intended height: what is left over then is genuinely someone
+			   else's. */
+			const doc = document.documentElement;
+			const boardBottom = el.getBoundingClientRect().bottom + window.scrollY;
+			const below = Math.max(0, Math.round(doc.scrollHeight - boardBottom));
+			if (below > 0) {
+				el.style.setProperty(
+					"--cgm-ops-board-offset",
+					`${Math.max(0, Math.round(top)) + below}px`
+				);
+			}
 		}
 
 		function watch_board_height() {
@@ -95,7 +115,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			let pending = null;
 			const remeasure = () => {
 				if (pending) cancelAnimationFrame(pending);
-				pending = requestAnimationFrame(fit_board_height);
+				pending = requestAnimationFrame(() => {
+					fit_board_height();
+					// A different amount of space means a different number of
+					// rows, so the page length follows the window.
+					scheduleRowFit();
+				});
 			};
 			window.addEventListener("resize", remeasure);
 			window.addEventListener("orientationchange", remeasure);
@@ -114,9 +139,10 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		// then is what turned a default into a preference nobody expressed.
 		function set_kpis_collapsed(collapsed, persist = true) {
 			const $section = page.main.find(".cgm-ops-kpis-section");
-			const $toggle = $section.find(".cgm-ops-kpis-toggle");
 			$section.toggleClass("is-collapsed", collapsed);
-			$toggle.attr("aria-expanded", collapsed ? "false" : "true");
+			// The checkbox is the control now, so it has to reflect the state
+			// even when that state came from storage rather than from a click.
+			page.main.find(".cgm-ops-kpis-checkbox").prop("checked", !collapsed);
 			if (persist) {
 				try {
 					localStorage.setItem(KPI_COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
@@ -127,8 +153,6 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		}
 
 		function init_kpis_collapse() {
-			const $section = page.main.find(".cgm-ops-kpis-section");
-			const $toggle = $section.find(".cgm-ops-kpis-toggle");
 			let stored = null;
 			try {
 				stored = localStorage.getItem(KPI_COLLAPSE_STORAGE_KEY);
@@ -141,10 +165,14 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			const collapsed = stored === null ? true : stored === "1";
 			set_kpis_collapsed(collapsed, false);
 
-			$toggle.on("click", () => {
-				set_kpis_collapsed(!$section.hasClass("is-collapsed"));
-				// Collapsing frees vertical space; re-fit so the table takes it.
-				requestAnimationFrame(fit_board_height);
+			page.main.find(".cgm-ops-kpis-checkbox").on("change", function () {
+				set_kpis_collapsed(!this.checked);
+				// Hiding the cards frees vertical space; re-fit so the table
+				// takes it, then re-count how many rows that space now holds.
+				requestAnimationFrame(() => {
+					fit_board_height();
+					scheduleRowFit();
+				});
 			});
 
 			watch_board_height();
@@ -159,11 +187,29 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		let containerRowsCache = [];
 		const updateRowByKey = {};
 		const selectedKeys = new Set();
-		const PAGE_LENGTH_OPTIONS = [20, 50, 100, 500];
-		// The first option in PAGE_LENGTH_OPTIONS, so the default always
-		// matches the leftmost button rather than being a separate constant
-		// that can drift away from it.
-		let pageLength = PAGE_LENGTH_OPTIONS[0];
+		const PAGE_LENGTH_OPTIONS = [25, 50, 100, 500];
+		const PAGE_LENGTH_STORAGE_KEY = "cgm_ops_board_page_length_v1";
+		/* Row height is what makes the chosen page fit the screen.
+		 *
+		 * The count stays what the user picked; the rows tighten, down to the
+		 * floor where the text itself needs the space, so 25 rows land inside
+		 * the window on a laptop as well as on a monitor. Past that floor the
+		 * table scrolls, because the alternative is unreadable type.
+		 */
+		const NATURAL_ROW_HEIGHT = 22;
+		const MIN_ROW_HEIGHT = 18;
+
+		function loadPageLength() {
+			try {
+				const stored = cint(localStorage.getItem(PAGE_LENGTH_STORAGE_KEY));
+				if (PAGE_LENGTH_OPTIONS.includes(stored)) return stored;
+			} catch (e) {
+				// fall through to the default
+			}
+			return PAGE_LENGTH_OPTIONS[0];
+		}
+
+		let pageLength = loadPageLength();
 		let listStart = 0;
 		// Empty sortBy means the server's default order: traffic-light rank
 		// then ETA, which is the operationally useful default.
@@ -664,6 +710,95 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			$count.text(text).show();
 		}
 
+		function persistPageLength() {
+			try {
+				localStorage.setItem(PAGE_LENGTH_STORAGE_KEY, String(pageLength));
+			} catch (e) {
+				// Private browsing. The choice still holds for this session.
+			}
+		}
+
+		/* Size the rows so the current page fits the window.
+		 *
+		 * Everything here is measured rather than assumed: row height moves
+		 * with the theme, the browser's font settings and zoom, and the space
+		 * above the table moves with the filters wrapping, the Summary panel
+		 * and the window itself. Only the browser knows the real numbers.
+		 *
+		 * Nothing is refetched — this is one CSS variable, so it costs a
+		 * reflow rather than a round trip.
+		 */
+		function fitRowsToScreen() {
+			const board = page.main.get(0);
+			const scroll = page.main.find(".cgm-ops-table-scroll").get(0);
+			if (!board) return;
+			if (!scroll || activeTab === "updates") {
+				board.style.removeProperty("--cgm-ops-row-height");
+				board.style.removeProperty("--cgm-ops-row-pad");
+				return;
+			}
+
+			const $rows = $(scroll).find("tbody > tr");
+			if (!$rows.length) return;
+
+			const thead = $(scroll).find("thead").get(0);
+			const headHeight = thead ? thead.getBoundingClientRect().height : 0;
+			// 2px of slack, because a last row clipped by a pixel is the whole
+			// complaint this exists to answer.
+			const available = scroll.clientHeight - headHeight - 2;
+			// Fit the page the user asked for, not the rows this page happens
+			// to hold: a short last page must not stretch the rows back out.
+			const target = Math.max(pageLength, $rows.length);
+			if (available <= 0 || !target) return;
+
+			let height = Math.floor(available / target);
+			if (height >= NATURAL_ROW_HEIGHT) {
+				// Everything already fits. Leave the grid at its normal
+				// density rather than spacing rows out to fill the window.
+				board.style.removeProperty("--cgm-ops-row-height");
+				board.style.removeProperty("--cgm-ops-row-pad");
+				return;
+			}
+			if (height < MIN_ROW_HEIGHT) {
+				// 100 or 500 rows on a laptop. Nothing sensible fits, so keep
+				// the rows readable and let the table scroll.
+				board.style.removeProperty("--cgm-ops-row-height");
+				board.style.removeProperty("--cgm-ops-row-pad");
+				return;
+			}
+
+			board.style.setProperty("--cgm-ops-row-height", `${height}px`);
+			// Below 20px the cell padding is the part that no longer fits.
+			board.style.setProperty("--cgm-ops-row-pad", height >= 20 ? "0.1rem" : "0px");
+
+			// A row whose client name wraps is taller than the height asked
+			// for, so check the result and take one more pass if it overran.
+			if (scroll.scrollHeight > scroll.clientHeight + 1) {
+				const ratio = available / (scroll.scrollHeight - headHeight);
+				const tighter = Math.max(MIN_ROW_HEIGHT, Math.floor(height * ratio));
+				if (tighter < height) {
+					board.style.setProperty("--cgm-ops-row-height", `${tighter}px`);
+					board.style.setProperty(
+						"--cgm-ops-row-pad",
+						tighter >= 20 ? "0.1rem" : "0px"
+					);
+				}
+			}
+		}
+
+		let fitFrame = null;
+		function scheduleRowFit() {
+			if (fitFrame) cancelAnimationFrame(fitFrame);
+			// Two frames: the first lets the new rows lay out, the second lets
+			// sticky headers and wrapped filters settle.
+			fitFrame = requestAnimationFrame(() =>
+				requestAnimationFrame(() => {
+					fitFrame = null;
+					fitRowsToScreen();
+				})
+			);
+		}
+
 		function renderListChrome(rows) {
 			const $header = page.main.find(".cgm-ops-list-header");
 			const $paging = page.main.find(".cgm-ops-list-paging");
@@ -737,6 +872,10 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				$selectAll.prop("checked", allSelected);
 				$selectAll.prop("indeterminate", !allSelected && someSelected);
 			}
+
+			// Measure what this render actually produced. On the usual load the
+			// count already agrees with the remembered one and nothing happens.
+			scheduleRowFit();
 		}
 
 		function checkboxCell(row) {
@@ -764,6 +903,175 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				</div>`);
 		}
 
+		/* -------------------------------------------------------------------
+		   Resizable columns
+
+		   The board carries 25+ columns of very different content and no single
+		   set of widths suits everyone: one operator lives in Remarks, the next
+		   only reads ETA and Status. Dragging the right edge of a header sets
+		   that column, double-clicking the edge hands it back to the browser,
+		   and the choice is remembered per tab.
+
+		   Widths are applied through one stylesheet rather than inline styles on
+		   every cell: at 500 rows x 28 columns that is 14,000 style writes per
+		   drag frame, against one text node here.
+		   ------------------------------------------------------------------ */
+		const COL_WIDTH_STORAGE_KEY = "cgm_ops_board_col_widths_v1";
+		const MIN_COL_WIDTH = 56;
+
+		function loadColWidths() {
+			try {
+				const raw = localStorage.getItem(COL_WIDTH_STORAGE_KEY);
+				const parsed = raw ? JSON.parse(raw) : null;
+				return parsed && typeof parsed === "object" ? parsed : {};
+			} catch (e) {
+				return {};
+			}
+		}
+
+		let colWidths = loadColWidths();
+
+		function persistColWidths() {
+			try {
+				localStorage.setItem(COL_WIDTH_STORAGE_KEY, JSON.stringify(colWidths));
+			} catch (e) {
+				// Private browsing or a full quota. The widths still hold for
+				// this session, they just do not survive a reload.
+			}
+		}
+
+		// Keyed by sort field where there is one, by label otherwise, so a width
+		// follows its column even if the column order changes later.
+		function columnKey($th) {
+			const field = $th.attr("data-sort");
+			if (field) return `f:${field}`;
+			const label = ($th.find(".cgm-ops-th-label").text() || $th.text() || "").trim();
+			return `l:${label}`;
+		}
+
+		function colWidthStyleEl() {
+			let el = document.getElementById("cgm-ops-col-widths");
+			if (!el) {
+				el = document.createElement("style");
+				el.id = "cgm-ops-col-widths";
+				document.head.appendChild(el);
+			}
+			return el;
+		}
+
+		function refreshColWidthStyles() {
+			const rules = [];
+			page.main.find("table.cgm-ops-table[data-table-key]").each(function () {
+				const $table = $(this);
+				const tableKey = $table.attr("data-table-key");
+				const widths = colWidths[tableKey];
+				if (!widths) return;
+				$table
+					.find("thead tr")
+					.first()
+					.children("th")
+					.each(function (index) {
+						const width = widths[columnKey($(this))];
+						if (!width) return;
+						// nth-child rather than a class per column: the header and
+						// body cells share a position but nothing else.
+						const cell = `.cgm-ops-board table.cgm-ops-table[data-table-key="${tableKey}"] > * > tr > :nth-child(${index + 1})`;
+						// max-width plus overflow is what lets a column get
+						// SMALLER: the cells are nowrap, so without a clip the
+						// content simply pushes the column back out.
+						rules.push(
+							`${cell}{width:${width}px;min-width:${width}px;max-width:${width}px;overflow:hidden;text-overflow:ellipsis;}`
+						);
+					});
+			});
+			colWidthStyleEl().textContent = rules.join("\n");
+		}
+
+		function setColumnWidth(tableKey, key, width) {
+			if (!colWidths[tableKey]) colWidths[tableKey] = {};
+			colWidths[tableKey][key] = width;
+			refreshColWidthStyles();
+		}
+
+		function setupResizableColumns($table, tableKey) {
+			if (!$table || !$table.length) return;
+			$table.attr("data-table-key", tableKey);
+			$table
+				.find("thead tr")
+				.first()
+				.children("th")
+				.each(function () {
+					const $th = $(this);
+					// The checkbox column is a fixed 32px gutter, not data.
+					if ($th.hasClass("cgm-ops-check-col")) return;
+					if ($th.children(".cgm-ops-col-resizer").length) return;
+					$(`<span class="cgm-ops-col-resizer" aria-hidden="true"></span>`)
+						.attr("title", __("Drag to resize, double-click to reset"))
+						.appendTo($th);
+				});
+			refreshColWidthStyles();
+		}
+
+		page.main.on("mousedown", ".cgm-ops-col-resizer", function (e) {
+			if (e.which && e.which !== 1) return;
+			const $th = $(this).closest("th");
+			const $table = $th.closest("table.cgm-ops-table");
+			if (!$table.length) return;
+
+			const tableKey = $table.attr("data-table-key") || activeTab;
+			const key = columnKey($th);
+			const startX = e.pageX;
+			const startWidth = $th.outerWidth();
+			let latest = startWidth;
+			let frame = null;
+
+			// The header is also the sort button, so the drag must not reach it.
+			e.preventDefault();
+			e.stopPropagation();
+			$("body").addClass("cgm-ops-col-resizing");
+
+			function onMove(ev) {
+				latest = Math.max(MIN_COL_WIDTH, Math.round(startWidth + (ev.pageX - startX)));
+				if (frame) return;
+				frame = requestAnimationFrame(function () {
+					frame = null;
+					setColumnWidth(tableKey, key, latest);
+				});
+			}
+
+			function onUp() {
+				if (frame) cancelAnimationFrame(frame);
+				frame = null;
+				setColumnWidth(tableKey, key, latest);
+				persistColWidths();
+				$(document).off(".cgmcolresize");
+				$("body").removeClass("cgm-ops-col-resizing");
+			}
+
+			// On document, not the header: the pointer routinely leaves the cell
+			// mid-drag and the resize has to keep following it.
+			$(document).on("mousemove.cgmcolresize", onMove).on("mouseup.cgmcolresize", onUp);
+		});
+
+		page.main.on("click", ".cgm-ops-col-resizer", function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+		});
+
+		page.main.on("dblclick", ".cgm-ops-col-resizer", function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+			const $th = $(this).closest("th");
+			const $table = $th.closest("table.cgm-ops-table");
+			const tableKey = $table.attr("data-table-key") || activeTab;
+			const widths = colWidths[tableKey];
+			if (widths) {
+				delete widths[columnKey($th)];
+				refreshColWidthStyles();
+				persistColWidths();
+			}
+		});
+
 		function renderListTable(headersHtml, bodyHtml, extraHeaderRow = "") {
 			$tableWrap.html(`
 				<div class="cgm-ops-table-scroll">
@@ -772,6 +1080,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 						<tbody>${bodyHtml}</tbody>
 					</table>
 				</div>`);
+			setupResizableColumns($tableWrap.find("table.cgm-ops-table"), activeTab);
 		}
 
 		function renderKpis(kpis) {
@@ -1257,6 +1566,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 								<tbody>${containerRows.map((row) => transportTableRow(row)).join("")}</tbody>
 							</table>
 						</div>`);
+					setupResizableColumns($body.find("table.cgm-ops-table"), "detail");
 				},
 			});
 		}
@@ -1462,6 +1772,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				return;
 			}
 			pageLength = value;
+			persistPageLength();
 			listStart = 0;
 			selectedKeys.clear();
 			refresh();
