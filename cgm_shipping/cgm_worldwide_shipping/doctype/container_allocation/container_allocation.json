@@ -1,11 +1,12 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "hash",
+ "autoname": "naming_series:",
  "creation": "2026-06-22 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "naming_series",
   "project",
   "bill_of_lading",
   "transporter",
@@ -23,6 +24,18 @@
   "transporter_updates_html"
  ],
  "fields": [
+  {
+   "default": "ALC.YY.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "no_copy": 1,
+   "options": "ALC.YY.#####",
+   "print_hide": 1,
+   "reqd": 1,
+   "set_only_once": 1
+  },
   {
    "fieldname": "project",
    "fieldtype": "Link",
@@ -145,7 +158,7 @@
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Allocation",
- "naming_rule": "Random",
+ "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

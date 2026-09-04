@@ -2,7 +2,7 @@
 
 For **Admin**, **Compliance**, and anyone responsible for keeping a company licence current. Covers recording licences, the expiry reminder schedule, and who gets notified.
 
-This register tracks the **company's own** licences and permits — trading licences, NTSA/KRA registrations, agency bonds, insurance certificates. It is unrelated to the per-shipment **Permit Register** on Opportunity/Project, which tracks permits applied for on behalf of a client.
+This register tracks the **company's own** licences and permits - trading licences, NTSA/KRA registrations, agency bonds, insurance certificates. It is unrelated to the per-shipment **Permit Register** on Opportunity/Project, which tracks permits applied for on behalf of a client.
 
 ---
 
@@ -26,11 +26,15 @@ All five are on the **CGM Shipping** workspace under **Licences & Permits**, and
 |-------|-------|
 | **Licence / Permit** | As it appears on the certificate |
 | **Type** | Link to **License Type**. If the type has a default validity, the expiry date is suggested from the issue date |
-| **Company** | Required — reminders quote it |
+| **Company** | Required - reminders quote it |
 | **Renewal Basis** | Decides how the licence is chased. See below |
 | **Service Provider** | Link to **Licensing Contact**; contact person, phone and email are pulled in |
 | **Responsible Person** | Notified in addition to the standing recipients, if enabled in settings |
 | **Additional Recipients** | Extra addresses for this licence only, comma separated |
+
+A licence as recorded, with the expiry banner and the **Reminder Schedule** / **Reminder Log** buttons the sections below describe:
+
+![A License Register record: type, certificate number, renewal basis, validity dates and issuing authority](../images/licence-record.png)
 
 ### Renewal basis
 
@@ -38,7 +42,7 @@ All five are on the **CGM Shipping** workspace under **Licences & Permits**, and
 |-------|-----------|
 | **Fixed Expiry Date** | Expiry date is mandatory. Reminders are counted back from it |
 | **Ongoing / No Expiry** | Tracked, never chased |
-| **Renew When Needed** | No date to work from — gets a periodic review nudge instead |
+| **Renew When Needed** | No date to work from - gets a periodic review nudge instead |
 
 **Status** and **Days to Expiry** are set by the system and refreshed every night; you cannot edit them.
 
@@ -49,7 +53,7 @@ All five are on the **CGM Shipping** workspace under **Licences & Permits**, and
 | Expired | Past the expiry date |
 | Renewal Required | Renew When Needed, or Fixed Expiry with no date set |
 | Ongoing | Ongoing / No Expiry |
-| Disabled | **Disabled** ticked — no status tracking, no reminders |
+| Disabled | **Disabled** ticked - no status tracking, no reminders |
 
 ---
 
@@ -62,7 +66,7 @@ Two rules matter:
 - **The tightest band that has been crossed wins.** A licence entered when it is already 45 days from expiry gets one reminder (the 60-day one), not one for every band it skipped.
 - **Each band fires once per expiry date.** Renewing a licence sets a new expiry date, which is a new schedule, so the bands fire again. Correcting a mistyped date back to what it was does *not* re-send.
 
-Use **Reminder Schedule** on the licence form to see the dates, what has already gone out, and who is on the list — without waiting for the nightly job.
+Use **Reminder Schedule** on the licence form to see the dates, what has already gone out, and who is on the list - without waiting for the nightly job.
 
 ### Per-licence overrides
 
@@ -82,10 +86,14 @@ Tick **Override Reminder Periods** on a licence to give it its own schedule inst
 | **Already Expired** | Whether to keep chasing after expiry, how often, and when to give up |
 | **Renew When Needed** | How often to nudge licences that have no fixed expiry date |
 
+The default schedule, and the two buttons described below:
+
+![License Settings, showing the 90 / 60 / 30 / 14 / 7 reminder periods](../images/licence-settings.png)
+
 Two buttons on the form:
 
-- **Preview Today's Reminders** — dry run. Shows what would go out and to whom. Sends nothing, logs nothing.
-- **Send Reminders Now** — runs the nightly check immediately, for real.
+- **Preview Today's Reminders** - dry run. Shows what would go out and to whom. Sends nothing, logs nothing.
+- **Send Reminders Now** - runs the nightly check immediately, for real.
 
 The widest notification period doubles as the **Expiring Soon** window, so the status flips to a warning on the same day the first reminder goes out. Saving the settings re-runs the status calculation in the background.
 
@@ -93,7 +101,7 @@ The widest notification period doubles as the **Expiring Soon** window, so the s
 
 ## Reminder Log
 
-Every send is written to **License Reminder Log** — licence, reminder type, days, expiry date, channels, recipients, and any error. This is also what stops the same reminder going out twice, so do not delete rows to "test" a reminder; use **Preview Today's Reminders** instead.
+Every send is written to **License Reminder Log** - licence, reminder type, days, expiry date, channels, recipients, and any error. This is also what stops the same reminder going out twice, so do not delete rows to "test" a reminder; use **Preview Today's Reminders** instead.
 
 A send that fails on every channel is logged as **Failed** and stays due, so the next nightly run tries again.
 
@@ -115,14 +123,13 @@ Both are created on install and on every migrate.
 | Issue | Check |
 |-------|-------|
 | No reminders arriving | **Enable Expiry Notifications** on; at least one of Email / In-App on; at least one notification period set |
-| Reminders due but nobody receives them | Recipients in License Settings — **Preview Today's Reminders** shows an empty list when nobody is configured |
+| Reminders due but nobody receives them | Recipients in License Settings - **Preview Today's Reminders** shows an empty list when nobody is configured |
 | Email fails, in-app works | Outgoing Email Account on the site. In-app is attempted first precisely so a site with no mail set up still gets its reminders |
 | Status stuck on Active near expiry | The widest notification period *is* the warning window. Add a wider period, or save License Settings to re-run the calculation |
-| A licence renewed but still chased | Confirm the expiry date actually moved — bands are keyed on the expiry date |
+| A licence renewed but still chased | Confirm the expiry date actually moved - bands are keyed on the expiry date |
 
 ---
 
 ## Related guides
 
-- [Admin & Setup](admin-setup.md)
-- [Declaration & Customs](declaration-customs.md) — per-shipment permits, which are a different thing
+- [Declaration & Customs](declaration-customs.md) - per-shipment permits, which are a different thing

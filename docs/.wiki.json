@@ -1,20 +1,43 @@
 {
 	"sidebar": [
-		{"Home": "README.md"},
-		{"Full documentation": "full-documentation.md"},
+		{
+			"Home": "README.md"
+		},
+		{
+			"Full documentation": "full-documentation.md"
+		},
 		{
 			"Guides": [
-				{"Operations": "guides/operations.md"},
-				{"Declaration & Customs": "guides/declaration-customs.md"},
-				{"Finance": "guides/finance.md"},
-				{"Commercial": "guides/commercial.md"},
-				{"CRM & Intake": "guides/crm-intake.md"},
-				{"Transport & Containers": "guides/transport-containers.md"},
-				{"Customer & Transporter Portal": "guides/portals.md"},
-				{"Licence & Permit Register": "guides/licences.md"},
-				{"Job Groups & Per Diems": "guides/per-diems.md"},
-				{"Admin & Setup": "guides/admin-setup.md"},
-				{"Developer reference": "guides/developer.md"}
+				{
+					"Operations": "guides/operations.md"
+				},
+				{
+					"Declaration & Customs": "guides/declaration-customs.md"
+				},
+				{
+					"Finance": "guides/finance.md"
+				},
+				{
+					"Commercial": "guides/commercial.md"
+				},
+				{
+					"CRM & Intake": "guides/crm-intake.md"
+				},
+				{
+					"Transport & Containers": "guides/transport-containers.md"
+				},
+				{
+					"Customer & Transporter Portal": "guides/portals.md"
+				},
+				{
+					"Licence & Permit Register": "guides/licences.md"
+				},
+				{
+					"Job Groups & Per Diems": "guides/per-diems.md"
+				},
+				{
+					"Applying for Leave": "guides/leave.md"
+				}
 			]
 		}
 	]

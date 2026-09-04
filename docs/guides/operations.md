@@ -16,6 +16,23 @@ For **Operations**, **Documentation**, and **Field Operations** teams managing s
 
 ---
 
+## How a shipment moves
+
+A shipment lives as one **Project** from the moment sales hand it over until the containers are back. Four things happen, in this order:
+
+1. **It is created.** Not by hand - an approved Opportunity is started as a shipment, which creates the Project with the cargo, parties and transport details already filled in. See the [CRM & Intake Guide](crm-intake.md).
+2. **Its plan is written.** The task engine reads the Shipment Type and writes the whole clearance plan onto it at once (see [below](#where-the-tasks-come-from)).
+3. **The plan is worked.** Each team completes its own tasks. As they close, the shipment status advances - but only as far as the completed tasks allow.
+4. **It closes.** Every task complete, containers returned, status **Completed**.
+
+The Project form shows all of this in one place. The stepper across the top is the clearance status, the line under it is progress against the plan and the next thing anyone is waiting on:
+
+![A shipment Project: the clearance workflow stepper, task progress and the next open task](../images/project-record.png)
+
+Read it as: **Documents Received** is where the shipment is now, **Draft** is behind it, *2/23 clearance tasks completed*, and the next thing needed is **Task 3: Create UCR (IDF)**. The tabs carry the rest - containers, the customer conversation, and costs.
+
+---
+
 ## Your tasks in the sea-import plan (25 steps)
 
 | Seq | Task | Your team |
@@ -40,6 +57,25 @@ Tasks **1–2** auto-complete when intake documents are verified on the Project.
 
 !!! note "Transport-owned steps"
     Steps 20–25 are Transport. See [Transport & Containers Guide](transport-containers.md).
+
+### Where the tasks come from
+
+Nobody creates these by hand. The moment a Project is created, the task engine reads the **Shipment Type**, follows it to that type's **CGM Task Template**, and writes the whole plan onto the shipment at once - so a new shipment arrives with its tasks already in place and assigned to the right departments.
+
+| Shipment Type | Template | Tasks created |
+|---------------|----------|---------------|
+| Sea Import | Sea Import Workflow | 23 |
+| Air Import | Air Import Workflow | 16 |
+| Sea Transit | Sea Transit Import Workflow | 15 |
+| Road Transit Import | Road Transit Inbound Workflow | 11 |
+
+**A Project saved without a Shipment Type gets no tasks at all**, silently - there is nothing in the form to tell you. The same is true of a type with no template behind it (**Import** and **Sea FCL** currently have none). If a shipment has an empty task list, that is the first thing to check.
+
+The whole plan lands on the shipment at once, in sequence, with the first steps already closed where intake documents were verified:
+
+![The task list for one shipment: the generated clearance plan in sequence](../images/project-tasks.png)
+
+Because the plan is written at creation, editing a template changes shipments created **after** the edit. It does not rewrite shipments already running - those keep the plan they were opened with, and setting the Shipment Type later does not backfill them.
 
 ---
 
@@ -140,7 +176,7 @@ Submit a **Daily Status Update** (`DSU-{date}-{#####}`) for RAG reporting on act
 ## Tips & guards
 
 - You only see **Tasks** for your **department** (permission-scoped).
-- Do not manually edit **Finance Cost Total** on Project — it is system-calculated.
+- Do not manually edit **Finance Cost Total** on Project - it is system-calculated.
 - One **Project** per **Opportunity**; use `custom_source_opportunity` to trace origin.
 - B/L container rows sync to **Container Tracker** records on the Project.
 

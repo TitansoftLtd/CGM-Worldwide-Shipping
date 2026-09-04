@@ -38,7 +38,7 @@ app_include_css = [
 	"/assets/cgm_shipping/css/cgm_shipping_workspace.css",
 ]
 app_include_js = [
-	# Must load before cgm_status_field.js — status grids call attach helpers from this file.
+	# Must load before cgm_status_field.js - status grids call attach helpers from this file.
 	"/assets/cgm_shipping/js/shipment_document_grid.js",
 	"/assets/cgm_shipping/js/cgm_status_field.js",
 	"/assets/cgm_shipping/js/cgm_container_tracking.js",

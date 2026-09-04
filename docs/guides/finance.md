@@ -40,7 +40,7 @@ Each finance task follows the same pattern:
 
 **Task Finance Line** child table holds line items (UCR, permits, entry slip, shipping line, KPA).
 
-Declarants attach invoices (and certificates where required). Finance verifies invoices and uploads payment receipts after payment — no separate receipt-verify step.
+Declarants attach invoices (and certificates where required). Finance verifies invoices and uploads payment receipts after payment - no separate receipt-verify step.
 
 ### Notifications you receive
 
@@ -94,7 +94,7 @@ Print formats: **CGM Quotation Full**, **CGM Quotation Local Charges**.
 |----------------|-----------|--------------|
 | **Draft** | 0 | Accounts User (preparer) |
 | **Pending Approval** | 0 | Accounts Manager only (preparer locked out) |
-| **Approved** | 1 | Submitted — ERPNext controls payment status |
+| **Approved** | 1 | Submitted - ERPNext controls payment status |
 | **Cancelled** | 2 | Cancelled via workflow or native Cancel |
 
 ### Transitions
@@ -117,7 +117,7 @@ After **Approve**, ERPNext owns payment **Status**:
 | **Paid** | Fully settled |
 | **Overdue** | Past due with balance outstanding |
 
-Workflow uses **Don't Override Status** — the list indicator and customer portal show **Unpaid / Paid**, not the approval state.
+Workflow uses **Don't Override Status** - the list indicator and customer portal show **Unpaid / Paid**, not the approval state.
 
 Email notifications (queued):
 
@@ -138,7 +138,7 @@ Journal Entries linked to a sea task (`custom_cgm_source_task`) automatically up
 | JE insert / update / submit | Costs added to project summary |
 | JE cancel | Costs reversed |
 
-**Do not** manually edit the finance cost total on Project — the field is protected.
+**Do not** manually edit the finance cost total on Project - the field is protected.
 
 Cost categories are mapped in **CGM Shipping Settings → Finance Cost Category Map**.
 
@@ -157,23 +157,8 @@ Tasks may expose **Create Journal Entry** actions when finance lines are ready. 
 
 ---
 
-## Checklist: finance on a new shipment
-
-- [ ] UCR paid (task 4) after Declaration creates UCR (task 3)
-- [ ] Pre-clearance permits paid (task 6)
-- [ ] Entry slip paid (task 11) after entry lodged (task 10)
-- [ ] Shipping line charges paid (task 13)
-- [ ] Post-clearance permits paid (task 16)
-- [ ] KPA invoice paid (task 19)
-- [ ] Review quotation before client billing
-- [ ] Approve sales invoice before submit
-- [ ] Monitor project cost total vs budget
-
----
-
 ## Related guides
 
 - [Operations](operations.md)
 - [Declaration & Customs](declaration-customs.md)
 - [Commercial](commercial.md)
-- [Admin & Setup](admin-setup.md)

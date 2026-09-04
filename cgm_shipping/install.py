@@ -73,6 +73,7 @@ def after_migrate() -> None:
 		("recruitment schema", ensure_recruitment_schema),
 		("hrms custom fields", ensure_hrms_custom_fields),
 		("job group structure & per diems", ensure_per_diem_setup),
+		("wiki documentation", ensure_wiki_docs_published),
 	):
 		try:
 			fn()
@@ -81,6 +82,26 @@ def after_migrate() -> None:
 				title=f"CGM after_migrate: {label}",
 				message=frappe.get_traceback(),
 			)
+
+
+def ensure_wiki_docs_published() -> None:
+	"""Publish `docs/` into the CGM Shipping wiki space on every migrate.
+
+	The sync itself lives in `patches.ensure_cgm_frappe_wiki`, but a patch runs once
+	and is then recorded in Patch Log forever - so every later edit to a guide, and
+	every new page added to `docs/.wiki.json`, silently never reached the wiki. Docs
+	are only useful if what is published matches what is in the repo, so the sync
+	belongs here, where it re-runs.
+
+	The files are the source of truth: the space is created with
+	`allow_contributions = 0`, so a re-sync cannot overwrite someone's edit.
+	"""
+	if not frappe.db.exists("DocType", "Wiki Space"):
+		return
+
+	from cgm_shipping.patches.ensure_cgm_frappe_wiki import execute as sync_wiki_docs
+
+	sync_wiki_docs()
 
 
 def ensure_hrms_custom_fields() -> None:
@@ -311,7 +332,7 @@ def export_cgm_customizations(
 	    bench --site <site> execute cgm_shipping.install.export_cgm_customizations
 
 	Workflows, Role Profiles, and User role assignments are **not** included —
-	see ``export_cgm_customizations`` docstring in patches.md / admin-setup.
+	see the ``export_cgm_customizations`` notes in docs/guides/patches.md.
 	"""
 	from frappe.modules.utils import export_customizations
 
