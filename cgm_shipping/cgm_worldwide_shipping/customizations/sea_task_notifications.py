@@ -60,20 +60,127 @@ SEA_TASK_YOUR_TURN_TRANSPORT = "CGM Task - Your Turn Transport"
 
 # Subject must stay under Notification.subject max length (140). Relies on
 # stamp_shipment_name_on_doc() before send (company name, not PROJ-####).
-_SHIPMENT = "{{ doc.cgm_shipment_name or doc.project or '—' }}"
+_SHIPMENT = "{{ doc.cgm_shipment_name or doc.project or '-' }}"
 # Message body may resolve Project.project_name even if stamp was skipped.
 _SHIPMENT_BODY = (
 	"{{ doc.cgm_shipment_name "
 	"or (frappe.db.get_value('Project', doc.project, 'project_name') if doc.project else None) "
-	"or doc.project or '—' }}"
+	"or doc.project or '-' }}"
 )
+
+# Every body follows one layout: lead line, detail table, numbered actions,
+# optional note, links. Inline styles only — mail clients drop <style> blocks.
+_LEAD_CSS = "margin:0 0 14px;font-size:14px"
+_LABEL_CSS = "padding:2px 16px 2px 0;color:#6b7280;white-space:nowrap;vertical-align:top"
+_VALUE_CSS = "padding:2px 0;vertical-align:top"
+_TABLE_CSS = "border-collapse:collapse;font-size:14px;margin:0 0 16px"
+_HEADING_CSS = "margin:0 0 6px;font-size:14px"
+_LIST_CSS = "margin:0 0 16px;padding-left:20px;font-size:14px"
+_NOTE_CSS = "margin:0 0 16px;font-size:13px;color:#6b7280"
+_LINK_CSS = "margin:0;font-size:14px"
+
+
+def _row(label: str, value: str) -> str:
+	return (
+		"<tr>"
+		f'<td style="{_LABEL_CSS}">{label}</td>'
+		f'<td style="{_VALUE_CSS}">{value}</td>'
+		"</tr>"
+	)
+
+
+def _details(*rows: str) -> str:
+	return (
+		f'<table role="presentation" cellpadding="0" cellspacing="0" style="{_TABLE_CSS}">'
+		+ "".join(rows)
+		+ "</table>"
+	)
+
+
+def _steps(*items: str) -> str:
+	if not items:
+		return ""
+	entries = "".join(f'<li style="margin:0 0 6px">{item}</li>' for item in items)
+	return (
+		f'<p style="{_HEADING_CSS}"><b>What to do</b></p>'
+		f'<ol style="{_LIST_CSS}">{entries}</ol>'
+	)
+
+
+def _body(
+	lead: str,
+	details: str,
+	steps: tuple[str, ...],
+	link: str,
+	*,
+	extra: str = "",
+	note: str = "",
+) -> str:
+	return (
+		f'<p style="{_LEAD_CSS}">{lead}</p>'
+		+ details
+		+ extra
+		+ _steps(*steps)
+		+ (f'<p style="{_NOTE_CSS}">{note}</p>' if note else "")
+		+ link
+	)
+
+
+_TASK_DETAILS = _details(
+	_row("Shipment", "<b>" + _SHIPMENT_BODY + "</b>"),
+	_row("Task", "{{ doc.subject }}"),
+	_row("Reference", "{{ doc.name }}"),
+	"{% if doc.exp_end_date %}"
+	+ _row("Due", "{{ frappe.utils.formatdate(doc.exp_end_date) }}")
+	+ "{% endif %}",
+)
+
 _TASK_LINK = (
-	"<p><a href=\"{{ frappe.utils.get_url_to_form('Task', doc.name) }}\">Open task</a>"
-	"{% if doc.project %} · "
-	f"<a href=\"{{{{ frappe.utils.get_url_to_form('Project', doc.project) }}}}\">"
-	f"Open {_SHIPMENT_BODY}</a>"
-	"{% endif %}</p>"
+	'<p style="' + _LINK_CSS + '">'
+	"<a href=\"{{ frappe.utils.get_url_to_form('Task', doc.name) }}\">Open task</a>"
+	"{% if doc.project %} &middot; "
+	"<a href=\"{{ frappe.utils.get_url_to_form('Project', doc.project) }}\">Open "
+	+ _SHIPMENT_BODY
+	+ "</a>{% endif %}</p>"
 )
+
+
+def _task_message(lead: str, *steps: str, extra: str = "", note: str = "") -> str:
+	"""Standard Task notification body — same shape for every sea handoff."""
+	return _body(lead, _TASK_DETAILS, steps, _TASK_LINK, extra=extra, note=note)
+
+
+def task_notification_message(lead: str, *steps: str, extra: str = "", note: str = "") -> str:
+	"""Public builder so other seeds reuse the Task notification layout."""
+	return _task_message(lead, *steps, extra=extra, note=note)
+
+
+def notification_message(
+	lead: str,
+	rows: tuple[tuple[str, str], ...],
+	steps: tuple[str, ...] = (),
+	*,
+	link: str = "",
+	extra: str = "",
+	note: str = "",
+) -> str:
+	"""Public builder for non-Task notifications: same layout, own detail rows."""
+	details = _details(*(_row(label, value) for label, value in rows))
+	return _body(lead, details, steps, link, extra=extra, note=note)
+
+
+def notification_link(doctype: str, label: str) -> str:
+	"""One "Open <doc>" link paragraph, styled like the task links."""
+	url = "{{ frappe.utils.get_url_to_form('" + doctype + "', doc.name) }}"
+	return '<p style="' + _LINK_CSS + '"><a href="' + url + '">' + label + "</a></p>"
+
+
+def notification_paragraph(heading: str, value: str) -> str:
+	"""Labelled free-text block (e.g. the body of an operational update)."""
+	return (
+		'<p style="' + _HEADING_CSS + '"><b>' + heading + "</b></p>"
+		'<p style="' + _LEAD_CSS + '">' + value + "</p>"
+	)
 
 
 def _roles(*groups: str) -> tuple[str, ...]:
@@ -149,242 +256,250 @@ def sea_task_notification_definitions() -> list[dict]:
 	)
 	kpa_receipt_roles = _roles_for_actions((FLOW_KPA, ACTION_UPLOAD_RECEIPT)) or finance
 
+	permit_list = (
+		"{% if doc.get('custom_task_permits') %}"
+		f'<p style="{_HEADING_CSS}"><b>Permits</b></p>'
+		f'<ul style="{_LIST_CSS}">'
+		"{% for row in doc.custom_task_permits %}<li>{{ row.permit_type }}</li>{% endfor %}"
+		"</ul>{% endif %}"
+	)
+
 	return [
 		_def(
 			FINANCE_PAYMENT_ACTION,
 			subject=f"{{{{ doc.cgm_notification_action_label or 'Payment action needed' }}}} - {_SHIPMENT}",
-			message=(
-				f"<p>Finance action is required on task <b>{{{{ doc.subject }}}}</b> "
-				f"({{{{ doc.name }}}}) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Open the task to verify invoices, record payment via "
-				"<b>Make Payment</b> (Journal Entry), or tick <b>Client will pay</b>.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"<b>{{ doc.cgm_notification_action_label or 'Payment action needed' }}</b> "
+				"on this shipment task.",
+				"Open the task and check the invoice lines under <b>Task Finance</b>.",
+				"Record payment with <b>Make Payment</b> (Journal Entry), or tick "
+				"<b>Client will pay</b> if the client settles it directly.",
 			),
 			roles=finance,
 		),
 		_def(
 			PERMIT_INVOICES_TO_FINANCE,
 			subject=f"Permit invoices ready for payment - {_SHIPMENT}",
-			message=(
-				f"<p>Permit invoices were submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"{% if doc.get('custom_task_permits') %}"
-				"<p>Permits: {% for row in doc.custom_task_permits %}"
-				"{{ row.permit_type }}{% if not loop.last %}, {% endif %}{% endfor %}</p>"
-				"{% endif %}"
-				"<p>On <b>{{ doc.subject }}</b>: verify invoices, then use "
-				"<b>Make Payment</b> (Journal Entry) or <b>Client will pay</b> on each permit row.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"Permit invoices are ready for Finance to verify and pay.",
+				"Verify each permit invoice attachment.",
+				"Use <b>Make Payment</b> (Journal Entry) or tick <b>Client will pay</b> "
+				"on each permit row.",
+				extra=permit_list,
 			),
 			roles=finance,
 		),
 		_def(
 			PERMIT_RECEIPTS_FOR_DECLARANT,
 			subject=f"Attach permit payment receipts - {_SHIPMENT}",
-			message=(
-				f"<p>Finance recorded permit payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Declarant: on <b>{{ doc.subject }}</b>, attach <b>Payment Receipt</b> on each Local "
-				"permit row when available.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"Finance has recorded the permit payment (Journal Entry).",
+				"Attach the <b>Payment Receipt</b> on each Local permit row once it is issued.",
+				note="Finance verifies each receipt after you attach it.",
 			),
 			roles=permit_receipt_roles,
 		),
 		_def(
 			PERMIT_RECEIPTS_VERIFY_FINANCE,
 			subject=f"Verify permit payment receipts - {_SHIPMENT}",
-			message=(
-				f"<p>Payment receipts were uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>, tick <b>Receipt Verified</b> on each permit row.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"Permit payment receipts were attached and need Finance verification.",
+				"Open each permit row and check the attached receipt.",
+				"Tick <b>Receipt Verified</b> on the row.",
 			),
 			roles=finance,
 		),
 		_def(
 			UCR_INVOICE_TO_FINANCE,
 			subject=f"UCR invoice ready - please verify and pay - {_SHIPMENT}",
-			message=(
-				f"<p>A <b>UCR Invoice</b> was submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>: verify the invoice, then use "
-				"<b>Make Payment</b> (Journal Entry) or tick <b>Client will pay</b> on the invoice row.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"A <b>UCR Invoice</b> is ready for Finance to verify and pay.",
+				"Verify the invoice attachment on the invoice row.",
+				"Use <b>Make Payment</b> (Journal Entry), or tick <b>Client will pay</b> "
+				"on the invoice row.",
 			),
 			roles=finance,
 		),
 		_def(
 			UCR_RECEIPT_FOR_DECLARANT,
 			subject=f"Attach UCR payment receipt - {_SHIPMENT}",
-			message=(
-				f"<p>Finance recorded UCR payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Declarant: on <b>{{ doc.subject }}</b>, attach the <b>UCR Receipt</b>.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"Finance has recorded the UCR payment (Journal Entry).",
+				"Attach the <b>UCR Receipt</b> on the receipt row when it is issued.",
+				note="Finance verifies the receipt after you attach it.",
 			),
 			roles=ucr_receipt_roles,
 		),
 		_def(
 			UCR_RECEIPT_VERIFY_FINANCE,
 			subject=f"Verify UCR payment receipt - {_SHIPMENT}",
-			message=(
-				f"<p>A <b>UCR Receipt</b> was uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>, tick <b>Verified by Finance</b> on the receipt row.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"A <b>UCR Receipt</b> was attached and needs Finance verification.",
+				"Check the receipt against the Journal Entry.",
+				"Tick <b>Verified by Finance</b> on the receipt row.",
 			),
 			roles=finance,
 		),
 		_def(
 			ENTRY_INVOICE_TO_FINANCE,
 			subject=f"Entry Slip invoice ready - please verify and pay - {_SHIPMENT}",
-			message=(
-				f"<p>An <b>Entry Slip Invoice</b> was submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>: verify the invoice, then use "
-				"<b>Make Payment</b> (Journal Entry) or <b>Client will pay</b>. Receipt is optional.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"An <b>Entry Slip Invoice</b> is ready for Finance to verify and pay.",
+				"Verify the invoice attachment on the invoice row.",
+				"Use <b>Make Payment</b> (Journal Entry), or tick <b>Client will pay</b> "
+				"on the invoice row.",
+				note="The Entry Slip receipt is optional - this flow closes once the "
+				"invoice is verified and paid.",
 			),
 			roles=finance,
 		),
 		_def(
 			ENTRY_RECEIPT_FOR_DECLARANT,
 			subject=f"Attach Entry Slip receipt (optional) - {_SHIPMENT}",
-			message=(
-				f"<p>Finance recorded Entry Slip payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>, you may attach the <b>Entry Slip Receipt</b> when available.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"Finance has recorded the Entry Slip payment (Journal Entry).",
+				"Attach the <b>Entry Slip Receipt</b> on the receipt row if one is issued.",
+				note="This receipt is optional and does not hold up the task.",
 			),
 			roles=entry_receipt_roles,
 		),
 		_def(
 			ENTRY_RECEIPT_VERIFY_FINANCE,
 			subject=f"Verify Entry Slip receipt - {_SHIPMENT}",
-			message=(
-				f"<p>An <b>Entry Slip Receipt</b> was uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>, verify the receipt row if present.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"An <b>Entry Slip Receipt</b> was attached.",
+				"Check the receipt against the Journal Entry.",
+				"Tick <b>Verified by Finance</b> on the receipt row.",
 			),
 			roles=finance,
 		),
 		_def(
 			SHIPPING_LINE_INVOICE_TO_FINANCE,
 			subject=f"Shipping Line invoice ready - please verify and pay - {_SHIPMENT}",
-			message=(
-				f"<p>A <b>Shipping Line Invoice</b> was submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>: verify the invoice, then use "
-				"<b>Make Payment</b> (Journal Entry) or <b>Client will pay</b>, then attach POP.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"A <b>Shipping Line Invoice</b> is ready for Finance to verify and pay.",
+				"Verify the invoice attachment on the invoice row.",
+				"Use <b>Make Payment</b> (Journal Entry), or tick <b>Client will pay</b>.",
+				"Attach the bank <b>POP</b> once the payment leaves the account.",
 			),
 			roles=finance,
 		),
 		_def(
 			SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
 			subject=f"Attach Shipping Line POP / receipt - {_SHIPMENT}",
-			message=(
-				f"<p>Finance recorded Shipping Line payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Finance: attach bank <b>POP</b>. Documentation: attach the "
-				"<b>Shipping Line Receipt</b> for Finance to verify.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"Finance has recorded the Shipping Line payment (Journal Entry).",
+				"<b>Finance:</b> attach the bank <b>POP</b> on the POP row.",
+				"<b>Documentation:</b> attach the <b>Shipping Line Receipt</b> once the "
+				"line issues it.",
+				note="Finance verifies the receipt after Documentation attaches it.",
 			),
 			roles=shipping_line_receipt_roles,
 		),
 		_def(
 			SHIPPING_LINE_RECEIPT_VERIFY_FINANCE,
 			subject=f"Verify Shipping Line receipt - {_SHIPMENT}",
-			message=(
-				f"<p>A <b>Shipping Line Receipt</b> was uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>, tick <b>Verified by Finance</b> on the receipt row.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"A <b>Shipping Line Receipt</b> was attached and needs Finance verification.",
+				"Check the receipt against the POP and Journal Entry.",
+				"Tick <b>Verified by Finance</b> on the receipt row.",
 			),
 			roles=finance,
 		),
 		_def(
 			KPA_INVOICE_TO_FINANCE,
 			subject=f"KPA invoice ready - please verify and pay - {_SHIPMENT}",
-			message=(
-				f"<p>A <b>KPA Invoice</b> was submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>: verify the invoice, then use "
-				"<b>Make Payment</b> (Journal Entry) or <b>Client will pay</b>.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"A <b>KPA Invoice</b> is ready for Finance to verify and pay.",
+				"Verify the invoice attachment on the invoice row.",
+				"Use <b>Make Payment</b> (Journal Entry), or tick <b>Client will pay</b> "
+				"on the invoice row.",
 			),
 			roles=finance,
 		),
 		_def(
 			KPA_RECEIPT_FOR_SUPERVISOR,
 			subject=f"Attach KPA payment receipt - {_SHIPMENT}",
-			message=(
-				f"<p>Finance recorded KPA payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>, attach the <b>KPA Receipt</b> when available.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"Finance has recorded the KPA payment (Journal Entry).",
+				"Attach the <b>KPA Receipt</b> on the receipt row when it is issued.",
+				note="Finance verifies the receipt after you attach it.",
 			),
 			roles=kpa_receipt_roles,
 		),
 		_def(
 			KPA_RECEIPT_VERIFY_FINANCE,
 			subject=f"Verify KPA payment receipt - {_SHIPMENT}",
-			message=(
-				f"<p>A <b>KPA Receipt</b> was uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>On <b>{{ doc.subject }}</b>, tick <b>Verified by Finance</b> on the receipt row.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"A <b>KPA Receipt</b> was attached and needs Finance verification.",
+				"Check the receipt against the Journal Entry.",
+				"Tick <b>Verified by Finance</b> on the receipt row.",
 			),
 			roles=finance,
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_FINANCE,
 			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
-			message=(
-				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Finance</b> on shipment "
-				f"<b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Open the task and complete the required finance actions.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"This task is now open for <b>Finance</b>.",
+				"Open the task and complete the finance actions listed on it.",
+				"Mark it <b>Completed</b> so the next step can start.",
 			),
 			roles=finance,
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_DECLARATION,
 			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
-			message=(
-				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Declaration</b> on shipment "
-				f"<b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Open the task and complete the required declaration actions.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"This task is now open for <b>Declaration</b>.",
+				"Open the task and complete the declaration actions listed on it.",
+				"Mark it <b>Completed</b> so the next step can start.",
 			),
 			roles=declaration,
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_DOCUMENTATION,
 			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
-			message=(
-				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Documentation</b> on shipment "
-				f"<b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Open the task and complete the required documentation actions.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"This task is now open for <b>Documentation</b>.",
+				"Open the task and complete the documentation actions listed on it.",
+				"Mark it <b>Completed</b> so the next step can start.",
 			),
 			roles=documentation,
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_OPERATIONS,
 			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
-			message=(
-				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Operations</b> on shipment "
-				f"<b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Open the task and complete the required operations actions.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"This task is now open for <b>Operations</b>.",
+				"Open the task and complete the operations actions listed on it.",
+				"Mark it <b>Completed</b> so the next step can start.",
 			),
 			roles=operations,
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_TRANSPORT,
 			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
-			message=(
-				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Transport / Field Ops</b> on shipment "
-				f"<b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Open the task and complete the required transport actions.</p>"
-				f"{_TASK_LINK}"
+			message=_task_message(
+				"This task is now open for <b>Transport / Field Ops</b>.",
+				"Open the task and complete the transport actions listed on it.",
+				"Mark it <b>Completed</b> so the next step can start.",
 			),
 			roles=transport,
 		),
 		_def(
 			DAILY_STATUS_RAG_ALERT,
 			subject="Daily status RAG alert - {{ doc.name }}",
-			message=(
-				"<p>A Daily Status Update requires attention.</p>"
-				"<p><a href=\"{{ frappe.utils.get_url_to_form('Daily Status Update', doc.name) }}\">"
-				"Open Daily Status Update</a></p>"
+			message=_body(
+				"A Daily Status Update was flagged and needs Operations attention.",
+				_details(_row("Update", "<b>{{ doc.name }}</b>")),
+				(
+					"Open the update and review the flagged items.",
+					"Assign follow-up actions to the responsible department.",
+				),
+				'<p style="' + _LINK_CSS + '">'
+				"<a href=\"{{ frappe.utils.get_url_to_form('Daily Status Update', doc.name) }}\">"
+				"Open Daily Status Update</a></p>",
 			),
 			roles=operations,
 			document_type="Daily Status Update",
@@ -392,13 +507,21 @@ def sea_task_notification_definitions() -> list[dict]:
 		_def(
 			CONTAINER_DEPOSIT_REFUND_REMINDER,
 			subject=f"Container deposit refund due - BL {{{{ doc.bl_number }}}} / {_SHIPMENT}",
-			message=(
-				f"<p>Bill of Lading <b>{{{{ doc.bl_number }}}}</b> containers have been returned "
-				f"and the deposit of <b>{{{{ doc.deposit_amount }}}}</b> is still pending refund "
-				f"on shipment <b>{_SHIPMENT_BODY}</b>.</p>"
-				"<p>Record the refund Journal Entry when the shipping line returns the deposit.</p>"
-				"<p><a href=\"{{ frappe.utils.get_url_to_form('Bill of Lading', doc.name) }}\">"
-				"Open Bill of Lading</a></p>"
+			message=_body(
+				"Containers on this Bill of Lading were returned and the deposit is "
+				"still pending refund.",
+				_details(
+					_row("Shipment", "<b>" + _SHIPMENT_BODY + "</b>"),
+					_row("Bill of Lading", "{{ doc.bl_number }}"),
+					_row("Deposit", "<b>{{ doc.deposit_amount }}</b>"),
+				),
+				(
+					"Follow up with the shipping line for the refund.",
+					"Record the refund Journal Entry once the deposit is returned.",
+				),
+				'<p style="' + _LINK_CSS + '">'
+				"<a href=\"{{ frappe.utils.get_url_to_form('Bill of Lading', doc.name) }}\">"
+				"Open Bill of Lading</a></p>",
 			),
 			roles=finance,
 			document_type="Bill of Lading",
@@ -491,6 +614,8 @@ def ensure_sea_task_notifications(*, sync_message: bool = False) -> int:
 		doc.channel = "Email"
 		doc.event = "Custom"
 		doc.enabled = 1
+		# Bodies are HTML; the field default is Markdown and shows the wrong Desk editor.
+		doc.message_type = "HTML"
 		doc.message = spec["message"]
 		for role in roles:
 			doc.append("recipients", {"receiver_by_role": role})
