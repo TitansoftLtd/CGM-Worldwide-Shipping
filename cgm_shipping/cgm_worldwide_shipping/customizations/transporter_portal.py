@@ -642,6 +642,26 @@ def mark_allocation_updates_read(allocation_name: str, names) -> dict:
 
 
 @frappe.whitelist()
+def set_conversation_status(allocation_name: str, name: str, status: str) -> dict:
+	"""Transporter portal: close a conversation, or reopen it for a clarification."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		set_thread_status,
+		thread_root,
+	)
+
+	transporter = require_transporter_portal_access()
+	_get_allocation_for_transporter(allocation_name, transporter)
+
+	root = thread_root(name)
+	visible = {
+		m["name"] for m in get_transporter_thread_for_allocation(allocation_name, transporter)
+	}
+	if not root or root not in visible:
+		frappe.throw(_("This conversation isn't yours."), frappe.PermissionError)
+	return set_thread_status(root, status)
+
+
+@frappe.whitelist()
 def submit_allocation_feedback(
 	allocation_name: str,
 	rating,

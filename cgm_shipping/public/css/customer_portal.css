@@ -722,6 +722,9 @@ label.cp-btn input[type="file"] { display: none; }
   padding: 1rem 0;
 }
 .cp-msg {
+  /* A scrolling flex column shrinks its children by default, which crushed a
+     long message instead of letting the thread scroll. */
+  flex: 0 0 auto;
   max-width: min(46rem, 88%);
   border: 1px solid var(--cp-border);
   border-radius: var(--cp-radius-sm);
@@ -937,3 +940,40 @@ label.cp-btn input[type="file"] { display: none; }
   color: var(--cp-text-muted);
 }
 .cp-msg-when { margin-left: 0.5rem; }
+
+/* Conversation status: the party's own view of whether it is settled. */
+.cp-thread-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--cp-border);
+}
+.cp-thread-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.cp-thread-state.is-open { background: var(--cp-amber-soft); color: var(--cp-amber); }
+.cp-thread-state.is-answered { background: var(--cp-green-soft); color: var(--cp-green); }
+.cp-thread-state.is-closed { background: var(--cp-green-soft); color: var(--cp-green); }
+.cp-thread-closed-note { font-size: 0.78rem; color: var(--cp-text-muted); }
+.cp-thread-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--cp-border);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--cp-brand);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.cp-thread-toggle:hover { background: var(--cp-brand-soft); border-color: rgba(3, 105, 161, 0.35); }
+.cp-thread-toggle:disabled { opacity: 0.6; cursor: not-allowed; }

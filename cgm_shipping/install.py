@@ -62,6 +62,7 @@ def after_migrate() -> None:
 		("finance cost ledger schema", ensure_finance_cost_ledger_schema),
 		("transporter portal setup", ensure_transporter_portal_setup),
 		("customer invoice share fields", ensure_customer_invoice_share_schema),
+		("sales invoice approval workflow", ensure_sales_invoice_workflow_setup),
 		("task workflow masters", ensure_task_workflow_masters),
 		("package field visibility", ensure_package_field_visibility),
 		("licence register roles", ensure_license_setup),
@@ -132,6 +133,19 @@ def ensure_customer_invoice_share_schema() -> None:
 
 	if frappe.db.exists("DocType", "Sales Invoice"):
 		ensure_customer_invoice_share_fields()
+
+
+def ensure_sales_invoice_workflow_setup() -> None:
+	"""Keep CGM Sales Invoice workflow states/transitions aligned with app code."""
+	if not frappe.db.exists("DocType", "Workflow"):
+		return
+	from cgm_shipping.patches.ensure_sales_invoice_workflow import (
+		_ensure_workflow_action_masters,
+		_sync_workflow,
+	)
+
+	_ensure_workflow_action_masters()
+	_sync_workflow()
 
 
 def ensure_transporter_portal_setup() -> None:
@@ -244,18 +258,51 @@ def reinstall_supplier_shipping_line_schema() -> None:
 	frappe.db.commit()
 
 
-def export_cgm_customizations(module: str = "CGM Worldwide Shipping") -> None:
-	"""Write desk customizations (field order, labels) into custom/*.json for git.
+def export_cgm_customizations(
+	module: str = "CGM Worldwide Shipping",
+	with_permissions: bool = True,
+) -> None:
+	"""Write desk customizations into custom/*.json for git (applied on migrate).
 
-	Run after saving Customize Form so production ``bench migrate`` matches dev::
+	Exports Custom Field, Property Setter, and Custom DocPerm for every doctype
+	touched in *module*. Run after Customize Form / Role Permission Manager::
 
 	    bench --site <site> execute cgm_shipping.install.export_cgm_customizations
+
+	Workflows, Role Profiles, and User role assignments are **not** included —
+	see ``export_cgm_customizations`` docstring in patches.md / admin-setup.
 	"""
 	from frappe.modules.utils import export_customizations
 
-	export_customizations(module=module, sync_on_migrate=1)
+	doctypes: set[str] = set(
+		frappe.get_all("Custom Field", filters={"module": module}, pluck="dt", distinct=True)
+	)
+	doctypes.update(
+		frappe.get_all(
+			"Property Setter", filters={"module": module}, pluck="doc_type", distinct=True
+		)
+	)
+
+	exported: list[str] = []
+	for doctype in sorted(doctypes):
+		if not doctype:
+			continue
+		path = export_customizations(
+			module=module,
+			doctype=doctype,
+			sync_on_migrate=1,
+			with_permissions=with_permissions,
+		)
+		if path:
+			exported.append(path)
+
 	frappe.db.commit()
-	print(f"Exported customizations for module: {module}")
+	if exported:
+		print(f"Exported {len(exported)} customization file(s) for module: {module}")
+		for path in exported:
+			print(f"  - {path}")
+	else:
+		print(f"No customizations to export for module: {module}")
 
 
 def run() -> None:

@@ -22,6 +22,10 @@
 	--cgm-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.06);
 	--cgm-check-col-width: 32px;
 	--cgm-ops-chrome-height: 7.5rem;
+	/* One gutter for the page. The filter chrome used 1rem and the list 0.7rem,
+	   so nothing lined up vertically and the cards sat almost against the desk
+	   sidebar. Everything on the board now indents by this. */
+	--cgm-ops-gutter: 1.25rem;
 	background: var(--cgm-surface-alt);
 	color: var(--cgm-text);
 	/* Was 28px of bottom padding, which showed as a grey band under the
@@ -63,7 +67,7 @@
 	   itself. */
 	display: flex;
 	justify-content: center;
-	padding: 0.3rem 1rem 0.1rem;
+	padding: 0.3rem var(--cgm-ops-gutter) 0.1rem;
 	background: transparent;
 	border-bottom: 0;
 	box-shadow: none;
@@ -105,7 +109,7 @@
 }
 
 .cgm-ops-board .cgm-ops-body {
-	padding: 0 0.7rem 0.5rem;
+	padding: 0 var(--cgm-ops-gutter) 0.75rem;
 	flex: 1;
 	min-height: 0;
 	display: flex;
@@ -114,7 +118,7 @@
 }
 
 .cgm-ops-sticky-chrome {
-	padding: 0.75rem 1rem 0.5rem;
+	padding: 0.75rem var(--cgm-ops-gutter) 0.5rem;
 	background: var(--cgm-surface-alt);
 }
 
@@ -599,8 +603,8 @@ body > .datepicker {
 
 .cgm-ops-table-wrap {
 	background: var(--cgm-surface);
-	border: none;
-	border-radius: 0;
+	border: 1px solid var(--cgm-border);
+	border-radius: var(--cgm-radius);
 	overflow: hidden;
 	box-shadow: none;
 	position: relative;
@@ -1309,7 +1313,7 @@ body > .datepicker {
 		margin-bottom: 0.4rem;
 	}
 	.cgm-ops-board .cgm-ops-body {
-		padding: 0 0.6rem 0.4rem;
+		padding: 0 var(--cgm-ops-gutter) 0.4rem;
 	}
 }
 
@@ -1318,7 +1322,7 @@ body > .datepicker {
 		display: none;
 	}
 	.cgm-ops-board .cgm-ops-body {
-		padding: 0 0.5rem 0.3rem;
+		padding: 0 var(--cgm-ops-gutter) 0.3rem;
 	}
 	.cgm-ops-list-header {
 		padding: 0.45rem 0.9rem;
@@ -1753,3 +1757,38 @@ body.cgm-ops-col-resizing * {
 	margin-left: 0.5rem;
 }
 
+
+/* Shipment Updates feed.
+   The card list is injected straight into .cgm-ops-table-wrap, which clips
+   (overflow: hidden) so the page itself never scrolls. Tables bring their own
+   .cgm-ops-table-scroll; the cards had none, so anything past the fold was cut
+   off behind the paging bar. Give the list the same scrolling the tables get. */
+.cgm-ops-table-wrap > .cgm-updates-list {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 0.75rem;
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior: contain;
+	scrollbar-width: thin;
+	scrollbar-color: #c3ccd8 transparent;
+}
+.cgm-ops-table-wrap > .cgm-updates-list::-webkit-scrollbar {
+	width: 7px;
+}
+.cgm-ops-table-wrap > .cgm-updates-list::-webkit-scrollbar-thumb {
+	background: #c3ccd8;
+	border-radius: 4px;
+}
+.cgm-ops-table-wrap > .cgm-updates-list::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+
+/* The gutter is breathing room on a wide desk; on a narrow one it is width the
+   list needs more. */
+@media (max-width: 768px) {
+	.cgm-ops-board {
+		--cgm-ops-gutter: 0.6rem;
+	}
+}

@@ -40,7 +40,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 							"Empty Return Tracker"
 						)}</button>
 						<button type="button" class="btn btn-sm btn-default" data-tab="updates">
-							<span class="cgm-ops-updates-tab-label">${__("Updates")}</span>
+							<span class="cgm-ops-updates-tab-label">${__("Shipment Updates")}</span>
 							<span class="cgm-ops-updates-badge" style="display:none"></span>
 						</button>
 						<label class="cgm-ops-kpis-check">
@@ -369,7 +369,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			},
 			{
 				fieldname: "subject",
-				label: __("Update Type"),
+				label: __("Subject"),
 				fieldtype: "Data",
 			},
 			{
@@ -430,7 +430,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			}
 			const options =
 				activeTab === "updates"
-					? "\nUnread\nRead"
+					? "\nAwaiting Reply\nAnswered\nClosed\nUnread\nRead"
 					: activeTab === "shipments"
 						? shipmentStatusOptions()
 						: CONTAINER_STATUS_OPTIONS;
@@ -469,6 +469,13 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			page.main
 				.find(".cgm-ops-completed-check")
 				.toggle(activeTab === "shipments" || activeTab === "board");
+
+			// The KPI strip counts containers and shipments; it says nothing
+			// about a conversation, so it is not offered on the Updates tab.
+			page.main.find(".cgm-ops-kpis-check").not(".cgm-ops-completed-check").toggle(!isUpdates);
+			if (isUpdates) {
+				page.main.find(".cgm-ops-kpis").hide();
+			}
 
 			syncStatusFilterForTab();
 		}
@@ -638,19 +645,29 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			const $btn = page.main.find('.cgm-ops-tabs button[data-tab="updates"]');
 			const $badge = $btn.find(".cgm-ops-updates-badge");
 			const $label = $btn.find(".cgm-ops-updates-tab-label");
+			$btn.attr(
+				"title",
+				unreadUpdateCount
+					? __("{0} question(s) from customers and transporters awaiting a reply", [
+							unreadUpdateCount,
+						])
+					: __("Customer and transporter messages")
+			);
 			if (unreadUpdateCount > 0) {
-				$label.text(__("Updates ({0})", [unreadUpdateCount]));
+				$label.text(__("Shipment Updates ({0})", [unreadUpdateCount]));
 				$badge.text(unreadUpdateCount).show();
 			} else {
-				$label.text(__("Updates"));
+				$label.text(__("Shipment Updates"));
 				$badge.hide();
 			}
 		}
 
 		function refreshUnreadBadge() {
 			frappe.call({
+				// Questions still owed an answer - a reply clears one, so this is
+				// the number ops can act on. Unread is tracked per portal party.
 				method:
-					"cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates.get_unread_update_count",
+					"cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates.get_awaiting_reply_count",
 				callback(r) {
 					if (!r.exc) {
 						updateUpdatesTabBadge(r.message || 0);
@@ -792,7 +809,8 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		function recordNoun(count) {
 			if (activeTab === "updates") {
-				return count === 1 ? __("Update") : __("Updates");
+				// Replies fold into their question, so a row is a conversation.
+				return count === 1 ? __("Conversation") : __("Conversations");
 			}
 			if (activeTab === "shipments") {
 				return count === 1 ? __("Shipment") : __("Shipments");
@@ -1745,10 +1763,13 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		function renderUpdates(data) {
 			applyPageMeta(data);
-			updateUpdatesTabBadge(data.unread_count);
+			refreshUnreadBadge();
 			updatesRows = data.rows || [];
 			if (!totalCount) {
-				renderEmptyState(__("No updates yet. Transporter and customer posts appear here."), "💬");
+				renderEmptyState(
+					__("No messages yet. Customer and transporter questions land here, newest first."),
+					"💬"
+				);
 				// Keep the publish action reachable on an empty feed - it is how
 				// ops starts a conversation rather than only answering one.
 				renderUpdatesHeader();

@@ -99,6 +99,48 @@ frappe.provide("cgm.portal");
 		return `<div class="cp-thread">${messages.map(renderMessage).join("")}</div>`;
 	}
 
+	/** The message a thread hangs off - its status lives there. */
+	function rootOf(messages) {
+		if (!(messages || []).length) {
+			return null;
+		}
+		const last = messages[messages.length - 1];
+		const rootName = last.parent_update || last.name;
+		return messages.find((m) => m.name === rootName) || messages[0];
+	}
+
+	/**
+	 * The party owns their own question, so they decide when it is settled -
+	 * and writing again reopens it, which the server does on its own.
+	 */
+	function renderStatusBar(messages, options = {}) {
+		if (!options.statusMethod) {
+			return "";
+		}
+		const root = rootOf(messages);
+		if (!root || root.from_cgm) {
+			return "";
+		}
+		const closed = root.response_status === "Closed";
+		const state = closed
+			? `<span class="cp-thread-state is-closed">${__("Closed")}</span>`
+			: root.response_status === "Answered"
+				? `<span class="cp-thread-state is-answered">${__("Answered")}</span>`
+				: `<span class="cp-thread-state is-open">${__("Awaiting reply from CGM")}</span>`;
+		const note =
+			closed && root.closed_on
+				? `<span class="cp-thread-closed-note">${esc(
+						__("Closed {0}", [when(root.closed_on)])
+					)}</span>`
+				: "";
+		return `<div class="cp-thread-bar" data-root="${esc(root.name)}">
+			${state}${note}
+			<button type="button" class="cp-thread-toggle" data-action="${closed ? "Open" : "Closed"}">
+				${closed ? __("Reopen conversation") : __("Mark as resolved")}
+			</button>
+		</div>`;
+	}
+
 	/**
 	 * Render a thread and, when `markReadMethod` is given, tell the server which
 	 * CGM messages the party has now seen.
@@ -111,13 +153,48 @@ frappe.provide("cgm.portal");
 		let current = messages || [];
 
 		function paint() {
-			node.innerHTML = renderThread(current, options);
+			node.innerHTML = renderStatusBar(current, options) + renderThread(current, options);
+			bindStatusToggle();
 			if (options.scrollToLatest !== false) {
 				const thread = node.querySelector(".cp-thread");
 				if (thread) {
 					thread.scrollTop = thread.scrollHeight;
 				}
 			}
+		}
+
+		function bindStatusToggle() {
+			const btn = node.querySelector(".cp-thread-toggle");
+			if (!btn) {
+				return;
+			}
+			btn.addEventListener("click", () => {
+				const bar = btn.closest(".cp-thread-bar");
+				btn.disabled = true;
+				frappe.call({
+					method: options.statusMethod,
+					args: Object.assign({}, options.statusArgs || {}, {
+						name: bar.dataset.root,
+						status: btn.dataset.action,
+					}),
+					freeze: true,
+					callback(r) {
+						if (r.exc) {
+							return;
+						}
+						frappe.show_alert({
+							message: (r.message && r.message.message) || __("Updated."),
+							indicator: "green",
+						});
+						if (typeof options.onStatusChanged === "function") {
+							options.onStatusChanged(r.message);
+						}
+					},
+					always() {
+						btn.disabled = false;
+					},
+				});
+			});
 		}
 
 		function markRead() {

@@ -2,7 +2,7 @@ frappe.provide("cgm_shipping.bl_containers");
 
 const BL_CONTAINER_FIELD = "custom_container_information";
 const BL_LINK_FIELD = "custom_bill_of_lading";
-const BL_CONTAINER_DOCTYPES = ["Lead", "Project", "Opportunity"];
+const BL_CONTAINER_DOCTYPES = ["Project", "Opportunity"];
 const BL_CONTAINER_SYNC_FIELDS = [
 	"container_number",
 	"cargo_size",
@@ -63,7 +63,7 @@ function restore_clean_form_state(frm) {
 cgm_shipping.bl_containers.restore_clean_form_state = restore_clean_form_state;
 
 function is_readonly_bl_container_form(frm) {
-	return frm.doctype === "Opportunity" || frm.doctype === "Lead";
+	return frm.doctype === "Opportunity";
 }
 
 function show_container_field(frm) {

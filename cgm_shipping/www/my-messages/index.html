@@ -152,6 +152,8 @@ frappe.ready(function () {
 		? cgm.portal.mountThread(mount, thread, {
 				emptyText: __("No messages on this query yet."),
 				markReadMethod: NS + "mark_general_updates_read",
+				statusMethod: NS + "set_conversation_status",
+				onStatusChanged: refresh,
 			})
 		: null;
 

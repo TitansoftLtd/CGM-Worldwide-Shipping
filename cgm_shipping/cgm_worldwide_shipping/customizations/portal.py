@@ -1429,6 +1429,39 @@ def mark_shipment_updates_read(project: str, names) -> dict:
 
 
 @frappe.whitelist()
+def set_conversation_status(name: str, status: str) -> dict:
+	"""Customer portal: close a conversation, or reopen it for a clarification.
+
+	The customer decides when their own question is settled, so this is theirs
+	to call - but only on a message they can actually see.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		set_thread_status,
+		thread_root,
+	)
+
+	customer = require_customer()
+	root = thread_root(name)
+	if not root or not _customer_owns_message(root, customer):
+		raise frappe.PermissionError(_("This conversation isn't yours."))
+	return set_thread_status(root, status)
+
+
+def _customer_owns_message(name: str, customer: str) -> bool:
+	row = frappe.db.get_value(
+		"Shipment Update",
+		name,
+		["customer", "project", "visible_to_customer"],
+		as_dict=True,
+	)
+	if not row or not row.visible_to_customer:
+		return False
+	if row.customer == customer:
+		return True
+	return bool(row.project and get_shipment_for_customer(row.project, customer))
+
+
+@frappe.whitelist()
 def submit_shipment_feedback(
 	project: str,
 	rating,
