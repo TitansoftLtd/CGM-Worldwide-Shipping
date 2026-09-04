@@ -108,6 +108,7 @@ doctype_js = {
 	"Container Tracker": "public/js/portal_engagement.js",
 	"Material Request": "public/js/material_request.js",
 	"Employee Advance": "public/js/employee_advance.js",
+	"Expense Claim": "public/js/expense_claim.js",
 	"Job Applicant": "public/js/job_applicant.js",
 	"Salary Component": "public/js/salary_component.js",
 }
@@ -325,6 +326,17 @@ doc_events = {
 	},
 	"Leave Application": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
+	},
+	"Employee Grade": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_job_group_designations",
+	},
+	# before_validate, not validate: the amounts these derive have to be in place
+	# before the HRMS controllers total the document.
+	"Expense Claim": {
+		"before_validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_expense_claim_per_diem",
+	},
+	"Employee Advance": {
+		"before_validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_employee_advance_per_diem",
 	},
 	"Job Applicant": {
 		"validate": [

@@ -33,6 +33,9 @@ def after_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
 		ensure_cargo_terminology_renames,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.per_diem import (
+		ensure_per_diem_setup,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		check_project_layout_export_drift,
 	)
@@ -68,6 +71,8 @@ def after_migrate() -> None:
 		("package field visibility", ensure_package_field_visibility),
 		("licence register roles", ensure_license_setup),
 		("recruitment schema", ensure_recruitment_schema),
+		("hrms custom fields", ensure_hrms_custom_fields),
+		("job group structure & per diems", ensure_per_diem_setup),
 	):
 		try:
 			fn()
@@ -76,6 +81,32 @@ def after_migrate() -> None:
 				title=f"CGM after_migrate: {label}",
 				message=frappe.get_traceback(),
 			)
+
+
+def ensure_hrms_custom_fields() -> None:
+	"""Put back any HR custom field HRMS creates only at install time.
+
+	HRMS adds its masters' fields - Company.default_expense_claim_payable_account,
+	Department.payroll_cost_center, Designation.skills and the rest - in its
+	`after_install`, and never again. Nothing restores them if they are later lost to
+	a partial restore or an app reinstall, and the loss is invisible until a form asks
+	for one: the desk then fails with *Field not permitted in query*, because the
+	column survives in the table while the Custom Field record that describes it does
+	not. Opening an Expense Claim hits exactly that, since it reads the Company field.
+
+	Only missing fields are created (`update=False`). Fields already in place keep
+	whatever the Customize Form exports in `custom/*.json` set on them - Employee's
+	HR fields are exported there and must not be reverted to the HRMS defaults.
+	Definitions are read from HRMS itself, so there is nothing here to drift.
+	"""
+	if "hrms" not in frappe.get_installed_apps():
+		return
+
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+	from hrms.setup import get_custom_fields
+
+	create_custom_fields(get_custom_fields(), ignore_validate=True, update=False)
+	frappe.db.commit()
 
 
 def ensure_task_workflow_masters() -> None:
