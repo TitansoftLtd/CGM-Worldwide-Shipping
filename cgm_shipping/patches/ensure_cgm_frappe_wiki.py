@@ -40,6 +40,7 @@ def execute() -> None:
 
 	space = _get_or_create_space()
 	nodes = _build_nodes_from_local_config(docs_dir, sidebar)
+	_import_local_images(space, docs_dir, nodes)
 	_sync_to_live(space, nodes, None, None)
 	_ensure_space_published(space.name)
 	frappe.db.commit()
@@ -67,6 +68,79 @@ def _ensure_space_published(space_name: str) -> None:
 		{"is_published": 1, "show_in_switcher": 1},
 		update_modified=False,
 	)
+
+
+def _import_local_images(space: frappe.Document, docs_dir: Path, nodes: list[dict[str, Any]]) -> None:
+	"""Turn repo-relative image links in the docs into Frappe Files the wiki can serve.
+
+	Frappe Wiki ships this for GitHub-backed spaces, but its importer fetches blobs
+	by SHA from the GitHub API. This space syncs from the local `docs/` folder, so
+	the same job is done here from disk: read the image, store it as a public File
+	attached to the space, and rewrite the link in place before the content is
+	hashed into a blob - otherwise `![](images/foo.png)` reaches the wiki as a
+	relative path that resolves to nothing.
+
+	Idempotent per (space, file contents): the File is named `cgmimg-<sha>.<ext>`,
+	so an unchanged screenshot reuses the File already stored and the page content
+	does not churn on every migrate.
+	"""
+	import hashlib
+	import posixpath
+
+	from wiki.wiki.git_sync import IMAGE_EXTENSIONS, MD_IMAGE_PATTERN, _is_repo_relative
+
+	def import_one(path: Path) -> str | None:
+		data = path.read_bytes()
+		sha = hashlib.sha256(data).hexdigest()[:16]
+		stem = f"cgmimg-{sha}"
+		existing = frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Wiki Space",
+				"attached_to_name": space.name,
+				"file_name": ["like", f"{stem}.%"],
+			},
+			fields=["file_url"],
+			limit=1,
+		)
+		if existing:
+			return existing[0].file_url
+		return frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{stem}{path.suffix.lower()}",
+				"attached_to_doctype": "Wiki Space",
+				"attached_to_name": space.name,
+				"is_private": 0,
+				"content": data,
+			}
+		).insert(ignore_permissions=True).file_url
+
+	for node in nodes:
+		content = node.get("content")
+		source_path = node.get("source_path")
+		if not content or not source_path or node.get("is_group"):
+			continue
+		base_dir = posixpath.dirname(source_path)
+
+		def repl(match, base_dir=base_dir):
+			src = match.group(2).strip("<>").strip()
+			if not _is_repo_relative(src) or not src.lower().endswith(IMAGE_EXTENSIONS):
+				return match.group(0)
+			resolved = posixpath.normpath(posixpath.join(base_dir, src))
+			if resolved.startswith(".."):
+				return match.group(0)
+			image_path = docs_dir / resolved
+			if not image_path.is_file():
+				frappe.log_error(
+					title="CGM Frappe Wiki",
+					message=f"Image not found for {source_path}: {resolved}",
+				)
+				return match.group(0)
+			url = import_one(image_path)
+			return f"{match.group(1)}{url}{match.group(3) or ''}{match.group(4)}" if url else match.group(0)
+
+		node["content"] = MD_IMAGE_PATTERN.sub(repl, content)
 
 
 def _build_nodes_from_local_config(docs_dir: Path, sidebar: list[Any]) -> list[dict[str, Any]]:

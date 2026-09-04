@@ -102,7 +102,7 @@ Used when calculating container charges on Container Tracker.
 
 ## Interchange Receipt
 
-Submittable confirmation when empty container is returned to depot — links to task 25 completion.
+Submittable confirmation when empty container is returned to depot - links to task 25 completion.
 
 ---
 

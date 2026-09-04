@@ -1,4 +1,4 @@
-# CGM Worldwide Shipping — Feature Documentation
+# CGM Worldwide Shipping - Feature Documentation
 
 ERPNext app (`cgm_shipping`) for end-to-end freight forwarding and customs clearance: CRM intake → sea-import clearance (25-task plan) → container lifecycle → quotations/invoicing → customer & transporter portals.
 
@@ -392,7 +392,7 @@ On `bench migrate`, patches in `patches.txt` run idempotently:
 
 ### Scheduled jobs
 
-- **Daily:** `container_tracker.refresh_open_container_metrics` — recalculates open container demurrage/detention
+- **Daily:** `container_tracker.refresh_open_container_metrics` - recalculates open container demurrage/detention
 
 ---
 

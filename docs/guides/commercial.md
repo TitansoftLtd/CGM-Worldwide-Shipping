@@ -80,7 +80,7 @@ Standard ERPNext **Get Items From → Quotation** is overridden to copy CGM cust
 
 ### Sales Invoice print
 
-**CGM Sales Invoice Default** — branded layout with consignee, shipment bar, terms, QR, totals.
+**CGM Sales Invoice Default** - branded layout with consignee, shipment bar, terms, QR, totals.
 
 ---
 

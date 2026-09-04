@@ -1,4 +1,4 @@
-# CGM Worldwide Shipping — Documentation Hub
+# CGM Worldwide Shipping - Documentation Hub
 
 Welcome to the CGM Worldwide Shipping documentation. This wiki covers freight forwarding and customs clearance on ERPNext (Frappe 16).
 
@@ -15,12 +15,11 @@ Welcome to the CGM Worldwide Shipping documentation. This wiki covers freight fo
 | [Customer & Transporter Portal](guides/portals.md) | Portal users, support | Customer and transporter website |
 | [Licence & Permit Register](guides/licences.md) | Admin, compliance | Company licences, expiry reminders, recipients |
 | [Job Groups & Per Diems](guides/per-diems.md) | HR, all employees | Job group structure, per diem rates, claiming a per diem |
-| [Admin & Setup Guide](guides/admin-setup.md) | System admins | Masters, CGM Shipping Settings, patches, go-live |
-| [Developer Guide](guides/developer.md) | Developers | Hooks, modules, extending the app |
+| [Applying for Leave](guides/leave.md) | All employees | Balances, leave types, applying, approvals |
 
 ## Full reference
 
-- **[Complete feature documentation](full-documentation.md)** — single document with everything (architecture, all DocTypes, all flows, guards).
+- **[Complete feature documentation](full-documentation.md)** - single document with everything (architecture, all DocTypes, all flows, guards).
 
 ## Quick links (Desk)
 

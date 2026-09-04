@@ -65,7 +65,7 @@ Same pattern after Delivery Order is lodged (task 14).
 ## Entry slip workflow (tasks 12–13)
 
 1. Attach Entry Slip invoice on Task 12 (Create Entry).
-2. Finance verifies the invoice on Task 13 — Create Entry completes automatically.
+2. Finance verifies the invoice on Task 13 - Create Entry completes automatically.
 3. Finance pays (or client-pays) and uploads receipt on Task 13.
 4. ENTRY customs document on Create Entry Clearance Documents remains optional when issued.
 

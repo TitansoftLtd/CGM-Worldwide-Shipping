@@ -64,7 +64,7 @@ Preshipment containers sync from B/L when linked.
 
 ### Key sections
 
-- **Client documents** (`custom_clients_documents`) — Shipment Document child table
+- **Client documents** (`custom_clients_documents`) - Shipment Document child table
 - Transport references: B/L, AWB, container type/qty, vessel, clearance station
 - Consignee, batch, CGM ref fields
 
@@ -92,8 +92,8 @@ From an approved Opportunity:
 
 Before Project can move to **Documents Received**:
 
-- **CI** (Commercial Invoice) — verified on Project shipment documents
-- **PKL** (Packing List) — verified on Project shipment documents
+- **CI** (Commercial Invoice) - verified on Project shipment documents
+- **PKL** (Packing List) - verified on Project shipment documents
 
 These are mandatory intake codes (`INTAKE_DOCUMENT_CODES`).
 
@@ -103,7 +103,7 @@ These are mandatory intake codes (`INTAKE_DOCUMENT_CODES`).
 
 - Unique `bl_number`
 - Container child table (FCL): when created from a Booking, rows are auto-generated from
-  requested size×qty — user only enters container number and seal
+  requested size×qty - user only enters container number and seal
 - LCL: packages/package type prefilled; no container table
 - Links: `linked_opportunity`, optional `booking_confirmation`
 - On submit: syncs shipping/cargo/containers into Opportunity (and Project if already created)
@@ -127,4 +127,3 @@ Opportunity form shows linked B/L, AWB, containers, and preshipment status (cust
 
 - [Operations](operations.md)
 - [Commercial](commercial.md)
-- [Admin & Setup](admin-setup.md)
