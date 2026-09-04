@@ -36,19 +36,44 @@ or Project) prefills from the Booking and replaces planned vessel/ETA/etc. with 
 
 ---
 
+## Two ways a shipment starts
+
+| | Existing customer | New customer |
+|---|---|---|
+| Start from | Transport document (**Bill of Lading** / **Air Waybill** / **Booking Confirmation**) | Create the **Customer** first |
+| Then | Create the Opportunity from it | Then follow the same path as an existing customer |
+
+The transport document comes first because it is what the customer actually sends. Capturing it creates the shipment record that the Opportunity is then built on, so the B/L number, containers and goods description never get typed twice.
+
+**A Customer must already exist before a shipment can be raised.** There is no path that creates one part-way through intake - if this is a new client, the Documentation team creates the Customer, then starts the shipment.
+
+---
+
+## Approval before a shipment exists
+
+Intake is a **workflow on Opportunity** (`CGM Opportunity Pre-Shipment`). No Project is created until it has been approved.
+
+| State | What it means | Who moves it on |
+|-------|---------------|-----------------|
+| **Ops Intake** | Documentation is still assembling documents | Anyone: **Send For Review** |
+| **Pending Approval** | With the Operations Manager | **Approve** - Operations Manager only |
+| | | **Return for Amendment** - back for correction, stays in Pending Approval |
+| | | **Reject** - closed as Rejected |
+| **Approved** | Shipment authorised. The Project can be started | **Cancel** if it falls away |
+
+Only the **Operations Manager** can approve. Everything else can be done by anyone with access, so a shipment cannot slip into operations without that sign-off.
+
+What the Operations Manager is checking: the attached documents are the right ones and legible, the shipment details match them, and nothing required is missing. A return for amendment goes back to Documentation to fix and resubmit.
+
+---
+
 ## Lead
 
-Capture on **Lead**:
+**Lead is stock ERPNext** - name, company, contact details, source. It carries no CGM shipment fields.
 
-| Field / section | Purpose |
-|-----------------|---------|
-| Shipment type / mode | Drives downstream workflow |
-| CI attachment | Commercial Invoice (intake) |
-| PKL attachment | Packing List (intake) |
-| Bill of Lading | Sea transport reference |
-| Container information | Container list preview |
+Shipment intake starts at **Opportunity**, not here: the shipment type, transport document, cargo and client documents are all captured there. A Lead is only the enquiry that comes before it.
 
-Preshipment containers sync from B/L when linked.
+Qualify the Lead in the normal way, then use **Create > Opportunity** to carry the contact across and begin intake.
 
 ---
 

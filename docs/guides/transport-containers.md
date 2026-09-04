@@ -60,6 +60,24 @@ Use **Task Container Update** child table on these tasks to record per-container
 
 ---
 
+## How a job reaches a transporter
+
+1. **Shipment details arrive** from Documentation.
+2. **Documents go to the transporter** - Bill of Lading, and the Delivery Order or container guarantee.
+3. **ETA is shared**, then kept current. Tracking runs daily until KRA releases the cargo, and the transporter is updated as it moves.
+4. **Transporter sends truck details**, and the containers are allocated to them.
+5. **Loading**, after the containers are verified, then the truck exits the port.
+6. **The contact person for the shipment** is passed to the transporter, who passes it to the drivers - so the person on the road can reach someone directly.
+7. **Delivery Order / container guarantee reaches the drivers**, because that is what they need to return the container afterwards.
+8. **Offload, then return the empty** to the appointed depot.
+9. **Interchange issued** at drop-off, and shared back to Tracking or Documentation.
+
+Step 9 is the one that pays: the interchange is the proof the container came back, and it is what the **container deposit refund** is claimed against.
+
+**Trucks are booked before the cargo is released**, not after. Planning overlaps clearance so movement starts the moment the entry is released - which is also why the warehouse is told to make space, and have bags and labour ready, while clearance is still running.
+
+---
+
 ## Container Ops Board
 
 **Desk:** CGM Shipping → Container Ops Board  

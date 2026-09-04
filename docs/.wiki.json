@@ -15,6 +15,9 @@
 					"Declaration & Customs": "guides/declaration-customs.md"
 				},
 				{
+					"Other Shipment Types": "guides/shipment-types.md"
+				},
+				{
 					"Finance": "guides/finance.md"
 				},
 				{
@@ -37,6 +40,9 @@
 				},
 				{
 					"Applying for Leave": "guides/leave.md"
+				},
+				{
+					"What CGM Adds to ERPNext": "guides/customizations.md"
 				}
 			]
 		}
