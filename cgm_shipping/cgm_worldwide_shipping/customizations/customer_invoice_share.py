@@ -86,15 +86,15 @@ def _assert_can_share_sales_invoice(invoice_name: str) -> None:
 
 
 @frappe.whitelist()
-def share_sales_invoice_with_customer(sales_invoice: str) -> dict:
-	"""Accountant action: share a submitted SI with the customer portal."""
+def set_sales_invoice_customer_share(sales_invoice: str, share: int | str | None = None) -> dict:
+	"""Set or clear Share with Customer on a submitted Sales Invoice."""
 	_assert_can_share_sales_invoice(sales_invoice)
 	ensure_customer_invoice_share_fields()
 
 	row = frappe.db.get_value(
 		"Sales Invoice",
 		sales_invoice,
-		["name", "customer", "docstatus", "is_return", SHARE_FIELD],
+		["name", "customer", "docstatus", "is_return", SHARE_FIELD, SHARED_ON_FIELD],
 		as_dict=True,
 	)
 	if not row:
@@ -106,21 +106,32 @@ def share_sales_invoice_with_customer(sales_invoice: str) -> dict:
 	if not row.customer:
 		frappe.throw(_("This invoice has no customer."))
 
-	when = now_datetime()
+	want_share = cint(share) if share is not None else 1
+	if want_share:
+		when = row.get(SHARED_ON_FIELD) or now_datetime()
+	else:
+		when = None
+
 	frappe.db.set_value(
 		"Sales Invoice",
 		sales_invoice,
 		{
-			SHARE_FIELD: 1,
+			SHARE_FIELD: want_share,
 			SHARED_ON_FIELD: when,
 		},
 		update_modified=True,
 	)
 	return {
 		"name": sales_invoice,
-		"shared": 1,
+		"shared": want_share,
 		"shared_on": when,
 	}
+
+
+@frappe.whitelist()
+def share_sales_invoice_with_customer(sales_invoice: str) -> dict:
+	"""Accountant action: share a submitted SI with the customer portal."""
+	return set_sales_invoice_customer_share(sales_invoice, share=1)
 
 
 def assert_shared_sales_invoice_for_customer(name: str, customer: str) -> dict:

@@ -87,7 +87,8 @@ def _workflow_states() -> list[dict]:
 		{
 			"state": SALES_INVOICE_WORKFLOW_STATE_APPROVED,
 			"doc_status": "1",
-			"allow_edit": "Accounts Manager",
+			# Allow allow-on-submit fields (e.g. Share with Customer) after submit.
+			"allow_edit": "Accounts User",
 			"is_optional_state": 0,
 		},
 		{

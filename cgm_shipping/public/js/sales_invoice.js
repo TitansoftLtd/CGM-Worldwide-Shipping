@@ -69,6 +69,7 @@ frappe.ui.form.on("Sales Invoice", {
 
 	custom_share_with_customer(frm) {
 		cgm_toggle_sales_invoice_share_fields(frm);
+		cgm_sync_sales_invoice_customer_share(frm);
 	},
 });
 
@@ -420,27 +421,98 @@ function cgm_toggle_sales_invoice_share_fields(frm) {
 	);
 }
 
+function cgm_unlock_sales_invoice_customer_share_field(frm) {
+	const field = frm.fields_dict.custom_share_with_customer;
+	if (!field || frm.doc.docstatus !== 1 || frm.doc.is_return) {
+		return;
+	}
+
+	field.df.allow_on_submit = 1;
+	field.df.read_only = 0;
+	field.disp_status = "Write";
+	field.refresh_input();
+}
+
 function cgm_configure_sales_invoice_customer_share_ui(frm) {
 	if (!frm.fields_dict.custom_share_with_customer) {
 		return;
 	}
 	cgm_toggle_sales_invoice_share_fields(frm);
-	if (frm.doc.docstatus !== 1 || frm.doc.is_return) {
+
+	const submitted = frm.doc.docstatus === 1 && !frm.doc.is_return;
+	if (submitted) {
+		cgm_unlock_sales_invoice_customer_share_field(frm);
+	}
+
+	if (!submitted || frm.doc.is_return) {
 		return;
 	}
 	if (cint(frm.doc.custom_share_with_customer)) {
 		return;
 	}
 
+	const amount_label = format_currency(
+		frm.doc.outstanding_amount || frm.doc.grand_total,
+		frm.doc.currency
+	);
+	const confirm_message =
+		(frm.doc.status || "").trim() === "Paid"
+			? __(
+					"Share this invoice on the customer portal? The customer will see it as Paid ({0}).",
+					[amount_label]
+			  )
+			: __(
+					"Share this invoice on the customer portal? They will see that they owe {0}. When you record payment, they will see it as Paid.",
+					[amount_label]
+			  );
+
 	frm.add_custom_button(__("Share with Customer"), () => {
-		frappe.confirm(
-			__(
-				"Share this invoice on the customer portal? They will see that they owe {0}. When you record payment, they will see it as Paid.",
-				[format_currency(frm.doc.outstanding_amount || frm.doc.grand_total, frm.doc.currency)]
-			),
-			() => cgm_share_sales_invoice_with_customer(frm)
-		);
+		frappe.confirm(confirm_message, () => cgm_share_sales_invoice_with_customer(frm));
 	}, __("CGM"));
+}
+
+function cgm_sync_sales_invoice_customer_share(frm) {
+	if (frm.doc.docstatus !== 1 || frm.doc.is_return || frm._cgm_share_field_sync) {
+		return;
+	}
+
+	const want_share = cint(frm.doc.custom_share_with_customer);
+	frm._cgm_share_field_sync = true;
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share.set_sales_invoice_customer_share",
+		args: {
+			sales_invoice: frm.doc.name,
+			share: want_share,
+		},
+		callback(r) {
+			frm._cgm_share_field_sync = false;
+			if (r.exc || !r.message) {
+				frm.reload_doc();
+				return;
+			}
+
+			const shared = cint(r.message.shared);
+			frm.doc.custom_share_with_customer = shared;
+			if (frm.fields_dict.custom_shared_with_customer_on) {
+				frm.doc.custom_shared_with_customer_on = r.message.shared_on || "";
+				frm.refresh_field("custom_shared_with_customer_on");
+			}
+			cgm_toggle_sales_invoice_share_fields(frm);
+			cgm_unlock_sales_invoice_customer_share_field(frm);
+
+			frappe.show_alert({
+				message: shared
+					? __("Invoice shared. The customer can now see it on their portal.")
+					: __("Invoice removed from the customer portal."),
+				indicator: shared ? "green" : "blue",
+			});
+		},
+		error() {
+			frm._cgm_share_field_sync = false;
+			frm.reload_doc();
+		},
+	});
 }
 
 function cgm_share_sales_invoice_with_customer(frm) {
