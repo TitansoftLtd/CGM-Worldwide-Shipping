@@ -139,6 +139,15 @@
         <div class="cp-kpi-label">{{ _("CGM owes you") }}</div>
       </div>
     </a>
+    <button type="button" class="cp-kpi teal" data-cp-tab="active" aria-label="{{ _('View allocations with unread CGM messages') }}">
+      <div class="cp-kpi-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <div>
+        <div class="cp-kpi-num">{{ stat_unread_updates|default(0) }}</div>
+        <div class="cp-kpi-label">{{ _("Unread from CGM") }}</div>
+      </div>
+    </button>
   </section>
 
   <nav class="cp-actions" style="margin-bottom:1.5rem;">

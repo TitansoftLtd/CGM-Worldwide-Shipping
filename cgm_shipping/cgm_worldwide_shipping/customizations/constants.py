@@ -272,6 +272,8 @@ DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 TRANSPORTER_TRUCK_UPDATE = "CGM Operational Update"  # legacy alias
 OPERATIONAL_UPDATE_NOTIFICATION = "CGM Operational Update"
 CONTAINER_DEPOSIT_REFUND_REMINDER = "CGM Container - Deposit Refund Reminder"
+PORTAL_UPDATE_PUBLISHED_NOTIFICATION = "CGM Portal - Update Published"
+PORTAL_FEEDBACK_NOTIFICATION = "CGM Portal - Feedback Received"
 
 # Per-row decisions on Funding Request Material Request child table.
 FR_ROW_DECISION_PENDING = "Pending"

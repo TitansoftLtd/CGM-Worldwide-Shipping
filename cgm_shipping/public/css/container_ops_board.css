@@ -104,9 +104,6 @@
 	display: none;
 }
 
-
-
-
 .cgm-ops-board .cgm-ops-body {
 	padding: 0 0.7rem 0.5rem;
 	flex: 1;
@@ -142,6 +139,32 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	box-shadow: var(--cgm-shadow);
 	position: relative;
 	z-index: 5;
+}
+
+/* Refresh and clear live in the page head, which is outside .cgm-ops-board, so
+   these are the only two rules here that are not scoped to the board. Both are
+   named for this page, so they touch nothing else in the desk. */
+.cgm-ops-refresh-btn:hover {
+	border-color: rgba(37, 99, 235, 0.4);
+	background: #eaf2fe;
+	color: #1d4f91;
+}
+
+.cgm-ops-clear-btn:hover {
+	border-color: rgba(227, 24, 55, 0.4);
+	background: var(--cgm-red-soft, #ffe8ec);
+	color: var(--cgm-red-dark, #b8122c);
+}
+
+.cgm-ops-refresh-btn .is-spinning {
+	animation: cgm-ops-spin 0.9s linear infinite;
+	transform-origin: center;
+}
+
+@keyframes cgm-ops-spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 /* The filter row must outrank the KPI panel and tabs beneath it, or a
@@ -322,86 +345,50 @@ body > .datepicker {
 	margin-bottom: 0.65rem;
 }
 
-.cgm-ops-kpis-toggle {
-	display: flex;
-	align-items: center;
-	gap: 0.45rem;
-	width: 100%;
-	margin: 0 0 0.4rem;
-	padding: 0.25rem 0.5rem;
-	border: 1px solid var(--cgm-border);
-	border-radius: 10px;
-	background: var(--cgm-surface);
-	color: var(--cgm-text);
-	font-size: 0.7rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	cursor: pointer;
-	transition: border-color 0.12s ease, background 0.12s ease;
-}
-
-.cgm-ops-kpis-toggle:hover {
-	border-color: rgba(227, 24, 55, 0.35);
-	background: #fff;
-}
-
-.cgm-ops-kpis-toggle-label {
-	/* Blue, taken from the palette's existing informational tone
-	   (.cgm-ops-kpi-icon.blue). Every other colour on this board is spoken
-	   for: red is alerts, amber is attention plus the caption strip, green is
-	   completed, slate is the row count. Blue is the one accent left that
-	   carries no status meaning, so a permanent label can use it without
-	   implying anything about the data. */
-	color: #2563eb;
-}
-
-.cgm-ops-kpis-toggle-hint {
-	margin-left: auto;
-	font-size: 0.62rem;
-	font-weight: 500;
-	text-transform: none;
-	letter-spacing: 0;
-	color: var(--cgm-muted);
-}
-
-.cgm-ops-kpis-toggle-icon {
-	font-size: 0.7rem;
-	line-height: 1;
-	color: var(--cgm-muted);
-	transition: transform 0.15s ease;
-}
-
-.cgm-ops-kpis-section.is-collapsed .cgm-ops-kpis-toggle-icon {
-	transform: rotate(-90deg);
-}
-
 .cgm-ops-kpis-section.is-collapsed .cgm-ops-kpis-collapse {
 	display: none;
 }
 
+/* With the cards hidden the section holds nothing, so its bottom margin was
+   pure empty space above the tabs. The board is height constrained, so that
+   margin is a row of the table. */
+.cgm-ops-kpis-section.is-collapsed {
+	margin-bottom: 0;
+}
+
 .cgm-ops-kpis {
-	display: grid;
-	/* Narrower minimum and a tighter gap: these are glanceable counters, not
-	   the content of the page, and every pixel here is a row of the table. */
-	grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-	gap: 0.55rem;
+	/* Flex rather than a grid with a minimum width. auto-fit wrapped as soon
+	   as the cards could not all meet their 148px minimum, so the Containers
+	   tab, which has eight, dropped one onto a second row and pushed the
+	   table down. Flex with nowrap and flex-basis 0 makes the cards share
+	   whatever width there is, so every tab keeps its cards on one line
+	   whatever the count. */
+	display: flex;
+	flex-wrap: nowrap;
+	gap: 0.4rem;
 	margin-bottom: 0;
 }
 
 .cgm-ops-kpi {
 	display: flex;
 	align-items: center;
-	gap: 0.55rem;
+	gap: 0.4rem;
+	/* basis 0 so the cards divide the row evenly instead of being sized by
+	   their own text, and min-width 0 so a long label can shrink the card
+	   rather than forcing the row wider than the screen. */
+	flex: 1 1 0;
+	min-width: 0;
 	background: var(--cgm-surface);
 	border: 1px solid var(--cgm-border);
 	border-radius: 10px;
-	padding: 0.6rem 0.7rem;
+	/* The card is sized by its contents, so the type sizes below and this
+	   padding are the whole height. Trimmed together rather than one at a
+	   time, or the card just gets tighter without getting shorter. */
+	padding: 0.3rem 0.5rem;
 	box-shadow: var(--cgm-shadow);
 	cursor: pointer;
 	transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
 	text-align: left;
-	width: 100%;
 }
 
 .cgm-ops-kpi:hover,
@@ -416,14 +403,16 @@ body > .datepicker {
 }
 
 .cgm-ops-kpi-icon {
-	width: 30px;
-	height: 30px;
+	/* Kept just under the text column's height so the icon never becomes the
+	   thing setting the card height. */
+	width: 20px;
+	height: 20px;
 	flex-shrink: 0;
-	border-radius: 8px;
+	border-radius: 7px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 0.85rem;
+	font-size: 0.62rem;
 }
 
 .cgm-ops-kpi-icon.red {
@@ -452,7 +441,7 @@ body > .datepicker {
 }
 
 .cgm-ops-kpi .value {
-	font-size: 1.1rem;
+	font-size: 0.8rem;
 	font-weight: 700;
 	line-height: 1;
 	font-variant-numeric: tabular-nums;
@@ -463,14 +452,21 @@ body > .datepicker {
 	color: var(--cgm-red);
 }
 
+/* The text column of the card. Without min-width 0 it keeps its intrinsic
+   width and the flex row cannot shrink, which is what forces a wrap. */
+.cgm-ops-kpi > div {
+	min-width: 0;
+}
+
 .cgm-ops-kpi .label {
-	font-size: 0.62rem;
+	font-size: 0.52rem;
+	overflow-wrap: anywhere;
 	text-transform: uppercase;
 	letter-spacing: 0.03em;
 	color: var(--cgm-muted);
-	margin-top: 0.12rem;
+	margin-top: 0.06rem;
 	font-weight: 600;
-	line-height: 1.25;
+	line-height: 1.2;
 }
 
 .cgm-ops-tabs {
@@ -649,17 +645,18 @@ body > .datepicker {
 }
 
 .cgm-ops-list-count {
-	/* Slate rather than red, amber or green: this is passive metadata, and
-	   each of those already means something on this board (alert, attention,
-	   completed). A quiet badge states the count without competing. */
+	/* Light blue rather than red, amber or green: this is passive metadata,
+	   and each of those already means something on this board (alert,
+	   attention, completed), so a status colour here would read as a verdict
+	   on the rows. Blue is only ever used for controls, so it stays neutral. */
 	display: inline-flex;
 	align-items: center;
 	gap: 0.3rem;
 	padding: 0.06rem 0.5rem;
 	border-radius: 999px;
-	background: #eef2f7;
-	color: #3f5570;
-	border: 1px solid #dbe3ed;
+	background: #eaf2fe;
+	color: #1d4f91;
+	border: 1px solid #cfe0f7;
 	font-size: 0.62rem;
 	font-weight: 600;
 	letter-spacing: 0.02em;
@@ -690,6 +687,34 @@ body > .datepicker {
 	max-height: none;
 	-webkit-overflow-scrolling: touch;
 	overscroll-behavior: contain;
+	/* Firefox. The horizontal bar sits between the last row and the paging
+	   controls, so its height is height the table does not get. */
+	scrollbar-width: thin;
+	scrollbar-color: #c3ccd8 transparent;
+}
+
+/* Chrome, Edge and Safari, which ignore scrollbar-width. 7px is still a
+   comfortable drag target and returns half the default bar to the rows. */
+.cgm-ops-table-scroll::-webkit-scrollbar {
+	width: 7px;
+	height: 7px;
+}
+
+.cgm-ops-table-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.cgm-ops-table-scroll::-webkit-scrollbar-thumb {
+	background: #c3ccd8;
+	border-radius: 999px;
+}
+
+.cgm-ops-table-scroll::-webkit-scrollbar-thumb:hover {
+	background: #a7b3c4;
+}
+
+.cgm-ops-table-scroll::-webkit-scrollbar-corner {
+	background: transparent;
 }
 
 .cgm-ops-list-paging {
@@ -836,11 +861,14 @@ body > .datepicker {
 	   sized by its text, not by padding. Everything inside a cell (pills,
 	   checkbox, links) is capped to match, or it silently pushes the row back
 	   up. */
-	padding: 0.1rem 0.4rem;
+	/* Both are variables so the board can tighten the grid until the chosen
+	   page fits the window (container_ops_board.js, fitRowsToScreen). The
+	   values here are the natural density, used whenever there is room. */
+	padding: var(--cgm-ops-row-pad, 0.1rem) 0.4rem;
 	border-bottom: 1px solid var(--cgm-border);
 	vertical-align: middle;
 	white-space: nowrap;
-	height: 22px;
+	height: var(--cgm-ops-row-height, 22px);
 	line-height: 1.15;
 }
 
@@ -1262,12 +1290,7 @@ body > .datepicker {
 @media (max-width: 900px) {
 	.cgm-ops-shipment-detail-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
-	.cgm-ops-kpis-toggle-hint {
-		display: none;
-	}
-}
+	}}
 
 @media (max-width: 560px) {
 	.cgm-ops-shipment-detail-grid {
@@ -1413,9 +1436,7 @@ body > .datepicker {
 	border-radius: 7px;
 	overflow: hidden;
 	background: var(--cgm-surface);
-}
-
-.cgm-ops-paging-group .btn.btn-paging {
+}.cgm-ops-paging-group .btn.btn-paging {
 	border: 0;
 	border-radius: 0;
 	background: transparent;
@@ -1468,6 +1489,53 @@ body > .datepicker {
 	.cgm-ops-paging-range {
 		display: none;
 	}
+}
+
+/* ---------------------------------------------------------------------------
+   Resizable columns
+
+   A 7px grab strip inside the right edge of each header. It only shows its
+   rule on hover, so 28 headers do not read as 28 dividers when nobody is
+   resizing anything.
+   -------------------------------------------------------------------------- */
+.cgm-ops-col-resizer {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 7px;
+	height: 100%;
+	cursor: col-resize;
+	user-select: none;
+	touch-action: none;
+	z-index: 2;
+}
+
+.cgm-ops-col-resizer::after {
+	content: "";
+	position: absolute;
+	top: 18%;
+	bottom: 18%;
+	right: 2px;
+	width: 2px;
+	border-radius: 1px;
+	background: transparent;
+	transition: background 0.12s ease;
+}
+
+.cgm-ops-table th:hover .cgm-ops-col-resizer::after {
+	background: #b8c6d8;
+}
+
+.cgm-ops-col-resizer:hover::after {
+	background: var(--cgm-red);
+}
+
+/* While dragging, the pointer is over the rows rather than the handle, so the
+   cursor and the text-selection block have to live on the body. */
+body.cgm-ops-col-resizing,
+body.cgm-ops-col-resizing * {
+	cursor: col-resize !important;
+	user-select: none !important;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1562,6 +1630,13 @@ body > .datepicker {
 	font-weight: 600;
 }
 
+/* The client's own reference is the column customers quote back, so it is set
+   bold: heavier than the CGM ref and B/L beside it, which the office reads. */
+.cgm-ops-table td .cgm-ops-client-ref {
+	font-weight: 700;
+	color: var(--cgm-text);
+}
+
 /* Client names are the one prose column, so they keep normal tracking and a
    slightly heavier weight to anchor the row. */
 .cgm-ops-table td.cgm-ops-sticky-col,
@@ -1594,3 +1669,87 @@ body > .datepicker {
 	color: var(--cgm-muted);
 	opacity: 0.65;
 }
+
+/* The KPI toggle. It was a full width bar carrying the word SUMMARY and a
+   hint that restated what the arrow already did, costing a whole row of the
+   board for one boolean. A checkbox in the tab strip says the same thing in
+   the space that was already there. */
+/* Both toggles read as chips rather than loose text, so they are findable in a
+   row that is otherwise tabs and a count, and each one says whether it is on by
+   colour rather than by the 12px box alone. */
+.cgm-ops-kpis-check {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	margin: 0 0 0 auto;
+	padding: 0.14rem 0.5rem;
+	border: 1px solid var(--cgm-border);
+	border-radius: 999px;
+	background: var(--cgm-surface);
+	font-size: 0.62rem;
+	font-weight: 600;
+	/* Darker than --cgm-muted: these are controls, not captions. */
+	color: #55637a;
+	white-space: nowrap;
+	cursor: pointer;
+	user-select: none;
+	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+/* The second chip follows the first rather than fighting it for the auto
+   margin that pushes the pair to the right. */
+.cgm-ops-kpis-check ~ .cgm-ops-kpis-check {
+	margin-left: 0.35rem;
+}
+
+.cgm-ops-kpis-check:hover {
+	color: var(--cgm-text);
+	border-color: rgba(227, 24, 55, 0.35);
+	background: #fff;
+}
+
+/* On: brand red for the KPI cards. The .is-on class is set in JS alongside
+   :has(), so the state still shows on a browser without :has() support. */
+.cgm-ops-kpis-check.is-on,
+.cgm-ops-kpis-check:has(input:checked) {
+	background: var(--cgm-red-soft);
+	border-color: rgba(227, 24, 55, 0.4);
+	color: var(--cgm-red-dark);
+}
+
+/* On: green for completed, which is what the word means everywhere else on
+   this board, and keeps the two chips apart at a glance. */
+.cgm-ops-completed-check.is-on,
+.cgm-ops-completed-check:has(input:checked) {
+	background: #eaf7ee;
+	border-color: #bfe3cb;
+	color: #256b42;
+}
+
+.cgm-ops-completed-check input {
+	accent-color: #16a34a;
+}
+
+.cgm-ops-completed-check:hover {
+	border-color: rgba(22, 163, 74, 0.4);
+}
+
+.cgm-ops-kpis-check input {
+	width: 12px;
+	height: 12px;
+	margin: 0;
+	cursor: pointer;
+	accent-color: var(--cgm-red);
+}
+
+.cgm-ops-kpis-check input:focus-visible {
+	outline: 2px solid var(--cgm-red);
+	outline-offset: 2px;
+}
+
+/* The count sat at the far right on its own margin. With the checkbox now
+   taking that auto margin, the count only needs a gap beside it. */
+.cgm-ops-tabs .cgm-ops-tabs-count {
+	margin-left: 0.5rem;
+}
+

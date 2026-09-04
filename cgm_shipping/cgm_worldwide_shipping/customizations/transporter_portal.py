@@ -28,11 +28,22 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import
 	compute_container_metrics,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+	AUDIENCE_TRANSPORTER,
 	TRANSPORTER_SUBJECTS,
+	count_unread_transporter_updates,
 	get_my_updates_for_allocation,
+	get_transporter_thread_for_allocation,
 	get_updates_for_allocation_item,
+	mark_thread_read,
+	post_transporter_message,
 	post_truck_update,
 	render_updates_list_html,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.portal_feedback import (
+	FEEDBACK_CATEGORIES,
+	PARTY_TRANSPORTER,
+	get_my_feedback,
+	submit_feedback,
 )
 
 
@@ -240,6 +251,7 @@ def get_transporter_portal_dashboard(transporter: str) -> dict:
 		"stat_outstanding_amount": invoice_summary["stat_outstanding_amount"],
 		"stat_paid_count": invoice_summary["stat_paid_count"],
 		"invoice_currency": invoice_summary["currency"],
+		"stat_unread_updates": count_unread_transporter_updates(transporter),
 	}
 
 
@@ -292,6 +304,13 @@ def get_allocation_detail(allocation_name: str) -> dict:
 			row.name,
 			container_tracker=row.container_tracker,
 		)
+		container_thread = (
+			get_transporter_thread_for_allocation(
+				allocation.name, transporter, container_tracker=row.container_tracker
+			)
+			if row.container_tracker
+			else []
+		)
 		containers.append(
 			{
 				"name": row.name,
@@ -312,10 +331,14 @@ def get_allocation_detail(allocation_name: str) -> dict:
 				"interchange_document": interchange_url,
 				"interchange_date": interchange_date_val,
 				"truck_updates": truck_updates,
+				"thread": container_thread,
+				"thread_json": frappe.as_json(container_thread),
 			}
 		)
 
 	my_updates = get_my_updates_for_allocation(allocation.name, limit=100)
+	thread = get_transporter_thread_for_allocation(allocation.name, transporter)
+	my_feedback = get_my_feedback(party=PARTY_TRANSPORTER, project=allocation.project)
 	container_options = [
 		{
 			"value": c["name"],
@@ -324,6 +347,17 @@ def get_allocation_detail(allocation_name: str) -> dict:
 		}
 		for c in containers
 		if c.get("assignment_status") in (ASSIGNMENT_TRUCK, ASSIGNMENT_INTERCHANGE)
+	]
+	# Messages may be about any tracked container, including ones CGM has not
+	# assigned a truck to yet - that is often exactly what is being asked about.
+	message_container_options = [
+		{
+			"value": c["name"],
+			"label": c.get("container_number") or c["name"],
+			"container_number": c.get("container_number") or c["name"],
+		}
+		for c in containers
+		if c.get("container_tracker")
 	]
 
 	offered_trucks = []
@@ -366,8 +400,22 @@ def get_allocation_detail(allocation_name: str) -> dict:
 		"my_updates": my_updates,
 		"my_updates_html": render_updates_list_html(my_updates, show_source=False),
 		"my_updates_json": frappe.as_json(my_updates),
+		"thread": thread,
+		"thread_json": frappe.as_json(thread),
+		"unread_count": sum(1 for m in thread if m.get("unread")),
+		"my_feedback": my_feedback,
+		"feedback_containers_json": frappe.as_json(
+			[
+				{"value": c["container_tracker"], "label": c.get("container_number") or c["container_tracker"]}
+				for c in containers
+				if c.get("container_tracker")
+			]
+		),
+		"feedback_categories": list(FEEDBACK_CATEGORIES),
+		"feedback_categories_json": frappe.as_json(list(FEEDBACK_CATEGORIES)),
 		"container_options": container_options,
 		"container_options_json": frappe.as_json(container_options),
+		"message_container_options_json": frappe.as_json(message_container_options),
 		"update_types": list(TRANSPORTER_SUBJECTS),
 		"update_types_json": frappe.as_json(list(TRANSPORTER_SUBJECTS)),
 	}
@@ -515,6 +563,118 @@ def post_truck_update_portal(
 		subject=subject or update_type,
 		transporter=transporter,
 	)
+
+
+def _allocation_container_row(allocation, item_name: str):
+	for row in allocation.containers or []:
+		if row.name == item_name:
+			return row
+	frappe.throw(_("Container allocation row not found."), frappe.DoesNotExistError)
+
+
+@frappe.whitelist()
+def get_allocation_conversation(allocation_name: str, item_name: str | None = None) -> list[dict]:
+	"""Transporter portal: the two-way thread on an allocation or one container."""
+	transporter = require_transporter_portal_access()
+	allocation = _get_allocation_for_transporter(allocation_name, transporter)
+
+	container_tracker = None
+	if item_name:
+		container_tracker = _allocation_container_row(allocation, item_name).container_tracker
+
+	return get_transporter_thread_for_allocation(
+		allocation_name, transporter, container_tracker=container_tracker
+	)
+
+
+@frappe.whitelist()
+def post_allocation_message(
+	allocation_name: str,
+	subject: str,
+	message: str,
+	item_name: str | None = None,
+	parent_update: str | None = None,
+) -> dict:
+	"""Transporter portal: free-text message to CGM about an allocation.
+
+	Distinct from `post_truck_update_portal`, which records a structured
+	movement event (and can move dates on the Container Tracker). This one
+	only starts or continues a conversation.
+	"""
+	transporter = require_transporter_portal_access()
+	allocation = _get_allocation_for_transporter(allocation_name, transporter)
+
+	container_tracker = None
+	if item_name:
+		container_tracker = _allocation_container_row(allocation, item_name).container_tracker
+
+	return post_transporter_message(
+		transporter=transporter,
+		subject=subject,
+		message=message,
+		allocation=allocation_name,
+		allocation_item=item_name or None,
+		container_tracker=container_tracker,
+		project=allocation.project,
+		parent_update=parent_update,
+	)
+
+
+@frappe.whitelist()
+def mark_allocation_updates_read(allocation_name: str, names) -> dict:
+	"""Transporter portal: clear the unread flag on CGM messages just opened."""
+	transporter = require_transporter_portal_access()
+	_get_allocation_for_transporter(allocation_name, transporter)
+
+	if isinstance(names, str):
+		names = frappe.parse_json(names) if names.strip().startswith("[") else [names]
+	names = [n for n in (names or []) if n]
+	if not names:
+		return {"ok": True, "marked": 0}
+
+	# Only messages this transporter can actually see may be stamped.
+	visible = {
+		m["name"]
+		for m in get_transporter_thread_for_allocation(allocation_name, transporter)
+	}
+	marked = mark_thread_read([n for n in names if n in visible], AUDIENCE_TRANSPORTER)
+	return {"ok": True, "marked": marked}
+
+
+@frappe.whitelist()
+def submit_allocation_feedback(
+	allocation_name: str,
+	rating,
+	category: str | None = None,
+	comments: str | None = None,
+	would_recommend: int | str = 0,
+	containers=None,
+) -> dict:
+	"""Transporter portal: rate working this shipment with CGM.
+
+	Containers may only be ticked from this allocation - a haulier must not be
+	able to name a box another transporter is carrying.
+	"""
+	transporter = require_transporter_portal_access()
+	allocation = _get_allocation_for_transporter(allocation_name, transporter)
+	if not allocation.project:
+		frappe.throw(_("This allocation is not linked to a shipment."))
+
+	return submit_feedback(
+		party=PARTY_TRANSPORTER,
+		project=allocation.project,
+		transporter=transporter,
+		stars=rating,
+		category=category,
+		comments=comments,
+		would_recommend=would_recommend,
+		containers=containers,
+		allowed_containers=_allocation_tracker_names(allocation),
+	)
+
+
+def _allocation_tracker_names(allocation) -> list[str]:
+	return [row.container_tracker for row in allocation.containers or [] if row.container_tracker]
 
 
 @frappe.whitelist()

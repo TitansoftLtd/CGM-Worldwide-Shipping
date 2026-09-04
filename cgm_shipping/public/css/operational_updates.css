@@ -137,3 +137,103 @@
 	-webkit-line-clamp: 3;
 	overflow: hidden;
 }
+
+/* ── Conversation transcript in the View More dialog ─────────────────── */
+
+.cgm-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.25rem 0.1rem;
+}
+/* Only the dialog needs to cap its height; the form has the room to show the
+   whole exchange without clipping the first message. */
+.modal .cgm-thread {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+.cgm-thread-msg {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md, 8px);
+  padding: 0.6rem 0.75rem;
+  background: var(--card-bg, var(--fg-color));
+  max-width: 88%;
+}
+/* The party asked; CGM answered - sides make that readable at a glance. */
+.cgm-thread-msg.is-party { align-self: flex-start; }
+.cgm-thread-msg.is-cgm {
+  align-self: flex-end;
+  background: var(--bg-light-gray, var(--subtle-fg));
+}
+/* The message View More was opened on. */
+.cgm-thread-msg.is-current { border-color: var(--primary, #2490ef); }
+.cgm-thread-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.cgm-thread-author {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.cgm-thread-when { margin-left: auto; white-space: nowrap; }
+.cgm-thread-subject {
+  margin-top: 0.2rem;
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.cgm-thread-body {
+  margin-top: 0.2rem;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.cgm-thread-note {
+  margin-top: 0.35rem;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ── Inline reply box on the Shipment Update form ─────────────────────── */
+
+.cgm-reply-box {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-color);
+}
+.cgm-reply-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+.cgm-reply-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.cgm-reply-audience {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.cgm-reply-audience input { margin: 0; }
+.cgm-reply-actions .cgm-reply-send { margin-left: auto; }
+
+/* Message reference number, quotable in an email or on the phone. */
+.cgm-updates-ref,
+.cgm-thread-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.01em;
+}
+.cgm-updates-ref { margin-left: auto; }
+.cgm-thread-ref { margin-left: auto; }
+.cgm-thread-when { margin-left: 0.5rem; }
