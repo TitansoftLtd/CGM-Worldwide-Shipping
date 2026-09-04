@@ -162,7 +162,7 @@ def _queue_share_email(project_name: str, labels: list[str]) -> dict:
 	portal_url = _shipment_portal_url(project_name)
 	fee_list = ", ".join(labels) if labels else _("regulatory fee invoice(s)")
 
-	subject = _("Invoice ready for payment — {0}").format(ref)
+	subject = _("Invoice ready for payment - {0}").format(ref)
 	message = frappe.render_template(
 		"""
 <p>{{ _("Hello") }},</p>
