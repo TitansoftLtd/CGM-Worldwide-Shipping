@@ -6,19 +6,22 @@
       <tr>
         <th>{{ _("Posting Date") }}</th>
         <th>{{ _("Invoice") }}</th>
+        <th>{{ _("Supplier Invoice No") }}</th>
+        <th>{{ _("Supplier Invoice Date") }}</th>
         <th>{{ _("Shipment") }}</th>
         <th style="text-align:right;">{{ _("Trucks Offered") }}</th>
         <th>{{ _("Status") }}</th>
         <th style="text-align:right;">{{ _("Total") }}</th>
         <th style="text-align:right;">{{ _("CGM owes you") }}</th>
-        <th class="cp-col-actions">{{ _("Actions") }}</th>
       </tr>
     </thead>
     <tbody>
       {% for i in invoice_rows %}
       <tr>
         <td data-label="{{ _('Posting Date') }}">{% if i.posting_date %}{{ local_date(i.posting_date) }}{% else %}-{% endif %}</td>
-        <td data-label="{{ _('Invoice') }}"><span class="ref-link">{{ i.name }}</span>{% if i.bill_no %}<div class="cp-list-sub">{{ i.bill_no }}</div>{% endif %}</td>
+        <td data-label="{{ _('Invoice') }}"><span class="ref-link">{{ i.name }}</span></td>
+        <td data-label="{{ _('Supplier Invoice No') }}">{% if i.bill_no %}{{ i.bill_no }}{% else %}—{% endif %}</td>
+        <td data-label="{{ _('Supplier Invoice Date') }}">{% if i.bill_date %}{{ local_date(i.bill_date) }}{% else %}—{% endif %}</td>
         <td data-label="{{ _('Shipment') }}">
           {% if i.allocation_url and (i.project_ref or i.project) %}
             <a class="ref-link" href="{{ i.allocation_url }}">{{ i.project_ref or i.project }}</a>
@@ -32,12 +35,6 @@
         <td data-label="{{ _('Status') }}"><span class="cp-status {{ i.tone }}"><span class="dot"></span>{{ i.status_label }}</span></td>
         <td data-label="{{ _('Total') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">{{ frappe.utils.fmt_money(i.grand_total, currency=i.currency) }}</td>
         <td data-label="{{ _('CGM owes you') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;{% if i.outstanding_amount and i.outstanding_amount > 0 %}color:#be123c;{% else %}color:var(--cp-green);{% endif %}">{{ frappe.utils.fmt_money(i.outstanding_amount, currency=i.currency) }}</td>
-        <td class="cp-col-actions" data-label="{{ _('Actions') }}">
-          <span style="display:inline-flex;gap:.4rem;flex-wrap:wrap;">
-            <a class="cp-btn cp-btn-ghost cp-btn-sm" href="{{ i.pdf_view_url }}" target="_blank" rel="noopener">{{ _("Preview") }}</a>
-            <a class="cp-btn cp-btn-ghost cp-btn-sm" href="{{ i.pdf_download_url }}" download="{{ i.name }}.pdf">{{ _("Download") }}</a>
-          </span>
-        </td>
       </tr>
       {% endfor %}
     </tbody>
