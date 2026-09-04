@@ -351,7 +351,7 @@ function render_container_tracker_alerts(frm) {
 				const overdue = Math.abs(remaining);
 				alert = {
 					msg: __(
-						"Demurrage accruing — {0} day(s) past the free period end date",
+						"Demurrage accruing - {0} day(s) past the free period end date",
 						[overdue]
 					),
 					color: "red",
@@ -359,7 +359,7 @@ function render_container_tracker_alerts(frm) {
 			} else if (remaining <= 2) {
 				alert = {
 					msg: __(
-						"Free days expiring — only {0} day(s) remaining before demurrage starts",
+						"Free days expiring - only {0} day(s) remaining before demurrage starts",
 						[remaining]
 					),
 					color: "orange",
@@ -383,7 +383,7 @@ function render_container_tracker_alerts(frm) {
 		if (diff > 0) {
 			alert = {
 				msg: __(
-					"Return overdue by {0} day(s) — contact transporter immediately. Demurrage/detention charges may be accruing.",
+					"Return overdue by {0} day(s) - contact transporter immediately. Demurrage/detention charges may be accruing.",
 					[diff]
 				),
 				color: "red",
@@ -391,7 +391,7 @@ function render_container_tracker_alerts(frm) {
 		} else if (diff >= -3) {
 			alert = {
 				msg: __(
-					"Container return due in {0} day(s) — arrange empty return now",
+					"Container return due in {0} day(s) - arrange empty return now",
 					[Math.abs(diff)]
 				),
 				color: "orange",
@@ -409,7 +409,7 @@ function render_container_tracker_alerts(frm) {
 		if (late > 0) {
 			alert = {
 				msg: __(
-					"Returned late — {0} day(s) past the shipping-line free period end date",
+					"Returned late - {0} day(s) past the shipping-line free period end date",
 					[late]
 				),
 				color: "orange",

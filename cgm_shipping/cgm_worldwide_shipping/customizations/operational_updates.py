@@ -622,7 +622,7 @@ def format_latest_update_summary(update: dict | None) -> str:
 	parts = [update.get("subject") or update.get("update_type") or ""]
 	if update.get("message"):
 		parts.append(update["message"])
-	label = " — ".join(p for p in parts if p)
+	label = " - ".join(p for p in parts if p)
 	posted = update.get("posted_on")
 	if posted:
 		formatted = frappe.format(posted, {"fieldtype": "Datetime"})

@@ -2571,7 +2571,7 @@ def create_journal_payment_from_task(
 		party_side = "from"
 	if party_side and not (party and party_type):
 		frappe.throw(
-			"A selected account is a <b>Party</b> account — choose a Party Type and Party."
+			"A selected account is a <b>Party</b> account - choose a Party Type and Party."
 		)
 
 	permit_row = None

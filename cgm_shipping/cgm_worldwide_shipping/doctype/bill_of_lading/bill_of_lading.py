@@ -1404,7 +1404,7 @@ def _validate_project_deposit_refund_confirmation(project: str, bl: dict) -> Non
 		frappe.throw(_("The container deposit must be paid before confirming a refund."))
 	if (bl.get("deposit_refund_status") or "") != DEPOSIT_REFUND_STATUSES[0]:
 		frappe.throw(
-			_("Deposit refund is not pending — current status is <b>{0}</b>.").format(
+			_("Deposit refund is not pending - current status is <b>{0}</b>.").format(
 				bl.get("deposit_refund_status") or _("Not started")
 			)
 		)
@@ -1706,7 +1706,7 @@ def _party_requirements(pay_from_account: str, pay_to_account: str, party_type, 
 		party_side = "from"
 	if party_side and not (party and party_type):
 		frappe.throw(
-			_("A selected account is a <b>Party</b> account — choose a Party Type and Party.")
+			_("A selected account is a <b>Party</b> account - choose a Party Type and Party.")
 		)
 	return party_side
 
@@ -1867,7 +1867,7 @@ def create_deposit_payment_from_task(
 			alert=True,
 		)
 
-	remark = user_remark or _("Container deposit — BL {0} ({1})").format(
+	remark = user_remark or _("Container deposit - BL {0} ({1})").format(
 		bl_info.get("bl_number") or bl_name, task.subject
 	)
 
@@ -1932,7 +1932,7 @@ def create_deposit_refund_from_bl(
 		frappe.throw(_("Could not determine the Company for this refund."))
 	_validate_accounts(company, pay_from_account, pay_to_account)
 
-	remark = user_remark or _("Container deposit refund — BL {0}").format(
+	remark = user_remark or _("Container deposit refund - BL {0}").format(
 		bl.bl_number or bl.name
 	)
 
@@ -2297,9 +2297,9 @@ def _project_customer_and_company(project: str) -> tuple[str, str]:
 	customer = frappe.db.get_value("Project", project, "customer")
 	company = frappe.db.get_value("Project", project, "company")
 	if not customer:
-		frappe.throw(_("Project has no Customer — cannot create a Sales Invoice."))
+		frappe.throw(_("Project has no Customer - cannot create a Sales Invoice."))
 	if not company:
-		frappe.throw(_("Project has no Company — cannot create a Sales Invoice."))
+		frappe.throw(_("Project has no Company - cannot create a Sales Invoice."))
 	return customer, company
 
 
@@ -2317,7 +2317,7 @@ def _validate_customer_deposit_sales_invoice_task(task_name: str):
 	if not bl:
 		frappe.throw(_("No container deposit on the linked Bill of Lading."))
 	if bl_deposit_payer(bl) and bl_deposit_payer(bl) != "Customer":
-		frappe.throw(_("Deposit payer is not Customer — use the correct payment path."))
+		frappe.throw(_("Deposit payer is not Customer - use the correct payment path."))
 	if bl.get("deposit_sales_invoice"):
 		frappe.throw(_("A Sales Invoice is already linked for this deposit."))
 
@@ -2372,7 +2372,7 @@ def _build_customer_deposit_sales_invoice_doc(task, bl, shipping_line_amount: fl
 			"item_code": deposit_item,
 			"qty": 1,
 			"rate": deposit_total,
-			"description": _("Container Deposit — BL {0}").format(bl.get("bl_number") or bl.get("name")),
+			"description": _("Container Deposit - BL {0}").format(bl.get("bl_number") or bl.get("name")),
 		},
 	)
 	si.run_method("set_missing_values")
@@ -2433,7 +2433,7 @@ def create_customer_sl_sales_invoice_with_deposit(
 		for row in si.get("items") or []
 	):
 		frappe.msgprint(
-			_("Shipping Line charge amount is zero — add or adjust the line on the Sales Invoice."),
+			_("Shipping Line charge amount is zero - add or adjust the line on the Sales Invoice."),
 			indicator="orange",
 		)
 	si.insert()
@@ -2475,7 +2475,7 @@ def create_company_deposit_sales_invoice_for_project(project: str) -> str:
 			"item_code": deposit_item,
 			"qty": 1,
 			"rate": deposit_total,
-			"description": _("Container Deposit (Company paid) — BL {0}").format(
+			"description": _("Container Deposit (Company paid) - BL {0}").format(
 				bl.get("bl_number") or bl.get("name")
 			),
 		},

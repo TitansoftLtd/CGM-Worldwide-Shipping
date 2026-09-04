@@ -57,7 +57,7 @@
   {
    "default": "0",
    "depends_on": "eval:doc.line_type==\"Invoice\"",
-   "description": "When enabled, Declarant can add extra invoice lines (amendments) after the first invoice is paid — same as Sea Clearance UCR / Entry / Shipping Line / KPA.",
+   "description": "When enabled, Declarant can add extra invoice lines (amendments) after the first invoice is paid - same as Sea Clearance UCR / Entry / Shipping Line / KPA.",
    "fieldname": "allows_amendment",
    "fieldtype": "Check",
    "in_list_view": 1,
