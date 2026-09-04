@@ -61,6 +61,7 @@ def after_migrate() -> None:
 		("shipment document versioning", ensure_shipment_document_versioning),
 		("finance cost ledger schema", ensure_finance_cost_ledger_schema),
 		("transporter portal setup", ensure_transporter_portal_setup),
+		("customer invoice share fields", ensure_customer_invoice_share_schema),
 		("task workflow masters", ensure_task_workflow_masters),
 		("package field visibility", ensure_package_field_visibility),
 		("licence register roles", ensure_license_setup),
@@ -121,6 +122,16 @@ def ensure_license_setup() -> None:
 
 	ensure_license_roles()
 	frappe.db.commit()
+
+
+def ensure_customer_invoice_share_schema() -> None:
+	"""Share-with-customer fields on Sales Invoice."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share import (
+		ensure_customer_invoice_share_fields,
+	)
+
+	if frappe.db.exists("DocType", "Sales Invoice"):
+		ensure_customer_invoice_share_fields()
 
 
 def ensure_transporter_portal_setup() -> None:

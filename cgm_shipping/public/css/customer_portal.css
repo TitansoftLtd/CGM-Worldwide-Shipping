@@ -38,8 +38,21 @@
   --cp-shadow-md: 0 4px 10px rgba(15,23,42,.06), 0 2px 4px rgba(15,23,42,.04);
 }
 
-.cp-page { max-width: min(1320px, 95vw); margin: 0 auto; padding: 1rem 1rem 4rem; color: var(--cp-text); }
-.cp-page-narrow { max-width: 1000px; }
+.cp-page {
+  width: 100%;
+  max-width: min(1760px, calc(100vw - 2rem));
+  margin: 0 auto;
+  padding: 1rem 1.5rem 4rem;
+  box-sizing: border-box;
+  color: var(--cp-text);
+}
+.cp-page-narrow { max-width: min(1760px, calc(100vw - 2rem)); }
+
+/* Expand Bootstrap's ~1170px container when a portal page is nested in it. */
+.container:has(.cp-page) {
+  width: 100%;
+  max-width: min(1760px, calc(100vw - 2rem));
+}
 
 /* ───── Back to portal ───── */
 .cp-back {
@@ -308,7 +321,7 @@ button.cp-kpi { width: 100%; text-align: left; font: inherit; }
 .cp-table tbody tr:hover td { background: var(--cp-surface-alt); }
 .cp-table a { color: var(--cp-brand); font-weight: 500; text-decoration: none; }
 .cp-table a:hover { text-decoration: underline; }
-.cp-table .ref-link { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+.cp-table .ref-link { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; white-space: normal; word-break: break-word; }
 .cp-table .cp-col-actions {
   position: sticky;
   right: 0;
