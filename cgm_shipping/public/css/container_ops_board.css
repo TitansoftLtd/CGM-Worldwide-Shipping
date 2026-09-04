@@ -141,6 +141,32 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	z-index: 5;
 }
 
+/* Refresh and clear live in the page head, which is outside .cgm-ops-board, so
+   these are the only two rules here that are not scoped to the board. Both are
+   named for this page, so they touch nothing else in the desk. */
+.cgm-ops-refresh-btn:hover {
+	border-color: rgba(37, 99, 235, 0.4);
+	background: #eaf2fe;
+	color: #1d4f91;
+}
+
+.cgm-ops-clear-btn:hover {
+	border-color: rgba(227, 24, 55, 0.4);
+	background: var(--cgm-red-soft, #ffe8ec);
+	color: var(--cgm-red-dark, #b8122c);
+}
+
+.cgm-ops-refresh-btn .is-spinning {
+	animation: cgm-ops-spin 0.9s linear infinite;
+	transform-origin: center;
+}
+
+@keyframes cgm-ops-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 /* The filter row must outrank the KPI panel and tabs beneath it, or a
    dropdown opens behind them. */
 .cgm-ops-filters {
@@ -1604,6 +1630,13 @@ body.cgm-ops-col-resizing * {
 	font-weight: 600;
 }
 
+/* The client's own reference is the column customers quote back, so it is set
+   bold: heavier than the CGM ref and B/L beside it, which the office reads. */
+.cgm-ops-table td .cgm-ops-client-ref {
+	font-weight: 700;
+	color: var(--cgm-text);
+}
+
 /* Client names are the one prose column, so they keep normal tracking and a
    slightly heavier weight to anchor the row. */
 .cgm-ops-table td.cgm-ops-sticky-col,
@@ -1641,22 +1674,64 @@ body.cgm-ops-col-resizing * {
    hint that restated what the arrow already did, costing a whole row of the
    board for one boolean. A checkbox in the tab strip says the same thing in
    the space that was already there. */
+/* Both toggles read as chips rather than loose text, so they are findable in a
+   row that is otherwise tabs and a count, and each one says whether it is on by
+   colour rather than by the 12px box alone. */
 .cgm-ops-kpis-check {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.3rem;
 	margin: 0 0 0 auto;
-	padding: 0 0.15rem;
+	padding: 0.14rem 0.5rem;
+	border: 1px solid var(--cgm-border);
+	border-radius: 999px;
+	background: var(--cgm-surface);
 	font-size: 0.62rem;
 	font-weight: 600;
-	color: var(--cgm-muted);
+	/* Darker than --cgm-muted: these are controls, not captions. */
+	color: #55637a;
 	white-space: nowrap;
 	cursor: pointer;
 	user-select: none;
+	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+/* The second chip follows the first rather than fighting it for the auto
+   margin that pushes the pair to the right. */
+.cgm-ops-kpis-check ~ .cgm-ops-kpis-check {
+	margin-left: 0.35rem;
 }
 
 .cgm-ops-kpis-check:hover {
 	color: var(--cgm-text);
+	border-color: rgba(227, 24, 55, 0.35);
+	background: #fff;
+}
+
+/* On: brand red for the KPI cards. The .is-on class is set in JS alongside
+   :has(), so the state still shows on a browser without :has() support. */
+.cgm-ops-kpis-check.is-on,
+.cgm-ops-kpis-check:has(input:checked) {
+	background: var(--cgm-red-soft);
+	border-color: rgba(227, 24, 55, 0.4);
+	color: var(--cgm-red-dark);
+}
+
+/* On: green for completed, which is what the word means everywhere else on
+   this board, and keeps the two chips apart at a glance. */
+.cgm-ops-completed-check.is-on,
+.cgm-ops-completed-check:has(input:checked) {
+	background: #eaf7ee;
+	border-color: #bfe3cb;
+	color: #256b42;
+}
+
+.cgm-ops-completed-check input {
+	accent-color: #16a34a;
+}
+
+.cgm-ops-completed-check:hover {
+	border-color: rgba(22, 163, 74, 0.4);
 }
 
 .cgm-ops-kpis-check input {

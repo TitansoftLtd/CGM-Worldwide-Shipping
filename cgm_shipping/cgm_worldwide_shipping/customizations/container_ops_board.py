@@ -80,6 +80,45 @@ def _parse_filters(filters) -> frappe._dict:
 	return frappe._dict(filters)
 
 
+COMPLETED_SHIPMENT_STATUS = "Completed"
+
+
+def _hide_completed(filters) -> bool:
+	"""Completed shipments stay off the board unless they are asked for.
+
+	Two ways to ask: tick "Include completed", or filter Status explicitly. The
+	explicit filter has to win, or choosing Completed in the Status list would
+	return nothing at all.
+	"""
+	if cint(filters.get("include_completed")):
+		return False
+	if (filters.get("status") or "").strip():
+		return False
+	return True
+
+
+def _drop_completed_projects(projects: list[dict], filters) -> list[dict]:
+	if not _hide_completed(filters):
+		return projects
+	return [
+		project
+		for project in projects
+		if (project.get("custom_shipment_status") or "") != COMPLETED_SHIPMENT_STATUS
+	]
+
+
+def _drop_completed_containers(rows: list[dict], filters, projects: dict) -> list[dict]:
+	"""Containers whose shipment is complete, by the same rule as the list above."""
+	if not _hide_completed(filters):
+		return rows
+	kept = []
+	for row in rows:
+		project = projects.get(row.get("project")) or {}
+		if (project.get("custom_shipment_status") or "") != COMPLETED_SHIPMENT_STATUS:
+			kept.append(row)
+	return kept
+
+
 def _project_header_fields() -> list[str]:
 	meta = frappe.get_meta("Project")
 	fields = ["name", "project_name", "customer"]
@@ -655,12 +694,25 @@ def _sort_shipment_rows(rows: list[dict], filters) -> list[dict]:
 	return present + blanks
 
 
+def _shipment_status_options() -> list[str]:
+	"""Select options for Project.custom_shipment_status.
+
+	The board is a desk Page, and a Page never loads Project's meta into the
+	browser, so frappe.meta.get_docfield() there returns nothing and the Status
+	filter fell back to a hardcoded pair. The options belong with the data.
+	"""
+	field = frappe.get_meta("Project").get_field("custom_shipment_status")
+	options = (field.options or "") if field else ""
+	return [option.strip() for option in options.split("\n") if option.strip()]
+
+
 @frappe.whitelist()
 def get_shipment_tracker(filters=None) -> dict:
 	frappe.has_permission("Container Tracker", ptype="read", throw=True)
 	filters = _parse_filters(filters)
 	# Status on the Shipments tab is shipment status — never pass it to tracker rows.
 	projects = _fetch_shipment_rows(filters)
+	projects = _drop_completed_projects(projects, filters)
 	project_map = {project["name"]: project for project in projects}
 	tracker_rows = []
 	if projects:
@@ -690,6 +742,7 @@ def get_shipment_tracker(filters=None) -> dict:
 		"start": start,
 		"page_length": page_length,
 		"kpi_filter": filters.get("kpi_filter"),
+		"status_options": _shipment_status_options(),
 	}
 
 
@@ -1193,6 +1246,7 @@ def get_container_ops_board(filters=None) -> dict:
 	projects = _project_cache()
 	raw = _fetch_tracker_rows(filters)
 	raw = _apply_container_post_filters(raw, filters, projects)
+	raw = _drop_completed_containers(raw, filters, projects)
 	all_rows = _enrich_rows_with_transporter_updates([_build_row(row, projects) for row in raw])
 	all_rows = _enrich_ops_rows_with_bl_deposits(all_rows, projects)
 	kpis = _kpis(all_rows, projects)

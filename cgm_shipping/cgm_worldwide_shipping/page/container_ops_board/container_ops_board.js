@@ -47,6 +47,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 							<input type="checkbox" class="cgm-ops-kpis-checkbox">
 							<span>${__("Show KPIs")}</span>
 						</label>
+						<label class="cgm-ops-kpis-check cgm-ops-completed-check" title="${__(
+							"Completed shipments are hidden until this is ticked"
+						)}">
+							<input type="checkbox" class="cgm-ops-completed-checkbox">
+							<span>${__("Include completed")}</span>
+						</label>
 						<span class="cgm-ops-list-count cgm-ops-tabs-count" style="display:none"></span>
 					</div>
 				</div>
@@ -143,6 +149,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			// The checkbox is the control now, so it has to reflect the state
 			// even when that state came from storage rather than from a click.
 			page.main.find(".cgm-ops-kpis-checkbox").prop("checked", !collapsed);
+			// Mirrors the checked state onto the chip, so the colour holds on
+			// browsers without :has() support.
+			page.main
+				.find(".cgm-ops-kpis-checkbox")
+				.closest(".cgm-ops-kpis-check")
+				.toggleClass("is-on", !collapsed);
 			if (persist) {
 				try {
 					localStorage.setItem(KPI_COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
@@ -289,9 +301,31 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		const CONTAINER_STATUS_OPTIONS =
 			"\nPending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received";
 
+		// Filled in from the shipment payload. The board is a desk Page, so
+		// Project's meta is never loaded in the browser and get_docfield()
+		// returns nothing here: that is why the filter only ever offered Draft
+		// and Completed, the two names in the hardcoded fallback, instead of
+		// the eighteen the field actually defines.
+		let shipmentStatusOptionsFromServer = null;
+
 		function shipmentStatusOptions() {
+			if (shipmentStatusOptionsFromServer && shipmentStatusOptionsFromServer.length) {
+				return `\n${shipmentStatusOptionsFromServer.join("\n")}`;
+			}
 			const df = frappe.meta.get_docfield("Project", "custom_shipment_status");
 			return df && df.options ? `\n${df.options}` : "\nCompleted\nDraft";
+		}
+
+		function applyShipmentStatusOptions(options) {
+			if (!Array.isArray(options) || !options.length) return;
+			const incoming = options.filter(Boolean).join("\n");
+			if (shipmentStatusOptionsFromServer && shipmentStatusOptionsFromServer.join("\n") === incoming) {
+				return;
+			}
+			shipmentStatusOptionsFromServer = incoming.split("\n");
+			if (activeTab === "shipments") {
+				syncStatusFilterForTab();
+			}
 		}
 
 		const BOARD_FILTER_FIELDS = [
@@ -400,8 +434,14 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 					: activeTab === "shipments"
 						? shipmentStatusOptions()
 						: CONTAINER_STATUS_OPTIONS;
+			// The options can arrive after the user has already chosen one,
+			// because the shipment payload is what carries them.
+			const chosen = control.get_value ? control.get_value() : "";
 			control.df.options = options;
 			control.refresh();
+			if (chosen && options.split("\n").includes(chosen) && control.get_value() !== chosen) {
+				control.set_value(chosen);
+			}
 			if (control.$input) {
 				control.$input.attr("placeholder", __("Status"));
 			}
@@ -421,6 +461,14 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			if ($range && $range.$input) {
 				$range.$input.attr("placeholder", isUpdates ? __("Posted Date") : __("Date"));
 			}
+
+			// Shown only where it does something. Updates are not shipments, and
+			// the Empty Return Tracker deliberately keeps every outstanding
+			// container: a shipment marked complete with a container still out
+			// is exactly the row that must not disappear from a return queue.
+			page.main
+				.find(".cgm-ops-completed-check")
+				.toggle(activeTab === "shipments" || activeTab === "board");
 
 			syncStatusFilterForTab();
 		}
@@ -446,6 +494,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			filters[fieldname] = value || null;
 		}
 
+		// Set while the clear button empties the controls: each set_value fires
+		// the control's own change handler, and without this the clear would
+		// refetch once per filter.
+		let suppressFilterRefresh = false;
+
 		const $filter_parent = page.main.find(".cgm-ops-filters");
 		filter_fields.forEach((df) => {
 			const control = frappe.ui.form.make_control({
@@ -455,6 +508,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 					input_class: "input-xs",
 					onchange() {
 						applyFilterValue(df.fieldname);
+						if (suppressFilterRefresh) return;
 						listStart = 0;
 						selectedKeys.clear();
 						refresh();
@@ -469,6 +523,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				// Link / Date controls sometimes set value without firing df.onchange.
 				control.$input.on("change awesomplete-selectcomplete", () => {
 					applyFilterValue(df.fieldname);
+					if (suppressFilterRefresh) return;
 					listStart = 0;
 					selectedKeys.clear();
 					refresh();
@@ -488,6 +543,62 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			filter_controls.transporter.get_query =
 				cgm_shipping.supplier_filters?.transporter_query ||
 				(() => ({ filters: { disabled: 0, is_transporter: 1 } }));
+		}
+
+		/* Refresh and clear, in the page head's own action slot.
+		 *
+		 * Not in the filter row: the eight filters already fill it on a laptop,
+		 * so anything appended there wraps onto a second line and costs the
+		 * table height. The page head is the top right of the page, is always
+		 * there, and costs nothing.
+		 */
+		function reloadBoard($icon) {
+			if ($icon && $icon.length) {
+				$icon.addClass("is-spinning");
+				setTimeout(() => $icon.removeClass("is-spinning"), 900);
+			}
+			refresh();
+			refreshUnreadBadge();
+		}
+
+		function clearBoardFilters() {
+			// Everything the user can narrow the board with, including the two
+			// that do not live in the filter row: a KPI drill-down and the
+			// completed toggle both survive a filter reset otherwise, and the
+			// list would still look filtered with every field empty.
+			suppressFilterRefresh = true;
+			Object.keys(filter_controls).forEach((fieldname) => {
+				const control = filter_controls[fieldname];
+				if (!control || !control.set_value) return;
+				try {
+					control.set_value("");
+				} catch (e) {
+					// A control that refuses an empty value (a date range mid
+					// edit, say) must not stop the rest from clearing.
+				}
+			});
+			suppressFilterRefresh = false;
+			Object.keys(filters).forEach((key) => {
+				filters[key] = null;
+			});
+			kpiFilter = null;
+			filters.include_completed = 0;
+			page.main.find(".cgm-ops-completed-checkbox").prop("checked", false);
+			page.main.find(".cgm-ops-completed-check").removeClass("is-on");
+			listStart = 0;
+			selectedKeys.clear();
+			updateFilterHint();
+			refresh();
+		}
+
+		if (page.add_action_icon) {
+			const $refreshBtn = page.add_action_icon(
+				"refresh",
+				() => reloadBoard($refreshBtn.find("svg, .icon").first()),
+				"cgm-ops-refresh-btn",
+				__("Refresh")
+			);
+			page.add_action_icon("filter-x", clearBoardFilters, "cgm-ops-clear-btn", __("Clear filters"));
 		}
 
 		syncFiltersForTab();
@@ -575,7 +686,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		}
 
 		function clientReferenceCell(row) {
-			return frappe.utils.escape_html(row.client_reference_no || "—");
+			const value = row.client_reference_no;
+			if (!value) return "—";
+			// The client's own reference is what customers quote on the phone,
+			// so it carries more weight than the columns around it.
+			return `<span class="cgm-ops-client-ref">${frappe.utils.escape_html(value)}</span>`;
 		}
 
 		function blCell(row) {
@@ -1473,6 +1588,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		function renderShipments(data) {
 			renderKpis(data.kpis);
 			applyPageMeta(data);
+			applyShipmentStatusOptions(data.status_options);
 			const rows = data.rows || [];
 			shipmentRows = rows;
 			cacheUpdateRows(rows, "shipment");
@@ -1636,6 +1752,16 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		page.main.find(".cgm-ops-filter-hint").on("click", ".clear-filter", () => {
 			kpiFilter = null;
+			listStart = 0;
+			selectedKeys.clear();
+			refresh();
+		});
+
+		page.main.on("change", ".cgm-ops-completed-checkbox", function () {
+			$(this).closest(".cgm-ops-completed-check").toggleClass("is-on", this.checked);
+			// Unticked on every load by design: the board is a work list, and
+			// finished shipments are not work.
+			filters.include_completed = this.checked ? 1 : 0;
 			listStart = 0;
 			selectedKeys.clear();
 			refresh();
