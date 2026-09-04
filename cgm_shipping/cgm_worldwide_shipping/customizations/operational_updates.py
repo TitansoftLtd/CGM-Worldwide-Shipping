@@ -1702,6 +1702,22 @@ def get_customer_general_thread(customer: str, limit: int = 200) -> list[dict]:
 	return _thread_payload(rows, audience=AUDIENCE_CUSTOMER)
 
 
+def get_transporter_general_thread(transporter: str, limit: int = 200) -> list[dict]:
+	"""The transporter's conversation with CGM that is not about a job."""
+	if not transporter or not frappe.db.exists("DocType", UPDATE_DOCTYPE):
+		return []
+	rows = _thread_rows(
+		{
+			"transporter": transporter,
+			"allocation": ("is", "not set"),
+			"project": ("is", "not set"),
+			"visible_to_transporter": 1,
+		},
+		limit,
+	)
+	return _thread_payload(rows, audience=AUDIENCE_TRANSPORTER)
+
+
 def get_transporter_thread_for_allocation(
 	allocation_name: str,
 	transporter: str,
