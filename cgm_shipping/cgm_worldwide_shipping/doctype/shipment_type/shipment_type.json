@@ -85,7 +85,7 @@
    "fieldtype": "Section Break"
   },
   {
-   "description": "Default Project Type for new projects using this shipment type. Container Tracker sections match Project.project_type. Add new types in the Project Type list (Setup) \u2014 names containing Mombasa, ICD, Transit, or Export control which tracker sections appear.",
+   "description": "Default Project Type for new projects using this shipment type. Container Tracker sections match Project.project_type. Add new types in the Project Type list (Setup) - names containing Mombasa, ICD, Transit, or Export control which tracker sections appear.",
    "fieldname": "container_tracker_mode",
    "fieldtype": "Link",
    "label": "Container Tracker Mode",
@@ -118,7 +118,7 @@
    "label": "CGM Ref Prefix"
   },
   {
-   "description": "Deprecated \u2014 use Container Tracker Mode. Kept for legacy records.",
+   "description": "Deprecated - use Container Tracker Mode. Kept for legacy records.",
    "fieldname": "container_tracking_mode",
    "fieldtype": "Data",
    "hidden": 1,
@@ -175,7 +175,7 @@
    "options": "Shipment Type Transport Document"
   },
   {
-   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type \u2014 no code change needed.",
+   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type - no code change needed.",
    "fieldname": "section_required_documents",
    "fieldtype": "Section Break",
    "label": "Required Intake Documents"
