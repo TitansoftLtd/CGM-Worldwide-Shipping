@@ -88,11 +88,6 @@ doctype_js = {
 		"public/js/package_field_visibility.js",
 		"public/js/project.js",
 	],
-	"Lead": [
-		"public/js/cgm_transport_reference.js",
-		"public/js/cgm_bl_containers.js",
-		"public/js/crm_lead.js",
-	],
 	"Customer": "public/js/crm_customer.js",
 	"Item": "public/js/item_pricing_rule.js",
 	"Opportunity": [
@@ -374,11 +369,6 @@ doc_events = {
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
 		"before_update_after_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
 		"on_trash": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.clear_back_links_on_trash",
-	},
-	"Lead": {
-		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl"
-		),
 	},
 	"Task": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_onload",
