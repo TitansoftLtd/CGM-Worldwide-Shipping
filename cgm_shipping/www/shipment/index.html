@@ -377,6 +377,8 @@ frappe.ready(function () {
 			markReadMethod:
 				"cgm_shipping.cgm_worldwide_shipping.customizations.portal.mark_shipment_updates_read",
 			markReadArgs: { project: PROJECT },
+			statusMethod: "cgm_shipping.cgm_worldwide_shipping.customizations.portal.set_conversation_status",
+			onStatusChanged: refreshThread,
 		}
 	);
 

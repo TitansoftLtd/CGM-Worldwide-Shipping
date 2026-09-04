@@ -21,13 +21,13 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 
 UPDATE_DOCTYPE = "Shipment Update"
 
+# Who wrote a message. Customs / Finance / Other were carried over from the
+# original DocType and no code path ever produced them, so a filter on them
+# always came back empty.
 UPDATE_SOURCES = (
-	"Transporter",
 	"Customer",
+	"Transporter",
 	"Internal",
-	"Customs",
-	"Finance",
-	"Other",
 )
 
 TRANSPORTER_SUBJECTS = (
@@ -75,16 +75,24 @@ _UPDATE_LIST_FIELDS = [
 	"responded_by",
 	"responded_on",
 	"response_update",
+	"closed_by",
+	"closed_on",
 ]
 
 # Sources that represent CGM speaking to a portal party (as opposed to the
 # party speaking to CGM). Used to work out which side of a thread a message
 # sits on, and which audience flags may be set on it.
-CGM_SOURCES = ("Internal", "Customs", "Finance", "Other")
+CGM_SOURCES = ("Internal",)
 
 # The two portal parties. A message from either is a question CGM owes an
 # answer to, which is what `response_status` on those rows tracks.
 PARTY_SOURCES = ("Customer", "Transporter")
+
+# A thread's life: CGM owes an answer, has given one, or the party has said the
+# matter is settled. Only the party closes and reopens - it is their question.
+STATUS_OPEN = "Open"
+STATUS_ANSWERED = "Answered"
+STATUS_CLOSED = "Closed"
 
 # Subjects offered to CGM staff when publishing an update to a portal party.
 PUBLISHED_SUBJECTS = (
@@ -159,10 +167,17 @@ def serialize_update(doc) -> dict:
 		),
 		"responded_on": str(doc.get("responded_on") or "") or "",
 		"response_update": doc.get("response_update") or "",
+		"closed_by": doc.get("closed_by") or "",
+		"closed_by_name": (
+			frappe.utils.get_fullname(doc.get("closed_by")) if doc.get("closed_by") else ""
+		),
+		"closed_on": str(doc.get("closed_on") or "") or "",
+		"is_closed": doc.get("response_status") == STATUS_CLOSED,
 		"last_activity_on": str(doc.get("last_activity_on") or doc.get("posted_on") or "") or "",
 		# True when a party raised this and CGM has not answered it yet.
 		"awaiting_response": (
-			doc.update_source in PARTY_SOURCES and doc.get("response_status") != "Answered"
+			doc.update_source in PARTY_SOURCES
+			and doc.get("response_status") not in (STATUS_ANSWERED, STATUS_CLOSED)
 		),
 		# True when CGM posted the update, False when the portal party did.
 		"from_cgm": doc.update_source in CGM_SOURCES,
@@ -317,12 +332,17 @@ def create_update(
 	# A reply is the thread's newest message, so the question it hangs off has
 	# to move with it - that is what orders the ops feed.
 	if doc.parent_update:
+		values = {"last_activity_on": doc.posted_on}
+		if doc.update_source in PARTY_SOURCES:
+			# The party came back, so the thread needs an answer again - this is
+			# also how a closed thread reopens. Who first responded is left
+			# alone; that history still stands.
+			values["response_status"] = STATUS_OPEN
+			values["is_read"] = 0
+			values["closed_by"] = None
+			values["closed_on"] = None
 		frappe.db.set_value(
-			UPDATE_DOCTYPE,
-			doc.parent_update,
-			"last_activity_on",
-			doc.posted_on,
-			update_modified=False,
+			UPDATE_DOCTYPE, doc.parent_update, values, update_modified=False
 		)
 
 	if notify:
@@ -863,32 +883,37 @@ def _preview_message(message: str, max_len: int = 180) -> str:
 
 
 def render_updates_list_html(rows: list[dict] | None, *, show_source: bool = False) -> str:
-	"""Ops-board style update cards for portal/server templates (same CSS as Desk)."""
+	"""Update cards for server-rendered pages - same markup as the Desk feed.
+
+	The transporter portal renders its truck updates without JavaScript, so the
+	structure here has to match `cgm.updates.renderListItem` or the two would
+	drift apart visually.
+	"""
 	from frappe.utils import escape_html, pretty_date
 
 	rows = rows or []
 	if not rows:
 		return ""
 
-	source_class = {
-		"Customer": "blue",
-		"Transporter": "orange",
-		"Internal": "gray",
-		"Customs": "cyan",
-		"Finance": "yellow",
-		"Other": "gray",
-	}
-
 	cards: list[str] = []
 	for row in rows:
 		subject = escape_html(row.get("subject") or row.get("update_type") or _("Update"))
 		source = (row.get("update_source") or "").strip() if show_source else ""
-		source_pill = (
-			f'<span class="indicator-pill {source_class.get(source, "gray")} no-indicator-dot cgm-upd-source">'
-			f"{escape_html(source.upper())}</span>"
+		source_tag = (
+			f'<span class="cgm-upd-tag is-source is-{escape_html(source.lower())}">'
+			f"{escape_html(source)}</span>"
 			if source
 			else ""
 		)
+
+		status = row.get("response_status") or ""
+		if status == "Open":
+			state_tag = f'<span class="cgm-upd-tag is-awaiting">{escape_html(_("Awaiting reply"))}</span>'
+		elif status == "Answered":
+			state_tag = f'<span class="cgm-upd-tag is-answered">{escape_html(_("Answered"))}</span>'
+		else:
+			state_tag = ""
+
 		when = ""
 		if row.get("posted_on"):
 			try:
@@ -896,58 +921,55 @@ def render_updates_list_html(rows: list[dict] | None, *, show_source: bool = Fal
 			except Exception:
 				when = escape_html(str(row["posted_on"]))
 
-		meta_bits = []
+		chips: list[str] = []
 		shipment = row.get("project_ref") or row.get("project")
 		if shipment:
-			meta_bits.append(
-				f'<div class="cgm-updates-meta-line">'
-				f'<span class="cgm-updates-meta-label">{escape_html(_("Shipment"))}:</span> '
-				f'<span class="cgm-updates-meta-value">{escape_html(shipment)}</span></div>'
-			)
+			chips.append(f'<span class="cgm-upd-chip is-ref">{escape_html(shipment)}</span>')
 		customer = row.get("customer_name") or row.get("customer")
 		if customer:
-			meta_bits.append(
-				f'<div class="cgm-updates-meta-line">'
-				f'<span class="cgm-updates-meta-label">{escape_html(_("Customer"))}:</span> '
-				f'<span class="cgm-updates-meta-value">{escape_html(customer)}</span></div>'
-			)
+			chips.append(f'<span class="cgm-upd-chip">{escape_html(customer)}</span>')
 		if row.get("container_number"):
-			meta_bits.append(
-				f'<div class="cgm-updates-meta-line">'
-				f'<span class="cgm-updates-meta-label">{escape_html(_("Container"))}:</span> '
-				f'<span class="cgm-updates-meta-value">{escape_html(row["container_number"])}</span></div>'
+			chips.append(
+				f'<span class="cgm-upd-chip is-ref">{escape_html(row["container_number"])}</span>'
 			)
-		meta_html = f'<div class="cgm-updates-meta">{"".join(meta_bits)}</div>' if meta_bits else ""
+		meta_html = f'<div class="cgm-upd-meta">{"".join(chips)}</div>' if chips else ""
 
 		preview = _preview_message(row.get("message") or "")
 		preview_html = (
-			f'<div class="cgm-updates-preview">{escape_html(preview)}</div>' if preview else ""
-		)
-		name = escape_html(row.get("name") or "")
-		unread = "" if cint(row.get("is_read")) else " is-unread"
-		when_html = (
-			f'<span class="cgm-updates-when text-muted small">{when}</span>' if when else ""
+			f'<p class="cgm-upd-preview">{escape_html(preview)}</p>' if preview else ""
 		)
 
+		answered_html = ""
+		if status == "Answered" and row.get("responded_by_name"):
+			answered_html = (
+				f'<div class="cgm-upd-answer">'
+				f'{escape_html(_("Answered by {0}").format(row["responded_by_name"]))}</div>'
+			)
+
+		name = escape_html(row.get("name") or "")
+		classes = "cgm-upd-card"
+		if not cint(row.get("is_read")):
+			classes += " is-unread"
+		if status == STATUS_OPEN:
+			classes += " is-awaiting"
+		elif status == STATUS_ANSWERED:
+			classes += " is-answered"
+		elif status == STATUS_CLOSED:
+			classes += " is-closed"
+
 		cards.append(
-			f'<div class="list-row-container{unread}" data-update="{name}">'
-			f'<div class="cgm-updates-head">'
-			f'<div class="cgm-updates-badges">'
-			f'<span class="indicator-pill red no-indicator-dot cgm-upd-subject">{subject}</span>'
-			f"{source_pill}"
+			f'<div class="{classes}" data-update="{name}" role="button" tabindex="0">'
+			f'<div class="cgm-upd-headline">'
+			f'<span class="cgm-upd-title">{subject}</span>{source_tag}{state_tag}'
+			f'<span class="cgm-upd-stamp">'
+			f'<span class="cgm-upd-ref">{name}</span>'
+			+ (f'<span class="cgm-upd-when">{when}</span>' if when else "")
+			+ f"</span></div>"
+			f"{meta_html}{preview_html}{answered_html}"
 			f"</div>"
-			f"{when_html}"
-			f"</div>"
-			f'<div class="cgm-updates-body">'
-			f'<div class="list-row-left">{meta_html}{preview_html}</div>'
-			f'<div class="list-row-right">'
-			f'<button type="button" class="btn btn-xs btn-default cgm-upd-view-more" data-update="{name}">'
-			f'{escape_html(_("View More"))}</button>'
-			f"</div></div></div>"
 		)
 
 	return f'<div class="cgm-updates-list">{"".join(cards)}</div>'
-
 
 
 def get_updates_for_container_tracker(container_tracker: str, limit: int = 50) -> list[dict]:
@@ -1150,10 +1172,12 @@ def get_ops_updates(filters=None) -> dict:
 	elif status in ("Read", "read"):
 		query_filters["is_read"] = 1
 	elif status in ("Awaiting Reply", "awaiting reply", "Open"):
-		query_filters["response_status"] = "Open"
+		query_filters["response_status"] = STATUS_OPEN
 		query_filters["update_source"] = ("in", list(PARTY_SOURCES))
 	elif status in ("Answered", "answered"):
-		query_filters["response_status"] = "Answered"
+		query_filters["response_status"] = STATUS_ANSWERED
+	elif status in ("Closed", "closed"):
+		query_filters["response_status"] = STATUS_CLOSED
 	elif filters.get("is_read") in (0, 1, "0", "1"):
 		query_filters["is_read"] = cint(filters.is_read)
 
@@ -1221,7 +1245,12 @@ def get_awaiting_reply_count() -> int:
 	require_desk_access()
 	return frappe.db.count(
 		UPDATE_DOCTYPE,
-		{"response_status": "Open", "update_source": ("in", list(PARTY_SOURCES))},
+		{
+			"response_status": "Open",
+			"update_source": ("in", list(PARTY_SOURCES)),
+			# One row per thread, so the badge matches the Awaiting Reply filter.
+			"parent_update": ("is", "not set"),
+		},
 	)
 
 
@@ -1860,6 +1889,55 @@ def reply_to_update(
 	frappe.db.set_value(UPDATE_DOCTYPE, name, "is_read", 1, update_modified=False)
 	result["message"] = _("Reply sent.")
 	return result
+
+
+def thread_root(name: str) -> str | None:
+	"""The message a thread hangs off - replies attach to it, as does status."""
+	row = frappe.db.get_value(UPDATE_DOCTYPE, name, ["name", "parent_update"], as_dict=True)
+	if not row:
+		return None
+	return row.parent_update or row.name
+
+
+def set_thread_status(name: str, status: str) -> dict:
+	"""Close or reopen a conversation.
+
+	Status lives on the thread's root, which is the row the ops feed lists and
+	the row every reply hangs off.
+	"""
+	if status not in (STATUS_OPEN, STATUS_CLOSED):
+		frappe.throw(_("Unknown conversation status."))
+
+	root = thread_root(name)
+	if not root:
+		frappe.throw(_("Conversation not found."), frappe.DoesNotExistError)
+
+	row = frappe.db.get_value(
+		UPDATE_DOCTYPE, root, ["update_source", "responded_by"], as_dict=True
+	)
+	if not row or row.update_source not in PARTY_SOURCES:
+		frappe.throw(_("Only a customer or transporter question can be closed."))
+
+	if status == STATUS_CLOSED:
+		values = {
+			"response_status": STATUS_CLOSED,
+			"closed_by": frappe.session.user,
+			"closed_on": now_datetime(),
+		}
+		message = _("Conversation closed.")
+	else:
+		# Reopening returns it to whichever side of the exchange it was on:
+		# answered before means CGM owes nothing until the party writes again.
+		values = {
+			"response_status": STATUS_ANSWERED if row.responded_by else STATUS_OPEN,
+			"closed_by": None,
+			"closed_on": None,
+		}
+		message = _("Conversation reopened.")
+
+	frappe.db.set_value(UPDATE_DOCTYPE, root, values, update_modified=False)
+	frappe.clear_document_cache(UPDATE_DOCTYPE, root)
+	return {"ok": True, "name": root, "status": values["response_status"], "message": message}
 
 
 def message_thread(name: str) -> list[dict]:

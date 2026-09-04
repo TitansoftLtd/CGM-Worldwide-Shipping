@@ -310,6 +310,9 @@ frappe.ready(function () {
 			emptyText: __("No messages yet. Send the first one below."),
 			markReadMethod: TP + "mark_allocation_updates_read",
 			markReadArgs: { allocation_name: ALLOCATION },
+			statusMethod: "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal.set_conversation_status",
+			statusArgs: { allocation_name: ALLOCATION },
+			onStatusChanged: refreshThread,
 		}
 	);
 

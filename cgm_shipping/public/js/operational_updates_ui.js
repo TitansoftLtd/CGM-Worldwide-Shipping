@@ -55,53 +55,8 @@ frappe.provide("cgm.updates");
 	}
 
 	function sourcePillClass(source) {
-		const map = {
-			Customer: "blue",
-			Transporter: "orange",
-			Internal: "gray",
-			Customs: "cyan",
-			Finance: "yellow",
-			Other: "gray",
-		};
+		const map = { Customer: "blue", Transporter: "orange", Internal: "gray" };
 		return map[source] || "gray";
-	}
-
-	function summaryMetaLines(row, options = {}) {
-		const lines = [];
-		if (!options.hideShipment && (row.project_ref || row.project)) {
-			lines.push({
-				label: __("Shipment"),
-				value: row.project_ref || row.project,
-			});
-		}
-		if (!options.hideCustomer && (row.customer_name || row.customer)) {
-			lines.push({
-				label: __("Customer"),
-				value: row.customer_name || row.customer,
-			});
-		}
-		if (row.container_number) {
-			lines.push({
-				label: __("Container"),
-				value: row.container_number,
-			});
-		}
-		return lines;
-	}
-
-	function renderMetaLines(lines) {
-		if (!lines.length) {
-			return "";
-		}
-		return `<div class="cgm-updates-meta">${lines
-			.map(
-				(line) =>
-					`<div class="cgm-updates-meta-line">
-						<span class="cgm-updates-meta-label">${esc(line.label)}:</span>
-						<span class="cgm-updates-meta-value">${esc(line.value)}</span>
-					</div>`
-			)
-			.join("")}</div>`;
 	}
 
 	function sectionsToDialogFields(sections) {
@@ -368,62 +323,76 @@ frappe.provide("cgm.updates");
 		scrollTranscript(d);
 	}
 
+	function metaChips(row, options = {}) {
+		const chips = [];
+		if (!options.hideShipment && (row.project_ref || row.project)) {
+			chips.push(
+				`<span class="cgm-upd-chip is-ref">${esc(row.project_ref || row.project)}</span>`
+			);
+		}
+		if (!options.hideCustomer && (row.customer_name || row.customer)) {
+			chips.push(`<span class="cgm-upd-chip">${esc(row.customer_name || row.customer)}</span>`);
+		}
+		if (row.container_number) {
+			chips.push(`<span class="cgm-upd-chip is-ref">${esc(row.container_number)}</span>`);
+		}
+		return chips.length ? `<div class="cgm-upd-meta">${chips.join("")}</div>` : "";
+	}
+
 	cgm.updates.renderListItem = function (row, options = {}) {
 		const unread = !cintSafe(row.is_read);
+		const awaiting = row.response_status === "Open";
+		const answered = row.response_status === "Answered";
+		const closed = row.response_status === "Closed";
 		const subject = row.subject || row.update_type || __("Update");
 		const source = options.showSource === false ? "" : row.update_source || "";
 		const when = relativeTime(row.posted_on);
 		const preview = previewMessage(row.message);
 		const name = row.name || "";
-		const metaLines = summaryMetaLines(row, options);
+
 		// Only a party's message carries response state - CGM's own posts are
 		// not questions anyone owes an answer to.
-		const responsePill = row.response_status
-			? row.response_status === "Answered"
-				? `<span class="indicator-pill green no-indicator-dot cgm-upd-response" title="${esc(
-						__("Answered by {0}", [row.responded_by_name || row.responded_by || "CGM"])
-					)}">${esc(__("ANSWERED"))}</span>`
-				: `<span class="indicator-pill orange no-indicator-dot cgm-upd-response">${esc(
-						__("AWAITING REPLY")
-					)}</span>`
-			: "";
+		const state = closed
+			? `<span class="cgm-upd-tag is-closed">${esc(__("Closed"))}</span>`
+			: awaiting
+				? `<span class="cgm-upd-tag is-awaiting">${esc(__("Awaiting reply"))}</span>`
+				: answered
+					? `<span class="cgm-upd-tag is-answered">${esc(__("Answered"))}</span>`
+					: "";
 
-		return `<div class="list-row-container${unread ? " is-unread" : ""}" data-update="${esc(name)}">
-			<div class="cgm-updates-head">
-				<div class="cgm-updates-badges">
-					<span class="indicator-pill red no-indicator-dot cgm-upd-subject">${esc(subject)}</span>
-					${
-						source
-							? `<span class="indicator-pill ${sourcePillClass(source)} no-indicator-dot cgm-upd-source">${esc(source.toUpperCase())}</span>`
-							: ""
-					}
-					${responsePill}
-				</div>
-				<span class="cgm-updates-ref text-muted small">${esc(name)}</span>
-				${when ? `<span class="cgm-updates-when text-muted small">${esc(when)}</span>` : ""}
+		// The whole row opens the conversation, so there is no button marooned
+		// at the far edge of a wide screen and the width can be used for the
+		// message itself.
+		return `<div class="cgm-upd-card${unread ? " is-unread" : ""}${
+			awaiting ? " is-awaiting" : ""
+		}${answered ? " is-answered" : ""}${
+			closed ? " is-closed" : ""
+		}" data-update="${esc(name)}" role="button" tabindex="0"
+			aria-label="${esc(__("Open {0}", [subject]))}">
+			<div class="cgm-upd-headline">
+				<span class="cgm-upd-title">${esc(subject)}</span>
+				${
+					source
+						? `<span class="cgm-upd-tag is-source is-${esc(
+								source.toLowerCase()
+							)}">${esc(source)}</span>`
+						: ""
+				}
+				${state}
+				<span class="cgm-upd-stamp">
+					<span class="cgm-upd-ref">${esc(name)}</span>
+					${when ? `<span class="cgm-upd-when">${esc(when)}</span>` : ""}
+				</span>
 			</div>
-			<div class="cgm-updates-body">
-				<div class="list-row-left">
-					${renderMetaLines(metaLines)}
-					${preview ? `<div class="cgm-updates-preview">${esc(preview)}</div>` : ""}
-					${
-						row.response_status === "Answered" && row.responded_by_name
-							? `<div class="cgm-updates-responder text-muted small">${esc(
-									__("Answered by {0}", [row.responded_by_name])
-								)}${
-									row.responded_on
-										? ` · ${esc(relativeTime(row.responded_on))}`
-										: ""
-								}</div>`
-							: ""
-					}
-				</div>
-				<div class="list-row-right">
-					<button type="button" class="btn btn-xs btn-default cgm-upd-view-more" data-update="${esc(name)}">
-						${__("Open")}
-					</button>
-				</div>
-			</div>
+			${metaChips(row, options)}
+			${preview ? `<p class="cgm-upd-preview">${esc(preview)}</p>` : ""}
+			${
+				answered && row.responded_by_name
+					? `<div class="cgm-upd-answer">${esc(
+							__("Answered by {0}", [row.responded_by_name])
+						)}${row.responded_on ? ` · ${esc(relativeTime(row.responded_on))}` : ""}</div>`
+					: ""
+			}
 		</div>`;
 	};
 
@@ -574,14 +543,20 @@ frappe.provide("cgm.updates");
 		}
 		const root = $root.jquery ? $root : $($root);
 		root
-			.find(`.list-row-container[data-update="${esc(name)}"]`)
+			.find(`.cgm-upd-card[data-update="${esc(name)}"]`)
 			.removeClass("is-unread");
 	};
 
 	cgm.updates.bindListClicks = function ($root, options = {}) {
 		const root = $root && $root.jquery ? $root : $($root || document);
-		root.off("click.cgmUpdates");
-		root.on("click.cgmUpdates", ".cgm-upd-view-more", function (e) {
+		root.off("click.cgmUpdates").off("keydown.cgmUpdates");
+		root.on("keydown.cgmUpdates", ".cgm-upd-card", function (e) {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				$(this).trigger("click.cgmUpdates");
+			}
+		});
+		root.on("click.cgmUpdates", ".cgm-upd-card, .cgm-upd-view-more", function (e) {
 			e.preventDefault();
 			e.stopPropagation();
 			const name = $(this).data("update");
