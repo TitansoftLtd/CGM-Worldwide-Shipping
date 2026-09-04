@@ -152,7 +152,7 @@ def sea_task_notification_definitions() -> list[dict]:
 	return [
 		_def(
 			FINANCE_PAYMENT_ACTION,
-			subject=f"{{{{ doc.cgm_notification_action_label or 'Payment action needed' }}}} — {_SHIPMENT}",
+			subject=f"{{{{ doc.cgm_notification_action_label or 'Payment action needed' }}}} - {_SHIPMENT}",
 			message=(
 				f"<p>Finance action is required on task <b>{{{{ doc.subject }}}}</b> "
 				f"({{{{ doc.name }}}}) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
@@ -164,7 +164,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			PERMIT_INVOICES_TO_FINANCE,
-			subject=f"Permit invoices ready for payment — {_SHIPMENT}",
+			subject=f"Permit invoices ready for payment - {_SHIPMENT}",
 			message=(
 				f"<p>Permit invoices were submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"{% if doc.get('custom_task_permits') %}"
@@ -179,7 +179,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			PERMIT_RECEIPTS_FOR_DECLARANT,
-			subject=f"Attach permit payment receipts — {_SHIPMENT}",
+			subject=f"Attach permit payment receipts - {_SHIPMENT}",
 			message=(
 				f"<p>Finance recorded permit payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>Declarant: on <b>{{ doc.subject }}</b>, attach <b>Payment Receipt</b> on each Local "
@@ -190,7 +190,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			PERMIT_RECEIPTS_VERIFY_FINANCE,
-			subject=f"Verify permit payment receipts — {_SHIPMENT}",
+			subject=f"Verify permit payment receipts - {_SHIPMENT}",
 			message=(
 				f"<p>Payment receipts were uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>, tick <b>Receipt Verified</b> on each permit row.</p>"
@@ -200,7 +200,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			UCR_INVOICE_TO_FINANCE,
-			subject=f"UCR invoice ready — please verify and pay — {_SHIPMENT}",
+			subject=f"UCR invoice ready - please verify and pay - {_SHIPMENT}",
 			message=(
 				f"<p>A <b>UCR Invoice</b> was submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>: verify the invoice, then use "
@@ -211,7 +211,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			UCR_RECEIPT_FOR_DECLARANT,
-			subject=f"Attach UCR payment receipt — {_SHIPMENT}",
+			subject=f"Attach UCR payment receipt - {_SHIPMENT}",
 			message=(
 				f"<p>Finance recorded UCR payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>Declarant: on <b>{{ doc.subject }}</b>, attach the <b>UCR Receipt</b>.</p>"
@@ -221,7 +221,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			UCR_RECEIPT_VERIFY_FINANCE,
-			subject=f"Verify UCR payment receipt — {_SHIPMENT}",
+			subject=f"Verify UCR payment receipt - {_SHIPMENT}",
 			message=(
 				f"<p>A <b>UCR Receipt</b> was uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>, tick <b>Verified by Finance</b> on the receipt row.</p>"
@@ -231,7 +231,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			ENTRY_INVOICE_TO_FINANCE,
-			subject=f"Entry Slip invoice ready — please verify and pay — {_SHIPMENT}",
+			subject=f"Entry Slip invoice ready - please verify and pay - {_SHIPMENT}",
 			message=(
 				f"<p>An <b>Entry Slip Invoice</b> was submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>: verify the invoice, then use "
@@ -242,7 +242,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			ENTRY_RECEIPT_FOR_DECLARANT,
-			subject=f"Attach Entry Slip receipt (optional) — {_SHIPMENT}",
+			subject=f"Attach Entry Slip receipt (optional) - {_SHIPMENT}",
 			message=(
 				f"<p>Finance recorded Entry Slip payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>, you may attach the <b>Entry Slip Receipt</b> when available.</p>"
@@ -252,7 +252,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			ENTRY_RECEIPT_VERIFY_FINANCE,
-			subject=f"Verify Entry Slip receipt — {_SHIPMENT}",
+			subject=f"Verify Entry Slip receipt - {_SHIPMENT}",
 			message=(
 				f"<p>An <b>Entry Slip Receipt</b> was uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>, verify the receipt row if present.</p>"
@@ -262,7 +262,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			SHIPPING_LINE_INVOICE_TO_FINANCE,
-			subject=f"Shipping Line invoice ready — please verify and pay — {_SHIPMENT}",
+			subject=f"Shipping Line invoice ready - please verify and pay - {_SHIPMENT}",
 			message=(
 				f"<p>A <b>Shipping Line Invoice</b> was submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>: verify the invoice, then use "
@@ -273,7 +273,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
-			subject=f"Attach Shipping Line POP / receipt — {_SHIPMENT}",
+			subject=f"Attach Shipping Line POP / receipt - {_SHIPMENT}",
 			message=(
 				f"<p>Finance recorded Shipping Line payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>Finance: attach bank <b>POP</b>. Documentation: attach the "
@@ -284,7 +284,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			SHIPPING_LINE_RECEIPT_VERIFY_FINANCE,
-			subject=f"Verify Shipping Line receipt — {_SHIPMENT}",
+			subject=f"Verify Shipping Line receipt - {_SHIPMENT}",
 			message=(
 				f"<p>A <b>Shipping Line Receipt</b> was uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>, tick <b>Verified by Finance</b> on the receipt row.</p>"
@@ -294,7 +294,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			KPA_INVOICE_TO_FINANCE,
-			subject=f"KPA invoice ready — please verify and pay — {_SHIPMENT}",
+			subject=f"KPA invoice ready - please verify and pay - {_SHIPMENT}",
 			message=(
 				f"<p>A <b>KPA Invoice</b> was submitted for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>: verify the invoice, then use "
@@ -305,7 +305,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			KPA_RECEIPT_FOR_SUPERVISOR,
-			subject=f"Attach KPA payment receipt — {_SHIPMENT}",
+			subject=f"Attach KPA payment receipt - {_SHIPMENT}",
 			message=(
 				f"<p>Finance recorded KPA payment (Journal Entry) for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>, attach the <b>KPA Receipt</b> when available.</p>"
@@ -315,7 +315,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			KPA_RECEIPT_VERIFY_FINANCE,
-			subject=f"Verify KPA payment receipt — {_SHIPMENT}",
+			subject=f"Verify KPA payment receipt - {_SHIPMENT}",
 			message=(
 				f"<p>A <b>KPA Receipt</b> was uploaded for shipment <b>{_SHIPMENT_BODY}</b>.</p>"
 				"<p>On <b>{{ doc.subject }}</b>, tick <b>Verified by Finance</b> on the receipt row.</p>"
@@ -325,7 +325,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_FINANCE,
-			subject=f"Your turn: {{{{ doc.subject }}}} — {_SHIPMENT}",
+			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
 			message=(
 				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Finance</b> on shipment "
 				f"<b>{_SHIPMENT_BODY}</b>.</p>"
@@ -336,7 +336,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_DECLARATION,
-			subject=f"Your turn: {{{{ doc.subject }}}} — {_SHIPMENT}",
+			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
 			message=(
 				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Declaration</b> on shipment "
 				f"<b>{_SHIPMENT_BODY}</b>.</p>"
@@ -347,7 +347,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_DOCUMENTATION,
-			subject=f"Your turn: {{{{ doc.subject }}}} — {_SHIPMENT}",
+			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
 			message=(
 				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Documentation</b> on shipment "
 				f"<b>{_SHIPMENT_BODY}</b>.</p>"
@@ -358,7 +358,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_OPERATIONS,
-			subject=f"Your turn: {{{{ doc.subject }}}} — {_SHIPMENT}",
+			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
 			message=(
 				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Operations</b> on shipment "
 				f"<b>{_SHIPMENT_BODY}</b>.</p>"
@@ -369,7 +369,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			SEA_TASK_YOUR_TURN_TRANSPORT,
-			subject=f"Your turn: {{{{ doc.subject }}}} — {_SHIPMENT}",
+			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
 			message=(
 				f"<p>Task <b>{{{{ doc.subject }}}}</b> is ready for <b>Transport / Field Ops</b> on shipment "
 				f"<b>{_SHIPMENT_BODY}</b>.</p>"
@@ -380,7 +380,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			DAILY_STATUS_RAG_ALERT,
-			subject="Daily status RAG alert — {{ doc.name }}",
+			subject="Daily status RAG alert - {{ doc.name }}",
 			message=(
 				"<p>A Daily Status Update requires attention.</p>"
 				"<p><a href=\"{{ frappe.utils.get_url_to_form('Daily Status Update', doc.name) }}\">"
@@ -391,7 +391,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		),
 		_def(
 			CONTAINER_DEPOSIT_REFUND_REMINDER,
-			subject=f"Container deposit refund due — BL {{{{ doc.bl_number }}}} / {_SHIPMENT}",
+			subject=f"Container deposit refund due - BL {{{{ doc.bl_number }}}} / {_SHIPMENT}",
 			message=(
 				f"<p>Bill of Lading <b>{{{{ doc.bl_number }}}}</b> containers have been returned "
 				f"and the deposit of <b>{{{{ doc.deposit_amount }}}}</b> is still pending refund "
