@@ -338,6 +338,7 @@ def get_allocation_detail(allocation_name: str) -> dict:
 
 	my_updates = get_my_updates_for_allocation(allocation.name, limit=100)
 	thread = get_transporter_thread_for_allocation(allocation.name, transporter)
+	conversations = allocation_conversation_summaries(allocation.name, transporter)
 	my_feedback = get_my_feedback(party=PARTY_TRANSPORTER, project=allocation.project)
 	container_options = [
 		{
@@ -403,6 +404,8 @@ def get_allocation_detail(allocation_name: str) -> dict:
 		"thread": thread,
 		"thread_json": frappe.as_json(thread),
 		"unread_count": sum(1 for m in thread if m.get("unread")),
+		"conversations": conversations,
+		"conversation_count": len(conversations),
 		"my_feedback": my_feedback,
 		"feedback_containers_json": frappe.as_json(
 			[
@@ -565,6 +568,163 @@ def post_truck_update_portal(
 	)
 
 
+def _group_conversations(messages: list[dict], url_for) -> list[dict]:
+	"""One row per conversation, newest activity first."""
+	grouped: dict[str, list[dict]] = {}
+	for message in messages:
+		grouped.setdefault(_thread_key(message), []).append(message)
+
+	summaries = []
+	for root_name, thread in grouped.items():
+		thread.sort(key=lambda m: m.get("posted_on") or "")
+		first, last = thread[0], thread[-1]
+		summaries.append(
+			{
+				"name": root_name,
+				"subject": first.get("subject") or _("Message"),
+				"from_cgm": bool(first.get("from_cgm")),
+				"container_number": first.get("container_number") or "",
+				"message_count": len(thread),
+				"unread_count": sum(1 for m in thread if m.get("unread")),
+				"status": first.get("response_status") or "",
+				"awaiting_response": bool(first.get("awaiting_response")),
+				"last_posted_on": last.get("posted_on") or "",
+				"last_preview": (last.get("message") or "").strip()[:160],
+				"last_from": _("CGM Worldwide Shipping")
+				if last.get("from_cgm")
+				else (last.get("posted_by_name") or _("You")),
+				"url": url_for(root_name),
+			}
+		)
+	summaries.sort(key=lambda x: x["last_posted_on"], reverse=True)
+	return summaries
+
+
+def transporter_general_summaries(transporter: str) -> list[dict]:
+	"""General queries - not about any one job."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		get_transporter_general_thread,
+	)
+
+	return _group_conversations(
+		get_transporter_general_thread(transporter),
+		lambda root: "/transporter/messages?query=" + quote(root, safe=""),
+	)
+
+
+def transporter_general_thread(transporter: str, root: str) -> list[dict]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		get_transporter_general_thread,
+	)
+
+	if not root:
+		return []
+	return [m for m in get_transporter_general_thread(transporter) if _thread_key(m) == root]
+
+
+def transporter_allocation_overview(transporter: str) -> list[dict]:
+	"""Each job this transporter has a conversation on, newest activity first."""
+	rows = []
+	for allocation in list_my_allocations_flat(transporter):
+		conversations = allocation_conversation_summaries(allocation["name"], transporter)
+		if not conversations:
+			continue
+		rows.append(
+			{
+				"allocation": allocation["name"],
+				"project_ref": allocation.get("project_ref") or allocation.get("project") or "",
+				"bill_of_lading": allocation.get("bill_of_lading") or "",
+				"conversation_count": len(conversations),
+				"unread_count": sum(c["unread_count"] for c in conversations),
+				"awaiting_count": sum(1 for c in conversations if c["awaiting_response"]),
+				"last_posted_on": conversations[0]["last_posted_on"],
+				"last_subject": conversations[0]["subject"],
+				"last_from": conversations[0]["last_from"],
+				"url": "/transporter/allocation?name="
+				+ quote(allocation["name"], safe="")
+				+ "#messages",
+			}
+		)
+	rows.sort(key=lambda x: x["last_posted_on"], reverse=True)
+	return rows
+
+
+@frappe.whitelist()
+def post_transporter_general_message(
+	subject: str = "", message: str = "", parent_update: str | None = None
+) -> dict:
+	"""Transporter portal: a query that is not about a particular job."""
+	transporter = require_transporter_portal_access()
+	return post_transporter_message(
+		transporter=transporter,
+		subject=subject,
+		message=message,
+		parent_update=_validated_general_parent(parent_update, transporter),
+	)
+
+
+def _validated_general_parent(parent_update: str | None, transporter: str) -> str | None:
+	"""Only thread onto a general message this transporter can already see."""
+	parent_update = (parent_update or "").strip()
+	if not parent_update:
+		return None
+	row = frappe.db.get_value(
+		"Shipment Update",
+		parent_update,
+		["name", "transporter", "allocation", "project", "visible_to_transporter", "parent_update"],
+		as_dict=True,
+	)
+	if not row or row.allocation or row.project:
+		return None
+	if row.transporter != transporter or not row.visible_to_transporter:
+		return None
+	return row.parent_update or row.name
+
+
+@frappe.whitelist()
+def get_transporter_general_messages(query: str | None = None) -> list[dict]:
+	"""Transporter portal: one general query, or all general messages."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		get_transporter_general_thread,
+	)
+
+	transporter = require_transporter_portal_access()
+	if query:
+		return transporter_general_thread(transporter, query)
+	return get_transporter_general_thread(transporter)
+
+
+@frappe.whitelist()
+def mark_transporter_general_read(names) -> dict:
+	"""Transporter portal: clear unread on general query replies."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		get_transporter_general_thread,
+	)
+
+	transporter = require_transporter_portal_access()
+	if isinstance(names, str):
+		names = frappe.parse_json(names) if names.strip().startswith("[") else [names]
+	allowed = {m["name"] for m in get_transporter_general_thread(transporter)}
+	marked = mark_thread_read([n for n in (names or []) if n in allowed], AUDIENCE_TRANSPORTER)
+	return {"ok": True, "marked": marked}
+
+
+@frappe.whitelist()
+def set_general_conversation_status(name: str, status: str) -> dict:
+	"""Transporter portal: close or reopen a general query."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		set_thread_status,
+		thread_root,
+	)
+
+	transporter = require_transporter_portal_access()
+	root = thread_root(name)
+	allowed = {m["name"] for m in transporter_general_summaries(transporter)}
+	if not root or root not in allowed:
+		frappe.throw(_("This conversation isn't yours."), frappe.PermissionError)
+	return set_thread_status(root, status)
+
+
 def _allocation_container_row(allocation, item_name: str):
 	for row in allocation.containers or []:
 		if row.name == item_name:
@@ -573,10 +733,15 @@ def _allocation_container_row(allocation, item_name: str):
 
 
 @frappe.whitelist()
-def get_allocation_conversation(allocation_name: str, item_name: str | None = None) -> list[dict]:
-	"""Transporter portal: the two-way thread on an allocation or one container."""
+def get_allocation_conversation(
+	allocation_name: str, item_name: str | None = None, thread: str | None = None
+) -> list[dict]:
+	"""Transporter portal: one conversation, or everything on the allocation."""
 	transporter = require_transporter_portal_access()
 	allocation = _get_allocation_for_transporter(allocation_name, transporter)
+
+	if thread:
+		return allocation_conversation_thread(allocation_name, transporter, thread)
 
 	container_tracker = None
 	if item_name:
@@ -585,6 +750,48 @@ def get_allocation_conversation(allocation_name: str, item_name: str | None = No
 	return get_transporter_thread_for_allocation(
 		allocation_name, transporter, container_tracker=container_tracker
 	)
+
+
+def _thread_key(message: dict) -> str:
+	"""The message that started this conversation - replies hang off it."""
+	return message.get("parent_update") or message["name"]
+
+
+def allocation_conversation_summaries(allocation_name: str, transporter: str) -> list[dict]:
+	"""One row per conversation on an allocation.
+
+	An allocation carries several separate exchanges - a gate pass query, a
+	delay, CGM's own notices. Listing them as one thread buried new messages
+	under whichever topic was last, so they are grouped the same way the
+	customer's general queries are.
+	"""
+	messages = get_transporter_thread_for_allocation(allocation_name, transporter)
+	return _group_conversations(
+		messages,
+		lambda root: "/transporter/allocation?name="
+		+ quote(allocation_name, safe="")
+		+ "&thread="
+		+ quote(root, safe=""),
+	)
+
+
+def allocation_conversation_thread(
+	allocation_name: str, transporter: str, root: str
+) -> list[dict]:
+	"""Messages of one conversation on an allocation, oldest first."""
+	if not root:
+		return []
+	messages = get_transporter_thread_for_allocation(allocation_name, transporter)
+	return [m for m in messages if _thread_key(m) == root]
+
+
+@frappe.whitelist()
+def get_allocation_conversations() -> list[dict]:
+	"""Transporter portal: every conversation on an allocation."""
+	transporter = require_transporter_portal_access()
+	allocation_name = frappe.form_dict.get("allocation_name")
+	_get_allocation_for_transporter(allocation_name, transporter)
+	return allocation_conversation_summaries(allocation_name, transporter)
 
 
 @frappe.whitelist()
@@ -639,6 +846,26 @@ def mark_allocation_updates_read(allocation_name: str, names) -> dict:
 	}
 	marked = mark_thread_read([n for n in names if n in visible], AUDIENCE_TRANSPORTER)
 	return {"ok": True, "marked": marked}
+
+
+@frappe.whitelist()
+def set_conversation_status(allocation_name: str, name: str, status: str) -> dict:
+	"""Transporter portal: close a conversation, or reopen it for a clarification."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		set_thread_status,
+		thread_root,
+	)
+
+	transporter = require_transporter_portal_access()
+	_get_allocation_for_transporter(allocation_name, transporter)
+
+	root = thread_root(name)
+	visible = {
+		m["name"] for m in get_transporter_thread_for_allocation(allocation_name, transporter)
+	}
+	if not root or root not in visible:
+		frappe.throw(_("This conversation isn't yours."), frappe.PermissionError)
+	return set_thread_status(root, status)
 
 
 @frappe.whitelist()

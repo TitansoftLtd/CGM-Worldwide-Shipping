@@ -124,10 +124,15 @@ frappe.ready(function () {
 
 	const conversation = readJSON("cgm-container-conversation-json", []);
 
+	// A shipment or allocation can carry several separate conversations. Only
+	// treat the box as a reply when there is exactly one to reply to -
+	// otherwise a new message would be buried under whichever topic happened
+	// to be last, and would reopen it. With several, ask for a subject and
+	// start a new one.
 	function threadRoot(messages) {
 		if (!(messages || []).length) return "";
-		const last = messages[messages.length - 1];
-		return last.parent_update || last.name;
+		const roots = new Set(messages.map((m) => m.parent_update || m.name));
+		return roots.size === 1 ? [...roots][0] : "";
 	}
 
 	const thread = cgm.portal.mountThread(
@@ -138,6 +143,8 @@ frappe.ready(function () {
 			markReadMethod:
 				"cgm_shipping.cgm_worldwide_shipping.customizations.portal.mark_shipment_updates_read",
 			markReadArgs: { project: PROJECT },
+			statusMethod: "cgm_shipping.cgm_worldwide_shipping.customizations.portal.set_conversation_status",
+			onStatusChanged: refreshThread,
 		}
 	);
 

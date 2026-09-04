@@ -35,6 +35,8 @@
   "column_break_response",
   "responded_on",
   "response_update",
+  "closed_by",
+  "closed_on",
   "section_message",
   "message",
   "attachment",
@@ -63,12 +65,13 @@
   },
   {
    "default": "Internal",
+   "description": "Who wrote this. Customer and Transporter are questions from a portal; Internal is CGM's own message. This drives which portal sees it and whether an answer is owed.",
    "fieldname": "update_source",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Update Source",
-   "options": "Transporter\nCustomer\nInternal\nCustoms\nFinance\nOther",
+   "options": "Customer\nTransporter\nInternal",
    "reqd": 1
   },
   {
@@ -225,13 +228,13 @@
    "label": "Response Tracking"
   },
   {
-   "description": "Open on a message raised by a customer or transporter; set to Answered when CGM replies. Blank on CGM's own updates.",
+   "description": "Open while CGM owes an answer, Answered once they reply, Closed when the customer or transporter says the matter is settled. Blank on CGM's own updates.",
    "fieldname": "response_status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Response Status",
-   "options": "Open\nAnswered",
+   "options": "Open\nAnswered\nClosed",
    "read_only": 1
   },
   {
@@ -256,6 +259,21 @@
    "fieldtype": "Link",
    "label": "Answered By",
    "options": "Shipment Update",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.response_status=='Closed'",
+   "fieldname": "closed_by",
+   "fieldtype": "Link",
+   "label": "Closed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.response_status=='Closed'",
+   "fieldname": "closed_on",
+   "fieldtype": "Datetime",
+   "label": "Closed On",
    "read_only": 1
   },
   {
@@ -332,7 +350,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-04 17:05:00.000000",
+ "modified": "2026-09-04 17:55:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Update",
