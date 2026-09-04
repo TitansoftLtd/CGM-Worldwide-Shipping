@@ -118,18 +118,21 @@ a.cp-kpi:hover, a.cp-kpi:focus-visible {
 .cp-kpi-icon { width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
 .cp-kpi-icon svg { width: 16px; height: 16px; }
 .cp-kpi-num { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.cp-kpi-body { min-width: 0; flex: 1; padding: 0 .2rem 0 .1rem; }
 .cp-kpi-label { font-size: .65rem; color: var(--cp-text-muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin-top: .15rem; }
 .cp-kpi-amount-num {
   display: flex;
   flex-direction: column;
   gap: .08rem;
-  font-size: .75rem;
+  font-size: .72rem;
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
+  margin: .05rem 0 .1rem;
 }
-.cp-kpi-amount-num span { white-space: nowrap; }
+.cp-kpi-amount-num span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cp-kpi.rose .cp-kpi-amount-num { font-size: .68rem; font-weight: 600; }
 .cp-kpi.blue   .cp-kpi-icon { background: var(--cp-blue-soft);   color: var(--cp-blue); }
 .cp-kpi.amber  .cp-kpi-icon { background: var(--cp-amber-soft);  color: var(--cp-amber); }
 .cp-kpi.green  .cp-kpi-icon { background: var(--cp-green-soft);  color: var(--cp-green); }

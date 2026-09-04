@@ -42,6 +42,7 @@ def ensure_transporter_invoice_share_fields() -> None:
 			"insert_after": "supplier_name",
 			"read_only": 1,
 			"hidden": 1,
+			"print_hide": 1,
 			"allow_on_submit": 1,
 			"no_copy": 1,
 		},
@@ -55,6 +56,7 @@ def ensure_transporter_invoice_share_fields() -> None:
 			"insert_after": SUPPLIER_IS_TRANSPORTER_FIELD,
 			"allow_on_submit": 1,
 			"no_copy": 1,
+			"print_hide": 1,
 			"in_standard_filter": 1,
 			"depends_on": f"eval:doc.{SUPPLIER_IS_TRANSPORTER_FIELD}",
 			"description": (
@@ -73,10 +75,45 @@ def ensure_transporter_invoice_share_fields() -> None:
 			"read_only": 1,
 			"allow_on_submit": 1,
 			"no_copy": 1,
+			"print_hide": 1,
 			"depends_on": f"eval:doc.{SHARE_FIELD}",
 		},
 	)
+	_hide_internal_purchase_invoice_fields_from_print()
 	frappe.clear_cache(doctype="Purchase Invoice")
+
+
+_PRINT_HIDE_PURCHASE_INVOICE_FIELDS = (
+	"update_outstanding_for_self",
+	"update_billed_amount_in_purchase_order",
+	"update_billed_amount_in_purchase_receipt",
+)
+
+
+def _hide_internal_purchase_invoice_fields_from_print() -> None:
+	"""Keep Standard print/preview free of internal accounting checkboxes."""
+	meta = frappe.get_meta("Purchase Invoice")
+	for fieldname in _PRINT_HIDE_PURCHASE_INVOICE_FIELDS:
+		if not meta.has_field(fieldname):
+			continue
+		name = f"Purchase Invoice-{fieldname}-print_hide"
+		if frappe.db.exists("Property Setter", name):
+			if str(frappe.db.get_value("Property Setter", name, "value") or "") != "1":
+				frappe.db.set_value("Property Setter", name, "value", "1", update_modified=False)
+			continue
+		frappe.get_doc(
+			{
+				"doctype": "Property Setter",
+				"name": name,
+				"doc_type": "Purchase Invoice",
+				"doctype_or_field": "DocField",
+				"field_name": fieldname,
+				"property": "print_hide",
+				"property_type": "Check",
+				"value": "1",
+				"module": "CGM Worldwide Shipping",
+			}
+		).insert(ignore_permissions=True)
 
 
 def supplier_is_transporter(supplier: str | None) -> bool:
@@ -196,7 +233,58 @@ def _project_ref(project_name: str | None) -> str:
 	return _project_display_ref(project_name)
 
 
-def _portal_row(row: dict) -> dict:
+def allocation_info_by_project(transporter: str, projects: list[str]) -> dict[str, dict]:
+	"""Map project → allocation name + trucks offered (excluding withdrawn)."""
+	if not transporter or not projects:
+		return {}
+	if not frappe.db.exists("DocType", "Container Allocation"):
+		return {}
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
+		OFFERED_TRUCK_WITHDRAWN,
+	)
+
+	unique_projects = list(dict.fromkeys(p for p in projects if p))
+	if not unique_projects:
+		return {}
+
+	allocations = frappe.get_all(
+		"Container Allocation",
+		filters={
+			"transporter": transporter,
+			"project": ["in", unique_projects],
+			"docstatus": 1,
+		},
+		fields=["name", "project"],
+		order_by="allocation_date desc, modified desc",
+		ignore_permissions=True,
+	)
+	by_project: dict[str, dict] = {}
+	for row in allocations:
+		if row.project not in by_project:
+			by_project[row.project] = {
+				"allocation": row.name,
+				"trucks_offered": 0,
+			}
+	names = [info["allocation"] for info in by_project.values()]
+	if not names or not frappe.db.exists("DocType", "Container Allocation Truck"):
+		return by_project
+
+	trucks = frappe.get_all(
+		"Container Allocation Truck",
+		filters={"parent": ["in", names], "status": ["!=", OFFERED_TRUCK_WITHDRAWN]},
+		fields=["parent"],
+		ignore_permissions=True,
+	)
+	counts: dict[str, int] = {}
+	for truck in trucks:
+		counts[truck.parent] = counts.get(truck.parent, 0) + 1
+	for info in by_project.values():
+		info["trucks_offered"] = counts.get(info["allocation"], 0)
+	return by_project
+
+
+def _portal_row(row: dict, allocation_info: dict | None = None) -> dict:
 	status = purchase_invoice_portal_status(row.get("status"), row.get("outstanding_amount"))
 	out = dict(row)
 	out["tone"] = status["tone"]
@@ -207,6 +295,13 @@ def _portal_row(row: dict) -> dict:
 	out["pdf_download_url"] = _pdf_url(row["name"], "attachment")
 	out["outstanding_amount"] = flt(row.get("outstanding_amount"))
 	out["grand_total"] = flt(row.get("grand_total"))
+	info = allocation_info or {}
+	allocation = info.get("allocation") or ""
+	out["allocation_name"] = allocation
+	out["allocation_url"] = (
+		f"/transporter/allocation?name={quote(allocation, safe='')}" if allocation else ""
+	)
+	out["trucks_offered"] = cint(info.get("trucks_offered"))
 	return out
 
 
@@ -248,7 +343,9 @@ def list_shared_purchase_invoices(transporter: str, limit: int = 200) -> list[di
 		limit=limit,
 		ignore_permissions=True,
 	)
-	return [_portal_row(row) for row in rows]
+	projects = [r.get("project") for r in rows if r.get("project")]
+	by_project = allocation_info_by_project(transporter, projects)
+	return [_portal_row(row, by_project.get(row.get("project") or "")) for row in rows]
 
 
 def get_transporter_invoice_summary(transporter: str) -> dict:
@@ -324,7 +421,14 @@ def download_shared_purchase_invoice_pdf(name: str, disposition: str = "attachme
 	transporter = require_transporter_portal_access()
 	_assert_shared_invoice_for_transporter(name, transporter)
 
-	pdf = frappe.get_print("Purchase Invoice", name, as_pdf=True)
+	# Portal users have no desk Print permission. Ownership was already checked.
+	doc = frappe.get_doc("Purchase Invoice", name, ignore_permissions=True)
+	frappe.flags.ignore_print_permissions = True
+	try:
+		pdf = frappe.get_print("Purchase Invoice", name, doc=doc, as_pdf=True)
+	finally:
+		frappe.flags.ignore_print_permissions = False
+
 	frappe.local.response.filename = f"{name}.pdf"
 	frappe.local.response.filecontent = pdf
 	frappe.local.response.type = "pdf" if disposition == "inline" else "download"
