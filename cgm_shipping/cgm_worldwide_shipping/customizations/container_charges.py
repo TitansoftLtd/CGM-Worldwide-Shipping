@@ -506,7 +506,7 @@ def post_container_charge_accrual_for_project(project: str, *, submit: bool = Tr
 	je.voucher_type = "Journal Entry"
 	je.company = company
 	je.posting_date = getdate(today())
-	je.user_remark = frappe._("Container charge accrual — {0}").format(project)
+	je.user_remark = frappe._("Container charge accrual - {0}").format(project)
 	if je.meta.has_field("custom_cgm_source_project"):
 		je.custom_cgm_source_project = project
 	if je.meta.has_field("custom_cgm_accrual_kind"):
@@ -550,7 +550,7 @@ def post_container_charge_accrual_for_project(project: str, *, submit: bool = Tr
 			currency=currency,
 			company=company,
 			project=project,
-			remark=f"{remark_base} — {charge_type} ({currency})",
+			remark=f"{remark_base} - {charge_type} ({currency})",
 			debit=True,
 		)
 		_append_je_line(
@@ -560,7 +560,7 @@ def post_container_charge_accrual_for_project(project: str, *, submit: bool = Tr
 			currency=currency,
 			company=company,
 			project=project,
-			remark=f"{remark_base} — {charge_type} ({currency})",
+			remark=f"{remark_base} - {charge_type} ({currency})",
 			debit=False,
 		)
 

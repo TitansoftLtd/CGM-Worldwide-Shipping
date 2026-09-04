@@ -1353,7 +1353,7 @@ def submit_permit_invoices_to_finance(task_name: str) -> dict:
 				"task": task.name,
 				"status": task.status,
 				"message": (
-					"All permits are <b>Foreign</b> — no Finance payment needed. "
+					"All permits are <b>Foreign</b> - no Finance payment needed. "
 					"Complete the task after certificates are attached."
 				),
 			}
@@ -1515,8 +1515,8 @@ def validate_permit_application_can_complete(task) -> None:
 		payable = payable_permit_rows(task)
 		if payable and not task.get("custom_permit_invoices_submitted"):
 			frappe.throw(
-				"Attach all <b>Local</b> permit invoices and save — Finance is notified "
-				"automatically — before completing this task."
+				"Attach all <b>Local</b> permit invoices and save - Finance is notified "
+				"automatically - before completing this task."
 			)
 		if payable and not finance_payment_completed(task.project, seq):
 			fin_seq = get_permit_finance_sequence_for_application(seq)
@@ -1543,8 +1543,8 @@ def validate_permit_application_can_complete(task) -> None:
 	if payable:
 		if not task.get("custom_permit_invoices_submitted"):
 			frappe.throw(
-				"Attach all <b>Local</b> permit invoices and save — Finance is notified "
-				"automatically — before completing this task."
+				"Attach all <b>Local</b> permit invoices and save - Finance is notified "
+				"automatically - before completing this task."
 			)
 
 		if not finance_payment_completed(task.project, seq):

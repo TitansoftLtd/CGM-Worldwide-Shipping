@@ -219,7 +219,7 @@
   },
   {
    "depends_on": "eval:doc.cargo_type!='LCL'",
-   "description": "Select before entering container rows — Container Deposit or Revolving Fund.",
+   "description": "Select before entering container rows - Container Deposit or Revolving Fund.",
    "fieldname": "deposit_arrangement",
    "fieldtype": "Select",
    "label": "Deposit Arrangement",

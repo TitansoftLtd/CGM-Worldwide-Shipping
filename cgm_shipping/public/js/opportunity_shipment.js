@@ -604,7 +604,7 @@ cgm_shipping.opportunity_shipment.render_transport_documents_dashboard = functio
 		} else {
 			parts.push(
 				`<button type="button" class="btn btn-sm btn-default cgm-defer-transport-docs">${__(
-					"None provided yet — continue to approval without BL / Booking / AWB"
+					"None provided yet - continue to approval without BL / Booking / AWB"
 				)}</button>`
 			);
 		}
@@ -931,7 +931,7 @@ cgm_shipping.opportunity_shipment.apply_pending_awb_from_submit = function (frm)
 		cgm_shipping.opportunity_shipment.toggle_package_fields(frm);
 	});
 	frappe.show_alert({
-		message: __("Air Waybill {0} linked — fields synced; continue completing this Opportunity.", [
+		message: __("Air Waybill {0} linked - fields synced; continue completing this Opportunity.", [
 			pending.awb_name,
 		]),
 		indicator: "green",
@@ -1083,7 +1083,7 @@ cgm_shipping.opportunity_shipment.apply_pending_booking_from_submit = function (
 	localStorage.removeItem(CGM_PENDING_BOOKING_LINK_KEY);
 	frappe.show_alert({
 		message: __(
-			"Booking Confirmation {0} linked — fields synced; continue verifying documents.",
+			"Booking Confirmation {0} linked - fields synced; continue verifying documents.",
 			[pending.booking_name]
 		),
 		indicator: "green",
@@ -1120,7 +1120,7 @@ cgm_shipping.opportunity_shipment.start_shipment = function (frm) {
 				return;
 			}
 			frappe.show_alert({
-				message: __("Project {0} created — shipment started.", [r.message]),
+				message: __("Project {0} created - shipment started.", [r.message]),
 				indicator: "green",
 			});
 			frappe.set_route("Form", "Project", r.message);

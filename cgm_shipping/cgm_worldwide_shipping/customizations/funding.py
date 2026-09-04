@@ -388,7 +388,7 @@ def get_material_request_description(material_request) -> str:
 		if text and text not in parts:
 			parts.append(text)
 	if parts:
-		return " — ".join(parts)
+		return " - ".join(parts)
 	legacy = (legacy or "").strip()
 	return legacy or get_material_request_item_summary(material_request)
 
@@ -905,7 +905,7 @@ def _build_operational_journal_entry(fr, row):
 				frappe.bold(fr.company)
 			)
 		)
-	remark = " — ".join(
+	remark = " - ".join(
 		part
 		for part in (
 			row.employee_name or row.employee,
@@ -1067,7 +1067,7 @@ def get_funding_pay_options(funding_request: str) -> dict:
 def _pay_option_label(row, remaining) -> str:
 	who = row.employee_name or row.employee or row.material_request
 	what = row.item_summary or row.material_request
-	return f"{who} — {what} — {flt(remaining):,.2f}"
+	return f"{who} - {what} - {flt(remaining):,.2f}"
 
 
 # ── Project dashboard ────────────────────────────────────────────────────────

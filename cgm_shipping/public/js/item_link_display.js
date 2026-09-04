@@ -70,7 +70,7 @@ function cgm_format_item_search_row(item) {
 	}
 
 	const display =
-		item_name && item_name !== item_code ? `${item_code} — ${item_name}` : item_code;
+		item_name && item_name !== item_code ? `${item_code} - ${item_name}` : item_code;
 	item.html = `<strong>${frappe.utils.escape_html(display)}</strong>`;
 
 	if (item.description) {

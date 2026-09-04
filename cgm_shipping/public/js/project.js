@@ -215,7 +215,7 @@ function mount_port_arrival_confirmation_button(frm) {
 					const savedAta = r.message?.ata || ata;
 					frappe.show_alert({
 						message: __(
-							"Port arrival confirmed — ATA {0} saved on Project and {1} container tracker(s).",
+							"Port arrival confirmed - ATA {0} saved on Project and {1} container tracker(s).",
 							[savedAta, count]
 						),
 						indicator: "green",
@@ -733,7 +733,7 @@ function paint_shipment_progress_chart(frm, field, payload) {
 		d.workflow_behind && d.workflow_status
 			? ` · ${__("Workflow field")}: <b>${frappe.utils.escape_html(d.workflow_status)}</b> (${__("syncing")})`
 			: d.workflow_ahead && d.workflow_status
-				? ` · ${__("Workflow field was ahead — correcting to tasks")}`
+				? ` · ${__("Workflow field was ahead - correcting to tasks")}`
 				: "";
 	const legendLine = d.uses_clearance_states
 		? `<div class="cgm-tracking-legend">
@@ -1008,7 +1008,7 @@ function render_container_card_body(c) {
 	}
 	if (!c.free_days_end_date && c.discharging_date) {
 		shippingRows.push(
-			container_card_row(__("Shipping line free days"), __("Not set — enter on tracker"), { warn: true })
+			container_card_row(__("Shipping line free days"), __("Not set - enter on tracker"), { warn: true })
 		);
 	}
 	sections.push(`
@@ -1146,7 +1146,7 @@ function container_allocation_detail(c) {
 	const status = c.assignment_status || __("Pending");
 	let text = `${__("Allocated to")} ${transporter} (${status})`;
 	if (c.allocation_pending_alert) {
-		text += ` — ${__("Truck not assigned yet")}`;
+		text += ` - ${__("Truck not assigned yet")}`;
 	}
 	return text;
 }

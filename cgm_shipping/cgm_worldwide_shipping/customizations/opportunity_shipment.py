@@ -460,7 +460,7 @@ def set_transport_docs_deferred(opportunity: str, deferred: int | str = 1) -> di
 
 	if not frappe.get_meta("Opportunity").has_field("custom_transport_docs_deferred"):
 		frappe.throw(
-			_("Missing field Custom Transport Docs Deferred — run bench migrate."),
+			_("Missing field Custom Transport Docs Deferred - run bench migrate."),
 			title=_("Migrate required"),
 		)
 

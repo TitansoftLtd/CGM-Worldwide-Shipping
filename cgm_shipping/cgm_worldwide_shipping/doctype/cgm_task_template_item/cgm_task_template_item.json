@@ -84,7 +84,7 @@
   },
   {
    "depends_on": "eval:[\"Application\",\"Finance Payment\",\"Permit Finance\"].includes(doc.task_role)",
-   "description": "UCR / ENTRY_SLIP / Shipping Line / KPA / Permit — must match on the Application and Finance Payment pair.",
+   "description": "UCR / ENTRY_SLIP / Shipping Line / KPA / Permit - must match on the Application and Finance Payment pair.",
    "fieldname": "payment_kind",
    "fieldtype": "Link",
    "label": "Payment Kind",

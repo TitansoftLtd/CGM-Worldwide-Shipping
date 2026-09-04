@@ -219,7 +219,7 @@ def sea_export_tasks() -> list[dict]:
 		_row(8, "Container armed by KRA and shipping line", "Field Operations", depends=7),
 		_row(9, "Lodge stuffing report with KRA", "Declaration", depends=8),
 		_row(10, "KRA grants pre-advice permission", "Field Operations", depends=9),
-		_row(11, "Finance pays KPA charges — truck enters port", "Finance", depends=10, finance=1),
+		_row(11, "Finance pays KPA charges - truck enters port", "Finance", depends=10, finance=1),
 		_row(12, "Entry settled", "Declaration", depends=11),
 		_row(13, "Container scheduled for vessel sailing", "Operations", depends=12),
 		_row(14, "Receive Certificate of Export (COE)", "Operations", depends=13, doc=1),
@@ -269,7 +269,7 @@ def air_import_tasks() -> list[dict]:
 		),
 		_row(
 			6,
-			"IDF approved — share with client",
+			"IDF approved - share with client",
 			"Operations",
 			depends=3,
 			auto=1,
@@ -280,7 +280,7 @@ def air_import_tasks() -> list[dict]:
 		_row(8, "Client shares airwaybill", "Documentation", depends=7, doc=1, role="Document"),
 		_row(
 			9,
-			"Shipment arrival — manifest issued",
+			"Shipment arrival - manifest issued",
 			"Operations",
 			depends=8,
 			doc=1,
@@ -288,10 +288,10 @@ def air_import_tasks() -> list[dict]:
 			condition="project.custom_actual_time_of_arrival_ata",
 			role="Auto Complete",
 		),
-		_row(10, "Lodge draft entry — share with client", "Declaration", depends=9, role="Document"),
+		_row(10, "Lodge draft entry - share with client", "Declaration", depends=9, role="Document"),
 		_row(
 			11,
-			"Register entry — share e-slip for tax payment",
+			"Register entry - share e-slip for tax payment",
 			"Declaration",
 			depends=10,
 			role="Application",
@@ -316,7 +316,7 @@ def air_import_tasks() -> list[dict]:
 			permit_stage="Post-clearance",
 		),
 		_row(14, "Share documents to ground handling team", "Field Operations", depends=13, doc=1, role="Document"),
-		_row(15, "Clearance — verification and permit removal", "Field Operations", depends=14),
+		_row(15, "Clearance - verification and permit removal", "Field Operations", depends=14),
 		_row(16, "Release and entry settlement", "Operations", depends=15),
 	]
 
@@ -397,7 +397,7 @@ def sea_transit_import_tasks() -> list[dict]:
 		),
 		_row(
 			7,
-			"Create transit entry — destination country team",
+			"Create transit entry - destination country team",
 			"Declaration",
 			doc=1,
 			role="Application",
