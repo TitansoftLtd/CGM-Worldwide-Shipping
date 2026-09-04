@@ -16,6 +16,36 @@ from frappe.utils import cint
 
 FUNDING_REQUEST_DOCTYPE = "Funding Request"
 MATERIAL_REQUEST_DOCTYPE = "Material Request"
+FUNDING_REQUEST_WORKFLOW = "CGM Funding Request Approval"
+MATERIAL_REQUEST_FUNDING_WORKFLOW = "CGM Material Request Funding"
+# Requesters/finance send their own draft into the next step. Approve/Reject stay checker-only.
+_SELF_SUBMIT_ACTIONS = frozenset({"Submit", "Submit Request"})
+
+
+def ensure_funding_workflow_self_submit() -> None:
+	"""Let the document owner Submit / Submit Request on funding workflows.
+
+	Frappe hides workflow actions from the owner unless Allow Self Approval is on.
+	That blocked requesters from submitting their own Material Request, and finance
+	from sending their own Funding Request to the Funding Approver.
+	"""
+	if not frappe.db.exists("DocType", "Workflow"):
+		return
+	for workflow_name in (MATERIAL_REQUEST_FUNDING_WORKFLOW, FUNDING_REQUEST_WORKFLOW):
+		if not frappe.db.exists("Workflow", workflow_name):
+			continue
+		doc = frappe.get_doc("Workflow", workflow_name)
+		changed = False
+		for row in doc.transitions:
+			if (row.action or "") not in _SELF_SUBMIT_ACTIONS:
+				continue
+			if cint(row.allow_self_approval):
+				continue
+			row.allow_self_approval = 1
+			changed = True
+		if changed:
+			doc.save(ignore_permissions=True)
+	frappe.clear_cache()
 
 
 @dataclass(frozen=True)
