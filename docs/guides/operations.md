@@ -33,6 +33,47 @@ Read it as: **Documents Received** is where the shipment is now, **Draft** is be
 
 ---
 
+## The clearance flow, end to end
+
+The task plan below is the system's version of this. It helps to know the real-world sequence it is modelling, and which outside body you are waiting on at each point.
+
+| # | Stage | Department | What happens |
+|---|-------|------------|--------------|
+| 1 | Transport document | Documentation | B/L or AWB captured with containers and goods description |
+| 2 | Opportunity | Documentation | Commercial Invoice, Packing List, COA and the rest attached |
+| 3 | Review | Operations Manager | Documents verified, then approved or returned for amendment |
+| 4 | Project created | Operations | Approved shipment becomes a live Project with its task plan |
+| 5 | Declaration | Declaration | UCR and IDF created, Finance pays the IDF |
+| 6 | Pre-clearance permits | Declaration | **DVS**, **NBA**, **VMD**, **ACA**, **KEBS** as the cargo requires, plus client inspection |
+| 7 | In transit | Tracking | Vessel or flight tracked, ETA updated, B/L, COC, COO, COA and marine insurance collected |
+| 8 | Arrival and manifest | Declaration / Admin | Original B/L and manifest obtained, local import charges requested, Customs Entry created, e-slip and taxes generated, Finance pays |
+| 9 | Customs and port clearance | Field Operations | **KRA** assigns a verification officer, **KPA** authorises positioning, **KEBS** and Port Health coordinated, joint verification, escalation to **CRO** if needed |
+| 10 | Charges and release | Documentation / Finance | Delivery Order lodged with the shipping line, line charges and post-clearance permits paid, Supervisor obtains the KPA invoice, Finance pays it |
+| 11 | Transport allocated | Transport | Transporter identified, truck and driver assigned, containers allocated, documents and ETA shared |
+| 12 | Pickup and exit | Transport / Field Operations | Trucks enter the port, containers verified and loaded, gate pass issued |
+| 13 | Delivery | Transport / Tracking | Truck movement monitored to warehouse or destination |
+| 14 | Container return | Transport | Cargo offloaded, empty returned to depot, **interchange** issued |
+| 15 | Closure | Finance / Documentation | Delivery confirmed, proof of delivery attached, final invoice sent |
+
+**Transport is planned before the cargo is released** (stage 11 overlaps 9 and 10), so trucks move the moment clearance comes through rather than being arranged afterwards.
+
+The interchange at stage 14 is what proves the container went back, and is what the **container deposit refund** is claimed against - see the [Transport & Containers Guide](transport-containers.md).
+
+### Where you wait
+
+Four points in the flow are waits on someone outside CGM, and they are the usual reason a shipment looks stalled:
+
+- Vessel or flight arrival
+- Final clearance documents from the client or origin agent
+- The manifest from the shipping line
+- KRA verification and the agencies' approvals
+
+### Regional transit
+
+A shipment moving beyond Kenya (Uganda, for example) adds exit notes, a **C2** cargo movement authorisation, and electronic cargo tracking devices on the truck.
+
+---
+
 ## Your tasks in the sea-import plan (25 steps)
 
 | Seq | Task | Your team |
@@ -83,24 +124,29 @@ Because the plan is written at creation, editing a template changes shipments cr
 
 The Project field **`custom_shipment_status`** tracks clearance progress (`CGM Sea Import Workflow`):
 
-```
-Draft
-  → Documents Received
-  → UCR Applied → UCR Paid
-  → Pre-clearance
-  → Client Inspection
-  → In Transit
-  → Final Docs Received
-  → Manifest Requested
-  → Entry Lodged → Entry Paid
-  → Line Paid & DO Lodged
-  → Post-clearance
-  → Field Clearance
-  → KPA Paid
-  → In Delivery
-  → Containers Returned
-  → Completed
-```
+Each move is an action on the form, in this order:
+
+| From | Action | To |
+|------|--------|-----|
+| Draft | Receive Client Documents | Documents Received |
+| Documents Received | Create UCR Application | UCR Applied |
+| UCR Applied | Confirm UCR Paid | UCR Paid |
+| UCR Paid | Start Pre-clearance Permits | Pre-clearance |
+| Pre-clearance | Request Client Inspection | Client Inspection |
+| Client Inspection | Start Shipment Tracking | In Transit |
+| In Transit | Receive Final Documents | Final Docs Received |
+| Final Docs Received | Request Manifest and Charges | Manifest Requested |
+| Manifest Requested | Lodge Customs Entry | Entry Lodged |
+| Entry Lodged | Confirm Line Paid and DO Lodged | Line Paid & DO Lodged |
+| Line Paid & DO Lodged | Confirm Entry Paid | Entry Paid |
+| Entry Paid | Complete Post-clearance Permits | Post-clearance |
+| Post-clearance | Hand to Field Officers | Field Clearance |
+| Field Clearance | Confirm KPA Paid | KPA Paid |
+| KPA Paid | Dispatch Cargo | In Delivery |
+| In Delivery | Confirm Containers Returned | Containers Returned |
+| Containers Returned | Complete Shipment File | Completed |
+
+Note the order around the entry: **Line Paid & DO Lodged sits between Entry Lodged and Entry Paid**. The delivery order is lodged with the shipping line once the entry is in, and the entry is confirmed paid after that - not the other way round.
 
 ### What blocks you from advancing status
 
@@ -110,6 +156,24 @@ Draft
 | **Document gates** | Required documents must be **Verified** before some state changes |
 | **Intake documents** | **CI** and **PKL** required before **Documents Received** |
 | **Closure** | All 25 sea tasks must be complete before **Completed** |
+
+---
+
+## Being told it is your turn
+
+You do not have to watch the shipment. When a task becomes your department's to do, a **Your Turn** notification goes out:
+
+| Notification | Reaches |
+|--------------|---------|
+| `CGM Task - Your Turn Operations` | CGM Documentation, Operations Manager |
+| `CGM Task - Your Turn Documentation` | CGM Documentation |
+| `CGM Task - Your Turn Declaration` | Declarant |
+| `CGM Task - Your Turn Finance` | Accounts User, Accounts Manager, Finance User |
+| `CGM Task - Your Turn Transport` | Transporter |
+
+The subject carries the task and the shipment, so it is clear what is being asked and against which job.
+
+These are ordinary ERPNext Notifications. **CGM Shipping Settings** maps each workflow event to the Notification it should send, so wording and recipients can be changed in the Desk without touching code - migrate only seeds defaults that are missing, and never overwrites edits. Finance has a further set for invoices and receipts; see the [Finance Guide](finance.md).
 
 ---
 
@@ -167,9 +231,22 @@ Submit a **Daily Status Update** (`DSU-{date}-{#####}`) for RAG reporting on act
 
 ### Field clearance
 
-1. Complete task 17 (field officers).
-2. Obtain KPA invoice (task 18) → Finance pays (task 19).
-3. Transport takes over for delivery (tasks 20–25).
+Tasks 17-19 in the plan. On the ground at the terminal it runs like this:
+
+1. **Receive the file.** Commercial Invoice, Packing List, Bill of Lading, Customs Entry and any permits come from the declarant or admin.
+2. **Open the shipment file** and record the details for tracking.
+3. **Request verification from KRA.** Once the containers are in the yard, email KRA Customs with the entry to declare the intention to verify, so they can assess risk and allocate an officer.
+4. **KRA issues instructions.** Depending on the goods and how they are packed, they order **partial verification**, **100% verification** or **scanning**, and tell KPA by official memo.
+5. **KPA authorises positioning.** KPA reviews KRA's memo and issues its own, allowing the container to be positioned.
+6. **Call the other agencies.** Notify whoever else is involved - **KEBS**, **KRPB**, **Port Health** - to attend the joint verification.
+7. **Joint verification.** The agencies and KRA verify together. Each releases its own permit once satisfied.
+8. **KRA examination account**, once every other agency has released its part.
+9. **Escalate to the CRO** for final release of the entry.
+10. **Initiate the pick-up order.** Always done from Nairobi.
+11. **Pay the KPA invoice** for port charges (task 18 → Finance, task 19) and confirm payment with KPA.
+12. **Book trucks** to collect the cargo - Transport takes over for tasks 20-25.
+
+Steps 3 to 9 are the part that takes unpredictable time: everything there waits on KRA, KPA or an agency.
 
 ---
 

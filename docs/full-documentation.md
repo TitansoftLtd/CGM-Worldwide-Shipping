@@ -2,8 +2,6 @@
 
 ERPNext app (`cgm_shipping`) for end-to-end freight forwarding and customs clearance: CRM intake → sea-import clearance (25-task plan) → container lifecycle → quotations/invoicing → customer & transporter portals.
 
-> **Role-based guides:** see [README.md](README.md)
-
 ---
 
 ## 1. Where things live
@@ -132,7 +130,6 @@ All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Ch
 
 | DocType | Notable fields |
 |---------|----------------|
-| **Lead** | `custom_ci_attachment`, `custom_pkl_attachment`, `custom_bill_of_lading`, `custom_container_information`, shipment type/mode |
 | **Opportunity** | `workflow_state`, `custom_clients_documents`, B/L/AWB, containers, clearance station, consignee |
 | **Project** | `custom_shipment_status`, `custom_cgm_ref_no`, `custom_source_opportunity`, shipment documents, permit register, container tracker, finance cost total, ETA/ATA |
 | **Task** | `custom_task_flow_key` (`SEA_IMPORT_E2E`), `custom_sequence_no`, task documents/permits/finance lines, container updates |

@@ -44,13 +44,21 @@ Declarants attach invoices (and certificates where required). Finance verifies i
 
 ### Notifications you receive
 
-ERPNext Notifications alert Finance when invoices are ready, e.g.:
+Each payment kind has its own round trip, and all of them are seeded as ERPNext Notifications. They are named with a **`CGM Task - `** prefix, which matters when you go looking for one in the Notification list - searching for "UCR Invoice to Finance" alone will not find it.
 
-- UCR Invoice to Finance
-- Entry Invoice to Finance
-- Shipping Line Invoice to Finance
-- Permit Invoices to Finance
-- KPA Invoice to Finance
+| Stage | Notification | Goes to |
+|-------|--------------|---------|
+| Invoice attached, ready to pay | `CGM Task - UCR Invoice to Finance` | Finance |
+| | `CGM Task - Entry Invoice to Finance` | Finance |
+| | `CGM Task - Shipping Line Invoice to Finance` | Finance |
+| | `CGM Task - Permit Invoices to Finance` | Finance |
+| | `CGM Task - KPA Invoice to Finance` | Finance |
+| Paid, receipt needed | `CGM Task - UCR Receipt for Declarant`, and the Entry, Shipping Line, Permit and KPA equivalents | Whoever attaches the receipt |
+| Receipt attached, needs checking | `CGM Task - UCR Receipt Verify Finance`, and the same four equivalents | Finance |
+
+There is also a generic **`CGM Task - Finance Payment Action`**, and a **Your Turn** notification per department - see the [Operations Guide](operations.md).
+
+**Changing them:** the code fires a stable *event* (for example "UCR Invoice to Finance") and **CGM Shipping Settings** maps that event to whichever Notification you point it at. So you can rewrite the wording, change recipients, or swap in your own Notification without touching code - migrate only ever seeds the defaults that are missing, it does not overwrite what you have edited.
 
 ---
 

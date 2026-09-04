@@ -75,6 +75,46 @@ Port arrival / ATA is confirmed separately on the **Project** (Actions → Confi
 
 ---
 
+## The declaration run, start to finish
+
+The tasks above in the order they actually happen:
+
+1. **Commercial invoice** in hand, so the shipment can be quoted.
+2. **Open the IDF** for inspection.
+3. **Draft B/L** to confirm the shipment; the **original B/L** follows after vessel arrival.
+4. Collect the rest as they arrive: commercial invoice, packing list, **COC**, marine insurance cover, **COO**, **COA**.
+5. **Wait for the manifest** from the shipping line. Nothing below can start without it.
+6. **Create the entry** once the manifest is in - this generates the **e-slip** and the taxes.
+7. **Taxes paid**, then check for any permits still outstanding and process them.
+8. Hand the file to **Field Operations**, who secure the verification memo and take it through KRA, KPA and the agencies. See [Field clearance](operations.md#field-clearance).
+9. Back with you at the end: the **examination account** is input, the file is escalated to the **CRO** for release, port charges are secured and paid, and the gate pass is prepared.
+10. **Port pass to border control** releases the entry for final removal, and the truck is loaded.
+
+---
+
+## Air freight declaration
+
+Air runs the same shape with a different document set and an extra client approval before registering the entry:
+
+1. Receive **proforma invoice**, **packing list**, **COA**.
+2. **Confirm the documents** - HS code against the product description, and weight against the package count. This is the check that prevents an amended entry later.
+3. **IDF application**, then **pay the UCR**.
+4. **Apply for pre-clearance permits** and pay the permit invoices.
+5. **IDF approved**, then shared with the Operations Manager to forward to the client.
+6. Client inspects the shipment and shares the **draft COC**.
+7. Once the draft COC is approved, the client shares the **air waybill**.
+8. **Flight arrives**, arrival confirmed, manifest issued.
+9. **Draft entry lodged** and shared with the client for approval before it is registered.
+10. **Entry registered** after the client approves; the e-slip goes to the client to pay the taxes.
+11. **Post-clearance permits** applied for after taxes are paid.
+12. Passed entry and permits, pre and post, go to the **ground handling team** for clearance.
+13. Follow up on permit removal and any holds, exactly as for sea.
+14. **Release**, then monitor the entry settling in the system.
+
+The difference that matters: on air, the **client approves the draft entry before it is registered**. On sea the entry is created and registered off the manifest without that round trip.
+
+---
+
 ## Documents you typically handle
 
 | Code | Document |
