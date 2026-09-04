@@ -56,6 +56,3 @@ jspm_packages/
 
 # Local-only documentation (not published to GitHub)
 docs/local/
-
-# Demo seeder state: which demo records exist on this particular site.
-cgm_shipping/demo/portal_seed_manifest.json
