@@ -14,13 +14,13 @@
   "allocated_by",
   "trucks_booked",
   "status",
+  "amended_from",
   "section_containers",
   "containers",
   "section_offered_trucks",
   "offered_trucks",
-  "section_transporter_updates",
-  "transporter_updates_html",
-  "amended_from"
+  "tab_shipment_updates",
+  "transporter_updates_html"
  ],
  "fields": [
   {
@@ -118,17 +118,14 @@
    "options": "Container Allocation Truck"
   },
   {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval:doc.docstatus==1",
-   "depends_on": "eval:doc.docstatus==1",
-   "fieldname": "section_transporter_updates",
-   "fieldtype": "Section Break",
-   "label": "Updates"
+   "fieldname": "tab_shipment_updates",
+   "fieldtype": "Tab Break",
+   "label": "Shipment Updates"
   },
   {
    "fieldname": "transporter_updates_html",
    "fieldtype": "HTML",
-   "label": "Updates"
+   "label": "Shipment Updates"
   },
   {
    "fieldname": "amended_from",

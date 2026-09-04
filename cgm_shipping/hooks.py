@@ -87,7 +87,6 @@ doctype_js = {
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/package_field_visibility.js",
-		"public/js/portal_engagement.js",
 		"public/js/project.js",
 	],
 	"Customer": "public/js/crm_customer.js",
