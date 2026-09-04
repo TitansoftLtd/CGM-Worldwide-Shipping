@@ -88,19 +88,44 @@ Print formats: **CGM Quotation Full**, **CGM Quotation Local Charges**.
 
 ## Sales Invoice approval
 
-**Workflow:** `CGM Sales Invoice Approval`
+**Workflow:** `CGM Sales Invoice Approval` (maker-checker gate before submit)
 
-| State | Meaning |
-|-------|---------|
-| Draft | Being prepared |
-| Pending Finance Approval | Awaiting your review |
-| Approved | **Submit** is now allowed |
-| Rejected | Returned to Draft |
+| Approval state | docstatus | Who can edit |
+|----------------|-----------|--------------|
+| **Draft** | 0 | Accounts User (preparer) |
+| **Pending Approval** | 0 | Accounts Manager only (preparer locked out) |
+| **Approved** | 1 | Submitted — ERPNext controls payment status |
+| **Cancelled** | 2 | Cancelled via workflow or native Cancel |
 
-!!! warning "Submit guard"
-    You cannot **Submit** a Sales Invoice until `workflow_state = Approved`.
+### Transitions
 
-After approval, use normal ERPNext payment entry against the invoice.
+| From | Action | To | Role |
+|------|--------|-----|------|
+| Draft | Submit for Review | Pending Approval | Accounts User |
+| Pending Approval | Approve | Approved (submits) | Accounts Manager |
+| Pending Approval | Reject | Draft | Accounts Manager |
+| Approved | Cancel | Cancelled | Accounts Manager |
+
+Rejection returns to **Draft** (no permanent Rejected state). Rejection reason is mandatory via the Reject dialog.
+
+After **Approve**, ERPNext owns payment **Status**:
+
+| Payment status | Meaning |
+|----------------|---------|
+| **Unpaid** | Submitted; customer sees it on **My Invoices** |
+| **Partly Paid** | Partial payment recorded |
+| **Paid** | Fully settled |
+| **Overdue** | Past due with balance outstanding |
+
+Workflow uses **Don't Override Status** — the list indicator and customer portal show **Unpaid / Paid**, not the approval state.
+
+Email notifications (queued):
+
+- **Submit for Review** → Accounts Manager
+- **Approve** → invoice creator (notes approval + payment status)
+- **Reject** → invoice creator (includes rejection reason)
+
+Post-approval corrections: **Cancel → Amend → Draft → Submit for Review → Approve** (full approval cycle again).
 
 ---
 

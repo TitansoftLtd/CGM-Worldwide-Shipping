@@ -67,7 +67,18 @@
       <div class="cp-kpi-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
       </div>
-      <div><div class="cp-kpi-num" style="font-size:1.15rem;">{{ frappe.utils.fmt_money(stat_amount_due|default(0), currency=amount_due_currency|default(None)) }}</div><div class="cp-kpi-label">{{ _("Amount Due") }}</div></div>
+      <div>
+        <div class="cp-kpi-amount-num">
+          {% if outstanding_totals %}
+            {% for t in outstanding_totals %}
+              <span>{{ frappe.utils.fmt_money(t.amount, currency=t.currency) }}</span>
+            {% endfor %}
+          {% else %}
+            <span>{{ amount_due_display or frappe.utils.fmt_money(stat_amount_due|default(0), currency=amount_due_currency|default(None)) }}</span>
+          {% endif %}
+        </div>
+        <div class="cp-kpi-label">{{ _("Amount Due") }}</div>
+      </div>
     </a>
   </section>
   {% endif %}

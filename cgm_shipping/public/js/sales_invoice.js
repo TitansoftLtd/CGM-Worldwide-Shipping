@@ -3,9 +3,10 @@ const CGM_SI_CREDIT_NOTE_NAMING_SERIES = "CR-.MMYY.-.####";
 
 const CGM_SI_DRAFT_STATE = "Draft";
 const CGM_SI_PENDING_STATE = "Pending Approval";
-const CGM_SI_REJECTED_STATE = "Rejected";
+const CGM_SI_APPROVED_STATE = "Approved";
 const CGM_SI_ACTION_SUBMIT_FOR_REVIEW = "Submit for Review";
 const CGM_SI_REJECTION_REASON_FIELD = "custom_rejection_reason";
+const CGM_SI_REJECTED_BY_FIELD = "custom_rejected_by";
 
 /** Sales Invoice field -> Project field for project-linked shipment refs. */
 const CGM_SI_PROJECT_FETCH_MAP = {
@@ -157,35 +158,76 @@ function cgm_set_sales_invoice_workflow_alert(frm, text, tone = "brand") {
 	);
 }
 
+function cgm_sales_invoice_status_tone(status) {
+	const value = (status || "").trim();
+	if (value === "Paid") {
+		return "green";
+	}
+	if (value.includes("Overdue")) {
+		return "red";
+	}
+	if (["Unpaid", "Partly Paid", "Submitted"].includes(value)) {
+		return "orange";
+	}
+	return "blue";
+}
+
 function cgm_configure_sales_invoice_workflow_ui(frm) {
 	if (!frm.fields_dict.workflow_state) {
 		return;
 	}
 
 	if (frm.doc.docstatus === 1) {
-		frm.dashboard.clear_headline();
+		const payment_status = (frm.doc.status || "").trim();
+		const approval_state = (frm.doc.workflow_state || CGM_SI_APPROVED_STATE).trim();
+		if (payment_status) {
+			frm.page.set_indicator(payment_status, cgm_sales_invoice_status_tone(payment_status));
+		}
+		if (frm.fields_dict.workflow_state) {
+			frm.toggle_display("workflow_state", true);
+		}
+		cgm_set_sales_invoice_workflow_alert(
+			frm,
+			__("Approval status: {0}", [approval_state]),
+			approval_state === CGM_SI_APPROVED_STATE ? "success" : "info"
+		);
 		cgm_add_sales_invoice_payment_button(frm);
 		return;
 	}
 
-	if (frm.doc.docstatus !== 0) {
+	if (frm.fields_dict.workflow_state) {
+		frm.toggle_display("workflow_state", true);
+	}
+
+	if (frm.doc.docstatus === 2) {
+		frm.dashboard.clear_headline();
 		return;
 	}
 
 	const state = frm.doc.workflow_state || CGM_SI_DRAFT_STATE;
 	frm.page.set_primary_action(__("Save"), () => frm.save());
 
-	if (state === CGM_SI_PENDING_STATE) {
-		cgm_set_sales_invoice_workflow_alert(
-			frm,
-			__("Waiting for this invoice to be approved or rejected. Approval will submit the invoice."),
-			"info"
-		);
-	} else if (state === CGM_SI_REJECTED_STATE) {
+	if (state === CGM_SI_APPROVED_STATE) {
 		cgm_set_sales_invoice_workflow_alert(
 			frm,
 			__(
-				"This invoice was rejected. Update it, then use Actions → {0}.",
+				"This invoice is approved but not submitted yet. Save or use Actions → Approve again — it will submit and show as Unpaid for the customer."
+			),
+			"danger"
+		);
+	} else if (state === CGM_SI_PENDING_STATE) {
+		cgm_set_sales_invoice_workflow_alert(
+			frm,
+			__(
+				"Pending manager approval. The invoice is locked for editing by the preparer until approved or rejected."
+			),
+			"info"
+		);
+	} else if (state === CGM_SI_DRAFT_STATE && frm.doc[CGM_SI_REJECTED_BY_FIELD]) {
+		cgm_set_sales_invoice_workflow_alert(
+			frm,
+			__(
+				"Returned to Draft after rejection. Correct the invoice, then use Actions → {0}.",
 				[CGM_SI_ACTION_SUBMIT_FOR_REVIEW]
 			),
 			"danger"
