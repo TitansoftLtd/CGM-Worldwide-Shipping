@@ -224,7 +224,7 @@ def share_invoices_with_client(task_name: str, notify: int = 1) -> dict:
 			if email_info.get("emailed"):
 				message = _("Client notified again by email.")
 			elif cint(notify) and email_info.get("reason") == "no_email":
-				message += " " + _("Could not email — add a customer contact or portal user.")
+				message += " " + _("Could not email - add a customer contact or portal user.")
 			elif cint(notify) and email_info.get("reason") == "email_failed":
 				message += " " + _("Portal share is fine; email could not be sent.")
 			return {
@@ -265,7 +265,7 @@ def share_invoices_with_client(task_name: str, notify: int = 1) -> dict:
 	if email_info.get("emailed"):
 		message += " " + _("Client notified by email.")
 	elif cint(notify) and email_info.get("reason") == "no_email":
-		message += " " + _("Could not email — add a customer contact or portal user.")
+		message += " " + _("Could not email - add a customer contact or portal user.")
 	elif cint(notify) and email_info.get("reason") == "email_failed":
 		message += " " + _("Portal share is fine; email could not be sent.")
 
@@ -339,7 +339,7 @@ def confirm_client_fee_paid(project: str, source: str, row: str) -> dict:
 	return {
 		"ok": True,
 		"message": _(
-			"Thank you — we recorded that you have paid. Please attach your payment receipt next."
+			"Thank you - we recorded that you have paid. Please attach your payment receipt next."
 		),
 	}
 
@@ -377,12 +377,12 @@ def submit_client_fee_payment_receipt(
 		is_shipping_line_pop = (payment_item or "") == "Shipping Line"
 	if is_shipping_line_pop:
 		message = _(
-			"Thank you — your bank POP was submitted. Documentation will attach the "
+			"Thank you - your bank POP was submitted. Documentation will attach the "
 			"shipping line receipt, then Finance will verify it."
 		)
 	else:
 		message = _(
-			"Thank you — your payment receipt was submitted. CGM Finance will confirm and continue clearance."
+			"Thank you - your payment receipt was submitted. CGM Finance will confirm and continue clearance."
 		)
 	return {
 		"ok": True,

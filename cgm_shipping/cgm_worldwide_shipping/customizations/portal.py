@@ -1088,9 +1088,9 @@ def _fee_invoice_row(
 	elif reported:
 		status = "payment_reported"
 		status_label = (
-			_("Payment reported — please attach POP")
+			_("Payment reported - please attach POP")
 			if is_pop
-			else _("Payment reported — please attach receipt")
+			else _("Payment reported - please attach receipt")
 		)
 	else:
 		status = "awaiting_payment"

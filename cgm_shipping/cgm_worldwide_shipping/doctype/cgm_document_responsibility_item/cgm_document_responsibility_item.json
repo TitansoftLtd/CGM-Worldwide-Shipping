@@ -31,7 +31,7 @@
    "reqd": 1
   },
   {
-   "description": "Link to a CGM Role Group master. Create new groups (e.g. Documentation) from CGM Role Group — no developer needed. Edit Roles and Department stems on that master.",
+   "description": "Link to a CGM Role Group master. Create new groups (e.g. Documentation) from CGM Role Group - no developer needed. Edit Roles and Department stems on that master.",
    "fieldname": "role_group",
    "fieldtype": "Link",
    "in_list_view": 1,
