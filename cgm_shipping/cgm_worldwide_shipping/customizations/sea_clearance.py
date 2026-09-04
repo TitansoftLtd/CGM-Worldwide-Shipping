@@ -494,8 +494,8 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 		)
 		if not permit_invoices_ready_for_project(project, stage):
 			frappe.throw(
-				f"Attach all permit invoices on the <b>{stage}</b> permit application task and save — "
-				"Finance is notified automatically — before advancing workflow."
+				f"Attach all permit invoices on the <b>{stage}</b> permit application task and save - "
+				"Finance is notified automatically - before advancing workflow."
 			)
 		return
 

@@ -41,11 +41,13 @@
         <p>{{ _("Commercial sales invoices from CGM Worldwide Shipping will appear here.") }}</p>
       </div>
     {% else %}
-      {% if total_outstanding > 0 %}
+      {% if has_outstanding %}
         <div class="cp-alert">
           <div class="icon">!</div>
           <div>
-            <h4>{{ _("Outstanding balance") }}: {{ frappe.utils.fmt_money(total_outstanding, currency=currency) }}</h4>
+            <h4>{{ _("Outstanding balance") }}:
+              {% for t in outstanding_totals %}{{ frappe.utils.fmt_money(t.amount, currency=t.currency) }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </h4>
             <p>{{ _("Total due across your open sales invoices. Please contact us to settle.") }}</p>
           </div>
         </div>
@@ -54,8 +56,9 @@
         <table class="cp-table">
           <thead>
             <tr>
+              <th>{{ _("Posting Date") }}</th>
               <th>{{ _("Invoice") }}</th>
-              <th>{{ _("Date") }}</th>
+              <th>{{ _("Project") }}</th>
               <th>{{ _("Due Date") }}</th>
               <th>{{ _("Status") }}</th>
               <th style="text-align:right;">{{ _("Total") }}</th>
@@ -66,12 +69,21 @@
           <tbody>
             {% for i in invoices %}
               <tr>
+                <td data-label="{{ _('Posting Date') }}">{% if i.posting_date %}{{ local_date(i.posting_date) }}{% else %}-{% endif %}</td>
                 <td data-label="{{ _('Invoice') }}"><span class="ref-link">{{ i.name }}</span></td>
-                <td data-label="{{ _('Date') }}">{% if i.posting_date %}{{ local_date(i.posting_date) }}{% else %}-{% endif %}</td>
+                <td data-label="{{ _('Project') }}">
+                  {% if i.project_url and i.project_label %}
+                    <a class="ref-link" href="{{ i.project_url }}">{{ i.project_label }}</a>
+                  {% elif i.project_label %}
+                    {{ i.project_label }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
                 <td data-label="{{ _('Due Date') }}">{% if i.due_date %}{{ local_date(i.due_date) }}{% else %}-{% endif %}</td>
                 <td data-label="{{ _('Status') }}"><span class="cp-status {{ i.tone }}"><span class="dot"></span>{{ i.status }}</span></td>
                 <td data-label="{{ _('Total') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">{{ frappe.utils.fmt_money(i.grand_total, currency=i.currency) }}</td>
-                <td data-label="{{ _('Outstanding') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;{% if i.outstanding_amount and i.outstanding_amount > 0 %}color:#be123c;{% else %}color:var(--cp-green);{% endif %}">{{ frappe.utils.fmt_money(i.outstanding_amount, currency=i.currency) }}</td>
+                <td data-label="{{ _('Outstanding') }}" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;{% if i.outstanding_in_currency and i.outstanding_in_currency > 0 %}color:#be123c;{% else %}color:var(--cp-green);{% endif %}">{{ frappe.utils.fmt_money(i.outstanding_in_currency, currency=i.currency) }}</td>
                 <td data-label="{{ _('Actions') }}">
                   <span style="display:inline-flex;gap:.4rem;">
                     <a class="cp-btn cp-btn-ghost cp-btn-sm" href="{{ i.pdf_view_url }}" target="_blank" rel="noopener">{{ _("Preview") }}</a>

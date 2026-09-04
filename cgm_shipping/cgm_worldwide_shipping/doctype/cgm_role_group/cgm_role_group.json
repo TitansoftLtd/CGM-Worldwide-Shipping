@@ -16,7 +16,7 @@
  ],
  "fields": [
   {
-   "description": "Short name used in Document responsibilities (e.g. Finance, Documentation). Create new groups here anytime — no code change needed.",
+   "description": "Short name used in Document responsibilities (e.g. Finance, Documentation). Create new groups here anytime - no code change needed.",
    "fieldname": "role_group_name",
    "fieldtype": "Data",
    "in_list_view": 1,

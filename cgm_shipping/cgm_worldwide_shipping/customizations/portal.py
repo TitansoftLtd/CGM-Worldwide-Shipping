@@ -24,7 +24,7 @@ from urllib.parse import quote
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 # ─── Customer resolution ─────────────────────────────────────────────────────
 
@@ -443,33 +443,77 @@ def get_customer_quotations(customer: str, limit: int = 200) -> list[dict]:
 	return rows
 
 
+def invoice_outstanding_in_invoice_currency(row: dict) -> float:
+	"""Return outstanding in the invoice's transaction currency.
+
+	ERPNext stores ``outstanding_amount`` in ``party_account_currency``. When
+	that is company currency (often KES) and the invoice is USD, formatting
+	the raw outstanding with the invoice currency would show KES as dollars.
+	"""
+	outstanding = flt(row.get("outstanding_amount"))
+	invoice_currency = row.get("currency")
+	party_currency = row.get("party_account_currency")
+	if not outstanding or not party_currency or party_currency == invoice_currency:
+		return outstanding
+	rate = flt(row.get("conversion_rate"))
+	if rate:
+		return flt(outstanding / rate)
+	return outstanding
+
+
+def outstanding_totals_by_currency(invoices: list[dict]) -> list[dict]:
+	"""Sum portal invoice outstanding per invoice currency (skip zeros)."""
+	totals: dict[str, float] = {}
+	for row in invoices:
+		amount = flt(row.get("outstanding_in_currency"))
+		if amount <= 0:
+			continue
+		currency = row.get("currency") or ""
+		totals[currency] = flt(totals.get(currency, 0) + amount)
+	return [{"currency": currency, "amount": amount} for currency, amount in totals.items()]
+
+
 def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
 	"""Submitted Sales Invoices for this customer, newest first.
 
 	Only submitted invoices (docstatus 1) are shown - drafts are internal.
 	Each row carries a tone + guarded PDF download URL.
+	Outstanding is converted to the invoice currency for portal display.
 	"""
 	if not customer:
 		return []
+	si_meta = frappe.get_meta("Sales Invoice")
+	fields = [
+		"name",
+		"posting_date",
+		"due_date",
+		"status",
+		"grand_total",
+		"outstanding_amount",
+		"currency",
+		"conversion_rate",
+		"party_account_currency",
+		"project",
+	]
+	if si_meta.has_field("custom_project_name"):
+		fields.append("custom_project_name")
 	rows = frappe.get_all(
 		"Sales Invoice",
 		filters={"customer": customer, "docstatus": 1},
-		fields=[
-			"name",
-			"posting_date",
-			"due_date",
-			"status",
-			"grand_total",
-			"outstanding_amount",
-			"currency",
-		],
+		fields=fields,
 		order_by="posting_date desc, creation desc",
 		limit=limit,
 	)
+	refs = _project_refs([r.project for r in rows if r.get("project")])
 	for r in rows:
 		r["tone"] = invoice_status_tone(r.status)
 		r["pdf_view_url"] = _pdf_url("Sales Invoice", r["name"], "inline")
 		r["pdf_download_url"] = _pdf_url("Sales Invoice", r["name"], "attachment")
+		r["outstanding_in_currency"] = invoice_outstanding_in_invoice_currency(r)
+		project = (r.get("project") or "").strip()
+		label = (r.get("custom_project_name") or "").strip() or refs.get(project) or project
+		r["project_label"] = label
+		r["project_url"] = f"/shipment?name={quote(project, safe='')}" if project else ""
 	return rows
 
 
@@ -921,6 +965,8 @@ def _project_refs(project_names: list[str]) -> dict[str, str]:
 		return {}
 	meta = frappe.get_meta("Project")
 	fields = ["name", "project_name"]
+	if meta.has_field("custom_project_reference"):
+		fields.append("custom_project_reference")
 	for field in ("custom_batch_no", "custom_bill_of_lading", "custom_bl_number"):
 		if meta.has_field(field):
 			fields.append(field)
@@ -1088,9 +1134,9 @@ def _fee_invoice_row(
 	elif reported:
 		status = "payment_reported"
 		status_label = (
-			_("Payment reported — please attach POP")
+			_("Payment reported - please attach POP")
 			if is_pop
-			else _("Payment reported — please attach receipt")
+			else _("Payment reported - please attach receipt")
 		)
 	else:
 		status = "awaiting_payment"

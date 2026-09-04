@@ -66,7 +66,7 @@ frappe.ui.form.on("Employee Advance", {
 				if (!frm.doc.purpose) {
 					frm.set_value(
 						"purpose",
-						[details.item_summary, details.description].filter(Boolean).join(" — ")
+						[details.item_summary, details.description].filter(Boolean).join(" - ")
 					);
 				}
 				if (!frm.doc.custom_project && details.project) {

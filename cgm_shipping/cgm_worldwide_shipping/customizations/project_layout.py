@@ -634,7 +634,7 @@ def ensure_task_container_update_fields() -> None:
 		"Task",
 		{
 			"fieldname": "custom_not_emptied_reason",
-			"label": "If containers not exiting port — reason",
+			"label": "If containers not exiting port - reason",
 			"fieldtype": "Small Text",
 			"insert_after": "custom_container_updates",
 			"depends_on": (
@@ -1128,7 +1128,7 @@ def _ensure_tracking_fields() -> None:
 			"in_list_view": 1,
 			"hidden": 0,
 			"read_only": 0,
-			"description": "Company CGM reference — enter manually; not the same as Project Name.",
+			"description": "Company CGM reference - enter manually; not the same as Project Name.",
 		},
 	)
 	_create_cf(
@@ -1551,7 +1551,7 @@ def ensure_project_finance_cost_fields() -> None:
 		"Project",
 		{
 			"fieldname": "custom_finance_cost_total",
-			"label": "Total Billed Amount (via Journal Entry) — numeric",
+			"label": "Total Billed Amount (via Journal Entry) - numeric",
 			"fieldtype": "Currency",
 			"insert_after": "custom_section_finance_cost_summary",
 			"read_only": 1,

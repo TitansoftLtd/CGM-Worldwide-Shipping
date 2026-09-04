@@ -87,8 +87,8 @@ def _migrate_notification() -> None:
 			"<p>A new operational update was posted.</p>"
 			"<p><b>Source:</b> {{ doc.update_source }}</p>"
 			"<p><b>Subject:</b> {{ doc.subject }}</p>"
-			"<p><b>Message:</b> {{ doc.message or '—' }}</p>"
-			"<p><b>Shipment:</b> {{ doc.project or '—' }}</p>"
+			"<p><b>Message:</b> {{ doc.message or '-' }}</p>"
+			"<p><b>Shipment:</b> {{ doc.project or '-' }}</p>"
 		)
 		if not doc.get("recipients"):
 			doc.append("recipients", {"receiver_by_role": "Transport Officer"})
@@ -108,8 +108,8 @@ def _migrate_notification() -> None:
 		"<p>A new operational update was posted.</p>"
 		"<p><b>Source:</b> {{ doc.update_source }}</p>"
 		"<p><b>Subject:</b> {{ doc.subject }}</p>"
-		"<p><b>Message:</b> {{ doc.message or '—' }}</p>"
-		"<p><b>Shipment:</b> {{ doc.project or '—' }}</p>"
+		"<p><b>Message:</b> {{ doc.message or '-' }}</p>"
+		"<p><b>Shipment:</b> {{ doc.project or '-' }}</p>"
 	)
 	notification.append("recipients", {"receiver_by_role": "Transport Officer"})
 	notification.append("recipients", {"receiver_by_role": "Operations Manager"})

@@ -181,7 +181,7 @@ def notify_client_for_inspection(task_name: str) -> dict:
 	project = frappe.get_doc("Project", project_name)
 	customer = project.customer
 	if not customer:
-		frappe.throw(_("This Project has no Customer — add one before notifying the client."))
+		frappe.throw(_("This Project has no Customer - add one before notifying the client."))
 
 	emails = get_customer_notification_emails(customer)
 	if not emails:
@@ -313,6 +313,6 @@ def confirm_inspection_via_portal(project: str) -> dict:
 		"ok": True,
 		"task_completed": task_completed,
 		"message": _(
-			"Thank you — your inspection confirmation has been recorded and the inspection task is complete."
+			"Thank you - your inspection confirmation has been recorded and the inspection task is complete."
 		),
 	}

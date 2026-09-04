@@ -8,7 +8,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		() => {
 		const page = frappe.ui.make_app_page({
 			parent: wrapper,
-			title: __("Shipment Tracker"),
+			title: __("Container Ops Board"),
 			single_column: true,
 		});
 
@@ -18,16 +18,15 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		page.main.addClass("cgm-ops-board");
 		page.main.append(`
 			<div class="cgm-ops-sticky-top">
-				<div class="cgm-ops-hero">
-					<h1>${__("Shipment Tracker")}</h1>
-					<p>${__("Shipment-level tracking with drill-down to container status and the existing container operations board")}</p>
-				</div>
+				<div class="cgm-ops-subtitle"><span>${__(
+					"Shipment-level tracking with drill-down to container status and the existing container operations board"
+				)}</span></div>
 				<div class="cgm-ops-sticky-chrome">
 					<div class="cgm-ops-filters"></div>
-					<div class="cgm-ops-kpis-section">
-						<button type="button" class="cgm-ops-kpis-toggle" aria-expanded="true">
+					<div class="cgm-ops-kpis-section is-collapsed">
+						<button type="button" class="cgm-ops-kpis-toggle" aria-expanded="false">
 							<span class="cgm-ops-kpis-toggle-label">${__("Summary")}</span>
-							<span class="cgm-ops-kpis-toggle-hint">${__("Click to show or hide KPI cards")}</span>
+							<span class="cgm-ops-kpis-toggle-hint">${__("Show or hide KPI cards")}</span>
 							<span class="cgm-ops-kpis-toggle-icon" aria-hidden="true">▾</span>
 						</button>
 						<div class="cgm-ops-kpis-collapse">
@@ -49,6 +48,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 							<span class="cgm-ops-updates-tab-label">${__("Updates")}</span>
 							<span class="cgm-ops-updates-badge" style="display:none"></span>
 						</button>
+						<span class="cgm-ops-list-count cgm-ops-tabs-count" style="display:none"></span>
 					</div>
 				</div>
 			</div>
@@ -64,25 +64,90 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		setup_cgm_ops_breadcrumbs();
 
-		const KPI_COLLAPSE_STORAGE_KEY = "cgm_ops_board_kpis_collapsed";
+		/* Versioned key.
+		 *
+		 * The previous code called set_kpis_collapsed() on load, and that
+		 * function writes to localStorage. So it stamped "0" for every user on
+		 * their first visit, and there is no way to tell "chose expanded" from
+		 * "the old code wrote it". Reusing the key would mean the collapsed
+		 * default never reaches anyone who has opened the page before.
+		 */
+		/* Fit the board to whatever height is actually left.
+		 *
+		 * The CSS falls back to calc(100dvh - 7rem), but 7rem is only a guess
+		 * at frappe's navbar, page head and breadcrumbs. Whenever the real
+		 * chrome is taller the board overruns the viewport and the whole PAGE
+		 * scrolls, which defeats the point: the table has its own scroller and
+		 * the filters, tabs and paging are meant to stay put.
+		 */
+		function fit_board_height() {
+			const el = page.main.get(0);
+			if (!el) return;
+			const top = el.getBoundingClientRect().top + window.scrollY;
+			el.style.setProperty("--cgm-ops-board-offset", `${Math.max(0, Math.round(top))}px`);
+		}
 
-		function set_kpis_collapsed(collapsed) {
+		function watch_board_height() {
+			fit_board_height();
+			// Two frames in: fonts and sticky chrome settle after first paint.
+			requestAnimationFrame(() => requestAnimationFrame(fit_board_height));
+
+			let pending = null;
+			const remeasure = () => {
+				if (pending) cancelAnimationFrame(pending);
+				pending = requestAnimationFrame(fit_board_height);
+			};
+			window.addEventListener("resize", remeasure);
+			window.addEventListener("orientationchange", remeasure);
+
+			// The chrome above can change height on its own, for instance when
+			// breadcrumbs wrap, so watch it rather than only window events.
+			if (window.ResizeObserver) {
+				const chrome = document.querySelector(".navbar, .page-head");
+				if (chrome) new ResizeObserver(remeasure).observe(chrome);
+			}
+		}
+
+		const KPI_COLLAPSE_STORAGE_KEY = "cgm_ops_board_kpis_collapsed_v2";
+
+		// `persist` is false when only applying the default on load. Writing
+		// then is what turned a default into a preference nobody expressed.
+		function set_kpis_collapsed(collapsed, persist = true) {
 			const $section = page.main.find(".cgm-ops-kpis-section");
 			const $toggle = $section.find(".cgm-ops-kpis-toggle");
 			$section.toggleClass("is-collapsed", collapsed);
 			$toggle.attr("aria-expanded", collapsed ? "false" : "true");
-			localStorage.setItem(KPI_COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
+			if (persist) {
+				try {
+					localStorage.setItem(KPI_COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
+				} catch (e) {
+					// Private browsing and blocked site data both throw here.
+				}
+			}
 		}
 
 		function init_kpis_collapse() {
 			const $section = page.main.find(".cgm-ops-kpis-section");
 			const $toggle = $section.find(".cgm-ops-kpis-toggle");
-			const collapsed = localStorage.getItem(KPI_COLLAPSE_STORAGE_KEY) === "1";
-			set_kpis_collapsed(collapsed);
+			let stored = null;
+			try {
+				stored = localStorage.getItem(KPI_COLLAPSE_STORAGE_KEY);
+			} catch (e) {
+				// Storage unavailable: fall through to the collapsed default.
+			}
+
+			// Collapsed unless this user has explicitly chosen otherwise: the
+			// cards push the tabs and the table below the fold.
+			const collapsed = stored === null ? true : stored === "1";
+			set_kpis_collapsed(collapsed, false);
 
 			$toggle.on("click", () => {
 				set_kpis_collapsed(!$section.hasClass("is-collapsed"));
+				// Collapsing frees vertical space; re-fit so the table takes it.
+				requestAnimationFrame(fit_board_height);
 			});
+
+			watch_board_height();
 		}
 
 		const filters = {};
@@ -95,8 +160,15 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		const updateRowByKey = {};
 		const selectedKeys = new Set();
 		const PAGE_LENGTH_OPTIONS = [20, 50, 100, 500];
-		let pageLength = frappe.is_large_screen && frappe.is_large_screen() ? 50 : 20;
+		// The first option in PAGE_LENGTH_OPTIONS, so the default always
+		// matches the leftmost button rather than being a separate constant
+		// that can drift away from it.
+		let pageLength = PAGE_LENGTH_OPTIONS[0];
 		let listStart = 0;
+		// Empty sortBy means the server's default order: traffic-light rank
+		// then ETA, which is the operationally useful default.
+		let sortBy = "";
+		let sortDir = "asc";
 		let totalCount = 0;
 		let unreadUpdateCount = 0;
 		let updatesRows = [];
@@ -183,8 +255,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			"batch_no",
 			"clearance_station",
 			"date_field",
-			"date_from",
-			"date_to",
+			"date_range",
 			"status",
 		];
 		const UPDATE_FILTER_FIELDS = [
@@ -192,8 +263,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			"container_tracker",
 			"status",
 			"subject",
-			"date_from",
-			"date_to",
+			"date_range",
 			"customer",
 			"transporter",
 		];
@@ -258,14 +328,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				options: "\nETA\nATA",
 			},
 			{
-				fieldname: "date_from",
-				label: __("Date From"),
-				fieldtype: "Date",
-			},
-			{
-				fieldname: "date_to",
-				label: __("Date To"),
-				fieldtype: "Date",
+				// One control, two server-side params. get_value() returns
+				// [from, to], which applyFilterValue splits back into
+				// filters.date_from / filters.date_to so the API is unchanged.
+				fieldname: "date_range",
+				label: __("Date"),
+				fieldtype: "DateRange",
 			},
 			{
 				fieldname: "status",
@@ -303,19 +371,33 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				$(control.wrapper).toggle(show);
 			});
 
-			const $from = filter_controls.date_from;
-			const $to = filter_controls.date_to;
-			if ($from && $from.$input) {
-				$from.$input.attr(
-					"placeholder",
-					isUpdates ? __("Posted From") : __("Date From")
-				);
-			}
-			if ($to && $to.$input) {
-				$to.$input.attr("placeholder", isUpdates ? __("Posted To") : __("Date To"));
+			const $range = filter_controls.date_range;
+			if ($range && $range.$input) {
+				$range.$input.attr("placeholder", isUpdates ? __("Posted Date") : __("Date"));
 			}
 
 			syncStatusFilterForTab();
+		}
+
+		// A control's value does not always map to a single filter. The date
+		// range is one widget feeding two server-side params, so every read
+		// goes through here rather than assuming filters[fieldname] = value.
+		function applyFilterValue(fieldname) {
+			const control = filter_controls[fieldname];
+			if (!control) {
+				return;
+			}
+
+			const value = control.get_value();
+
+			if (fieldname === "date_range") {
+				const range = Array.isArray(value) ? value : null;
+				filters.date_from = (range && range[0]) || null;
+				filters.date_to = (range && range[1]) || null;
+				return;
+			}
+
+			filters[fieldname] = value || null;
 		}
 
 		const $filter_parent = page.main.find(".cgm-ops-filters");
@@ -326,7 +408,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 					placeholder: df.label,
 					input_class: "input-xs",
 					onchange() {
-						filters[df.fieldname] = control.get_value() || null;
+						applyFilterValue(df.fieldname);
 						listStart = 0;
 						selectedKeys.clear();
 						refresh();
@@ -340,13 +422,13 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				control.$input.attr("placeholder", df.label);
 				// Link / Date controls sometimes set value without firing df.onchange.
 				control.$input.on("change awesomplete-selectcomplete", () => {
-					filters[df.fieldname] = control.get_value() || null;
+					applyFilterValue(df.fieldname);
 					listStart = 0;
 					selectedKeys.clear();
 					refresh();
 				});
 			}
-			$(control.wrapper).addClass("cgm-ops-filter-field");
+			$(control.wrapper).addClass(`cgm-ops-filter-field cgm-ops-filter-${df.fieldname}`);
 			filter_controls[df.fieldname] = control;
 		});
 
@@ -365,9 +447,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		syncFiltersForTab();
 
 		function syncFilterValues() {
-			Object.keys(filter_controls).forEach((fieldname) => {
-				filters[fieldname] = filter_controls[fieldname].get_value() || null;
-			});
+			Object.keys(filter_controls).forEach(applyFilterValue);
 		}
 
 		function fmtDate(val) {
@@ -495,6 +575,8 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 							date_to: filters.date_to || null,
 							start: listStart,
 							page_length: pageLength,
+							sort_by: sortBy || null,
+							sort_dir: sortDir,
 						},
 					},
 					freeze: true,
@@ -521,6 +603,8 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			}
 			args.start = listStart;
 			args.page_length = pageLength;
+			args.sort_by = sortBy || null;
+			args.sort_dir = sortDir;
 
 			frappe.call({
 				method,
@@ -559,9 +643,25 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			if (!totalCount) {
 				return __("No {0}", [recordNoun(0).toLowerCase()]);
 			}
-			const from = listStart + 1;
+			// How many rows are on screen, out of the total. The exact position
+			// in the set ("51-100 of 412") now lives beside the paging arrows,
+			// so repeating the range here was saying the same thing twice.
 			const to = Math.min(listStart + pageLength, totalCount);
-			return __("Showing {0}–{1} of {2} {3}", [from, to, totalCount, recordNoun(totalCount)]);
+			const shown = to - listStart;
+			return __("Showing {0} of {1}", [shown, totalCount]);
+		}
+
+		// The count sits at the right end of the tabs row rather than in a strip
+		// of its own: it is one short line of metadata, and a dedicated bar for
+		// it cost ~22px of table height on every screen.
+		function setTabsCount(text) {
+			const $count = page.main.find(".cgm-ops-tabs-count");
+			if (!$count.length) return;
+			if (!text) {
+				$count.text("").hide();
+				return;
+			}
+			$count.text(text).show();
 		}
 
 		function renderListChrome(rows) {
@@ -571,27 +671,42 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			const allSelected = pageKeys.length && pageKeys.every((key) => selectedKeys.has(key));
 			const someSelected = pageKeys.some((key) => selectedKeys.has(key));
 
-			$header.html(`
-				<div class="cgm-ops-list-header-left">
-					<span class="cgm-ops-list-count">${frappe.utils.escape_html(listCountLabel())}</span>
-					${
-						selectedKeys.size
-							? `<span class="cgm-ops-list-selected">${__("{0} selected", [selectedKeys.size])}</span>`
-							: ""
-					}
-				</div>
-			`);
+			setTabsCount(listCountLabel());
+
+			// Selection is an action state, so it stays on the left where the
+			// checkboxes are. With the count moved up to the tabs, this row has
+			// nothing to say until something is selected, so it collapses.
+			$header.html(
+				selectedKeys.size
+					? `<div class="cgm-ops-list-header-left">
+					<span class="cgm-ops-list-selected">${__("{0} selected", [selectedKeys.size])}</span>
+				</div>`
+					: ""
+			);
+			$header.css("display", selectedKeys.size ? "" : "none");
+
+			// A compact "51-100 of 412" beside the arrows, so the buttons say
+			// where you are as well as what they do.
+			function pagingRangeLabel() {
+				if (!totalCount) {
+					return "";
+				}
+				const from = listStart + 1;
+				const to = Math.min(listStart + pageLength, totalCount);
+				return `${from}\u2013${to} ${__("of")} ${totalCount}`;
+			}
 
 			const canPrev = listStart > 0;
 			const canNext = listStart + pageLength < totalCount;
 			$paging.html(`
 				<div class="list-paging-area level cgm-ops-paging-area">
-					<div class="level-left">
-						<div class="btn-group">
+					<div class="level-left cgm-ops-paging-size">
+						<span class="cgm-ops-paging-label">${__("Rows")}</span>
+						<div class="btn-group cgm-ops-paging-group">
 							${PAGE_LENGTH_OPTIONS.map(
 								(value) => `
 								<button type="button" class="btn btn-default btn-sm btn-paging${
-									value === pageLength ? " btn-info" : ""
+									value === pageLength ? " is-current" : ""
 								}" data-value="${value}" ${value === pageLength ? "disabled" : ""}>
 									${value}
 								</button>`
@@ -599,11 +714,18 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 						</div>
 					</div>
 					<div class="level-right cgm-ops-paging-nav">
-						<button type="button" class="btn btn-default btn-sm cgm-ops-page-prev" ${canPrev ? "" : "disabled"}>
-							${__("Previous")}
+						<span class="cgm-ops-paging-range">${frappe.utils.escape_html(
+							pagingRangeLabel()
+						)}</span>
+						<button type="button" class="btn btn-default btn-sm cgm-ops-page-prev" ${
+							canPrev ? "" : "disabled"
+						} aria-label="${__("Previous page")}">
+							<span aria-hidden="true">&lsaquo;</span> ${__("Prev")}
 						</button>
-						<button type="button" class="btn btn-default btn-sm cgm-ops-page-next" ${canNext ? "" : "disabled"}>
-							${__("Next")}
+						<button type="button" class="btn btn-default btn-sm cgm-ops-page-next" ${
+							canNext ? "" : "disabled"
+						} aria-label="${__("Next page")}">
+							${__("Next")} <span aria-hidden="true">&rsaquo;</span>
 						</button>
 					</div>
 				</div>
@@ -632,7 +754,8 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		}
 
 		function renderEmptyState(message, icon) {
-			page.main.find(".cgm-ops-list-header").empty();
+			setTabsCount(listCountLabel());
+			page.main.find(".cgm-ops-list-header").empty().css("display", "none");
 			page.main.find(".cgm-ops-list-paging").empty();
 			$tableWrap.html(`
 				<div class="cgm-ops-empty">
@@ -641,11 +764,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				</div>`);
 		}
 
-		function renderListTable(headersHtml, bodyHtml) {
+		function renderListTable(headersHtml, bodyHtml, extraHeaderRow = "") {
 			$tableWrap.html(`
 				<div class="cgm-ops-table-scroll">
 					<table class="cgm-ops-table">
-						<thead><tr>${headersHtml}</tr></thead>
+						<thead><tr>${headersHtml}</tr>${extraHeaderRow}</thead>
 						<tbody>${bodyHtml}</tbody>
 					</table>
 				</div>`);
@@ -707,7 +830,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		function transportTableHeaders() {
 			return `
 				${selectAllHeader()}
-				<th class="cgm-ops-sticky-col">${__("Client Name")}</th>
+				<th class="cgm-ops-sticky-col">${__("Client")}</th>
 				<th>${__("Client Reference No")}</th>
 				<th>${__("CGM Ref No")}</th>
 				<th>${__("B/L Number")}</th>
@@ -747,10 +870,12 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			const hasDeposit =
 				flt(row.deposit_amount) > 0 || cint(row.has_deposit);
 			if (!hasDeposit || !status || status === "Not Applicable") {
-				return `<span class="indicator-pill gray ellipsis">${__("No Deposit")}</span>`;
+				return `<span class="cgm-ops-pill muted"><span class="dot"></span>${__("No Deposit")}</span>`;
 			}
 			const tone = status === "Paid" ? "success" : status === "Unpaid" ? "warning" : "muted";
-			return `<span class="indicator-pill ${tone} ellipsis">${frappe.utils.escape_html(status)}</span>`;
+			return `<span class="cgm-ops-pill ${tone}"><span class="dot"></span>${frappe.utils.escape_html(
+				status
+			)}</span>`;
 		}
 
 		function depositRefundStatusCell(row) {
@@ -758,14 +883,20 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			if (!label) {
 				return `<span class="cgm-ops-muted">—</span>`;
 			}
+			// Mapped onto the board's own tones. "blue" and "gray" were
+			// frappe indicator names with no equivalent in cgm-ops-pill, so
+			// they became info and muted rather than silently rendering
+			// unstyled.
 			const toneMap = {
 				success: "success",
 				warning: "warning",
-				blue: "blue",
-				muted: "gray",
+				blue: "info",
+				muted: "muted",
 			};
-			const tone = toneMap[row.deposit_refund_display_tone] || "gray";
-			return `<span class="indicator-pill ${tone} ellipsis">${frappe.utils.escape_html(label)}</span>`;
+			const tone = toneMap[row.deposit_refund_display_tone] || "muted";
+			return `<span class="cgm-ops-pill ${tone}"><span class="dot"></span>${frappe.utils.escape_html(
+				label
+			)}</span>`;
 		}
 
 		function transportTableRow(row, extraCol = "") {
@@ -842,28 +973,149 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			renderListChrome(shipmentRows);
 		}
 
+		// Only columns the server whitelists in _SHIPMENT_SORT_FIELDS are
+		// sortable. The rest render as plain headers rather than offering a
+		// control that would silently do nothing.
+		function sortableHeader(label, field, extraClass = "") {
+			const isActive = sortBy === field;
+			const dir = isActive ? sortDir : "";
+			return `<th class="cgm-ops-sortable${extraClass ? " " + extraClass : ""}${
+				isActive ? " is-sorted" : ""
+			}" data-sort="${field}" role="button" tabindex="0"
+				aria-sort="${isActive ? (dir === "asc" ? "ascending" : "descending") : "none"}"
+				title="${__("Sort by {0}", [label])}">
+				<span class="cgm-ops-th-label">${label}</span>
+				<span class="cgm-ops-sort-caret" aria-hidden="true">${
+					isActive ? (dir === "asc" ? "\u25B4" : "\u25BE") : "\u21C5"
+				}</span>
+			</th>`;
+		}
+
+		// Delegated, because the header row is re-rendered on every refresh.
+		// Row keys the server sorts on, mirrored here so a sort can be done
+		// locally when the whole result set is already on screen. Kept in step
+		// with _SHIPMENT_SORT_FIELDS in container_ops_board.py.
+		const SORT_ROW_KEYS = {
+			client_name: "customer",
+			client_reference_no: "client_reference_no",
+			cgm_ref_no: "cgm_ref_no",
+			bill_of_lading: "bl_number",
+			project_ref: "project_ref",
+			eta: "eta",
+			ata: "ata",
+			operational_status: "operational_status",
+			batch_no: "batch_no",
+			shipping_line: "shipping_line",
+			country_of_origin: "country_of_origin",
+			clearance_station: "clearance_station",
+			container_count: "quantity",
+			vessel: "vessel_name",
+		};
+
+		function sortRowsLocally(rows) {
+			if (!sortBy) return rows;
+			const key = SORT_ROW_KEYS[sortBy];
+			if (!key) return rows;
+
+			const desc = sortDir === "desc";
+			return rows.slice().sort((a, b) => {
+				const av = a[key];
+				const bv = b[key];
+				// Blanks last in both directions: a missing B/L is absent
+				// information, not the smallest value. Matches the server.
+				const ab = av === null || av === undefined || av === "";
+				const bb = bv === null || bv === undefined || bv === "";
+				if (ab && bb) return 0;
+				if (ab) return 1;
+				if (bb) return -1;
+
+				let cmp;
+				if (typeof av === "number" && typeof bv === "number") {
+					cmp = av - bv;
+				} else {
+					cmp = String(av).localeCompare(String(bv), undefined, {
+						numeric: true,
+						sensitivity: "base",
+					});
+				}
+				return desc ? -cmp : cmp;
+			});
+		}
+
+		function applySort(field) {
+			if (!field) return;
+
+			if (sortBy === field) {
+				// Third click clears back to the server default rather than
+				// trapping the user in asc/desc with no way out.
+				if (sortDir === "asc") {
+					sortDir = "desc";
+				} else {
+					sortBy = "";
+					sortDir = "asc";
+				}
+			} else {
+				sortBy = field;
+				sortDir = "asc";
+			}
+
+			selectedKeys.clear();
+
+			// If every matching row is already loaded, sorting is a local
+			// operation and there is nothing to fetch. Going to the server
+			// here would be a round trip to reorder data the browser already
+			// holds.
+			//
+			// When the set IS paginated we must fetch, because sorting only
+			// the rows on screen would order 20 of 41 and present it as the
+			// sorted list, which is wrong rather than merely slower.
+			const haveEverything =
+				activeTab === "shipments" && shipmentRows.length >= totalCount && totalCount > 0;
+
+			if (haveEverything) {
+				listStart = 0;
+				shipmentRows = sortRowsLocally(shipmentRows);
+				renderShipmentListTable();
+				return;
+			}
+
+			listStart = 0;
+			refresh();
+		}
+
+		page.main.on("click", ".cgm-ops-sortable", function () {
+			applySort($(this).data("sort"));
+		});
+
+		page.main.on("keydown", ".cgm-ops-sortable", function (e) {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				applySort($(this).data("sort"));
+			}
+		});
+
 		function shipmentTableHeaders() {
 			return `
 				${selectAllHeader()}
-				<th class="cgm-ops-sticky-col">${__("Client Name")}</th>
-				<th>${__("Client Reference No")}</th>
-				<th>${__("CGM Ref No")}</th>
-				<th>${__("B/L Number")}</th>
-				<th>${__("Shipment")}</th>
-				<th>${__("ETA")}</th>
-				<th>${__("Operational Status")}</th>
-				<th>${__("CGM Batch No")}</th>
-				<th>${__("Shipping Line")}</th>
-				<th>${__("Country of Origin")}</th>
-				<th>${__("Clearance Station")}</th>
+				${sortableHeader(__("Client"), "client_name", "cgm-ops-sticky-col")}
+				${sortableHeader(__("Client Reference No"), "client_reference_no")}
+				${sortableHeader(__("CGM Ref No"), "cgm_ref_no")}
+				${sortableHeader(__("B/L Number"), "bill_of_lading")}
+				${sortableHeader(__("Shipment"), "project_ref")}
+				${sortableHeader(__("ETA"), "eta")}
+				${sortableHeader(__("Operational Status"), "operational_status")}
+				${sortableHeader(__("CGM Batch No"), "batch_no")}
+				${sortableHeader(__("Shipping Line"), "shipping_line")}
+				${sortableHeader(__("Country of Origin"), "country_of_origin")}
+				${sortableHeader(__("Clearance Station"), "clearance_station")}
 				<th>${__("Remarks")}</th>
-				<th>${__("Containers")}</th>
-				<th>${__("ATA")}</th>
+				${sortableHeader(__("Containers"), "container_count")}
+				${sortableHeader(__("ATA"), "ata")}
 				<th>${__("Container Status")}</th>
 				<th>${__("Container Deposit")}</th>
 				<th>${__("Deposit Payment")}</th>
 				<th>${__("Deposit Refund Status")}</th>
-				<th>${__("Vessel")}</th>
+				${sortableHeader(__("Vessel"), "vessel")}
 			`;
 		}
 
@@ -1278,7 +1530,7 @@ function setup_cgm_ops_breadcrumbs(shipmentLabel) {
 	);
 	frappe.breadcrumbs.append_breadcrumb_element(
 		"/desk/container-ops-board",
-		__("Shipment Tracker"),
+		__("Container Ops Board"),
 		shipmentLabel ? "shipment-list-breadcrumb" : "title-text"
 	);
 	if (shipmentLabel) {

@@ -337,7 +337,7 @@ function cgm_autosave_task_document_attachment(frm) {
 					const msg = (e && (e.message || e)) || "";
 					if (String(msg).includes("modified after you have opened")) {
 						frappe.show_alert({
-							message: __("Document was updated elsewhere — refreshing…"),
+							message: __("Document was updated elsewhere - refreshing…"),
 							indicator: "orange",
 						});
 						frm.reload_doc();

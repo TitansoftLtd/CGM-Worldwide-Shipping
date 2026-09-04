@@ -128,7 +128,7 @@ frappe.ui.form.on("Task", {
 				if (is_permit_finance_step(frm, seq)) {
 					if (frm.doc.custom_client_paid_directly) {
 						intro = __(
-							"<b>Client will pay</b> is selected — no company Journal Entry. " +
+							"<b>Client will pay</b> is selected - no company Journal Entry. " +
 								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional). " +
 								"Receipt attachment is optional. Both tasks complete when invoices are verified " +
 								"(and certificates are attached on the application task)."
@@ -162,7 +162,7 @@ frappe.ui.form.on("Task", {
 						"<b>After invoices go to Finance:</b> Finance verifies invoices and pays on <b>{0}</b>. " +
 							"Then upload payment receipts on that finance task (same department that attached the invoices). " +
 							"Attach <b>Permit Certificate</b> on each row; this task completes when receipts and certificates are in. " +
-							"You can still add more permits later — Finance will reopen to verify and pay.",
+							"You can still add more permits later - Finance will reopen to verify and pay.",
 						[finLabel]
 					);
 				} else {
@@ -197,7 +197,7 @@ frappe.ui.form.on("Task", {
 			} else if (ui.is_ucr_finance) {
 				intro = form_has_client_paid_invoice_line(frm)
 					? __(
-							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
+							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
 								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional) · " +
 								"<b>3</b> Declarant attaches <b>UCR Receipt</b> (here or on Create UCR) · <b>4</b> Verify the receipt. " +
 								"Task completes only after the receipt is verified. " +
@@ -216,7 +216,7 @@ frappe.ui.form.on("Task", {
 				const clientReported = cint(inv?.client_reported_paid);
 				intro = form_has_client_paid_invoice_line(frm)
 					? __(
-							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
+							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
 								"<b>1</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
 								"<b>2</b> <b>Share Invoice with Client</b> (optional). " +
 								"<b>Entry Slip Receipt</b> is optional."
@@ -224,37 +224,37 @@ frappe.ui.form.on("Task", {
 					: __(
 							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row). " +
-								"This finance task completes after payment — <b>Entry Slip Receipt</b> is optional."
+								"This finance task completes after payment - <b>Entry Slip Receipt</b> is optional."
 						);
 				if (clientReported) {
 					intro +=
 						" " +
 						__(
-							"<b>Client reported paid</b> on the portal — check <b>Client Reported Paid</b> on the invoice row; receipt may still be attached."
+							"<b>Client reported paid</b> on the portal - check <b>Client Reported Paid</b> on the invoice row; receipt may still be attached."
 						);
 				}
 				intro_set = true;
 			} else if (ui.is_shipping_line_finance) {
 				intro = form_has_client_paid_invoice_line(frm)
 					? __(
-							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
+							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
 								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b>. " +
 								"<b>3</b> Client uploads <b>POP</b> on the portal (or Finance attaches it). " +
 								"<b>4</b> Documentation attaches the <b>Shipping Line Receipt</b> using the POP. " +
-								"<b>5</b> Finance verifies the receipt — then this task completes."
+								"<b>5</b> Finance verifies the receipt - then this task completes."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>Shipping Line Invoice</b> · " +
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row). " +
 								"<b>3</b> Attach bank <b>POP</b> (or client shares POP via portal). " +
 								"<b>4</b> Documentation attaches the <b>Shipping Line Receipt</b> using the POP. " +
-								"<b>5</b> Finance verifies the receipt — then this task completes."
+								"<b>5</b> Finance verifies the receipt - then this task completes."
 						);
 				intro_set = true;
 			} else if (ui.is_kpa_finance) {
 				intro = form_has_client_paid_invoice_line(frm)
 					? __(
-							"<b>Client will pay</b> on one or more invoice rows — no company Journal Entry for those. " +
+							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
 								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional) · " +
 								"<b>3</b> Attach <b>KPA Receipt</b> · <b>4</b> Verify the receipt. " +
 								"Task completes only after the receipt is verified."
@@ -269,13 +269,13 @@ frappe.ui.form.on("Task", {
 			} else if (ui.is_document_checkpoint) {
 				intro = __(
 					"<b>Initial documents</b> were copied from the Project (read-only). " +
-						"Attach each <b>Final Document</b> here — finals sync to the Project when you save."
+						"Attach each <b>Final Document</b> here - finals sync to the Project when you save."
 				);
 				intro_set = true;
 			} else if (ui.show_payments) {
 				intro = __(
 					"Use <b>Make Payment</b> to record a Journal Entry, or tick <b>Client will pay</b> " +
-						"if the client settles this fee — then verify the invoice and upload their receipt (no JE)."
+						"if the client settles this fee - then verify the invoice and upload their receipt (no JE)."
 				);
 			}
 			if (!intro_set) {
@@ -1518,7 +1518,7 @@ function verify_all_permit_receipts_from_form(frm) {
 				message:
 					data.message ||
 					__(
-						"Permit receipts verified — Finance pays Pre-Clearance Permits and Apply for Pre-Clearance Permits are completed."
+						"Permit receipts verified - Finance pays Pre-Clearance Permits and Apply for Pre-Clearance Permits are completed."
 					),
 				indicator: data.auto_completed ? "green" : "blue",
 			});
@@ -1614,7 +1614,7 @@ function ensure_finance_permit_task_completed_on_form(frm) {
 			}
 			frappe.show_alert({
 				message: __(
-					"Permit receipts uploaded — Finance and declarant pre-clearance tasks completed."
+					"Permit receipts uploaded - Finance and declarant pre-clearance tasks completed."
 				),
 				indicator: "green",
 			});
@@ -2203,11 +2203,11 @@ function mount_cgm_task_toolbar_buttons(frm) {
 						frappe.show_alert({
 							message: fin
 								? __(
-										"Task re-opened. Add a new Local row (tick <b>Amendment</b> to keep the first payment) with the new invoice and save — Finance will verify and pay on {0}.",
+										"Task re-opened. Add a new Local row (tick <b>Amendment</b> to keep the first payment) with the new invoice and save - Finance will verify and pay on {0}.",
 										[fin]
 								  )
 								: __(
-										"Task re-opened. Add a new Local row (tick <b>Amendment</b> for an extra invoice on the same permit type) and save — Finance will be notified."
+										"Task re-opened. Add a new Local row (tick <b>Amendment</b> for an extra invoice on the same permit type) and save - Finance will be notified."
 								  ),
 							indicator: "orange",
 						});
@@ -2241,7 +2241,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 					if (!r.exc) {
 						frappe.show_alert({
 							message: __(
-								"Task re-opened. Replace the primary invoice attachment and save — Finance will verify and pay. " +
+								"Task re-opened. Replace the primary invoice attachment and save - Finance will verify and pay. " +
 									"To keep the first payment and add another invoice, use <b>Add amendment invoice</b> instead."
 							),
 							indicator: "orange",
@@ -2260,7 +2260,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 			if (row.journal_entry) {
 				add_cgm_toolbar_button(
 					frm,
-					__("View Journal Entry — {0}", [finance_line_display_label(row)]),
+					__("View Journal Entry - {0}", [finance_line_display_label(row)]),
 					() => frappe.set_route("Form", "Journal Entry", row.journal_entry)
 				);
 			}
@@ -2777,7 +2777,7 @@ frappe.ui.form.on("Task Finance Line", {
 				});
 			} else if (row.line_type === "Receipt") {
 				frappe.show_alert({
-					message: __("UCR receipt saved — Finance will see it on Finance pays UCR."),
+					message: __("UCR receipt saved - Finance will see it on Finance pays UCR."),
 					indicator: "green",
 				});
 			}
@@ -2809,7 +2809,7 @@ frappe.ui.form.on("Task Finance Line", {
 		if (is_fin && row.line_type === "POP" && row.attachment) {
 			frappe.show_alert({
 				message: __(
-					"POP saved — Documentation can attach the Shipping Line Receipt using this proof."
+					"POP saved - Documentation can attach the Shipping Line Receipt using this proof."
 				),
 				indicator: "green",
 			});
@@ -2817,8 +2817,8 @@ frappe.ui.form.on("Task Finance Line", {
 		if (is_fin && row.line_type === "Receipt" && row.attachment) {
 			frappe.show_alert({
 				message: is_shipping_line_finance_step(frm)
-					? __("Receipt saved — Finance must verify it to complete this task.")
-					: __("Receipt saved — Declarant can view it on the application task."),
+					? __("Receipt saved - Finance must verify it to complete this task.")
+					: __("Receipt saved - Declarant can view it on the application task."),
 				indicator: "green",
 			});
 		}
@@ -2860,7 +2860,7 @@ frappe.ui.form.on("Task Finance Line", {
 					const msg = (e && (e.message || e)) || "";
 					if (String(msg).includes("modified after you have opened")) {
 						frappe.show_alert({
-							message: __("Document was updated elsewhere — refreshing…"),
+							message: __("Document was updated elsewhere - refreshing…"),
 							indicator: "orange",
 						});
 						frm.reload_doc();
@@ -3027,7 +3027,7 @@ frappe.ui.form.on("Permit Register", {
 			});
 			frappe.show_alert({
 				message: __(
-					"Foreign permit — upload the Permit Certificate only (no invoice or payment)."
+					"Foreign permit - upload the Permit Certificate only (no invoice or payment)."
 				),
 				indicator: "blue",
 			});
@@ -3080,7 +3080,7 @@ frappe.ui.form.on("Permit Register", {
 		if (cint(row.invoice_verified)) {
 			frappe.model.set_value(cdt, cdn, "status", "Invoice Verified");
 			frappe.show_alert({
-				message: __("{0} invoice verified — you can Make Payment for this permit.", [
+				message: __("{0} invoice verified - you can Make Payment for this permit.", [
 					row.permit_type || __("Permit"),
 				]),
 				indicator: "green",
@@ -3276,7 +3276,7 @@ function verify_ucr_finance_line(frm, line_type, finance_line_name) {
 			const msg = (e && (e.message || e)) || "";
 			if (String(msg).includes("modified after you have opened")) {
 				frappe.show_alert({
-					message: __("Document was updated elsewhere — refreshing…"),
+					message: __("Document was updated elsewhere - refreshing…"),
 					indicator: "orange",
 				});
 				frm.reload_doc();
@@ -3370,7 +3370,7 @@ function apply_entry_application_intro(frm, status) {
 	} else if (status.client_paid_directly) {
 		intro = __(
 			"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
-				"Waiting for Finance to verify the <b>{0}</b> — this task completes when they do.",
+				"Waiting for Finance to verify the <b>{0}</b> - this task completes when they do.",
 			[invoiceLabel]
 		);
 	} else if (status.invoice_verified) {
@@ -3382,14 +3382,14 @@ function apply_entry_application_intro(frm, status) {
 		);
 	} else if (status.invoice_submitted) {
 		intro = __(
-			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify — this task completes " +
+			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify - this task completes " +
 				"when the invoice is approved.",
 			[invoiceLabel]
 		);
 	} else {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>{0}</b> and save on " +
-				"<b>Invoices & Receipts</b> — Finance is notified automatically. " +
+				"<b>Invoices & Receipts</b> - Finance is notified automatically. " +
 				"This task completes once Finance verifies the invoice. " +
 				"ENTRY document under <b>Clearance Documents</b> remains optional when issued.",
 			[invoiceLabel]
@@ -3478,7 +3478,7 @@ function verify_entry_finance_line(frm, line_type, finance_line_name) {
 			const msg = (e && (e.message || e)) || "";
 			if (String(msg).includes("modified after you have opened")) {
 				frappe.show_alert({
-					message: __("Document was updated elsewhere — refreshing…"),
+					message: __("Document was updated elsewhere - refreshing…"),
 					indicator: "orange",
 				});
 				frm.reload_doc();
@@ -3851,7 +3851,7 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 			? __(
 					"<b>Finance selected: Client will pay</b> (no company Journal Entry). " +
 						"After the client/Finance shares <b>POP</b>, attach the <b>{0}</b> here. " +
-						"Finance verifies the receipt — then this task and Finance complete together.",
+						"Finance verifies the receipt - then this task and Finance complete together.",
 					[receiptLabel]
 				)
 			: __(
@@ -3876,7 +3876,7 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 			? status.receipt_verified
 				? __("<b>All documents are in place.</b> Completing this task…")
 				: __(
-						"<b>{0} attached.</b> Waiting for Finance to verify it — then both Shipping Line tasks complete.",
+						"<b>{0} attached.</b> Waiting for Finance to verify it - then both Shipping Line tasks complete.",
 						[receiptLabel]
 					)
 			: __("<b>{0} receipt uploaded.</b> This task will complete automatically.", [
@@ -4038,7 +4038,7 @@ function verify_app_finance_line(frm, profileKey, lineType, finance_line_name) {
 			const msg = (e && (e.message || e)) || "";
 			if (String(msg).includes("modified after you have opened")) {
 				frappe.show_alert({
-					message: __("Document was updated elsewhere — refreshing…"),
+					message: __("Document was updated elsewhere - refreshing…"),
 					indicator: "orange",
 				});
 				frm.reload_doc();
@@ -4182,7 +4182,7 @@ function show_permit_finance_journal_entry_view_buttons(frm) {
 		const label = cint(row.is_amendment)
 			? __("{0} (amendment)", [row.permit_type])
 			: row.permit_type;
-		add_cgm_toolbar_button(frm, __("View Journal Entry — {0}", [label]), () => {
+		add_cgm_toolbar_button(frm, __("View Journal Entry - {0}", [label]), () => {
 			frappe.set_route("Form", "Journal Entry", row.journal_entry);
 		});
 	});
@@ -4199,7 +4199,7 @@ function setup_permit_finance_make_payment_buttons(frm) {
 		const label = cint(row.is_amendment)
 			? __("{0} (amendment)", [row.permit_type])
 			: row.permit_type;
-		add_cgm_toolbar_button(frm, __("Make Payment — {0}", [label]), () =>
+		add_cgm_toolbar_button(frm, __("Make Payment - {0}", [label]), () =>
 			open_journal_entry_payment_dialog(frm, {
 				permit_row_name: row.name,
 				default_amount: row.invoice_amount,
@@ -4213,7 +4213,7 @@ function setup_app_finance_make_payment_buttons(frm, unpaid_lines) {
 	const ui = get_sea_task_ui(frm);
 	(unpaid_lines || unpaid_verified_invoice_lines_on_form(frm)).forEach((row) => {
 		const label = finance_line_display_label(row);
-		add_cgm_toolbar_button(frm, __("Make Payment — {0}", [label]), () => {
+		add_cgm_toolbar_button(frm, __("Make Payment - {0}", [label]), () => {
 			const opts = {
 				finance_line_name: row.name,
 				title_suffix: label,
@@ -4263,7 +4263,7 @@ function setup_app_finance_client_will_pay_buttons(frm, unpaid_lines) {
 			return;
 		}
 		const label = finance_line_display_label(row);
-		add_cgm_toolbar_button(frm, __("Client will pay — {0}", [label]), () => {
+		add_cgm_toolbar_button(frm, __("Client will pay - {0}", [label]), () => {
 			if (frm.is_dirty()) {
 				frappe.msgprint({
 					title: __("Save first"),
@@ -4275,7 +4275,7 @@ function setup_app_finance_client_will_pay_buttons(frm, unpaid_lines) {
 			frappe.model.set_value(row.doctype, row.name, "client_paid_directly", 1);
 			frm.save().then(() => {
 				frappe.show_alert({
-					message: __("{0}: Client will pay — no company Journal Entry.", [label]),
+					message: __("{0}: Client will pay - no company Journal Entry.", [label]),
 					indicator: "blue",
 				});
 			});
@@ -4370,7 +4370,7 @@ function setup_permit_finance_payment_buttons(frm) {
 function open_journal_entry_payment_dialog(frm, opts = {}) {
 	const permit_row_name = opts.permit_row_name || null;
 	const finance_line_name = opts.finance_line_name || null;
-	const title_suffix = opts.title_suffix ? ` — ${opts.title_suffix}` : "";
+	const title_suffix = opts.title_suffix ? ` - ${opts.title_suffix}` : "";
 	if (!frm.doc.name || frm.is_new()) {
 		frappe.msgprint(__("Save the task before making a payment."));
 		return;

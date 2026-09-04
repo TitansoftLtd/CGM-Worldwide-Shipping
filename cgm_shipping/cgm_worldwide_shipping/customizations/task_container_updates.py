@@ -426,7 +426,7 @@ def validate_shipping_line_deposit_declarations(doc) -> None:
 	if amount_missing and flt(bl.get("deposit_amount")) <= 0:
 		frappe.throw(
 			_(
-				"Bill of Lading <b>{0}</b> has Container Deposit — enter deposit amounts "
+				"Bill of Lading <b>{0}</b> has Container Deposit - enter deposit amounts "
 				"on each container row: {1}"
 			).format(bl.bl_number or bl.name, ", ".join(amount_missing))
 		)

@@ -894,7 +894,7 @@ def verify_application_finance_line(
 			frappe.throw(f"Attach the <b>{label_fallback}</b> before verifying.")
 	if line_type == "POP":
 		frappe.throw(
-			f"<b>{profile.pop_label or 'POP'}</b> does not need Finance verification — "
+			f"<b>{profile.pop_label or 'POP'}</b> does not need Finance verification - "
 			"Documentation uses it to attach the shipping line receipt."
 		)
 	line.verified = 1

@@ -287,7 +287,11 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
 		"after_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.after_insert_sales_invoice",
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
-		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
+		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_sales_invoice_cancel",
+		"on_update": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_sales_invoice_update",
+		],
 	},
 	"Journal Entry": {
 		"after_insert": (
