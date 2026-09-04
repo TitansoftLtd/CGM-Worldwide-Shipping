@@ -8,6 +8,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import
 	company_default_currency,
 	project_je_billed_display,
 )
+from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+	is_deposit_journal_entry,
+)
 
 TOTAL_FIELD = "custom_finance_cost_total"
 DISPLAY_FIELD = "custom_finance_cost_total_display"
@@ -43,6 +46,8 @@ def _project_for_journal_entry(je, task=None) -> str | None:
 
 
 def _expense_lines_for_project(je, project: str) -> list[dict]:
+	if is_deposit_journal_entry(je):
+		return []
 	lines = []
 	for row in je.get("accounts") or []:
 		if row.project and row.project != project:
@@ -139,6 +144,8 @@ def _other_je_expense_totals_for_project(project: str) -> dict[str, float]:
 		je = frappe.get_doc("Journal Entry", je_name)
 		if int(je.docstatus or 0) != 1:
 			continue
+		if is_deposit_journal_entry(je):
+			continue
 		if je.get("custom_cgm_accrual_kind") == "Container Charge Accrual":
 			continue
 		for line in _expense_lines_for_project(je, project):
@@ -155,6 +162,8 @@ def _company_currency_expense_total(project: str) -> float:
 			continue
 		je = frappe.get_doc("Journal Entry", je_name)
 		if int(je.docstatus or 0) != 1:
+			continue
+		if is_deposit_journal_entry(je):
 			continue
 		for row in je.get("accounts") or []:
 			if row.project and row.project != project:

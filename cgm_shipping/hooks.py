@@ -5,6 +5,12 @@ app_description = "CGM Customizations"
 app_email = "nkubitudouglas@gmail.com"
 app_license = "mit"
 
+naming_series_variables = {
+	"MMYY": [
+		"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.parse_mmyy_naming_series_variable"
+	],
+}
+
 # Apps
 # ------------------
 
@@ -106,6 +112,7 @@ doctype_js = {
 	"Material Request": "public/js/material_request.js",
 	"Employee Advance": "public/js/employee_advance.js",
 	"Job Applicant": "public/js/job_applicant.js",
+	"Salary Component": "public/js/salary_component.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
@@ -225,6 +232,8 @@ override_doctype_class = {
     ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
     "Quotation":
     "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
+    "Salary Slip":
+    "cgm_shipping.cgm_worldwide_shipping.overrides.salary_slip.CGMSalarySlip",
 }
 
 # Document Events
@@ -232,6 +241,17 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	"Salary Component": {
+		"validate": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.validate_net_pay_only_component"
+		),
+		"on_update": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
+		),
+		"on_trash": (
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
+		),
+	},
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
 		"after_insert": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_after_insert",
@@ -261,7 +281,11 @@ doc_events = {
 		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_cancel",
 	},
 	"Sales Invoice": {
+		"before_insert": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_insert_sales_invoice"
+		),
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
+		"after_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.after_insert_sales_invoice",
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
 	},
@@ -276,15 +300,18 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_on_submit",
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.sync_deposit_status_from_journal_entry",
 		],
 		"on_cancel": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_cancel",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_on_cancel",
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.sync_deposit_status_from_journal_entry",
 		],
-		"on_update_after_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
-		),
+		"on_update_after_submit": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.sync_deposit_status_from_journal_entry",
+		],
 	},
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.on_customer_update",
@@ -366,8 +393,12 @@ scheduler_events = {
     "daily": [
         "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
         "cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.post_all_container_charge_accruals",
+        "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.send_deposit_refund_reminders",
         # Licence & permit expiry reminders. Periods and recipients live in License Settings.
         "cgm_shipping.cgm_worldwide_shipping.customizations.license_reminders.send_license_expiry_reminders",
+    ],
+    "hourly": [
+        "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.send_deposit_refund_reminders",
     ],
 }
 

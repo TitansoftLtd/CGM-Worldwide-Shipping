@@ -8,6 +8,7 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CONTAINER_DEPOSIT_REFUND_REMINDER,
 	DAILY_STATUS_RAG_ALERT,
 	ENTRY_INVOICE_TO_FINANCE,
 	ENTRY_RECEIPT_FOR_DECLARANT,
@@ -60,6 +61,7 @@ WORKFLOW_NOTIFICATION_DEFAULTS: tuple[tuple[str, str, str], ...] = (
 	("Your Turn Operations", _YOUR_TURN_OPERATIONS, ""),
 	("Your Turn Transport", _YOUR_TURN_TRANSPORT, ""),
 	("Daily Status RAG Alert", DAILY_STATUS_RAG_ALERT, ""),
+	("Container Deposit Refund Reminder", CONTAINER_DEPOSIT_REFUND_REMINDER, "After all BL containers returned"),
 	("Operational Update", OPERATIONAL_UPDATE_NOTIFICATION, ""),
 )
 
