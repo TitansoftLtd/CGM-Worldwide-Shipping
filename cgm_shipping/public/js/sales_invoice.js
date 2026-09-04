@@ -1,11 +1,14 @@
 const CGM_SI_NAMING_SERIES = "INV-.MMYY.-.####";
 const CGM_SI_CREDIT_NOTE_NAMING_SERIES = "CR-.MMYY.-.####";
+const CGM_SI_PRINT_FORMAT = "CGM Sales Invoice";
+const CGM_SI_CREDIT_NOTE_PRINT_FORMAT = "CGM Credit Note";
 
 const CGM_SI_DRAFT_STATE = "Draft";
 const CGM_SI_PENDING_STATE = "Pending Approval";
-const CGM_SI_REJECTED_STATE = "Rejected";
+const CGM_SI_APPROVED_STATE = "Approved";
 const CGM_SI_ACTION_SUBMIT_FOR_REVIEW = "Submit for Review";
 const CGM_SI_REJECTION_REASON_FIELD = "custom_rejection_reason";
+const CGM_SI_REJECTED_BY_FIELD = "custom_rejected_by";
 
 /** Sales Invoice field -> Project field for project-linked shipment refs. */
 const CGM_SI_PROJECT_FETCH_MAP = {
@@ -24,16 +27,21 @@ frappe.ui.form.on("Sales Invoice", {
 		cgm_toggle_sales_invoice_project_name(frm);
 		cgm_toggle_sales_invoice_project_fetched_fields(frm);
 		cgm_apply_sales_invoice_naming_series(frm);
+		cgm_apply_sales_invoice_print_format(frm);
+		cgm_toggle_sales_invoice_share_fields(frm);
 	},
 
 	is_return(frm) {
 		cgm_apply_sales_invoice_naming_series(frm);
+		cgm_apply_sales_invoice_print_format(frm);
 	},
 
 	refresh(frm) {
 		cgm_toggle_sales_invoice_project_name(frm);
 		cgm_toggle_sales_invoice_project_fetched_fields(frm);
+		cgm_apply_sales_invoice_print_format(frm);
 		cgm_configure_sales_invoice_workflow_ui(frm);
+		cgm_configure_sales_invoice_customer_share_ui(frm);
 	},
 
 	project(frm) {
@@ -47,13 +55,20 @@ frappe.ui.form.on("Sales Invoice", {
 	},
 
 	after_workflow_action(frm) {
-		frappe.after_ajax(() => cgm_configure_sales_invoice_workflow_ui(frm));
+		frappe.after_ajax(() => {
+			cgm_configure_sales_invoice_workflow_ui(frm);
+			cgm_configure_sales_invoice_customer_share_ui(frm);
+		});
 	},
 
 	before_workflow_action(frm) {
 		if (frm.selected_workflow_action === "Reject") {
 			return cgm_prompt_sales_invoice_rejection_reason(frm);
 		}
+	},
+
+	custom_share_with_customer(frm) {
+		cgm_toggle_sales_invoice_share_fields(frm);
 	},
 });
 
@@ -67,6 +82,15 @@ function cgm_apply_sales_invoice_naming_series(frm) {
 	if (frm.doc.naming_series !== series) {
 		frm.set_value("naming_series", series);
 	}
+}
+
+function cgm_apply_sales_invoice_print_format(frm) {
+	if (!frm.meta) {
+		return;
+	}
+	frm.meta.default_print_format = frm.doc.is_return
+		? CGM_SI_CREDIT_NOTE_PRINT_FORMAT
+		: CGM_SI_PRINT_FORMAT;
 }
 
 function cgm_get_sales_invoice_project_fetch_fields() {
@@ -157,35 +181,76 @@ function cgm_set_sales_invoice_workflow_alert(frm, text, tone = "brand") {
 	);
 }
 
+function cgm_sales_invoice_status_tone(status) {
+	const value = (status || "").trim();
+	if (value === "Paid") {
+		return "green";
+	}
+	if (value.includes("Overdue")) {
+		return "red";
+	}
+	if (["Unpaid", "Partly Paid", "Submitted"].includes(value)) {
+		return "orange";
+	}
+	return "blue";
+}
+
 function cgm_configure_sales_invoice_workflow_ui(frm) {
 	if (!frm.fields_dict.workflow_state) {
 		return;
 	}
 
 	if (frm.doc.docstatus === 1) {
-		frm.dashboard.clear_headline();
+		const payment_status = (frm.doc.status || "").trim();
+		const approval_state = (frm.doc.workflow_state || CGM_SI_APPROVED_STATE).trim();
+		if (payment_status) {
+			frm.page.set_indicator(payment_status, cgm_sales_invoice_status_tone(payment_status));
+		}
+		if (frm.fields_dict.workflow_state) {
+			frm.toggle_display("workflow_state", true);
+		}
+		cgm_set_sales_invoice_workflow_alert(
+			frm,
+			__("Approval status: {0}", [approval_state]),
+			approval_state === CGM_SI_APPROVED_STATE ? "success" : "info"
+		);
 		cgm_add_sales_invoice_payment_button(frm);
 		return;
 	}
 
-	if (frm.doc.docstatus !== 0) {
+	if (frm.fields_dict.workflow_state) {
+		frm.toggle_display("workflow_state", true);
+	}
+
+	if (frm.doc.docstatus === 2) {
+		frm.dashboard.clear_headline();
 		return;
 	}
 
 	const state = frm.doc.workflow_state || CGM_SI_DRAFT_STATE;
 	frm.page.set_primary_action(__("Save"), () => frm.save());
 
-	if (state === CGM_SI_PENDING_STATE) {
-		cgm_set_sales_invoice_workflow_alert(
-			frm,
-			__("Waiting for this invoice to be approved or rejected. Approval will submit the invoice."),
-			"info"
-		);
-	} else if (state === CGM_SI_REJECTED_STATE) {
+	if (state === CGM_SI_APPROVED_STATE) {
 		cgm_set_sales_invoice_workflow_alert(
 			frm,
 			__(
-				"This invoice was rejected. Update it, then use Actions → {0}.",
+				"This invoice is approved but not submitted yet. Save or use Actions → Approve again — it will submit and show as Unpaid for the customer."
+			),
+			"danger"
+		);
+	} else if (state === CGM_SI_PENDING_STATE) {
+		cgm_set_sales_invoice_workflow_alert(
+			frm,
+			__(
+				"Pending manager approval. The invoice is locked for editing by the preparer until approved or rejected."
+			),
+			"info"
+		);
+	} else if (state === CGM_SI_DRAFT_STATE && frm.doc[CGM_SI_REJECTED_BY_FIELD]) {
+		cgm_set_sales_invoice_workflow_alert(
+			frm,
+			__(
+				"Returned to Draft after rejection. Correct the invoice, then use Actions → {0}.",
 				[CGM_SI_ACTION_SUBMIT_FOR_REVIEW]
 			),
 			"danger"
@@ -342,5 +407,58 @@ function cgm_prompt_sales_invoice_rejection_reason(frm) {
 
 		dialog.show();
 		dialog.get_primary_btn().addClass("btn-danger");
+	});
+}
+
+function cgm_toggle_sales_invoice_share_fields(frm) {
+	if (!frm.fields_dict.custom_shared_with_customer_on) {
+		return;
+	}
+	frm.toggle_display(
+		"custom_shared_with_customer_on",
+		cint(frm.doc.custom_share_with_customer)
+	);
+}
+
+function cgm_configure_sales_invoice_customer_share_ui(frm) {
+	if (!frm.fields_dict.custom_share_with_customer) {
+		return;
+	}
+	cgm_toggle_sales_invoice_share_fields(frm);
+	if (frm.doc.docstatus !== 1 || frm.doc.is_return) {
+		return;
+	}
+	if (cint(frm.doc.custom_share_with_customer)) {
+		return;
+	}
+
+	frm.add_custom_button(__("Share with Customer"), () => {
+		frappe.confirm(
+			__(
+				"Share this invoice on the customer portal? They will see that they owe {0}. When you record payment, they will see it as Paid.",
+				[format_currency(frm.doc.outstanding_amount || frm.doc.grand_total, frm.doc.currency)]
+			),
+			() => cgm_share_sales_invoice_with_customer(frm)
+		);
+	}, __("CGM"));
+}
+
+function cgm_share_sales_invoice_with_customer(frm) {
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share.share_sales_invoice_with_customer",
+		args: { sales_invoice: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Sharing with customer…"),
+		callback(r) {
+			if (r.exc || !r.message) {
+				return;
+			}
+			frappe.show_alert({
+				message: __("Invoice shared. The customer can now see it on their portal."),
+				indicator: "green",
+			});
+			frm.reload_doc();
+		},
 	});
 }

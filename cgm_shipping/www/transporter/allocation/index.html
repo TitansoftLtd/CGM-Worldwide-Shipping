@@ -48,17 +48,25 @@
       {% if allocation.containers %}<span class="cp-tab-count">{{ allocation.containers|length }}</span>{% endif %}
     </button>
     <button type="button" class="cp-tab" data-cp-tab="updates" role="tab" aria-selected="false">
-      {{ _("Updates") }}
+      {{ _("Truck Updates") }}
       {% if allocation.my_updates %}<span class="cp-tab-count">{{ allocation.my_updates|length }}</span>{% endif %}
+    </button>
+    <button type="button" class="cp-tab" data-cp-tab="messages" role="tab" aria-selected="false">
+      {{ _("Messages") }}
+      {% if allocation.thread %}<span class="cp-tab-count">{{ allocation.thread|length }}</span>{% endif %}
+      {% if allocation.unread_count %}<span class="cp-unread-pill">{{ allocation.unread_count }}</span>{% endif %}
+    </button>
+    <button type="button" class="cp-tab" data-cp-tab="feedback" role="tab" aria-selected="false">
+      {{ _("Feedback") }}
     </button>
   </div>
 
   <div class="cp-tab-panel active" data-cp-panel="trucks" role="tabpanel">
     {% if not allocation.is_completed %}
-    <div class="cp-card" style="margin-bottom:1rem; padding:1rem;">
+    <div class="cp-card tp-offer-form-card" style="margin-bottom:1rem; padding:1rem;{% if allocation.offered_trucks %} display:none;{% endif %}">
       <h4 style="margin-top:0;">{{ _("Offer trucks") }}</h4>
       <p class="text-muted" style="margin:0 0 1rem; font-size:.88rem;">
-        {{ _("Add as many trucks as you can provide. Include truck number and driver details for each row, then submit once.") }}
+        {{ _("Add truck and driver details, then submit. Use Add another truck if you can provide more than one.") }}
       </p>
       <div id="tp-offer-rows"></div>
       <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:1rem;">
@@ -68,8 +76,20 @@
         <button type="button" class="btn btn-primary btn-sm" id="tp-submit-offered-trucks">
           <span class="tp-btn-label">{{ _("Submit offered trucks") }}</span>
         </button>
+        {% if allocation.offered_trucks %}
+        <button type="button" class="btn btn-default btn-sm" id="tp-cancel-offer-form">
+          {{ _("Cancel") }}
+        </button>
+        {% endif %}
       </div>
     </div>
+    {% if allocation.offered_trucks %}
+    <div class="cp-card tp-offer-more-card" style="margin-bottom:1rem; padding:1rem;">
+      <button type="button" class="btn btn-default btn-sm" id="tp-show-offer-form">
+        {{ _("Offer more trucks") }}
+      </button>
+    </div>
+    {% endif %}
     {% endif %}
 
     {% if allocation.offered_trucks %}
@@ -92,7 +112,7 @@
       </div>
     </div>
     {% endfor %}
-    {% else %}
+    {% elif allocation.is_completed %}
     <div class="cp-card" style="padding:1rem;">
       <p class="text-muted" style="margin:0;">{{ _("No trucks offered yet.") }}</p>
     </div>
@@ -201,6 +221,36 @@
     </div>
   </div>
 
+  <div class="cp-tab-panel" data-cp-panel="messages" role="tabpanel">
+    <div class="cp-card" style="margin-bottom:1rem;">
+      <div class="cp-card-head"><h3>{{ _("Conversation with CGM") }}</h3></div>
+      <div class="cp-card-body" id="tp-thread-mount">
+        <div class="cp-thread-empty">{{ _("Loading messages…") }}</div>
+      </div>
+    </div>
+    <div class="cp-card">
+      <div class="cp-card-head"><h3>{{ _("Send a message") }}</h3></div>
+      <div class="cp-card-body">
+        <p class="text-muted" style="margin:0 0 1rem; font-size:.88rem;">
+          {{ _("Ask CGM a question or flag a problem. Use Truck Updates for movement events - those also move the container's tracking dates.") }}
+        </p>
+        <div id="tp-message-form-mount"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cp-tab-panel" data-cp-panel="feedback" role="tabpanel">
+    <div class="cp-card" style="margin-bottom:1rem;">
+      <div class="cp-card-head"><h3>{{ _("How was this job?") }}</h3></div>
+      <div class="cp-card-body">
+        <p class="text-muted" style="margin:0 0 1rem; font-size:.88rem;">
+          {{ _("Rate working this shipment with CGM - instructions, turnaround at the port, and payment. Tick the containers it is about if it only concerns some of them.") }}
+        </p>
+        <div id="tp-feedback-mount"></div>
+      </div>
+    </div>
+  </div>
+
   {% endif %}
 </div>
 
@@ -208,6 +258,11 @@
 <script type="application/json" id="tp-update-types-json">{{ allocation.update_types_json | safe }}</script>
 <script type="application/json" id="tp-container-options-json">{{ allocation.container_options_json | safe }}</script>
 <script type="application/json" id="tp-my-updates-json">{{ allocation.my_updates_json | safe }}</script>
+<script type="application/json" id="tp-message-containers-json">{{ allocation.message_container_options_json | safe }}</script>
+<script type="application/json" id="tp-thread-json">{{ allocation.thread_json | safe }}</script>
+<script type="application/json" id="tp-feedback-categories-json">{{ allocation.feedback_categories_json | safe }}</script>
+<script type="application/json" id="tp-my-feedback-json">{{ allocation.my_feedback | tojson }}</script>
+<script type="application/json" id="tp-feedback-containers-json">{{ allocation.feedback_containers_json | safe }}</script>
 <script>
 frappe.ready(function () {
 	const page = document.getElementById("tp-allocation-page");
@@ -228,6 +283,99 @@ frappe.ready(function () {
 				panel.classList.toggle("active", panel.getAttribute("data-cp-panel") === key);
 			});
 		});
+	});
+
+	// ── Conversation + feedback (portal_conversation.js is loaded site-wide) ──
+	const ALLOCATION = page.dataset.allocation;
+	const TP = "cgm_shipping.cgm_worldwide_shipping.customizations.transporter_portal.";
+
+	function readJSON(id, fallback) {
+		try {
+			return JSON.parse((document.getElementById(id) || {}).textContent || "null") || fallback;
+		} catch (e) {
+			return fallback;
+		}
+	}
+
+	function threadRoot(messages) {
+		if (!(messages || []).length) return "";
+		const last = messages[messages.length - 1];
+		return last.parent_update || last.name;
+	}
+
+	const thread = cgm.portal.mountThread(
+		document.getElementById("tp-thread-mount"),
+		readJSON("tp-thread-json", []),
+		{
+			emptyText: __("No messages yet. Send the first one below."),
+			markReadMethod: TP + "mark_allocation_updates_read",
+			markReadArgs: { allocation_name: ALLOCATION },
+		}
+	);
+
+	function refreshThread() {
+		frappe.call({
+			method: TP + "get_allocation_conversation",
+			args: { allocation_name: ALLOCATION },
+			callback(r) {
+				if (r.exc || !thread) return;
+				thread.setMessages(r.message || []);
+			},
+		});
+	}
+
+	cgm.portal.mountComposer(document.getElementById("tp-message-form-mount"), {
+		containers: readJSON("tp-message-containers-json", []),
+		replyTo: threadRoot(readJSON("tp-thread-json", [])),
+		subjectPlaceholder: __("e.g. Gate pass not released"),
+		onSend(values, done) {
+			let sent = false;
+			frappe.call({
+				method: TP + "post_allocation_message",
+				args: {
+					allocation_name: ALLOCATION,
+					subject: values.subject,
+					message: values.message,
+					item_name: values.item_name || "",
+					parent_update: values.parent_update,
+				},
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Message sent."),
+						indicator: "green",
+					});
+					sent = true;
+					refreshThread();
+				},
+				always() { done(sent); },
+			});
+		},
+	});
+
+	const feedbackCategories = readJSON("tp-feedback-categories-json", ["Overall Service"]);
+
+	cgm.portal.mountFeedback(document.getElementById("tp-feedback-mount"), {
+		categories: feedbackCategories,
+		containers: readJSON("tp-feedback-containers-json", []),
+		value: readJSON("tp-my-feedback-json", null),
+		onSubmit(values, done) {
+			frappe.call({
+				method: TP + "submit_allocation_feedback",
+				args: Object.assign({ allocation_name: ALLOCATION }, values),
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Thanks for your feedback."),
+						indicator: "green",
+					});
+					window.location.reload();
+				},
+				always() { done(); },
+			});
+		},
 	});
 
 	frappe.require(["dialog.bundle.js", "/assets/cgm_shipping/js/operational_updates_ui.js"], function () {
@@ -298,13 +446,37 @@ frappe.ready(function () {
 		offerMount.insertAdjacentHTML("beforeend", truckRowHtml());
 	}
 
-	if (offerMount) {
+	function resetOfferForm() {
+		if (!offerMount) return;
+		offerMount.innerHTML = "";
 		addOfferRow();
-		const booked = {{ allocation.trucks_booked or 1 }};
-		for (let i = 1; i < Math.min(booked, 10); i++) {
-			addOfferRow();
+	}
+
+	function showOfferForm() {
+		document.querySelector(".tp-offer-form-card")?.style.setProperty("display", "block");
+		document.querySelector(".tp-offer-more-card")?.style.setProperty("display", "none");
+		if (!offerMount?.querySelector(".tp-offer-row")) {
+			resetOfferForm();
 		}
 	}
+
+	function hideOfferForm() {
+		document.querySelector(".tp-offer-form-card")?.style.setProperty("display", "none");
+		document.querySelector(".tp-offer-more-card")?.style.setProperty("display", "block");
+		resetOfferForm();
+	}
+
+	if (offerMount) {
+		resetOfferForm();
+	}
+
+	document.getElementById("tp-show-offer-form")?.addEventListener("click", function () {
+		showOfferForm();
+	});
+
+	document.getElementById("tp-cancel-offer-form")?.addEventListener("click", function () {
+		hideOfferForm();
+	});
 
 	document.getElementById("tp-add-truck-row")?.addEventListener("click", function () {
 		addOfferRow();
@@ -433,7 +605,6 @@ frappe.ready(function () {
 				args: {
 					allocation_name: allocationName,
 					item_name: itemName,
-					subject: values.subject,
 					update_type: values.subject,
 					message: values.message,
 					event_date: values.event_date || null,

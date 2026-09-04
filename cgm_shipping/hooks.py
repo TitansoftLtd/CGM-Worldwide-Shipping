@@ -58,6 +58,7 @@ web_include_css = [
 web_include_js = [
 	"/assets/cgm_shipping/js/portal_localize_time.js",
 	"/assets/cgm_shipping/js/operational_updates_ui.js",
+	"/assets/cgm_shipping/js/portal_conversation.js",
 ]
 
 # include custom scss in every website theme (without file extension ".scss")
@@ -86,6 +87,7 @@ doctype_js = {
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/package_field_visibility.js",
+		"public/js/portal_engagement.js",
 		"public/js/project.js",
 	],
 	"Lead": [
@@ -109,6 +111,7 @@ doctype_js = {
 	"Supplier": "public/js/supplier.js",
 	"Leave Application": "public/js/leave_application.js",
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
+	"Container Tracker": "public/js/portal_engagement.js",
 	"Material Request": "public/js/material_request.js",
 	"Employee Advance": "public/js/employee_advance.js",
 	"Job Applicant": "public/js/job_applicant.js",
@@ -287,7 +290,11 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
 		"after_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.after_insert_sales_invoice",
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
-		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
+		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_sales_invoice_cancel",
+		"on_update": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_sales_invoice_update",
+		],
 	},
 	"Journal Entry": {
 		"after_insert": (

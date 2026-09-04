@@ -7,25 +7,89 @@
 	--cgm-red-grad: linear-gradient(135deg, #ff4d6a 0%, #e31837 45%, #b8122c 100%);
 	--cgm-surface: #ffffff;
 	--cgm-surface-alt: #f8fafc;
+	/* Column-header band. A cool slate wash rather than the brand red: the
+	   header sits above every row on screen, so a saturated fill would fight
+	   the status pills for attention. The brand shows up as the thin rule
+	   under the band instead. */
+	--cgm-thead-bg: linear-gradient(180deg, #f4f7fb 0%, #e7eef7 100%);
+	--cgm-thead-text: #33445c;
+	--cgm-thead-hover: linear-gradient(180deg, #e8effa 0%, #dae4f2 100%);
+	--cgm-thead-rule: rgba(227, 24, 55, 0.65);
 	--cgm-border: var(--border-color, #e5e7eb);
 	--cgm-text: var(--text-color, #0f172a);
 	--cgm-muted: var(--text-muted, #64748b);
 	--cgm-radius: 14px;
 	--cgm-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.06);
-	--cgm-check-col-width: 42px;
+	--cgm-check-col-width: 32px;
 	--cgm-ops-chrome-height: 7.5rem;
 	background: var(--cgm-surface-alt);
 	color: var(--cgm-text);
-	padding: 0 0 28px;
+	/* Was 28px of bottom padding, which showed as a grey band under the
+	   paging bar because the board is height-constrained: the space was
+	   reserved and then left empty instead of going to the table. */
+	padding: 0;
 	margin: -15px -15px 0;
 	display: flex;
 	flex-direction: column;
-	min-height: calc(100vh - 7rem);
-	max-height: calc(100vh - 7rem);
-	overflow: hidden;
+	/* The space above this board is frappe's navbar, page head and
+	   breadcrumbs, whose height varies by theme, route and whether the
+	   breadcrumbs wrap. 7rem was a guess, and whenever the real chrome was
+	   taller the board ran past the viewport and the whole PAGE scrolled.
+	   container_ops_board.js measures the true offset into
+	   --cgm-ops-board-offset; the value here is only a first-paint fallback.
+
+	   dvh rather than vh so the height follows mobile browser chrome instead
+	   of sitting underneath it. */
+	--cgm-ops-board-offset: 7rem;
+	min-height: calc(100vh - var(--cgm-ops-board-offset));
+	max-height: calc(100vh - var(--cgm-ops-board-offset));
+	min-height: calc(100dvh - var(--cgm-ops-board-offset));
+	max-height: calc(100dvh - var(--cgm-ops-board-offset));
+	/* Deliberately NOT overflow:hidden. That clipped every filter dropdown at
+	   the board edge, because a Link list opening downward is taller than the
+	   space left inside. .cgm-ops-body below still clips, which is what keeps
+	   the page from scrolling, so nothing is lost by letting overlays out. */
+	overflow: visible;
 }
 
-/* Hero + filters/KPIs/tabs stay on screen while the list scrolls */
+/* A single thin caption line, centred, replacing the old hero block. It says
+   what the page is without the heading (which frappe already renders in the
+   page head) or the vertical cost of a full banner. */
+.cgm-ops-subtitle {
+	/* Not a full-bleed band. Sitting edge to edge directly beneath the desk's
+	   white breadcrumb bar, any coloured strip reads as an alert banner, which
+	   is the opposite of what a passive caption should say. A centred chip on
+	   the board's own surface carries the same warmth without announcing
+	   itself. */
+	display: flex;
+	justify-content: center;
+	padding: 0.3rem 1rem 0.1rem;
+	background: transparent;
+	border-bottom: 0;
+	box-shadow: none;
+}
+
+.cgm-ops-subtitle > span {
+	display: inline-block;
+	max-width: 100%;
+	padding: 0.14rem 0.7rem;
+	border-radius: 999px;
+	/* Light green rather than the earlier warm sand: green reads as "all is
+	   well" on an operations board, which is the right register for a caption
+	   that is always on screen. */
+	background: #eef9f1;
+	color: #2f6b46;
+	border: 1px solid #cfe9d8;
+	font-size: 0.62rem;
+	font-weight: 500;
+	line-height: 1.35;
+	letter-spacing: 0.005em;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Filters, KPIs and tabs stay on screen while the list scrolls */
 .cgm-ops-sticky-top {
 	position: sticky;
 	top: 0;
@@ -40,33 +104,8 @@
 	display: none;
 }
 
-.cgm-ops-board .cgm-ops-hero {
-	position: relative;
-	padding: 1.1rem 1.5rem 1rem;
-	margin-bottom: 0;
-	background:
-		radial-gradient(900px 180px at 100% 0%, rgba(227, 24, 55, 0.18), transparent 55%),
-		linear-gradient(135deg, #fff5f7 0%, #ffe8ec 100%);
-	border-bottom: 1px solid rgba(227, 24, 55, 0.15);
-	overflow: hidden;
-}
-
-.cgm-ops-board .cgm-ops-hero h1 {
-	margin: 0;
-	font-size: 1.35rem;
-	font-weight: 700;
-	letter-spacing: -0.02em;
-	color: var(--cgm-red-dark);
-}
-
-.cgm-ops-board .cgm-ops-hero p {
-	margin: 0.35rem 0 0;
-	color: var(--cgm-muted);
-	font-size: 0.9rem;
-}
-
 .cgm-ops-board .cgm-ops-body {
-	padding: 0 1rem 1rem;
+	padding: 0 0.7rem 0.5rem;
 	flex: 1;
 	min-height: 0;
 	display: flex;
@@ -91,30 +130,211 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 .cgm-ops-filters {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px 12px;
-	margin-bottom: 1rem;
+	gap: 6px 8px;
+	margin-bottom: 0.5rem;
 	background: var(--cgm-surface);
 	border: 1px solid var(--cgm-border);
-	border-radius: var(--cgm-radius);
-	padding: 12px;
+	border-radius: 10px;
+	padding: 7px 8px;
 	box-shadow: var(--cgm-shadow);
 	position: relative;
 	z-index: 5;
 }
 
+/* Refresh and clear live in the page head, which is outside .cgm-ops-board, so
+   these are the only two rules here that are not scoped to the board. Both are
+   named for this page, so they touch nothing else in the desk. */
+.cgm-ops-refresh-btn:hover {
+	border-color: rgba(37, 99, 235, 0.4);
+	background: #eaf2fe;
+	color: #1d4f91;
+}
+
+.cgm-ops-clear-btn:hover {
+	border-color: rgba(227, 24, 55, 0.4);
+	background: var(--cgm-red-soft, #ffe8ec);
+	color: var(--cgm-red-dark, #b8122c);
+}
+
+.cgm-ops-refresh-btn .is-spinning {
+	animation: cgm-ops-spin 0.9s linear infinite;
+	transform-origin: center;
+}
+
+@keyframes cgm-ops-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* The filter row must outrank the KPI panel and tabs beneath it, or a
+   dropdown opens behind them. */
+.cgm-ops-filters {
+	z-index: 60;
+}
+
+/* An open filter sits above its neighbours, so the next control's border does
+   not cut across the list. */
+.cgm-ops-filter-field:focus-within {
+	z-index: 70;
+}
+
 .cgm-ops-filters .awesomplete > [role="listbox"] {
-	z-index: 10;
+	z-index: 1000;
+	/* Long customer and shipping line lists otherwise run off the bottom of
+	   the screen with no way to reach the end. */
+	max-height: 320px;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	min-width: 100%;
+	width: max-content;
+	max-width: 340px;
+	background: var(--cgm-surface);
+	border: 1px solid var(--cgm-border);
+	border-radius: 10px;
+	box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.28), 0 2px 6px rgba(15, 23, 42, 0.08);
+	padding: 4px;
+	margin-top: 4px;
+}
+
+.cgm-ops-filters .awesomplete > [role="listbox"] li {
+	padding: 6px 9px;
+	border-radius: 7px;
+	font-size: 0.7rem;
+	line-height: 1.35;
+	/* Long names stay readable rather than being cut mid-word. */
+	white-space: normal;
+	word-break: break-word;
+}
+
+.cgm-ops-filters .awesomplete > [role="listbox"] li[aria-selected="true"],
+.cgm-ops-filters .awesomplete > [role="listbox"] li:hover {
+	background: var(--cgm-red-soft);
+	color: var(--cgm-red-dark);
+}
+
+/* The date picker is appended to <body> so it escapes the board on its own,
+   but it still has to clear the sticky chrome at z-index 40. */
+.datepicker.active,
+body > .datepicker {
+	z-index: 1001 !important;
 }
 
 .cgm-ops-filter-field {
-	flex: 1 1 160px;
-	min-width: 140px;
-	max-width: 220px;
+	/* The board tab shows eight filters. At the old 140px minimum they needed
+	   more than 1200px and wrapped onto a second row on most laptops, pushing
+	   the table further down. */
+	flex: 1 1 130px;
+	min-width: 116px;
+	max-width: 200px;
 	margin: 0 !important;
+	position: relative;
+}
+
+/* The range reads "01-06-2026 to 30-06-2026", so it needs more room than a
+   single date field and must not be squeezed to the common minimum. */
+.cgm-ops-filter-date_range {
+	flex: 1 1 200px;
+	min-width: 186px;
+	max-width: 240px;
+}
+
+/* Date Field and Status are short Selects holding values like "ETA". Letting
+   them take an equal share wastes width the Link filters need. */
+.cgm-ops-filter-date_field,
+.cgm-ops-filter-status {
+	flex: 0 1 104px;
+	min-width: 92px;
+	max-width: 128px;
+}
+
+/* Below this the eight genuinely cannot share a line, so let them wrap rather
+   than shrink into unreadable slivers. */
+@media (max-width: 1180px) {
+	.cgm-ops-filter-field {
+		flex: 1 1 150px;
+		min-width: 132px;
+	}
 }
 
 .cgm-ops-filter-field .control-input {
 	width: 100%;
+}
+
+/* Filter inputs: the typed value, the placeholder and the select text all sit
+   at frappe's default size, which is larger than the table they filter. That
+   made the filter row read as the heaviest thing on the page. Matching the
+   table's 0.7rem also shortens the inputs, so the filters card gives a little
+   height back to the rows. */
+.cgm-ops-filter-field input,
+.cgm-ops-filter-field select,
+.cgm-ops-filter-field textarea,
+.cgm-ops-filter-field .form-control,
+.cgm-ops-filters .awesomplete input {
+	font-size: 0.7rem;
+	line-height: 1.3;
+	height: 24px;
+	min-height: 24px;
+	padding: 0.1rem 0.42rem;
+	border-radius: 7px;
+}
+
+/* Selects need room for their own arrow. */
+.cgm-ops-filter-field select,
+.cgm-ops-filter-field select.form-control {
+	padding-right: 1.1rem;
+	background-position: right 0.3rem center;
+}
+
+.cgm-ops-filter-field input::placeholder,
+.cgm-ops-filter-field .form-control::placeholder {
+	font-size: 0.7rem;
+	opacity: 0.75;
+}
+
+/* Select controls do not use a native placeholder. frappe appends its own
+   overlay div:
+       <div class="placeholder ellipsis text-extra-muted xs"><span>..</span></div>
+   so "Date Field" and "Status" were rendering at that div's size, untouched by
+   the rule above, which is why those two stayed large while every other filter
+   shrank. */
+.cgm-ops-filter-field .placeholder,
+.cgm-ops-filter-field .placeholder span {
+	font-size: 0.7rem;
+	line-height: 1.3;
+}
+
+.cgm-ops-filter-field .placeholder {
+	display: flex;
+	align-items: center;
+	height: 24px;
+	padding: 0 0.42rem;
+}
+
+/* The chevron frappe injects beside a select is sized independently too. */
+.cgm-ops-filter-field .select-icon {
+	height: 24px;
+	display: flex;
+	align-items: center;
+}
+
+.cgm-ops-filter-field .select-icon svg,
+.cgm-ops-filter-field .select-icon .icon {
+	width: 10px;
+	height: 10px;
+}
+
+/* The link fields render a clear button and a value area of their own. */
+.cgm-ops-filter-field .link-btn,
+.cgm-ops-filter-field .btn-clear {
+	height: 24px;
+	line-height: 24px;
+}
+
+/* Any label frappe emits inside the wrapper is redundant here: every filter
+   already carries its name as a placeholder. */
+.cgm-ops-filter-field .control-label {
+	display: none;
 }
 
 .cgm-ops-board > .page-form.row {
@@ -125,78 +345,50 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	margin-bottom: 0.65rem;
 }
 
-.cgm-ops-kpis-toggle {
-	display: flex;
-	align-items: center;
-	gap: 0.45rem;
-	width: 100%;
-	margin: 0 0 0.55rem;
-	padding: 0.35rem 0.55rem;
-	border: 1px solid var(--cgm-border);
-	border-radius: 10px;
-	background: var(--cgm-surface);
-	color: var(--cgm-text);
-	font-size: 0.78rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	cursor: pointer;
-	transition: border-color 0.12s ease, background 0.12s ease;
-}
-
-.cgm-ops-kpis-toggle:hover {
-	border-color: rgba(227, 24, 55, 0.35);
-	background: #fff;
-}
-
-.cgm-ops-kpis-toggle-label {
-	color: var(--cgm-red-dark);
-}
-
-.cgm-ops-kpis-toggle-hint {
-	margin-left: auto;
-	font-size: 0.68rem;
-	font-weight: 500;
-	text-transform: none;
-	letter-spacing: 0;
-	color: var(--cgm-muted);
-}
-
-.cgm-ops-kpis-toggle-icon {
-	font-size: 0.85rem;
-	line-height: 1;
-	color: var(--cgm-muted);
-	transition: transform 0.15s ease;
-}
-
-.cgm-ops-kpis-section.is-collapsed .cgm-ops-kpis-toggle-icon {
-	transform: rotate(-90deg);
-}
-
 .cgm-ops-kpis-section.is-collapsed .cgm-ops-kpis-collapse {
 	display: none;
 }
 
+/* With the cards hidden the section holds nothing, so its bottom margin was
+   pure empty space above the tabs. The board is height constrained, so that
+   margin is a row of the table. */
+.cgm-ops-kpis-section.is-collapsed {
+	margin-bottom: 0;
+}
+
 .cgm-ops-kpis {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-	gap: 0.85rem;
+	/* Flex rather than a grid with a minimum width. auto-fit wrapped as soon
+	   as the cards could not all meet their 148px minimum, so the Containers
+	   tab, which has eight, dropped one onto a second row and pushed the
+	   table down. Flex with nowrap and flex-basis 0 makes the cards share
+	   whatever width there is, so every tab keeps its cards on one line
+	   whatever the count. */
+	display: flex;
+	flex-wrap: nowrap;
+	gap: 0.4rem;
 	margin-bottom: 0;
 }
 
 .cgm-ops-kpi {
 	display: flex;
 	align-items: center;
-	gap: 0.85rem;
+	gap: 0.4rem;
+	/* basis 0 so the cards divide the row evenly instead of being sized by
+	   their own text, and min-width 0 so a long label can shrink the card
+	   rather than forcing the row wider than the screen. */
+	flex: 1 1 0;
+	min-width: 0;
 	background: var(--cgm-surface);
 	border: 1px solid var(--cgm-border);
-	border-radius: var(--cgm-radius);
-	padding: 0.95rem 1rem;
+	border-radius: 10px;
+	/* The card is sized by its contents, so the type sizes below and this
+	   padding are the whole height. Trimmed together rather than one at a
+	   time, or the card just gets tighter without getting shorter. */
+	padding: 0.3rem 0.5rem;
 	box-shadow: var(--cgm-shadow);
 	cursor: pointer;
 	transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
 	text-align: left;
-	width: 100%;
 }
 
 .cgm-ops-kpi:hover,
@@ -211,14 +403,16 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-kpi-icon {
-	width: 44px;
-	height: 44px;
+	/* Kept just under the text column's height so the icon never becomes the
+	   thing setting the card height. */
+	width: 20px;
+	height: 20px;
 	flex-shrink: 0;
-	border-radius: 12px;
+	border-radius: 7px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 1.15rem;
+	font-size: 0.62rem;
 }
 
 .cgm-ops-kpi-icon.red {
@@ -247,7 +441,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-kpi .value {
-	font-size: 1.55rem;
+	font-size: 0.8rem;
 	font-weight: 700;
 	line-height: 1;
 	font-variant-numeric: tabular-nums;
@@ -258,43 +452,62 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	color: var(--cgm-red);
 }
 
+/* The text column of the card. Without min-width 0 it keeps its intrinsic
+   width and the flex row cannot shrink, which is what forces a wrap. */
+.cgm-ops-kpi > div {
+	min-width: 0;
+}
+
 .cgm-ops-kpi .label {
-	font-size: 0.72rem;
+	font-size: 0.52rem;
+	overflow-wrap: anywhere;
 	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	letter-spacing: 0.03em;
 	color: var(--cgm-muted);
-	margin-top: 0.25rem;
+	margin-top: 0.06rem;
 	font-weight: 600;
+	line-height: 1.2;
 }
 
 .cgm-ops-tabs {
 	display: flex;
-	gap: 8px;
-	margin-bottom: 0.85rem;
+	align-items: center;
+	gap: 6px;
+	/* This margin is the gap between the tabs and the table below, so it is
+	   pure vertical cost on every screen. */
+	margin-bottom: 0.35rem;
 	flex-wrap: wrap;
+}
+
+/* The row count shares the tabs row instead of holding a strip of its own, so
+   it parks against the right edge and gives the height back to the table. */
+.cgm-ops-tabs-count {
+	margin-left: auto;
 }
 
 .cgm-ops-tabs .btn {
 	border-radius: 999px;
 	font-weight: 600;
-	padding: 0.35rem 1rem;
+	font-size: 0.7rem;
+	line-height: 1.25;
+	padding: 0.28rem 0.72rem;
 }
 
 .cgm-ops-tabs .btn.active {
 	background: var(--cgm-red-grad);
 	color: #fff;
 	border-color: transparent;
-	box-shadow: 0 4px 12px rgba(227, 24, 55, 0.35);
+	box-shadow: 0 2px 6px rgba(227, 24, 55, 0.28);
 }
 
 .cgm-ops-updates-badge {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-width: 1.25rem;
-	height: 1.25rem;
+	min-width: 1.05rem;
+	height: 1.05rem;
 	margin-left: 0.35rem;
-	padding: 0 0.35rem;
+	padding: 0 0.3rem;
 	border-radius: 999px;
 	background: #fff;
 	color: var(--cgm-red-dark);
@@ -315,8 +528,52 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	padding: 0 0.25rem;
 }
 
+/* The Updates tab renders through the shared operational_updates component,
+   which is loaded app-wide and sized on Frappe's scale. It is deliberately
+   not edited there: other pages still want the larger reading size. These
+   overrides are scoped to the board so this tab matches the density of the
+   Shipments, Containers and Empty Returns tables beside it. */
+.cgm-ops-board .cgm-updates-list .list-row-container {
+	padding: 0.5rem 0.6rem;
+	border-radius: 7px;
+}
+
+.cgm-ops-board .cgm-updates-list .cgm-upd-subject {
+	font-size: 0.7rem;
+	min-height: 0;
+	line-height: 1.3;
+}
+
+.cgm-ops-board .cgm-updates-list .cgm-upd-source {
+	font-size: 0.6rem;
+}
+
+.cgm-ops-board .cgm-updates-meta {
+	margin-bottom: 0.3rem;
+}
+
+.cgm-ops-board .cgm-updates-meta-line {
+	font-size: 0.66rem;
+	line-height: 1.35;
+	margin-bottom: 0.1rem;
+}
+
+.cgm-ops-board .cgm-updates-preview {
+	margin-top: 0.3rem;
+	font-size: 0.66rem;
+	line-height: 1.4;
+}
+
+/* The shared component emits Frappe .indicator-pill, unlike the tables which
+   emit .cgm-ops-pill. Cap it to the same size so both read as one family. */
+.cgm-ops-board .cgm-updates-list .indicator-pill {
+	font-size: 0.6rem;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
 .cgm-ops-filter-hint {
-	font-size: 0.82rem;
+	font-size: 0.7rem;
 	color: var(--cgm-muted);
 	margin-bottom: 0.65rem;
 	display: flex;
@@ -331,7 +588,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	border-radius: 999px;
 	padding: 0.15rem 0.65rem;
 	font-weight: 600;
-	font-size: 0.75rem;
+	font-size: 0.62rem;
 }
 
 .cgm-ops-filter-hint .clear-filter {
@@ -360,7 +617,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	border-radius: var(--cgm-radius);
 	box-shadow: var(--cgm-shadow);
 	overflow: hidden;
-	margin-top: 0.35rem;
+	margin-top: 0.2rem;
 	flex: 1;
 	min-height: 0;
 	display: flex;
@@ -371,11 +628,12 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 0.75rem;
-	padding: 0.65rem 0.9rem;
+	gap: 0.5rem;
+	padding: 0.2rem 0.6rem;
+	font-size: 0.7rem;
 	border-bottom: 1px solid var(--cgm-border);
 	background: var(--fg-color, var(--cgm-surface));
-	min-height: 40px;
+	min-height: 22px;
 	flex-shrink: 0;
 }
 
@@ -387,13 +645,34 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-list-count {
-	font-size: var(--text-sm, 0.82rem);
-	color: var(--cgm-muted);
-	font-weight: 500;
+	/* Light blue rather than red, amber or green: this is passive metadata,
+	   and each of those already means something on this board (alert,
+	   attention, completed), so a status colour here would read as a verdict
+	   on the rows. Blue is only ever used for controls, so it stays neutral. */
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	padding: 0.06rem 0.5rem;
+	border-radius: 999px;
+	background: #eaf2fe;
+	color: #1d4f91;
+	border: 1px solid #cfe0f7;
+	font-size: 0.62rem;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.cgm-ops-list-header-right {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-left: auto;
 }
 
 .cgm-ops-list-selected {
-	font-size: var(--text-sm, 0.82rem);
+	font-size: 0.62rem;
 	font-weight: 600;
 	color: var(--cgm-red-dark);
 	background: var(--cgm-red-soft);
@@ -408,9 +687,38 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	max-height: none;
 	-webkit-overflow-scrolling: touch;
 	overscroll-behavior: contain;
+	/* Firefox. The horizontal bar sits between the last row and the paging
+	   controls, so its height is height the table does not get. */
+	scrollbar-width: thin;
+	scrollbar-color: #c3ccd8 transparent;
+}
+
+/* Chrome, Edge and Safari, which ignore scrollbar-width. 7px is still a
+   comfortable drag target and returns half the default bar to the rows. */
+.cgm-ops-table-scroll::-webkit-scrollbar {
+	width: 7px;
+	height: 7px;
+}
+
+.cgm-ops-table-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.cgm-ops-table-scroll::-webkit-scrollbar-thumb {
+	background: #c3ccd8;
+	border-radius: 999px;
+}
+
+.cgm-ops-table-scroll::-webkit-scrollbar-thumb:hover {
+	background: #a7b3c4;
+}
+
+.cgm-ops-table-scroll::-webkit-scrollbar-corner {
+	background: transparent;
 }
 
 .cgm-ops-list-paging {
+	font-size: 0.7rem;
 	border-top: 1px solid var(--cgm-border);
 	background: var(--fg-color, var(--cgm-surface));
 	flex-shrink: 0;
@@ -436,7 +744,10 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	min-width: 100%;
 	border-collapse: separate;
 	border-spacing: 0;
-	font-size: var(--text-sm, 0.8125rem);
+	/* 0.66rem is about 10.6px, the floor for a screen people read all day:
+	   below it the digits in a container number get hard to tell apart, and
+	   the table is only useful if a reference can be trusted at a glance. */
+	font-size: 0.66rem;
 }
 
 .cgm-ops-table th.cgm-ops-check-col,
@@ -454,9 +765,12 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-table thead th.cgm-ops-check-col {
+	/* Same reason as the sticky column: keep the red rule unbroken across the
+	   full width of the header. */
+	box-shadow: 0 2px 0 var(--cgm-thead-rule);
 	z-index: 5;
 	top: 0;
-	background: var(--subtle-fg, var(--cgm-surface-alt));
+	background: var(--cgm-thead-bg);
 }
 
 .cgm-ops-table th.cgm-ops-sticky-col,
@@ -464,8 +778,12 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	position: sticky;
 	left: var(--cgm-check-col-width);
 	z-index: 1;
-	min-width: 148px;
-	max-width: 240px;
+	/* This is the one column with a width cap, because it is frozen and a wide
+	   client name would eat the viewport. At the smaller type the same pixel
+	   budget now holds noticeably more characters, so the cap can come down
+	   and give the scrolling columns more room. */
+	min-width: 132px;
+	max-width: 210px;
 	white-space: normal;
 	background: var(--cgm-surface);
 	box-shadow: 4px 0 8px -2px rgba(15, 23, 42, 0.12);
@@ -475,7 +793,14 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 .cgm-ops-table thead th.cgm-ops-sticky-col {
 	z-index: 6;
 	top: 0;
-	background: var(--subtle-fg, var(--cgm-surface-alt));
+	background: var(--cgm-thead-bg);
+	/* box-shadow is one property, not a list that merges. The sticky column
+	   declares its own right-edge shadow, which silently replaced the red
+	   header rule from .cgm-ops-table th and left a gap under this one cell.
+	   Both shadows have to be stated together here. */
+	box-shadow:
+		0 2px 0 var(--cgm-thead-rule),
+		4px 0 8px -2px rgba(15, 23, 42, 0.12);
 }
 
 .cgm-ops-table tbody tr:hover td.cgm-ops-sticky-col,
@@ -513,26 +838,38 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	position: sticky;
 	top: 0;
 	z-index: 4;
-	background: var(--subtle-fg, var(--cgm-surface-alt));
-	color: var(--cgm-muted);
-	padding: 0.55rem 0.75rem;
+	background: var(--cgm-thead-bg);
+	color: var(--cgm-thead-text);
+	padding: 0.2rem 0.4rem;
 	text-align: left;
 	font-weight: 600;
 	white-space: nowrap;
-	font-size: 0.7rem;
+	font-size: 0.56rem;
 	text-transform: uppercase;
 	letter-spacing: 0.03em;
-	border-bottom: 1px solid var(--cgm-border);
-	box-shadow: 0 1px 0 var(--cgm-border);
+	border-bottom: 1px solid #c9d5e5;
+	/* Sits outside the cell so it still covers the first row of data as it
+	   scrolls under the sticky header. */
+	box-shadow: 0 2px 0 var(--cgm-thead-rule);
 }
 
 .cgm-ops-table td {
-	padding: 0.55rem 0.75rem;
+	/* Every pixel here is multiplied by the row count, so this is where the
+	   height actually goes. height was 40px but the pill and checkbox pushed
+	   rows past 50px; the explicit height is now a floor, not a target. */
+	/* Report-grid density, in the spirit of a QuickBooks report: the row is
+	   sized by its text, not by padding. Everything inside a cell (pills,
+	   checkbox, links) is capped to match, or it silently pushes the row back
+	   up. */
+	/* Both are variables so the board can tighten the grid until the chosen
+	   page fits the window (container_ops_board.js, fitRowsToScreen). The
+	   values here are the natural density, used whenever there is room. */
+	padding: var(--cgm-ops-row-pad, 0.1rem) 0.4rem;
 	border-bottom: 1px solid var(--cgm-border);
 	vertical-align: middle;
 	white-space: nowrap;
-	height: 40px;
-	line-height: 1.35;
+	height: var(--cgm-ops-row-height, 22px);
+	line-height: 1.15;
 }
 
 .cgm-ops-table tbody tr:hover td {
@@ -563,11 +900,18 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 .cgm-ops-pill {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.3rem;
-	padding: 0.18rem 0.55rem;
+	gap: 0.22rem;
+	/* Was 0.18rem vertical on top of the cell padding, which is what pushed
+	   rows past their nominal height. */
+	padding: 0 0.34rem;
 	border-radius: 999px;
-	font-size: 0.68rem;
-	font-weight: 700;
+	/* 0.6rem, not 0.66. Matching the cell text exactly made pills look bigger
+	   than their neighbours, because these are bold, uppercase and letter
+	   spaced: all three make the same point size read larger. A slightly
+	   smaller, less heavy pill sits level with plain text on the page. */
+	font-size: 0.6rem;
+	line-height: 1.4;
+	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.03em;
 }
@@ -608,15 +952,15 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-pill .dot {
-	width: 6px;
-	height: 6px;
+	width: 5px;
+	height: 5px;
 	border-radius: 50%;
 	background: currentColor;
 	opacity: 0.7;
 }
 
 .cgm-ops-alert {
-	font-size: 0.75rem;
+	font-size: 0.7rem;
 	color: var(--cgm-red);
 	font-weight: 600;
 	margin-top: 0.15rem;
@@ -629,7 +973,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-empty-icon {
-	font-size: 2rem;
+	font-size: 1.4rem;
 	margin-bottom: 0.5rem;
 	opacity: 0.5;
 }
@@ -667,7 +1011,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-shipment-detail-card {
-	padding: 1.25rem 1.5rem 1.35rem;
+	padding: 0.75rem 0.9rem 0.8rem;
 	background:
 		radial-gradient(700px 120px at 100% 0%, rgba(227, 24, 55, 0.08), transparent 60%),
 		var(--cgm-surface);
@@ -682,7 +1026,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 
 .cgm-ops-shipment-detail-heading {
 	margin: 0 0 1.1rem;
-	font-size: 1.25rem;
+	font-size: 0.95rem;
 	font-weight: 700;
 	letter-spacing: -0.02em;
 	color: var(--cgm-red-dark);
@@ -691,19 +1035,19 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 .cgm-ops-shipment-detail-grid {
 	display: grid;
 	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 0.85rem 1.25rem;
+	gap: 0.5rem 0.75rem;
 }
 
 .cgm-ops-detail-field {
-	padding: 0.65rem 0.75rem;
+	padding: 0.4rem 0.5rem;
 	background: var(--cgm-surface-alt);
 	border: 1px solid var(--cgm-border);
-	border-radius: 10px;
+	border-radius: 7px;
 	min-width: 0;
 }
 
 .cgm-ops-detail-label {
-	font-size: 0.7rem;
+	font-size: 0.62rem;
 	font-weight: 600;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
@@ -712,7 +1056,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-detail-value {
-	font-size: 0.92rem;
+	font-size: 0.72rem;
 	font-weight: 600;
 	color: var(--cgm-text);
 	line-height: 1.35;
@@ -748,8 +1092,8 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 
 .cgm-ops-containers-heading {
 	margin: 0;
-	padding: 0.85rem 1.25rem;
-	font-size: 0.8rem;
+	padding: 0.45rem 0.6rem;
+	font-size: 0.7rem;
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
@@ -809,7 +1153,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 	white-space: nowrap;
 	padding: 0.15rem 0.55rem;
 	border-radius: 999px;
-	font-size: 0.72rem;
+	font-size: 0.62rem;
 	font-weight: 700;
 	letter-spacing: 0.02em;
 	background: var(--cgm-red-soft);
@@ -849,7 +1193,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-activity-item {
-	padding: 0.85rem 0;
+	padding: 0.5rem 0;
 	border-bottom: 1px solid var(--border-color, #e5e7eb);
 	background: transparent;
 }
@@ -864,7 +1208,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-activity-subject {
-	font-size: var(--text-base, 0.95rem);
+	font-size: 0.7rem;
 	font-weight: 600;
 	color: var(--text-color, #1f272e);
 	line-height: 1.35;
@@ -872,14 +1216,14 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 
 .cgm-ops-activity-meta {
 	margin-top: 0.25rem;
-	font-size: var(--text-sm, 0.8rem);
+	font-size: 0.62rem;
 	color: var(--text-muted, #6c7680);
 	line-height: 1.35;
 }
 
 .cgm-ops-activity-message {
 	margin-top: 0.55rem;
-	font-size: var(--text-md, 0.875rem);
+	font-size: 0.66rem;
 	color: var(--text-color, #1f272e);
 	line-height: 1.5;
 	white-space: pre-wrap;
@@ -893,7 +1237,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 
 .cgm-ops-activity-attach {
 	margin-top: 0.45rem;
-	font-size: var(--text-sm, 0.8rem);
+	font-size: 0.62rem;
 }
 
 .cgm-ops-activity-attach a {
@@ -901,7 +1245,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-activity-empty {
-	padding: 1.75rem 0.75rem;
+	padding: 1rem 0.75rem;
 	text-align: center;
 }
 
@@ -912,7 +1256,7 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 }
 
 .cgm-ops-activity-empty-text {
-	font-size: var(--text-sm, 0.85rem);
+	font-size: 0.62rem;
 	color: var(--text-muted, #6c7680);
 }
 
@@ -926,9 +1270,9 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 
 .cgm-ops-activity-footer-note {
 	margin: 0;
-	padding-top: 0.75rem;
+	padding-top: 0.5rem;
 	border-top: 1px solid var(--border-color, #e5e7eb);
-	font-size: var(--text-sm, 0.8rem);
+	font-size: 0.62rem;
 	color: var(--text-muted, #6c7680);
 	line-height: 1.4;
 }
@@ -946,15 +1290,466 @@ body:has(.cgm-ops-body.is-detail-view) .cgm-ops-sticky-top,
 @media (max-width: 900px) {
 	.cgm-ops-shipment-detail-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
-	.cgm-ops-kpis-toggle-hint {
-		display: none;
-	}
-}
+	}}
 
 @media (max-width: 560px) {
 	.cgm-ops-shipment-detail-grid {
 		grid-template-columns: 1fr;
 	}
 }
+
+/* ---------------------------------------------------------------------------
+   Short viewports
+
+   The board must fit the window without the page scrolling, so on a short
+   screen the chrome gives up space first and the table keeps what is left.
+   -------------------------------------------------------------------------- */
+@media (max-height: 860px) {
+	.cgm-ops-kpis-section {
+		margin-bottom: 0.4rem;
+	}
+	.cgm-ops-board .cgm-ops-body {
+		padding: 0 0.6rem 0.4rem;
+	}
+}
+
+@media (max-height: 700px) {
+	.cgm-ops-subtitle {
+		display: none;
+	}
+	.cgm-ops-board .cgm-ops-body {
+		padding: 0 0.5rem 0.3rem;
+	}
+	.cgm-ops-list-header {
+		padding: 0.45rem 0.9rem;
+		min-height: 34px;
+	}
+}
+
+@media (max-width: 720px) {
+	.cgm-ops-subtitle {
+		white-space: normal;
+		font-size: 0.62rem;
+		padding: 0.3rem 0.75rem;
+	}
+}
+
+/* ---------------------------------------------------------------------------
+   Report-grid density
+
+   At 22px the row is sized by its text, so anything taller inside a cell wins
+   and the row silently grows back. These caps are what make the height hold.
+   -------------------------------------------------------------------------- */
+.cgm-ops-table td > * {
+	vertical-align: middle;
+}
+
+.cgm-ops-table td input[type="checkbox"] {
+	width: 13px;
+	height: 13px;
+	margin: 0;
+	vertical-align: middle;
+}
+
+.cgm-ops-table td a,
+.cgm-ops-table td .cgm-ops-link {
+	line-height: 1.15;
+}
+
+/* Frappe's indicator dots and small badges default to a line-height that
+   exceeds the row on their own. */
+/* The table cells emit .cgm-ops-pill, not these. This rule is for anything
+   frappe renders into a cell itself, and for the shared components that still
+   use .indicator-pill (the Updates tab is one), so a pill arriving from
+   outside inherits the grid's size instead of breaking the row height. */
+.cgm-ops-table td .indicator,
+.cgm-ops-table td .indicator-pill,
+.cgm-ops-table td .badge {
+	font-size: 0.6rem;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	line-height: 1.4;
+	padding-top: 0;
+	padding-bottom: 0;
+	padding-left: 0.34rem;
+	padding-right: 0.34rem;
+	border-radius: 999px;
+	vertical-align: middle;
+}
+
+/* The dot frappe draws inside an indicator scales with the text, so it needs
+   pinning too or it sits oversized against the smaller label. */
+.cgm-ops-table td .indicator-pill::before,
+.cgm-ops-table td .indicator::before {
+	width: 5px;
+	height: 5px;
+	margin-right: 0.22rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Paging bar
+
+   Previously a bare "20 50 100 500" block with nothing saying what those
+   numbers did, and Previous/Next floating at the far edge. Now: a labelled
+   segmented control, and a range indicator beside the arrows so the bar says
+   where you are as well as what it does.
+   -------------------------------------------------------------------------- */
+.cgm-ops-list-paging {
+	padding: 0.22rem 0.6rem;
+}
+
+.cgm-ops-paging-area {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin: 0;
+}
+
+.cgm-ops-paging-size {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+
+.cgm-ops-paging-label,
+.cgm-ops-paging-range {
+	font-size: 0.62rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--cgm-muted);
+	white-space: nowrap;
+}
+
+.cgm-ops-paging-range {
+	text-transform: none;
+	letter-spacing: 0;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+
+/* One segmented control rather than four loose buttons. */
+.cgm-ops-paging-group {
+	display: inline-flex;
+	border: 1px solid var(--cgm-border);
+	border-radius: 7px;
+	overflow: hidden;
+	background: var(--cgm-surface);
+}.cgm-ops-paging-group .btn.btn-paging {
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	padding: 0.16rem 0.5rem;
+	font-size: 0.62rem;
+	font-weight: 600;
+	line-height: 1.25;
+	color: var(--cgm-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.cgm-ops-paging-group .btn.btn-paging + .btn.btn-paging {
+	border-left: 1px solid var(--cgm-border);
+}
+
+.cgm-ops-paging-group .btn.btn-paging:hover:not(:disabled) {
+	background: var(--cgm-surface-alt);
+	color: var(--cgm-text);
+}
+
+/* The current size is disabled, so it must not look merely greyed out. */
+.cgm-ops-paging-group .btn.btn-paging.is-current,
+.cgm-ops-paging-group .btn.btn-paging.is-current:disabled {
+	background: var(--cgm-red-soft);
+	color: var(--cgm-red-dark);
+	opacity: 1;
+}
+
+.cgm-ops-paging-nav {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+
+.cgm-ops-paging-nav .btn {
+	padding: 0.16rem 0.55rem;
+	font-size: 0.62rem;
+	font-weight: 600;
+	line-height: 1.25;
+	border-radius: 7px;
+}
+
+.cgm-ops-paging-nav .btn:disabled {
+	opacity: 0.45;
+}
+
+@media (max-width: 720px) {
+	.cgm-ops-paging-label,
+	.cgm-ops-paging-range {
+		display: none;
+	}
+}
+
+/* ---------------------------------------------------------------------------
+   Resizable columns
+
+   A 7px grab strip inside the right edge of each header. It only shows its
+   rule on hover, so 28 headers do not read as 28 dividers when nobody is
+   resizing anything.
+   -------------------------------------------------------------------------- */
+.cgm-ops-col-resizer {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 7px;
+	height: 100%;
+	cursor: col-resize;
+	user-select: none;
+	touch-action: none;
+	z-index: 2;
+}
+
+.cgm-ops-col-resizer::after {
+	content: "";
+	position: absolute;
+	top: 18%;
+	bottom: 18%;
+	right: 2px;
+	width: 2px;
+	border-radius: 1px;
+	background: transparent;
+	transition: background 0.12s ease;
+}
+
+.cgm-ops-table th:hover .cgm-ops-col-resizer::after {
+	background: #b8c6d8;
+}
+
+.cgm-ops-col-resizer:hover::after {
+	background: var(--cgm-red);
+}
+
+/* While dragging, the pointer is over the rows rather than the handle, so the
+   cursor and the text-selection block have to live on the body. */
+body.cgm-ops-col-resizing,
+body.cgm-ops-col-resizing * {
+	cursor: col-resize !important;
+	user-select: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Sortable headers
+   -------------------------------------------------------------------------- */
+.cgm-ops-table th.cgm-ops-sortable {
+	cursor: pointer;
+	user-select: none;
+	white-space: nowrap;
+}
+
+.cgm-ops-table th.cgm-ops-sortable .cgm-ops-th-label {
+	vertical-align: middle;
+}
+
+.cgm-ops-sort-caret {
+	display: inline-block;
+	margin-left: 0.25rem;
+	font-size: 0.62rem;
+	line-height: 1;
+	vertical-align: middle;
+	/* The idle double-arrow is a hint, not information, so it stays faint
+	   until the column is actually the one being sorted. */
+	opacity: 0.3;
+	transition: opacity 0.12s ease;
+}
+
+.cgm-ops-table th.cgm-ops-sortable:hover .cgm-ops-sort-caret,
+.cgm-ops-table th.cgm-ops-sortable:focus-visible .cgm-ops-sort-caret {
+	opacity: 0.7;
+}
+
+.cgm-ops-table th.cgm-ops-sortable:hover {
+	background: var(--cgm-thead-hover);
+	color: var(--cgm-text);
+}
+
+.cgm-ops-table th.cgm-ops-sortable.is-sorted {
+	color: #2563eb;
+}
+
+.cgm-ops-table th.cgm-ops-sortable.is-sorted .cgm-ops-sort-caret {
+	opacity: 1;
+	color: #2563eb;
+}
+
+.cgm-ops-table th.cgm-ops-sortable:focus-visible {
+	outline: 2px solid #2563eb;
+	outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Typography
+
+   No web font is loaded on purpose. The desk runs offline for some users and a
+   blocked font request would leave the densest screen in the app falling back
+   mid-render. These are system faces that are already present, chosen for how
+   they set small text and figures.
+   -------------------------------------------------------------------------- */
+.cgm-ops-board {
+	font-family:
+		-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+		"Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
+}
+
+/* Lining, tabular figures across the grid. This is the change that makes a
+   data table feel typeset: every ETA, container count and reference number
+   occupies the same width, so digits line up in a column instead of drifting.
+   Without it "22-05-2026" and "01-06-2026" are literally different widths. */
+.cgm-ops-table,
+.cgm-ops-table td,
+.cgm-ops-table th {
+	font-variant-numeric: tabular-nums lining-nums;
+	font-feature-settings: "tnum" 1, "lnum" 1, "calt" 0;
+}
+
+/* Reference codes read as identifiers, not prose: B/L numbers, CGM refs and
+   shipment codes are scanned character by character, so a touch of tracking
+   and a medium weight makes transposed characters easier to catch. */
+.cgm-ops-table td a,
+.cgm-ops-table .cgm-ops-ref {
+	letter-spacing: 0.012em;
+	font-weight: 500;
+}
+
+/* Column headers: small caps need air or they set as a solid block. */
+.cgm-ops-table th {
+	letter-spacing: 0.055em;
+	font-weight: 600;
+}
+
+/* The client's own reference is the column customers quote back, so it is set
+   bold: heavier than the CGM ref and B/L beside it, which the office reads. */
+.cgm-ops-table td .cgm-ops-client-ref {
+	font-weight: 700;
+	color: var(--cgm-text);
+}
+
+/* Client names are the one prose column, so they keep normal tracking and a
+   slightly heavier weight to anchor the row. */
+.cgm-ops-table td.cgm-ops-sticky-col,
+.cgm-ops-table td:first-of-type {
+	letter-spacing: 0;
+}
+
+/* Numbers in the KPI cards are display figures: tighter tracking reads as
+   deliberate at that size. */
+.cgm-ops-kpi .value {
+	letter-spacing: -0.015em;
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Filters and paging are chrome, so they sit a hair lighter than the data
+   they act on. */
+.cgm-ops-filter-field input,
+.cgm-ops-filter-field select,
+.cgm-ops-filter-field .placeholder {
+	letter-spacing: 0.004em;
+}
+
+.cgm-ops-subtitle {
+	font-weight: 500;
+}
+
+/* The placeholder shown for an empty cell. It is absence of data, not data,
+   so it should recede rather than read as a value. */
+.cgm-ops-muted {
+	color: var(--cgm-muted);
+	opacity: 0.65;
+}
+
+/* The KPI toggle. It was a full width bar carrying the word SUMMARY and a
+   hint that restated what the arrow already did, costing a whole row of the
+   board for one boolean. A checkbox in the tab strip says the same thing in
+   the space that was already there. */
+/* Both toggles read as chips rather than loose text, so they are findable in a
+   row that is otherwise tabs and a count, and each one says whether it is on by
+   colour rather than by the 12px box alone. */
+.cgm-ops-kpis-check {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	margin: 0 0 0 auto;
+	padding: 0.14rem 0.5rem;
+	border: 1px solid var(--cgm-border);
+	border-radius: 999px;
+	background: var(--cgm-surface);
+	font-size: 0.62rem;
+	font-weight: 600;
+	/* Darker than --cgm-muted: these are controls, not captions. */
+	color: #55637a;
+	white-space: nowrap;
+	cursor: pointer;
+	user-select: none;
+	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+/* The second chip follows the first rather than fighting it for the auto
+   margin that pushes the pair to the right. */
+.cgm-ops-kpis-check ~ .cgm-ops-kpis-check {
+	margin-left: 0.35rem;
+}
+
+.cgm-ops-kpis-check:hover {
+	color: var(--cgm-text);
+	border-color: rgba(227, 24, 55, 0.35);
+	background: #fff;
+}
+
+/* On: brand red for the KPI cards. The .is-on class is set in JS alongside
+   :has(), so the state still shows on a browser without :has() support. */
+.cgm-ops-kpis-check.is-on,
+.cgm-ops-kpis-check:has(input:checked) {
+	background: var(--cgm-red-soft);
+	border-color: rgba(227, 24, 55, 0.4);
+	color: var(--cgm-red-dark);
+}
+
+/* On: green for completed, which is what the word means everywhere else on
+   this board, and keeps the two chips apart at a glance. */
+.cgm-ops-completed-check.is-on,
+.cgm-ops-completed-check:has(input:checked) {
+	background: #eaf7ee;
+	border-color: #bfe3cb;
+	color: #256b42;
+}
+
+.cgm-ops-completed-check input {
+	accent-color: #16a34a;
+}
+
+.cgm-ops-completed-check:hover {
+	border-color: rgba(22, 163, 74, 0.4);
+}
+
+.cgm-ops-kpis-check input {
+	width: 12px;
+	height: 12px;
+	margin: 0;
+	cursor: pointer;
+	accent-color: var(--cgm-red);
+}
+
+.cgm-ops-kpis-check input:focus-visible {
+	outline: 2px solid var(--cgm-red);
+	outline-offset: 2px;
+}
+
+/* The count sat at the far right on its own margin. With the checkbox now
+   taking that auto margin, the count only needs a gap beside it. */
+.cgm-ops-tabs .cgm-ops-tabs-count {
+	margin-left: 0.5rem;
+}
+

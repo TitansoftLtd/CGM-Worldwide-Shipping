@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import cint, cstr, getdate, now_datetime
+from frappe.utils import cint, cstr, get_url, getdate, now_datetime
 from frappe.utils.user import get_users_with_role
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
@@ -15,12 +15,12 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	SALES_INVOICE_REJECTION_REASON_FIELD,
 	SALES_INVOICE_SUBMITTABLE_STATES,
 	SALES_INVOICE_WORKFLOW_STATE_APPROVED,
+	SALES_INVOICE_WORKFLOW_STATE_CANCELLED,
 	SALES_INVOICE_WORKFLOW_STATE_DRAFT,
 	SALES_INVOICE_WORKFLOW_STATE_PENDING,
-	SALES_INVOICE_WORKFLOW_STATE_REJECTED,
 )
 
-REVIEW_ROLES = ("Accounts Manager", "Accounts User")
+MANAGER_ROLE = "Accounts Manager"
 
 
 def before_insert_sales_invoice(doc, method=None) -> None:
@@ -46,6 +46,11 @@ def parse_mmyy_naming_series_variable(doc, variable):
 def validate_sales_invoice(doc, method=None) -> None:
 	validate_sales_invoice_project_reference(doc)
 	validate_sales_invoice_workflow(doc)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share import (
+		validate_share_with_customer,
+	)
+
+	validate_share_with_customer(doc)
 
 
 def after_insert_sales_invoice(doc, method=None) -> None:
@@ -53,7 +58,6 @@ def after_insert_sales_invoice(doc, method=None) -> None:
 		link_deposit_sales_invoice_to_bl,
 	)
 
-	# Credit notes / sales returns must not overwrite the BL deposit Sales Invoice link.
 	if cint(doc.get("is_return")):
 		return
 
@@ -70,9 +74,17 @@ def after_insert_sales_invoice(doc, method=None) -> None:
 def validate_sales_invoice_workflow(doc) -> None:
 	if not doc.meta.has_field("workflow_state"):
 		return
-	if doc.docstatus != 0:
+
+	state = (doc.workflow_state or "").strip()
+	if doc.docstatus == 1:
+		if not state:
+			doc.workflow_state = SALES_INVOICE_WORKFLOW_STATE_APPROVED
 		return
-	if not doc.workflow_state:
+	if doc.docstatus == 2:
+		if not state:
+			doc.workflow_state = SALES_INVOICE_WORKFLOW_STATE_CANCELLED
+		return
+	if not state:
 		doc.workflow_state = SALES_INVOICE_WORKFLOW_STATE_DRAFT
 
 
@@ -97,6 +109,18 @@ def before_submit_sales_invoice(doc, method=None) -> None:
 		)
 
 
+def on_sales_invoice_cancel(doc, method=None) -> None:
+	if not doc.meta.has_field("workflow_state"):
+		return
+	frappe.db.set_value(
+		"Sales Invoice",
+		doc.name,
+		"workflow_state",
+		SALES_INVOICE_WORKFLOW_STATE_CANCELLED,
+		update_modified=False,
+	)
+
+
 def on_update_sales_invoice_workflow(doc, method=None) -> None:
 	if not doc.meta.has_field("workflow_state"):
 		return
@@ -111,21 +135,71 @@ def on_update_sales_invoice_workflow(doc, method=None) -> None:
 		return
 
 	if curr == SALES_INVOICE_WORKFLOW_STATE_PENDING:
-		_share_sales_invoice_with_reviewers(doc)
+		_clear_rejection_stamps(doc)
+		_share_sales_invoice_with_managers(doc)
+		_notify_accounts_managers_pending_review(doc)
 	elif curr == SALES_INVOICE_WORKFLOW_STATE_APPROVED:
 		_stamp_sales_invoice_approval(doc)
-	elif curr == SALES_INVOICE_WORKFLOW_STATE_REJECTED:
+		ensure_approved_sales_invoice_submitted(doc)
+		_notify_owner_approved(doc)
+	elif (
+		prev == SALES_INVOICE_WORKFLOW_STATE_PENDING
+		and curr == SALES_INVOICE_WORKFLOW_STATE_DRAFT
+	):
 		_stamp_sales_invoice_rejection(doc)
-	elif curr == SALES_INVOICE_WORKFLOW_STATE_DRAFT:
-		_reset_sales_invoice_approval_stamps(doc)
+		_notify_owner_rejected(doc)
 
 
-def _share_sales_invoice_with_reviewers(doc) -> None:
-	users = _reviewer_users()
-	if not users:
+def on_sales_invoice_update(doc, method=None) -> None:
+	"""Safety net: Approved invoices must be submitted so ERPNext status (Unpaid…) applies."""
+	if doc.docstatus != 0:
+		return
+	if (doc.get("workflow_state") or "").strip() != SALES_INVOICE_WORKFLOW_STATE_APPROVED:
+		return
+	ensure_approved_sales_invoice_submitted(doc)
+
+
+def ensure_approved_sales_invoice_submitted(doc) -> None:
+	"""Submit after approval so payment Status (Unpaid / Partly Paid / Paid) takes over."""
+	if doc.docstatus != 0:
+		return
+	if (doc.get("workflow_state") or "").strip() != SALES_INVOICE_WORKFLOW_STATE_APPROVED:
+		return
+	if frappe.flags.get("cgm_si_submitting_after_approval"):
 		return
 
-	for user in users:
+	frappe.flags.cgm_si_submitting_after_approval = True
+	try:
+		doc.submit()
+	except frappe.ValidationError:
+		raise
+	except Exception as exc:
+		frappe.log_error(
+			title="CGM: Sales Invoice submit after approval failed",
+			message=frappe.get_traceback(),
+		)
+		frappe.throw(
+			_("This invoice is approved but could not be submitted: {0}").format(str(exc)),
+			title=_("Submit Failed"),
+		)
+	finally:
+		frappe.flags.cgm_si_submitting_after_approval = False
+
+
+def _sales_invoice_form_url(name: str) -> str:
+	return get_url(f"/app/sales-invoice/{name}")
+
+
+def _manager_users() -> list[str]:
+	return sorted(
+		user
+		for user in (get_users_with_role(MANAGER_ROLE) or [])
+		if user and user != "Guest"
+	)
+
+
+def _share_sales_invoice_with_managers(doc) -> None:
+	for user in _manager_users():
 		if user in {doc.owner, frappe.session.user}:
 			continue
 		frappe.share.add_docshare(
@@ -134,15 +208,86 @@ def _share_sales_invoice_with_reviewers(doc) -> None:
 			user,
 			read=1,
 			write=0,
-			notify=1,
+			notify=0,
 		)
 
 
-def _reviewer_users() -> set[str]:
-	users: set[str] = set()
-	for role in REVIEW_ROLES:
-		users.update(get_users_with_role(role) or [])
-	return {user for user in users if user and user != "Guest"}
+def _notify_accounts_managers_pending_review(doc) -> None:
+	recipients = [u for u in _manager_users() if u != doc.owner]
+	if not recipients:
+		return
+	subject = _("Sales Invoice {0} awaiting your approval").format(doc.name)
+	message = frappe.render_template(
+		"""
+<p>{{ _("A Sales Invoice has been submitted for your review.") }}</p>
+<p><strong>{{ doc.name }}</strong> · {{ doc.customer_name or doc.customer }}</p>
+<p>{{ _("Approval status") }}: <strong>{{ _("Pending Approval") }}</strong></p>
+<p><a href="{{ url }}">{{ _("Open Sales Invoice") }}</a></p>
+""",
+		{"doc": doc, "url": _sales_invoice_form_url(doc.name)},
+	)
+	_send_sales_invoice_mail(recipients, subject, message, doc)
+
+
+def _notify_owner_approved(doc) -> None:
+	if not doc.owner or doc.owner == frappe.session.user:
+		return
+	subject = _("Sales Invoice {0} approved and submitted").format(doc.name)
+	message = frappe.render_template(
+		"""
+<p>{{ _("Your Sales Invoice has been approved and submitted.") }}</p>
+<p><strong>{{ doc.name }}</strong></p>
+<p>{{ _("Approval status") }}: <strong>{{ _("Approved") }}</strong></p>
+<p>{{ _("Payment status") }}: <strong>{{ doc.status or _("Unpaid") }}</strong></p>
+<p><a href="{{ url }}">{{ _("Open Sales Invoice") }}</a></p>
+""",
+		{"doc": doc, "url": _sales_invoice_form_url(doc.name)},
+	)
+	_send_sales_invoice_mail([doc.owner], subject, message, doc)
+
+
+def _notify_owner_rejected(doc) -> None:
+	if not doc.owner:
+		return
+	reason = (cstr(doc.get(SALES_INVOICE_REJECTION_REASON_FIELD)) or "").strip()
+	subject = _("Sales Invoice {0} rejected — returned to Draft").format(doc.name)
+	reason_block = (
+		f"<p><strong>{_('Rejection reason')}:</strong> {frappe.utils.escape_html(reason)}</p>"
+		if reason
+		else ""
+	)
+	message = frappe.render_template(
+		"""
+<p>{{ _("Your Sales Invoice was rejected and returned to Draft for correction.") }}</p>
+<p><strong>{{ doc.name }}</strong></p>
+<p>{{ _("Approval status") }}: <strong>{{ _("Draft") }}</strong></p>
+{{ reason_block | safe }}
+<p><a href="{{ url }}">{{ _("Open Sales Invoice") }}</a></p>
+""",
+		{
+			"doc": doc,
+			"url": _sales_invoice_form_url(doc.name),
+			"reason_block": reason_block,
+		},
+	)
+	_send_sales_invoice_mail([doc.owner], subject, message, doc)
+
+
+def _send_sales_invoice_mail(recipients: list[str], subject: str, message: str, doc) -> None:
+	try:
+		frappe.sendmail(
+			recipients=recipients,
+			subject=subject,
+			message=message,
+			delayed=True,
+			reference_doctype=doc.doctype,
+			reference_name=doc.name,
+		)
+	except Exception:
+		frappe.log_error(
+			title="CGM: Sales Invoice workflow email failed",
+			message=frappe.get_traceback(),
+		)
 
 
 def _stamp_sales_invoice_approval(doc) -> None:
@@ -168,9 +313,8 @@ def _stamp_sales_invoice_rejection(doc) -> None:
 			doc.db_set(fieldname, value, update_modified=False)
 
 
-def _reset_sales_invoice_approval_stamps(doc) -> None:
+def _clear_rejection_stamps(doc) -> None:
 	updates = {
-		SALES_INVOICE_APPROVED_BY_FIELD: None,
 		SALES_INVOICE_REJECTED_BY_FIELD: None,
 		SALES_INVOICE_REJECTION_REASON_FIELD: None,
 	}

@@ -39,7 +39,7 @@
 {% endblock %}
 
 {% block page_content %}
-<div class="cp-page cp-page-narrow">
+<div class="cp-page">
 
 {% include "templates/includes/portal_back_link.html" %}
 
@@ -145,8 +145,12 @@
       {% if containers %}<span class="cp-tab-count">{{ containers|length }}</span>{% endif %}
     </button>
     <button type="button" class="cp-tab" data-cp-tab="updates" role="tab" aria-selected="false">
-      {{ _("Updates") }}
-      {% if updates %}<span class="cp-tab-count">{{ updates|length }}</span>{% endif %}
+      {{ _("Messages") }}
+      {% if conversation %}<span class="cp-tab-count">{{ conversation|length }}</span>{% endif %}
+      {% if unread_count %}<span class="cp-unread-pill">{{ unread_count }}</span>{% endif %}
+    </button>
+    <button type="button" class="cp-tab" data-cp-tab="feedback" role="tab" aria-selected="false">
+      {{ _("Feedback") }}
     </button>
   </div>
 
@@ -183,6 +187,12 @@
                 {% endif %}
               </div>
             {% endif %}
+
+            <p style="margin:1rem 0 0;">
+              <a class="cp-btn cp-btn-ghost" style="padding:.35rem .9rem;font-size:.8rem;" href="{{ c.url }}">
+                {{ _("Messages & feedback for this container") }}
+              </a>
+            </p>
           </div>
         </details>
       {% endfor %}
@@ -192,19 +202,31 @@
   </div>
 
   <div class="cp-tab-panel" data-cp-panel="updates" role="tabpanel">
-    <div class="cp-card" style="margin-bottom:1rem;">
+    <div class="cp-card" id="cgm-shipment-updates-list" style="margin-bottom:1rem;">
+      <div class="cp-card-head"><h3>{{ _("Conversation with operations") }}</h3></div>
+      <div class="cp-card-body" id="cgm-shipment-updates-mount">
+        <div class="cp-thread-empty">{{ _("Loading messages…") }}</div>
+      </div>
+    </div>
+    <div class="cp-card">
+      <div class="cp-card-head"><h3>{% if conversation %}{{ _("Reply") }}{% else %}{{ _("Send a message") }}{% endif %}</h3></div>
       <div class="cp-card-body">
         <p style="margin:0 0 1rem;color:var(--cp-text-muted);font-size:.88rem;">
-          {{ _("Send a message to the operations team about this shipment. Your update is logged against this shipment.") }}
+          {{ _("The operations team replies here, and you will be emailed when they do.") }}
         </p>
         <div id="cgm-shipment-update-form-mount"></div>
       </div>
     </div>
-    <div class="cp-card" id="cgm-shipment-updates-list">
-      <div class="cp-card-body" id="cgm-shipment-updates-mount">
-        {% if not updates %}
-        <div class="cp-empty" style="border:none;padding:1rem 0;"><p>{{ _("No updates yet. Use the form above to message operations.") }}</p></div>
-        {% endif %}
+  </div>
+
+  <div class="cp-tab-panel" data-cp-panel="feedback" role="tabpanel">
+    <div class="cp-card">
+      <div class="cp-card-head"><h3>{{ _("How are we doing on this shipment?") }}</h3></div>
+      <div class="cp-card-body">
+        <p style="margin:0 0 1rem;color:var(--cp-text-muted);font-size:.88rem;">
+          {{ _("Rate this shipment and tell us what to keep doing or fix. Tick the containers it is about if it only concerns some of them. Your feedback goes straight to the operations manager.") }}
+        </p>
+        <div id="cgm-shipment-feedback-mount"></div>
       </div>
     </div>
   </div>
@@ -280,11 +302,37 @@ frappe.ready(function () {
 </script>
 {% endif %}
 {% if not error_title and shipment %}
-<script type="application/json" id="cgm-shipment-updates-json">{{ updates_json | safe }}</script>
+<script type="application/json" id="cgm-shipment-conversation-json">{{ conversation_json | safe }}</script>
+<script type="application/json" id="cgm-shipment-feedback-json">{{ feedback_json | safe }}</script>
 <script>
 frappe.ready(function () {
 	const page = document.querySelector(".cp-page");
 	if (!page) return;
+
+	const PROJECT = {{ (shipment.name or "") | tojson }};
+
+	function showTab(key) {
+		let matched = false;
+		page.querySelectorAll(".cp-tab").forEach(function (t) {
+			const active = t.getAttribute("data-cp-tab") === key;
+			matched = matched || active;
+			t.classList.toggle("active", active);
+			t.setAttribute("aria-selected", active ? "true" : "false");
+		});
+		if (!matched) return false;
+		page.querySelectorAll(".cp-tab-panel").forEach(function (panel) {
+			panel.classList.toggle("active", panel.getAttribute("data-cp-panel") === key);
+		});
+		return true;
+	}
+
+	// Arriving from /my-messages or the New Messages tile lands on the thread.
+	const wanted = (window.location.hash || "").replace("#", "");
+	if (wanted === "messages" || wanted === "updates") {
+		if (showTab("updates")) {
+			page.querySelector('[data-cp-panel="updates"]').scrollIntoView({ block: "start" });
+		}
+	}
 
 	page.querySelectorAll(".cp-tab").forEach(function (tab) {
 		tab.addEventListener("click", function () {
@@ -300,63 +348,102 @@ frappe.ready(function () {
 		});
 	});
 
-	let updates = [];
-	try {
-		updates = JSON.parse((document.getElementById("cgm-shipment-updates-json") || {}).textContent || "[]");
-	} catch (e) {
-		updates = [];
+	function readJSON(id, fallback) {
+		try {
+			return JSON.parse((document.getElementById(id) || {}).textContent || "null") || fallback;
+		} catch (e) {
+			return fallback;
+		}
 	}
 
-	const listOpts = { showSource: false, hideShipment: true, hideCustomer: true };
+	const conversation = readJSON("cgm-shipment-conversation-json", []);
+	const feedback = readJSON("cgm-shipment-feedback-json", {
+		categories: [],
+		my_feedback: null,
+		containers: [],
+	});
 
-	frappe.require(
-		[
-			"dialog.bundle.js",
-			"web_form.bundle.js",
-			"/assets/cgm_shipping/js/transporter_update_form.js",
-		],
-		function () {
-			const mount = document.getElementById("cgm-shipment-updates-mount");
-			if (mount && window.cgm && cgm.updates && cgm.updates.mount) {
-				if (updates.length) {
-					cgm.updates.mount(mount, updates, listOpts);
-				}
-			}
+	function threadRoot(messages) {
+		if (!(messages || []).length) return "";
+		const last = messages[messages.length - 1];
+		return last.parent_update || last.name;
+	}
 
-			const formMount = document.getElementById("cgm-shipment-update-form-mount");
-			if (!(formMount && cgm.updates && cgm.updates.mountCustomerForm)) {
-				return;
-			}
-			const form = cgm.updates.mountCustomerForm(formMount);
-			if (!form) return;
-
-			form.$btn.on("click", function () {
-				const values = form.validate();
-				if (!values) return;
-				const btn = form.$btn.get(0);
-				btn.disabled = true;
-				frappe.call({
-					method: "cgm_shipping.cgm_worldwide_shipping.customizations.portal.post_shipment_update",
-					args: {
-						project: {{ (shipment.name or "") | tojson }},
-						subject: values.subject,
-						message: values.message,
-					},
-					freeze: true,
-					callback(r) {
-						btn.disabled = false;
-						if (r.exc) return;
-						frappe.show_alert({
-							message: (r.message && r.message.message) || __("Update sent."),
-							indicator: "green",
-						});
-						window.location.reload();
-					},
-					error() { btn.disabled = false; },
-				});
-			});
+	const thread = cgm.portal.mountThread(
+		document.getElementById("cgm-shipment-updates-mount"),
+		conversation,
+		{
+			emptyText: __("No messages yet. Send the first one below."),
+			markReadMethod:
+				"cgm_shipping.cgm_worldwide_shipping.customizations.portal.mark_shipment_updates_read",
+			markReadArgs: { project: PROJECT },
 		}
 	);
+
+	cgm.portal.mountComposer(document.getElementById("cgm-shipment-update-form-mount"), {
+		replyTo: threadRoot(conversation),
+		subjectPlaceholder: __("e.g. Delivery instructions"),
+		onSend(values, done) {
+			let sent = false;
+			frappe.call({
+				method: "cgm_shipping.cgm_worldwide_shipping.customizations.portal.post_shipment_update",
+				args: {
+					project: PROJECT,
+					subject: values.subject,
+					message: values.message,
+					parent_update: values.parent_update,
+				},
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Message sent."),
+						indicator: "green",
+					});
+					sent = true;
+					refreshThread();
+				},
+				// Website frappe.call has no `error` hook - `always` is the
+				// only place the button is guaranteed to be re-enabled.
+				always() { done(sent); },
+			});
+		},
+	});
+
+	function refreshThread() {
+		frappe.call({
+			method:
+				"cgm_shipping.cgm_worldwide_shipping.customizations.portal.get_shipment_updates_portal",
+			args: { project: PROJECT },
+			callback(r) {
+				if (r.exc || !thread) return;
+				thread.setMessages(r.message || []);
+			},
+		});
+	}
+
+	cgm.portal.mountFeedback(document.getElementById("cgm-shipment-feedback-mount"), {
+		categories: feedback.categories,
+		containers: feedback.containers,
+		value: feedback.my_feedback,
+		onSubmit(values, done) {
+			frappe.call({
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.customizations.portal.submit_shipment_feedback",
+				args: Object.assign({ project: PROJECT }, values),
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Thanks for your feedback."),
+						indicator: "green",
+					});
+					window.location.reload();
+				},
+				always() { done(); },
+			});
+		},
+	});
 });
 </script>
 {% endif %}

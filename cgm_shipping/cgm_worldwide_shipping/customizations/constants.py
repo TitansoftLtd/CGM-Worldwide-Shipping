@@ -90,10 +90,13 @@ SALES_INVOICE_WORKFLOW_NAME = "CGM Sales Invoice Approval"
 SALES_INVOICE_WORKFLOW_STATE_DRAFT = "Draft"
 SALES_INVOICE_WORKFLOW_STATE_PENDING = "Pending Approval"
 SALES_INVOICE_WORKFLOW_STATE_APPROVED = "Approved"
-SALES_INVOICE_WORKFLOW_STATE_REJECTED = "Rejected"
+SALES_INVOICE_WORKFLOW_STATE_CANCELLED = "Cancelled"
 SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW = "Submit for Review"
 SALES_INVOICE_WORKFLOW_ACTION_APPROVE = "Approve"
 SALES_INVOICE_WORKFLOW_ACTION_REJECT = "Reject"
+SALES_INVOICE_WORKFLOW_ACTION_CANCEL = "Cancel"
+# Legacy — rejection now returns to Draft; kept for migration/backward imports only.
+SALES_INVOICE_WORKFLOW_STATE_REJECTED = "Rejected"
 # Backward-compatible alias for older imports.
 SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE = SALES_INVOICE_WORKFLOW_STATE_PENDING
 # Approve sets this state then submits; ERPNext then owns Sales Invoice.status.
@@ -269,6 +272,8 @@ DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 TRANSPORTER_TRUCK_UPDATE = "CGM Operational Update"  # legacy alias
 OPERATIONAL_UPDATE_NOTIFICATION = "CGM Operational Update"
 CONTAINER_DEPOSIT_REFUND_REMINDER = "CGM Container - Deposit Refund Reminder"
+PORTAL_UPDATE_PUBLISHED_NOTIFICATION = "CGM Portal - Update Published"
+PORTAL_FEEDBACK_NOTIFICATION = "CGM Portal - Feedback Received"
 
 # Per-row decisions on Funding Request Material Request child table.
 FR_ROW_DECISION_PENDING = "Pending"

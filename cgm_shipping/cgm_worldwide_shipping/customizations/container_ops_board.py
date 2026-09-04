@@ -7,9 +7,6 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, today
 
-from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
-	bl_all_containers_returned,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	CLOSED_CONTAINER_STATUSES,
 	compute_container_metrics,
@@ -83,6 +80,45 @@ def _parse_filters(filters) -> frappe._dict:
 	return frappe._dict(filters)
 
 
+COMPLETED_SHIPMENT_STATUS = "Completed"
+
+
+def _hide_completed(filters) -> bool:
+	"""Completed shipments stay off the board unless they are asked for.
+
+	Two ways to ask: tick "Include completed", or filter Status explicitly. The
+	explicit filter has to win, or choosing Completed in the Status list would
+	return nothing at all.
+	"""
+	if cint(filters.get("include_completed")):
+		return False
+	if (filters.get("status") or "").strip():
+		return False
+	return True
+
+
+def _drop_completed_projects(projects: list[dict], filters) -> list[dict]:
+	if not _hide_completed(filters):
+		return projects
+	return [
+		project
+		for project in projects
+		if (project.get("custom_shipment_status") or "") != COMPLETED_SHIPMENT_STATUS
+	]
+
+
+def _drop_completed_containers(rows: list[dict], filters, projects: dict) -> list[dict]:
+	"""Containers whose shipment is complete, by the same rule as the list above."""
+	if not _hide_completed(filters):
+		return rows
+	kept = []
+	for row in rows:
+		project = projects.get(row.get("project")) or {}
+		if (project.get("custom_shipment_status") or "") != COMPLETED_SHIPMENT_STATUS:
+			kept.append(row)
+	return kept
+
+
 def _project_header_fields() -> list[str]:
 	meta = frappe.get_meta("Project")
 	fields = ["name", "project_name", "customer"]
@@ -120,19 +156,39 @@ def _transporter_names() -> dict[str, str]:
 	return {r.name: r.supplier_name or r.name for r in rows}
 
 
+@frappe.request_cache
+def _customer_names() -> dict[str, str]:
+	rows = frappe.get_all(
+		"Customer", fields=["name", "customer_name"], limit_page_length=0
+	)
+	return {r.name: r.customer_name or r.name for r in rows}
+
+
 def _customer_name(customer: str | None) -> str:
 	if not customer:
 		return ""
-	return frappe.db.get_value("Customer", customer, "customer_name") or customer
+	# One map for the request rather than a get_value per row: the board asks
+	# this for every row on every tab, and the table is small enough to hold.
+	return _customer_names().get(customer) or customer
+
+
+@frappe.request_cache
+def _station_labels() -> dict[str, str]:
+	if not frappe.db.exists("DocType", "Clearance Station"):
+		return {}
+	rows = frappe.get_all(
+		"Clearance Station", fields=["name", "cfs_name"], limit_page_length=0
+	)
+	return {r.name: r.cfs_name or r.name for r in rows}
 
 
 def _station_label(row: dict) -> str:
 	station = row.get("delivery_location") or row.get("custom_clearance_station")
 	if not station:
 		return ""
-	if frappe.db.exists("Clearance Station", station):
-		return frappe.db.get_value("Clearance Station", station, "cfs_name") or station
-	return station
+	# Was an exists() plus a get_value() per row, so two queries each time the
+	# board asked for a station label. Membership in the map answers both.
+	return _station_labels().get(station) or station
 
 
 def _contact_display(row: dict) -> str:
@@ -575,13 +631,79 @@ def _paginate_rows(rows: list[dict], filters) -> tuple[list[dict], int, int, int
 	except (TypeError, ValueError):
 		start = 0
 	try:
-		page_length = int(filters.get("page_length") or 20)
+		page_length = int(filters.get("page_length") or 25)
 	except (TypeError, ValueError):
-		page_length = 20
+		page_length = 25
 	page_length = min(max(page_length, 1), 500)
 	if start >= total and total > 0:
 		start = (total - 1) // page_length * page_length
 	return rows[start : start + page_length], total, start, page_length
+
+
+# Fields the Shipments tab may be sorted by, mapped to the row key that holds
+# the value. Whitelisted deliberately: the sort field arrives from the browser
+# and is used to read row data, so it must never be free-form.
+_SHIPMENT_SORT_FIELDS = {
+	"client_name": "customer",
+	"client_reference_no": "client_reference_no",
+	"cgm_ref_no": "cgm_ref_no",
+	"bill_of_lading": "bl_number",
+	"project_ref": "project_ref",
+	"eta": "eta",
+	"ata": "ata",
+	"operational_status": "operational_status",
+	"batch_no": "batch_no",
+	"shipping_line": "shipping_line",
+	"country_of_origin": "country_of_origin",
+	"clearance_station": "clearance_station",
+	"container_count": "quantity",
+	"vessel": "vessel_name",
+}
+
+
+def _sort_shipment_rows(rows: list[dict], filters) -> list[dict]:
+	"""Order rows by the requested column, or by the default traffic/ETA rank.
+
+	Sorting happens before pagination, so it orders the whole result set rather
+	than only the page on screen.
+	"""
+	field = _SHIPMENT_SORT_FIELDS.get(filters.get("sort_by") or "")
+	if not field:
+		rows.sort(key=_eta_sort_key)
+		return rows
+
+	descending = (filters.get("sort_dir") or "asc").lower() == "desc"
+
+	def is_blank(row) -> bool:
+		value = row.get(field)
+		return value is None or value == ""
+
+	def key(row):
+		value = row.get(field)
+		if isinstance(value, (int, float)):
+			return value
+		return str(value).casefold()
+
+	# Blanks are partitioned out rather than given a sentinel key. A sentinel
+	# gets reversed along with everything else, which put every empty ETA at
+	# the TOP on a descending sort. An empty B/L is missing information, not
+	# the largest value, so it belongs last whichever way the column is sorted.
+	present = [row for row in rows if not is_blank(row)]
+	blanks = [row for row in rows if is_blank(row)]
+	present.sort(key=key, reverse=descending)
+	return present + blanks
+
+
+def _shipment_status_options() -> list[str]:
+	"""Select options for Project.custom_shipment_status.
+
+	The board is a desk Page, and a Page never loads Project's meta into the
+	browser, so frappe.meta.get_docfield() there returns nothing and the Status
+	filter fell back to a hardcoded pair. The options belong with the data.
+	"""
+	field = frappe.get_meta("Project").get_field("custom_shipment_status")
+	options = (field.options or "") if field else ""
+	return [option.strip() for option in options.split("\n") if option.strip()]
 
 
 @frappe.whitelist()
@@ -590,6 +712,7 @@ def get_shipment_tracker(filters=None) -> dict:
 	filters = _parse_filters(filters)
 	# Status on the Shipments tab is shipment status — never pass it to tracker rows.
 	projects = _fetch_shipment_rows(filters)
+	projects = _drop_completed_projects(projects, filters)
 	project_map = {project["name"]: project for project in projects}
 	tracker_rows = []
 	if projects:
@@ -610,7 +733,7 @@ def get_shipment_tracker(filters=None) -> dict:
 		rows.append(_build_shipment_row(project, project_map, all_tracker_rows))
 	rows = _enrich_ops_rows_with_bl_deposits(rows, project_map)
 	rows = _apply_shipment_kpi_filter(rows, filters.get("kpi_filter"))
-	rows.sort(key=_eta_sort_key)
+	rows = _sort_shipment_rows(rows, filters)
 	page_rows, total_count, start, page_length = _paginate_rows(rows, filters)
 	return {
 		"kpis": kpis,
@@ -619,6 +742,7 @@ def get_shipment_tracker(filters=None) -> dict:
 		"start": start,
 		"page_length": page_length,
 		"kpi_filter": filters.get("kpi_filter"),
+		"status_options": _shipment_status_options(),
 	}
 
 
@@ -725,14 +849,23 @@ def _is_overdue_return(row: dict) -> bool:
 	return False
 
 
-def _bl_deposit_amount_for_project(project: dict) -> float:
-	bl_name = (project.get("custom_bill_of_lading") or "").strip()
-	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
-		return 0.0
+@frappe.request_cache
+def _bl_deposit_amounts() -> dict[str, float]:
 	meta = frappe.get_meta("Bill of Lading")
 	if not meta.has_field("deposit_amount"):
+		return {}
+	rows = frappe.get_all(
+		"Bill of Lading", fields=["name", "deposit_amount"], limit_page_length=0
+	)
+	return {r.name: flt(r.deposit_amount) for r in rows}
+
+
+def _bl_deposit_amount_for_project(project: dict) -> float:
+	bl_name = (project.get("custom_bill_of_lading") or "").strip()
+	if not bl_name:
 		return 0.0
-	return flt(frappe.db.get_value("Bill of Lading", bl_name, "deposit_amount"))
+	# Was exists() + get_value() per project.
+	return flt(_bl_deposit_amounts().get(bl_name))
 
 
 def _load_bl_deposit_maps(projects: dict[str, dict]) -> tuple[dict, dict, dict]:
@@ -742,7 +875,6 @@ def _load_bl_deposit_maps(projects: dict[str, dict]) -> tuple[dict, dict, dict]:
 		for p in projects.values()
 		if (p.get("custom_bill_of_lading") or "").strip()
 	}
-	bl_names = {n for n in bl_names if frappe.db.exists("Bill of Lading", n)}
 	if not bl_names:
 		return {}, {}, {}
 
@@ -836,13 +968,84 @@ def _deposit_refund_display(
 	return _("Awaiting Interchange"), "muted"
 
 
+def _bl_return_states(bl_names: list[str]) -> dict[str, bool]:
+	"""all-containers-returned, per BL, in four queries instead of six per BL.
+
+	bl_all_containers_returned() answers for a single BL and costs ~6 queries to
+	do it. The board needs the answer for every BL on screen, and asking one at a
+	time was the single largest source of queries on the page. The three ways a
+	tracker can belong to a BL are the same ones get_trackers_for_bl() uses:
+	named on the BL's container rows, reached through a project that points at
+	the BL, or carrying the BL number itself.
+	"""
+	names = [n for n in bl_names if n]
+	if not names:
+		return {}
+
+	# a. Trackers named directly on the BL's container rows.
+	trackers_by_bl: dict[str, set[str]] = {n: set() for n in names}
+	for row in frappe.get_all(
+		"Container",
+		filters={"parent": ["in", names], "parenttype": "Bill of Lading"},
+		fields=["parent", "container_tracker"],
+	):
+		if row.container_tracker and row.parent in trackers_by_bl:
+			trackers_by_bl[row.parent].add(row.container_tracker)
+
+	# b. Trackers reached through a project that points at the BL.
+	bl_by_project = {
+		row.name: row.custom_bill_of_lading
+		for row in frappe.get_all(
+			"Project",
+			filters={"custom_bill_of_lading": ["in", names]},
+			fields=["name", "custom_bill_of_lading"],
+		)
+	}
+
+	bl_by_tracker_name: dict[str, set[str]] = {}
+	for bl_name, tracker_names in trackers_by_bl.items():
+		for tracker_name in tracker_names:
+			bl_by_tracker_name.setdefault(tracker_name, set()).add(bl_name)
+
+	or_filters = []
+	if bl_by_tracker_name:
+		or_filters.append(["name", "in", list(bl_by_tracker_name)])
+	if bl_by_project:
+		or_filters.append(["project", "in", list(bl_by_project)])
+	# c. Trackers carrying the BL number as data.
+	or_filters.append(["bl_number", "in", names])
+
+	claimed: dict[str, list[dict]] = {n: [] for n in names}
+	for tracker in frappe.get_all(
+		"Container Tracker",
+		or_filters=or_filters,
+		fields=["name", "project", "bl_number", "actual_empty_return", "interchange_date"],
+	):
+		owners = set(bl_by_tracker_name.get(tracker.name) or ())
+		project_bl = bl_by_project.get(tracker.project)
+		if project_bl:
+			owners.add(project_bl)
+		if tracker.bl_number in claimed:
+			owners.add(tracker.bl_number)
+		for owner in owners:
+			claimed[owner].append(tracker)
+
+	# A BL with no trackers is not "returned", it is unknown, which is how
+	# bl_all_containers_returned() reads it too.
+	return {
+		bl_name: bool(trackers)
+		and all(
+			tracker.get("actual_empty_return") or tracker.get("interchange_date")
+			for tracker in trackers
+		)
+		for bl_name, trackers in claimed.items()
+	}
+
+
 def _enrich_ops_rows_with_bl_deposits(rows: list[dict], projects: dict[str, dict]) -> list[dict]:
 	"""Overlay BL deposit fields onto tracker/shipment rows (trackers no longer store deposits)."""
 	bl_by_name, child_by_tracker, child_by_bl_number = _load_bl_deposit_maps(projects)
-	bl_return_cache: dict[str, bool] = {}
-	for bl_name in bl_by_name:
-		all_returned, _return_date = bl_all_containers_returned(bl_name)
-		bl_return_cache[bl_name] = all_returned
+	bl_return_cache = _bl_return_states(list(bl_by_name))
 
 	if not bl_by_name:
 		for row in rows:
@@ -1043,6 +1246,7 @@ def get_container_ops_board(filters=None) -> dict:
 	projects = _project_cache()
 	raw = _fetch_tracker_rows(filters)
 	raw = _apply_container_post_filters(raw, filters, projects)
+	raw = _drop_completed_containers(raw, filters, projects)
 	all_rows = _enrich_rows_with_transporter_updates([_build_row(row, projects) for row in raw])
 	all_rows = _enrich_ops_rows_with_bl_deposits(all_rows, projects)
 	kpis = _kpis(all_rows, projects)

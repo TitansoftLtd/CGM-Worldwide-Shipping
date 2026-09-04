@@ -281,6 +281,18 @@
   {
    "child": 1,
    "collapsible": 0,
+   "icon": "dashboard",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Operations Overview",
+   "link_to": "operations-overview",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
    "icon": "lock",
    "indent": 0,
    "keep_closed": 0,
@@ -311,6 +323,41 @@
    "label": "Container Tracking Detail",
    "link_to": "Container Tracking Detail",
    "link_type": "Report",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "message",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Customer & Transporter Portal",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
+   "icon": "message",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Shipment Updates",
+   "link_to": "Shipment Update",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
+   "icon": "comment",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Portal Feedback",
+   "link_to": "Portal Feedback",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
   },
@@ -529,7 +576,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-08-24 12:00:00.000000",
+ "modified": "2026-09-04 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",

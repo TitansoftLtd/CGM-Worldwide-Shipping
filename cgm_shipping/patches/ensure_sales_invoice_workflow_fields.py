@@ -55,7 +55,7 @@ def _ensure_sales_invoice_workflow_fields() -> None:
 			"options": "User",
 			"insert_after": SALES_INVOICE_APPROVED_BY_FIELD,
 			"read_only": 1,
-			"depends_on": "eval:doc.workflow_state=='Rejected'",
+			"depends_on": f"eval:doc.{SALES_INVOICE_REJECTED_BY_FIELD}",
 		},
 	)
 	_upsert_cf(
@@ -65,7 +65,7 @@ def _ensure_sales_invoice_workflow_fields() -> None:
 			"label": "Rejection Reason",
 			"fieldtype": "Small Text",
 			"insert_after": SALES_INVOICE_REJECTED_BY_FIELD,
-			"depends_on": "eval:doc.workflow_state=='Rejected'",
+			"depends_on": f"eval:doc.{SALES_INVOICE_REJECTED_BY_FIELD}",
 			"read_only": 1,
 		},
 	)

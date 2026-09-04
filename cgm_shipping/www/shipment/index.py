@@ -19,13 +19,13 @@ from frappe import _
 from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
 	get_project_inspection_portal_context,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
-	get_my_updates_for_project,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
+	apply_customer_portal_layout,
 	container_timeline,
 	customer_for_user,
 	get_containers_for_shipment,
+	get_customer_conversation,
+	get_customer_feedback_context,
 	get_shipment_documents,
 	get_shipment_for_customer,
 	get_shipment_permits,
@@ -39,8 +39,7 @@ no_cache = 1
 
 
 def get_context(context):
-	context.no_cache = 1
-	context.show_sidebar = False
+	apply_customer_portal_layout(context)
 
 	project = (frappe.form_dict.get("name") or "").strip()
 
@@ -121,6 +120,7 @@ def _build_context(context, project):
 		for c in containers:
 			c["timeline"] = container_timeline(c)
 			c["has_charges"] = bool(c.get("demurrage_days") or 0)
+			c["url"] = "/container?name=" + quote(c["name"], safe="")
 		context.containers = containers
 	except Exception:
 		frappe.log_error(
@@ -129,6 +129,10 @@ def _build_context(context, project):
 		)
 		context.containers = []
 
-	# Only updates posted by the logged-in customer user.
-	context.updates = get_my_updates_for_project(project, limit=100)
-	context.updates_json = frappe.as_json(context.updates)
+	# Two-way conversation: the customer's messages plus the updates CGM
+	# published to them on this shipment.
+	context.conversation = get_customer_conversation(project)
+	context.conversation_json = frappe.as_json(context.conversation)
+	context.unread_count = sum(1 for m in context.conversation if m.get("unread"))
+	context.feedback = get_customer_feedback_context(project)
+	context.feedback_json = frappe.as_json(context.feedback)
