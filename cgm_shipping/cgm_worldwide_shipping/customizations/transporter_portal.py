@@ -338,6 +338,7 @@ def get_allocation_detail(allocation_name: str) -> dict:
 
 	my_updates = get_my_updates_for_allocation(allocation.name, limit=100)
 	thread = get_transporter_thread_for_allocation(allocation.name, transporter)
+	conversations = allocation_conversation_summaries(allocation.name, transporter)
 	my_feedback = get_my_feedback(party=PARTY_TRANSPORTER, project=allocation.project)
 	container_options = [
 		{
@@ -403,6 +404,8 @@ def get_allocation_detail(allocation_name: str) -> dict:
 		"thread": thread,
 		"thread_json": frappe.as_json(thread),
 		"unread_count": sum(1 for m in thread if m.get("unread")),
+		"conversations": conversations,
+		"conversation_count": len(conversations),
 		"my_feedback": my_feedback,
 		"feedback_containers_json": frappe.as_json(
 			[
@@ -573,10 +576,15 @@ def _allocation_container_row(allocation, item_name: str):
 
 
 @frappe.whitelist()
-def get_allocation_conversation(allocation_name: str, item_name: str | None = None) -> list[dict]:
-	"""Transporter portal: the two-way thread on an allocation or one container."""
+def get_allocation_conversation(
+	allocation_name: str, item_name: str | None = None, thread: str | None = None
+) -> list[dict]:
+	"""Transporter portal: one conversation, or everything on the allocation."""
 	transporter = require_transporter_portal_access()
 	allocation = _get_allocation_for_transporter(allocation_name, transporter)
+
+	if thread:
+		return allocation_conversation_thread(allocation_name, transporter, thread)
 
 	container_tracker = None
 	if item_name:
@@ -585,6 +593,75 @@ def get_allocation_conversation(allocation_name: str, item_name: str | None = No
 	return get_transporter_thread_for_allocation(
 		allocation_name, transporter, container_tracker=container_tracker
 	)
+
+
+def _thread_key(message: dict) -> str:
+	"""The message that started this conversation - replies hang off it."""
+	return message.get("parent_update") or message["name"]
+
+
+def allocation_conversation_summaries(allocation_name: str, transporter: str) -> list[dict]:
+	"""One row per conversation on an allocation.
+
+	An allocation carries several separate exchanges - a gate pass query, a
+	delay, CGM's own notices. Listing them as one thread buried new messages
+	under whichever topic was last, so they are grouped the same way the
+	customer's general queries are.
+	"""
+	messages = get_transporter_thread_for_allocation(allocation_name, transporter)
+	if not messages:
+		return []
+
+	grouped: dict[str, list[dict]] = {}
+	for message in messages:
+		grouped.setdefault(_thread_key(message), []).append(message)
+
+	summaries = []
+	for root_name, thread in grouped.items():
+		thread.sort(key=lambda m: m.get("posted_on") or "")
+		first, last = thread[0], thread[-1]
+		summaries.append(
+			{
+				"name": root_name,
+				"subject": first.get("subject") or _("Message"),
+				"from_cgm": bool(first.get("from_cgm")),
+				"container_number": first.get("container_number") or "",
+				"message_count": len(thread),
+				"unread_count": sum(1 for m in thread if m.get("unread")),
+				"status": first.get("response_status") or "",
+				"awaiting_response": bool(first.get("awaiting_response")),
+				"last_posted_on": last.get("posted_on") or "",
+				"last_preview": (last.get("message") or "").strip()[:160],
+				"last_from": _("CGM Worldwide Shipping")
+				if last.get("from_cgm")
+				else (last.get("posted_by_name") or _("You")),
+				"url": "/transporter/allocation?name="
+				+ quote(allocation_name, safe="")
+				+ "&thread="
+				+ quote(root_name, safe=""),
+			}
+		)
+	summaries.sort(key=lambda x: x["last_posted_on"], reverse=True)
+	return summaries
+
+
+def allocation_conversation_thread(
+	allocation_name: str, transporter: str, root: str
+) -> list[dict]:
+	"""Messages of one conversation on an allocation, oldest first."""
+	if not root:
+		return []
+	messages = get_transporter_thread_for_allocation(allocation_name, transporter)
+	return [m for m in messages if _thread_key(m) == root]
+
+
+@frappe.whitelist()
+def get_allocation_conversations() -> list[dict]:
+	"""Transporter portal: every conversation on an allocation."""
+	transporter = require_transporter_portal_access()
+	allocation_name = frappe.form_dict.get("allocation_name")
+	_get_allocation_for_transporter(allocation_name, transporter)
+	return allocation_conversation_summaries(allocation_name, transporter)
 
 
 @frappe.whitelist()
