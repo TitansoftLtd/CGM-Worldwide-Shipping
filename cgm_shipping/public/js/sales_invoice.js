@@ -1,5 +1,7 @@
 const CGM_SI_NAMING_SERIES = "INV-.MMYY.-.####";
 const CGM_SI_CREDIT_NOTE_NAMING_SERIES = "CR-.MMYY.-.####";
+const CGM_SI_PRINT_FORMAT = "CGM Sales Invoice";
+const CGM_SI_CREDIT_NOTE_PRINT_FORMAT = "CGM Credit Note";
 
 const CGM_SI_DRAFT_STATE = "Draft";
 const CGM_SI_PENDING_STATE = "Pending Approval";
@@ -25,16 +27,19 @@ frappe.ui.form.on("Sales Invoice", {
 		cgm_toggle_sales_invoice_project_name(frm);
 		cgm_toggle_sales_invoice_project_fetched_fields(frm);
 		cgm_apply_sales_invoice_naming_series(frm);
+		cgm_apply_sales_invoice_print_format(frm);
 		cgm_toggle_sales_invoice_share_fields(frm);
 	},
 
 	is_return(frm) {
 		cgm_apply_sales_invoice_naming_series(frm);
+		cgm_apply_sales_invoice_print_format(frm);
 	},
 
 	refresh(frm) {
 		cgm_toggle_sales_invoice_project_name(frm);
 		cgm_toggle_sales_invoice_project_fetched_fields(frm);
+		cgm_apply_sales_invoice_print_format(frm);
 		cgm_configure_sales_invoice_workflow_ui(frm);
 		cgm_configure_sales_invoice_customer_share_ui(frm);
 	},
@@ -77,6 +82,15 @@ function cgm_apply_sales_invoice_naming_series(frm) {
 	if (frm.doc.naming_series !== series) {
 		frm.set_value("naming_series", series);
 	}
+}
+
+function cgm_apply_sales_invoice_print_format(frm) {
+	if (!frm.meta) {
+		return;
+	}
+	frm.meta.default_print_format = frm.doc.is_return
+		? CGM_SI_CREDIT_NOTE_PRINT_FORMAT
+		: CGM_SI_PRINT_FORMAT;
 }
 
 function cgm_get_sales_invoice_project_fetch_fields() {
