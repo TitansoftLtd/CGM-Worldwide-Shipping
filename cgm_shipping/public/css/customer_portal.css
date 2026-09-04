@@ -103,21 +103,33 @@
 .cp-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cp-green); display: inline-block; }
 
 /* ───── KPI strip ───── */
-.cp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.cp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: .65rem; margin-bottom: 1.25rem; }
 .cp-kpi {
   background: var(--cp-surface); border: 1px solid var(--cp-border);
-  border-radius: var(--cp-radius); padding: 1.1rem 1.2rem; box-shadow: var(--cp-shadow);
-  display: flex; align-items: center; gap: 1rem; color: inherit; text-decoration: none;
+  border-radius: 12px; padding: .7rem .85rem; box-shadow: var(--cp-shadow);
+  display: flex; align-items: center; gap: .65rem; color: inherit; text-decoration: none;
+  min-width: 0;
 }
 a.cp-kpi { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
 a.cp-kpi:hover, a.cp-kpi:focus-visible {
   transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,.06);
   border-color: #cbd5e1; text-decoration: none; color: inherit;
 }
-.cp-kpi-icon { width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; }
-.cp-kpi-icon svg { width: 22px; height: 22px; }
-.cp-kpi-num { font-size: 1.55rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
-.cp-kpi-label { font-size: .78rem; color: var(--cp-text-muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin-top: .25rem; }
+.cp-kpi-icon { width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
+.cp-kpi-icon svg { width: 16px; height: 16px; }
+.cp-kpi-num { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.cp-kpi-label { font-size: .65rem; color: var(--cp-text-muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin-top: .15rem; }
+.cp-kpi-amount-num {
+  display: flex;
+  flex-direction: column;
+  gap: .08rem;
+  font-size: .75rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.cp-kpi-amount-num span { white-space: nowrap; }
 .cp-kpi.blue   .cp-kpi-icon { background: var(--cp-blue-soft);   color: var(--cp-blue); }
 .cp-kpi.amber  .cp-kpi-icon { background: var(--cp-amber-soft);  color: var(--cp-amber); }
 .cp-kpi.green  .cp-kpi-icon { background: var(--cp-green-soft);  color: var(--cp-green); }
@@ -294,6 +306,15 @@ button.cp-kpi { width: 100%; text-align: left; font: inherit; }
 .cp-table a { color: var(--cp-brand); font-weight: 500; text-decoration: none; }
 .cp-table a:hover { text-decoration: underline; }
 .cp-table .ref-link { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+.cp-table .cp-col-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--cp-surface);
+  box-shadow: -10px 0 12px -12px rgba(15, 23, 42, .35);
+}
+.cp-table thead .cp-col-actions { background: var(--cp-surface-alt); }
+.cp-table tbody tr:hover .cp-col-actions { background: var(--cp-surface-alt); }
 
 @media (max-width: 760px) {
   .cp-table-wrap { overflow: visible; border: none; background: transparent; box-shadow: none; }
@@ -303,6 +324,7 @@ button.cp-kpi { width: 100%; text-align: left; font: inherit; }
   .cp-table tbody tr:hover td { background: transparent; }
   .cp-table td { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .55rem .85rem; border-bottom: 1px dashed var(--cp-border); white-space: normal; }
   .cp-table tr td:last-child { border-bottom: none; }
+  .cp-table .cp-col-actions { position: static; box-shadow: none; background: transparent; }
   .cp-table td::before { content: attr(data-label); font-size: .68rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--cp-text-muted); flex-shrink: 0; }
 }
 
