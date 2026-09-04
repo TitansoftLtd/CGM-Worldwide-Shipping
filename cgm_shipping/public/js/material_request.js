@@ -48,6 +48,7 @@ frappe.ui.form.on("Material Request", {
 		set_item_code_query(frm);
 		apply_material_request_form_layout(frm);
 		setup_funding_actions(frm);
+		setup_funding_submit_button(frm);
 		set_funding_workflow_indicator(frm);
 		if (frm.fields_dict.workflow_state && is_funding_request_type(frm)) {
 			frm.set_df_property("workflow_state", "read_only", 1);
@@ -144,6 +145,64 @@ function is_funding_request_type(frm) {
 	return (
 		type === "Operational Expense" || type === "Purchase" || type === "Subcontracting"
 	);
+}
+
+function setup_funding_submit_button(frm) {
+	if (!is_funding_request_type(frm) || frm.is_new() || frm.doc.docstatus !== 0) {
+		return;
+	}
+	if (cint(frm.doc.__unsaved)) {
+		frm.dashboard.set_headline(
+			__("Save this request, then Submit so Finance can add it to a Funding Request.")
+		);
+		return;
+	}
+
+	const apply = () => {
+		if (!frm.doc || frm.doc.docstatus !== 0 || !frappe.workflow?.get_transitions) {
+			return;
+		}
+		frappe.workflow.get_transitions(frm.doc).then((transitions) => {
+			const submit = (transitions || []).find((row) =>
+				["Submit", "Submit Request"].includes(row.action)
+			);
+			if (!submit) {
+				return;
+			}
+			const user = frappe.session.user;
+			if (
+				user !== "Administrator" &&
+				!cint(submit.allow_self_approval) &&
+				user === frm.doc.owner
+			) {
+				return;
+			}
+
+			frm.page.btn_primary.removeClass("hide");
+			frm.page.set_primary_action(__(submit.action), () => {
+				if (frm.states?.handle_workflow_action) {
+					frm.states.handle_workflow_action(submit);
+					return;
+				}
+				frappe.xcall("frappe.model.workflow.apply_workflow", {
+					doc: frm.doc,
+					action: submit.action,
+				}).then((doc) => {
+					frappe.model.sync(doc);
+					frm.refresh();
+				});
+			});
+			frm.dashboard.set_headline(
+				__(
+					"Submit this request so it waits for funding. Finance will add it to a Funding Request."
+				)
+			);
+		});
+	};
+
+	apply();
+	// Workflow UI hides the primary button after it loads Actions. Put Submit back.
+	setTimeout(apply, 400);
 }
 
 function set_employee_from_user(frm) {

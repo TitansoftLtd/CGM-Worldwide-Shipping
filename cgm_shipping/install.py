@@ -63,6 +63,7 @@ def after_migrate() -> None:
 		("transporter portal setup", ensure_transporter_portal_setup),
 		("customer invoice share fields", ensure_customer_invoice_share_schema),
 		("sales invoice approval workflow", ensure_sales_invoice_workflow_setup),
+		("funding workflow self-submit", ensure_funding_workflow_self_submit_setup),
 		("task workflow masters", ensure_task_workflow_masters),
 		("package field visibility", ensure_package_field_visibility),
 		("licence register roles", ensure_license_setup),
@@ -133,6 +134,15 @@ def ensure_customer_invoice_share_schema() -> None:
 
 	if frappe.db.exists("DocType", "Sales Invoice"):
 		ensure_customer_invoice_share_fields()
+
+
+def ensure_funding_workflow_self_submit_setup() -> None:
+	"""Requesters can Submit their own Material Request / Funding Request drafts."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+		ensure_funding_workflow_self_submit,
+	)
+
+	ensure_funding_workflow_self_submit()
 
 
 def ensure_sales_invoice_workflow_setup() -> None:
