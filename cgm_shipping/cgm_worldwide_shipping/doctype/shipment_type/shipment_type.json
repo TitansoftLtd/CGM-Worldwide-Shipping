@@ -85,7 +85,6 @@
    "fieldtype": "Section Break"
   },
   {
-   "description": "Default Project Type for new projects using this shipment type. Container Tracker sections match Project.project_type. Add new types in the Project Type list (Setup) - names containing Mombasa, ICD, Transit, or Export control which tracker sections appear.",
    "fieldname": "container_tracker_mode",
    "fieldtype": "Link",
    "label": "Container Tracker Mode",
@@ -97,7 +96,7 @@
    "label": "Integration"
   },
   {
-   "description": "CGM Task Template used when Start Shipment creates Project tasks. Preferred over Task Flow Key.",
+   "description": "CGM Task Template used when Start Shipment creates Project tasks.",
    "fieldname": "task_template",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -108,13 +107,14 @@
    "description": "Legacy fallback when Task Template is empty. Matches a seeded template via flow key (e.g. SEA_IMPORT_E2E).",
    "fieldname": "task_flow_key",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Task Flow Key"
   },
   {
    "description": "Optional prefix for CGM tracking references on air/road shipments (e.g. AIR, ROD). Sea shipments can use Cargo Type CGM Ref Prefix instead.",
    "fieldname": "cgm_ref_prefix",
    "fieldtype": "Data",
-   "in_list_view": 1,
+   "hidden": 1,
    "label": "CGM Ref Prefix"
   },
   {
@@ -175,7 +175,7 @@
    "options": "Shipment Type Transport Document"
   },
   {
-   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type - no code change needed.",
+   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type.",
    "fieldname": "section_required_documents",
    "fieldtype": "Section Break",
    "label": "Required Intake Documents"
@@ -213,12 +213,13 @@
    "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",
    "fieldname": "legacy_crm_labels",
    "fieldtype": "Small Text",
+   "hidden": 1,
    "label": "Legacy CRM Labels"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-21 17:26:13.598936",
+ "modified": "2026-09-05 07:15:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Type",

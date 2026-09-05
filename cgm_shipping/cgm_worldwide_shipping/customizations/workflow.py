@@ -624,6 +624,11 @@ def seed_finance_permit_rows_from_project(finance_task, *, save: bool = True) ->
 	if added and save:
 		frappe.flags.cgm_syncing_permit_finance_rows = True
 		try:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.task_status import (
+				prepare_task_doc_before_programmatic_save,
+			)
+
+			prepare_task_doc_before_programmatic_save(finance_task)
 			finance_task.save(ignore_permissions=True)
 		finally:
 			frappe.flags.cgm_syncing_permit_finance_rows = False
@@ -875,6 +880,11 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 	if changed and save:
 		frappe.flags.cgm_syncing_permit_finance_rows = True
 		try:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.task_status import (
+				prepare_task_doc_before_programmatic_save,
+			)
+
+			prepare_task_doc_before_programmatic_save(finance_task)
 			finance_task.save(ignore_permissions=True)
 		finally:
 			frappe.flags.cgm_syncing_permit_finance_rows = False
