@@ -3726,6 +3726,12 @@ def on_task_onload(doc, _method=None):
 			seed_required_task_document_rows(doc)
 		prepare_shipment_documents_for_form(doc, TASK_DOCUMENTS_FIELD)
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_status import (
+		finalize_task_status_for_form,
+	)
+
+	finalize_task_status_for_form(doc)
+
 
 def preserve_completed_status_against_stale_save(doc) -> None:
 	"""Keep Completed when an incidental save still carries status=Open in memory.
