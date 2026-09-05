@@ -293,7 +293,8 @@ doc_events = {
 	},
 	"Journal Entry": {
 		"after_insert": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_after_insert",
 		),
 		"on_update": (
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
@@ -349,6 +350,9 @@ doc_events = {
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
 	},
 	"Purchase Order": {
+		"after_insert": (
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_order_after_insert"
+		),
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
 	},
 	"Request for Quotation": {

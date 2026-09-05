@@ -177,7 +177,7 @@ function refresh_transporter_share_ui(frm) {
 			frm.set_value("custom_supplier_is_transporter", 0);
 		}
 		toggle_transporter_share_fields(frm);
-		add_share_with_transporter_button(frm);
+		show_transporter_share_headline(frm);
 		return;
 	}
 	frappe.db.get_value("Supplier", frm.doc.supplier, "is_transporter", (r) => {
@@ -191,7 +191,7 @@ function refresh_transporter_share_ui(frm) {
 			frm.set_value("custom_supplier_is_transporter", is_transporter);
 		}
 		toggle_transporter_share_fields(frm);
-		add_share_with_transporter_button(frm);
+		show_transporter_share_headline(frm);
 	});
 }
 
@@ -208,55 +208,18 @@ function toggle_transporter_share_fields(frm) {
 	}
 }
 
-function add_share_with_transporter_button(frm) {
-	if (!frm.fields_dict.custom_share_with_transporter) {
+function show_transporter_share_headline(frm) {
+	if (
+		frm.doc.docstatus !== 1 ||
+		!cint(frm.doc.custom_share_with_transporter) ||
+		!supplier_is_transporter_on_invoice(frm)
+	) {
 		return;
 	}
-	if (frm.doc.docstatus !== 1 || frm.doc.is_return) {
-		return;
-	}
-	if (!supplier_is_transporter_on_invoice(frm)) {
-		return;
-	}
-
-	if (cint(frm.doc.custom_share_with_transporter)) {
-		frm.dashboard.set_headline_alert(
-			__("Shared with the transporter portal. They can see what CGM owes on this invoice."),
-			"blue"
-		);
-		return;
-	}
-
-	frm.add_custom_button(__("Share with Transporter"), () => {
-		frappe.confirm(
-			__(
-				"Share this invoice on the transporter portal? They will see that CGM owes {0}. When you record payment, they will see it as Paid.",
-				[format_currency(frm.doc.outstanding_amount || frm.doc.grand_total, frm.doc.currency)]
-			),
-			() => share_purchase_invoice_with_transporter(frm)
-		);
-	}, __("CGM"));
-	frm.page.set_inner_btn_group_as_primary(__("CGM"));
-}
-
-function share_purchase_invoice_with_transporter(frm) {
-	frappe.call({
-		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.transporter_invoice_share.share_purchase_invoice_with_transporter",
-		args: { purchase_invoice: frm.doc.name },
-		freeze: true,
-		freeze_message: __("Sharing with transporter…"),
-		callback(r) {
-			if (r.exc || !r.message) {
-				return;
-			}
-			frappe.show_alert({
-				message: __("Invoice shared. The transporter can now see what CGM owes them."),
-				indicator: "green",
-			});
-			frm.reload_doc();
-		},
-	});
+	frm.dashboard.set_headline_alert(
+		__("Shared with the transporter portal. They can see what CGM owes on this invoice."),
+		"blue"
+	);
 }
 
 function add_one_permit_line(frm, row) {
