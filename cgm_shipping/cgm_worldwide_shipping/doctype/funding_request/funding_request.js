@@ -3,14 +3,20 @@
 
 const MATERIAL_REQUEST_LINK_PLACEHOLDER = __("Material Request");
 
+function fundable_material_request_filters(frm) {
+	return {
+		docstatus: 1,
+		status: ["!=", "Stopped"],
+		material_request_type: ["in", ["Purchase", "Operational Expense"]],
+		workflow_state: ["in", ["Unfunded", "Submitted"]],
+		company: frm.doc.company || undefined,
+	};
+}
+
 frappe.ui.form.on("Funding Request", {
 	setup(frm) {
 		frm.set_query("material_request", "material_requests", () => ({
-			filters: {
-				docstatus: 1,
-				status: ["!=", "Stopped"],
-				company: frm.doc.company || undefined,
-			},
+			filters: fundable_material_request_filters(frm),
 		}));
 	},
 
@@ -56,11 +62,7 @@ frappe.ui.form.on("Funding Request", {
 
 	company(frm) {
 		frm.set_query("material_request", "material_requests", () => ({
-			filters: {
-				docstatus: 1,
-				status: ["!=", "Stopped"],
-				company: frm.doc.company || undefined,
-			},
+			filters: fundable_material_request_filters(frm),
 		}));
 	},
 });
