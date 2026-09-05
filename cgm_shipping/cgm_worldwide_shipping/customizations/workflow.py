@@ -263,6 +263,35 @@ def has_all_payable_permit_invoices(task) -> bool:
 	return bool(payable) and all(r.get("payment_invoice") for r in payable)
 
 
+def submitted_journal_entry(je_name: str | None) -> bool:
+	"""True when the Journal Entry exists and is submitted (docstatus = 1)."""
+	if not je_name or not frappe.db.exists("Journal Entry", je_name):
+		return False
+	return cint(frappe.db.get_value("Journal Entry", je_name, "docstatus")) == 1
+
+
+def permit_application_invoices_ready_for_finance(task_name: str) -> bool:
+	"""True when Declarant has sent payable permit invoices Finance may act on.
+
+	Finance can pay permits one at a time while the application task stays Open
+	and other permit types are still being collected. Requires the submitted flag,
+	all payable invoices attached, or at least one payable invoice on the task.
+	"""
+	if not task_name or not frappe.db.exists("Task", task_name):
+		return False
+	if frappe.db.get_value("Task", task_name, "custom_permit_invoices_submitted"):
+		return True
+	if not frappe.has_permission("Task", doc=task_name, ptype="read", throw=False):
+		return False
+	task = frappe.get_doc("Task", task_name)
+	payable = payable_permit_rows(task)
+	if not payable:
+		return True
+	if has_all_payable_permit_invoices(task):
+		return True
+	return any((r.get("payment_invoice") or "").strip() for r in payable)
+
+
 def permit_invoices_submitted(task_name: str) -> bool:
 	if not task_name or not frappe.db.exists("Task", task_name):
 		return False
@@ -850,6 +879,69 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 		finally:
 			frappe.flags.cgm_syncing_permit_finance_rows = False
 	return changed
+
+
+def _payable_permit_invoice_keys(task) -> list[tuple]:
+	"""Sorted (permit_type, is_amendment, payment_invoice) keys for payable Local rows."""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
+	keys: list[tuple] = []
+	for row in task.get(TASK_PERMITS_FIELD) or []:
+		if not row.get("permit_type") or not permit_requires_payment(row):
+			continue
+		keys.append(
+			(
+				row.get("permit_type"),
+				cint(row.get("is_amendment")),
+				(row.get("payment_invoice") or "").strip(),
+			)
+		)
+	return sorted(keys)
+
+
+def finance_permit_rows_out_of_sync(finance_task) -> bool:
+	"""True when the paired application task has payable invoices Finance is missing."""
+	if not is_permit_finance_task_doc(finance_task):
+		return False
+	if not finance_task.project:
+		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_application_sequence_for_finance_task,
+	)
+
+	app_seq = get_application_sequence_for_finance_task(finance_task)
+	if not app_seq:
+		return False
+	app_name = get_permit_application_task_name(finance_task.project, app_seq)
+	if not app_name:
+		return False
+	app = frappe.get_doc("Task", app_name)
+	return _payable_permit_invoice_keys(app) != _payable_permit_invoice_keys(finance_task)
+
+
+def finance_permit_row_payloads(task) -> list[dict]:
+	"""Minimal permit rows for desk sync / mismatch checks."""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
+	out: list[dict] = []
+	for row in task.get(TASK_PERMITS_FIELD) or []:
+		if not row.get("permit_type") or not permit_requires_payment(row):
+			continue
+		out.append(
+			{
+				"permit_type": row.get("permit_type"),
+				"origin": row.get("origin") or "Local",
+				"is_amendment": cint(row.get("is_amendment")),
+				"payment_invoice": row.get("payment_invoice") or "",
+				"status": row.get("status") or "",
+				"invoice_verified": cint(row.get("invoice_verified")),
+			}
+		)
+	return out
 
 
 def ensure_finance_permit_rows_saved(finance_task) -> bool:
@@ -1456,11 +1548,15 @@ def ensure_finance_permit_rows(task_name: str) -> dict:
 	task = frappe.get_doc("Task", task_name)
 	if not is_permit_finance_task_doc(task):
 		frappe.throw("This action is only for permit finance payment tasks.")
-	added = ensure_finance_permit_rows_saved(task)
+	stale_before = finance_permit_rows_out_of_sync(task)
+	changed = ensure_finance_permit_rows_saved(task)
 	task.reload()
+	stale_after = finance_permit_rows_out_of_sync(task)
 	return {
-		"added": added,
+		"changed": changed,
+		"reload": changed or stale_before or stale_after,
 		"rows": len(task.get(TASK_PERMITS_FIELD) or []),
+		"permits": finance_permit_row_payloads(task),
 		"task": task.name,
 	}
 
@@ -1667,7 +1763,9 @@ def can_complete_finance_permit_task(task) -> bool:
 		PERMIT_JOURNAL_ENTRY_FIELD,
 	)
 
-	return all(r.get(PERMIT_JOURNAL_ENTRY_FIELD) for r in rows)
+	return all(
+		submitted_journal_entry(r.get(PERMIT_JOURNAL_ENTRY_FIELD)) for r in rows
+	)
 
 
 def mark_permit_task_completed(task) -> None:
