@@ -7,6 +7,7 @@ import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
 	apply_batch_approve_to_pending_rows,
+	funding_batch_is_partially_approved,
 	funding_approval_is_recorded,
 	funding_is_approved,
 	funding_is_pending,
@@ -51,7 +52,7 @@ USER_FUNDING_WORKFLOW = _funding_workflow(
 	],
 	[
 		("Draft", "Submit", "Pending"),
-		("Rejected", "Submit", "Pending"),
+		("Rejected", "Resubmit", "Pending"),
 		("Pending", "Approve", "Approved"),
 		("Pending", "Reject", "Rejected"),
 		("Disbursed", "Complete", "Completed"),
@@ -102,6 +103,30 @@ class TestFundingRequestHelpers(unittest.TestCase):
 
 	def test_full_approval_has_no_variance(self):
 		self.assertEqual(variance_amount(2000, 2000), 0)
+
+	def test_partial_approval_is_derived_from_rows_not_actions(self):
+		import frappe
+
+		rows = [
+			frappe._dict(
+				decision="Approved", requested_amount=867, approved_amount=867
+			),
+		]
+		self.assertFalse(funding_batch_is_partially_approved(rows))
+
+		rows[0].approved_amount = 450
+		self.assertTrue(funding_batch_is_partially_approved(rows))
+
+		mixed = [
+			frappe._dict(decision="Approved", requested_amount=500, approved_amount=500),
+			frappe._dict(decision="Rejected", requested_amount=300, approved_amount=0),
+		]
+		self.assertTrue(funding_batch_is_partially_approved(mixed))
+
+		all_rejected = [
+			frappe._dict(decision="Rejected", requested_amount=500, approved_amount=0),
+		]
+		self.assertFalse(funding_batch_is_partially_approved(all_rejected))
 
 	def test_requested_total_comes_from_items_not_header(self):
 		import frappe
@@ -230,6 +255,12 @@ class TestFundingRequestHelpers(unittest.TestCase):
 			"Disbursement in Progress",
 		)
 		self.assertEqual(
+			funding_progress_state(
+				"Approved", 0, 700, workflow=wf, disbursement_started=True
+			),
+			"Disbursement in Progress",
+		)
+		self.assertEqual(
 			funding_progress_state("Approved", 0, 700, workflow=wf),
 			"Approved",
 		)
@@ -251,48 +282,15 @@ class TestFundingRequestHelpers(unittest.TestCase):
 		self.assertFalse(funding_is_approved("Rejected", 1, workflow=wf))
 		self.assertFalse(funding_is_approved("Cancelled", 2, workflow=wf))
 
-	def test_purchase_documents_require_funding_approved(self):
-		from unittest.mock import patch
-
-		import frappe
-
+	def test_purchase_documents_do_not_require_funding(self):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
 			assert_material_request_may_create_purchase_document,
 			material_request_purchase_is_funding_approved,
 		)
 
 		self.assertTrue(material_request_purchase_is_funding_approved(""))
-
-		unfunded = frappe._dict(material_request_type="Purchase", custom_funding_request=None)
-		with patch("frappe.db.get_value", return_value=unfunded):
-			self.assertFalse(material_request_purchase_is_funding_approved("MAT-MR-1"))
-			self.assertRaises(
-				frappe.ValidationError,
-				assert_material_request_may_create_purchase_document,
-				"MAT-MR-1",
-			)
-
-		transfer = frappe._dict(
-			material_request_type="Material Transfer", custom_funding_request=None
-		)
-		with patch("frappe.db.get_value", return_value=transfer):
-			self.assertTrue(material_request_purchase_is_funding_approved("MAT-MR-2"))
-
-		def _approved_lookup(doctype, name, fields, as_dict=False):
-			if doctype == "Material Request":
-				return frappe._dict(
-					material_request_type="Purchase", custom_funding_request="FR-1"
-				)
-			return frappe._dict(workflow_state="Approved", docstatus=1)
-
-		wf_map = FundingWorkflowMap.from_workflow(USER_FUNDING_WORKFLOW)
-		with patch("frappe.db.get_value", side_effect=_approved_lookup):
-			with patch(
-				"cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_funding_workflow_map",
-				return_value=wf_map,
-			):
-				self.assertTrue(material_request_purchase_is_funding_approved("MAT-MR-3"))
-				assert_material_request_may_create_purchase_document("MAT-MR-3")
+		self.assertTrue(material_request_purchase_is_funding_approved("MAT-MR-1"))
+		assert_material_request_may_create_purchase_document("MAT-MR-1")
 
 	def test_purchase_order_keeps_required_by_when_material_request_date_is_past(self):
 		import frappe
@@ -362,7 +360,7 @@ class TestFundingRequestHelpers(unittest.TestCase):
 		)
 		self.assertEqual(
 			mr_workflow_state_from_funding_request("Pending", workflow=wf, mr_workflow=mr),
-			"Pending",
+			"On Funding Request",
 		)
 		self.assertEqual(
 			mr_workflow_state_from_funding_request("Approved", workflow=wf, mr_workflow=mr),
@@ -398,7 +396,7 @@ class TestFundingRequestHelpers(unittest.TestCase):
 				workflow=wf,
 				mr_workflow={"On Funding Request", "Pending Approval", "Approved", "Rejected"},
 			),
-			"Pending Approval",
+			"On Funding Request",
 		)
 
 	def test_operational_expense_becomes_disbursed_when_that_request_is_paid(self):
@@ -466,9 +464,117 @@ class TestFundingRequestHelpers(unittest.TestCase):
 		self.assertEqual(wf_map.reject_next_states, frozenset({"Rejected"}))
 		self.assertEqual(wf_map.partial_state, "Partially Approved")
 		self.assertEqual(wf_map.disbursement_state, "Disbursement in Progress")
-		self.assertEqual(wf_map.complete_from_states, frozenset({"Disbursed"}))
-		self.assertEqual(wf_map.complete_next_states, frozenset({"Completed"}))
+		self.assertEqual(
+			wf_map.complete_from_states,
+			frozenset({"Disbursed"}),
+		)
+		self.assertEqual(
+			wf_map.complete_next_states,
+			frozenset({"Completed"}),
+		)
+		self.assertEqual(wf_map.disbursed_states(), frozenset({"Disbursed"}))
+		self.assertFalse(wf_map.is_disbursed("Approved"))
+		self.assertTrue(wf_map.is_disbursed("Disbursed"))
 		self.assertEqual(wf_map.cancel_state, "Cancelled")
+
+	def test_intended_transitions_are_not_copied_per_role(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+			_funding_request_transitions,
+			_material_request_transitions,
+		)
+
+		mr = _material_request_transitions()
+		self.assertEqual(len(mr), 5)
+		self.assertEqual({row["allowed"] for row in mr}, {"All"})
+		self.assertEqual(sum(1 for row in mr if row["action"] == "Submit"), 2)
+		self.assertEqual({row["action"] for row in mr if row["state"] == "Draft"}, {"Submit"})
+
+		fr = _funding_request_transitions()
+		self.assertEqual({row["allowed"] for row in fr}, {"Finance User", "Funding Approver"})
+		self.assertEqual(
+			{row["allowed"] for row in fr if row["action"] in {"Approve", "Reject"}},
+			{"Funding Approver"},
+		)
+		self.assertTrue(all(row.get("allow_self_approval") for row in fr))
+		self.assertEqual(
+			{row["allowed"] for row in fr if row["action"] not in {"Approve", "Reject"}},
+			{"Finance User"},
+		)
+		self.assertEqual(len(fr), 8)
+		keys = [(row["state"], row["action"], row["next_state"], row.get("condition")) for row in fr]
+		self.assertEqual(len(keys), len(set(keys)))
+
+	def test_live_workflows_have_no_role_copied_transitions(self):
+		if not getattr(frappe.local, "site", None):
+			self.skipTest("Needs a Frappe site")
+		if not frappe.db.exists("Workflow", "CGM Material Request Funding"):
+			self.skipTest("Workflow not installed")
+
+		mr = frappe.get_doc("Workflow", "CGM Material Request Funding")
+		mr_roles = {row.allowed for row in mr.transitions}
+		self.assertEqual(mr_roles, {"All"}, mr_roles)
+		self.assertEqual(len(mr.transitions), 5, [row.as_dict() for row in mr.transitions])
+		submit_roles = {row.allowed for row in mr.transitions if row.action == "Submit"}
+		self.assertEqual(submit_roles, {"All"})
+		for banned in (
+			"Stock User",
+			"Purchase User",
+			"Stock Manager",
+			"Purchase Manager",
+			"Employee",
+			"System Manager",
+			"Finance User",
+			"Finance Manager",
+			"Accounts User",
+			"Accounts Manager",
+		):
+			self.assertNotIn(banned, mr_roles)
+
+		fr = frappe.get_doc("Workflow", "CGM Funding Request Approval")
+		fr_roles = {row.allowed for row in fr.transitions}
+		self.assertEqual(fr_roles, {"Finance User", "Funding Approver"}, fr_roles)
+		self.assertLessEqual(len(fr.transitions), 8, [row.as_dict() for row in fr.transitions])
+		for banned in ("Finance Manager", "Accounts User", "Accounts Manager"):
+			self.assertNotIn(banned, fr_roles)
+
+	def test_approval_does_not_mark_material_request_disbursed(self):
+		wf = _funding_workflow(
+			[
+				("Draft", 0),
+				("Pending", 0),
+				("Approved", 1),
+				("Partially Approved", 1),
+				("Disbursement in Progress", 1),
+				("Disbursed", 1),
+				("Completed", 1),
+				("Rejected", 0),
+				("Cancelled", 2),
+			],
+			[
+				("Draft", "Submit", "Pending"),
+				("Pending", "Approve", "Approved"),
+				("Pending", "Reject", "Rejected"),
+				("Approved", "Start Disbursement", "Disbursement in Progress"),
+				("Disbursement in Progress", "Mark Disbursed", "Disbursed"),
+				("Disbursed", "Complete", "Completed"),
+				("Approved", "Cancel", "Cancelled"),
+			],
+		)
+		mr = SERVER_MR_STATES
+		self.assertEqual(
+			mr_workflow_state_from_funding_request("Approved", workflow=wf, mr_workflow=mr),
+			"Approved",
+		)
+		self.assertEqual(
+			mr_workflow_state_from_funding_request(
+				"Disbursement in Progress", workflow=wf, mr_workflow=mr
+			),
+			"Approved",
+		)
+		self.assertEqual(
+			mr_workflow_state_from_funding_request("Disbursed", workflow=wf, mr_workflow=mr),
+			"Disbursed",
+		)
 
 	def test_header_approve_promotes_pending_rows(self):
 		import frappe
