@@ -240,15 +240,15 @@ override_doctype_class = {
 
 doc_events = {
 	"Salary Component": {
-		"validate": (
+		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.validate_net_pay_only_component"
-		),
-		"on_update": (
+		],
+		"on_update": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
-		),
-		"on_trash": (
+		],
+		"on_trash": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
-		),
+		],
 	},
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
@@ -279,9 +279,7 @@ doc_events = {
 		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_cancel",
 	},
 	"Sales Invoice": {
-		"before_insert": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_insert_sales_invoice"
-		),
+		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_insert_sales_invoice",
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
 		"after_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.after_insert_sales_invoice",
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
@@ -292,13 +290,13 @@ doc_events = {
 		],
 	},
 	"Journal Entry": {
-		"after_insert": (
+		"after_insert": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_after_insert",
-		),
-		"on_update": (
+		],
+		"on_update": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
-		),
+		],
 		"on_submit": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
@@ -350,9 +348,9 @@ doc_events = {
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
 	},
 	"Purchase Order": {
-		"after_insert": (
+		"after_insert": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_order_after_insert"
-		),
+		],
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
 	},
 	"Request for Quotation": {
