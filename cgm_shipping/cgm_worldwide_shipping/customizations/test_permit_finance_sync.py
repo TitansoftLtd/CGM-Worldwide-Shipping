@@ -114,15 +114,21 @@ class TestSubmittedJournalEntry(UnitTestCase):
 
 	def test_docstatus_one_counts_as_submitted(self):
 		je = frappe._dict(name="ACC-JV-TEST")
-		original = frappe.db.get_value
+		original_get_value = frappe.db.get_value
+		original_exists = frappe.db.exists
 		try:
-			frappe.db.get_value = lambda doctype, name, field: (
-				1 if doctype == "Journal Entry" and field == "docstatus" else original(doctype, name, field)
+			frappe.db.get_value = lambda doctype, name, field, *args, **kwargs: (
+				1
+				if doctype == "Journal Entry" and field == "docstatus"
+				else original_get_value(doctype, name, field, *args, **kwargs)
 			)
-			frappe.db.exists = lambda doctype, name: doctype == "Journal Entry" and name == je.name
+			frappe.db.exists = lambda doctype, name, *args, **kwargs: (
+				doctype == "Journal Entry" and name == je.name
+			) or original_exists(doctype, name, *args, **kwargs)
 			self.assertTrue(submitted_journal_entry(je.name))
 		finally:
-			frappe.db.get_value = original
+			frappe.db.get_value = original_get_value
+			frappe.db.exists = original_exists
 
 
 class TestPermitApplicationInvoicesReadyForFinance(UnitTestCase):
