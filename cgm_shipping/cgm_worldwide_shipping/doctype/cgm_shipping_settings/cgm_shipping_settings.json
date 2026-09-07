@@ -158,7 +158,7 @@
    "label": "Roles"
   },
   {
-   "description": "Map ERPNext Roles to departments. A role listed here may open only that department's sea tasks. Do not add Projects User / Projects Manager here \u2014 give those on the User for Desk access only; use Transporter, Declarant, Finance User, etc. for department tasks.",
+   "description": "Map ERPNext Roles to departments. A role listed here may open only that department's sea tasks. Do not add Projects User / Projects Manager here - give those on the User for Desk access only; use Transporter, Declarant, Finance User, etc. for department tasks.",
    "fieldname": "section_roles",
    "fieldtype": "Section Break"
   },
@@ -177,7 +177,7 @@
    "options": "Department"
   },
   {
-   "description": "Roles that may open Operations-department sea tasks only (e.g. Operations Manager). Add a role here to grant Operations tasks \u2014 not Documentation.",
+   "description": "Roles that may open Operations-department sea tasks only (e.g. Operations Manager). Add a role here to grant Operations tasks - not Documentation.",
    "fieldname": "custom_operations_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Operations roles",
@@ -205,7 +205,7 @@
    "options": "CGM Role Item"
   },
   {
-   "description": "Who may upload or verify each document. Role Group is a Link to CGM Role Group \u2014 create Documentation or any other group there, add CGM Roles, then pick it here. No code change needed.",
+   "description": "Who may upload or verify each document. Role Group is a Link to CGM Role Group - create Documentation or any other group there, add CGM Roles, then pick it here. No code change needed.",
    "fieldname": "section_document_responsibilities",
    "fieldtype": "Section Break",
    "label": "Document responsibilities"
@@ -322,7 +322,7 @@
    "label": "General"
   },
   {
-   "description": "Global shipping configuration. Task plans are maintained in CGM Task Template \u2014 not here.",
+   "description": "Global shipping configuration. Task plans are maintained in CGM Task Template - not here.",
    "fieldname": "section_task_workflow_settings",
    "fieldtype": "Section Break",
    "label": "General Settings"
@@ -525,7 +525,7 @@
    "label": "Stop After (days)"
   },
   {
-   "description": "Map each clearance handoff to an ERPNext Notification. Seeded defaults are create-if-missing only \u2014 edit subject/message/recipients on the Notification in Desk, or create a new Notification and select it here. Migrates never overwrite Desk Notification content.",
+   "description": "Map each clearance handoff to an ERPNext Notification. Seeded defaults are create-if-missing only - edit subject/message/recipients on the Notification in Desk, or create a new Notification and select it here. Migrates never overwrite Desk Notification content.",
    "fieldname": "section_workflow_notifications",
    "fieldtype": "Section Break",
    "label": "Workflow notifications"

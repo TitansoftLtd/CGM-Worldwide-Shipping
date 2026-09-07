@@ -1471,51 +1471,65 @@ frappe.realtime.on("cgm_project_tracking_refresh", (data) => {
 	}
 });
 
-function render_project_operational_updates(frm) {
-	if (frm.is_new() || !frm.doc.name) {
+/**
+ * `operational_updates_ui.js` ships via `app_include_js`, which the desk serves
+ * as a plain unversioned path - a browser holding the previous build keeps
+ * serving it, and the tab dead-ends on "refresh the page". Doctype JS like this
+ * file is embedded in the DocType meta and so is always fresh, which makes it
+ * the right place to force the stale asset past the cache.
+ */
+function cgm_with_updates_ui(on_ready, on_fail) {
+	if (window.cgm && cgm.updates && cgm.updates.mountConversations) {
+		on_ready();
 		return;
 	}
-	let section = frm.layout.wrapper.find(".cgm-project-updates");
-	if (!section.length) {
-		section = $(`
-			<div class="cgm-project-updates form-section" style="margin:1rem 0;">
-				<div class="section-head">${__("Operational Updates")}</div>
-				<div class="cgm-project-updates-toolbar" style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;margin:0.5rem 0 0.75rem;">
-					<div class="text-muted" style="font-size:0.85rem;">
-						${__("Transporter and customer updates linked to this shipment.")}
-					</div>
-					<a class="btn btn-xs btn-default" href="/app/update?project=${encodeURIComponent(frm.doc.name)}">${__("Open full update log")}</a>
-				</div>
-				<div class="cgm-project-updates-body text-muted">${__("Loading…")}</div>
-			</div>
-		`);
-		const after =
-			frm.fields_dict.custom_shipment_progress_html ||
-			frm.fields_dict.custom_project_details ||
-			frm.fields_dict.project_name;
-		if (after && after.$wrapper) {
-			section.insertAfter(after.$wrapper.closest(".form-section").length
-				? after.$wrapper.closest(".form-section")
-				: after.$wrapper);
-		} else {
-			section.prependTo(frm.layout.wrapper);
+	frappe.require(
+		`/assets/cgm_shipping/js/operational_updates_ui.js?v=${Date.now()}`,
+		() => {
+			if (window.cgm && cgm.updates && cgm.updates.mountConversations) {
+				on_ready();
+			} else {
+				on_fail();
+			}
 		}
+	);
+}
+
+function render_project_operational_updates(frm) {
+	const field = frm.get_field("custom_shipment_updates_html");
+	if (!field || !field.$wrapper) {
+		return;
 	}
 
-	frappe.call({
-		method: "cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates.get_project_updates",
-		args: { project: frm.doc.name },
-		callback(r) {
-			const rows = r.message || [];
-			const body = section.find(".cgm-project-updates-body");
-			if (!rows.length) {
-				body.html(`<div class="text-muted">${__("No operational updates yet.")}</div>`);
-				return;
-			}
-			body.html(cgm.updates.renderList(rows.slice(0, 25)));
-			cgm.updates.bindListClicks(body);
+	if (frm.is_new() || !frm.doc.name) {
+		field.$wrapper.html(
+			`<div class="cgm-conv-empty">${__("Save the shipment to start a conversation.")}</div>`
+		);
+		return;
+	}
+
+	cgm_with_updates_ui(
+		() => {
+			cgm.updates.mountConversations(field.$wrapper, {
+				method:
+					"cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates.get_project_conversations",
+				args: { project: frm.doc.name },
+				emptyText: __(
+					"No shipment updates yet. Customer, transporter, and internal conversations on this shipment appear here."
+				),
+				postDefaults: { project: frm.doc.name },
+				logRoute: `/app/shipment-update?project=${encodeURIComponent(frm.doc.name)}`,
+				// The shipment is the scope, so repeating its reference on every
+				// card is noise.
+				listOptions: { hideShipment: true, hideCustomer: true },
+			});
 		},
-	});
+		() => {
+			field.$wrapper.html(
+				`<div class="text-danger">${__("Updates UI failed to load. Refresh the page.")}</div>`
+			);
+		}
+	);
 }
 
 function setup_company_deposit_invoice_button(frm) {
@@ -1923,6 +1937,7 @@ frappe.ui.form.on("Project", {
 			configure_project_status_fields(frm);
 			configure_project_container_grid(frm);
 			refresh_project_deposit_refund_mirror(frm);
+			render_project_operational_updates(frm);
 
 			// Sync auto business name to Project Reference only — never CGM Ref No
 			// (company-entered, independent of project_name).

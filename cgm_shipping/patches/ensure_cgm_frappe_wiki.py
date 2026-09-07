@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import posixpath
-import re
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +12,6 @@ WIKI_SPACE_ROUTE = "cgm-shipping"
 WIKI_SPACE_NAME = "CGM Shipping"
 WIKI_CONFIG_FILENAME = ".wiki.json"
 LANDING_BASENAMES = ("readme.md", "index.md", "readme.mdx", "index.mdx")
-IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".avif")
-MD_IMAGE_PATTERN = re.compile(r"(!\[[^\]]*\]\(\s*)(<[^>]+>|[^)\s]+)(\s+[^)]*)?(\))")
 
 
 def execute() -> None:
@@ -45,76 +40,10 @@ def execute() -> None:
 
 	space = _get_or_create_space()
 	nodes = _build_nodes_from_local_config(docs_dir, sidebar)
-	for node in nodes:
-		if node.get("is_group") or not node.get("content"):
-			continue
-		node["content"] = _rewrite_local_image_links(
-			node["content"], node["source_path"], docs_dir, space
-		)
+	_import_local_images(space, docs_dir, nodes)
 	_sync_to_live(space, nodes, None, None)
 	_ensure_space_published(space.name)
 	frappe.db.commit()
-
-
-def _rewrite_local_image_links(
-	content: str, source_path: str, docs_dir: Path, space: frappe.Document
-) -> str:
-	"""Rewrite docs-relative ``![alt](../images/x.png)`` to public ``/files/…`` URLs."""
-	if not content or not source_path:
-		return content
-
-	base_dir = posixpath.dirname(source_path.replace("\\", "/"))
-
-	def repl(match: re.Match) -> str:
-		raw = match.group(2)
-		src = raw.strip("<>").strip()
-		low = src.lower()
-		if low.startswith(("http://", "https://", "//", "data:", "mailto:", "/files/", "/private/files/", "#")):
-			return match.group(0)
-		resolved = posixpath.normpath(posixpath.join(base_dir, src))
-		if resolved.startswith("..") or not resolved.lower().endswith(IMAGE_EXTENSIONS):
-			return match.group(0)
-		file_path = docs_dir / resolved
-		if not file_path.is_file():
-			return match.group(0)
-		url = _import_local_image(space, file_path)
-		if not url:
-			return match.group(0)
-		return f"{match.group(1)}{url}{match.group(3) or ''}{match.group(4)}"
-
-	return MD_IMAGE_PATTERN.sub(repl, content)
-
-
-def _import_local_image(space: frappe.Document, file_path: Path) -> str | None:
-	"""Attach a docs image to the Wiki Space once (keyed by content hash)."""
-	payload = file_path.read_bytes()
-	digest = hashlib.sha1(payload).hexdigest()[:16]
-	ext = file_path.suffix.lower() or ".png"
-	stem = f"cgmdocimg-{digest}"
-	existing = frappe.get_all(
-		"File",
-		filters={
-			"attached_to_doctype": "Wiki Space",
-			"attached_to_name": space.name,
-			"file_name": ["like", f"{stem}.%"],
-		},
-		fields=["file_url"],
-		limit=1,
-	)
-	if existing:
-		return existing[0].file_url
-
-	file_doc = frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_name": f"{stem}{ext}",
-			"attached_to_doctype": "Wiki Space",
-			"attached_to_name": space.name,
-			"is_private": 0,
-			"content": payload,
-		}
-	).insert(ignore_permissions=True)
-	return file_doc.file_url
 
 
 def _get_or_create_space() -> frappe.Document:
@@ -139,6 +68,79 @@ def _ensure_space_published(space_name: str) -> None:
 		{"is_published": 1, "show_in_switcher": 1},
 		update_modified=False,
 	)
+
+
+def _import_local_images(space: frappe.Document, docs_dir: Path, nodes: list[dict[str, Any]]) -> None:
+	"""Turn repo-relative image links in the docs into Frappe Files the wiki can serve.
+
+	Frappe Wiki ships this for GitHub-backed spaces, but its importer fetches blobs
+	by SHA from the GitHub API. This space syncs from the local `docs/` folder, so
+	the same job is done here from disk: read the image, store it as a public File
+	attached to the space, and rewrite the link in place before the content is
+	hashed into a blob - otherwise `![](images/foo.png)` reaches the wiki as a
+	relative path that resolves to nothing.
+
+	Idempotent per (space, file contents): the File is named `cgmimg-<sha>.<ext>`,
+	so an unchanged screenshot reuses the File already stored and the page content
+	does not churn on every migrate.
+	"""
+	import hashlib
+	import posixpath
+
+	from wiki.wiki.git_sync import IMAGE_EXTENSIONS, MD_IMAGE_PATTERN, _is_repo_relative
+
+	def import_one(path: Path) -> str | None:
+		data = path.read_bytes()
+		sha = hashlib.sha256(data).hexdigest()[:16]
+		stem = f"cgmimg-{sha}"
+		existing = frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Wiki Space",
+				"attached_to_name": space.name,
+				"file_name": ["like", f"{stem}.%"],
+			},
+			fields=["file_url"],
+			limit=1,
+		)
+		if existing:
+			return existing[0].file_url
+		return frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{stem}{path.suffix.lower()}",
+				"attached_to_doctype": "Wiki Space",
+				"attached_to_name": space.name,
+				"is_private": 0,
+				"content": data,
+			}
+		).insert(ignore_permissions=True).file_url
+
+	for node in nodes:
+		content = node.get("content")
+		source_path = node.get("source_path")
+		if not content or not source_path or node.get("is_group"):
+			continue
+		base_dir = posixpath.dirname(source_path)
+
+		def repl(match, base_dir=base_dir):
+			src = match.group(2).strip("<>").strip()
+			if not _is_repo_relative(src) or not src.lower().endswith(IMAGE_EXTENSIONS):
+				return match.group(0)
+			resolved = posixpath.normpath(posixpath.join(base_dir, src))
+			if resolved.startswith(".."):
+				return match.group(0)
+			image_path = docs_dir / resolved
+			if not image_path.is_file():
+				frappe.log_error(
+					title="CGM Frappe Wiki",
+					message=f"Image not found for {source_path}: {resolved}",
+				)
+				return match.group(0)
+			url = import_one(image_path)
+			return f"{match.group(1)}{url}{match.group(3) or ''}{match.group(4)}" if url else match.group(0)
+
+		node["content"] = MD_IMAGE_PATTERN.sub(repl, content)
 
 
 def _build_nodes_from_local_config(docs_dir: Path, sidebar: list[Any]) -> list[dict[str, Any]]:

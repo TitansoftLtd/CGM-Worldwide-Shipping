@@ -112,9 +112,17 @@ frappe.provide("cgm.portal");
 	/**
 	 * The party owns their own question, so they decide when it is settled -
 	 * and writing again reopens it, which the server does on its own.
+	 *
+	 * Only shown when the view holds a single conversation. A shipment can
+	 * carry several, and one "Mark as resolved" button over a mixed list would
+	 * close whichever happened to be newest.
 	 */
 	function renderStatusBar(messages, options = {}) {
 		if (!options.statusMethod) {
+			return "";
+		}
+		const roots = new Set((messages || []).map((m) => m.parent_update || m.name));
+		if (roots.size !== 1) {
 			return "";
 		}
 		const root = rootOf(messages);

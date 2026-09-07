@@ -250,7 +250,7 @@ def _notify_owner_rejected(doc) -> None:
 	if not doc.owner:
 		return
 	reason = (cstr(doc.get(SALES_INVOICE_REJECTION_REASON_FIELD)) or "").strip()
-	subject = _("Sales Invoice {0} rejected — returned to Draft").format(doc.name)
+	subject = _("Sales Invoice {0} rejected - returned to Draft").format(doc.name)
 	reason_block = (
 		f"<p><strong>{_('Rejection reason')}:</strong> {frappe.utils.escape_html(reason)}</p>"
 		if reason

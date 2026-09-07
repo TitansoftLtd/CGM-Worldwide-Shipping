@@ -14,6 +14,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates impo
 	_customer_can_access_update,
 	_thread_payload,
 	_transporter_can_access_update,
+	_validated_parent,
+	conversation_list,
 	default_audience_for_source,
 	post_published_update,
 )
@@ -242,6 +244,109 @@ class TestPublishGuards(unittest.TestCase):
 				project="PROJ-0001",
 				to_customer=True,
 			)
+
+
+class TestThreadFlattening(unittest.TestCase):
+	"""A thread is one root plus its replies - never a chain."""
+
+	def test_a_reply_hangs_off_the_root_not_off_another_reply(self):
+		# Answering the customer's follow-up must not bury the answer one level
+		# down, where message_thread() would never return it.
+		reply = {"name": "MSG-2", "project": "PROJ-0001", "parent_update": "MSG-1"}
+		with patch("frappe.db.get_value", return_value=frappe._dict(reply)):
+			self.assertEqual(_validated_parent("MSG-2"), "MSG-1")
+
+	def test_a_root_stays_the_root(self):
+		root = {"name": "MSG-1", "project": "PROJ-0001", "parent_update": None}
+		with patch("frappe.db.get_value", return_value=frappe._dict(root)):
+			self.assertEqual(_validated_parent("MSG-1"), "MSG-1")
+
+	def test_a_parent_on_another_shipment_is_refused(self):
+		other = {"name": "MSG-9", "project": "PROJ-0002", "parent_update": None}
+		with patch("frappe.db.get_value", return_value=frappe._dict(other)):
+			self.assertIsNone(_validated_parent("MSG-9", project="PROJ-0001"))
+
+
+class TestConversationList(unittest.TestCase):
+	"""The Shipment Updates tab lists conversations, not messages."""
+
+	def setUp(self):
+		for target, kwargs in (
+			(f"{_MODULE}._project_display_ref", {"return_value": "LJL-2606-0468"}),
+			("frappe.db.exists", {"return_value": True}),
+			("frappe.db.get_value", {"return_value": "Acme Ltd"}),
+			("frappe.utils.get_fullname", {"return_value": "A Person"}),
+		):
+			p = patch(target, **kwargs)
+			p.start()
+			self.addCleanup(p.stop)
+
+	@staticmethod
+	def _reply(**kwargs):
+		values = {
+			"name": "MSG-2",
+			"parent_update": "MSG-1",
+			"posted_on": "2026-09-01 11:00:00",
+			"posted_by": "ops@example.com",
+			"message": "On its way.",
+			"update_source": "Internal",
+			"is_read": 1,
+		}
+		values.update(kwargs)
+		return frappe._dict(values)
+
+	def _run(self, roots, replies):
+		with patch("frappe.get_all", side_effect=[roots, replies]) as get_all:
+			result = conversation_list(filters={"project": "PROJ-0001"})
+		return result, get_all
+
+	def test_only_roots_are_listed_and_replies_fold_into_them(self):
+		roots = [_row(name="MSG-1")]
+		replies = [self._reply(), self._reply(name="MSG-3", posted_on="2026-09-01 12:00:00")]
+		result, get_all = self._run(roots, replies)
+
+		[row] = result["rows"]
+		self.assertEqual(row["name"], "MSG-1")
+		self.assertEqual(row["reply_count"], 2)
+		self.assertEqual(result["total_count"], 1)
+		# The root query must exclude replies, or every answer lists as its own
+		# conversation and opens the same transcript.
+		self.assertEqual(
+			get_all.call_args_list[0].kwargs["filters"]["parent_update"], ("is", "not set")
+		)
+
+	def test_the_card_carries_the_latest_message_not_the_opening_one(self):
+		roots = [_row(name="MSG-1", message="Where is my container?")]
+		replies = [self._reply(message="Cleared customs this morning.")]
+		result, _ = self._run(roots, replies)
+
+		[row] = result["rows"]
+		self.assertEqual(row["last_preview"], "Cleared customs this morning.")
+		self.assertEqual(row["last_posted_on"], "2026-09-01 11:00:00")
+		self.assertEqual(row["last_from"], "A Person")
+
+	def test_an_unread_reply_makes_the_whole_conversation_unread(self):
+		roots = [_row(name="MSG-1", is_read=1)]
+		result, _ = self._run(roots, [self._reply(is_read=0)])
+
+		self.assertEqual(result["rows"][0]["thread_unread"], 1)
+		self.assertEqual(result["unread_count"], 1)
+
+	def test_awaiting_count_tracks_questions_cgm_has_not_answered(self):
+		roots = [
+			_row(name="MSG-1", response_status="Open"),
+			_row(name="MSG-2", response_status="Answered"),
+		]
+		result, _ = self._run(roots, [])
+
+		self.assertEqual(result["awaiting_count"], 1)
+		self.assertEqual(result["total_count"], 2)
+
+	def test_no_conversations_reads_as_empty_not_as_an_error(self):
+		with patch("frappe.get_all", return_value=[]):
+			result = conversation_list(filters={"project": "PROJ-0001"})
+		self.assertEqual(result["rows"], [])
+		self.assertEqual(result["total_count"], 0)
 
 
 class TestFeedbackRating(unittest.TestCase):

@@ -346,8 +346,12 @@ def _application_invoice_ready_for_finance(app_name: str, app_seq: int) -> bool:
 
 	if is_ucr_application_task(app_seq) and ucr_invoice_ready(app_name):
 		return True
-	if is_permit_application_task(app_seq) and permit_invoices_ready(app_name):
-		return True
+	if is_permit_application_task(app_seq):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			permit_application_invoices_ready_for_finance,
+		)
+
+		return permit_application_invoices_ready_for_finance(app_name)
 	if is_entry_application_task(app_seq) and application_invoice_submitted(
 		app_name, APPLICATION_FINANCE_PROFILES["Entry Application"]
 	):

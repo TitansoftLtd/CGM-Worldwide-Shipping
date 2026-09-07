@@ -1,7 +1,7 @@
 {% extends "templates/web.html" %}
 {% from "templates/includes/portal_localize.html" import local_date %}
 
-{% block title %}{{ _("Invoices from CGM") }}{% endblock %}
+{% block title %}{{ _("Invoices to CGM") }}{% endblock %}
 
 {% block page_content %}
 <div class="cp-page">
@@ -15,8 +15,8 @@
   {% elif is_transporter %}
 
   <section class="cp-hero">
-    <h1>{{ _("Invoices from CGM") }}</h1>
-    <p class="cp-sub">{{ _("Purchase invoices CGM has shared with you. Outstanding amounts are what CGM still owes you.") }}</p>
+    <h1>{{ _("Invoices to CGM") }}</h1>
+    <p class="cp-sub">{{ _("Invoices you have raised to CGM. Outstanding amounts are what CGM still owes you.") }}</p>
     <span class="cp-chip"><span class="dot"></span>{{ transporter_name }}</span>
   </section>
 
@@ -57,7 +57,7 @@
     <div class="icon">!</div>
     <div>
       <h4>{{ _("CGM owes you") }}: {{ frappe.utils.fmt_money(stat_outstanding_amount, currency=currency) }}</h4>
-      <p>{{ _("This is the unpaid balance on invoices CGM has shared with you. It will show as Paid after CGM records payment.") }}</p>
+      <p>{{ _("This is the unpaid balance on invoices shared with you. It will show as Paid after CGM records payment.") }}</p>
     </div>
   </div>
   {% endif %}

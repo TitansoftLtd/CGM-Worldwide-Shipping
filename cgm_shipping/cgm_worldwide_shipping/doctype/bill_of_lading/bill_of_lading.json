@@ -344,7 +344,7 @@
   },
   {
    "depends_on": "eval:doc.deposit_arrangement=='Container Deposit'",
-   "description": "Set when all containers on this BL have empty return or interchange \u2014 starts refund reminders.",
+   "description": "Set when all containers on this BL have empty return or interchange - starts refund reminders.",
    "fieldname": "deposit_return_date",
    "fieldtype": "Date",
    "label": "Deposit Return Date",

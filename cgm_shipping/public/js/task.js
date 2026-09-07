@@ -71,6 +71,10 @@ frappe.ui.form.on("Task", {
 		reset_cgm_task_sea_ui_state_if_needed(frm);
 		ensure_cgm_finance_department_loaded(frm);
 		const ui = get_sea_task_ui(frm);
+		// Permit table depends_on must be corrected on every refresh — the Desk
+		// Custom Field default omits post-clearance Finance (seq 16) and would
+		// hide invoices even when child rows exist in the database.
+		apply_permit_field_visibility(frm, ui);
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
 		// Wait until the async sea-sequence config has loaded, otherwise the layout
@@ -431,9 +435,26 @@ function sea_task_permits_depends_on(frm) {
 		]),
 	].sort((a, b) => a - b);
 	if (!seqs.length) {
-		return `eval:${SEA_FLOW_KEYS_EXPR}`;
+		return `eval:${SEA_FLOW_KEYS_EXPR} && (['Permit Application','Permit Finance'].includes(doc.custom_task_role) || doc.custom_requires_permit_action)`;
 	}
-	return `eval:${SEA_FLOW_KEYS_EXPR} && [${seqs.join(",")}].includes(doc.custom_sequence_no)`;
+	return `eval:${SEA_FLOW_KEYS_EXPR} && (['Permit Application','Permit Finance'].includes(doc.custom_task_role) || doc.custom_requires_permit_action || [${seqs.join(",")}].includes(doc.custom_sequence_no))`;
+}
+
+function apply_permit_field_visibility(frm, ui) {
+	if (!ui?.show_permits) {
+		return;
+	}
+	["custom_section_task_permits", "custom_task_permits"].forEach((fieldname) => {
+		if (!frm.fields_dict[fieldname]) {
+			return;
+		}
+		frm.set_df_property(
+			fieldname,
+			"depends_on",
+			ui.from_template ? "" : sea_task_permits_depends_on(frm)
+		);
+		frm.set_df_property(fieldname, "hidden", 0);
+	});
 }
 
 const CGM_TASK_PERMISSIONS_FALLBACK = {
@@ -1116,17 +1137,10 @@ function apply_sea_task_form_layout(frm, ui) {
 		if (!frm.fields_dict[fieldname]) {
 			return;
 		}
-		if (ui.show_permits) {
-			// Template-stamped roles: do not gate on Sea Import sequence lists.
-			frm.set_df_property(
-				fieldname,
-				"depends_on",
-				ui.from_template ? "" : sea_task_permits_depends_on(frm)
-			);
-		}
 		toggle(fieldname, ui.show_permits);
 	});
 	if (ui.show_permits) {
+		apply_permit_field_visibility(frm, ui);
 		configure_permit_grid(frm);
 		frm.refresh_field("custom_task_permits");
 	}
@@ -2392,16 +2406,24 @@ function ensure_finance_permit_rows_on_form(frm) {
 	if (frm._cgm_finance_permit_rows_ensuring) {
 		return;
 	}
-	if ((frm.doc.custom_task_permits || []).length) {
-		return;
-	}
 	frm._cgm_finance_permit_rows_ensuring = true;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.ensure_finance_permit_rows",
 		args: { task_name: frm.doc.name },
 		callback(r) {
 			frm._cgm_finance_permit_rows_ensuring = false;
-			if (!r.exc && r.message?.rows) {
+			if (r.exc || !r.message) {
+				return;
+			}
+			if (r.message.reload) {
+				frm.reload_doc();
+				return;
+			}
+			// Same DB payload but grid still empty — force a field refresh.
+			if (
+				(r.message.permits || []).some((row) => row.payment_invoice) &&
+				!(frm.doc.custom_task_permits || []).some((row) => row.payment_invoice)
+			) {
 				frm.reload_doc();
 			}
 		},
@@ -2623,6 +2645,11 @@ function configure_permit_grid(frm) {
 		["payment_invoice", "purchase_invoice", "payment_entry", "permit_document"].forEach((fn) => {
 			grid.update_docfield_property(fn, "read_only", 1);
 		});
+		grid.update_docfield_property("payment_invoice", "hidden", 0);
+		grid.update_docfield_property("payment_invoice", "in_list_view", 1);
+		grid.update_docfield_property("invoice_amount", "hidden", 0);
+		grid.update_docfield_property("invoice_amount", "in_list_view", 1);
+		toggle_permit_invoice_fields_for_origin(grid);
 		grid.update_docfield_property("invoice_verified", "hidden", 0);
 		grid.update_docfield_property("invoice_verified", "read_only", user_can_verify_invoice(frm) ? 0 : 1);
 		grid.update_docfield_property("invoice_verified", "in_list_view", 1);

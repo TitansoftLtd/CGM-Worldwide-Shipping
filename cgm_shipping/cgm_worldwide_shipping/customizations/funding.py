@@ -2,7 +2,7 @@
 
 ERPNext already owns Material Request, purchasing, stock, Journal Entry, and
 Payment Entry. Operational Expense is paid by Journal Entry (expense + bank).
-Purchase still uses Purchase Order. Employee Advance is not used for funding.
+Purchase still uses Purchase Order. Funding Request is Operational Expense only.
 """
 
 from __future__ import annotations
@@ -43,13 +43,14 @@ def mr_workflow_state_from_funding_request(
 	if wf.is_pending(fr_workflow_state):
 		return pick_workflow_state(
 			mr_states,
+			"On Funding Request",
 			fr_workflow_state,
 			*wf.pending_states,
 			"Pending",
 			"Pending Approval",
-			default=fr_workflow_state or "Pending",
+			default=MR_WORKFLOW_STATE_ON_FUNDING_REQUEST,
 		)
-	if wf.is_disbursed(fr_workflow_state) or wf.is_completed(fr_workflow_state):
+	if wf.is_disbursed(fr_workflow_state) or wf.is_fully_complete(fr_workflow_state):
 		return pick_workflow_state(mr_states, "Disbursed", default=MR_WORKFLOW_STATE_DISBURSED)
 	if wf.is_partial(fr_workflow_state):
 		return pick_workflow_state(
@@ -125,6 +126,19 @@ def apply_batch_approve_to_pending_rows(rows) -> None:
 			row.approved_amount = flt(row.get("requested_amount"))
 
 
+def funding_batch_is_partially_approved(rows, *, tolerance: float = 0.005) -> bool:
+	"""True when Approve should land on Partially Approved, not Approved."""
+	approved = [row for row in rows if row.get("decision") == FR_ROW_DECISION_APPROVED]
+	rejected = [row for row in rows if row.get("decision") == FR_ROW_DECISION_REJECTED]
+	if rejected and approved:
+		return True
+	return any(
+		row.get("decision") == FR_ROW_DECISION_APPROVED
+		and flt(row.get("approved_amount")) + tolerance < flt(row.get("requested_amount"))
+		for row in rows
+	)
+
+
 def funding_approval_is_recorded(workflow_state: str | None, workflow=None) -> bool:
 	"""True only after a Funding Approver has approved the batch."""
 	return get_funding_workflow_map(workflow).approval_is_recorded(workflow_state)
@@ -140,53 +154,65 @@ def funding_is_approved(workflow_state: str | None, docstatus: int | None = 0, w
 
 
 def funding_progress_state(
-	current: str | None, total_funded: float, total_approved: float, workflow=None
+	current: str | None,
+	total_funded: float,
+	total_approved: float,
+	workflow=None,
+	*,
+	disbursement_started: bool = False,
 ) -> str | None:
 	"""Payment-driven Funding Request state.
 
-	Creating a draft Journal Entry is not payment, so paid can stay 0.
-	Never reverse Disbursement in Progress back to Approved — that transition
-	is not in the workflow.
+	Draft Journal Entries / Purchase Orders move the batch to Disbursement in
+	Progress. Submitted Journal Entries and recorded PO payments move rows (and
+	the batch when fully paid) to Disbursed.
 	"""
 	wf = get_funding_workflow_map(workflow)
 	if current not in wf.progress_states():
 		return current
 	funded = flt(total_funded)
 	approved = flt(total_approved)
-	disbursed = next(iter(wf.complete_from_states), None)
+	disbursed = next(iter(wf.disbursed_states()), None)
 	if approved > 0 and funded + 0.005 >= approved:
 		return disbursed or current
-	if funded > 0:
+	if funded > 0 or disbursement_started:
 		return wf.disbursement_state or current
 	if wf.is_disbursed(current):
 		return wf.disbursement_state or current
 	return current
 
 
-PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING = frozenset({"Purchase", "Subcontracting"})
+def funding_request_disbursement_started(funding_request: str) -> bool:
+	"""True when an open Journal Entry or Purchase Order exists for approved rows."""
+	if not funding_request or not frappe.db.exists("Funding Request", funding_request):
+		return False
+	fr = frappe.get_doc("Funding Request", funding_request)
+	for row in fr.material_requests:
+		if getattr(row, "decision", None) != FR_ROW_DECISION_APPROVED:
+			continue
+		if not row.material_request:
+			continue
+		if flt(row.approved_amount) - flt(row.funded_amount) <= 0:
+			continue
+		mr_type = frappe.db.get_value(
+			"Material Request", row.material_request, "material_request_type"
+		)
+		if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
+			if _open_journal_entry_exists(funding_request, row.material_request):
+				return True
+		elif mr_type in PURCHASE_REQUEST_TYPES:
+			if _open_purchase_order_exists(row.material_request):
+				return True
+	return False
+
+
+PURCHASE_REQUEST_TYPES = frozenset({"Purchase", "Subcontracting"})
+FUNDING_MATERIAL_REQUEST_TYPES = frozenset({"Purchase", MATERIAL_REQUEST_TYPE_OPERATIONAL})
 
 
 def material_request_purchase_is_funding_approved(material_request: str) -> bool:
-	"""Purchase/Subcontracting may create a PO only after approved funding."""
-	if not material_request:
-		return True
-	mr = frappe.db.get_value(
-		"Material Request",
-		material_request,
-		["material_request_type", "custom_funding_request"],
-		as_dict=True,
-	)
-	if not mr or mr.material_request_type not in PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING:
-		return True
-	if not mr.custom_funding_request:
-		return False
-	fr = frappe.db.get_value(
-		"Funding Request",
-		mr.custom_funding_request,
-		["workflow_state", "docstatus"],
-		as_dict=True,
-	)
-	return bool(fr and funding_is_approved(fr.workflow_state, fr.docstatus))
+	"""Purchase follows procurement. It does not wait on a Funding Request."""
+	return True
 
 
 def assert_material_request_may_create_purchase_document(material_request: str) -> None:
@@ -555,8 +581,30 @@ def on_journal_entry_on_submit(doc, method=None) -> None:
 	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
 
 
+def on_journal_entry_after_insert(doc, method=None) -> None:
+	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
+
+
 def on_journal_entry_on_cancel(doc, method=None) -> None:
 	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
+
+
+def on_purchase_order_after_insert(doc, method=None) -> None:
+	sync_funding_request_from_purchase_order(doc)
+
+
+def sync_funding_request_from_purchase_order(doc) -> None:
+	fr_name = doc.get("custom_funding_request") if doc.meta.has_field("custom_funding_request") else None
+	if not fr_name:
+		for row in doc.get("items") or []:
+			mr_name = row.get("material_request")
+			if not mr_name:
+				continue
+			fr_name = frappe.db.get_value("Material Request", mr_name, "custom_funding_request")
+			if fr_name:
+				break
+	if fr_name:
+		sync_funding_request_paid_amounts(fr_name)
 
 
 def sync_funding_requests_touched_by_payment_entry(doc) -> None:
@@ -586,7 +634,10 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 			changed = True
 	fr.calculate_totals()
 	next_state = funding_progress_state(
-		fr.workflow_state, fr.total_funded, fr.total_approved
+		fr.workflow_state,
+		fr.total_funded,
+		fr.total_approved,
+		disbursement_started=funding_request_disbursement_started(funding_request),
 	)
 	state_changed = next_state != fr.workflow_state
 	if not changed and not state_changed:
@@ -612,7 +663,7 @@ def paid_amount_for_material_request(funding_request: str, material_request: str
 	mr_type = frappe.db.get_value("Material Request", material_request, "material_request_type")
 	if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
 		return _paid_against_journal_entries(funding_request, material_request)
-	if mr_type in PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING:
+	if mr_type in PURCHASE_REQUEST_TYPES:
 		return _paid_against_purchase_orders(material_request)
 	return 0.0
 
@@ -750,6 +801,7 @@ def get_unfunded_material_requests(
 	elif to_date:
 		filters["transaction_date"] = ["<=", to_date]
 
+	filters["material_request_type"] = ["in", list(FUNDING_MATERIAL_REQUEST_TYPES)]
 	mr_states = get_material_request_state_names()
 	filters[MR_WORKFLOW_STATE_FIELD] = [
 		"in",
@@ -806,6 +858,10 @@ def make_funding_request(material_request: str):
 	frappe.has_permission("Funding Request", "write", throw=True)
 	frappe.has_permission("Material Request", "read", throw=True)
 	mr = frappe.get_doc("Material Request", material_request)
+	if mr.material_request_type not in FUNDING_MATERIAL_REQUEST_TYPES:
+		frappe.throw(
+			_("Funding Request is only for Purchase and Operational Expense Material Requests.")
+		)
 	if mr.docstatus != 1:
 		frappe.throw(_("Submit the Material Request before creating a Funding Request."))
 	if mr.status == "Stopped":
@@ -845,6 +901,7 @@ def make_journal_entries(funding_request: str) -> list[str]:
 		created.append(je.name)
 	if not created:
 		frappe.throw(_("No Journal Entries left to create."))
+	sync_funding_request_paid_amounts(fr.name)
 	return created
 
 
@@ -855,8 +912,12 @@ def make_purchase_orders(funding_request: str) -> list[str]:
 	fr = frappe.get_doc("Funding Request", funding_request)
 	_assert_funding_request_approved(fr)
 	created = []
+	skipped = []
 	for row in _outstanding_rows(fr, None, purchase=True):
 		if _open_purchase_order_exists(row.material_request):
+			po_name = _open_purchase_order_name(row.material_request)
+			if po_name:
+				skipped.append(po_name)
 			continue
 		po = make_purchase_order(row.material_request)
 		if isinstance(po, dict):
@@ -867,7 +928,14 @@ def make_purchase_orders(funding_request: str) -> list[str]:
 		po.insert(ignore_permissions=True, ignore_mandatory=True)
 		created.append(po.name)
 	if not created:
+		if skipped:
+			frappe.throw(
+				_("Draft Purchase Order(s) already exist: {0}. Open them to continue procurement.").format(
+					", ".join(skipped)
+				)
+			)
 		frappe.throw(_("No Purchase Orders left to create."))
+	sync_funding_request_paid_amounts(fr.name)
 	return created
 
 
@@ -993,7 +1061,7 @@ def _outstanding_rows(fr, request_type: str | None, purchase: bool = False):
 		mr_type = frappe.db.get_value(
 			"Material Request", row.material_request, "material_request_type"
 		)
-		if purchase and mr_type in PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING:
+		if purchase and mr_type in PURCHASE_REQUEST_TYPES:
 			out.append(row)
 		elif request_type and mr_type == request_type:
 			out.append(row)
@@ -1016,11 +1084,14 @@ def _open_journal_entry_exists(funding_request: str, material_request: str) -> b
 
 
 def _open_purchase_order_exists(material_request: str) -> bool:
-	return bool(
-		frappe.db.exists(
-			"Purchase Order Item",
-			{"material_request": material_request, "docstatus": ["<", 2]},
-		)
+	return bool(_open_purchase_order_name(material_request))
+
+
+def _open_purchase_order_name(material_request: str) -> str | None:
+	return frappe.db.get_value(
+		"Purchase Order Item",
+		{"material_request": material_request, "docstatus": ["<", 2]},
+		"parent",
 	)
 
 
@@ -1058,7 +1129,7 @@ def get_funding_pay_options(funding_request: str) -> dict:
 		if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
 			if not _open_journal_entry_exists(fr.name, row.material_request):
 				operational.append(payload)
-		elif mr_type in PURCHASE_REQUEST_TYPES_REQUIRING_FUNDING:
+		elif mr_type in PURCHASE_REQUEST_TYPES:
 			if not _open_purchase_order_exists(row.material_request):
 				purchase.append(payload)
 	return {"operational": operational, "purchase": purchase}

@@ -1,127 +1,121 @@
+# Customer & Transporter Portal Guide
+
+For **portal users** and **support staff** helping customers and transporters use the website.
+
 ---
-title: Customer & Transporter Portal
-metatags:
-  description: Customer portal routes for shipments, documents, quotations, invoices, and messages; transporter allocations and invoices; Desk vs portal; troubleshooting.
----
 
-# Customer & Transporter Portal
+## Customer portal
 
-**Website access for customers and transporters — progress, documents, and commercial files without Desk.**
-
-Use this guide when onboarding portal users, explaining what customers can see, or diagnosing missing shipments and allocations.
-
-A typical scenario: After Finance shares a quotation and Operations advances the Project, the customer logs into `/portal`, opens **My Shipments**, downloads documents, and replies via **My Messages**. A transporter opens `/transporter/allocation` for assigned containers and `/transporter/invoices` for shared purchase invoices.
-
-Customer home:
-
-> Website → `/portal`
-
-Transporter home:
-
-> Website → `/transporter`
-
-## 1. Prerequisites
-
-### Customer
-
-- **Customer** master
-- **Website User** with role **Customer**, linked to that Customer
-- Project(s) with matching customer
-- Quotations only appear when workflow is **Shared with Client** (and invoices when submitted/visible per portal rules)
-
-### Transporter
-
-- **Supplier** marked as transporter
-- Portal user synced (`transporter_supplier` on save)
-- Role **Transporter**
-- **Container Allocation** submitted for jobs to appear
-
-:::note
-Website users are redirected away from Desk to their portal home. Support staff use Desk; customers and transporters use the website.
-:::
-
-## 2. How to — Customer portal
+**Role:** `Customer` (Website User linked to Customer master)  
+**Home after login:** `/portal`
 
 | Route | Purpose |
 |-------|---------|
 | `/portal` | Dashboard home |
 | `/my-shipments` | List of customer shipments |
 | `/shipment` | Shipment detail / progress |
-| `/documents` | Download shared documents |
-| `/my-quotations` | Quotations shared with the client |
-| `/my-invoices` | Sales invoices |
-| `/my-messages` | Shipment Update / messaging threads |
-| `/container` | Container Tracker timeline (`?name=…`) |
+| `/documents` | Download uploaded documents |
+| `/my-quotations` | View quotations shared with client |
+| `/my-invoices` | View sales invoices |
+| `/my-messages` | Conversations with operations |
+
+The dashboard customers land on after login, with shipment counts and the quick actions for each area:
+
+![The customer portal dashboard, showing shipment status tiles and quick actions](../images/customer-portal.png)
 
 ### What customers see
 
-- Progress aligned with Project shipment status
-- Documents operations has made available
-- Commercial PDFs when quotation is **Shared with Client**
-- Timestamps localized in the browser (`portal_localize_time.js`)
+- Shipment progress aligned with Project workflow status
+- Document availability (as shared by operations)
+- Commercial documents when quotation is **Shared with Client**
+- Timestamps localized to browser timezone (`portal_localize_time.js`)
 
 ### Desk vs portal
 
 | Action | Where |
 |--------|-------|
-| Upload / verify clearance documents | Desk (Operations / Documentation) |
-| View progress and download shared files | Portal |
-| Approve quotation internally | Desk (Finance) |
-| View shared quotation / invoice PDF | Portal |
-| Reply on shipment messages | Portal (**My Messages**) and Desk (**Shipment Update**) |
-| Raise Funding Request / pay Tasks | Desk only |
+| Upload clearance documents | Desk (operations) |
+| View progress | Portal |
+| Approve quotation internally | Desk (finance) |
+| View shared quotation PDF | Portal |
 
-## 3. How to — Transporter portal
+---
+
+## Messages
+
+Both portals carry a two-way conversation with operations. The thread is the record, kept against the shipment rather than in anyone's inbox - and the portal user is emailed when operations reply, so they do not have to keep checking.
+
+**For the customer** (`/my-messages`, and the **New Messages** tile on the dashboard):
+
+- One row per shipment that has messages: the newest message, who sent it, and how many CGM messages are still unread. Opening a row goes to that shipment's **Messages** tab.
+- **General queries** for anything not tied to a shipment. Each is its own thread.
+
+![The customer Messages page, listing general queries and their reply status](../images/portal-messages.png)
+
+**For the transporter**, the **Messages** card on the dashboard: questions about a job, or anything else.
+
+### How operations sees them
+
+Messages are **Shipment Update** records (`MSG.YY.#####`), so a conversation is threaded, searchable and attached to the shipment rather than living in someone's inbox. Each carries its source - Customer, Transporter or Internal - a link to the shipment, customer, container or allocation, and an optional attachment.
+
+| Field | What it does |
+|-------|--------------|
+| **Customer Portal** / **Supplier Portal** | Whether the message is visible in that portal |
+| **In Reply To** | Threads a reply onto the message it answers |
+| **Response Status** | **Open**, **Answered** or **Closed**, with who answered and when |
+| **Read by Customer On** / **Read by Transporter On** | Set when the other side opens the thread - this is what drives the unread counts |
+
+### The rule that catches people out
+
+**A message written by CGM stays internal unless it is explicitly published to a portal.** A party's own message is always visible to that party, so a customer's question reaches operations by default - but an internal note written against the shipment does *not* reach the customer until the visibility flag is set.
+
+That is deliberate: it lets operations keep working notes on a shipment without the customer reading them. It also means a reply the customer never sees looks, from the desk, exactly like one they did. If a customer says they had no answer, check the **Customer Portal** flag on the reply before anything else.
+
+---
+
+## Transporter portal
+
+**Role:** `Transporter`  
+**Home after login:** `/transporter`
 
 | Route | Purpose |
 |-------|---------|
-| `/transporter` | Dashboard |
+| `/transporter` | Transporter dashboard |
 | `/transporter/allocation` | Container allocation jobs |
-| `/transporter/invoices` | Purchase invoices shared with the transporter |
 | `/transporter/profile` | Profile settings |
 
-Ops share transporter invoices from Desk (Purchase Invoice share flow). Outstanding amounts shown are what CGM still expects the transporter relationship to settle as configured on site.
+The dashboard: job and container counts, what CGM owes, and the allocations awaiting trucks.
 
-## 4. Features — Messaging and feedback
+![The transporter portal dashboard: job counts, balance owed, and the allocations list](../images/transporter-portal.png)
 
-- **Shipment Update** threads power portal messages; unread items surface on the portal home and `/my-messages`.
-- **Portal Feedback** captures customer feedback for ops follow-up (Desk).
+Transporter users are synced from **Supplier** records marked as transporters (`transporter_supplier.py`).
 
-## 5. How to — Troubleshooting
+---
 
-### Customer cannot see a shipment
+## Supporting portal users
 
-1. Website User linked to the correct **Customer**.
-2. Project **customer** matches that Customer.
-3. User has role **Customer** (not only Employee).
-4. Soft-check portal API visibility / document sharing if the Project exists but documents are empty.
+### Customer cannot see shipment
 
-### Customer cannot see a quotation
-
-1. Quotation party = Customer.
-2. Workflow state **Shared with Client** (Approved alone may not publish to portal).
+1. Confirm Website User is linked to correct **Customer**.
+2. Confirm Project customer matches.
+3. Check document sharing / project visibility rules in portal API (`portal.py`).
 
 ### Transporter cannot see allocation
 
-1. Supplier has transporter flag; portal user linked and active.
-2. **Container Allocation** is **submitted**.
-3. Allocation points at the correct Project / B/L / containers.
+1. Confirm Supplier has transporter flag and portal user linked.
+2. Confirm **Container Allocation** is submitted.
+3. Check allocation references correct Project/B/L.
 
-### Transporter cannot see invoices
+### Customer says they never got a reply
 
-1. Purchase Invoice was shared to that transporter via the CGM share action.
-2. User is the synced transporter Website User for that Supplier.
+1. Open the reply on the shipment's **Messages** tab and check **Customer Portal** is ticked. A CGM message stays internal until it is.
+2. Check the reply is threaded onto their question (**In Reply To**), not posted as a loose note.
+3. **Read by Customer On** tells you whether they have opened the thread since.
 
-### Redirect loop or landing on wrong home
+---
 
-1. Roles on the Website User (`role_home_page` / session hooks).
-2. Clear cache / re-login after role changes.
-3. Confirm Website User roles and Customer/Supplier links on Desk.
-
-## 6. Related Topics
+## Related guides
 
 - [CRM & Intake](crm-intake.md)
 - [Transport & Containers](transport-containers.md)
 - [Commercial](commercial.md)
-- [Finance](finance.md)
-- [Getting Started](process-overview.md)

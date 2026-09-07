@@ -61,7 +61,6 @@ def ensure_transporter_portal_menu() -> None:
 		return
 
 	settings = frappe.get_single("Portal Settings")
-	existing = {(row.route or "").strip("/") for row in settings.get("menu") or []}
 	wanted = (
 		{
 			"title": _("Transporter Portal"),
@@ -70,18 +69,25 @@ def ensure_transporter_portal_menu() -> None:
 			"role": "Transporter",
 		},
 		{
-			"title": _("Invoices from CGM"),
+			"title": _("Invoices to CGM"),
 			"route": "transporter/invoices",
 			"enabled": 1,
 			"role": "Transporter",
 		},
 	)
+	by_route = {(row.route or "").strip("/"): row for row in settings.get("menu") or []}
 	changed = False
 	for item in wanted:
-		if item["route"] in existing:
+		row = by_route.get(item["route"])
+		if row is None:
+			settings.append("menu", item)
+			changed = True
 			continue
-		settings.append("menu", item)
-		changed = True
+		# The row exists, so a title corrected in code would otherwise never
+		# reach a site that already has it.
+		if row.title != item["title"]:
+			row.title = item["title"]
+			changed = True
 	if changed:
 		settings.save(ignore_permissions=True)
 

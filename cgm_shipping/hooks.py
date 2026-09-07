@@ -38,7 +38,7 @@ app_include_css = [
 	"/assets/cgm_shipping/css/cgm_shipping_workspace.css",
 ]
 app_include_js = [
-	# Must load before cgm_status_field.js — status grids call attach helpers from this file.
+	# Must load before cgm_status_field.js - status grids call attach helpers from this file.
 	"/assets/cgm_shipping/js/shipment_document_grid.js",
 	"/assets/cgm_shipping/js/cgm_status_field.js",
 	"/assets/cgm_shipping/js/cgm_container_tracking.js",
@@ -87,7 +87,6 @@ doctype_js = {
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
 		"public/js/package_field_visibility.js",
-		"public/js/portal_engagement.js",
 		"public/js/project.js",
 	],
 	"Customer": "public/js/crm_customer.js",
@@ -109,6 +108,7 @@ doctype_js = {
 	"Container Tracker": "public/js/portal_engagement.js",
 	"Material Request": "public/js/material_request.js",
 	"Employee Advance": "public/js/employee_advance.js",
+	"Expense Claim": "public/js/expense_claim.js",
 	"Job Applicant": "public/js/job_applicant.js",
 	"Salary Component": "public/js/salary_component.js",
 }
@@ -240,15 +240,15 @@ override_doctype_class = {
 
 doc_events = {
 	"Salary Component": {
-		"validate": (
+		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.validate_net_pay_only_component"
-		),
-		"on_update": (
+		],
+		"on_update": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
-		),
-		"on_trash": (
+		],
+		"on_trash": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
-		),
+		],
 	},
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
@@ -279,9 +279,7 @@ doc_events = {
 		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_cancel",
 	},
 	"Sales Invoice": {
-		"before_insert": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_insert_sales_invoice"
-		),
+		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_insert_sales_invoice",
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
 		"after_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.after_insert_sales_invoice",
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
@@ -292,12 +290,13 @@ doc_events = {
 		],
 	},
 	"Journal Entry": {
-		"after_insert": (
+		"after_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_after_insert",
+		],
+		"on_update": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
-		),
-		"on_update": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
-		),
+		],
 		"on_submit": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
@@ -327,6 +326,17 @@ doc_events = {
 	"Leave Application": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 	},
+	"Employee Grade": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_job_group_designations",
+	},
+	# before_validate, not validate: the amounts these derive have to be in place
+	# before the HRMS controllers total the document.
+	"Expense Claim": {
+		"before_validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_expense_claim_per_diem",
+	},
+	"Employee Advance": {
+		"before_validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_employee_advance_per_diem",
+	},
 	"Job Applicant": {
 		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_territory",
@@ -338,6 +348,9 @@ doc_events = {
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
 	},
 	"Purchase Order": {
+		"after_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_order_after_insert"
+		],
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
 	},
 	"Request for Quotation": {

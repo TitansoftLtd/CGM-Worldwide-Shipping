@@ -382,6 +382,7 @@ def list_shared_purchase_invoices(transporter: str, limit: int = 200) -> list[di
 		"outstanding_amount",
 		"currency",
 		"bill_no",
+		"bill_date",
 		"project",
 		"supplier_name",
 	]

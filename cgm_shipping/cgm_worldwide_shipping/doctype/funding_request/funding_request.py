@@ -6,7 +6,7 @@ from __future__ import annotations
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, nowdate
+from frappe.utils import cint, flt, nowdate
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	FR_ROW_DECISION_APPROVED,
@@ -15,8 +15,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	MR_WORKFLOW_STATE_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+	FUNDING_MATERIAL_REQUEST_TYPES,
 	_material_requests_on_active_funding_requests,
 	apply_batch_approve_to_pending_rows,
+	funding_batch_is_partially_approved,
 	funding_approval_is_recorded,
 	funding_is_approved,
 	funding_is_pending,
@@ -148,18 +150,16 @@ class FundingRequest(Document):
 			)
 
 	def _apply_partial_approval_state(self) -> None:
-		"""After Approve, move to the workflow's partial state when some rows were rejected.
+		"""After Approve, move to Partially Approved when the batch is not fully approved.
 
-		Uses db_set so ERPNext is not asked for a transition that is not on the workflow
-		(Approve only targets the fully-approved state).
+		Partially Approved is never chosen from Actions. It applies when some Material
+		Requests were rejected or an approved amount is below the requested amount.
 		"""
 		wf = get_funding_workflow_map()
 		if not wf.is_approve_next(self.workflow_state) or not wf.partial_state:
 			return
 		rows = self._valid_material_request_rows()
-		approved = [row for row in rows if row.decision == FR_ROW_DECISION_APPROVED]
-		rejected = [row for row in rows if row.decision == FR_ROW_DECISION_REJECTED]
-		if not rejected or not approved:
+		if not funding_batch_is_partially_approved(rows, tolerance=AMOUNT_TOLERANCE):
 			return
 		frappe.db.set_value(
 			"Funding Request",
@@ -208,7 +208,7 @@ class FundingRequest(Document):
 			mr = frappe.db.get_value(
 				"Material Request",
 				row.material_request,
-				["docstatus", "status"],
+				["docstatus", "status", "material_request_type"],
 				as_dict=True,
 			)
 			if not mr or mr.docstatus != 1:
@@ -220,6 +220,19 @@ class FundingRequest(Document):
 			if mr.status == "Stopped":
 				frappe.throw(
 					_("Material Request {0} is Stopped.").format(frappe.bold(row.material_request))
+				)
+			if (
+				cint(self.docstatus) == 0
+				and mr.material_request_type not in FUNDING_MATERIAL_REQUEST_TYPES
+			):
+				frappe.throw(
+					_(
+						"Funding Request is only for Purchase and Operational Expense. "
+						"Material Request {0} is {1}."
+					).format(
+						frappe.bold(row.material_request),
+						frappe.bold(mr.material_request_type or _("another type")),
+					)
 				)
 
 	def _apply_row_amounts(self) -> None:

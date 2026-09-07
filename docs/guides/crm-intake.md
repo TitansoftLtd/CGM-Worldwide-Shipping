@@ -1,78 +1,83 @@
+# CRM & Intake Guide
+
+For **sales** and **customer onboarding**: Lead → Opportunity → Project.
+
 ---
-title: CRM & Intake
-metatags:
-  description: Lead to Opportunity to Project intake — Shipment Type drives the entire task plan; B/L, Booking, and AWB sync; approval and document guards.
+
+## Where to work
+
+| Item | Path in Desk |
+|------|----------------|
+| New enquiry | **Lead** |
+| Qualified deal | **Opportunity** |
+| Live shipment | **Project** |
+| Transport docs | **Bill of Lading**, **Air Waybill** |
+
 ---
 
-# CRM & Intake
+## The intake flow
 
-**Qualify the deal, pick the Shipment Type, approve the Opportunity, and start the Project.**
-
-Use this guide for sales and onboarding. The Shipment Type you choose on Opportunity selects the **CGM Task Template** and **Container Tracker Mode** for the whole clearance plan.
-
-A typical scenario: You open an Opportunity for a sea customer, set **Shipment Type = Sea Import**, link a Bill of Lading, verify CI and PKL, get approval, and Create Project — 25 Sea Import tasks appear automatically.
-
-To access intake, go to:
-
-> Home > CGM Shipping > Opportunity
-
-Also use:
-
-> Home > CRM > Lead
-
-> Home > CGM Shipping > Bill of Lading
-
-![Opportunity form — shipment intake and client documents](../images/opportunity-form.png)
-
-![Bill of Lading — vessel, containers, and deposit links](../images/bill-of-lading-form.png)
-
-## 1. Prerequisites
-
-- Customer (or Lead to convert) and Shipment Type masters
-- Document Type codes for intake (**CI**, **PKL**, …)
-- Opportunity approval workflow configured on the site
-- Correct transport DocType for the mode (B/L, Booking, AWB)
-
-:::caution
-**Shipment Type drives the entire task plan.** Choosing the wrong type creates the wrong template on Project. Review [Shipment Modes](shipment-modes.md) before you approve.
-:::
-
-## 2. How to — intake flow
-
-Opportunity is the **shipment intake and authorization** record. Transport documents synchronize into it. The Project is created only after approval.
+Opportunity is the **shipment intake & authorization record** (single source of truth).
+Transport documents (Booking Confirmation, Bill of Lading, Air Waybill) synchronize into it.
+The Project is created only after approval.
 
 ```
 New Shipment
   → Create Opportunity → Select Shipment Type
     → Choose initial document (BL / Booking / AWB / None for Transit)
       → Complete document → fields sync to Opportunity
-        → Upload and verify remaining client documents
+        → Upload & verify remaining client documents
           → Approve Opportunity → Start Shipment → Project + Tasks
 ```
 
-| Mode family | Typical first document |
-|-------------|------------------------|
-| Sea import | Bill of Lading (or Booking then B/L) |
-| Sea export | Booking Confirmation and/or B/L |
-| Air | Air Waybill |
-| Transit / road | Often None at start; use Export Shipment fields later |
+Booking Confirmation = **planned** shipment. Bill of Lading = **confirmed** cargo.
+Either may arrive first; both workflows are supported. Adding a BL later (from Opportunity
+or Project) prefills from the Booking and replaces planned vessel/ETA/etc. with confirmed values.
 
-Booking Confirmation = **planned** shipment. Bill of Lading = **confirmed** cargo. Adding a B/L later prefills from Booking and replaces planned vessel/ETA with confirmed values.
+---
 
-## 3. How to — Lead
+## Two ways a shipment starts
 
-Capture on **Lead** when useful:
+| | Existing customer | New customer |
+|---|---|---|
+| Start from | Transport document (**Bill of Lading** / **Air Waybill** / **Booking Confirmation**) | Create the **Customer** first |
+| Then | Create the Opportunity from it | Then follow the same path as an existing customer |
 
-| Field / section | Purpose |
-|-----------------|---------|
-| Shipment type / mode | Downstream workflow |
-| CI / PKL attachments | Intake |
-| Bill of Lading | Sea reference |
-| Container information | Preview |
+The transport document comes first because it is what the customer actually sends. Capturing it creates the shipment record that the Opportunity is then built on, so the B/L number, containers and goods description never get typed twice.
 
-Preshipment containers sync from B/L when linked.
+**A Customer must already exist before a shipment can be raised.** There is no path that creates one part-way through intake - if this is a new client, the Documentation team creates the Customer, then starts the shipment.
 
-## 4. How to — Opportunity
+---
+
+## Approval before a shipment exists
+
+Intake is a **workflow on Opportunity** (`CGM Opportunity Pre-Shipment`). No Project is created until it has been approved.
+
+| State | What it means | Who moves it on |
+|-------|---------------|-----------------|
+| **Ops Intake** | Documentation is still assembling documents | Anyone: **Send For Review** |
+| **Pending Approval** | With the Operations Manager | **Approve** - Operations Manager only |
+| | | **Return for Amendment** - back for correction, stays in Pending Approval |
+| | | **Reject** - closed as Rejected |
+| **Approved** | Shipment authorised. The Project can be started | **Cancel** if it falls away |
+
+Only the **Operations Manager** can approve. Everything else can be done by anyone with access, so a shipment cannot slip into operations without that sign-off.
+
+What the Operations Manager is checking: the attached documents are the right ones and legible, the shipment details match them, and nothing required is missing. A return for amendment goes back to Documentation to fix and resubmit.
+
+---
+
+## Lead
+
+**Lead is stock ERPNext** - name, company, contact details, source. It carries no CGM shipment fields.
+
+Shipment intake starts at **Opportunity**, not here: the shipment type, transport document, cargo and client documents are all captured there. A Lead is only the enquiry that comes before it.
+
+Qualify the Lead in the normal way, then use **Create > Opportunity** to carry the contact across and begin intake.
+
+---
+
+## Opportunity
 
 ### Required for Project creation
 
@@ -84,45 +89,66 @@ Preshipment containers sync from B/L when linked.
 
 ### Key sections
 
-- **Client documents** (`custom_clients_documents`)
-- Transport refs: B/L, AWB, containers, vessel, clearance station
+- **Client documents** (`custom_clients_documents`) - Shipment Document child table
+- Transport references: B/L, AWB, container type/qty, vessel, clearance station
 - Consignee, batch, CGM ref fields
-- **Shipment Type** → template + tracker mode ([Shipment Modes](shipment-modes.md))
 
-Verified documents are stamped when Opportunity reaches approved state.
+### On approval
 
-## 5. How to — Create Project
+Verified documents are stamped when Opportunity reaches approved state (hooks on save/submit).
+
+---
+
+## Creating the Project
 
 From an approved Opportunity:
 
-1. Use **Create Project** / Start Shipment.
-2. Project receives `custom_source_opportunity`, `custom_cgm_ref_no`, `custom_shipment_status` = Draft, and carried documents.
-3. Tasks are created from the Shipment Type’s **CGM Task Template** (25 for Sea Import, other counts for other modes).
+1. Use the **Create Project** action (or equivalent dashboard link).
+2. Project receives:
+   - `custom_source_opportunity`
+   - `custom_cgm_ref_no` (LP naming: `{qty}X{size}-{batch}/{seq}`)
+   - `custom_shipment_status` = Draft
+   - Shipment documents carried from Opportunity
+3. If Shipment Type uses sea-import workflow → **25 clearance tasks** are created automatically.
 
-## 6. Features — Intake document guard
+---
+
+## Intake document guard
 
 Before Project can move to **Documents Received**:
 
-- **CI** (Commercial Invoice) — verified
-- **PKL** (Packing List) — verified
+- **CI** (Commercial Invoice) - verified on Project shipment documents
+- **PKL** (Packing List) - verified on Project shipment documents
 
-(`INTAKE_DOCUMENT_CODES`)
+These are mandatory intake codes (`INTAKE_DOCUMENT_CODES`).
 
-## 7. Features — Bill of Lading
+---
+
+## Bill of Lading
 
 - Unique `bl_number`
-- FCL: container rows (from Booking size×qty when applicable)
-- LCL: packages; no container table
+- Container child table (FCL): when created from a Booking, rows are auto-generated from
+  requested size×qty - user only enters container number and seal
+- LCL: packages/package type prefilled; no container table
 - Links: `linked_opportunity`, optional `booking_confirmation`
-- On submit: syncs into Opportunity (and Project if present)
-- Feeds **Container Tracker** on Project
+- On submit: syncs shipping/cargo/containers into Opportunity (and Project if already created)
+- Container rows feed **Container Tracker** on Project
 
-Customer **KRA PIN** attachment on Customer syncs to document type `KRA_PIN`.
+---
 
-## 8. Related Topics
+## Customer master
 
-- [Shipment Modes](shipment-modes.md)
-- [Getting Started](process-overview.md)
+On **Customer**, attach **KRA PIN** file → syncs to document type `KRA_PIN` for clearance.
+
+---
+
+## Opportunity dashboard
+
+Opportunity form shows linked B/L, AWB, containers, and preshipment status (custom dashboard in `shipment.py`).
+
+---
+
+## Related guides
+
 - [Operations](operations.md)
 - [Commercial](commercial.md)
-- [Customer & Transporter Portal](portals.md)

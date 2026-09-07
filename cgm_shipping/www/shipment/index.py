@@ -24,8 +24,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	container_timeline,
 	customer_for_user,
 	get_containers_for_shipment,
-	get_customer_conversation,
 	get_customer_feedback_context,
+	shipment_conversation_summaries,
+	shipment_conversation_thread,
 	get_shipment_documents,
 	get_shipment_for_customer,
 	get_shipment_permits,
@@ -129,10 +130,17 @@ def _build_context(context, project):
 		)
 		context.containers = []
 
-	# Two-way conversation: the customer's messages plus the updates CGM
-	# published to them on this shipment.
-	context.conversation = get_customer_conversation(project)
-	context.conversation_json = frappe.as_json(context.conversation)
-	context.unread_count = sum(1 for m in context.conversation if m.get("unread"))
+	# A shipment collects several conversations. The Messages tab lists them;
+	# `?thread=` opens one, the same shape as /my-messages.
+	# Container conversations live on the container's own page; this tab is the
+	# shipment's own.
+	context.conversations = shipment_conversation_summaries(project, shipment_only=True)
+	context.unread_count = sum(c["unread_count"] for c in context.conversations)
+
+	requested = (frappe.form_dict.get("thread") or "").strip()
+	open_thread = shipment_conversation_thread(project, requested) if requested else []
+	context.open_thread = requested if open_thread else ""
+	context.open_thread_subject = open_thread[0]["subject"] if open_thread else ""
+	context.open_thread_json = frappe.as_json(open_thread)
 	context.feedback = get_customer_feedback_context(project)
 	context.feedback_json = frappe.as_json(context.feedback)

@@ -27,6 +27,19 @@ frappe.ui.form.on("Employee Advance", {
 		});
 	},
 
+	// A per diem advance is priced from the employee's job group, not typed in. The
+	// server re-derives this on validate; this keeps the form in step.
+	employee(frm) {
+		frm._per_diem_employee = null;
+		if (flt(frm.doc.custom_per_diem_days)) {
+			cgm_price_per_diem_advance(frm);
+		}
+	},
+
+	custom_per_diem_days(frm) {
+		cgm_price_per_diem_advance(frm);
+	},
+
 	custom_material_request(frm) {
 		if (!frm.doc.custom_material_request) {
 			return;
@@ -76,3 +89,30 @@ frappe.ui.form.on("Employee Advance", {
 		});
 	},
 });
+
+function cgm_price_per_diem_advance(frm) {
+	const days = flt(frm.doc.custom_per_diem_days);
+	if (!days) {
+		frm.set_value("custom_per_diem_rate", 0);
+		return;
+	}
+	if (!frm.doc.employee) {
+		return;
+	}
+	frappe.call({
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.get_per_diem_details",
+		args: { employee: frm.doc.employee },
+		callback(r) {
+			const rate = (r.message && flt(r.message.per_diem_rate)) || 0;
+			if (!rate) {
+				frappe.show_alert({
+					message: __("No per diem rate is set for this employee's job group. Ask HR."),
+					indicator: "orange",
+				});
+				return;
+			}
+			frm.set_value("custom_per_diem_rate", rate);
+			frm.set_value("advance_amount", days * rate);
+		},
+	});
+}

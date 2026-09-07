@@ -1329,6 +1329,82 @@ def require_container(container_tracker: str, customer: str) -> dict:
 	return container
 
 
+def shipment_conversation_summaries(
+	project: str, container_tracker: str | None = None, shipment_only: bool = False
+) -> list[dict]:
+	"""One row per conversation on a shipment.
+
+	A shipment collects several separate exchanges over its life. Listing them
+	as one thread buried a new message under whichever topic was last, so they
+	are grouped the same way the general queries are.
+
+	`shipment_only` drops the conversations that belong to a particular
+	container - those are read and answered on that container's own page, and
+	repeating them here made the shipment tab a dump of everything.
+	"""
+	messages = get_customer_conversation(project, container_tracker=container_tracker)
+	if not messages:
+		return []
+
+	grouped: dict[str, list[dict]] = {}
+	for message in messages:
+		grouped.setdefault(message.get("parent_update") or message["name"], []).append(message)
+
+	if shipment_only:
+		grouped = {
+			root: thread
+			for root, thread in grouped.items()
+			if not sorted(thread, key=lambda m: m.get("posted_on") or "")[0].get("container_tracker")
+		}
+
+	summaries = []
+	for root_name, thread in grouped.items():
+		thread.sort(key=lambda m: m.get("posted_on") or "")
+		first, last = thread[0], thread[-1]
+		summaries.append(
+			{
+				"name": root_name,
+				"subject": first.get("subject") or _("Message"),
+				"from_cgm": bool(first.get("from_cgm")),
+				"container_number": first.get("container_number") or "",
+				"message_count": len(thread),
+				"unread_count": sum(1 for m in thread if m.get("unread")),
+				"status": first.get("response_status") or "",
+				"awaiting_response": bool(first.get("awaiting_response")),
+				"last_posted_on": last.get("posted_on") or "",
+				"last_preview": (last.get("message") or "").strip()[:160],
+				"last_from": _("CGM Worldwide Shipping")
+				if last.get("from_cgm")
+				else (last.get("posted_by_name") or _("You")),
+				"url": "/shipment?name="
+				+ quote(project, safe="")
+				+ "&thread="
+				+ quote(root_name, safe="")
+				+ "#messages",
+			}
+		)
+	summaries.sort(key=lambda x: x["last_posted_on"], reverse=True)
+	return summaries
+
+
+def shipment_conversation_thread(
+	project: str, root: str, container_tracker: str | None = None
+) -> list[dict]:
+	"""Messages of one conversation on a shipment, oldest first."""
+	if not root:
+		return []
+	messages = get_customer_conversation(project, container_tracker=container_tracker)
+	return [m for m in messages if (m.get("parent_update") or m["name"]) == root]
+
+
+@frappe.whitelist()
+def get_shipment_conversations(project: str) -> list[dict]:
+	"""Customer portal: every conversation on a shipment."""
+	customer = require_customer()
+	require_shipment(project, customer)
+	return shipment_conversation_summaries(project, shipment_only=True)
+
+
 @frappe.whitelist()
 def post_shipment_update(
 	project: str,
@@ -1379,10 +1455,12 @@ def post_container_update(
 
 
 @frappe.whitelist()
-def get_shipment_updates_portal(project: str) -> list[dict]:
-	"""Customer portal: the shipment conversation - their posts plus CGM's."""
+def get_shipment_updates_portal(project: str, thread: str | None = None) -> list[dict]:
+	"""Customer portal: one conversation, or everything on the shipment."""
 	customer = require_customer()
 	require_shipment(project, customer)
+	if thread:
+		return shipment_conversation_thread(project, thread)
 	return get_customer_conversation(project)
 
 

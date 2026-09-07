@@ -1,26 +1,10 @@
+# CGM Worldwide Shipping - Feature Documentation
+
+ERPNext app (`cgm_shipping`) for end-to-end freight forwarding and customs clearance: CRM intake → sea-import clearance (25-task plan) → container lifecycle → quotations/invoicing → customer & transporter portals.
+
 ---
-title: Full documentation
-metatags:
-  description: Complete CGM Shipping reference — workspace, DocTypes, eight shipment templates, Sea Import flow, funding, guards, roles, notifications, install, and developer paths.
----
 
-# Full documentation
-
-**End-to-end freight forwarding and customs clearance on ERPNext (`cgm_shipping`): CRM intake → multi-mode clearance → containers → quotations/invoicing → funding → portals.**
-
-This page is the comprehensive reference. Role-based day-to-day steps live in the guides linked from the [Documentation Hub](README.md). Every Shipment Type’s task list is in [Shipment Modes](guides/shipment-modes.md). Funding via Material Request is in [Funding Request](guides/funding.md).
-
-To access the Desk workspace, go to:
-
-> Home > CGM Shipping
-
-## 1. Prerequisites
-
-- App installed and migrated (`cgm_shipping`)
-- Wiki app optional for `/cgm-shipping/` publishing
-- Masters and **CGM Shipping Settings** reviewed
-
-## 2. Features — Where things live
+## 1. Where things live
 
 ### Desk workspace
 
@@ -33,13 +17,22 @@ To access the Desk workspace, go to:
 | **Clearance & Customs** | Customs Entry · IDF UCR Record · Clearance Station · Port Charges KPA Invoice · Shipping Line Charges |
 | **Transport & Containers** | Container Tracker · **Container Ops Board** · Seal Record · Interchange Receipt · Report: Container Tracking Detail |
 | **Masters & Setup** | Container Type · Shipment Type · Mode of Transport · Document Type · Permit Type · CFS Location · **CGM Shipping Settings** |
-| **Pages** | Container Ops Board (`container-ops-board`) · Operations Overview (`operations-overview`) |
 
-Standard ERPNext doctypes used heavily: **Lead**, **Opportunity**, **Customer**, **Project**, **Task**, **Quotation**, **Sales Order**, **Sales Invoice**, **Supplier**, **Item**, **Material Request**, **Journal Entry**, **Payment Entry**, **Leave Application**.
+Standard ERPNext doctypes used heavily: **Lead**, **Opportunity**, **Customer**, **Project**, **Task**, **Quotation**, **Sales Order**, **Sales Invoice**, **Supplier**, **Item**, **Journal Entry**, **Payment Entry**.
 
-### Reports (selection)
+### Custom page
 
-Container Tracking Detail / Report / Return Tracker · Funding Request Report · Material Request Funding · Project Expense Summary · PAYE / NSSF / SHIF Monthly Return · DTB Salary Payment Schedule
+| Page | Route | Purpose |
+|------|-------|---------|
+| Container Ops Board | `container-ops-board` | Live container KPIs, filters (client, B/L, batch, station), empty-return tracker |
+
+Backend: `customizations/container_ops_board.py` · Frontend: `page/container_ops_board/container_ops_board.js`
+
+### Reports
+
+- Container Tracking Detail
+- Container Tracking Report
+- Container Return Tracker
 
 ### Portals (website)
 
@@ -48,9 +41,9 @@ Container Tracking Detail / Report / Return Tracker · Funding Request Report ·
 | `/portal` | Customer | Shipment home |
 | `/my-shipments`, `/shipment`, `/documents` | Customer | Progress, documents |
 | `/my-quotations`, `/my-invoices` | Customer | Commercial docs |
-| `/my-messages` | Customer | Messaging |
-| `/container` | Customer | Container timeline |
-| `/transporter`, `/transporter/allocation`, `/transporter/invoices`, `/transporter/profile` | Transporter | Jobs and invoices |
+| `/transporter`, `/transporter/allocation` | Transporter | Container allocations |
+
+Configured in `hooks.py` (`role_home_page`, `on_session_creation`, `before_request`).
 
 ### Print formats
 
@@ -60,111 +53,121 @@ Container Tracking Detail / Report / Return Tracker · Funding Request Report ·
 | CGM Quotation Local Charges | Quotation | Local charges only |
 | CGM Quotation Shipping | Quotation | Legacy combined layout |
 | CGM Sales Invoice Default | Sales Invoice | Branded invoice + QR |
-| CGM Sales Invoice | Sales Invoice | Alternate |
-| CGM Credit Note | Sales Invoice | Credit notes |
-| CGM Purchase Invoice Transporter | Purchase Invoice | Transporter share |
 
-PDF engine: **Chrome** (Frappe 16).
+All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Chrome** (Frappe 16).
 
-## 3. Features — Eight shipment templates
+---
 
-**Shipment Type** on Opportunity selects **CGM Task Template** + **Container Tracker Mode**. Full subject tables: [Shipment Modes](guides/shipment-modes.md).
-
-| Shipment Type | CGM Task Template | Tracker Mode | Tasks |
-|---------------|-------------------|--------------|------:|
-| Sea Import | Sea Import Workflow | Mombasa Port | 25 |
-| Sea Export | Sea Export Workflow | Export | 14 |
-| Air Import | Air Import Workflow | ICD Nairobi | 16 |
-| Air Export | Air Export Workflow | Export | 11 |
-| Sea Transit Import | Sea Transit Import Workflow | Transit Import | 15 |
-| Sea Transit Export | Sea Transit Export Workflow | Transit Export | 10 |
-| Road Transit Outbound | Road Transit Outbound Workflow | Transit Export | 10 |
-| Road Transit Inbound | Road Transit Inbound Workflow | Transit Import | 13 |
-
-Seed source: `customizations/task_template_seed_data.py` · Registry: `task_template_registry.py`.
-
-**Export Shipment** DocType holds export/transit fields (COC/EAC, C2, exit note, ECMD, warehouses) linked to Project.
-
-## 4. Features — DocTypes & data
+## 2. DocTypes & data
 
 ### Configuration (single / masters)
 
 | DocType | Purpose |
 |---------|---------|
-| **CGM Shipping Settings** | Gates, role maps, funding default expense account, cost category map, notifications, sea task requirements |
-| **CGM Task Template** | Editable task plans (seed creates missing defaults; site edits preserved) |
-| **Shipment Type** | Links template + tracker mode + required docs |
+| **CGM Shipping Settings** | Single doc: 25-step sea task template, task completion rules, workflow gates, role mappings, default customs taxes, finance cost category map |
+| **Shipment Type** | Mode, sea-import flag, B/L/AWB rules, CGM ref prefix |
 | **Mode of Transport** | Transport mode master |
 | **Container Type** / **Container Size** | Container classification |
-| **Document Type** | Codes (CI, PKL, UCR, …) |
-| **Permit Type** | Client permits → default Item |
-| **Customs Tax Type** | VAT, IDF, RDL, … |
-| **Clearance Station** / **CFS Location** / **Clearance Port** | CFS / port masters |
-| **Material Request Purpose** | Funding classification support |
-| **License Settings** | Company licence reminder schedule |
+| **Document Type** | Document codes (CI, PKL, UCR, etc.) with required stage |
+| **Permit Type** | Permit types linked to default ERPNext Item |
+| **Customs Tax Type** | VAT, IDF, RDL, etc. (seeded) |
+| **Clearance Station** / **CFS Location** / **Clearance Port** | CFS / port masters (stations seeded from KRA list) |
+| **Charge Item** / **Cost Type** | Charge descriptions for quotations |
 
 ### Transport & shipment records
 
 | DocType | Purpose |
 |---------|---------|
-| **Bill of Lading** | Sea transport; containers; deposits |
-| **Air Waybill** | Air transport |
-| **Booking Confirmation** | Planned sea booking |
-| **Container Tracker** | Per-container lifecycle |
-| **Container Allocation** | Transporter jobs |
-| **Export Shipment** | Export/transit field shell |
-| **Shipment tracker** | General tracking |
-| **Daily Status Update** | Ops RAG (`DSU-{date}-{#####}`) |
-| **Seal Record** / **Interchange Receipt** | Seals / empty return |
-| **Funding Request** | Batch MR funding |
-| **Shipment Update** / **Portal Feedback** | Portal messaging / feedback |
-| **Additional Salary Tool** | HR payroll helper |
-| **License Register** (+ types, contacts, reminder log) | Company licences |
+| **Bill of Lading** | Submittable sea doc; unique `bl_number`; container child table; links Opportunity |
+| **Air Waybill** | Submittable air transport doc |
+| **Container** | Child: container rows on B/L |
+| **Container Tracker** | Per-container lifecycle (dates, demurrage/detention, transporter, empty return); name = `container_number` |
+| **Container Allocation** | Submittable: assign containers to transporter for a project/B/L |
+| **Export Shipment** | Export-side shipment record |
+| **Shipment tracker** | General shipment tracking |
+| **Daily Status Update** | Submittable ops RAG status (`DSU-{date}-{#####}`) |
+| **Seal Record** | Seal tracking (`seal_number`) |
+| **Interchange Receipt** | Empty-container interchange confirmation |
 
 ### Customs & clearance
 
 | DocType | Purpose |
 |---------|---------|
-| **Customs Entry** | Entry + taxes |
-| **IDF UCR Record** | UCR/IDF + finance links |
-| **Port Charges KPA Invoice** | KPA charges |
-| **Shipping Line Charges** | Line charges |
+| **Customs Entry** | Submittable entry with taxes; unique `entry_number` |
+| **IDF UCR Record** | UCR/IDF certificate + invoice/receipt workflow |
+| **Port Charges KPA Invoice** | KPA port charges |
+| **Shipping Line Charges** | Shipping-line charge record |
 
-### Child tables (selection)
+### Child tables (on Project / Task / Quotation / Supplier)
 
-Shipment Document · Permit Register · Task Finance Line · Task Container Update · Import Cost Component · Customs Tax Component · Quotation Item Pricing · Shipping Line Free Days / Demurrage / Detention tiers
+| DocType | Parent | Purpose |
+|---------|--------|---------|
+| **Shipment Document** | Project, Task, Opportunity | Document type, initial/final attachments, version status, verify metadata |
+| **Permit Register** | Project, Task | Permit invoices, receipts, finance links (PI, JE, PE), verification |
+| **Task Finance Line** | Task | Finance payment line items (UCR, permits, entry, shipping line, KPA) |
+| **Task Container Update** | Task | Per-container updates on transport tasks (11, 18, 20–26) |
+| **Import Cost Component** | Quotation | Foreign-currency valuation lines |
+| **Customs Tax Component** | Quotation | Estimated customs tax lines |
+| **Quotation Item Pricing** | Quotation | Item-based pricing breakdown |
+| **Item Pricing Rule** | Item | Pricing by shipment type / container / qty |
+| **Shipping Line Free Days Rule** | Supplier | Free days by destination |
+| **Shipping Line Demurrage Tier** | Supplier | Demurrage rate tiers |
+| **Shipping Line Detention Tier** | Supplier | Detention rate tiers |
+
+### Settings child tables (on CGM Shipping Settings)
+
+| DocType | Purpose |
+|---------|---------|
+| **Sea Import Task Template Item** | Subject + department per task seq (1–25) |
+| **Sea Clearance Task Requirement Item** | Completion rules per seq (documents, finance, permits, UCR, etc.) |
+| **Sea Workflow Task Gate Item** | Maps `custom_shipment_status` → minimum completed task seq |
+| **Workflow Stage Requirement Item** | Document verification stages per workflow state |
+| **Finance Cost Category Map** | Maps payment items to project cost buckets |
+| **Default Customs Tax** | Default tax rates on Settings |
+| **CGM Role Item** | Role groupings (Finance, Operations, Declaration) |
 
 ### Key custom fields on standard DocTypes
 
 | DocType | Notable fields |
 |---------|----------------|
-| **Opportunity** | `workflow_state`, client documents, B/L/AWB, Shipment Type |
-| **Project** | `custom_shipment_status`, `custom_cgm_ref_no`, documents, permits, finance cost total, ETA/ATA |
-| **Task** | `custom_task_flow_key`, `custom_sequence_no`, documents/permits/finance/container children |
-| **Quotation** / **Sales Invoice** | Valuation/taxes/pricing; approval `workflow_state` |
-| **Material Request** | Funding type, Project, Employee (ops expense), link to Funding Request |
-| **Journal Entry** | `custom_cgm_source_task`, funding request link where used |
-| **Customer** | KRA PIN attachment → `KRA_PIN` |
-| **Supplier** | Shipping line charge tables; transporter portal flag |
+| **Opportunity** | `workflow_state`, `custom_clients_documents`, B/L/AWB, containers, clearance station, consignee |
+| **Project** | `custom_shipment_status`, `custom_cgm_ref_no`, `custom_source_opportunity`, shipment documents, permit register, container tracker, finance cost total, ETA/ATA |
+| **Task** | `custom_task_flow_key` (`SEA_IMPORT_E2E`), `custom_sequence_no`, task documents/permits/finance lines, container updates |
+| **Quotation** | Import cost component, customs taxes, item pricing, shipment refs, `workflow_state` |
+| **Sales Invoice** | CGM/client refs, IDF, country of origin, `workflow_state`, finance approval stamps |
+| **Customer** | `custom_kra_pin_attachment` → synced to Document Type `KRA_PIN` |
+| **Supplier** | Shipping line free days / demurrage / detention child tables |
+| **Journal Entry** | `custom_cgm_source_task` (finance cost ledger sync) |
 
-## 5. How to — Core flows
+Custom field JSON: `cgm_worldwide_shipping/custom/*.json` · Runtime fields: `customizations/project_layout.py`
 
-### A. CRM intake → Project
+---
+
+## 3. The flow
+
+### A. CRM intake → Opportunity → Project
 
 ```
-Lead / Opportunity (Shipment Type + documents + transport refs)
-  → workflow_state = Approved + Customer party
-    → Project + CGM Task Template tasks
+Lead (CI + PKL attachments, B/L, containers)
+  → Opportunity (client documents, transport refs, workflow approval)
+    → [workflow_state = Approved] + Customer party
+      → Project (LP reference naming, shipment status workflow)
+        → [Sea import] 25-task clearance plan auto-created
 ```
 
-Guards: one Project per Opportunity; CI + PKL before **Documents Received**. Details: [CRM & Intake](guides/crm-intake.md).
+**Key logic:** `customizations/shipment.py`, `customizations/project.py`, `customizations/documents.py`
 
-### B. Sea Import clearance (25 tasks)
+**Guards:**
+- Opportunity must be **Approved** and party must be **Customer** before Project creation
+- One Project per Opportunity
+- **CI** and **PKL** documents required before Project reaches **Documents Received**
 
-Applies when Shipment Type uses **Sea Import Workflow**. Deep guides: [Operations](guides/operations.md), [Declaration](guides/declaration-customs.md), [Finance](guides/finance.md), [Transport](guides/transport-containers.md).
+### B. Sea import clearance (25 tasks)
+
+Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded in **CGM Shipping Settings** and created on the Project by `customizations/sea_clearance.py`.
 
 | Seq | Task | Department |
-|----:|------|------------|
+|-----|------|------------|
 | 1 | Receive shipment documents from Client | Operations |
 | 2 | Share documents with Declarants | Operations |
 | 3 | Create UCR (IDF) | Declaration |
@@ -174,10 +177,10 @@ Applies when Shipment Type uses **Sea Import Workflow**. Deep guides: [Operation
 | 7 | Client conducts inspection | Operations |
 | 8 | Receive Final Clearance Documents (B/L, Invoice, PKL, COC) | Documentation |
 | 9 | Request Manifest and Local Import Charges | Documentation |
-| 10 | Attach Shipping Line Invoice | Documentation |
-| 11 | Finance pays Shipping Line Charges | Finance |
 | 12 | Create Entry | Declaration |
-| 13 | Finance Pays Entry Slip | Finance |
+| 11 | Finance Pays Entry Slip | Finance |
+| 12 | Attach Shipping Line Invoice | Documentation |
+| 13 | Finance pays Shipping Line Charges | Finance |
 | 14 | Lodge Delivery Order | Operations |
 | 15 | Prepare Post-Clearance Permits | Declaration |
 | 16 | Finance pays for Post-Clearance Permits | Finance |
@@ -195,66 +198,115 @@ Applies when Shipment Type uses **Sea Import Workflow**. Deep guides: [Operation
 
 Draft → Documents Received → UCR Applied → UCR Paid → Pre-clearance → Client Inspection → In Transit → Final Docs Received → Manifest Requested → Entry Lodged → Entry Paid → Line Paid & DO Lodged → Post-clearance → Field Clearance → KPA Paid → In Delivery → Containers Returned → **Completed**
 
-**Finance pairs:** 3→4 (UCR), 5→6 (Permit), 10→11 (Shipping Line), 12→13 (ENTRY_SLIP), 15→16 (Permit), 18→19 (KPA).
+Each state advance is gated by minimum completed task seq (from Settings) and verified documents where configured.
 
-### C. Funding Request (ops spend)
+**Finance subflows** (Ops attaches invoice → Finance pays → receipt verified → task completes):
+
+| Pair | Tasks | Kind |
+|------|-------|------|
+| UCR | 3 → 4 | UCR |
+| Pre-clearance permits | 5 → 6 | Permit |
+| Entry slip | 10 → 11 | Entry |
+| Shipping line | 12 → 13 | Shipping Line |
+| Post-clearance permits | 15 → 16 | Permit |
+| KPA invoice | 18 → 19 | KPA |
+
+Modules: `workflow.py`, `application_finance.py`, `workflow_application_finance.py`
+
+**Auto-complete:** Tasks 1–2 complete automatically when documents are in place.
+
+### C. Quotation → Sales Order / Sales Invoice
 
 ```
-Material Request (Operational Expense | Purchase | Subcontracting)
-  → Funding Request (approve amounts)
-    → Operational Expense → Journal Entry
-    → Purchase / Subcontracting → Purchase Order (only after funding approved)
+Quotation (import valuation + customs taxes + item pricing + local charges)
+  → Submit for Finance Approval
+    → Approved / Rejected / Shared with Client
+      → Sales Order or Sales Invoice (custom fields mapped)
 ```
 
-Separate from clearance Task payments. Settings: **Default Operational Expense Account**. Details: [Funding Request](guides/funding.md). Two-path overview: [Finance](guides/finance.md).
+**Workflow:** `CGM Quotation Approval`
 
-### D. Quotation → Sales Invoice
+| State | Meaning |
+|-------|---------|
+| Draft | Editable |
+| Pending Finance Approval | Awaiting finance |
+| Approved | Ready for billing |
+| Rejected | Returned to draft |
+| Shared with Client | Client-facing; also billable |
 
-**CGM Quotation Approval** → bill only from **Approved** or **Shared with Client**.  
-**CGM Sales Invoice Approval** maker-checker before submit.  
-Details: [Commercial](guides/commercial.md), [Finance](guides/finance.md).
+**Billing guard:** Sales Invoice / Sales Order only from quotations in **Approved** or **Shared with Client**.
+
+**Logic:** `customizations/quotation.py` · Overrides: `make_sales_order`, `make_sales_invoice` in `hooks.py`
+
+### D. Sales Invoice finance approval
+
+**Workflow:** `CGM Sales Invoice Approval`
+
+Draft → Pending Finance Approval → Approved / Rejected
+
+- **Submit** is blocked until `workflow_state = Approved`
+- Finance team is notified on pending approval (`customizations/sales_invoice.py`)
 
 ### E. Container lifecycle
 
-B/L → Container Tracker → Task container updates → daily demurrage/detention refresh → Container Ops Board. Transporter portal: `/transporter/allocation`.
+```
+B/L containers → Container Tracker (per container_number, per project)
+  → Task container updates (gate-out, delivery, offload, empty return)
+    → Daily scheduler refreshes demurrage/detention metrics
+      → Container Ops Board (operations dashboard)
+```
+
+**Container statuses** (derived from dates): Pending Arrival → Vessel Berthed → Discharged / At Port → Released / In Transit → At Warehouse → Cargo Offloaded → Empty Returned → Interchange Received (or Return Overdue).
+
+**Transporter portal:** Container Allocation visible at `/transporter/allocation`.
 
 ### F. Finance cost ledger
 
-JE with `custom_cgm_source_task` updates Project `custom_finance_cost_total` (system-managed).
+Journal Entry insert/update/submit/cancel syncs costs to **Project** `custom_finance_cost_total` summary.
 
-### G. Portals
+- Source task linked via `custom_cgm_source_task`
+- Project finance ledger is **system-managed** (manual edits blocked)
 
-Customers: `/portal`. Transporters: `/transporter`. Details: [Portals](guides/portals.md).
+Module: `customizations/finance_cost_ledger.py`
 
-### H. Leave / Payroll / Licences
+### G. Customer portal
 
-- [Leave](guides/leave.md) — employee applications and approval chains  
-- [Payroll & HR](guides/payroll-hr.md) — Additional Salary Tool; PAYE/NSSF/SHIF; DTB  
-- [Licence & Permit Register](guides/licences.md) — company certificates (≠ shipment Permit Register)
+Website users with role **Customer** land on `/portal` after login. They can view shipment progress, documents, quotations, and invoices. Timezone localization via `portal_localize_time.js`.
 
-## 6. Features — Guards
+---
+
+## 4. Guards in place
 
 ### Project
 
 | Guard | Enforces |
 |-------|----------|
-| Document gate | Verified docs before some status advances |
-| Sea workflow task gates | Min completed task seq per status |
-| Intake documents | CI + PKL before Documents Received |
-| Project closure | All sea tasks complete before Completed |
-| Finance cost ledger | Manual total edits blocked |
+| Document gate on workflow change | Verified documents before advancing `custom_shipment_status` |
+| Sea workflow task gates | Min completed task seq per workflow state |
+| Intake documents | CI + PKL before **Documents Received** |
+| Permit rules | Post-clearance permit rules before **Entry Lodged** |
+| Project closure | All sea tasks complete before **Completed** |
+| Finance cost ledger | Manual edits to cost summary blocked |
 
-### Task / buying / commercial
+### Task
 
 | Guard | Enforces |
 |-------|----------|
-| Completion requirements | Docs, finance, permits per template/Settings |
-| Department permissions | Tasks scoped by department |
-| Funding before PO | Purchase/Subcontracting MR need approved Funding Request |
-| Shipping Line supplier on PO | Blocked on funded purchase path |
-| Quotation / SI workflows | Finance approval before billing / submit |
+| Completion requirements | Document codes, finance payments, permit rows per seq (from Settings) |
+| Settings configured | Throws if completion rules table is empty |
+| Department permissions | Users see tasks for their department only |
+| Payment Entry submit | Can auto-complete linked finance tasks |
 
-### Unique / naming
+### Quotation / Sales Invoice
+
+| Guard | Enforces |
+|-------|----------|
+| Customs tax calculation | Validated on save |
+| Quotation workflow | Finance approval before sharing / billing |
+| Sales Invoice submit | Only when workflow **Approved** |
+| Item pricing rules | No overlapping rules on same Item |
+
+### Unique / naming constraints
 
 | DocType | Constraint |
 |---------|------------|
@@ -262,52 +314,93 @@ Customers: `/portal`. Transporters: `/transporter`. Details: [Portals](guides/po
 | Container Tracker | Name = `container_number` |
 | Customs Entry | `entry_number` unique |
 | Seal Record | `seal_number` unique |
+| Shipment Type | `shipment_type_name` unique |
 | Document Type | `code` unique |
 
-## 7. Features — Roles & notifications
+### Payment Entry
 
-Departments on templates: Operations · Declaration · Finance · Documentation · Field Operations · Transport. Role groups in **CGM Shipping Settings**.
+- Project link required when shipment-linked (`overrides/payment_entry.py`)
 
-Notifications (examples): UCR/Entry/Shipping Line/Permit/KPA invoice & receipt events · Daily Status RAG · Leave chain · Licence expiry · Operational Update.
+---
 
-## 8. How to — Installation & patches
+## 5. Roles & departments
 
-On `bench migrate`, patches seed templates/modes, workflows, schema, print formats, and wiki sync.
+Task assignment follows **department** on each step of the sea template:
 
-`install.after_migrate` re-applies critical schema and portal setup; seeds CGM Task Templates when missing.
+- Operations · Declaration · Finance · Documentation · Field Operations · Transport
 
-## 9. Features — Developer map
+Role groupings are configurable in **CGM Shipping Settings** (`CGM Role Item` child table).
+
+Finance actions (approve quotation, approve sales invoice, pay UCR/permits/entry/shipping line/KPA) expect users with Finance roles.
+
+---
+
+## 6. Notifications
+
+ERPNext Notifications (seeded / referenced in `constants.py`) alert teams at key handoffs, e.g.:
+
+- UCR invoice to Finance  
+- Entry invoice to Finance  
+- Shipping line invoice to Finance  
+- Permit invoices to Finance  
+- KPA invoice to Finance  
+- Daily status RAG alerts  
+
+Dispatcher: `customizations/notifications.py`
+
+---
+
+## 7. Installation & patches
+
+On `bench migrate`, patches in `patches.txt` run idempotently:
+
+| Category | Examples |
+|----------|----------|
+| **Seed data** | Sea task template, task requirements, workflow gates, clearance stations, CFS locations, customs tax types |
+| **Workflows** | Quotation approval, Sales Invoice approval, entry/shipping-line/post-clearance/KPA finance subflows |
+| **Schema** | Supplier shipping-line tables, task container updates, quotation pricing fields, print formats |
+| **Workspace** | Container Ops Board link |
+
+`install.after_migrate` re-applies critical schema and transporter portal setup.
+
+---
+
+## 8. Developer reference
 
 | Area | Path |
 |------|------|
 | Hooks & events | `cgm_shipping/hooks.py` |
-| Task templates | `customizations/task_template_registry.py`, `task_template_seed_data.py` |
-| Sea / project / tasks | `sea_clearance.py`, `project.py`, `task.py` |
-| Funding | `customizations/funding.py`, `funding_workflow.py` |
-| Finance subflows | `workflow.py`, `application_finance.py` |
-| Quotation / SI | `quotation.py`, `sales_invoice.py` |
-| Containers / portals | `container_tracker.py`, `portal.py`, `website.py` |
-| Docs → Wiki | `docs/` + `docs/.wiki.json` |
-| Client scripts | `public/js/` (one DocType per file) |
+| Shared constants | `customizations/constants.py` |
+| Sea seed defaults | `customizations/sea_settings_seed_data.py` |
+| Project / clearance | `customizations/project.py`, `sea_clearance.py` |
+| Task engine | `customizations/task.py` |
+| Finance subflows | `customizations/workflow.py`, `application_finance.py` |
+| Quotation / billing | `customizations/quotation.py`, `sales_invoice.py` |
+| Container ops | `customizations/container_tracker.py`, `container_ops_board.py` |
+| Portals | `customizations/portal.py`, `transporter_portal.py`, `website.py` |
+| Client scripts | `cgm_shipping/public/js/` |
+| Patches | `cgm_shipping/patches/` |
 
-Class overrides include Task → `CGMTask`, Quotation → `CGMQuotation`, Sales Order → `CGMSalesOrder`.
+### Class overrides
 
-### Scheduled jobs (selection)
+- `Task` → `CGMTask`
+- `Quotation` → `CGMQuotation`
+- `Sales Order` → `CGMSalesOrder`
 
-- Daily: open container metrics; licence expiry reminders; related charge/deposit jobs as configured in hooks
+### Scheduled jobs
 
-## 10. How to — Quick start (new site)
+- **Daily:** `container_tracker.refresh_open_container_metrics` - recalculates open container demurrage/detention
 
-1. Masters: Shipment Types (all eight) · Document Types · Permit Types · Stations · CGM Shipping Settings · Default Operational Expense Account.
-2. CRM: Opportunity → pick **Shipment Type** → approve → Create Project.
-3. Clearance: work template tasks; Sea Import finance pairs 3–4, 5–6, 10–11, 12–13, 15–16, 18–19.
-4. Funding: MR → Funding Request for non-clearance spend.
-5. Commercial: Quotation → approve → SI → approve → submit.
-6. Ops: Container Ops Board / Operations Overview; transporter allocations.
+---
 
-## 11. Related Topics
+## 9. Quick start (new site)
 
-- [Documentation Hub](README.md)
-- [Getting Started](guides/process-overview.md)
-- [Shipment Modes](guides/shipment-modes.md)
-- [Funding Request](guides/funding.md)
+1. **Masters:** Shipment Type (enable sea import workflow) · Document Types · Permit Types · Clearance Stations · CGM Shipping Settings (review task template & gates).
+2. **CRM:** Lead with CI/PKL → Opportunity → approve workflow → create Project.
+3. **Clearance:** Complete tasks in seq; finance subflows on tasks 3–4, 5–6, 10–11, 12–13, 15–16, 18–19.
+4. **Commercial:** Quotation → finance approve → Sales Invoice → finance approve → submit.
+5. **Operations:** Monitor containers on **Container Ops Board**; allocate transporters via Container Allocation.
+
+---
+
+*App: `cgm_shipping` v0.0.1 · Module: CGM Worldwide Shipping · Built on Frappe / ERPNext 16.*

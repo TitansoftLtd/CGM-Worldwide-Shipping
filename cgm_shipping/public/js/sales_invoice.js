@@ -235,7 +235,7 @@ function cgm_configure_sales_invoice_workflow_ui(frm) {
 		cgm_set_sales_invoice_workflow_alert(
 			frm,
 			__(
-				"This invoice is approved but not submitted yet. Save or use Actions → Approve again — it will submit and show as Unpaid for the customer."
+				"This invoice is approved but not submitted yet. Save or use Actions → Approve again - it will submit and show as Unpaid for the customer."
 			),
 			"danger"
 		);

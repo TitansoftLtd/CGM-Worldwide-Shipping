@@ -281,3 +281,30 @@
 .cgm-updates-ref { margin-left: auto; }
 .cgm-thread-ref { margin-left: auto; }
 .cgm-thread-when { margin-left: 0.5rem; }
+
+/* ── Shipment Updates tab (Project / Container Allocation forms) ────────── */
+
+.cgm-conv-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-bottom: 0.75rem;
+}
+.cgm-conv-summary {
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+.cgm-conv-actions {
+	display: flex;
+	gap: 0.4rem;
+	flex-wrap: wrap;
+}
+.cgm-conv-empty {
+	padding: var(--padding-md, 1rem);
+	border: 1px dashed var(--border-color);
+	border-radius: var(--border-radius, 6px);
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+}
