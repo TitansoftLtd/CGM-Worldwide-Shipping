@@ -4,6 +4,8 @@ For **Operations**, **Declaration** and **Transport** handling anything other th
 
 Most of this documentation describes **Sea Import**, because that is the bulk of the work and the only type with a full 23-step task plan. The types below run differently. Where a step is the same as sea import, this guide says so rather than repeating it.
 
+For the full task-plan tables across all eight modes, see [Shipment Modes](shipment-modes.md).
+
 | Type | Task template | Covered here |
 |------|---------------|--------------|
 | Sea Import | Sea Import Workflow | The rest of the documentation |

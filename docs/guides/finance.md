@@ -170,3 +170,5 @@ Tasks may expose **Create Journal Entry** actions when finance lines are ready. 
 - [Operations](operations.md)
 - [Declaration & Customs](declaration-customs.md)
 - [Commercial](commercial.md)
+- [Funding Request](funding.md)
+- [Shipment Modes](shipment-modes.md)
