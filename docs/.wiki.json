@@ -1,49 +1,24 @@
 {
 	"sidebar": [
+		{"Home": "README.md"},
+		{"Getting Started": "guides/process-overview.md"},
+		{"Full documentation": "full-documentation.md"},
 		{
-			"Home": "README.md"
-		},
-		{
-			"Full documentation": "full-documentation.md"
-		},
-		{
-			"Guides": [
-				{
-					"Operations": "guides/operations.md"
-				},
-				{
-					"Declaration & Customs": "guides/declaration-customs.md"
-				},
-				{
-					"Other Shipment Types": "guides/shipment-types.md"
-				},
-				{
-					"Finance": "guides/finance.md"
-				},
-				{
-					"Commercial": "guides/commercial.md"
-				},
-				{
-					"CRM & Intake": "guides/crm-intake.md"
-				},
-				{
-					"Transport & Containers": "guides/transport-containers.md"
-				},
-				{
-					"Customer & Transporter Portal": "guides/portals.md"
-				},
-				{
-					"Licence & Permit Register": "guides/licences.md"
-				},
-				{
-					"Job Groups & Per Diems": "guides/per-diems.md"
-				},
-				{
-					"Applying for Leave": "guides/leave.md"
-				},
-				{
-					"What CGM Adds to ERPNext": "guides/customizations.md"
-				}
+			"Processes": [
+				{"CRM & Intake": "guides/crm-intake.md"},
+				{"Shipment Modes": "guides/shipment-modes.md"},
+				{"Other Shipment Types": "guides/shipment-types.md"},
+				{"Operations": "guides/operations.md"},
+				{"Declaration & Customs": "guides/declaration-customs.md"},
+				{"Transport & Containers": "guides/transport-containers.md"},
+				{"Finance": "guides/finance.md"},
+				{"Funding Request": "guides/funding.md"},
+				{"Commercial": "guides/commercial.md"},
+				{"Customer & Transporter Portal": "guides/portals.md"},
+				{"Leave": "guides/leave.md"},
+				{"Payroll & HR": "guides/payroll-hr.md"},
+				{"Job Groups & Per Diems": "guides/per-diems.md"},
+				{"Licence & Permit Register": "guides/licences.md"}
 			]
 		}
 	]

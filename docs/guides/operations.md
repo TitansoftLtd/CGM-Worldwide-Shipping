@@ -265,3 +265,5 @@ Steps 3 to 9 are the part that takes unpredictable time: everything there waits 
 - [Finance](finance.md)
 - [Transport & Containers](transport-containers.md)
 - [CRM & Intake](crm-intake.md)
+- [Shipment Modes](shipment-modes.md)
+- [Other Shipment Types](shipment-types.md)
