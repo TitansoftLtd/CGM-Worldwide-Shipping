@@ -1,33 +1,51 @@
-# Transport & Containers Guide
-
-For **transport coordinators** and **operations** managing containers, demurrage, and transporter assignments.
-
+---
+title: Transport & Containers
+metatags:
+  description: Container Tracker lifecycle, Ops Board, allocations, demurrage, and Sea Import transport tasks 20–25 — other modes use different sequences.
 ---
 
-## Where to work
+# Transport & Containers
 
-| Item | Path in Desk |
-|------|----------------|
-| Container records | **Container Tracker** |
-| Live dashboard | **Container Ops Board** |
-| Transporter jobs | **Container Allocation** |
-| Empty interchange | **Interchange Receipt** |
-| Seal tracking | **Seal Record** |
-| Reports | Container Tracking Detail, Container Return Tracker |
+**Container Tracker, Ops Board, transporter allocations, and delivery / empty-return tasks.**
 
----
+Use this guide for sea-import transport execution and container charging. Other Shipment Types have fewer or different transport steps — same tools, different sequences.
 
-## Container lifecycle
+A typical scenario: After KPA is paid, you book trucks (task 20), gate out (21), monitor delivery (22), offload (23), return empties (24), and file interchange (25), updating each Container Tracker from the Task.
+
+To access Transport work, go to:
+
+> Home > CGM Shipping > Container Tracker
+
+Also use:
+
+> Home > CGM Shipping > Container Ops Board
+
+> Home > CGM Shipping > Container Allocation
+
+![Container Tracker — status, seals, and port dates](../images/container-tracker-form.png)
+
+![Container Ops Board — shipment-level operational dashboard](../images/container-ops-board.png)
+
+## 1. Prerequisites
+
+- Transport / Operations roles
+- Bill of Lading (or mode equivalent) with container rows where FCL
+- Project with Container Tracker Mode from Shipment Type
+- Shipping line free days / demurrage configured on Supplier when charging applies
+
+:::tip
+Sea Import transport tasks are **20–25** below. Export and transit templates use different seqs (for example book trucks earlier on transit). See [Shipment Modes](shipment-modes.md).
+:::
+
+## 2. Features — Container lifecycle
 
 ```
 Bill of Lading containers
-  → Container Tracker (one record per container_number per project)
-    → Task Container Updates (on transport tasks 20–25)
+  → Container Tracker (one per container_number per project)
+    → Task Container Updates (transport tasks)
       → Daily metrics refresh (demurrage / detention)
         → Container Ops Board
 ```
-
-### Status progression
 
 | Status | Typical trigger |
 |--------|-----------------|
@@ -37,18 +55,16 @@ Bill of Lading containers
 | Released / In Transit | Gate out from port |
 | At Warehouse | Arrival at CFS / warehouse |
 | Cargo Offloaded | Offload confirmed |
-| Empty Returned | Empty container at depot |
+| Empty Returned | Empty at depot |
 | Interchange Received | Interchange receipt filed |
 | Return Overdue | Past free days / deadline |
 
-Statuses are **derived from dates** on Container Tracker (daily scheduler recalculates charges).
+Statuses are **derived from dates** (daily scheduler).
 
----
-
-## Sea-import transport tasks (20–25)
+## 3. How to — Sea Import transport tasks (20–25)
 
 | Seq | Task |
-|-----|------|
+|----:|------|
 | 20 | Book trucks and notify warehouse |
 | 21 | Load trucks and exit port |
 | 22 | Monitor delivery to destination |
@@ -56,68 +72,33 @@ Statuses are **derived from dates** on Container Tracker (daily scheduler recalc
 | 24 | Return empty container to depot |
 | 25 | Receive interchange confirmation |
 
-Use **Task Container Update** child table on these tasks to record per-container gate-out, delivery, offload, and return dates.
+Use **Task Container Update** on these tasks for per-container dates.
 
----
+## 4. Features — Ops Board and Allocation
 
-## Container Ops Board
+**Container Ops Board** (`container-ops-board`): KPI tiles, filters, All Containers / Empty Return Tracker.
 
-**Desk:** CGM Shipping → Container Ops Board  
-**Route:** `container-ops-board`
+**Container Allocation**: assign containers to a transporter **Supplier**; transporters see jobs at `/transporter/allocation`. See [Portals](portals.md).
 
-Features:
+## 5. Features — Charges, interchange, reports
 
-- KPI tiles: overdue returns, demurrage exposure, free days expiring
-- Filters: customer, project, B/L, batch, clearance station
-- Tabs: **All Containers**, **Empty Return Tracker**
-- Column layout: Shipment, Client, B/L, Containers, Batch, etc.
+On **Supplier** (shipping line): Free Days Rule, Demurrage Tier, Detention Tier.
 
----
-
-## Container Allocation (transporters)
-
-**Container Allocation** assigns containers from a Project/B/L to a **Supplier** (transporter).
-
-- Submittable document
-- Child rows: **Container Allocation Item**
-- Transporters view assignments at **`/transporter/allocation`**
-
-Transporter suppliers sync portal users on save (`transporter_supplier.py`).
-
----
-
-## Shipping line charges (Supplier master)
-
-On **Supplier** (shipping line), configure:
-
-| Child table | Purpose |
-|-------------|---------|
-| Shipping Line Free Days Rule | Free days by destination |
-| Shipping Line Demurrage Tier | Demurrage rate tiers |
-| Shipping Line Detention Tier | Detention rate tiers |
-
-Used when calculating container charges on Container Tracker.
-
----
-
-## Interchange Receipt
-
-Submittable confirmation when empty container is returned to depot — links to task 25 completion.
-
----
-
-## Reports
+**Interchange Receipt** confirms empty return (task 25 on Sea Import).
 
 | Report | Use |
 |--------|-----|
-| Container Tracking Detail | Full container timeline |
+| Container Tracking Detail | Full timeline |
 | Container Return Tracker | Empty return focus |
-| Container Tracking Report | Summary tracking |
+| Container Tracking Report | Summary |
 
----
+:::note
+Finance shipping-line payment on Sea Import is tasks **10–11**, not 12–13. See [Finance](finance.md).
+:::
 
-## Related guides
+## 6. Related Topics
 
+- [Shipment Modes](shipment-modes.md)
 - [Operations](operations.md)
 - [Portals](portals.md)
-- [Finance](finance.md) (shipping line invoice tasks 12–13)
+- [Finance](finance.md)

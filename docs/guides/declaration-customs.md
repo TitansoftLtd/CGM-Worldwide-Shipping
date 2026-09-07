@@ -1,81 +1,89 @@
-# Declaration & Customs Guide
-
-For **Declaration** teams handling UCR, permits, customs entry, and regulatory documents.
-
+---
+title: Declaration & Customs
+metatags:
+  description: UCR, permits, and customs entry for Declaration — Sea Import task pairs with note that sequence numbers differ by Shipment Type.
 ---
 
-## Where to work
+# Declaration & Customs
 
-| Item | Path in Desk |
-|------|----------------|
-| Project / tasks | **Project** → linked **Tasks** (department = Declaration) |
-| UCR records | **IDF UCR Record** |
-| Customs entries | **Customs Entry** |
-| Permit tracking | **Permit Register** on Project / Task |
-| Masters | **Permit Type**, **Document Type**, **Clearance Station** |
+**UCR (IDF), permits, customs entry, and regulatory documents for Declaration.**
 
----
+Use this guide for Sea Import declaration work. Other modes reuse Application ↔ Finance patterns with **different sequence numbers**.
 
-## Your tasks in the sea-import plan
+A typical scenario: You create the UCR on task 3, attach the invoice and IDF certificate; Finance pays on task 4. Later you Create Entry (12) and Finance pays the entry slip (13). Pre- and post-clearance permits follow the same apply → pay pattern.
+
+To access Declaration work, go to:
+
+> Home > CGM Shipping > Task
+
+Also use:
+
+> Home > CGM Shipping > IDF UCR Record
+
+> Home > CGM Shipping > Customs Entry
+
+## 1. Prerequisites
+
+- Declaration department role
+- Permit Type and Document Type masters
+- Clearance Station / CFS as required
+- Project tasks created from the correct Shipment Type template
+
+:::tip
+Task sequence numbers below are **Sea Import**. For Air Import, Transit, Road, and Export declaration steps, see [Shipment Modes](shipment-modes.md).
+:::
+
+## 2. How to — Sea Import declaration tasks
 
 | Seq | Task | Notes |
-|-----|------|-------|
-| 3 | Create UCR (IDF) | Triggers UCR finance subflow (task 4) |
+|----:|------|-------|
+| 3 | Create UCR (IDF) | Triggers UCR finance (task 4) |
 | 5 | Apply for Pre-Clearance Permits | DVS, NBA, VMD, ACA |
 | 12 | Create Entry | Entry Slip invoice + ENTRY document |
 | 15 | Prepare Post-Clearance Permits | After DO lodged |
 
-Finance pays on tasks **4, 6, 11, 16**. You upload invoices (and certificates); Finance uploads payment receipts after paying. See [Finance Guide](finance.md).
+Finance pays on tasks **4, 6, 13, 16** (and shipping line **11** is Documentation → Finance). See [Finance](finance.md).
 
----
+:::note
+In older docs, Create Entry was sometimes listed as task 10. Current seed: **Attach Shipping Line Invoice = 10**, **Create Entry = 12**, **Finance Pays Entry Slip = 13**.
+:::
 
-## UCR workflow (tasks 3–4)
+## 3. How to — UCR (tasks 3–4)
 
 ```
 Task 3: Create UCR (IDF)
-  → Attach UCR invoice on Task; attach IDF certificate when issued
-  → Finance notified (UCR Invoice to Finance)
+  → Attach UCR invoice; attach IDF certificate when issued
+  → Finance notified
 Task 4: Finance pays UCR
-  → Finance records payment, uploads payment receipt, and verifies
+  → Payment + receipt on finance Task
   → Project may advance to UCR Paid
 ```
 
-**IDF UCR Record** doctype stores UCR/IDF certificate details and links to finance workflow fields.
+**IDF UCR Record** stores certificate and finance link fields.
 
----
+## 4. How to — Permits
 
-## Permit workflows
+### Pre-clearance (5–6)
 
-### Pre-clearance (tasks 5–6)
+1. Apply on Task 5; add **Permit Register** / Task Permits rows.
+2. Attach permit invoices.
+3. Finance pays on Task 6.
 
-1. Apply for permits (DVS, NBA, VMD, ACA) on Task 5.
-2. Add rows to **Permit Register** / **Task Permits** child table.
-3. Attach permit invoices.
-4. Finance pays on Task 6.
-5. Upload receipts; Finance verifies.
+### Post-clearance (15–16)
 
-### Post-clearance (tasks 15–16)
+Same pattern after Delivery Order (task 14).
 
-Same pattern after Delivery Order is lodged (task 14).
+**Permit Type** links each permit to a default ERPNext Item.
 
-**Permit Type** master links each permit to a default ERPNext Item for purchase invoice lines.
-
----
-
-## Entry slip workflow (tasks 12–13)
+## 5. How to — Entry slip (12–13)
 
 1. Attach Entry Slip invoice on Task 12 (Create Entry).
-2. Finance verifies the invoice on Task 13 — Create Entry completes automatically.
-3. Finance pays (or client-pays) and uploads receipt on Task 13.
-4. ENTRY customs document on Create Entry Clearance Documents remains optional when issued.
+2. Finance verifies and pays on Task 13 (or client-pays with receipt).
+3. Port ATA is confirmed separately on **Project** — it does not complete Create Entry.
 
-Port arrival / ATA is confirmed separately on the **Project** (Actions → Confirm Shipment Arrival at the Port) and does not complete Create Entry.
+**Customs Entry:** submittable, unique `entry_number`, tax child table.
 
-**Customs Entry** doctype: submittable, unique `entry_number`, tax child table.
-
----
-
-## Documents you typically handle
+## 6. Features — Documents and gates
 
 | Code | Document |
 |------|----------|
@@ -86,35 +94,26 @@ Port arrival / ATA is confirmed separately on the **Project** (Actions → Confi
 | DO | Delivery Order |
 | COC | Certificate of Conformity |
 
-Upload via **Shipment Document** rows on Project or Task. Documents must reach **Verified** status before some workflow gates open.
-
----
-
-## Project status gates (declaration-relevant)
-
-| Status | Typical declaration milestone |
-|--------|------------------------------|
+| Status | Typical declaration milestone (Sea Import) |
+|--------|--------------------------------------------|
 | UCR Applied | Task 3 complete |
 | UCR Paid | Task 4 complete |
 | Pre-clearance | Task 5 complete |
-| Entry Lodged | Task 10 complete |
-| Entry Paid | Task 11 complete |
+| Entry Lodged | Create Entry complete (seq 12) |
+| Entry Paid | Task 13 complete |
 | Post-clearance | Task 15 complete |
 
-Task sequence minimums are configured in **CGM Shipping Settings → Sea Workflow Task Gates**.
+Gates: **CGM Shipping Settings → Sea Workflow Task Gates**.
 
----
+## 7. Features — Guards
 
-## Guards
+- Required document codes must be verified before task complete (per Settings).
+- Permit invoices/receipts verified before finance tasks complete.
+- Company **License Register** is unrelated — see [Licence & Permit Register](licences.md).
 
-- Task cannot complete until required document codes are verified (per Settings).
-- Permit rows must have invoices/receipts verified before finance tasks complete.
-- Post-clearance permit rules are enforced before **Entry Lodged** in some configurations.
+## 8. Related Topics
 
----
-
-## Related guides
-
+- [Shipment Modes](shipment-modes.md)
 - [Operations](operations.md)
 - [Finance](finance.md)
 - [CRM & Intake](crm-intake.md)

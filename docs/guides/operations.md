@@ -1,51 +1,75 @@
-# Operations Guide
-
-For **Operations**, **Documentation**, and **Field Operations** teams managing shipments day-to-day on Desk.
-
+---
+title: Operations
+metatags:
+  description: Day-to-day Project and Task work for Sea Import — workflow status, documents, Ops Board, Operations Overview, Daily Status Update, and gates.
 ---
 
-## Where to work
+# Operations
 
-| Item | Path in Desk |
-|------|----------------|
-| Workspace | **CGM Shipping** |
-| Shipment record | **Project** (filter by `custom_cgm_ref_no` or customer) |
-| Tasks | **Task** (linked to Project; filtered by your department) |
-| Live containers | **Container Ops Board** (page) |
-| Daily reporting | **Daily Status Update** |
+**Projects, clearance tasks, documents, and live container dashboards for Operations, Documentation, and Field teams.**
 
----
+Use this guide for Sea Import day-to-day work on Desk. Other Shipment Types use different task sequences — same Project/Task skills, different plan.
 
-## Your tasks in the sea-import plan (25 steps)
+A typical scenario: After CRM creates a Sea Import Project, you verify CI and PKL, advance to Documents Received, complete auto intake tasks, hand UCR to Declaration, then chase manifests, DO, field clearance, and KPA before Transport takes delivery.
+
+To open Operations work, go to:
+
+> Home > CGM Shipping > Project
+
+Also use:
+
+> Home > CGM Shipping > Task
+
+> Home > CGM Shipping > Container Ops Board
+
+> Home > CGM Shipping > Operations Overview
+
+![Project form — shipment details, containers, and client documents](../images/project-form.png)
+
+![Clearance Task with Task Documents child table](../images/task-form.png)
+
+## 1. Prerequisites
+
+- Department roles matching the task template (Operations, Documentation, Field Operations, …)
+- Project created from an **Approved** Opportunity
+- Document Type masters (CI, PKL, MANIFEST, DO, …)
+- Understanding of your Shipment Type’s task plan
+
+:::tip
+Sea Import (25 tasks) is detailed below. For Sea Export, Air, Transit, and Road plans, see [Shipment Modes](shipment-modes.md).
+:::
+
+## 2. How to — Sea Import ops tasks
 
 | Seq | Task | Your team |
-|-----|------|-----------|
+|----:|------|-----------|
 | 1 | Receive shipment documents from Client | Operations |
 | 2 | Share documents with Declarants | Operations |
 | 7 | Client conducts inspection | Operations |
 | 8 | Receive Final Clearance Documents | Documentation |
 | 9 | Request Manifest and Local Import Charges | Documentation |
-| 12 | Attach Shipping Line Invoice | Documentation |
+| 10 | Attach Shipping Line Invoice | Documentation |
 | 14 | Lodge Delivery Order | Operations |
 | 17 | Field Officers conduct clearance | Field Operations |
 | 18 | Supervisor obtains KPA Invoice | Operations |
 
 Tasks **1–2** auto-complete when intake documents are verified on the Project.
 
-!!! note "Finance-owned steps"
-    Steps 4, 6, 11, 13, 16, 19 are Finance tasks. You attach invoices; Finance pays. See the [Finance Guide](finance.md).
+:::note
+Steps **4, 6, 11, 13, 16, 19** are Finance. You attach invoices; Finance pays. See [Finance](finance.md).
+:::
 
-!!! note "Declaration-owned steps"
-    UCR, permits, and entry creation are Declaration tasks. See [Declaration & Customs Guide](declaration-customs.md).
+:::note
+UCR, permits, and Create Entry are Declaration. See [Declaration & Customs](declaration-customs.md).
+:::
 
-!!! note "Transport-owned steps"
-    Steps 20–25 are Transport. See [Transport & Containers Guide](transport-containers.md).
+:::note
+Steps **20–25** are Transport. See [Transport & Containers](transport-containers.md).
+:::
 
----
+## 3. Features — Project workflow (shipment status)
 
-## Project workflow (shipment status)
-
-The Project field **`custom_shipment_status`** tracks clearance progress (`CGM Sea Import Workflow`):
+**`custom_shipment_status`** tracks Sea Import clearance (`CGM Sea Import Workflow`):
 
 ```
 Draft
@@ -66,18 +90,16 @@ Draft
   → Completed
 ```
 
-### What blocks you from advancing status
+### What blocks advancing status
 
 | Rule | Meaning |
 |------|---------|
-| **Task gates** | You cannot skip ahead of incomplete tasks (configured in CGM Shipping Settings) |
+| **Task gates** | Cannot skip ahead of incomplete tasks (CGM Shipping Settings) |
 | **Document gates** | Required documents must be **Verified** before some state changes |
 | **Intake documents** | **CI** and **PKL** required before **Documents Received** |
 | **Closure** | All 25 sea tasks must be complete before **Completed** |
 
----
-
-## Documents on Project
+## 4. How to — Documents on Project
 
 Open the Project → **Shipment Documents** child table.
 
@@ -87,67 +109,65 @@ Open the Project → **Shipment Documents** child table.
 | Upload final version | Corrected / stamped version received |
 | Verify / Reject | Supervisor confirms document is acceptable |
 
-Document types are masters in **Document Type** (codes like `CI`, `PKL`, `MANIFEST`, `DO`, etc.).
+Final attachment review can move Draft → Pending Review → Approved / Rejected. Document types live in **Document Type**.
 
----
+## 5. Features — Container Ops Board
 
-## Container Ops Board
+**Route:** `/app/container-ops-board` (workspace: Container Ops Board)
 
-Route: **CGM Shipping → Container Ops Board** or `/app/container-ops-board`
+![Container Ops Board](../images/container-ops-board.png)
 
-Use this page to:
+- Overdue empty returns and demurrage risk
+- Filters: client, project, B/L, batch, clearance station
+- Lifecycle statuses and **Empty Return Tracker** tab
 
-- See overdue empty returns and demurrage risk
-- Filter by client, project, B/L, batch, clearance station
-- Track containers through lifecycle statuses
-- Monitor **Empty Return Tracker** tab
+## 6. Features — Operations Overview
 
-Container statuses: Pending Arrival → Vessel Berthed → Discharged / At Port → Released / In Transit → At Warehouse → Cargo Offloaded → Empty Returned → Interchange Received.
+**Route:** `/app/operations-overview` (workspace link: Operations Overview)
 
----
+Management page for filtered shipment KPIs and grids (date range, shipping line, customer, project, status, cargo size, currency). Roles typically include Operations Manager, Finance Manager, and System Manager.
 
-## Daily Status Update
+Use it for cross-shipment visibility; use **Container Ops Board** for container-level execution.
 
-Submit a **Daily Status Update** (`DSU-{date}-{#####}`) for RAG reporting on active shipments. Finance and management receive notifications when configured.
+## 7. How to — Daily Status Update
 
----
+1. From Project Actions or **Daily Status Update** list, create `DSU-{date}-{#####}`.
+2. Capture RAG / narrative for active shipments.
+3. Submit — Finance and management receive notifications when **Daily Status RAG Alert** is configured.
 
-## Common workflow
+## 8. How to — Common Sea Import workflow
 
 ### New shipment (after CRM)
 
 1. Confirm Project exists from approved Opportunity.
 2. Verify **CI** and **PKL** on Project documents.
 3. Advance status to **Documents Received** when intake is complete.
-4. Complete task 1–2 (often automatic).
+4. Complete tasks 1–2 (often automatic).
 5. Hand off to Declaration for UCR (task 3).
 
 ### After vessel arrival
 
 1. Confirm ATA on Project (Actions → Confirm Shipment Arrival at the Port) to create Container Trackers.
-2. Create Entry (Declaration, task 12) proceeds independently for Entry Slip / ENTRY paperwork.
-3. After finance pays entry (task 13), continue shipping-line / DO steps as sequenced.
-4. Lodge DO when line charges are paid.
+2. Create Entry (Declaration, task 12) and Shipping Line invoice (task 10) follow their own application ↔ finance pairs.
+3. Lodge DO (task 14) when line charges and process allow.
 
 ### Field clearance
 
-1. Complete task 17 (field officers).
-2. Obtain KPA invoice (task 18) → Finance pays (task 19).
-3. Transport takes over for delivery (tasks 20–25).
+1. Complete task 17.
+2. Obtain KPA invoice (18) → Finance pays (19).
+3. Transport: tasks 20–25.
 
----
+## 9. Features — Tips and guards
 
-## Tips & guards
+- You only see **Tasks** for your **department**.
+- Do not manually edit **Finance Cost Total** on Project.
+- One **Project** per **Opportunity** (`custom_source_opportunity`).
+- B/L container rows sync to **Container Tracker** on the Project.
 
-- You only see **Tasks** for your **department** (permission-scoped).
-- Do not manually edit **Finance Cost Total** on Project — it is system-calculated.
-- One **Project** per **Opportunity**; use `custom_source_opportunity` to trace origin.
-- B/L container rows sync to **Container Tracker** records on the Project.
+## 10. Related Topics
 
----
-
-## Related guides
-
+- [Shipment Modes](shipment-modes.md)
+- [Getting Started](process-overview.md)
 - [Declaration & Customs](declaration-customs.md)
 - [Finance](finance.md)
 - [Transport & Containers](transport-containers.md)

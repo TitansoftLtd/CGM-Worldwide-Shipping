@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import posixpath
+import re
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +15,8 @@ WIKI_SPACE_ROUTE = "cgm-shipping"
 WIKI_SPACE_NAME = "CGM Shipping"
 WIKI_CONFIG_FILENAME = ".wiki.json"
 LANDING_BASENAMES = ("readme.md", "index.md", "readme.mdx", "index.mdx")
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".avif")
+MD_IMAGE_PATTERN = re.compile(r"(!\[[^\]]*\]\(\s*)(<[^>]+>|[^)\s]+)(\s+[^)]*)?(\))")
 
 
 def execute() -> None:
@@ -40,9 +45,76 @@ def execute() -> None:
 
 	space = _get_or_create_space()
 	nodes = _build_nodes_from_local_config(docs_dir, sidebar)
+	for node in nodes:
+		if node.get("is_group") or not node.get("content"):
+			continue
+		node["content"] = _rewrite_local_image_links(
+			node["content"], node["source_path"], docs_dir, space
+		)
 	_sync_to_live(space, nodes, None, None)
 	_ensure_space_published(space.name)
 	frappe.db.commit()
+
+
+def _rewrite_local_image_links(
+	content: str, source_path: str, docs_dir: Path, space: frappe.Document
+) -> str:
+	"""Rewrite docs-relative ``![alt](../images/x.png)`` to public ``/files/…`` URLs."""
+	if not content or not source_path:
+		return content
+
+	base_dir = posixpath.dirname(source_path.replace("\\", "/"))
+
+	def repl(match: re.Match) -> str:
+		raw = match.group(2)
+		src = raw.strip("<>").strip()
+		low = src.lower()
+		if low.startswith(("http://", "https://", "//", "data:", "mailto:", "/files/", "/private/files/", "#")):
+			return match.group(0)
+		resolved = posixpath.normpath(posixpath.join(base_dir, src))
+		if resolved.startswith("..") or not resolved.lower().endswith(IMAGE_EXTENSIONS):
+			return match.group(0)
+		file_path = docs_dir / resolved
+		if not file_path.is_file():
+			return match.group(0)
+		url = _import_local_image(space, file_path)
+		if not url:
+			return match.group(0)
+		return f"{match.group(1)}{url}{match.group(3) or ''}{match.group(4)}"
+
+	return MD_IMAGE_PATTERN.sub(repl, content)
+
+
+def _import_local_image(space: frappe.Document, file_path: Path) -> str | None:
+	"""Attach a docs image to the Wiki Space once (keyed by content hash)."""
+	payload = file_path.read_bytes()
+	digest = hashlib.sha1(payload).hexdigest()[:16]
+	ext = file_path.suffix.lower() or ".png"
+	stem = f"cgmdocimg-{digest}"
+	existing = frappe.get_all(
+		"File",
+		filters={
+			"attached_to_doctype": "Wiki Space",
+			"attached_to_name": space.name,
+			"file_name": ["like", f"{stem}.%"],
+		},
+		fields=["file_url"],
+		limit=1,
+	)
+	if existing:
+		return existing[0].file_url
+
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"{stem}{ext}",
+			"attached_to_doctype": "Wiki Space",
+			"attached_to_name": space.name,
+			"is_private": 0,
+			"content": payload,
+		}
+	).insert(ignore_permissions=True)
+	return file_doc.file_url
 
 
 def _get_or_create_space() -> frappe.Document:
