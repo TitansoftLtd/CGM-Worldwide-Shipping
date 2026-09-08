@@ -65,7 +65,6 @@ cgm_shipping.status_field = {
 				"UCR Paid",
 				"Pre-clearance",
 				"Final Docs Received",
-				"Manifest Requested",
 				"Entry Lodged",
 				"Post-clearance",
 				"Field Clearance",

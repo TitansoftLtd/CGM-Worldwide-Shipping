@@ -402,6 +402,44 @@ def task_is_ucr_workflow(task) -> bool:
 	return task_is_ucr_application(task) or task_is_ucr_finance(task)
 
 
+def task_is_entry_application(task) -> bool:
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_application and behaviour.payment_kind == "ENTRY_SLIP"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_entry_application_task
+
+	return is_entry_application_task(int(task.get("custom_sequence_no") or 0))
+
+
+def task_is_entry_finance(task) -> bool:
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_finance_payment and behaviour.payment_kind == "ENTRY_SLIP"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_entry_finance_payment_task
+
+	return is_entry_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+
+
+def task_is_shipping_line_finance(task) -> bool:
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_finance_payment and behaviour.payment_kind == "Shipping Line"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_shipping_line_finance_payment_task,
+	)
+
+	return is_shipping_line_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+
+
+def task_is_kpa_finance(task) -> bool:
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_finance_payment and behaviour.payment_kind == "KPA"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_kpa_finance_payment_task
+
+	return is_kpa_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+
+
 def task_is_permit_application(task) -> bool:
 	behaviour = get_task_behaviour(task)
 	if behaviour.from_template:

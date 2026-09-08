@@ -184,7 +184,7 @@ Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded 
 | 14 | Lodge Delivery Order | Operations |
 | 15 | Prepare Post-Clearance Permits | Declaration |
 | 16 | Finance pays for Post-Clearance Permits | Finance |
-| 17 | Field Officers conduct clearance | Field Operations |
+| 17 | Field Officers conduct clearance | Field Operations — attach any clearance document on **Task Documents**, or record CRO release / verification report |
 | 18 | Supervisor obtains KPA Invoice | Operations |
 | 19 | Finance pays KPA Invoice | Finance |
 | 20 | Book trucks and notify warehouse | Transport |
@@ -196,7 +196,7 @@ Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded 
 
 **Project workflow** (`CGM Sea Import Workflow` on `custom_shipment_status`):
 
-Draft → Documents Received → UCR Applied → UCR Paid → Pre-clearance → Client Inspection → In Transit → Final Docs Received → Manifest Requested → Entry Lodged → Entry Paid → Line Paid & DO Lodged → Post-clearance → Field Clearance → KPA Paid → In Delivery → Containers Returned → **Completed**
+Draft → Documents Received → UCR Applied → UCR Paid → Pre-clearance → Client Inspection → In Transit → Final Docs Received → Entry Lodged → Entry Paid → Line Paid & DO Lodged → Post-clearance → Field Clearance → KPA Paid → In Delivery → Containers Returned → **Completed**
 
 Each state advance is gated by minimum completed task seq (from Settings) and verified documents where configured.
 

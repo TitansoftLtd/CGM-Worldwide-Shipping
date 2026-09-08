@@ -383,6 +383,11 @@ def validate_application_not_manually_completed(
 			f"This task completes automatically after Finance verifies the "
 			f"<b>{profile.receipt_label}</b> (once POP is shared and Documentation attaches the receipt)."
 		)
+	if profile.complete_when_finance_settled:
+		frappe.throw(
+			f"This task completes automatically after Finance verifies and pays the "
+			f"<b>{profile.invoice_label}</b>."
+		)
 	if profile.complete_on_invoice_verified:
 		frappe.throw(
 			f"This task completes automatically after Finance verifies the "
@@ -775,7 +780,7 @@ def get_application_declarant_workflow_status(
 		"client_paid_directly": client_paid,
 		"certificate_required": bool(
 			(profile.certificate_document_code or profile.legacy_certificate_codes)
-			and not profile.complete_on_invoice_verified
+			and not profile.certificate_document_optional
 		),
 		"certificate_attached": certificate_uploaded(task, profile),
 		"application_ready_to_complete": can_complete_application_task(
@@ -1676,11 +1681,42 @@ def process_application_workflow_onload(task) -> bool:
 		):
 			changed = True
 	elif task_matches_application_finance(task, profile):
-		# Completed + unfinished invoice work → reopen so Make Payment shows.
+		# Completed + unfinished invoice/receipt work → reopen so Make Payment shows.
 		result = reopen_application_finance_if_pending_work(task, profile)
 		if result and result.get("reopened"):
 			task.reload()
 			changed = True
+		needs_reopen = task.status == "Completed" and not can_complete_application_finance_task(
+			task, profile
+		)
+		if needs_reopen:
+			frappe.flags.cgm_reopening_task = True
+			try:
+				values = {
+					"status": "Open",
+					"progress": 0,
+					"completed_by": None,
+					"completed_on": None,
+				}
+				frappe.db.set_value("Task", task.name, values, update_modified=True)
+				for field, value in values.items():
+					task.set(field, value)
+				task.modified = frappe.db.get_value("Task", task.name, "modified")
+				frappe.clear_document_cache("Task", task.name)
+				if task.project:
+					frappe.publish_realtime(
+						"cgm_task_status_changed",
+						{
+							"task": task.name,
+							"project": task.project,
+							"status": "Open",
+							"reopened": 1,
+							"soft_sync": 1,
+						},
+					)
+				changed = True
+			finally:
+				frappe.flags.cgm_reopening_task = False
 		# Remove accidental duplicate amendment rows (same label + attachment).
 		if _dedupe_finance_invoice_lines(task, profile):
 			task.reload()
@@ -1715,8 +1751,8 @@ def enforce_entry_finance_gate(project: str) -> None:
 	):
 		frappe.throw(
 			"Cannot move to <b>Entry Paid</b> until <b>Finance Pays Entry Slip</b> is completed: "
-			"Finance verifies the invoice, then either records payment (Journal Entry) "
-			"or ticks <b>Client will pay</b>. Receipt attachment is optional."
+			"Finance verifies the invoice, records payment (Journal Entry) or ticks "
+			"<b>Client will pay</b>, then attaches and verifies the Entry Slip receipt."
 		)
 
 

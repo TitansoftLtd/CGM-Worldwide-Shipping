@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_TASK_SEQ_DEFAULTS,
@@ -878,7 +879,12 @@ def prepare_ucr_task_tables(task) -> None:
 		APPLICATION_FINANCE_PROFILES,
 		prepare_application_task_tables,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_workflow,
+	)
 
+	if not task_is_ucr_workflow(task):
+		return
 	prepare_application_task_tables(task, APPLICATION_FINANCE_PROFILES["UCR Application"])
 
 
@@ -893,13 +899,14 @@ def prepare_entry_task_tables(task) -> None:
 
 
 def prepare_application_finance_task_tables(task) -> None:
-	"""All configured application → finance profiles (Entry, Shipping Line, …)."""
+	"""Seed finance lines for this task's application/finance profile only."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
 		prepare_application_task_tables,
+		profile_for_task,
 	)
 
-	for profile in APPLICATION_FINANCE_PROFILES.values():
+	profile = profile_for_task(task)
+	if profile:
 		prepare_application_task_tables(task, profile)
 
 
@@ -948,24 +955,31 @@ def _ensure_line(task, line_type: str, label: str, payment_item: str = PAYMENT_U
 
 def seed_ucr_finance_lines(task) -> None:
 	"""Pre-fill UCR Invoice + UCR Receipt rows on UCR tasks."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_finance,
+		task_is_ucr_workflow,
+	)
+
 	if not task_has_finance_table(task):
 		return
-	seq = _task_seq(task)
-	if not is_ucr_workflow_task(seq):
+	if not task_is_ucr_workflow(task):
 		return
 
 	_ensure_line(task, LINE_INVOICE, UCR_INVOICE_LABEL)
 	_ensure_line(task, LINE_RECEIPT, UCR_RECEIPT_LABEL)
-	if is_ucr_finance_payment_task(seq):
+	if task_is_ucr_finance(task):
 		copy_ucr_invoice_to_finance_task(task)
 
 
 def ensure_ucr_finance_lines_saved(task) -> bool:
 	"""Persist missing UCR Invoice / UCR Receipt rows on Create UCR and Finance pays UCR."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_workflow,
+	)
+
 	if not task_has_finance_table(task):
 		return False
-	seq = _task_seq(task)
-	if not is_ucr_workflow_task(seq):
+	if not task_is_ucr_workflow(task):
 		return False
 
 	before = {
@@ -990,10 +1004,13 @@ def ensure_ucr_finance_lines_saved(task) -> bool:
 
 def migrate_invoice_attachments_from_documents(task) -> None:
 	"""Move legacy invoice attachments from Clearance Documents → finance lines."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_workflow,
+	)
+
 	if not task_has_finance_table(task):
 		return
-	seq = _task_seq(task)
-	if not is_ucr_workflow_task(seq):
+	if not task_is_ucr_workflow(task):
 		return
 
 	seed_ucr_finance_lines(task)
@@ -1010,7 +1027,11 @@ def migrate_invoice_attachments_from_documents(task) -> None:
 
 def copy_ucr_invoice_to_finance_task(finance_task) -> None:
 	"""Copy declarant UCR invoice onto the finance task for review."""
-	if not is_ucr_finance_payment_task(_task_seq(finance_task)) or not finance_task.project:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_ucr_finance,
+	)
+
+	if not task_is_ucr_finance(finance_task) or not finance_task.project:
 		return
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -1714,10 +1735,11 @@ def seed_checkpoint_task_documents(task) -> bool:
 
 
 def parse_required_document_types(value: str | None) -> list[str]:
-	"""Split MultiSelect / comma-separated Document Type names from template stamp."""
-	if not value:
-		return []
-	return [part.strip() for part in str(value).split(",") if part.strip()]
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
+		parse_required_document_types as _parse,
+	)
+
+	return _parse(value)
 
 
 def get_stamped_required_document_types(task) -> list[str]:
@@ -1728,32 +1750,111 @@ def get_stamped_required_document_types(task) -> list[str]:
 	return parse_required_document_types(task.get("custom_required_document_types"))
 
 
-def resolve_required_document_type_name(token: str) -> str | None:
-	"""Resolve a template token to a Document Type name."""
-	token = (token or "").strip()
-	if not token:
+def get_template_task_item(task) -> dict | None:
+	"""CGM Task Template row for this task (flow_key + sequence), including extends_template."""
+	flow_key = (task.get("custom_task_flow_key") or "").strip()
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not flow_key or not seq or not frappe.db.exists("CGM Task Template", flow_key):
 		return None
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		get_document_type_link_name,
+	from cgm_shipping.cgm_worldwide_shipping.task_engine import _collect_items
+
+	template = frappe.get_doc("CGM Task Template", flow_key)
+	by_seq = {int(i["sequence_no"]): i for i in _collect_items(template)}
+	return by_seq.get(seq)
+
+
+def get_template_required_document_types(task) -> list[str]:
+	item = get_template_task_item(task)
+	if not item:
+		return []
+	return item.get("required_document_type_names") or []
+
+
+def get_template_required_document_types_raw(task) -> str:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
+		serialize_required_document_types,
 	)
 
-	return get_document_type_link_name(token) or (
-		token if frappe.db.exists("Document Type", token) else None
+	return serialize_required_document_types(get_template_required_document_types(task))
+
+
+def get_effective_required_document_types(task) -> list[str]:
+	"""Stamp on Task first; otherwise live CGM Task Template row."""
+	stamped = get_stamped_required_document_types(task)
+	if stamped:
+		return stamped
+	return get_template_required_document_types(task)
+
+
+def resolve_required_document_type_name(token: str) -> str | None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
+		resolve_required_document_type_name as _resolve,
 	)
 
+	return _resolve(token)
 
-def seed_stamped_required_document_rows(task) -> bool:
-	"""Prefill Task Documents from custom_required_document_types. Returns True if rows added."""
+
+def sync_task_required_document_stamp(task) -> bool:
+	"""Copy Required Document Types from template onto Task when stamp is still empty."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
+		normalize_required_document_type_stamp,
+	)
+
+	if not task.meta.has_field("custom_required_document_types"):
+		return False
+	stamp = (task.get("custom_required_document_types") or "").strip()
+	if stamp:
+		normalized = normalize_required_document_type_stamp(stamp)
+		if normalized and normalized != stamp:
+			if not task.is_new() and task.name:
+				frappe.db.set_value(
+					"Task",
+					task.name,
+					"custom_required_document_types",
+					normalized,
+					update_modified=False,
+				)
+			task.custom_required_document_types = normalized
+			return True
+		return False
+	raw = get_template_required_document_types_raw(task)
+	if not raw:
+		return False
+	raw = normalize_required_document_type_stamp(raw) or raw
+	if not task.is_new() and task.name:
+		frappe.db.set_value(
+			"Task",
+			task.name,
+			"custom_required_document_types",
+			raw,
+			update_modified=False,
+		)
+	task.custom_required_document_types = raw
+	return True
+
+
+def _required_document_type_names(task, required: list[str] | None = None) -> list[str]:
+	tokens = required if required is not None else get_effective_required_document_types(task)
+	names = []
+	for token in tokens:
+		dt_name = resolve_required_document_type_name(token)
+		if dt_name:
+			names.append(dt_name)
+	return names
+
+
+def seed_stamped_required_document_rows(task, required: list[str] | None = None) -> bool:
+	"""Prefill Task Documents from template Required Document Types. Returns True if rows added."""
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return False
-	required = get_stamped_required_document_types(task)
-	if not required:
+	tokens = required if required is not None else get_effective_required_document_types(task)
+	if not tokens:
 		return False
 	existing_types = {
 		row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or [] if row.document_type
 	}
 	added = False
-	for token in required:
+	for token in tokens:
 		dt_name = resolve_required_document_type_name(token)
 		if not dt_name or dt_name in existing_types:
 			continue
@@ -1767,13 +1868,15 @@ def seed_stamped_required_document_rows(task) -> bool:
 
 
 def ensure_stamped_required_documents_saved(task) -> bool:
-	"""Persist stamped Task Document rows on form open without a full Task.save().
+	"""Persist required Task Document rows on form open without a full Task.save().
 
 	Returns True when the in-memory task should be reloaded for Desk.
 	"""
 	if task.is_new() or not task.name or not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return False
-	if not get_stamped_required_document_types(task):
+	sync_task_required_document_stamp(task)
+	required = get_effective_required_document_types(task)
+	if not required:
 		return False
 
 	# DB may already have the rows even if this form session is stale.
@@ -1786,17 +1889,13 @@ def ensure_stamped_required_documents_saved(task) -> bool:
 		)
 		if r.document_type
 	}
-	required_names = []
-	for token in get_stamped_required_document_types(task):
-		dt_name = resolve_required_document_type_name(token)
-		if dt_name:
-			required_names.append(dt_name)
+	required_names = _required_document_type_names(task, required)
 	missing = [n for n in required_names if n not in existing_db]
 	if not missing:
 		# Still hydrate in-memory if form has no typed rows yet.
-		return seed_stamped_required_document_rows(task)
+		return seed_stamped_required_document_rows(task, required)
 
-	seed_stamped_required_document_rows(task)
+	seed_stamped_required_document_rows(task, required)
 	max_idx = cint(
 		frappe.db.sql(
 			"""
@@ -1826,8 +1925,8 @@ def ensure_stamped_required_documents_saved(task) -> bool:
 
 
 def stamped_required_document_types_attached(task) -> bool:
-	"""True when every stamped required Document Type has a primary attachment."""
-	required = get_stamped_required_document_types(task)
+	"""True when every required Document Type has a primary attachment."""
+	required = get_effective_required_document_types(task)
 	if not required:
 		return True
 	attached = attached_document_codes(task)
@@ -1841,23 +1940,80 @@ def stamped_required_document_types_attached(task) -> bool:
 	return True
 
 
+def purge_stray_task_document_rows(task) -> bool:
+	"""Remove project intake rows wrongly copied onto non-Document tasks (legacy seq seeding).
+
+	Does not remove user-selected clearance documents (Entry, exit, c2, etc.) — those stay
+	on Task Documents; Required Document Types only gate completion.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		DOCUMENT_ROLES,
+		get_task_behaviour,
+	)
+
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	if get_task_behaviour(task).role in DOCUMENT_ROLES:
+		return False
+
+	changed = False
+	for row in list(task.get(TASK_DOCUMENTS_FIELD) or []):
+		if not _is_stray_intake_document_row(row.document_type):
+			continue
+		task.remove(row)
+		changed = True
+	return changed
+
+
+def _is_stray_intake_document_row(document_type: str | None) -> bool:
+	"""True for checkpoint/intake docs (BL, COO, …) that must not sit on finance/app tasks."""
+	if not document_type:
+		return False
+	token = (document_type or "").strip().upper()
+	stray = {"BL", "COO", "COA", "CI", "PKL", "COC"}
+	if token in stray:
+		return True
+	code = (get_document_type_code(document_type) or "").strip().upper()
+	return code in stray
+
+
+def purge_unrequired_task_document_rows(task) -> bool:
+	"""Strip invoice rows and legacy intake copies from Task Documents.
+
+	User-added document rows are kept. Template Required Document Types only gate
+	completion via validate_required_documents — they do not restrict the table.
+	"""
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	before = len(task.get(TASK_DOCUMENTS_FIELD) or [])
+	remove_invoice_rows_from_task_documents(task)
+	purge_stray_task_document_rows(task)
+	return len(task.get(TASK_DOCUMENTS_FIELD) or []) != before
+
+
 def seed_required_task_document_rows(task) -> None:
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
 		task_is_document_checkpoint,
 		task_is_ucr_application,
 	)
 
-	# Template stamp first — dynamic required docs for any mode.
-	seed_stamped_required_document_rows(task)
-
+	behaviour = get_task_behaviour(task)
 	seq = int(task.get("custom_sequence_no") or 0)
+	if behaviour.from_template:
+		if task_is_document_checkpoint(task):
+			seed_checkpoint_task_documents(task)
+		else:
+			seed_stamped_required_document_rows(task)
+		return
+
+	# Legacy (non-template) tasks — settings sequence + profile helpers.
+	seed_stamped_required_document_rows(task)
 	if task_is_document_checkpoint(task) or is_document_checkpoint_task(seq):
 		seed_checkpoint_task_documents(task)
 		return
-	# If stamp already seeded rows, skip hardcoded certificate helpers unless UCR/Entry
-	# still need profile certificate when stamp is empty.
 	if get_stamped_required_document_types(task):
 		return
 	if task_is_ucr_application(task) or is_ucr_application_task(seq):
@@ -1907,6 +2063,12 @@ def seed_required_task_document_rows(task) -> None:
 def validate_sea_task_can_complete(task) -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_auto_complete,
+		task_is_document_checkpoint,
+		task_is_entry_finance,
+		task_is_kpa_finance,
+		task_is_permit_finance,
+		task_is_shipping_line_finance,
+		task_is_ucr_finance,
 		uses_clearance_behaviour,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
@@ -1977,21 +2139,29 @@ def validate_sea_task_can_complete(task) -> None:
 		validate_application_not_manually_completed(
 			task, APPLICATION_FINANCE_PROFILES["KPA Application"]
 		)
-	elif is_document_checkpoint_task(seq):
+	elif task_is_document_checkpoint(task):
 		validate_document_checkpoint_task(task)
 	elif is_light_proof_task(seq):
 		validate_light_proof_task(task)
 	elif seq == CONTAINER_TASK_SEQ_DEFAULTS["custom_field_clearance_task_seq"]:
 		validate_field_clearance_task(task)
 
-	if is_finance_payment_task(seq):
-		if is_ucr_finance_payment_task(seq):
+	if is_finance_payment_task(seq) or any(
+		(
+			task_is_ucr_finance(task),
+			task_is_entry_finance(task),
+			task_is_shipping_line_finance(task),
+			task_is_kpa_finance(task),
+			task_is_permit_finance(task),
+		)
+	):
+		if task_is_ucr_finance(task):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 				validate_finance_ucr_payment_task,
 			)
 
 			validate_finance_ucr_payment_task(task)
-		elif is_entry_finance_payment_task(seq):
+		elif task_is_entry_finance(task):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 				APPLICATION_FINANCE_PROFILES,
 			)
@@ -2002,7 +2172,7 @@ def validate_sea_task_can_complete(task) -> None:
 			validate_finance_application_payment_task(
 				task, APPLICATION_FINANCE_PROFILES["Entry Application"]
 			)
-		elif is_shipping_line_finance_payment_task(seq):
+		elif task_is_shipping_line_finance(task):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 				APPLICATION_FINANCE_PROFILES,
 			)
@@ -2017,7 +2187,7 @@ def validate_sea_task_can_complete(task) -> None:
 				task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
 			)
 			validate_shipping_line_deposit_payments(task)
-		elif is_kpa_finance_payment_task(seq):
+		elif task_is_kpa_finance(task):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 				APPLICATION_FINANCE_PROFILES,
 			)
@@ -2028,7 +2198,7 @@ def validate_sea_task_can_complete(task) -> None:
 			validate_finance_application_payment_task(
 				task, APPLICATION_FINANCE_PROFILES["KPA Application"]
 			)
-		elif is_permit_finance_payment_task(seq):
+		elif task_is_permit_finance(task):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 				validate_finance_permit_payment_task,
 				validate_permit_finance_task_completion,
@@ -2042,13 +2212,21 @@ def validate_sea_task_can_complete(task) -> None:
 
 def validate_required_documents(task, seq: int) -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+	)
 
-	stamped = get_stamped_required_document_types(task)
+	required = get_effective_required_document_types(task)
+	behaviour = get_task_behaviour(task)
+	# Template tasks with no required docs do not gate completion on Task Documents.
+	if behaviour.from_template and not required:
+		return
+
 	attached = attached_document_codes(task)
 	missing = []
 
-	if stamped:
-		for token in stamped:
+	if required:
+		for token in required:
 			if required_document_code_is_attached(token, attached):
 				continue
 			dt_name = resolve_required_document_type_name(token)
@@ -2071,12 +2249,13 @@ def validate_required_documents(task, seq: int) -> None:
 			f"<b>{', '.join(missing)}</b>."
 		)
 
-	# Only enforce empty-row cleanup for stamped / settings-required rows.
-	required_names = set()
-	for token in stamped or get_required_document_codes(seq):
-		name = resolve_required_document_type_name(token) or token
-		if name:
-			required_names.add(name)
+	# Only enforce empty-row cleanup for required rows.
+	required_names = set(_required_document_type_names(task, required or None))
+	if not required_names:
+		for token in get_required_document_codes(seq):
+			name = resolve_required_document_type_name(token) or token
+			if name:
+				required_names.add(name)
 	empty_rows = [
 		row.document_type or "Document"
 		for row in task.get(TASK_DOCUMENTS_FIELD) or []
@@ -2117,9 +2296,12 @@ def validate_light_proof_task(task) -> None:
 
 
 def validate_field_clearance_task(task) -> None:
-	"""Task 16 — field clearance complete when released, report attached, or FIELD doc uploaded."""
+	"""Field clearance completes when ops attach a document or record CRO release."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		CONTAINER_TASK_SEQ_DEFAULTS,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
 	)
 
 	field_seq = CONTAINER_TASK_SEQ_DEFAULTS["custom_field_clearance_task_seq"]
@@ -2128,14 +2310,19 @@ def validate_field_clearance_task(task) -> None:
 
 	released = (task.get("custom_verification_status") or "") == "Released by CRO"
 	report_attached = frappe.utils.cint(task.get("custom_verification_report_attached"))
-	has_field_doc = "FIELD" in attached_document_codes(task)
-	if released or report_attached or has_field_doc:
+	has_clearance_doc = any(
+		primary_attachment(row)
+		for row in task.get(TASK_DOCUMENTS_FIELD) or []
+		if row.document_type
+	)
+	if released or report_attached or has_clearance_doc:
 		return
 
 	frappe.throw(
 		_(
-			"Mark <b>Verification Status</b> as <i>Released by CRO</i>, attach the "
-			"<b>Verification Report</b>, or upload a <b>FIELD</b> clearance document."
+			"Attach a clearance document on <b>Task Documents</b> (any document type), "
+			"or mark <b>Verification Status</b> as <i>Released by CRO</i>, "
+			"or attach the <b>Verification Report</b>."
 		)
 	)
 
@@ -2976,17 +3163,25 @@ def get_task_defaults(task_name: str) -> dict:
 	task = frappe.get_doc("Task", task_name)
 	ctx = _task_context(task)
 	seq = int(task.get("custom_sequence_no") or 0)
-	if is_permit_finance_payment_task(seq):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_entry_finance,
+		task_is_kpa_finance,
+		task_is_permit_finance,
+		task_is_shipping_line_finance,
+		task_is_ucr_finance,
+	)
+
+	if task_is_permit_finance(task):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			ensure_finance_permit_rows_saved,
 		)
 
 		ensure_finance_permit_rows_saved(task)
 		task.reload()
-	if is_ucr_finance_payment_task(seq):
+	if task_is_ucr_finance(task):
 		ensure_ucr_finance_lines_saved(task)
 		task.reload()
-	if is_entry_finance_payment_task(seq):
+	if task_is_entry_finance(task):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			APPLICATION_FINANCE_PROFILES,
 			ensure_application_finance_lines_saved,
@@ -2996,7 +3191,7 @@ def get_task_defaults(task_name: str) -> dict:
 			task, APPLICATION_FINANCE_PROFILES["Entry Application"]
 		)
 		task.reload()
-	if is_shipping_line_finance_payment_task(seq):
+	if task_is_shipping_line_finance(task):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			APPLICATION_FINANCE_PROFILES,
 			ensure_application_finance_lines_saved,
@@ -3006,7 +3201,7 @@ def get_task_defaults(task_name: str) -> dict:
 			task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
 		)
 		task.reload()
-	if is_kpa_finance_payment_task(seq):
+	if task_is_kpa_finance(task):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			APPLICATION_FINANCE_PROFILES,
 			ensure_application_finance_lines_saved,
@@ -3619,9 +3814,19 @@ def on_task_onload(doc, _method=None):
 		return
 	if purge_invoice_rows_from_task_documents_db(doc.name):
 		doc.reload()
-		if _is_sea_task(doc):
-			prepare_ucr_task_tables(doc)
-			prepare_application_finance_task_tables(doc)
+	if _is_sea_task(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			purge_foreign_finance_lines,
+		)
+
+		purged_finance = purge_foreign_finance_lines(doc)
+		purged_docs = purge_unrequired_task_document_rows(doc)
+		prepare_ucr_task_tables(doc)
+		prepare_application_finance_task_tables(doc)
+		if purged_finance or purged_docs:
+			preserve_completed_status_against_stale_save(doc)
+			doc.save(ignore_permissions=True)
+			doc.reload()
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_configured_application_workflow,
 		task_is_permit_application,
@@ -3719,11 +3924,16 @@ def on_task_onload(doc, _method=None):
 			prepare_shipment_documents_for_form,
 		)
 
-		# Prefill Task Documents from template stamp so IDF CERT (etc.) shows on open.
+		# Prefill Task Documents from CGM Task Template Required Document Types.
 		if ensure_stamped_required_documents_saved(doc):
 			doc.reload()
 		else:
-			seed_required_task_document_rows(doc)
+			purged_docs = purge_unrequired_task_document_rows(doc)
+			seeded = seed_stamped_required_document_rows(doc)
+			if purged_docs or seeded:
+				preserve_completed_status_against_stale_save(doc)
+				doc.save(ignore_permissions=True)
+				doc.reload()
 		prepare_shipment_documents_for_form(doc, TASK_DOCUMENTS_FIELD)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_status import (
@@ -3825,10 +4035,54 @@ def block_premature_shipping_line_completion(doc) -> None:
 		return
 	if can_complete_application_task(doc, profile):
 		return
+	_revert_premature_task_completion(doc)
+
+
+def _revert_premature_task_completion(doc) -> None:
 	doc.status = "Open"
 	doc.progress = 0
 	doc.completed_by = None
 	doc.completed_on = None
+
+
+def block_premature_finance_completion(doc) -> None:
+	"""Force Open when a stale form still carries Completed but finance gates fail."""
+	if doc.is_new() or doc.status != "Completed":
+		return
+	if frappe.flags.get("cgm_auto_completing_sea_task") or frappe.flags.get("cgm_reopening_task"):
+		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		can_complete_application_finance_task,
+		profile_for_task,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_application_finance_for_profile,
+		task_is_permit_finance,
+		task_is_ucr_finance,
+	)
+
+	if task_is_ucr_finance(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			can_complete_ucr_payment_task,
+		)
+
+		if not can_complete_ucr_payment_task(doc):
+			_revert_premature_task_completion(doc)
+		return
+
+	if task_is_permit_finance(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			can_complete_finance_permit_task,
+		)
+
+		if not can_complete_finance_permit_task(doc):
+			_revert_premature_task_completion(doc)
+		return
+
+	profile = profile_for_task(doc)
+	if profile and task_is_application_finance_for_profile(doc, profile):
+		if not can_complete_application_finance_task(doc, profile):
+			_revert_premature_task_completion(doc)
 
 
 def finance_payment_task_ready_to_complete(doc) -> bool:
@@ -3929,6 +4183,7 @@ def before_task_save(doc, _method=None):
 
 	preserve_completed_status_against_stale_save(doc)
 	block_premature_shipping_line_completion(doc)
+	block_premature_finance_completion(doc)
 	enforce_client_paid_confirmation(doc)
 	# Always keep Shipping Line POP/Receipt rows present — a stale Completed save
 	# used to wipe the POP child row and re-flicker the form on next open.
@@ -3948,6 +4203,12 @@ def before_task_save(doc, _method=None):
 		)
 
 		migrate_invoice_attachments_from_documents(doc)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			purge_foreign_finance_lines,
+		)
+
+		purge_foreign_finance_lines(doc)
+		purge_unrequired_task_document_rows(doc)
 		prepare_ucr_task_tables(doc)
 		prepare_application_finance_task_tables(doc)
 		seed_required_task_document_rows(doc)

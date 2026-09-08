@@ -6052,7 +6052,7 @@
    "name": "Project-custom_shipment_status",
    "no_copy": 0,
    "non_negative": 0,
-   "options": "Draft\nDocuments Received\nUCR Applied\nUCR Paid\nPre-clearance\nClient Inspection\nIn Transit\nFinal Docs Received\nManifest Requested\nEntry Lodged\nLine Paid & DO Lodged\nEntry Paid\nPost-clearance\nField Clearance\nKPA Paid\nIn Delivery\nContainers Returned\nCompleted",
+   "options": "Draft\nDocuments Received\nUCR Applied\nUCR Paid\nPre-clearance\nClient Inspection\nIn Transit\nFinal Docs Received\nEntry Lodged\nLine Paid & DO Lodged\nEntry Paid\nPost-clearance\nField Clearance\nKPA Paid\nIn Delivery\nContainers Returned\nCompleted",
    "owner": "Administrator",
    "permlevel": 0,
    "placeholder": null,
