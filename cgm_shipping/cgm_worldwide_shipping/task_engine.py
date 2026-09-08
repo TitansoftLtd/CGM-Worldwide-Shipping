@@ -6,6 +6,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	SEA_IMPORT_TEMPLATE,
 	normalize_template_name,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
+	document_type_names_from_template_row as _required_document_type_names,
+	serialize_required_document_types as _serialize_required_document_types,
+)
 
 
 def create_project_tasks(project_name: str) -> list[str]:
@@ -141,6 +145,7 @@ def _collect_items(template, _visited: set | None = None) -> list[dict]:
 	max_parent_seq = max((i["sequence_no"] for i in items), default=0)
 
 	for row in template.tasks:
+		doc_names = _required_document_type_names(row)
 		items.append(
 			{
 				"sequence_no": int(row.sequence_no or 0) + max_parent_seq,
@@ -158,7 +163,8 @@ def _collect_items(template, _visited: set | None = None) -> list[dict]:
 				"is_auto_completable": bool(row.is_auto_completable),
 				"completion_condition": row.completion_condition or "",
 				"is_optional": bool(row.is_optional),
-				"required_document_types": (row.get("required_document_types") or "").strip(),
+				"required_document_type_names": doc_names,
+				"required_document_types": _serialize_required_document_types(doc_names),
 			}
 		)
 

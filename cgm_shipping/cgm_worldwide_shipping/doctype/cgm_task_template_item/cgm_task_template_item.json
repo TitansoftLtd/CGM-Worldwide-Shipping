@@ -163,10 +163,11 @@
   },
   {
    "depends_on": "eval:[\"Document\",\"Document Checkpoint\",\"Application\"].includes(doc.task_role) || doc.requires_document_upload",
-   "description": "Document Types required before this task can be Completed (e.g. IDF CERT). Prefills Task Documents and blocks Complete until each is attached. Select from Document Type master (comma-separated).",
+   "description": "Document Types from the Document Type master. Each selection prefills Task Documents on the matching task and blocks Complete until attached.",
    "fieldname": "required_document_types",
-   "fieldtype": "Data",
-   "label": "Required Document Types"
+   "fieldtype": "Table MultiSelect",
+   "label": "Required Document Types",
+   "options": "CGM Task Template Document Type"
   }
  ],
  "grid_page_length": 50,

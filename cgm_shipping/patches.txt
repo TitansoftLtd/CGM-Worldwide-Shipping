@@ -6,6 +6,7 @@ cgm_shipping.patches.capture_running_tax_base_config
 
 cgm_shipping.patches.rename_update_to_shipment_message
 cgm_shipping.patches.rename_shipment_message_to_shipment_update
+cgm_shipping.patches.backup_template_required_document_strings
 
 [post_model_sync]
 # Idempotent patches — re-apply config from source on every migrate.
@@ -46,6 +47,8 @@ cgm_shipping.patches.unlink_non_finance_sea_task_deps
 cgm_shipping.patches.seed_document_responsibility_defaults
 cgm_shipping.patches.migrate_ucr_permit_receipt_upload_to_declaration
 cgm_shipping.patches.migrate_strict_department_task_visibility
+cgm_shipping.patches.migrate_field_operations_transport_visibility
+cgm_shipping.patches.ensure_field_operations_role_group
 cgm_shipping.patches.backfill_finance_line_journal_entries
 cgm_shipping.patches.ensure_sea_task_notifications
 cgm_shipping.patches.sync_receipt_notification_recipients
@@ -59,6 +62,8 @@ cgm_shipping.patches.sync_sea_transit_import_template
 # thin alias patches for that work.
 cgm_shipping.patches.sync_task_template_behaviour
 cgm_shipping.patches.fix_cgm_task_template_item_nested_table
+cgm_shipping.patches.restore_template_required_document_links
+cgm_shipping.patches.normalize_task_required_document_stamps
 cgm_shipping.patches.sync_template_required_document_types
 cgm_shipping.patches.migrate_funding_legacy_data
 cgm_shipping.patches.migrate_funding_approval_v2
@@ -93,3 +98,5 @@ cgm_shipping.patches.backfill_employee_job_groups
 cgm_shipping.patches.name_container_allocations_with_series
 cgm_shipping.patches.ensure_task_permits_field_visibility
 cgm_shipping.patches.reconcile_task_status_mismatch
+cgm_shipping.patches.resync_shipment_workflow_status
+cgm_shipping.patches.fix_completed_with_open_clearance_tasks

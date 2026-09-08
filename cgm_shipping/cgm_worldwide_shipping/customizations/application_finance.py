@@ -320,6 +320,28 @@ def profile_for_task(task) -> ApplicationFinanceProfile | None:
 	return profile_for_behaviour_task(task)
 
 
+def purge_foreign_finance_lines(task) -> bool:
+	"""Drop finance rows whose payment_item does not match this task's profile."""
+	if not task_has_finance_table(task):
+		return False
+	profile = profile_for_task(task)
+	if not profile:
+		return False
+
+	allowed = profile.payment_item
+	legacy_ucr = profile.key == "ucr"
+	changed = False
+	for row in list(task.get(TASK_FINANCE_FIELD) or []):
+		item = (row.payment_item or "").strip()
+		if not item and legacy_ucr:
+			continue
+		effective = item or (allowed if legacy_ucr else "")
+		if effective != allowed:
+			task.remove(row)
+			changed = True
+	return changed
+
+
 def task_has_finance_table(task) -> bool:
 	return bool(task.meta.has_field(TASK_FINANCE_FIELD))
 
@@ -1397,10 +1419,19 @@ def ensure_certificate_document_row(task, profile: ApplicationFinanceProfile) ->
 		is_invoice_clearance_document_row,
 		remove_invoice_rows_from_task_documents,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+	)
 
 	if not task_matches_application(task, profile):
 		return
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return
+	# Template-stamped tasks use custom_required_document_types only.
+	if get_task_behaviour(task).from_template:
+		return
+	# Entry Slip invoice lives on finance lines; ENTRY cert is optional.
+	if profile.complete_on_invoice_verified:
 		return
 	remove_invoice_rows_from_task_documents(task)
 	dt_name = get_document_type_link_name(profile.certificate_document_code)
@@ -1432,12 +1463,12 @@ def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
 		primary_attachment,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		get_stamped_required_document_types,
+		get_effective_required_document_types,
 		stamped_required_document_types_attached,
 	)
 
-	# Template stamp replaces hardcoded profile certificate codes when configured.
-	if get_stamped_required_document_types(task):
+	# Template Required Document Types replace hardcoded profile certificate codes.
+	if get_effective_required_document_types(task):
 		return stamped_required_document_types_attached(task)
 	if not profile.certificate_document_code and not profile.legacy_certificate_codes:
 		return True

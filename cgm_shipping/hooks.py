@@ -394,6 +394,9 @@ doc_events = {
 		],
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_update",
 	},
+	"CGM Task Template": {
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.doctype.cgm_task_template.cgm_task_template.sync_open_tasks_from_template",
+	},
 }
 
 # Scheduled Tasks

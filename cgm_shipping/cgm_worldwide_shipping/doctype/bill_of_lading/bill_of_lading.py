@@ -1628,12 +1628,11 @@ def set_bl_deposit_payer(task_name: str, payer: str) -> dict:
 def validate_shipping_line_deposit_payments(task) -> None:
 	"""Block Shipping Line finance completion until deposit payer + payment rules are met."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import TASK_FINANCE_FIELD
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_shipping_line_finance_payment_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_shipping_line_finance,
 	)
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_shipping_line_finance_payment_task(seq) or not task.project:
+	if not task_is_shipping_line_finance(task) or not task.project:
 		return
 	bl = get_deposit_bl_for_project(task.project)
 	if not bl:
@@ -2129,16 +2128,15 @@ def get_shipping_line_expense_payment_defaults(
 ) -> dict:
 	"""Defaults for Shipping Line expense JE (invoice total minus BL container deposit)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import TASK_FINANCE_FIELD
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_shipping_line_finance_payment_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_shipping_line_finance,
 	)
 
 	if not task_name or not frappe.db.exists("Task", task_name):
 		frappe.throw(_("Task not found."))
 	frappe.has_permission("Task", ptype="read", doc=task_name, throw=True)
 	task = frappe.get_doc("Task", task_name)
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_shipping_line_finance_payment_task(seq):
+	if not task_is_shipping_line_finance(task):
 		frappe.throw(_("This task is not a Shipping Line finance payment step."))
 
 	bl = get_deposit_bl_for_project(task.project or "") if task.project else None
