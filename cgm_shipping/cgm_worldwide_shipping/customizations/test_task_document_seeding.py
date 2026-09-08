@@ -77,7 +77,18 @@ class TestTaskDocumentSeeding(UnitTestCase):
 			types = {row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or []}
 			self.assertEqual(types, {"Entry"})
 
-	def test_purge_keeps_user_added_documents_on_template_task(self):
+	def test_purge_keeps_user_added_entry_on_application_task(self):
+		task = _TaskStub(
+			custom_task_role="Application",
+			custom_payment_kind="ENTRY_SLIP",
+			custom_sequence_no=7,
+		)
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "Entry", "status": "Missing"})
+		self.assertFalse(purge_unrequired_task_document_rows(task))
+		types = {row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or []}
+		self.assertEqual(types, {"Entry"})
+
+	def test_purge_keeps_user_added_documents_on_document_task(self):
 		task = _TaskStub(
 			custom_task_role="Document",
 			custom_sequence_no=10,

@@ -222,13 +222,13 @@ frappe.ui.form.on("Task", {
 					? __(
 							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
 								"<b>1</b> Verify <b>Entry Slip Invoice</b> · " +
-								"<b>2</b> <b>Share Invoice with Client</b> (optional). " +
-								"Create Entry completes after payment - <b>Entry Slip Receipt</b> is optional."
+								"<b>2</b> <b>Share Invoice with Client</b> (optional) · " +
+								"<b>3</b> Attach and verify <b>Entry Slip Receipt</b> - then this task completes."
 						)
 					: __(
 							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row). " +
-								"This finance task completes after payment - <b>Entry Slip Receipt</b> is optional."
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row) · " +
+								"<b>3</b> Attach and verify <b>Entry Slip Receipt</b> - then this task completes."
 						);
 				if (clientReported) {
 					intro +=
@@ -2721,6 +2721,13 @@ frappe.ui.form.on("Task Finance Line", {
 			if (is_shipping_line_application_step(frm, seq) && row.line_type === "Receipt") {
 				attachment_editable = user_can_upload_receipt(frm);
 				verified_editable = false;
+			} else if (
+				(is_entry_application_step(frm, seq) || is_kpa_application_step(frm, seq)) &&
+				row.line_type === "Receipt"
+			) {
+				// Entry / KPA receipts are uploaded on the Finance payment task.
+				attachment_editable = false;
+				verified_editable = false;
 			} else if (user_may_attach_receipt_on_application(frm, row)) {
 				// UCR: Declarant attaches the supplier receipt on Create UCR after payment.
 				attachment_editable = true;
@@ -2768,6 +2775,30 @@ frappe.ui.form.on("Task Finance Line", {
 		)) {
 			if (is_shipping_line_application_step(frm) && row.line_type === "Receipt") {
 				// Documentation attaches receipt here after POP is mirrored from Finance.
+			} else if (is_entry_application_step(frm) && row.line_type === "Receipt") {
+				frappe.show_alert({
+					message: __(
+						"Attach and verify the <b>Entry Slip Receipt</b> on the finance task " +
+							"<b>Finance pays transit entry taxes</b> (Finance role)."
+					),
+					indicator: "orange",
+				});
+				if (row.attachment) {
+					frappe.model.set_value(cdt, cdn, "attachment", "");
+				}
+				return;
+			} else if (is_kpa_application_step(frm) && row.line_type === "Receipt") {
+				frappe.show_alert({
+					message: __(
+						"Attach and verify the <b>KPA Receipt</b> on the paired Finance payment task " +
+							"(Finance role)."
+					),
+					indicator: "orange",
+				});
+				if (row.attachment) {
+					frappe.model.set_value(cdt, cdn, "attachment", "");
+				}
+				return;
 			} else if (user_may_attach_receipt_on_application(frm, row)) {
 				// Declarant attaches UCR receipt here after Finance records payment.
 			} else if (is_shipping_line_application_step(frm) && row.line_type === "POP") {
@@ -3402,9 +3433,10 @@ function apply_entry_application_intro(frm, status) {
 		);
 	} else if (status.invoice_verified) {
 		intro = __(
-			"<b>{0} verified by Finance.</b> Waiting for Finance to pay (or confirm client payment) - " +
-				"this task completes after payment. <b>{1}</b> on the finance task is optional. " +
-				"You may attach the ENTRY document under <b>Clearance Documents</b> when issued.",
+			"<b>{0} verified by Finance.</b> Waiting for Finance to pay (or confirm client payment). " +
+				"Finance attaches and verifies <b>{1}</b> on the finance task " +
+				"<b>Finance pays transit entry taxes</b>. You may attach the ENTRY document under " +
+				"<b>Clearance Documents</b> when issued.",
 			[invoiceLabel, receiptLabel]
 		);
 	} else if (status.invoice_submitted) {
@@ -3695,7 +3727,9 @@ function configure_client_paid_field(frm, ui) {
 		const editable =
 			finance_step && user_can_confirm_client_paid(frm) && frm.doc.status !== "Completed";
 		frm.set_df_property("custom_client_paid_directly", "read_only", editable ? 0 : 1);
-		const receiptOptional = Boolean(ui.is_entry_finance || ui.is_entry_application);
+		const receiptOptional = Boolean(
+			ui.is_kpa_finance || ui.is_kpa_application
+		);
 		frm.set_df_property(
 			"custom_client_paid_directly",
 			"description",
@@ -4000,8 +4034,12 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 		}
 	} else {
 		const rec = get_finance_line(frm, "Receipt");
-		// KPA: receipt required when present on the row; settlement is per invoice line.
-		if (rec?.attachment && !cint(rec.verified)) {
+		if (profileKey === "entry") {
+			if (!rec?.attachment || !cint(rec.verified)) {
+				return;
+			}
+		} else if (rec?.attachment && !cint(rec.verified)) {
+			// KPA: receipt required when present on the row; settlement is per invoice line.
 			return;
 		}
 	}

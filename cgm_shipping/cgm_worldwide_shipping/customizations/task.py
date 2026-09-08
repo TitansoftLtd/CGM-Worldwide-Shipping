@@ -1940,8 +1940,11 @@ def stamped_required_document_types_attached(task) -> bool:
 
 
 def purge_stray_task_document_rows(task) -> bool:
-	"""Drop project/intake documents from tasks that are not Document roles."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import document_types_match
+	"""Remove project intake rows wrongly copied onto non-Document tasks (legacy seq seeding).
+
+	Does not remove user-selected clearance documents (Entry, exit, c2, etc.) — those stay
+	on Task Documents; Required Document Types only gate completion.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		DOCUMENT_ROLES,
 		get_task_behaviour,
@@ -1952,31 +1955,32 @@ def purge_stray_task_document_rows(task) -> bool:
 	if get_task_behaviour(task).role in DOCUMENT_ROLES:
 		return False
 
-	allowed: set[str] = set()
-	for token in get_effective_required_document_types(task):
-		resolved = resolve_required_document_type_name(token)
-		if resolved:
-			allowed.add(resolved)
-		if token:
-			allowed.add(token)
-
 	changed = False
 	for row in list(task.get(TASK_DOCUMENTS_FIELD) or []):
-		doc_type = row.document_type
-		if doc_type in allowed:
-			continue
-		if any(document_types_match(doc_type, allowed_name) for allowed_name in allowed):
+		if not _is_stray_intake_document_row(row.document_type):
 			continue
 		task.remove(row)
 		changed = True
 	return changed
 
 
-def purge_unrequired_task_document_rows(task) -> bool:
-	"""Strip invoice rows and stray intake documents from Task Documents.
+def _is_stray_intake_document_row(document_type: str | None) -> bool:
+	"""True for checkpoint/intake docs (BL, COO, …) that must not sit on finance/app tasks."""
+	if not document_type:
+		return False
+	token = (document_type or "").strip().upper()
+	stray = {"BL", "COO", "COA", "CI", "PKL", "COC"}
+	if token in stray:
+		return True
+	code = (get_document_type_code(document_type) or "").strip().upper()
+	return code in stray
 
-	Document / Document Checkpoint tasks keep their rows. Other roles only keep
-	rows matching stamped or template Required Document Types.
+
+def purge_unrequired_task_document_rows(task) -> bool:
+	"""Strip invoice rows and legacy intake copies from Task Documents.
+
+	User-added document rows are kept. Template Required Document Types only gate
+	completion via validate_required_documents — they do not restrict the table.
 	"""
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return False

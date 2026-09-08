@@ -110,6 +110,8 @@ Nobody creates these by hand. The moment a Project is created, the task engine r
 | Sea Transit | Sea Transit Import Workflow | 15 |
 | Road Transit Import | Road Transit Inbound Workflow | 11 |
 
+**Sea Transit** uses a shorter clearance chart (no UCR, permits, client inspection, or Manifest Requested): Draft → Documents Received → Line Paid & DO Lodged → Entry Lodged → Entry Paid → Field Clearance → Post-clearance → KPA Paid → In Delivery → Completed.
+
 **A Project saved without a Shipment Type gets no tasks at all**, silently - there is nothing in the form to tell you. The same is true of a type with no template behind it (**Import** and **Sea FCL** currently have none). If a shipment has an empty task list, that is the first thing to check.
 
 The whole plan lands on the shipment at once, in sequence, with the first steps already closed where intake documents were verified:
@@ -150,8 +152,7 @@ Each move is an action on the form, in this order:
 | Pre-clearance | Request Client Inspection | Client Inspection |
 | Client Inspection | Start Shipment Tracking | In Transit |
 | In Transit | Receive Final Documents | Final Docs Received |
-| Final Docs Received | Request Manifest and Charges | Manifest Requested |
-| Manifest Requested | Lodge Customs Entry | Entry Lodged |
+| Final Docs Received | Lodge Customs Entry | Entry Lodged |
 | Entry Lodged | Confirm Line Paid and DO Lodged | Line Paid & DO Lodged |
 | Line Paid & DO Lodged | Confirm Entry Paid | Entry Paid |
 | Entry Paid | Complete Post-clearance Permits | Post-clearance |

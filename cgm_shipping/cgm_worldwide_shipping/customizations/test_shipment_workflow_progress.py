@@ -30,6 +30,9 @@ class TestWorkflowProgressFromTasks(UnitTestCase):
 		self.states = list(DEFAULT_SEA_IMPORT_WORKFLOW_STATES)
 		self.gates = _gates()
 
+	def test_sea_import_chart_excludes_manifest_requested(self):
+		self.assertNotIn("Manifest Requested", self.states)
+
 	def test_all_tasks_completed_shows_completed(self):
 		tasks = [
 			{"custom_sequence_no": i, "status": "Completed"}
