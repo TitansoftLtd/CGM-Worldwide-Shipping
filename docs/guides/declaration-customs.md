@@ -149,6 +149,7 @@ Task sequence minimums are configured in **CGM Shipping Settings → Sea Workflo
 ## Guards
 
 - Task cannot complete until **Required Document Types** from the template (if any) are attached on **Task Documents**; extra document rows added during clearance are allowed.
+- **Field Officers conduct clearance** (task 17): complete when any file is attached on Task Documents, or when **Verification Status** is *Released by CRO*, or when the **Verification Report** is attached — no fixed document code (e.g. FIELD only).
 - Permit rows must have invoices/receipts verified before finance tasks complete.
 - Post-clearance permit rules are enforced before **Entry Lodged** in some configurations.
 

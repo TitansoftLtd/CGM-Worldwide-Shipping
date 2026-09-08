@@ -184,7 +184,7 @@ Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded 
 | 14 | Lodge Delivery Order | Operations |
 | 15 | Prepare Post-Clearance Permits | Declaration |
 | 16 | Finance pays for Post-Clearance Permits | Finance |
-| 17 | Field Officers conduct clearance | Field Operations |
+| 17 | Field Officers conduct clearance | Field Operations — attach any clearance document on **Task Documents**, or record CRO release / verification report |
 | 18 | Supervisor obtains KPA Invoice | Operations |
 | 19 | Finance pays KPA Invoice | Finance |
 | 20 | Book trucks and notify warehouse | Transport |

@@ -207,3 +207,26 @@ class TestTaskDocumentSeeding(UnitTestCase):
 			side_effect=lambda _dt, name: name == "Entry",
 		):
 			self.assertEqual(valid_document_type_names(["Entry", "Entry Slip"]), ["Entry"])
+
+
+class TestFieldClearanceValidation(UnitTestCase):
+	def test_accepts_any_attached_task_document(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			validate_field_clearance_task,
+		)
+
+		task = _TaskStub(custom_sequence_no=17)
+		task.append(
+			TASK_DOCUMENTS_FIELD,
+			{"document_type": "DO", "attachment": "/files/delivery-order.pdf"},
+		)
+		validate_field_clearance_task(task)
+
+	def test_requires_document_release_or_report(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+			validate_field_clearance_task,
+		)
+
+		task = _TaskStub(custom_sequence_no=17)
+		with self.assertRaises(frappe.ValidationError):
+			validate_field_clearance_task(task)

@@ -264,6 +264,8 @@ Tasks 17-19 in the plan. On the ground at the terminal it runs like this:
 
 Steps 3 to 9 are the part that takes unpredictable time: everything there waits on KRA, KPA or an agency.
 
+**Completing task 17 (Field Officers conduct clearance):** attach any clearance proof on **Task Documents** (for example **DO**, **FIELD**, or another **Document Type** from the master list) and mark the task **Completed**. Alternatively, set **Verification Status** to *Released by CRO* or attach the **Verification Report**. The task does not require a specific document code — any attached file on Task Documents is enough unless the template stamps **Required Document Types** for that row.
+
 ---
 
 ## Tips & guards

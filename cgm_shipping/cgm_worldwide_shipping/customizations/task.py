@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_TASK_SEQ_DEFAULTS,
@@ -2295,9 +2296,12 @@ def validate_light_proof_task(task) -> None:
 
 
 def validate_field_clearance_task(task) -> None:
-	"""Task 16 — field clearance complete when released, report attached, or FIELD doc uploaded."""
+	"""Field clearance completes when ops attach a document or record CRO release."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		CONTAINER_TASK_SEQ_DEFAULTS,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		primary_attachment,
 	)
 
 	field_seq = CONTAINER_TASK_SEQ_DEFAULTS["custom_field_clearance_task_seq"]
@@ -2306,14 +2310,19 @@ def validate_field_clearance_task(task) -> None:
 
 	released = (task.get("custom_verification_status") or "") == "Released by CRO"
 	report_attached = frappe.utils.cint(task.get("custom_verification_report_attached"))
-	has_field_doc = "FIELD" in attached_document_codes(task)
-	if released or report_attached or has_field_doc:
+	has_clearance_doc = any(
+		primary_attachment(row)
+		for row in task.get(TASK_DOCUMENTS_FIELD) or []
+		if row.document_type
+	)
+	if released or report_attached or has_clearance_doc:
 		return
 
 	frappe.throw(
 		_(
-			"Mark <b>Verification Status</b> as <i>Released by CRO</i>, attach the "
-			"<b>Verification Report</b>, or upload a <b>FIELD</b> clearance document."
+			"Attach a clearance document on <b>Task Documents</b> (any document type), "
+			"or mark <b>Verification Status</b> as <i>Released by CRO</i>, "
+			"or attach the <b>Verification Report</b>."
 		)
 	)
 
