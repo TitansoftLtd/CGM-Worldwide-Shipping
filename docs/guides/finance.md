@@ -33,14 +33,16 @@ Each finance task follows the same pattern:
 
 ```
 1. Ops/Declaration attaches invoice on the application Task (finance lines / documents)
-2. Finance verifies the invoice and creates Journal Entry or Payment Entry
-3. Finance uploads payment receipt on the finance Task (Declarant can view it on the application Task)
-4. Task can be marked complete → Project status may advance
+2. Finance verifies the invoice and creates Journal Entry or Payment Entry (or Client will pay)
+3. Finance uploads the payment receipt on the finance Task and verifies it (Declarant can view on the application Task)
+4. Application and finance Tasks auto-complete when their rules are satisfied → Project status may advance
 ```
+
+**Entry Slip:** Create Entry / Create transit entry (Application) completes only after Finance has verified **and paid** the invoice. Finance Pays Entry Slip completes after payment **and receipt verification**.
 
 **Task Finance Line** child table holds line items (UCR, permits, entry slip, shipping line, KPA).
 
-Declarants attach invoices (and certificates where required). Finance verifies invoices and uploads payment receipts after payment - no separate receipt-verify step.
+Declarants attach invoices (and certificates where required). Finance verifies invoices, pays, uploads receipts, and verifies receipts on the finance task.
 
 ### Notifications you receive
 

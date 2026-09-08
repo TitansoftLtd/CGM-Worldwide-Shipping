@@ -118,6 +118,21 @@ The whole plan lands on the shipment at once, in sequence, with the first steps 
 
 Because the plan is written at creation, editing a template changes shipments created **after** the edit. It does not rewrite shipments already running - those keep the plan they were opened with, and setting the Shipment Type later does not backfill them.
 
+### Template task rows (Required Document Types)
+
+Open **CGM Task Template** → pencil on a task row:
+
+| Field | Purpose |
+|-------|---------|
+| **Task Role** | Drives Desk UI: Document, Application, Finance Payment, etc. |
+| **Document Upload Required** | Shows **Task Documents** on Standard rows too |
+| **Required Document Types** | Multi-select from **Document Type** master (exact names). Prefills **Task Documents** on matching live tasks and **blocks Complete** until each selected type is attached. |
+| **Payment Kind** | Pairs Application ↔ Finance Payment rows (UCR, Entry Slip, Shipping Line, KPA) |
+
+Users may still add extra rows on **Task Documents** during clearance — Required Document Types only enforce the minimum for completion, they do not delete user-added documents.
+
+Saving a template runs **sync open tasks from template** so role, payment kind, and required-document stamps update on non-cancelled tasks for that workflow.
+
 ---
 
 ## Project workflow (shipment status)

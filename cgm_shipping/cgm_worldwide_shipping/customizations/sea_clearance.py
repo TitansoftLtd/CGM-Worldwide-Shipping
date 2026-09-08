@@ -186,6 +186,9 @@ def derive_workflow_passed_states(
 		gate_seq = gate_row.get("min_completed_task_seq") if gate_row else None
 		if gate_seq and gate_seq in completed_seqs:
 			passed.add(state)
+	# Draft has no task gate — pass it together with Documents Received (seq 1 / intake).
+	if "Draft" in states and "Documents Received" in passed:
+		passed.add("Draft")
 	if all_clearance_tasks_completed(tasks, gates=gates) and "Completed" in states:
 		passed.add("Completed")
 	return passed

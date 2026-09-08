@@ -77,16 +77,68 @@ class TestTaskDocumentSeeding(UnitTestCase):
 			types = {row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or []}
 			self.assertEqual(types, {"Entry"})
 
-	def test_purge_removes_legacy_rows_on_template_task_without_stamp(self):
+	def test_purge_keeps_user_added_documents_on_template_task(self):
+		task = _TaskStub(
+			custom_task_role="Document",
+			custom_sequence_no=10,
+		)
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "exit", "status": "Missing"})
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "c2", "status": "Missing"})
+		self.assertFalse(purge_unrequired_task_document_rows(task))
+		types = {row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or []}
+		self.assertEqual(types, {"exit", "c2"})
+
+	def test_purge_still_removes_invoice_rows_from_clearance_table(self):
 		task = _TaskStub(
 			custom_task_role="Application",
 			custom_payment_kind="ENTRY_SLIP",
 			custom_sequence_no=7,
 		)
 		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "Entry", "status": "Missing"})
-		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "Inspect", "status": "Missing"})
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.is_invoice_clearance_document_row",
+			side_effect=lambda dt: dt == "Entry",
+		):
+			self.assertTrue(purge_unrequired_task_document_rows(task))
+		self.assertEqual(task.get(TASK_DOCUMENTS_FIELD) or [], [])
+
+	def test_finance_task_does_not_seed_checkpoint_documents_by_global_seq(self):
+		task = _TaskStub(
+			custom_task_role="Finance Payment",
+			custom_sequence_no=8,
+			custom_requires_document_upload=0,
+		)
+		with patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations.documents.seed_checkpoint_task_documents_from_project",
+			return_value=True,
+		) as seed_checkpoint:
+			seed_required_task_document_rows(task)
+		seed_checkpoint.assert_not_called()
+		self.assertEqual(len(task.get(TASK_DOCUMENTS_FIELD) or []), 0)
+
+	def test_purge_removes_intake_documents_from_finance_task(self):
+		task = _TaskStub(
+			custom_task_role="Finance Payment",
+			custom_sequence_no=8,
+			custom_requires_document_upload=0,
+		)
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "BL", "status": "Uploaded"})
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "COO", "status": "Uploaded"})
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "COA", "status": "Uploaded"})
 		self.assertTrue(purge_unrequired_task_document_rows(task))
 		self.assertEqual(task.get(TASK_DOCUMENTS_FIELD) or [], [])
+
+	def test_purge_keeps_intake_documents_on_document_task(self):
+		task = _TaskStub(
+			custom_task_role="Document",
+			custom_sequence_no=2,
+			custom_requires_document_upload=1,
+		)
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "BL", "status": "Verified"})
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "COO", "status": "Verified"})
+		self.assertFalse(purge_unrequired_task_document_rows(task))
+		types = {row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or []}
+		self.assertEqual(types, {"BL", "COO"})
 
 	def test_template_row_reads_table_multiselect_children(self):
 		row = {

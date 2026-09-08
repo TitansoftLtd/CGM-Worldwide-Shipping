@@ -1939,28 +1939,51 @@ def stamped_required_document_types_attached(task) -> bool:
 	return True
 
 
-def purge_unrequired_task_document_rows(task) -> bool:
-	"""Drop Task Document rows not listed on the template (template tasks only)."""
-	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
-		return False
+def purge_stray_task_document_rows(task) -> bool:
+	"""Drop project/intake documents from tasks that are not Document roles."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import document_types_match
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		DOCUMENT_ROLES,
 		get_task_behaviour,
-		task_is_document_checkpoint,
 	)
 
-	if not get_task_behaviour(task).from_template:
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return False
-	if task_is_document_checkpoint(task):
+	if get_task_behaviour(task).role in DOCUMENT_ROLES:
 		return False
 
-	allowed = set(_required_document_type_names(task))
+	allowed: set[str] = set()
+	for token in get_effective_required_document_types(task):
+		resolved = resolve_required_document_type_name(token)
+		if resolved:
+			allowed.add(resolved)
+		if token:
+			allowed.add(token)
 
 	changed = False
 	for row in list(task.get(TASK_DOCUMENTS_FIELD) or []):
-		if row.document_type and row.document_type not in allowed:
-			task.remove(row)
-			changed = True
+		doc_type = row.document_type
+		if doc_type in allowed:
+			continue
+		if any(document_types_match(doc_type, allowed_name) for allowed_name in allowed):
+			continue
+		task.remove(row)
+		changed = True
 	return changed
+
+
+def purge_unrequired_task_document_rows(task) -> bool:
+	"""Strip invoice rows and stray intake documents from Task Documents.
+
+	Document / Document Checkpoint tasks keep their rows. Other roles only keep
+	rows matching stamped or template Required Document Types.
+	"""
+	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
+		return False
+	before = len(task.get(TASK_DOCUMENTS_FIELD) or [])
+	remove_invoice_rows_from_task_documents(task)
+	purge_stray_task_document_rows(task)
+	return len(task.get(TASK_DOCUMENTS_FIELD) or []) != before
 
 
 def seed_required_task_document_rows(task) -> None:
@@ -1975,7 +1998,7 @@ def seed_required_task_document_rows(task) -> None:
 	behaviour = get_task_behaviour(task)
 	seq = int(task.get("custom_sequence_no") or 0)
 	if behaviour.from_template:
-		if task_is_document_checkpoint(task) or is_document_checkpoint_task(seq):
+		if task_is_document_checkpoint(task):
 			seed_checkpoint_task_documents(task)
 		else:
 			seed_stamped_required_document_rows(task)
@@ -2035,6 +2058,7 @@ def seed_required_task_document_rows(task) -> None:
 def validate_sea_task_can_complete(task) -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_auto_complete,
+		task_is_document_checkpoint,
 		task_is_entry_finance,
 		task_is_kpa_finance,
 		task_is_permit_finance,
@@ -2110,7 +2134,7 @@ def validate_sea_task_can_complete(task) -> None:
 		validate_application_not_manually_completed(
 			task, APPLICATION_FINANCE_PROFILES["KPA Application"]
 		)
-	elif is_document_checkpoint_task(seq):
+	elif task_is_document_checkpoint(task):
 		validate_document_checkpoint_task(task)
 	elif is_light_proof_task(seq):
 		validate_light_proof_task(task)
@@ -3998,10 +4022,54 @@ def block_premature_shipping_line_completion(doc) -> None:
 		return
 	if can_complete_application_task(doc, profile):
 		return
+	_revert_premature_task_completion(doc)
+
+
+def _revert_premature_task_completion(doc) -> None:
 	doc.status = "Open"
 	doc.progress = 0
 	doc.completed_by = None
 	doc.completed_on = None
+
+
+def block_premature_finance_completion(doc) -> None:
+	"""Force Open when a stale form still carries Completed but finance gates fail."""
+	if doc.is_new() or doc.status != "Completed":
+		return
+	if frappe.flags.get("cgm_auto_completing_sea_task") or frappe.flags.get("cgm_reopening_task"):
+		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		can_complete_application_finance_task,
+		profile_for_task,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_application_finance_for_profile,
+		task_is_permit_finance,
+		task_is_ucr_finance,
+	)
+
+	if task_is_ucr_finance(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			can_complete_ucr_payment_task,
+		)
+
+		if not can_complete_ucr_payment_task(doc):
+			_revert_premature_task_completion(doc)
+		return
+
+	if task_is_permit_finance(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			can_complete_finance_permit_task,
+		)
+
+		if not can_complete_finance_permit_task(doc):
+			_revert_premature_task_completion(doc)
+		return
+
+	profile = profile_for_task(doc)
+	if profile and task_is_application_finance_for_profile(doc, profile):
+		if not can_complete_application_finance_task(doc, profile):
+			_revert_premature_task_completion(doc)
 
 
 def finance_payment_task_ready_to_complete(doc) -> bool:
@@ -4102,6 +4170,7 @@ def before_task_save(doc, _method=None):
 
 	preserve_completed_status_against_stale_save(doc)
 	block_premature_shipping_line_completion(doc)
+	block_premature_finance_completion(doc)
 	enforce_client_paid_confirmation(doc)
 	# Always keep Shipping Line POP/Receipt rows present — a stale Completed save
 	# used to wipe the POP child row and re-flicker the form on next open.

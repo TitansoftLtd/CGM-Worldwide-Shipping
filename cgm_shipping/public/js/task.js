@@ -221,12 +221,12 @@ frappe.ui.form.on("Task", {
 				intro = form_has_client_paid_invoice_line(frm)
 					? __(
 							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
-								"<b>1</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
+								"<b>1</b> Verify <b>Entry Slip Invoice</b> · " +
 								"<b>2</b> <b>Share Invoice with Client</b> (optional). " +
-								"<b>Entry Slip Receipt</b> is optional."
+								"Create Entry completes after payment - <b>Entry Slip Receipt</b> is optional."
 						)
 					: __(
-							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
+							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> · " +
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row). " +
 								"This finance task completes after payment - <b>Entry Slip Receipt</b> is optional."
 						);
@@ -3389,10 +3389,10 @@ function apply_entry_application_intro(frm, status) {
 	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
 	} else if (status.application_ready_to_complete) {
-		intro = __("<b>Entry Slip invoice verified by Finance.</b> Completing this task…");
+		intro = __("<b>Finance has verified and paid the Entry Slip invoice.</b> Completing this task…");
 	} else if (status.client_paid_directly && status.invoice_verified) {
 		intro = __(
-			"<b>Finance verified the invoice</b> (client-pays path). Completing this task…"
+			"<b>Finance verified the invoice</b> (client-pays path). Waiting for payment settlement…"
 		);
 	} else if (status.client_paid_directly) {
 		intro = __(
@@ -3402,22 +3402,22 @@ function apply_entry_application_intro(frm, status) {
 		);
 	} else if (status.invoice_verified) {
 		intro = __(
-			"<b>{0} verified by Finance.</b> Completing this task… Finance continues payment and " +
-				"<b>{1}</b> on the finance task. You may still attach the ENTRY document under " +
-				"<b>Clearance Documents</b> when issued.",
+			"<b>{0} verified by Finance.</b> Waiting for Finance to pay (or confirm client payment) - " +
+				"this task completes after payment. <b>{1}</b> on the finance task is optional. " +
+				"You may attach the ENTRY document under <b>Clearance Documents</b> when issued.",
 			[invoiceLabel, receiptLabel]
 		);
 	} else if (status.invoice_submitted) {
 		intro = __(
-			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify - this task completes " +
-				"when the invoice is approved.",
+			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify and pay - this task completes " +
+				"after payment is recorded.",
 			[invoiceLabel]
 		);
 	} else {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>{0}</b> and save on " +
 				"<b>Invoices & Receipts</b> - Finance is notified automatically. " +
-				"This task completes once Finance verifies the invoice. " +
+				"This task completes once Finance verifies and pays the invoice. " +
 				"ENTRY document under <b>Clearance Documents</b> remains optional when issued.",
 			[invoiceLabel]
 		);

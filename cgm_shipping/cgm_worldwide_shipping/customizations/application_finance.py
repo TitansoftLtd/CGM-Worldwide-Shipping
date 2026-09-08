@@ -62,10 +62,14 @@ class ApplicationFinanceProfile:
 	# Shipping Line: POP (proof of payment) between pay and Documentation receipt.
 	requires_pop: bool = False
 	pop_label: str = ""
-	# Create Entry: complete when Finance verifies the invoice (ENTRY doc optional).
+	# Legacy: complete application as soon as Finance verifies the invoice (unused for Entry).
 	complete_on_invoice_verified: bool = False
+	# Entry Slip: application completes when Finance settles payment (not on verify alone).
+	complete_when_finance_settled: bool = False
+	# ENTRY / IDF certificate rows on Clearance Documents are optional for this profile.
+	certificate_document_optional: bool = False
 	# After company payment, Finance must attach + verify the receipt before complete.
-	# Only Entry Slip keeps the receipt optional (set requires_receipt_verification=False).
+	# Entry Slip follows the same receipt verify gate as UCR / Shipping Line / KPA.
 	requires_receipt_verification: bool = True
 
 
@@ -105,8 +109,8 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		application_receipt_verified_field=None,
 		sync_to_idf_record=False,
 		legacy_certificate_codes=frozenset({"ENTRY"}),
-		complete_on_invoice_verified=True,
-		requires_receipt_verification=False,
+		complete_when_finance_settled=True,
+		certificate_document_optional=True,
 	),
 	"Shipping Line Application": ApplicationFinanceProfile(
 		key="shipping_line",
@@ -1431,7 +1435,7 @@ def ensure_certificate_document_row(task, profile: ApplicationFinanceProfile) ->
 	if get_task_behaviour(task).from_template:
 		return
 	# Entry Slip invoice lives on finance lines; ENTRY cert is optional.
-	if profile.complete_on_invoice_verified:
+	if profile.certificate_document_optional:
 		return
 	remove_invoice_rows_from_task_documents(task)
 	dt_name = get_document_type_link_name(profile.certificate_document_code)
@@ -1880,8 +1884,12 @@ def can_complete_application_task(
 		)
 		return bool(rec_ok)
 
-	# Entry: complete as soon as Finance verifies the Entry Slip invoice.
-	# ENTRY customs document remains optional on Clearance Documents.
+	# Entry Slip: application completes when Finance has verified and settled payment.
+	if profile.complete_when_finance_settled:
+		if not finance_task:
+			return False
+		return can_complete_application_finance_task(finance_task, profile)
+
 	if profile.complete_on_invoice_verified:
 		return True
 
@@ -1931,15 +1939,12 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 			return False
 		return True
 
-	# Receipt required after settlement except Entry Slip (requires_receipt_verification=False).
+	# Receipt required after settlement (all application finance profiles).
 	if profile.requires_receipt_verification:
 		if not receipt_attached_for_payment_workflow(task, profile):
 			return False
 		if not receipt_verified(task, profile):
 			return False
-		return True
-
-	# Entry Slip: receipt attachment is optional.
 	return True
 
 

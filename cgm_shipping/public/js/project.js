@@ -713,7 +713,11 @@ function paint_shipment_progress_chart(frm, field, payload) {
 	const steps = (d.states || [])
 		.map((state, i) => {
 			let cls = "cgm-progress-step";
-			const isPassed = passedSet.has(state) || i < d.current_index;
+			// Clearance chart: green only when that gate's task is actually done.
+			// Do not infer passed from index — out-of-order completion leaves gaps.
+			const isPassed = d.uses_clearance_states
+				? passedSet.has(state)
+				: passedSet.has(state) || i < d.current_index;
 			if (isPassed && state !== d.current_status) cls += " is-done";
 			if (state === d.current_status) cls += " is-current";
 			return `<span class="${cls}" title="${frappe.utils.escape_html(state)}">${frappe.utils.escape_html(state)}</span>`;

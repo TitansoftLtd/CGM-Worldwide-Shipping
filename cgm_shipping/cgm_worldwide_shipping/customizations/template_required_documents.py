@@ -1,8 +1,8 @@
 """Required Document Types on CGM Task Template → Task Documents.
 
-New template rows use Table MultiSelect (exact Document Type links).
-Legacy comma-separated stamps (e.g. Entry Slip vs Entry) are coerced via
-resolve_legacy_document_type_name when reading old Tasks / migrating data.
+Template rows store comma-separated Document Type names (Data field).
+Legacy Table MultiSelect child rows are flattened on migrate.
+Legacy labels (e.g. Entry Slip vs Entry) are coerced via resolve_legacy_document_type_name.
 """
 from __future__ import annotations
 
@@ -111,10 +111,8 @@ def normalize_required_document_type_stamp(value: str | None) -> str:
 
 
 def set_template_row_required_document_types(row, names: list[str]) -> None:
-	"""Replace Table MultiSelect rows with validated Document Type links."""
-	row.set("required_document_types", [])
-	for name in valid_document_type_names(names):
-		row.append("required_document_types", {"document_type": name})
+	"""Set validated Document Type names on a template row (comma-separated Data field)."""
+	row.required_document_types = serialize_required_document_types(valid_document_type_names(names))
 
 
 def set_template_row_required_document_types_from_string(row, value: str | None) -> None:

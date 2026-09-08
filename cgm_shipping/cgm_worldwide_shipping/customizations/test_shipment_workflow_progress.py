@@ -42,6 +42,17 @@ class TestWorkflowProgressFromTasks(UnitTestCase):
 		self.assertEqual(index, self.states.index("Completed"))
 		self.assertTrue(all_clearance_tasks_completed(tasks))
 
+	def test_draft_passes_with_documents_received(self):
+		tasks = [{"custom_sequence_no": 1, "status": "Completed"}]
+		passed = derive_workflow_passed_states(tasks, states=self.states, gates=self.gates)
+		self.assertIn("Documents Received", passed)
+		self.assertIn("Draft", passed)
+
+	def test_draft_stays_open_before_documents_received(self):
+		passed = derive_workflow_passed_states([], states=self.states, gates=self.gates)
+		self.assertNotIn("Draft", passed)
+		self.assertNotIn("Documents Received", passed)
+
 	def test_open_middle_task_blocks_completed_even_when_later_tasks_done(self):
 		"""Task 17 open while 18–25 complete must not show Completed."""
 		tasks = [
@@ -54,6 +65,7 @@ class TestWorkflowProgressFromTasks(UnitTestCase):
 		passed = derive_workflow_passed_states(tasks, states=self.states, gates=self.gates)
 		self.assertNotEqual(status, "Completed")
 		self.assertNotIn("Completed", passed)
+		self.assertNotIn("Field Clearance", passed)
 		self.assertFalse(all_clearance_tasks_completed(tasks))
 		self.assertEqual(status, "Containers Returned")
 
