@@ -733,24 +733,33 @@ def sync_template_behaviour_fields() -> int:
 			doc.flags.ignore_permissions = True
 			doc.save(ignore_permissions=True)
 			updated += 1
-		# Always sync required docs by child name — reliable for Data/MultiSelect UX.
+		from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
+			coerce_legacy_document_type_tokens,
+			set_template_row_required_document_types_from_string,
+		)
+
+		docs_changed = False
+		# Sync required docs from seed defaults (legacy labels coerced to master names).
 		for row in doc.get("tasks") or []:
 			seed = seed_by_seq.get(int(row.sequence_no or 0))
-			want = (seed or {}).get("required_document_types") or ""
-			if not want or not row.name:
+			want_raw = (seed or {}).get("required_document_types") or ""
+			want_names = coerce_legacy_document_type_tokens(
+				[t.strip() for t in want_raw.split(",") if t.strip()]
+			)
+			if not want_names:
 				continue
-			current = frappe.db.get_value(
-				"CGM Task Template Item", row.name, "required_document_types"
-			) or ""
-			if current != want:
-				frappe.db.set_value(
-					"CGM Task Template Item",
-					row.name,
-					"required_document_types",
-					want,
-					update_modified=False,
-				)
-				updated += 1
+			from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
+				document_type_names_from_template_row,
+			)
+
+			if document_type_names_from_template_row(row) == want_names:
+				continue
+			set_template_row_required_document_types_from_string(row, want_raw)
+			docs_changed = True
+		if docs_changed:
+			doc.flags.ignore_permissions = True
+			doc.save(ignore_permissions=True)
+			updated += 1
 	return updated
 
 
@@ -761,7 +770,6 @@ def backfill_open_task_behaviour_from_templates() -> int:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		ensure_task_behaviour_fields,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.task_engine import _collect_items
 
 	ensure_task_behaviour_fields()
 	if not frappe.db.exists("DocType", "CGM Task Template"):
@@ -777,44 +785,65 @@ def backfill_open_task_behaviour_from_templates() -> int:
 	)
 	updated = 0
 	for flow_key in flow_keys:
-		if not flow_key or not frappe.db.exists("CGM Task Template", flow_key):
+		updated += sync_tasks_for_template(flow_key)
+	return updated
+
+
+def sync_tasks_for_template(template_name: str) -> int:
+	"""Push template behaviour + required Task Documents onto open Tasks for one template."""
+	import frappe
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		ensure_stamped_required_documents_saved,
+		purge_unrequired_task_document_rows,
+		seed_stamped_required_document_rows,
+		sync_task_required_document_stamp,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.task_engine import _collect_items
+
+	if not template_name or not frappe.db.exists("CGM Task Template", template_name):
+		return 0
+	if not frappe.get_meta("Task").has_field("custom_task_role"):
+		return 0
+
+	template = frappe.get_doc("CGM Task Template", template_name)
+	by_seq = {int(i["sequence_no"]): i for i in _collect_items(template)}
+	if not by_seq:
+		return 0
+
+	tasks = frappe.get_all(
+		"Task",
+		filters={
+			"custom_task_flow_key": template_name,
+			"status": ["!=", "Cancelled"],
+		},
+		fields=["name", "custom_sequence_no", "custom_task_role"],
+	)
+	updated = 0
+	for task_row in tasks:
+		item = by_seq.get(int(task_row.custom_sequence_no or 0))
+		if not item:
 			continue
-		template = frappe.get_doc("CGM Task Template", flow_key)
-		by_seq = {int(i["sequence_no"]): i for i in _collect_items(template)}
-		if not by_seq:
-			continue
-		tasks = frappe.get_all(
+		role = (item.get("task_role") or "Standard").strip() or "Standard"
+		want_kind = (item.get("payment_kind") or "").strip()
+		want_doc_names = item.get("required_document_type_names") or []
+		want_docs = ", ".join(want_doc_names)
+		current = frappe.db.get_value(
 			"Task",
-			filters={
-				"custom_task_flow_key": flow_key,
-				"status": ["!=", "Cancelled"],
-			},
-			fields=["name", "custom_sequence_no", "custom_task_role"],
+			task_row.name,
+			["custom_task_role", "custom_payment_kind", "custom_required_document_types"],
+			as_dict=True,
+		) or {}
+		current_role = (current.get("custom_task_role") or "").strip()
+		current_kind = (current.get("custom_payment_kind") or "").strip()
+		current_docs = (current.get("custom_required_document_types") or "").strip()
+		behaviour_changed = not (
+			current_role
+			and current_role == role
+			and current_kind == want_kind
+			and current_docs == want_docs
 		)
-		for task in tasks:
-			item = by_seq.get(int(task.custom_sequence_no or 0))
-			if not item:
-				continue
-			role = (item.get("task_role") or "Standard").strip() or "Standard"
-			want_kind = (item.get("payment_kind") or "").strip()
-			want_docs = (item.get("required_document_types") or "").strip()
-			current = frappe.db.get_value(
-				"Task",
-				task.name,
-				["custom_task_role", "custom_payment_kind", "custom_required_document_types"],
-				as_dict=True,
-			) or {}
-			current_role = (current.get("custom_task_role") or "").strip()
-			current_kind = (current.get("custom_payment_kind") or "").strip()
-			current_docs = (current.get("custom_required_document_types") or "").strip()
-			# Skip only when role, kind, and required docs already match.
-			if (
-				current_role
-				and current_role == role
-				and current_kind == want_kind
-				and current_docs == want_docs
-			):
-				continue
+		if behaviour_changed:
 			values = {
 				"custom_task_role": role,
 				"custom_requires_finance_action": 1 if item.get("requires_finance_action") else 0,
@@ -829,7 +858,15 @@ def backfill_open_task_behaviour_from_templates() -> int:
 				values["custom_permit_stage"] = item["permit_stage"]
 			if frappe.get_meta("Task").has_field("custom_required_document_types"):
 				values["custom_required_document_types"] = want_docs
-			frappe.db.set_value("Task", task.name, values, update_modified=False)
+			frappe.db.set_value("Task", task_row.name, values, update_modified=False)
+			updated += 1
+
+		task = frappe.get_doc("Task", task_row.name)
+		sync_task_required_document_stamp(task)
+		purge_unrequired_task_document_rows(task)
+		if ensure_stamped_required_documents_saved(task):
+			updated += 1
+		elif seed_stamped_required_document_rows(task):
 			updated += 1
 	return updated
 

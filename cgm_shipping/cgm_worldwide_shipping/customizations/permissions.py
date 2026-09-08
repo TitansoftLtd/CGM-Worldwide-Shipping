@@ -233,20 +233,14 @@ def user_has_declarant_department_access(user: str | None = None) -> bool:
 
 @frappe.request_cache
 def transport_department_stems() -> frozenset[str]:
-	"""Department stems for transport / empty-return container steps."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-		CONTAINER_UPDATE_TASK_SEQS,
-		TRANSPORT_TASK_SEQS,
-	)
+	"""Department stems for transport container / delivery steps."""
+	return frozenset({"Transport"})
 
-	stems: set[str] = set()
-	for seq in TRANSPORT_TASK_SEQS | CONTAINER_UPDATE_TASK_SEQS:
-		stem = department_stem_for_sequence(seq)
-		if stem and stem in {"Transport", "Field Operations"}:
-			stems.add(stem)
-	if not stems:
-		stems.update({"Transport", "Field Operations"})
-	return frozenset(stems)
+
+@frappe.request_cache
+def field_operations_department_stems() -> frozenset[str]:
+	"""Department stems for field clearance / stuffing steps."""
+	return frozenset({"Field Operations"})
 
 
 @frappe.request_cache
@@ -261,6 +255,20 @@ def configured_transport_roles() -> frozenset[str]:
 def user_has_transport_department_access(user: str | None = None) -> bool:
 	"""True when the user has a role listed under Transport roles (Settings / Role Group)."""
 	return bool(_department_grant_roles(user_roles(user)) & configured_transport_roles())
+
+
+@frappe.request_cache
+def configured_field_operations_roles() -> frozenset[str]:
+	"""Field Operations roles from CGM Role Group and/or Settings → Roles tab."""
+	return _department_grant_roles(
+		_roles_from_cgm_role_group("Field Operations")
+		| _roles_from_settings_field("custom_field_operations_roles")
+	)
+
+
+def user_has_field_operations_department_access(user: str | None = None) -> bool:
+	"""True when the user has a role listed under Field Operations roles."""
+	return bool(_department_grant_roles(user_roles(user)) & configured_field_operations_roles())
 
 
 def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool:
@@ -345,6 +353,13 @@ def documentation_visibility_department_stems() -> frozenset[str]:
 	"""Departments Documentation roles may see in Task list / form."""
 	stems = set(_stems_for_role_group("Documentation"))
 	stems.add("Documentation")
+	return frozenset(stems)
+
+
+def field_operations_visibility_department_stems() -> frozenset[str]:
+	"""Departments Field Operations roles may see in Task list / form."""
+	stems = set(_stems_for_role_group("Field Operations"))
+	stems |= set(field_operations_department_stems())
 	return frozenset(stems)
 
 
@@ -442,6 +457,7 @@ def visibility_department_stems_for_user(user: str | None = None) -> set[str]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
 		ROLE_GROUP_DECLARATION,
 		ROLE_GROUP_DOCUMENTATION,
+		ROLE_GROUP_FIELD_OPERATIONS,
 		ROLE_GROUP_FINANCE,
 		ROLE_GROUP_OPERATIONS,
 		ROLE_GROUP_TRANSPORT,
@@ -471,6 +487,11 @@ def visibility_department_stems_for_user(user: str | None = None) -> set[str]:
 			ROLE_GROUP_TRANSPORT,
 			configured_transport_roles(),
 			transport_department_stems(),
+		),
+		(
+			ROLE_GROUP_FIELD_OPERATIONS,
+			configured_field_operations_roles(),
+			field_operations_department_stems(),
 		),
 	]
 
@@ -811,12 +832,13 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 
 
 def _finance_only_visibility(user: str) -> bool:
-	"""True when user is Finance Settings/role only (not Ops/Declarant/Documentation/Transport)."""
+	"""True when user is Finance Settings/role only (not Ops/Declarant/Documentation/Transport/Field Ops)."""
 	return user_has_finance_department_access(user) and not (
 		user_has_operations_department_access(user)
 		or user_has_declarant_department_access(user)
 		or user_has_documentation_department_access(user)
 		or user_has_transport_department_access(user)
+		or user_has_field_operations_department_access(user)
 	)
 
 
@@ -827,6 +849,7 @@ def _documentation_only_visibility(user: str) -> bool:
 		or user_has_operations_department_access(user)
 		or user_has_declarant_department_access(user)
 		or user_has_transport_department_access(user)
+		or user_has_field_operations_department_access(user)
 	)
 
 
@@ -837,6 +860,7 @@ def _operations_only_visibility(user: str) -> bool:
 		or user_has_documentation_department_access(user)
 		or user_has_declarant_department_access(user)
 		or user_has_transport_department_access(user)
+		or user_has_field_operations_department_access(user)
 	)
 
 
@@ -847,6 +871,18 @@ def _transport_only_visibility(user: str) -> bool:
 		or user_has_documentation_department_access(user)
 		or user_has_declarant_department_access(user)
 		or user_has_operations_department_access(user)
+		or user_has_field_operations_department_access(user)
+	)
+
+
+def _field_operations_only_visibility(user: str) -> bool:
+	"""True when user is Field Operations Settings/role only."""
+	return user_has_field_operations_department_access(user) and not (
+		user_has_finance_department_access(user)
+		or user_has_documentation_department_access(user)
+		or user_has_declarant_department_access(user)
+		or user_has_operations_department_access(user)
+		or user_has_transport_department_access(user)
 	)
 
 
@@ -857,6 +893,7 @@ def _declaration_only_visibility(user: str) -> bool:
 		or user_has_documentation_department_access(user)
 		or user_has_operations_department_access(user)
 		or user_has_transport_department_access(user)
+		or user_has_field_operations_department_access(user)
 	)
 
 
@@ -913,6 +950,12 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 			restricted=restricted,
 			assigned_only=assigned_only,
 			stems=set(transport_department_stems()) | set(_stems_for_role_group("Transport")),
+		)
+	if _field_operations_only_visibility(user):
+		return _department_only_sql(
+			restricted=restricted,
+			assigned_only=assigned_only,
+			stems=set(field_operations_visibility_department_stems()) or {"Field Operations"},
 		)
 	if _finance_only_visibility(user):
 		fin_stems = set(finance_payment_department_stems()) or {"Finance"}

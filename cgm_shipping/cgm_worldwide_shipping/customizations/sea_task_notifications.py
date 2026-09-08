@@ -348,18 +348,18 @@ def sea_task_notification_definitions() -> list[dict]:
 				"Verify the invoice attachment on the invoice row.",
 				"Use <b>Make Payment</b> (Journal Entry), or tick <b>Client will pay</b> "
 				"on the invoice row.",
-				note="The Entry Slip receipt is optional - this flow closes once the "
-				"invoice is verified and paid.",
+				note="After payment, attach and verify the <b>Entry Slip Receipt</b> "
+				"before this task can complete.",
 			),
 			roles=finance,
 		),
 		_def(
 			ENTRY_RECEIPT_FOR_DECLARANT,
-			subject=f"Attach Entry Slip receipt (optional) - {_SHIPMENT}",
+			subject=f"Attach Entry Slip receipt - {_SHIPMENT}",
 			message=_task_message(
 				"Finance has recorded the Entry Slip payment (Journal Entry).",
-				"Attach the <b>Entry Slip Receipt</b> on the receipt row if one is issued.",
-				note="This receipt is optional and does not hold up the task.",
+				"Attach the <b>Entry Slip Receipt</b> on the receipt row.",
+				note="Finance must verify the receipt before the finance task can complete.",
 			),
 			roles=entry_receipt_roles,
 		),

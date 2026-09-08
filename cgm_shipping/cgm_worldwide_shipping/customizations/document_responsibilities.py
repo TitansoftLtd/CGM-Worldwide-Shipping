@@ -32,6 +32,7 @@ ROLE_GROUP_FINANCE = "Finance"
 ROLE_GROUP_DECLARATION = "Declaration"
 ROLE_GROUP_OPERATIONS = "Operations"
 ROLE_GROUP_TRANSPORT = "Transport"
+ROLE_GROUP_FIELD_OPERATIONS = "Field Operations"
 ROLE_GROUP_DOCUMENTATION = "Documentation"
 
 # name → (department_stems, default roles)
@@ -53,8 +54,12 @@ DEFAULT_ROLE_GROUPS: dict[str, tuple[str, tuple[str, ...]]] = {
 		("CGM Documentation", "Documentation"),
 	),
 	ROLE_GROUP_TRANSPORT: (
-		"Transport,Field Operations",
-		("Transport Manager", "Transport User", "Fleet Manager", "Transporter"),
+		"Transport",
+		("Transport Manager", "Transport User", "Fleet Manager", "Transporter", "Transport Officer"),
+	),
+	ROLE_GROUP_FIELD_OPERATIONS: (
+		"Field Operations",
+		("Field Officer", "Field Operations Officers"),
 	),
 }
 
@@ -145,6 +150,7 @@ SETTINGS_ROLE_FIELDS = {
 	ROLE_GROUP_OPERATIONS: "custom_operations_roles",
 	ROLE_GROUP_DOCUMENTATION: "custom_documentation_roles",
 	ROLE_GROUP_TRANSPORT: "custom_transport_roles",
+	ROLE_GROUP_FIELD_OPERATIONS: "custom_field_operations_roles",
 }
 
 
@@ -439,6 +445,7 @@ def migrate_strict_department_task_visibility() -> bool:
 		ROLE_GROUP_DECLARATION,
 		ROLE_GROUP_OPERATIONS,
 		ROLE_GROUP_TRANSPORT,
+		ROLE_GROUP_FIELD_OPERATIONS,
 	):
 		if not frappe.db.exists("CGM Role Group", group_name):
 			continue
@@ -476,6 +483,99 @@ def migrate_strict_department_task_visibility() -> bool:
 	if changed:
 		frappe.clear_cache()
 	return changed
+
+
+def migrate_field_operations_role_group() -> bool:
+	"""Split Field Operations into its own Settings role list and CGM Role Group."""
+	if not frappe.db.exists("DocType", "CGM Role Group"):
+		return False
+
+	changed = False
+	field_officer_roles = ("Field Officer", "Field Operations Officers")
+
+	if not frappe.db.exists("CGM Role Group", ROLE_GROUP_FIELD_OPERATIONS):
+		ensure_cgm_role_groups()
+		changed = True
+
+	for group_name, stems in (
+		(ROLE_GROUP_TRANSPORT, "Transport"),
+		(ROLE_GROUP_FIELD_OPERATIONS, "Field Operations"),
+	):
+		if not frappe.db.exists("CGM Role Group", group_name):
+			continue
+		doc = frappe.get_doc("CGM Role Group", group_name)
+		if (doc.department_stems or "").strip() != stems:
+			doc.department_stems = stems
+			doc.flags.ignore_permissions = True
+			doc.flags.skip_settings_sync = True
+			doc.save(ignore_permissions=True)
+			changed = True
+
+	if frappe.db.exists("CGM Role Group", ROLE_GROUP_TRANSPORT):
+		doc = frappe.get_doc("CGM Role Group", ROLE_GROUP_TRANSPORT)
+		current_roles = [r.role for r in (doc.get("roles") or []) if r.role]
+		kept_roles = [role for role in current_roles if role not in field_officer_roles]
+		if kept_roles != current_roles:
+			doc.set("roles", [])
+			for role in kept_roles:
+				doc.append("roles", {"role": role})
+			doc.flags.ignore_permissions = True
+			doc.flags.skip_settings_sync = True
+			doc.save(ignore_permissions=True)
+			changed = True
+
+	if frappe.db.exists("DocType", "CGM Shipping Settings"):
+		settings = frappe.get_doc("CGM Shipping Settings")
+		transport_field = SETTINGS_ROLE_FIELDS.get(ROLE_GROUP_TRANSPORT)
+		field_ops_field = SETTINGS_ROLE_FIELDS.get(ROLE_GROUP_FIELD_OPERATIONS)
+		settings_changed = False
+
+		if (
+			transport_field
+			and field_ops_field
+			and settings.meta.has_field(transport_field)
+			and settings.meta.has_field(field_ops_field)
+		):
+			transport_roles = [r.role for r in (settings.get(transport_field) or []) if r.role]
+			field_ops_roles = {r.role for r in (settings.get(field_ops_field) or []) if r.role}
+			moved = [role for role in transport_roles if role in field_officer_roles]
+			kept_transport = [role for role in transport_roles if role not in field_officer_roles]
+
+			if moved:
+				settings.set(transport_field, [])
+				for role in kept_transport:
+					settings.append(transport_field, {"role": role})
+				settings_changed = True
+
+			for role in moved:
+				if role not in field_ops_roles:
+					settings.append(field_ops_field, {"role": role})
+					field_ops_roles.add(role)
+					settings_changed = True
+
+		if (
+			field_ops_field
+			and settings.meta.has_field(field_ops_field)
+			and not settings.get(field_ops_field)
+		):
+			for role in field_officer_roles:
+				if frappe.db.exists("Role", role):
+					settings.append(field_ops_field, {"role": role})
+					settings_changed = True
+
+		if settings_changed:
+			settings.flags.ignore_permissions = True
+			settings.save(ignore_permissions=True)
+			changed = True
+
+	if changed:
+		frappe.clear_cache()
+	return changed
+
+
+def migrate_field_operations_transport_visibility() -> bool:
+	"""Backward-compatible alias for older patch name."""
+	return migrate_field_operations_role_group()
 
 
 def ensure_default_role_group_membership(settings=None) -> bool:
@@ -567,6 +667,7 @@ def roles_for_group(role_group: str) -> frozenset[str]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		configured_declaration_roles,
 		configured_documentation_roles,
+		configured_field_operations_roles,
 		configured_finance_roles,
 		configured_operations_roles,
 		configured_transport_roles,
@@ -578,6 +679,7 @@ def roles_for_group(role_group: str) -> frozenset[str]:
 		ROLE_GROUP_OPERATIONS: configured_operations_roles,
 		ROLE_GROUP_DOCUMENTATION: configured_documentation_roles,
 		ROLE_GROUP_TRANSPORT: configured_transport_roles,
+		ROLE_GROUP_FIELD_OPERATIONS: configured_field_operations_roles,
 	}
 	getter = legacy.get(role_group)
 	if getter:
@@ -627,8 +729,10 @@ def user_in_role_group(role_group: str, user: str | None = None) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		user_has_declarant_department_access,
 		user_has_documentation_department_access,
+		user_has_field_operations_department_access,
 		user_has_finance_department_access,
 		user_has_operations_department_access,
+		user_has_transport_department_access,
 		user_roles,
 	)
 
@@ -653,15 +757,9 @@ def user_in_role_group(role_group: str, user: str | None = None) -> bool:
 	if role_group == ROLE_GROUP_OPERATIONS:
 		return user_has_operations_department_access(user)
 	if role_group == ROLE_GROUP_TRANSPORT:
-		from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-			configured_transport_roles,
-			transport_department_stems,
-		)
-
-		roles = user_roles(user)
-		if roles & configured_transport_roles():
-			return True
-		return bool(roles & transport_department_stems())
+		return user_has_transport_department_access(user)
+	if role_group == ROLE_GROUP_FIELD_OPERATIONS:
+		return user_has_field_operations_department_access(user)
 	return False
 
 

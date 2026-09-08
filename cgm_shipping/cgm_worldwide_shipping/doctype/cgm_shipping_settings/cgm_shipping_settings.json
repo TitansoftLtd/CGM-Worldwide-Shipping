@@ -50,6 +50,7 @@
   "custom_documentation_roles",
   "custom_declaration_roles",
   "custom_transport_roles",
+  "custom_field_operations_roles",
   "section_document_responsibilities",
   "custom_document_responsibilities",
   "section_email_templates",
@@ -198,10 +199,17 @@
    "options": "CGM Role Item"
   },
   {
-   "description": "Roles that may open Transport / Field Operations tasks (book trucks, gate out, delivery, empty return).",
+   "description": "Roles that may open Transport-department sea tasks (book trucks, gate out, delivery, empty return).",
    "fieldname": "custom_transport_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Transport roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "Roles that may open Field Operations-department sea tasks (clearance, stuffing, gate processes). Example: Field Officer.",
+   "fieldname": "custom_field_operations_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Field Operations roles",
    "options": "CGM Role Item"
   },
   {
@@ -541,7 +549,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-03 22:08:00.000000",
+ "modified": "2026-09-08 06:20:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

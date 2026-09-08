@@ -64,10 +64,11 @@ Same pattern after Delivery Order is lodged (task 14).
 
 ## Entry slip workflow (tasks 12–13)
 
-1. Attach Entry Slip invoice on Task 12 (Create Entry).
-2. Finance verifies the invoice on Task 13 - Create Entry completes automatically.
-3. Finance pays (or client-pays) and uploads receipt on Task 13.
-4. ENTRY customs document on Create Entry Clearance Documents remains optional when issued.
+1. Attach **Entry Slip invoice** on Task 12 (Create Entry).
+2. Finance verifies the invoice on Task 13, records payment (Journal Entry or **Client will pay**), then attaches and verifies the **Entry Slip receipt**.
+3. **Create Entry** stays open until Finance has **verified and paid** the invoice — it does not complete on invoice verify alone.
+4. **Finance Pays Entry Slip** completes after payment and receipt verification.
+5. **ENTRY** customs document on Create Entry → **Task Documents** remains optional when issued.
 
 Port arrival / ATA is confirmed separately on the **Project** (Actions → Confirm Shipment Arrival at the Port) and does not complete Create Entry.
 
@@ -147,7 +148,8 @@ Task sequence minimums are configured in **CGM Shipping Settings → Sea Workflo
 
 ## Guards
 
-- Task cannot complete until required document codes are verified (per Settings).
+- Task cannot complete until **Required Document Types** from the template (if any) are attached on **Task Documents**; extra document rows added during clearance are allowed.
+- **Field Officers conduct clearance** (task 17): complete when any file is attached on Task Documents, or when **Verification Status** is *Released by CRO*, or when the **Verification Report** is attached — no fixed document code (e.g. FIELD only).
 - Permit rows must have invoices/receipts verified before finance tasks complete.
 - Post-clearance permit rules are enforced before **Entry Lodged** in some configurations.
 
