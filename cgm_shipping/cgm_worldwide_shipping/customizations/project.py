@@ -16,22 +16,25 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 	sync_project_documents_from_opportunity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-	bootstrap_sea_task_plan_for_project,
 	enforce_workflow_task_gate,
 	get_sea_closure_blockers,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.transit_clearance import (
-	bootstrap_transit_task_plan_for_project,
+from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
+	copy_opportunity_scalars_to_project,
+	resolve_fcl_batch_for_opportunity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	assign_lp_project_reference,
 	is_lp_project_reference,
+	refresh_project_reference_from_fields,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	apply_awb_fields_to_doc,
 	apply_bill_of_lading_from_source,
 	copy_carrier_fields_from_source,
 	copy_shipment_classification_from_source,
 	copy_tracking_fields_from_source,
+	awb_quantity_summary,
 	get_awb_value_from_doc,
 	get_bl_quantity_summary,
 	get_project_awb_field,
@@ -103,10 +106,50 @@ def hydrate_project_ata_on_load(doc, _method=None) -> None:
 def get_documents(doc):
 	return doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
 
+
+def find_shipment_row_for_intake_code(doc, intake_code: str):
+	"""Resolve a Client Documents row for CI/PKL intake codes (name or master code)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		document_type_match_tokens,
+		required_document_code_is_attached,
+	)
+
+	for row in get_documents(doc):
+		if not row.document_type:
+			continue
+		attached = document_type_match_tokens(row.document_type)
+		if required_document_code_is_attached(intake_code, attached):
+			return row
+	return None
+
+
+def intake_shipment_row_is_present(row) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
+
+	if not row:
+		return False
+	if not primary_attachment(row):
+		return False
+	return (row.status or "").strip() != "Missing"
+
+
+def intake_document_label(intake_code: str) -> str:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		get_document_type_link_name,
+	)
+
+	return get_document_type_link_name(intake_code) or intake_code
+
 # ─── Workflow Stage Requirements ─────────────────────────────────────────────
 def get_stage_requirements():
 	"""Map Project shipment status to required Document Type stages (from CGM Shipping Settings)."""
-	settings = frappe.get_single("CGM Shipping Settings")
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
+		return {}
 	rows = sorted(
 		settings.get("custom_workflow_stage_requirements") or [],
 		key=lambda r: ((r.shipment_workflow_state or "").strip(), r.idx or 0),
@@ -123,8 +166,13 @@ def get_stage_requirements():
 
 # ─── Project Save Hooks ───────────────────────────────────────────────────────
 def assign_project_reference_on_insert(doc, _method=None):
-	"""Allocate LP {qty}X{size}-{batch}/{seq} on project_name and custom_project_reference."""
+	"""Allocate Client Ref / Quantity[/ Batch] on project_name and custom_project_reference."""
 	assign_lp_project_reference(doc)
+
+
+def sync_project_reference_on_save(doc, _method=None):
+	"""Keep project_name aligned when batch or quantity fields are edited manually."""
+	refresh_project_reference_from_fields(doc)
 
 
 def on_project_onload(doc, _method=None):
@@ -250,7 +298,13 @@ def normalize_document_rows(doc):
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		normalize_shipment_document_row,
 		primary_attachment,
+		get_draft_attachment,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.doctype.shipment_document.shipment_document import (
+		stamp_shipment_document_upload_metadata,
+	)
+
+	stamp_shipment_document_upload_metadata(doc, SHIPMENT_DOCUMENTS_FIELD)
 
 	rows = list(get_documents(doc))
 	# Batch the Document Type 'default_required' lookups (was one query per row).
@@ -273,27 +327,16 @@ def normalize_document_rows(doc):
 			if default_required is not None:
 				row.required = int(default_required)
 
-		# 2. Auto-manage upload state and uploader metadata.
+		# 2. Auto-manage upload state (metadata stamped separately on attachment change).
 		if primary_attachment(row):
 			if row.status in (None, "", "Missing"):
 				row.status = "Uploaded"
-			if not row.uploaded_by:
-				row.uploaded_by = frappe.session.user
-			if not row.uploaded_on:
-				row.uploaded_on = now_datetime()
-		elif row.get("initial_attachment") or row.get("final_attachment"):
+		elif get_draft_attachment(row) or row.get("final_attachment"):
 			normalize_shipment_document_row(row)
-			if primary_attachment(row):
-				if row.status in (None, "", "Missing"):
-					row.status = "Uploaded"
-				if not row.uploaded_by:
-					row.uploaded_by = frappe.session.user
-				if not row.uploaded_on:
-					row.uploaded_on = now_datetime()
+			if primary_attachment(row) and row.status in (None, "", "Missing"):
+				row.status = "Uploaded"
 		else:
 			row.status = "Missing"
-			row.uploaded_by = None
-			row.uploaded_on = None
 			row.verified_by = None
 			row.verified_on = None
 
@@ -360,18 +403,10 @@ def enforce_intake_documents_before_documents_received(doc):
 	if doc.get("custom_shipment_status") != "Documents Received":
 		return
 	missing = []
-	rows_by_code = {}
-	for row in get_documents(doc):
-		if not row.document_type:
-			continue
-		code = frappe.db.get_value("Document Type", row.document_type, "code")
-		if code:
-			rows_by_code[code] = row
 	for code in INTAKE_DOCUMENT_CODES:
-		row = rows_by_code.get(code)
-		if not row or not row.attachment or row.status == "Missing":
-			label = frappe.db.get_value("Document Type", {"code": code}, "name") or code
-			missing.append(label)
+		row = find_shipment_row_for_intake_code(doc, code)
+		if not intake_shipment_row_is_present(row):
+			missing.append(intake_document_label(code))
 	if missing:
 		frappe.throw(
 			f"Upload client documents in <b>Client Documents</b> first: {', '.join(missing)}. "
@@ -379,14 +414,27 @@ def enforce_intake_documents_before_documents_received(doc):
 		)
 
 def normalize_permit_register_rows(doc):
-	"""Derive Pre-Cleared / Post-Cleared from invoice, payment, and permit document fields."""
+	"""Derive clearance phase and stamp permit attachment upload metadata."""
 	if not doc.meta.has_field(PERMIT_REGISTER_FIELD):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		stamp_permit_register_upload_metadata,
+	)
+
+	stamp_permit_register_upload_metadata(doc, PERMIT_REGISTER_FIELD)
 	for row in doc.get(PERMIT_REGISTER_FIELD) or []:
 		row.clearance_phase = derive_permit_clearance_phase(row)
 
 def derive_permit_clearance_phase(row) -> str:
 	"""Map permit row finance fields to high-level clearance phase (see OPERATIONS_PROCESS.md §7)."""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+		permit_requires_payment,
+	)
+
+	# Foreign origin: certificate alone completes clearance (no payment path).
+	if not permit_requires_payment(row) and row.get("permit_document"):
+		return "Post-Cleared"
+
 	if row.get("payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", row.payment_entry, "docstatus")
 		if int(pe_status or 0) == 1:
@@ -510,16 +558,9 @@ def project_has_intake_documents(project_doc) -> bool:
 	shipment_field = get_project_shipment_documents_field()
 	if not shipment_field or not project_doc.meta.has_field(shipment_field):
 		return False
-	rows_by_code = {}
-	for row in project_doc.get(shipment_field) or []:
-		if not row.document_type:
-			continue
-		code = frappe.db.get_value("Document Type", row.document_type, "code")
-		if code:
-			rows_by_code[code] = row
 	for code in INTAKE_DOCUMENT_CODES:
-		row = rows_by_code.get(code)
-		if not row or not row.attachment:
+		row = find_shipment_row_for_intake_code(project_doc, code)
+		if not intake_shipment_row_is_present(row):
 			return False
 	return True
 
@@ -583,6 +624,22 @@ def project_ready_for_documents_received(project_doc) -> bool:
 	return project_has_intake_documents(project_doc)
 
 
+def cap_workflow_status_for_intake(project_doc, progress_status: str, states: list[str]) -> str:
+	"""Do not advance to Documents Received (or beyond) until CI/PKL intake is satisfied."""
+	if not progress_status or progress_status not in states:
+		return progress_status
+	if project_ready_for_documents_received(project_doc):
+		return progress_status
+	try:
+		documents_received_index = states.index("Documents Received")
+		progress_index = states.index(progress_status)
+	except ValueError:
+		return progress_status
+	if progress_index >= documents_received_index:
+		return states[0]
+	return progress_status
+
+
 def bootstrap_project_workflow_status(project_name: str) -> None:
 	"""
 	After insert: move to Documents Received when CRM already supplied verified client docs.
@@ -621,11 +678,12 @@ def _seed_project_workflow_state(project_name: str) -> None:
 	if not shipment_status:
 		return
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		get_sea_import_workflow_states,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_clearance_workflow_states_for_project,
 	)
 
-	valid_states = get_sea_import_workflow_states()
+	project = frappe.get_doc("Project", project_name)
+	valid_states = get_clearance_workflow_states_for_project(project)
 	if not valid_states or shipment_status not in valid_states:
 		return
 
@@ -647,8 +705,6 @@ def insert_shipment_project(project) -> str:
 	frappe.flags.cgm_skip_task_project_sync = True
 	try:
 		project.insert(ignore_permissions=True)
-		bootstrap_sea_task_plan_for_project(project.name)
-		bootstrap_transit_task_plan_for_project(project.name)
 	finally:
 		frappe.flags.cgm_skip_task_project_sync = False
 	refresh_project_documents(project.name)
@@ -682,6 +738,10 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 		if awb and not project.get(project_awb_field):
 			project.set(project_awb_field, awb)
 
+	awb_name = project.get(project_awb_field) if project_meta.has_field(project_awb_field) else None
+	if awb_name and frappe.db.exists("Air Waybill", awb_name):
+		apply_awb_fields_to_doc(project, frappe.get_doc("Air Waybill", awb_name))
+
 	quantity_field = bl_config.get("opportunity_quantity_field")
 	if quantity_field and project_meta.has_field(quantity_field) and not project.get(quantity_field):
 		qty = source_doc.get(quantity_field)
@@ -695,34 +755,142 @@ def apply_preshipment_transport_defaults(project, source_doc) -> None:
 					quantity_field,
 					get_bl_quantity_summary(frappe.get_doc("Bill of Lading", bl_name)),
 				)
+			elif awb_name and frappe.db.exists("Air Waybill", awb_name):
+				project.set(
+					quantity_field,
+					awb_quantity_summary(frappe.get_doc("Air Waybill", awb_name)),
+				)
 
 def apply_opportunity_to_project_mappings(project, opp) -> None:
 	"""Copy scalar Opportunity shipment fields onto Project when the target is empty."""
-	meta = project.meta
-	pairs = (
-		("custom_entry_no", "custom_entry_no"),
-		("custom_consignee", "custom_consignee"),
-		("custom_quantity", "custom_quantity"),
-		("custom_gross_weight", "custom_gross_weightkg"),
-		("custom_weight_nw", "custom_net_weightkg"),
-		("custom_description_of_goods", "custom_description_of_goods"),
-		("custom_clearance_station", "custom_clearance_station"),
-		("custom_station_code", "custom_station_code"),
-		("custom_country_of_origin", "custom_country_of_origin"),
-		("custom_cargo_type", "custom_cargo_type"),
-		("custom_client_refrence_no", "custom_client_refrence_no"),
-		("custom_batch_no", "custom_batch_no"),
+	copy_opportunity_scalars_to_project(project, opp, only_empty=True)
+	copy_opportunity_requested_cargo_to_project(opp, project)
+
+
+REQUESTED_CARGO_ROW_FIELDS = ("cargo_size", "quantity")
+
+
+def copy_opportunity_requested_cargo_to_project(opp, project, *, replace: bool = False) -> bool:
+	"""Copy FCL requested-cargo rows from Opportunity onto Project."""
+	table_field = "custom_requested_cargo_quantity"
+	if not (opp.meta.has_field(table_field) and project.meta.has_field(table_field)):
+		return False
+
+	new_rows = [
+		{
+			"cargo_size": (row.get("cargo_size") or "").strip(),
+			"quantity": str(row.get("quantity") or "").strip(),
+		}
+		for row in opp.get(table_field) or []
+	]
+
+	existing = [
+		{
+			"cargo_size": (row.get("cargo_size") or "").strip(),
+			"quantity": str(row.get("quantity") or "").strip(),
+		}
+		for row in project.get(table_field) or []
+	]
+	if not replace and existing:
+		# Keep existing Project rows unless Opportunity has better (sized) data.
+		existing_has_sizes = all(row.get("cargo_size") for row in existing) if existing else False
+		new_has_sizes = all(row.get("cargo_size") for row in new_rows) if new_rows else False
+		if existing_has_sizes or not new_has_sizes:
+			if existing == new_rows:
+				return False
+			if existing_has_sizes:
+				return False
+
+	if existing == new_rows:
+		return False
+
+	project.set(table_field, [])
+	for row in new_rows:
+		project.append(table_field, {field: row.get(field) for field in REQUESTED_CARGO_ROW_FIELDS})
+	return True
+
+
+def sync_linked_project_from_booking(booking_doc, opportunity: str) -> str | None:
+	"""Push Booking Confirmation cargo + documents onto the linked Project."""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
 	)
-	for src_field, dest_field in pairs:
-		if not meta.has_field(dest_field) or not opp.meta.has_field(src_field):
-			continue
-		value = opp.get(src_field)
-		if value not in (None, "") and not project.get(dest_field):
-			project.set(dest_field, value)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+
+	if project.meta.has_field("custom_booking_confirmation"):
+		if project.get("custom_booking_confirmation") != booking_doc.name:
+			project.set("custom_booking_confirmation", booking_doc.name)
+
+	copy_opportunity_scalars_to_project(project, opp, only_empty=False)
+	copy_opportunity_requested_cargo_to_project(opp, project, replace=True)
+	sync_project_documents_from_opportunity(project, opp)
+
+	project.flags.ignore_validate = True
+	project.save(ignore_permissions=True)
+	return project_name
+
+
+def sync_linked_project_from_opportunity(opp, _method=None) -> None:
+	"""Keep linked Project transport fields aligned when Opportunity intake data is filled later."""
+	if getattr(opp, "is_new", lambda: False)() or not opp.name:
+		return
+	if not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opp.name}, "name"
+	)
+	if not project_name:
+		return
+
+	project = frappe.get_doc("Project", project_name)
+	changed = copy_opportunity_scalars_to_project(project, opp, only_empty=True)
+	if copy_opportunity_requested_cargo_to_project(opp, project, replace=False):
+		changed = True
+
+	if not changed:
+		return
+
+	project.flags.ignore_validate = True
+	project.save(ignore_permissions=True)
+
 
 def sync_predocuments_from_source(project, source_doc) -> None:
 	"""Copy Opportunity Clients Documents and Customer KRA PIN onto Project shipment documents."""
 	sync_project_documents_from_opportunity(project, source_doc)
+
+
+def sync_linked_project_documents_from_opportunity(opportunity: str) -> str | None:
+	"""Push Opportunity client documents + Customer KRA PIN onto the linked Project."""
+	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
+		return None
+
+	project_name = frappe.db.get_value(
+		"Project", {"custom_source_opportunity": opportunity}, "name"
+	)
+	if not project_name:
+		return None
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	project = frappe.get_doc("Project", project_name)
+	opp = frappe.get_doc("Opportunity", opportunity)
+	sync_project_documents_from_opportunity(project, opp)
+
+	frappe.flags.cgm_syncing_shipment_documents = True
+	try:
+		project.flags.ignore_validate = True
+		project.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_shipment_documents = False
+	return project_name
 
 @frappe.whitelist()
 def get_shipment_project_for_opportunity(opportunity: str) -> str | None:
@@ -779,7 +947,8 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	apply_project_tracking_defaults(proj)
 	if project_name and not is_lp_project_reference(project_name):
 		frappe.throw(
-			"Projects use the LP {qty}X{size}-{batch}/{seq} naming format. "
+			"Projects use Client Reference / Quantity / Batch (FCL) "
+			"or Client Reference / packages (LCL). "
 			"Leave project_name blank to auto-generate."
 		)
 
@@ -791,15 +960,7 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	apply_preshipment_transport_defaults(proj, opp)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
 		apply_project_type_from_shipment_type,
-		opportunity_to_project_field_pairs,
 	)
-
-	for src_field, dest_field in opportunity_to_project_field_pairs():
-		if not proj.meta.has_field(dest_field) or not opp.meta.has_field(src_field):
-			continue
-		value = opp.get(src_field)
-		if value not in (None, "") and not proj.get(dest_field):
-			proj.set(dest_field, value)
 
 	apply_project_type_from_shipment_type(proj, opp.get("custom_shipment_type"))
 	sync_cargo_type_from_linked_bl(proj)

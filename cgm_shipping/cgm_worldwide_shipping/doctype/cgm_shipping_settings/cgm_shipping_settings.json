@@ -5,18 +5,61 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "tab_task_workflow_settings",
+  "section_task_workflow_settings",
+  "default_company",
+  "sea_import_template",
+  "section_package_field_visibility",
+  "package_visibility_modes",
+  "package_visibility_cargo_types",
+  "tab_container_port_settings",
+  "section_container_port_settings",
+  "kpa_default_free_days",
+  "section_kpa_port_charges",
+  "kpa_port_rate_currency",
+  "kpa_port_daily_rate",
+  "section_container_accrual_accounts",
+  "demurrage_accrual_expense_account",
+  "demurrage_accrual_payable_account",
+  "column_break_accrual_accounts",
+  "kpa_port_accrual_expense_account",
+  "kpa_port_accrual_payable_account",
+  "section_funding_settings",
+  "default_operational_expense_account",
+  "tab_notification_settings",
+  "section_notification_settings",
+  "inspection_reminder_hours",
+  "portal_url",
+  "ops_notification_email",
+  "section_container_deposit_settings",
+  "container_deposit_account",
+  "container_deposit_sales_item",
+  "deposit_refund_remind_after_unit",
+  "deposit_refund_remind_after",
+  "column_break_deposit_reminders",
+  "deposit_refund_repeat_unit",
+  "deposit_refund_repeat_every",
+  "deposit_refund_stop_after_days",
+  "section_workflow_notifications",
+  "custom_workflow_notifications",
+  "roles_tab",
+  "section_roles",
+  "custom_finance_roles",
+  "custom_finance_department",
+  "custom_operations_roles",
+  "custom_documentation_roles",
+  "custom_declaration_roles",
+  "custom_transport_roles",
+  "custom_field_operations_roles",
+  "section_document_responsibilities",
+  "custom_document_responsibilities",
+  "section_email_templates",
+  "custom_default_email_template",
+  "custom_permit_finance_email_template",
+  "custom_ucr_finance_email_template",
   "tab_quotation_customs",
   "section_default_customs_taxes",
   "custom_default_customs_taxes",
-  "sea_import_task_plan_tab",
-  "section_break_sea_import",
-  "custom_sea_import_task_template",
-  "sea_transit_task_plan_tab",
-  "section_sea_transit_import",
-  "custom_sea_transit_import_shared_through_seq",
-  "custom_sea_transit_import_extension_template",
-  "section_sea_transit_export",
-  "custom_sea_transit_export_task_template",
   "tab_sea_task_requirements",
   "section_sea_task_requirements",
   "custom_sea_clearance_task_requirements",
@@ -26,17 +69,6 @@
   "tab_workflow_document_gates",
   "section_workflow_document_gates",
   "custom_workflow_stage_requirements",
-  "roles_tab",
-  "section_roles",
-  "custom_finance_roles",
-  "custom_finance_department",
-  "custom_default_purchase_item",
-  "custom_operations_roles",
-  "custom_declaration_roles",
-  "section_email_templates",
-  "custom_default_email_template",
-  "custom_permit_finance_email_template",
-  "custom_ucr_finance_email_template",
   "tab_container_tracking",
   "section_container_task_sequences",
   "custom_track_eta_task_seq",
@@ -49,9 +81,7 @@
   "custom_offload_task_seq",
   "custom_empty_return_task_seq",
   "custom_interchange_task_seq",
-  "custom_kpa_free_days",
-  "section_batch_counter",
-  "last_batch_no"
+  "custom_kpa_free_days"
  ],
  "fields": [
   {
@@ -72,61 +102,10 @@
    "options": "Default Customs Tax"
   },
   {
-   "fieldname": "sea_import_task_plan_tab",
-   "fieldtype": "Tab Break",
-   "label": "Sea import task plan"
-  },
-  {
-   "fieldname": "section_break_sea_import",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "custom_sea_import_task_template",
-   "fieldtype": "Table",
-   "label": "Sea import task template",
-   "options": "Sea Import Task Template Item"
-  },
-  {
-   "fieldname": "sea_transit_task_plan_tab",
-   "fieldtype": "Tab Break",
-   "label": "Sea transit task plans"
-  },
-  {
-   "description": "Sea Transit Import reuses rows from the Sea import task plan through the shared sequence, then appends the extension rows below. Edit rows here when your process changes — no code deploy required. Link a Shipment Type to this flow via Task Flow Key SEA_TRANSIT_IMPORT_E2E.",
-   "fieldname": "section_sea_transit_import",
-   "fieldtype": "Section Break",
-   "label": "Sea Transit Import"
-  },
-  {
-   "default": "20",
-   "description": "Last shared sea-import task sequence (inclusive). Steps after this come from the extension template below.",
-   "fieldname": "custom_sea_transit_import_shared_through_seq",
-   "fieldtype": "Int",
-   "label": "Shared Through Sequence"
-  },
-  {
-   "description": "Post-KPA transit steps appended after the shared sea-import sequence.",
-   "fieldname": "custom_sea_transit_import_extension_template",
-   "fieldtype": "Table",
-   "label": "Sea Transit Import extension template",
-   "options": "Sea Import Task Template Item"
-  },
-  {
-   "description": "Full task plan for Sea Transit Export. Link a Shipment Type via Task Flow Key SEA_TRANSIT_EXPORT_E2E. Container Tracker sections on each Project are driven by Project Type (standard ERPNext list — add new types there without developer help).",
-   "fieldname": "section_sea_transit_export",
-   "fieldtype": "Section Break",
-   "label": "Sea Transit Export"
-  },
-  {
-   "fieldname": "custom_sea_transit_export_task_template",
-   "fieldtype": "Table",
-   "label": "Sea Transit Export task template",
-   "options": "Sea Import Task Template Item"
-  },
-  {
    "fieldname": "tab_sea_task_requirements",
    "fieldtype": "Tab Break",
-   "label": "Sea task completion rules"
+   "hidden": 1,
+   "label": "Sea task completion rules (legacy)"
   },
   {
    "description": "What must be satisfied before each sea clearance task can be marked completed. Prefer this table over hard-coded Python rules.",
@@ -143,7 +122,8 @@
   {
    "fieldname": "tab_sea_workflow_task_gates",
    "fieldtype": "Tab Break",
-   "label": "Sea workflow task gates"
+   "hidden": 1,
+   "label": "Sea workflow task gates (legacy)"
   },
   {
    "description": "Before Project shipment status can move to each workflow state, these sea task steps must be satisfied. Aligns with CGM Sea Import Workflow on Project.",
@@ -160,7 +140,8 @@
   {
    "fieldname": "tab_workflow_document_gates",
    "fieldtype": "Tab Break",
-   "label": "Shipment status and required document stages"
+   "hidden": 1,
+   "label": "Shipment status and required document stages (legacy)"
   },
   {
    "fieldname": "section_workflow_document_gates",
@@ -178,11 +159,12 @@
    "label": "Roles"
   },
   {
-   "description": "Which roles are notified / treated as Finance, Operations, or Declaration. Required: an empty table means no one is in that group (those notifications and role checks will match nobody).",
+   "description": "Map ERPNext Roles to departments. A role listed here may open only that department's sea tasks. Do not add Projects User / Projects Manager here - give those on the User for Desk access only; use Transporter, Declarant, Finance User, etc. for department tasks.",
    "fieldname": "section_roles",
    "fieldtype": "Section Break"
   },
   {
+   "description": "Roles that may open Finance-department sea tasks only (e.g. Finance User, Accounts User).",
    "fieldname": "custom_finance_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Finance roles",
@@ -196,23 +178,51 @@
    "options": "Department"
   },
   {
-   "description": "Default Item for auto-filled permit and finance Purchase Invoice lines when no type-specific item is set.",
-   "fieldname": "custom_default_purchase_item",
-   "fieldtype": "Link",
-   "label": "Default Purchase Item",
-   "options": "Item"
-  },
-  {
+   "description": "Roles that may open Operations-department sea tasks only (e.g. Operations Manager). Add a role here to grant Operations tasks - not Documentation.",
    "fieldname": "custom_operations_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Operations roles",
    "options": "CGM Role Item"
   },
   {
+   "description": "Roles that may open Documentation-department sea tasks only (e.g. CGM Documentation). Keep this separate from Operations roles.",
+   "fieldname": "custom_documentation_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Documentation roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "Roles that may open Declaration-department sea tasks only (Create UCR, permits, Entry). Example: Declarant.",
    "fieldname": "custom_declaration_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Declaration roles",
    "options": "CGM Role Item"
+  },
+  {
+   "description": "Roles that may open Transport-department sea tasks (book trucks, gate out, delivery, empty return).",
+   "fieldname": "custom_transport_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Transport roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "Roles that may open Field Operations-department sea tasks (clearance, stuffing, gate processes). Example: Field Officer.",
+   "fieldname": "custom_field_operations_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Field Operations roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "Who may upload or verify each document. Role Group is a Link to CGM Role Group - create Documentation or any other group there, add CGM Roles, then pick it here. No code change needed.",
+   "fieldname": "section_document_responsibilities",
+   "fieldtype": "Section Break",
+   "label": "Document responsibilities"
+  },
+  {
+   "fieldname": "custom_document_responsibilities",
+   "fieldtype": "Table",
+   "label": "Document responsibilities",
+   "options": "CGM Document Responsibility Item"
   },
   {
    "description": "HTML + Jinja. Available variables: {{ message }}, {{ task_url }}, {{ project_url }}. Leave blank to use the built-in default.",
@@ -238,7 +248,8 @@
   {
    "fieldname": "tab_container_tracking",
    "fieldtype": "Tab Break",
-   "label": "Container tracking"
+   "hidden": 1,
+   "label": "Container tracking (legacy seq map)"
   },
   {
    "description": "Sea task sequence numbers that update Container Tracker records. Leave at 0 to use the built-in default for that step.",
@@ -311,27 +322,234 @@
    "description": "Default KPA free days applied to new Container Tracker records.",
    "fieldname": "custom_kpa_free_days",
    "fieldtype": "Int",
-   "label": "Default KPA Free Days"
+   "label": "Default KPA Free Days (legacy alias)"
   },
   {
-   "description": "Auto-incremented when a new Opportunity is created. Reset only when re-seeding the batch sequence.",
-   "fieldname": "section_batch_counter",
+   "fieldname": "tab_task_workflow_settings",
+   "fieldtype": "Tab Break",
+   "label": "General"
+  },
+  {
+   "description": "Global shipping configuration. Task plans are maintained in CGM Task Template - not here.",
+   "fieldname": "section_task_workflow_settings",
    "fieldtype": "Section Break",
-   "label": "Opportunity batch counter"
+   "label": "General Settings"
   },
   {
-   "default": "0",
-   "description": "Last batch number assigned on Opportunity. The next Opportunity receives this value + 1.",
-   "fieldname": "last_batch_no",
+   "description": "Used to look up department suffix (abbr) when creating tasks.",
+   "fieldname": "default_company",
+   "fieldtype": "Link",
+   "label": "Default Company",
+   "options": "Company"
+  },
+  {
+   "description": "Optional fallback template name for manual migration only. Shipment Types should use Task Workflow Template instead.",
+   "fieldname": "sea_import_template",
+   "fieldtype": "Link",
+   "label": "Sea Import Fallback Template",
+   "options": "CGM Task Template"
+  },
+  {
+   "description": "Show Number of Packages and Package Type when Mode of Transport or Cargo Type matches a value listed here. Changing this list updates Opportunity and Project forms on save.",
+   "fieldname": "section_package_field_visibility",
+   "fieldtype": "Section Break",
+   "label": "Package field visibility"
+  },
+  {
+   "fieldname": "package_visibility_modes",
+   "fieldtype": "Table MultiSelect",
+   "label": "Show packages for Mode of Transport",
+   "options": "Mode of Transport Item"
+  },
+  {
+   "fieldname": "package_visibility_cargo_types",
+   "fieldtype": "Table MultiSelect",
+   "label": "Show packages for Cargo Type",
+   "options": "Cargo Type Item"
+  },
+  {
+   "fieldname": "tab_container_port_settings",
+   "fieldtype": "Tab Break",
+   "label": "Container & Port Settings"
+  },
+  {
+   "fieldname": "section_container_port_settings",
+   "fieldtype": "Section Break",
+   "label": "Container & Port Settings"
+  },
+  {
+   "default": "5",
+   "fieldname": "kpa_default_free_days",
    "fieldtype": "Int",
-   "label": "Last Batch Number"
+   "label": "KPA Default Free Days"
+  },
+  {
+   "description": "Daily rate after KPA free days end until gate out at Mombasa.",
+   "fieldname": "section_kpa_port_charges",
+   "fieldtype": "Section Break",
+   "label": "KPA Port Chargeable Days"
+  },
+  {
+   "fieldname": "kpa_port_daily_rate",
+   "fieldtype": "Currency",
+   "label": "KPA Port Daily Rate"
+  },
+  {
+   "default": "KES",
+   "fieldname": "kpa_port_rate_currency",
+   "fieldtype": "Link",
+   "label": "KPA Port Rate Currency",
+   "options": "Currency"
+  },
+  {
+   "description": "GL accounts used when posting container charge accrual journal entries.",
+   "fieldname": "section_container_accrual_accounts",
+   "fieldtype": "Section Break",
+   "label": "Container Charge Accrual Accounts"
+  },
+  {
+   "fieldname": "demurrage_accrual_expense_account",
+   "fieldtype": "Link",
+   "label": "Demurrage Expense Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "demurrage_accrual_payable_account",
+   "fieldtype": "Link",
+   "label": "Demurrage Accrued Payable Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "column_break_accrual_accounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "kpa_port_accrual_expense_account",
+   "fieldtype": "Link",
+   "label": "KPA Port Expense Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "kpa_port_accrual_payable_account",
+   "fieldtype": "Link",
+   "label": "KPA Port Accrued Payable Account",
+   "options": "Account"
+  },
+  {
+   "description": "Fallback expense account for Operational Expense Journal Entries when Material Request items have no Expense Account.",
+   "fieldname": "section_funding_settings",
+   "fieldtype": "Section Break",
+   "label": "Funding"
+  },
+  {
+   "fieldname": "default_operational_expense_account",
+   "fieldtype": "Link",
+   "label": "Default Operational Expense Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "tab_notification_settings",
+   "fieldtype": "Tab Break",
+   "label": "Notification Settings"
+  },
+  {
+   "fieldname": "section_notification_settings",
+   "fieldtype": "Section Break",
+   "label": "Notification Settings"
+  },
+  {
+   "default": "48",
+   "description": "Hours after permit payment before reminding client to inspect.",
+   "fieldname": "inspection_reminder_hours",
+   "fieldtype": "Int",
+   "label": "Inspection Reminder (hours)"
+  },
+  {
+   "fieldname": "portal_url",
+   "fieldtype": "Data",
+   "label": "Client Portal URL"
+  },
+  {
+   "fieldname": "ops_notification_email",
+   "fieldtype": "Data",
+   "label": "Operations Notification Email"
+  },
+  {
+   "fieldname": "section_container_deposit_settings",
+   "fieldtype": "Section Break",
+   "label": "Container deposits"
+  },
+  {
+   "description": "Asset account debited when Finance pays a container deposit (hold).",
+   "fieldname": "container_deposit_account",
+   "fieldtype": "Link",
+   "label": "Container Deposit Account",
+   "options": "Account"
+  },
+  {
+   "description": "Item used on Sales Invoices for the container deposit line (Customer / Company paths).",
+   "fieldname": "container_deposit_sales_item",
+   "fieldtype": "Link",
+   "label": "Container Deposit Sales Item",
+   "options": "Item"
+  },
+  {
+   "fieldname": "column_break_deposit_reminders",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "2",
+   "description": "First reminder this long after the container is returned.",
+   "fieldname": "deposit_refund_remind_after",
+   "fieldtype": "Int",
+   "label": "Remind After"
+  },
+  {
+   "default": "Days",
+   "fieldname": "deposit_refund_remind_after_unit",
+   "fieldtype": "Select",
+   "label": "Remind After Unit",
+   "options": "Hours\nDays"
+  },
+  {
+   "default": "24",
+   "description": "Repeat reminders until refund is recorded or the stop window ends.",
+   "fieldname": "deposit_refund_repeat_every",
+   "fieldtype": "Int",
+   "label": "Repeat Every"
+  },
+  {
+   "default": "Hours",
+   "fieldname": "deposit_refund_repeat_unit",
+   "fieldtype": "Select",
+   "label": "Repeat Unit",
+   "options": "Hours\nDays"
+  },
+  {
+   "default": "14",
+   "description": "Maximum days after return to keep sending refund reminders.",
+   "fieldname": "deposit_refund_stop_after_days",
+   "fieldtype": "Int",
+   "label": "Stop After (days)"
+  },
+  {
+   "description": "Map each clearance handoff to an ERPNext Notification. Seeded defaults are create-if-missing only - edit subject/message/recipients on the Notification in Desk, or create a new Notification and select it here. Migrates never overwrite Desk Notification content.",
+   "fieldname": "section_workflow_notifications",
+   "fieldtype": "Section Break",
+   "label": "Workflow notifications"
+  },
+  {
+   "fieldname": "custom_workflow_notifications",
+   "fieldtype": "Table",
+   "label": "Workflow notifications",
+   "options": "CGM Workflow Notification Item"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-26 01:46:52.585603",
+ "modified": "2026-09-08 06:20:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
@@ -346,6 +564,15 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Desk User",
+   "select": 1,
+   "share": 0
   }
  ],
  "row_format": "Dynamic",

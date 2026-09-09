@@ -2,6 +2,9 @@
 
 All behavioural rules come from the **Customs Tax Type** master.
 All volume vs weight decisions come from standard ERPNext **UOM.category**.
+
+The engine never branches on tax names. New Customs Tax Types work without
+code changes.
 """
 
 from __future__ import annotations
@@ -20,6 +23,19 @@ VALID_CALCULATION_MODES = frozenset(
 	{CALC_MODE_PERCENTAGE, CALC_MODE_PER_UNIT, CALC_MODE_FIXED_AMOUNT}
 )
 
+PERCENTAGE_BASE_CUSTOMS_VALUE = "Customs Value"
+PERCENTAGE_BASE_RUNNING_TAX_BASE = "Running Tax Base"
+VALID_PERCENTAGE_BASES = frozenset(
+	{
+		PERCENTAGE_BASE_CUSTOMS_VALUE,
+		PERCENTAGE_BASE_RUNNING_TAX_BASE,
+	}
+)
+
+# Legacy Select values kept for migration mapping only.
+_LEGACY_PERCENTAGE_BASE_CUMULATIVE = "Cumulative Base"
+_LEGACY_PERCENTAGE_BASE_CUSTOMS_PLUS_DUTY = "Customs Value + Duty Pool"
+
 FIELD_UOM = "custom_uom"
 FIELD_WEIGHT = "custom_weight"
 FIELD_VOLUME = "custom_volume"
@@ -34,23 +50,73 @@ class TaxTypeConfig:
 	tax_type: str
 	allowed_modes: tuple[str, ...]
 	default_mode: str
-	is_stacking: bool
-	is_excise: bool
-	affects_import_duty: bool
-	feeds_running_base: bool
-	per_unit_skips_running_base: bool
+	percentage_base: str
+	include_in_subsequent_tax_base: bool
+
+
+@dataclass(frozen=True)
+class TaxCalculationResult:
+	"""Result of calculating one customs-tax row."""
+
+	amount: float
+	tax_base: float
+	mode: str
 
 
 # ── Customs Tax Type configuration ───────────────────────────────────────────
 
 
-def parse_allowed_modes(raw: str | None) -> tuple[str, ...]:
-	modes = []
-	for line in (raw or "").splitlines():
-		mode = line.strip()
+def parse_allowed_modes(raw) -> tuple[str, ...]:
+	"""Parse allowed modes from legacy newline text, a list, or child-table rows."""
+	modes: list[str] = []
+
+	if raw is None:
+		return tuple()
+
+	if isinstance(raw, str):
+		candidates = [line.strip() for line in raw.splitlines()]
+	elif isinstance(raw, (list, tuple)):
+		candidates = []
+		for item in raw:
+			if isinstance(item, str):
+				candidates.append(item.strip())
+			elif isinstance(item, dict):
+				candidates.append(cstr_mode(item.get("calculation_mode")))
+			else:
+				candidates.append(cstr_mode(getattr(item, "calculation_mode", None)))
+	else:
+		return tuple()
+
+	for mode in candidates:
 		if mode in VALID_CALCULATION_MODES and mode not in modes:
 			modes.append(mode)
 	return tuple(modes)
+
+
+def cstr_mode(value) -> str:
+	return (value or "").strip() if isinstance(value, str) else str(value or "").strip()
+
+
+def allowed_modes_from_doc(doc) -> tuple[str, ...]:
+	"""Read allowed modes from a Customs Tax Type document (child table or legacy text)."""
+	rows = doc.get("allowed_calculation_modes")
+	if rows and not isinstance(rows, str):
+		return parse_allowed_modes(rows)
+	return parse_allowed_modes(rows if isinstance(rows, str) else None)
+
+
+def normalize_percentage_base(value: str | None) -> str:
+	"""Map legacy percentage-base labels onto the current Select options."""
+	base = cstr_mode(value) or PERCENTAGE_BASE_CUSTOMS_VALUE
+	if base in (
+		_LEGACY_PERCENTAGE_BASE_CUMULATIVE,
+		_LEGACY_PERCENTAGE_BASE_CUSTOMS_PLUS_DUTY,
+		PERCENTAGE_BASE_RUNNING_TAX_BASE,
+	):
+		return PERCENTAGE_BASE_RUNNING_TAX_BASE
+	if base == PERCENTAGE_BASE_CUSTOMS_VALUE:
+		return PERCENTAGE_BASE_CUSTOMS_VALUE
+	return base
 
 
 def get_tax_type_config(tax_type: str) -> TaxTypeConfig:
@@ -59,7 +125,7 @@ def get_tax_type_config(tax_type: str) -> TaxTypeConfig:
 		frappe.throw(_("Customs tax type is required."))
 
 	doc = frappe.get_cached_doc("Customs Tax Type", tax_type)
-	allowed = parse_allowed_modes(doc.get("allowed_calculation_modes"))
+	allowed = allowed_modes_from_doc(doc)
 	if not allowed:
 		frappe.throw(
 			_("Customs Tax Type '{0}' has no Allowed Calculation Modes configured.").format(
@@ -67,7 +133,7 @@ def get_tax_type_config(tax_type: str) -> TaxTypeConfig:
 			)
 		)
 
-	default_mode = (doc.get("default_calculation_mode") or "").strip()
+	default_mode = cstr_mode(doc.get("default_calculation_mode"))
 	if default_mode not in allowed:
 		frappe.throw(
 			_(
@@ -76,15 +142,26 @@ def get_tax_type_config(tax_type: str) -> TaxTypeConfig:
 			).format(tax_type, default_mode or _("(empty)"))
 		)
 
+	percentage_base = normalize_percentage_base(doc.get("percentage_base"))
+	if percentage_base not in VALID_PERCENTAGE_BASES:
+		frappe.throw(
+			_(
+				"Customs Tax Type '{0}' has invalid Percentage Base '{1}'. "
+				"Valid options: {2}."
+			).format(tax_type, percentage_base, ", ".join(sorted(VALID_PERCENTAGE_BASES)))
+		)
+
+	include_flag = doc.get("include_in_subsequent_tax_base")
+	if include_flag is None and doc.get("include_in_duty_pool") is not None:
+		# Transient compatibility while a site is mid-migration.
+		include_flag = doc.get("include_in_duty_pool")
+
 	return TaxTypeConfig(
 		tax_type=tax_type,
 		allowed_modes=allowed,
 		default_mode=default_mode,
-		is_stacking=bool(cint(doc.get("is_stacking"))),
-		is_excise=bool(cint(doc.get("is_excise"))),
-		affects_import_duty=bool(cint(doc.get("affects_import_duty"))),
-		feeds_running_base=bool(cint(doc.get("feeds_running_base"))),
-		per_unit_skips_running_base=bool(cint(doc.get("per_unit_skips_running_base"))),
+		percentage_base=percentage_base,
+		include_in_subsequent_tax_base=bool(cint(include_flag)),
 	)
 
 
@@ -99,7 +176,7 @@ def default_mode_for_tax(tax_type: str) -> str:
 def resolve_calculation_mode(row, tax_type: str) -> str:
 	"""Return the row's mode if set, else the tax type default. Never silently remaps."""
 	config = get_tax_type_config(tax_type)
-	mode = (row.get("calculation_mode") or "").strip()
+	mode = cstr_mode(row.get("calculation_mode"))
 	if not mode:
 		return config.default_mode
 	return mode
@@ -171,29 +248,79 @@ def rate_label_for_mode(
 	return _("Rate (%)")
 
 
+def format_rate_display(
+	mode: str,
+	rate: float,
+	*,
+	quotation_uom: str | None = None,
+	currency: str | None = None,
+) -> str:
+	"""Human-readable rate for grids and labels, e.g. '25%', 'KES 250', 'KES 10 / Litre'."""
+	currency = currency or resolve_company_currency()
+	rate_str = _format_rate_number(rate)
+
+	if mode == CALC_MODE_PERCENTAGE:
+		return f"{rate_str}%"
+
+	if mode == CALC_MODE_FIXED_AMOUNT:
+		if currency:
+			return f"{currency} {rate_str}"
+		return rate_str
+
+	if mode == CALC_MODE_PER_UNIT:
+		uom = (quotation_uom or _("Unit")).strip()
+		if currency:
+			return f"{currency} {rate_str} / {uom}"
+		return f"{rate_str} / {uom}"
+
+	return rate_str
+
+
+def _format_rate_number(rate: float) -> str:
+	"""Compact float formatting that drops trailing zeros (25 not 25.0)."""
+	rate = flt(rate)
+	if rate == int(rate):
+		return str(int(rate))
+	return f"{rate:g}"
+
+
+def rate_display_suffix(
+	mode: str,
+	quotation_uom: str | None = None,
+	currency: str | None = None,
+) -> str:
+	"""Short suffix/unit for grid Rate display."""
+	if mode == CALC_MODE_PERCENTAGE:
+		return "%"
+	if mode == CALC_MODE_PER_UNIT:
+		return (quotation_uom or _("Unit")).strip()
+	return currency or resolve_company_currency()
+
+
 # ── Row calculation (single-purpose helpers) ─────────────────────────────────
 
 
-def should_feed_running_base(tax_type: str, mode: str) -> bool:
-	config = get_tax_type_config(tax_type)
-	if not config.feeds_running_base:
-		return False
-	if mode == CALC_MODE_PER_UNIT and config.per_unit_skips_running_base:
-		return False
-	return True
+def should_include_in_subsequent_tax_base(tax_type: str) -> bool:
+	"""Whether this tax amount should grow the Running Tax Base for later taxes."""
+	return get_tax_type_config(tax_type).include_in_subsequent_tax_base
 
 
-def import_duty_contribution(tax_type: str, mode: str, amount_kes: float) -> float:
-	config = get_tax_type_config(tax_type)
-	if config.is_excise or config.is_stacking:
-		return 0.0
-	if mode == CALC_MODE_PER_UNIT and config.per_unit_skips_running_base:
-		return 0.0
+def resolve_tax_base(
+	config: TaxTypeConfig,
+	mode: str,
+	*,
+	customs_value: float,
+	running_tax_base: float,
+	shipment_qty: float,
+) -> float:
+	"""Return the numeric base the engine uses for this row's calculation."""
 	if mode == CALC_MODE_FIXED_AMOUNT:
 		return 0.0
-	if not config.affects_import_duty:
-		return 0.0
-	return amount_kes
+	if mode == CALC_MODE_PER_UNIT:
+		return flt(shipment_qty)
+	if config.percentage_base == PERCENTAGE_BASE_RUNNING_TAX_BASE:
+		return flt(running_tax_base)
+	return flt(customs_value)
 
 
 def _fixed_amount(row) -> float:
@@ -201,37 +328,38 @@ def _fixed_amount(row) -> float:
 	return flt(row.rate) or flt(row.get(FIELD_FIXED_AMOUNT))
 
 
-def _percentage_amount(config: TaxTypeConfig, rate: float, *, customs_value_kes: float, running_base: float, import_duty_kes: float) -> float:
-	if config.is_excise:
-		return (customs_value_kes + import_duty_kes) * (rate / 100)
-	if config.is_stacking:
-		return running_base * (rate / 100)
-	return customs_value_kes * (rate / 100)
+def _percentage_amount(tax_base: float, rate: float) -> float:
+	return flt(tax_base) * (flt(rate) / 100)
 
 
 def calculate_tax_amount(
 	row,
 	tax_type: str,
 	*,
-	customs_value_kes: float,
-	running_base: float,
-	import_duty_kes: float,
+	customs_value: float,
+	running_tax_base: float,
 	shipment_qty: float,
-) -> float:
+) -> TaxCalculationResult:
+	"""Calculate one tax row from Customs Tax Type configuration.
+
+	Does not update the Running Tax Base — the caller decides whether to include
+	the result via ``should_include_in_subsequent_tax_base``.
+	"""
 	config = get_tax_type_config(tax_type)
 	mode = validate_calculation_mode(row, tax_type)
-	rate = flt(row.rate)
+	tax_base = resolve_tax_base(
+		config,
+		mode,
+		customs_value=customs_value,
+		running_tax_base=running_tax_base,
+		shipment_qty=shipment_qty,
+	)
 
 	if mode == CALC_MODE_FIXED_AMOUNT:
-		return _fixed_amount(row)
+		amount = _fixed_amount(row)
+	elif mode == CALC_MODE_PER_UNIT:
+		amount = flt(shipment_qty) * flt(row.rate)
+	else:
+		amount = _percentage_amount(tax_base, row.rate)
 
-	if mode == CALC_MODE_PER_UNIT:
-		return shipment_qty * rate
-
-	return _percentage_amount(
-		config,
-		rate,
-		customs_value_kes=customs_value_kes,
-		running_base=running_base,
-		import_duty_kes=import_duty_kes,
-	)
+	return TaxCalculationResult(amount=flt(amount), tax_base=flt(tax_base), mode=mode)

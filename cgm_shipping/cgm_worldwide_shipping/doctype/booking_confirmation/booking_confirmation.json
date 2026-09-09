@@ -9,26 +9,31 @@
   "customer",
   "client_ref",
   "booking_number",
-  "attach_booking",
+  "shipment_type",
   "column_break_bc_1",
   "linked_opportunity",
-  "shipment_type",
   "shipping_line",
   "vessel",
   "voyage_number",
   "section_vessel",
   "port_of_loading",
   "port_of_discharge",
-  "uom",
+  "weight_uom",
+  "net_weight",
   "gross_weight",
   "column_break_bc_2",
-  "cargo_cut_off",
-  "etd",
   "eta",
+  "etd",
+  "cargo_cut_off",
+  "batch_no",
+  "quantity",
   "section_cargo",
   "requested_cargo_type",
-  "table_esvv",
+  "requested_cargo_quantity",
+  "number_of_packages",
+  "package_type",
   "commodity",
+  "attach_booking",
   "section_links",
   "amended_from"
  ],
@@ -52,7 +57,8 @@
   {
    "fieldname": "client_ref",
    "fieldtype": "Data",
-   "label": "Client Reference"
+   "label": "Client Reference",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_bc_1",
@@ -64,7 +70,6 @@
    "in_list_view": 1,
    "label": "Shipment Type",
    "options": "Shipment Type",
-   "read_only": 1,
    "reqd": 1
   },
   {
@@ -152,33 +157,61 @@
    "label": "Voyage Number"
   },
   {
-   "fieldname": "uom",
+   "fieldname": "requested_cargo_type",
    "fieldtype": "Link",
-   "label": "UOM",
+   "label": "Requested Cargo Type",
+   "options": "Cargo Type"
+  },
+  {
+   "fieldname": "weight_uom",
+   "fieldtype": "Link",
+   "label": "Weight UOM",
    "options": "UOM"
   },
   {
+   "fieldname": "net_weight",
+   "fieldtype": "Float",
+   "label": "Net Weight"
+  },
+  {
    "fieldname": "gross_weight",
-   "fieldtype": "Data",
+   "fieldtype": "Float",
    "label": "Gross Weight"
   },
   {
-   "fieldname": "table_esvv",
+   "fieldname": "number_of_packages",
+   "fieldtype": "Data",
+   "label": "Number of Packages"
+  },
+  {
+   "fieldname": "package_type",
+   "fieldtype": "Link",
+   "label": "Package Type",
+   "options": "Package Type"
+  },
+  {
+   "fieldname": "requested_cargo_quantity",
    "fieldtype": "Table",
    "label": "Requested Cargo Quantity",
    "options": "Requested Containers"
   },
   {
-   "fieldname": "requested_cargo_type",
-   "fieldtype": "Link",
-   "label": "Requested Cargo Type",
-   "options": "Cargo Type"
+   "fieldname": "quantity",
+   "fieldtype": "Data",
+   "label": "Derived Quantity",
+   "read_only": 1
+  },
+  {
+   "description": "Enter the client batch for this shipment. Required during onboarding; auto-allocation can be enabled later.",
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-10 07:23:40.050047",
+ "modified": "2026-07-28 14:43:29.336766",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Booking Confirmation",

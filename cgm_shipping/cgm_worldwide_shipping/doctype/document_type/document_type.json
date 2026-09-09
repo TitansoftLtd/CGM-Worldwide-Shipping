@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "creation": "2026-04-30 11:23:10.954917",
  "doctype": "DocType",
@@ -11,6 +12,8 @@
   "mode_of_transport",
   "required_stage",
   "default_required",
+  "requires_download_permission",
+  "download_roles",
   "column_break_jjki",
   "text_editor_eisl"
  ],
@@ -57,6 +60,19 @@
    "label": "Default Required"
   },
   {
+   "default": "0",
+   "fieldname": "requires_download_permission",
+   "fieldtype": "Check",
+   "label": "Requires Download Permission"
+  },
+  {
+   "depends_on": "requires_download_permission",
+   "fieldname": "download_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Download Roles",
+   "options": "CGM Role Item"
+  },
+  {
    "fieldname": "text_editor_eisl",
    "fieldtype": "Text Editor",
    "label": "Description"
@@ -69,7 +85,8 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 21:58:38.232864",
+ "make_attachments_public": 1,
+ "modified": "2026-07-21 17:39:16.443604",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Document Type",

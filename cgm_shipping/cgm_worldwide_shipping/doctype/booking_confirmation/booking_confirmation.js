@@ -1,8 +1,65 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 // For license information, please see license.txt
 
+const REQUESTED_CONTAINERS_FIELD = "requested_cargo_quantity";
+
+function cargo_type_code(frm) {
+	return (frm.doc.requested_cargo_type || "").trim().toUpperCase();
+}
+
+/**
+ * LCL → packages only.
+ * Otherwise show the requested-containers table (FCL, empty, or size-like
+ * Cargo Type values). Hiding only when cargo === LCL avoids mid-edit
+ * disappear when Cargo Type is not exactly "FCL".
+ */
+function toggle_cargo_fields(frm) {
+	const is_lcl = cargo_type_code(frm) === "LCL";
+	const show_table = !is_lcl;
+	const show_packages = is_lcl;
+
+	frm.set_df_property(REQUESTED_CONTAINERS_FIELD, "hidden", show_table ? 0 : 1);
+	frm.set_df_property("number_of_packages", "hidden", show_packages ? 0 : 1);
+	frm.set_df_property("package_type", "hidden", show_packages ? 0 : 1);
+	frm.set_df_property("quantity", "hidden", show_table ? 0 : 1);
+	frm.set_df_property("batch_no", "hidden", show_table ? 0 : 1);
+
+	if (show_table) {
+		frm.refresh_field(REQUESTED_CONTAINERS_FIELD);
+	}
+	if (show_packages) {
+		frm.refresh_field("number_of_packages");
+		frm.refresh_field("package_type");
+	}
+}
+
+function setup_booking_batch_autocomplete(frm) {
+	const fieldname = "batch_no";
+	if (!frm.fields_dict[fieldname] || !frm.doc.customer) {
+		return;
+	}
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_customer_batch_numbers",
+		args: { customer: frm.doc.customer },
+		callback(r) {
+			const options = (r.message || []).join("\n");
+			frm.set_df_property(fieldname, "options", options);
+			const df = frm.get_field(fieldname)?.df;
+			if (df && df.fieldtype === "Data") {
+				frm.set_df_property(fieldname, "fieldtype", "Autocomplete");
+			}
+			frm.set_df_property(fieldname, "read_only", 0);
+			frm.refresh_field(fieldname);
+		},
+	});
+}
+
 frappe.ui.form.on("Booking Confirmation", {
 	onload(frm) {
+		toggle_cargo_fields(frm);
+		setup_booking_batch_autocomplete(frm);
+
 		if (frm.is_new()) {
 			if (frappe.route_options?.linked_opportunity) {
 				remember_return_opportunity(frm, frappe.route_options.linked_opportunity);
@@ -17,6 +74,9 @@ frappe.ui.form.on("Booking Confirmation", {
 	},
 
 	refresh(frm) {
+		toggle_cargo_fields(frm);
+		setup_booking_batch_autocomplete(frm);
+
 		if (frm.doc.docstatus === 1) {
 			add_create_opportunity_button(frm);
 		}
@@ -25,6 +85,43 @@ frappe.ui.form.on("Booking Confirmation", {
 
 	on_submit(frm) {
 		return_to_opportunity_after_submit(frm);
+	},
+
+	requested_cargo_type(frm) {
+		toggle_cargo_fields(frm);
+	},
+
+	customer(frm) {
+		setup_booking_batch_autocomplete(frm);
+	},
+
+	validate(frm) {
+		if ((frm.doc.requested_cargo_type || "").trim().toUpperCase() === "LCL") {
+			return;
+		}
+		const rows = frm.doc[REQUESTED_CONTAINERS_FIELD] || [];
+		const missing = [];
+		rows.forEach((row, idx) => {
+			if ((row.quantity || "").toString().trim() && !(row.cargo_size || "").toString().trim()) {
+				missing.push(idx + 1);
+			}
+		});
+		if (missing.length) {
+			frappe.throw(
+				__("Cargo Size is required on Requested Cargo Quantity row(s) {0}.", [
+					missing.join(", "),
+				])
+			);
+		}
+	},
+});
+
+frappe.ui.form.on("Requested Containers", {
+	cargo_size(frm) {
+		frm.refresh_field(REQUESTED_CONTAINERS_FIELD);
+	},
+	quantity(frm) {
+		frm.refresh_field(REQUESTED_CONTAINERS_FIELD);
 	},
 });
 
@@ -118,7 +215,7 @@ function return_to_opportunity_after_submit(frm) {
 		}
 		localStorage.removeItem(CGM_RETURN_OPPORTUNITY_KEY);
 		frappe.show_alert({
-			message: __("Booking Confirmation submitted — returning to Opportunity to continue."),
+			message: __("Booking Confirmation submitted - returning to Opportunity to continue."),
 			indicator: "green",
 		});
 		frappe.set_route("Form", "Opportunity", target_opportunity);

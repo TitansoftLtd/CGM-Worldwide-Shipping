@@ -24,6 +24,17 @@ from urllib.parse import quote
 
 import frappe
 from frappe import _
+from frappe.utils import cint, flt
+
+# ─── Page layout ─────────────────────────────────────────────────────────────
+
+
+def apply_customer_portal_layout(context) -> None:
+	"""Let portal pages use the viewport instead of Bootstrap's ~1170px container."""
+	context.no_cache = 1
+	context.show_sidebar = False
+	context.full_width = True
+
 
 # ─── Customer resolution ─────────────────────────────────────────────────────
 
@@ -78,7 +89,7 @@ def customer_display_name(customer: str | None) -> str:
 
 # ─── Shipment lifecycle model ────────────────────────────────────────────────
 
-# The granular Project.custom_shipment_status chart (18 ordered states).
+# The granular Project.custom_shipment_status chart (17 ordered states).
 SHIPMENT_STAGES = [
 	"Draft",
 	"Documents Received",
@@ -88,7 +99,6 @@ SHIPMENT_STAGES = [
 	"Client Inspection",
 	"In Transit",
 	"Final Docs Received",
-	"Manifest Requested",
 	"Entry Lodged",
 	"Line Paid & DO Lodged",
 	"Entry Paid",
@@ -101,7 +111,7 @@ SHIPMENT_STAGES = [
 ]
 _STAGE_INDEX = {name: i for i, name in enumerate(SHIPMENT_STAGES)}
 
-# Customer-facing milestones: the 18 internal states rolled up into six
+# Customer-facing milestones: the 17 internal states rolled up into six
 # steps a consignee actually cares about. Each milestone owns a contiguous
 # slice of the chart; a shipment's current milestone is whichever slice its
 # status falls into.
@@ -113,7 +123,6 @@ MILESTONES = [
 		"Arrival & Customs Entry",
 		(
 			"Final Docs Received",
-			"Manifest Requested",
 			"Entry Lodged",
 			"Line Paid & DO Lodged",
 			"Entry Paid",
@@ -140,7 +149,7 @@ def shipment_progress(status: str | None) -> dict:
 	    'done' | 'current' | 'upcoming'
 	  - ``current_label``: the friendly milestone label
 	  - ``status``: the raw granular status (e.g. "Entry Lodged")
-	  - ``percent``: 0-100 completion across the 18-state chart
+	  - ``percent``: 0-100 completion across the 17-state chart
 	  - ``is_complete``: True once the shipment reaches "Completed"
 	"""
 	status = status or "Draft"
@@ -191,8 +200,9 @@ def status_tone(status: str | None) -> str:
 
 # Fields pulled for the list / dashboard. Kept in one place so the list
 # page, dashboard and detail header stay consistent. Some sites still have
-# the legacy custom_cgm_ref_no column but not custom_project_reference yet;
-# filter through Project meta so get_all never selects a missing column.
+# CGM Ref No is company-entered; Project Reference / project_name are auto.
+# Prefer CGM Ref when set. Filter through Project meta so get_all never
+# selects a missing column.
 _SHIPMENT_LIST_FIELD_CANDIDATES = [
 	"name",
 	"project_name",
@@ -224,10 +234,10 @@ def shipment_list_fields() -> list[str]:
 def _project_ref_sql_coalesce(alias: str = "p") -> str:
 	meta = frappe.get_meta("Project")
 	parts = []
-	if meta.has_field("custom_project_reference"):
-		parts.append(f"NULLIF({alias}.custom_project_reference, '')")
 	if meta.has_field("custom_cgm_ref_no"):
 		parts.append(f"NULLIF({alias}.custom_cgm_ref_no, '')")
+	if meta.has_field("custom_project_reference"):
+		parts.append(f"NULLIF({alias}.custom_project_reference, '')")
 	parts.extend([f"NULLIF({alias}.project_name, '')", f"{alias}.name"])
 	return "COALESCE(" + ", ".join(parts) + ")"
 
@@ -299,8 +309,10 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 		"custom_net_weightkg",
 		# Route / carrier / document fields added to Project.
 		"custom_etd",
+		"custom_expected_time_of_depatureetd",
 		"custom_country_of_origin",
 		"custom_final_destination",
+		"custom_destination_country",
 		"custom_vessel",
 		"custom_airline",
 		"custom_shipping_line",
@@ -329,35 +341,43 @@ def get_shipment_for_customer(project_name: str, customer: str) -> dict | None:
 
 def get_containers_for_shipment(project_name: str) -> list[dict]:
 	"""Container Tracker rows for a shipment, ordered by container number."""
-	if not project_name:
+	if not project_name or not frappe.db.exists("DocType", "Container Tracker"):
 		return []
+
+	wanted = [
+		"name",
+		"container_number",
+		"container_mode",
+		"status",
+		"current_location",
+		"delivery_location",
+		"eta",
+		"ata",
+		"discharging_date",
+		"custom_release_date",
+		"gate_out_date_port",
+		"icd_gate_out_date",
+		"gate_in_date_warehouse",
+		"offloading_date",
+		"delivery_date",
+		"border_clearance_date",
+		"truck_number",
+		"actual_empty_return",
+		"demurrage_days",
+		"demurrage_amount",
+		"days_outstanding",
+	]
+	meta = frappe.get_meta("Container Tracker")
+	fields = [f for f in wanted if meta.has_field(f)]
+	if "name" not in fields:
+		fields.insert(0, "name")
+
 	return frappe.get_all(
 		"Container Tracker",
 		filters={"project": project_name},
-		fields=[
-			"name",
-			"container_number",
-			"container_mode",
-			"status",
-			"current_location",
-			"delivery_location",
-			"eta",
-			"ata",
-			"discharging_date",
-			"custom_release_date",
-			"gate_out_date_port",
-			"icd_gate_out_date",
-			"gate_in_date_warehouse",
-			"offloading_date",
-			"delivery_date",
-			"border_clearance_date",
-			"truck_number",
-			"actual_empty_return",
-			"demurrage_days",
-			"demurrage_amount",
-			"days_outstanding",
-		],
+		fields=fields,
 		order_by="container_number asc",
+		ignore_permissions=True,
 	)
 
 
@@ -375,7 +395,6 @@ CONTAINER_CHECKPOINTS = [
 	("border_clearance_date", "Border Cleared"),
 	("gate_in_date_warehouse", "Arrived at Warehouse"),
 	("offloading_date", "Offloaded"),
-	("delivery_date", "Delivered"),
 	("actual_empty_return", "Empty Returned"),
 ]
 
@@ -432,33 +451,91 @@ def get_customer_quotations(customer: str, limit: int = 200) -> list[dict]:
 	return rows
 
 
-def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
-	"""Submitted Sales Invoices for this customer, newest first.
+def invoice_outstanding_in_invoice_currency(row: dict) -> float:
+	"""Return outstanding in the invoice's transaction currency.
 
-	Only submitted invoices (docstatus 1) are shown - drafts are internal.
-	Each row carries a tone + guarded PDF download URL.
+	ERPNext stores ``outstanding_amount`` in ``party_account_currency``. When
+	that is company currency (often KES) and the invoice is USD, formatting
+	the raw outstanding with the invoice currency would show KES as dollars.
+	"""
+	outstanding = flt(row.get("outstanding_amount"))
+	invoice_currency = row.get("currency")
+	party_currency = row.get("party_account_currency")
+	if not outstanding or not party_currency or party_currency == invoice_currency:
+		return outstanding
+	rate = flt(row.get("conversion_rate"))
+	if rate:
+		return flt(outstanding / rate)
+	return outstanding
+
+
+def outstanding_totals_by_currency(invoices: list[dict]) -> list[dict]:
+	"""Sum portal invoice outstanding per invoice currency (skip zeros)."""
+	totals: dict[str, float] = {}
+	for row in invoices:
+		amount = flt(row.get("outstanding_in_currency"))
+		if amount <= 0:
+			continue
+		currency = row.get("currency") or ""
+		totals[currency] = flt(totals.get(currency, 0) + amount)
+	return [{"currency": currency, "amount": amount} for currency, amount in totals.items()]
+
+
+def get_customer_invoices(customer: str, limit: int = 200) -> list[dict]:
+	"""Submitted Sales Invoices CGM has shared with this customer.
+
+	Only submitted, non-return invoices with **Share with Customer** ticked
+	appear. Drafts stay internal. Each row carries a tone + guarded PDF URL.
+	Outstanding is converted to the invoice currency for portal display.
 	"""
 	if not customer:
 		return []
+	from cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share import (
+		SHARE_FIELD,
+	)
+
+	si_meta = frappe.get_meta("Sales Invoice")
+	if not si_meta.has_field(SHARE_FIELD):
+		return []
+	fields = [
+		"name",
+		"posting_date",
+		"due_date",
+		"status",
+		"grand_total",
+		"outstanding_amount",
+		"currency",
+		"conversion_rate",
+		"party_account_currency",
+		"project",
+	]
+	if si_meta.has_field("custom_project_name"):
+		fields.append("custom_project_name")
+	filters: dict = {
+		"customer": customer,
+		"docstatus": 1,
+		SHARE_FIELD: 1,
+	}
+	if si_meta.has_field("is_return"):
+		filters["is_return"] = 0
 	rows = frappe.get_all(
 		"Sales Invoice",
-		filters={"customer": customer, "docstatus": 1},
-		fields=[
-			"name",
-			"posting_date",
-			"due_date",
-			"status",
-			"grand_total",
-			"outstanding_amount",
-			"currency",
-		],
+		filters=filters,
+		fields=fields,
 		order_by="posting_date desc, creation desc",
 		limit=limit,
+		ignore_permissions=True,
 	)
+	refs = _project_refs([r.project for r in rows if r.get("project")])
 	for r in rows:
 		r["tone"] = invoice_status_tone(r.status)
 		r["pdf_view_url"] = _pdf_url("Sales Invoice", r["name"], "inline")
 		r["pdf_download_url"] = _pdf_url("Sales Invoice", r["name"], "attachment")
+		r["outstanding_in_currency"] = invoice_outstanding_in_invoice_currency(r)
+		project = (r.get("project") or "").strip()
+		label = (r.get("custom_project_name") or "").strip() or refs.get(project) or project
+		r["project_label"] = label
+		r["project_url"] = f"/shipment?name={quote(project, safe='')}" if project else ""
 	return rows
 
 
@@ -507,12 +584,12 @@ def _pdf_url(doctype: str, name: str, disposition: str = "attachment") -> str:
 
 @frappe.whitelist()
 def download_transaction_pdf(doctype: str, name: str, disposition: str = "attachment"):
-	"""Stream a customer's own Quotation / Sales Invoice as a PDF.
+	"""Stream a customer's own Quotation / shared Sales Invoice as a PDF.
 
 	Portal users hold no desk read perm on these doctypes, so a direct
 	print URL would 403. This re-derives the customer from the session,
-	confirms the document is addressed to them, then renders and streams
-	the PDF. Only Quotation and Sales Invoice are served here.
+	confirms the document is addressed to them (and, for Sales Invoice,
+	that it has been shared), then renders and streams the PDF.
 
 	``disposition`` controls how the browser handles it:
 	  - "inline"     → preview in a new tab (Content-Disposition: inline)
@@ -526,17 +603,25 @@ def download_transaction_pdf(doctype: str, name: str, disposition: str = "attach
 		raise frappe.PermissionError(_("No customer is linked to your account."))
 
 	if doctype == "Sales Invoice":
-		owner = frappe.db.get_value("Sales Invoice", name, "customer")
+		from cgm_shipping.cgm_worldwide_shipping.customizations.customer_invoice_share import (
+			assert_shared_sales_invoice_for_customer,
+		)
+
+		assert_shared_sales_invoice_for_customer(name, customer)
+		doc = frappe.get_doc("Sales Invoice", name, ignore_permissions=True)
+		frappe.flags.ignore_print_permissions = True
+		try:
+			pdf = frappe.get_print(doctype, name, doc=doc, as_pdf=True)
+		finally:
+			frappe.flags.ignore_print_permissions = False
 	else:
 		row = frappe.db.get_value(
 			"Quotation", name, ["quotation_to", "party_name"], as_dict=True
 		)
 		owner = row.party_name if (row and row.quotation_to == "Customer") else None
-
-	if not owner or owner != customer:
-		raise frappe.PermissionError(_("You can only access your own documents."))
-
-	pdf = frappe.get_print(doctype, name, as_pdf=True)
+		if not owner or owner != customer:
+			raise frappe.PermissionError(_("You can only access your own documents."))
+		pdf = frappe.get_print(doctype, name, as_pdf=True)
 	frappe.local.response.filename = f"{name}.pdf"
 	frappe.local.response.filecontent = pdf
 	# "pdf" → inline preview; "download" → save-as. Frappe's response
@@ -553,21 +638,62 @@ def _portal_document_fields() -> list[str]:
 		"document_type",
 		"attachment",
 		"verified_on",
-		"uploaded_on",
 		"remarks",
 		"status",
 	]
 	meta = frappe.get_meta("Shipment Document")
-	for fieldname in ("initial_attachment", "final_attachment"):
+	for fieldname in (
+		"draft_documents",
+		"final_attachment",
+		"draft_documents_uploaded_on",
+		"final_document_uploaded_on",
+		"uploaded_on",
+	):
 		if meta.has_field(fieldname):
 			fields.append(fieldname)
 	return fields
 
 
 def _is_portal_visible_document(row: dict) -> bool:
-	"""Portal document rows; hide rejected rows only."""
+	"""Portal document rows; hide rejected rows and download-restricted types."""
 	status = (row.get("status") or "Missing").strip()
-	return status != "Rejected"
+	if status == "Rejected":
+		return False
+	document_type = row.get("document_type")
+	if document_type and not _user_can_download_document_type(document_type):
+		return False
+	return True
+
+
+def _user_can_download_document_type(document_type: str | None) -> bool:
+	"""True when Document Type has no download gate, or the user has an allowed role."""
+	if not document_type or not frappe.db.exists("Document Type", document_type):
+		return True
+	if frappe.session.user == "Administrator" or "System Manager" in frappe.get_roles():
+		return True
+	meta = frappe.get_meta("Document Type")
+	if not meta.has_field("requires_download_permission"):
+		return True
+	requires = cint(
+		frappe.db.get_value("Document Type", document_type, "requires_download_permission")
+	)
+	if not requires:
+		return True
+	if not meta.has_field("download_roles"):
+		return False
+	allowed = frappe.get_all(
+		"CGM Role Item",
+		filters={
+			"parent": document_type,
+			"parenttype": "Document Type",
+			"parentfield": "download_roles",
+		},
+		pluck="role",
+	)
+	if not allowed:
+		return False
+	user_roles = set(frappe.get_roles())
+	return bool(user_roles.intersection(allowed))
 
 
 _PORTAL_INTERNAL_REMARKS = frozenset(
@@ -596,6 +722,11 @@ def _enrich_portal_document(row: dict, project_name: str) -> dict:
 	)
 
 	row["attachment"] = primary_attachment(row)
+	row["uploaded_on"] = (
+		row.get("final_document_uploaded_on")
+		or row.get("draft_documents_uploaded_on")
+		or row.get("uploaded_on")
+	)
 	row["remarks"] = _portal_document_remarks(row.get("remarks"))
 	row["doc_label"] = _document_label(row.get("document_type"))
 	status = (row.get("status") or "Missing").strip()
@@ -641,13 +772,32 @@ def get_all_customer_documents(customer: str, limit: int = 500) -> list[dict]:
 	if not customer:
 		return []
 	ref_sql = _project_ref_sql_coalesce("p")
-	has_versioning = frappe.get_meta("Shipment Document").has_field("initial_attachment")
+	ref_sql = _project_ref_sql_coalesce("p")
+	meta = frappe.get_meta("Shipment Document")
+	extra_cols = []
+	for fieldname in ("draft_documents", "final_attachment"):
+		if meta.has_field(fieldname):
+			extra_cols.append(f"sd.{fieldname}")
+	uploaded_parts = [
+		f"sd.{fieldname}"
+		for fieldname in (
+			"final_document_uploaded_on",
+			"draft_documents_uploaded_on",
+			"uploaded_on",
+		)
+		if meta.has_field(fieldname)
+	]
+	uploaded_select = (
+		f"COALESCE({', '.join(uploaded_parts)}) AS uploaded_on"
+		if uploaded_parts
+		else "NULL AS uploaded_on"
+	)
 	rows = frappe.db.sql(
 		f"""
 		SELECT sd.name, sd.document_type, sd.attachment, sd.verified_on,
-		       sd.uploaded_on, sd.status, sd.remarks, p.name AS project,
+		       {uploaded_select}, sd.status, sd.remarks, p.name AS project,
 		       {ref_sql} AS ref
-		       {", sd.initial_attachment, sd.final_attachment" if has_versioning else ""}
+		       {", " + ", ".join(extra_cols) if extra_cols else ""}
 		FROM `tabShipment Document` sd
 		JOIN `tabProject` p ON p.name = sd.parent
 		WHERE sd.parenttype = 'Project'
@@ -709,6 +859,9 @@ def download_shipment_document(project: str, row: str):
 	)
 	if not doc_row or not _is_portal_visible_document(doc_row):
 		raise frappe.PermissionError(_("Document not found on this shipment."))
+
+	if not _user_can_download_document_type(doc_row.get("document_type")):
+		raise frappe.PermissionError(_("You are not allowed to download this document type."))
 
 	file_url = primary_attachment(doc_row)
 	if not file_url:
@@ -803,3 +956,859 @@ def download_shipment_permit(project: str, row: str):
 	frappe.local.response.filename = file_doc.file_name or "permit"
 	frappe.local.response.filecontent = file_doc.get_content()
 	frappe.local.response.type = "download"
+
+
+# ─── Shared fee invoices (client pays) ────────────────────────────────────────
+
+
+def get_shipment_shared_fee_invoices(project_name: str) -> list[dict]:
+	"""Invoices Finance explicitly shared for the client to pay.
+
+	Two cheap queries (indexed filters) — no Task/Project document loads.
+	"""
+	if not project_name:
+		return []
+	return _shared_fee_invoices_for_projects([project_name])
+
+
+def get_customer_shared_fee_invoices(customer: str, limit: int = 100) -> list[dict]:
+	"""All Finance-shared fee invoices across this customer's shipments."""
+	if not customer:
+		return []
+	projects = frappe.get_all(
+		"Project",
+		filters={"customer": customer},
+		pluck="name",
+		limit=limit,
+	)
+	if not projects:
+		return []
+	return _shared_fee_invoices_for_projects(projects)
+
+
+def _project_refs(project_names: list[str]) -> dict[str, str]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+		display_ref_from_values,
+	)
+
+	if not project_names:
+		return {}
+	meta = frappe.get_meta("Project")
+	fields = ["name", "project_name"]
+	if meta.has_field("custom_project_reference"):
+		fields.append("custom_project_reference")
+	for field in ("custom_batch_no", "custom_bill_of_lading", "custom_bl_number"):
+		if meta.has_field(field):
+			fields.append(field)
+	rows = frappe.get_all("Project", filters={"name": ["in", project_names]}, fields=fields)
+	return {r.name: display_ref_from_values(r) or r.name for r in rows}
+
+
+def _shared_fee_invoices_for_projects(project_names: list[str]) -> list[dict]:
+	if not project_names:
+		return []
+
+	out: list[dict] = []
+	api = (
+		"/api/method/cgm_shipping.cgm_worldwide_shipping.customizations.portal"
+		".download_shared_fee_invoice"
+	)
+	refs = _project_refs(project_names)
+	has_client_paid = frappe.get_meta("Task Finance Line").has_field("client_reported_paid")
+	has_permit_client_paid = frappe.get_meta("Permit Register").has_field("client_reported_paid")
+
+	# Permit fee invoices on the Project register.
+	if (
+		frappe.get_meta("Project").has_field("custom_permit_register")
+		and frappe.get_meta("Permit Register").has_field("shared_with_client")
+	):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+			PERMIT_REGISTER_FIELD,
+		)
+
+		fields = ["name", "permit_type", "payment_invoice", "shared_on", "parent", "payment_receipt"]
+		if has_permit_client_paid:
+			fields.extend(["client_reported_paid", "client_reported_on"])
+
+		for row in frappe.get_all(
+			"Permit Register",
+			filters={
+				"parent": ["in", project_names],
+				"parenttype": "Project",
+				"parentfield": PERMIT_REGISTER_FIELD,
+				"shared_with_client": 1,
+				"payment_invoice": ["is", "set"],
+			},
+			fields=fields,
+			order_by="shared_on desc",
+		):
+			project = row.parent
+			label = _permit_label(row.get("permit_type"))
+			has_proof = bool(row.get("payment_receipt"))
+			reported = bool(cint(row.get("client_reported_paid"))) or has_proof
+			out.append(
+				_fee_invoice_row(
+					source="permit",
+					row_name=row.name,
+					project=project,
+					ref=refs.get(project) or project,
+					label=_("{0} Invoice").format(label),
+					shared_on=row.get("shared_on"),
+					reported=reported,
+					has_proof=has_proof,
+					reported_on=row.get("client_reported_on"),
+					api=api,
+				)
+			)
+
+	# UCR / Entry / Shipping Line / KPA invoices on Task Finance Lines.
+	if (
+		frappe.db.table_exists("Task Finance Line")
+		and frappe.get_meta("Task Finance Line").has_field("shared_with_client")
+	):
+		client_cols = (
+			", tfl.client_reported_paid, tfl.client_reported_on" if has_client_paid else ""
+		)
+		rows = frappe.db.sql(
+			f"""
+			SELECT
+				tfl.name,
+				tfl.line_label,
+				tfl.payment_item,
+				tfl.attachment,
+				tfl.shared_on,
+				t.project,
+				t.name AS task_name
+				{client_cols}
+			FROM `tabTask Finance Line` tfl
+			INNER JOIN `tabTask` t ON t.name = tfl.parent AND tfl.parenttype = 'Task'
+			WHERE t.project IN %(projects)s
+				AND tfl.line_type = 'Invoice'
+				AND tfl.shared_with_client = 1
+				AND IFNULL(tfl.attachment, '') != ''
+			ORDER BY tfl.shared_on DESC
+			""",
+			{"projects": tuple(project_names)},
+			as_dict=True,
+		)
+
+		# Batch-check receipt / POP lines for payment status (one query).
+		task_names = list({r.task_name for r in rows if r.task_name})
+		receipt_by_task_item: dict[tuple[str, str], str] = {}
+		pop_by_task_item: dict[tuple[str, str], str] = {}
+		if task_names:
+			for rec in frappe.get_all(
+				"Task Finance Line",
+				filters={
+					"parent": ["in", task_names],
+					"parenttype": "Task",
+					"line_type": ["in", ["Receipt", "POP"]],
+					"attachment": ["is", "set"],
+				},
+				fields=["parent", "payment_item", "attachment", "line_type"],
+			):
+				key = (rec.parent, rec.payment_item or "")
+				if rec.line_type == "POP":
+					pop_by_task_item[key] = rec.attachment
+				else:
+					receipt_by_task_item[key] = rec.attachment
+
+		for row in rows:
+			project = row.project
+			label = row.get("line_label") or row.get("payment_item") or _("Fee Invoice")
+			item_key = (row.task_name, row.get("payment_item") or "")
+			is_shipping_line = (row.get("payment_item") or "") == "Shipping Line"
+			has_proof = bool(
+				pop_by_task_item.get(item_key)
+				if is_shipping_line
+				else receipt_by_task_item.get(item_key)
+			)
+			reported = bool(cint(row.get("client_reported_paid"))) or has_proof
+			out.append(
+				_fee_invoice_row(
+					source="finance_line",
+					row_name=row.name,
+					project=project,
+					ref=refs.get(project) or project,
+					label=label,
+					shared_on=row.get("shared_on"),
+					reported=reported,
+					has_proof=has_proof,
+					reported_on=row.get("client_reported_on"),
+					api=api,
+					proof_kind="pop" if is_shipping_line else "receipt",
+				)
+			)
+
+	return out
+
+
+def _fee_invoice_row(
+	*,
+	source: str,
+	row_name: str,
+	project: str,
+	ref: str,
+	label: str,
+	shared_on,
+	reported: bool,
+	reported_on,
+	api: str,
+	proof_kind: str = "receipt",
+	has_proof: bool = False,
+) -> dict:
+	is_pop = proof_kind == "pop"
+	if has_proof:
+		status = "pop_submitted" if is_pop else "receipt_submitted"
+		status_label = _("POP submitted") if is_pop else _("Receipt submitted")
+	elif reported:
+		status = "payment_reported"
+		status_label = (
+			_("Payment reported - please attach POP")
+			if is_pop
+			else _("Payment reported - please attach receipt")
+		)
+	else:
+		status = "awaiting_payment"
+		status_label = _("Awaiting your payment")
+	return {
+		"source": source,
+		"row": row_name,
+		"project": project,
+		"ref": ref,
+		"label": label,
+		"shared_on": shared_on,
+		"payment_status": status,
+		"status_label": status_label,
+		"proof_kind": proof_kind,
+		"client_reported_paid": 1 if reported else 0,
+		"has_payment_proof": 1 if has_proof else 0,
+		"client_reported_on": reported_on,
+		"shipment_url": f"/shipment?name={quote(project, safe='')}",
+		"download_url": (
+			f"{api}?project={quote(project, safe='')}"
+			f"&source={quote(source, safe='')}"
+			f"&row={quote(row_name, safe='')}"
+		),
+	}
+
+
+@frappe.whitelist()
+def download_shared_fee_invoice(project: str, source: str, row: str):
+	"""Stream a Finance-shared fee invoice to the owning customer only."""
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+
+	owner = frappe.db.get_value("Project", project, "customer")
+	if not owner or owner != customer:
+		raise frappe.PermissionError(_("You can only download invoices for your own shipments."))
+
+	file_url = None
+	if source == "permit":
+		from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+			PERMIT_REGISTER_FIELD,
+		)
+
+		file_url = frappe.db.get_value(
+			"Permit Register",
+			{
+				"name": row,
+				"parent": project,
+				"parenttype": "Project",
+				"parentfield": PERMIT_REGISTER_FIELD,
+				"shared_with_client": 1,
+			},
+			"payment_invoice",
+		)
+	elif source == "finance_line":
+		matched = frappe.db.sql(
+			"""
+			SELECT tfl.attachment
+			FROM `tabTask Finance Line` tfl
+			INNER JOIN `tabTask` t ON t.name = tfl.parent AND tfl.parenttype = 'Task'
+			WHERE tfl.name = %(row)s
+				AND t.project = %(project)s
+				AND tfl.line_type = 'Invoice'
+				AND tfl.shared_with_client = 1
+			LIMIT 1
+			""",
+			{"row": row, "project": project},
+		)
+		file_url = matched[0][0] if matched else None
+	else:
+		raise frappe.ValidationError(_("Unknown invoice source."))
+
+	if not file_url:
+		raise frappe.PermissionError(_("Invoice is not available for download."))
+
+	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	frappe.local.response.filename = file_doc.file_name or "invoice"
+	frappe.local.response.filecontent = file_doc.get_content()
+	frappe.local.response.type = "download"
+
+
+# ─── Conversation & feedback ─────────────────────────────────────────────────
+#
+# The customer sees a two-way thread per shipment and per container: their own
+# messages plus the updates CGM published to them. `require_customer` and
+# `require_shipment` re-check ownership on every call because the project and
+# container names arrive from the browser.
+
+
+def require_customer() -> str:
+	customer = customer_for_user(frappe.session.user)
+	if not customer:
+		raise frappe.PermissionError(_("No customer is linked to your account."))
+	return customer
+
+
+def require_shipment(project: str, customer: str) -> dict:
+	shipment = get_shipment_for_customer(project, customer)
+	if not shipment:
+		raise frappe.PermissionError(_("This shipment isn't consigned to your account."))
+	return shipment
+
+
+def get_container_for_customer(container_tracker: str, customer: str) -> dict | None:
+	"""Fetch a container, enforcing that its shipment belongs to the customer."""
+	if not container_tracker or not customer:
+		return None
+	if not frappe.db.exists("DocType", "Container Tracker"):
+		return None
+
+	wanted = [
+		"name",
+		"project",
+		"container_number",
+		"container_mode",
+		"cargo_size",
+		"status",
+		"current_location",
+		"delivery_location",
+		"shipping_line",
+		"bl_number",
+		"truck_number",
+		"eta",
+		"ata",
+		"discharging_date",
+		"custom_release_date",
+		"gate_out_date_port",
+		"icd_gate_out_date",
+		"border_clearance_date",
+		"gate_in_date_warehouse",
+		"offloading_date",
+		"delivery_date",
+		"actual_empty_return",
+		"expected_empty_return",
+		"free_days",
+		"free_days_end_date",
+		"demurrage_days",
+		"demurrage_amount",
+		"days_outstanding",
+	]
+	meta = frappe.get_meta("Container Tracker")
+	fields = [f for f in wanted if meta.has_field(f)]
+	if "name" not in fields:
+		fields.insert(0, "name")
+
+	row = frappe.db.get_value("Container Tracker", container_tracker, fields, as_dict=True)
+	if not row or not row.get("project"):
+		return None
+	if frappe.db.get_value("Project", row.project, "customer") != customer:
+		return None
+	return row
+
+
+def require_container(container_tracker: str, customer: str) -> dict:
+	container = get_container_for_customer(container_tracker, customer)
+	if not container:
+		raise frappe.PermissionError(_("This container isn't on one of your shipments."))
+	return container
+
+
+def shipment_conversation_summaries(
+	project: str, container_tracker: str | None = None, shipment_only: bool = False
+) -> list[dict]:
+	"""One row per conversation on a shipment.
+
+	A shipment collects several separate exchanges over its life. Listing them
+	as one thread buried a new message under whichever topic was last, so they
+	are grouped the same way the general queries are.
+
+	`shipment_only` drops the conversations that belong to a particular
+	container - those are read and answered on that container's own page, and
+	repeating them here made the shipment tab a dump of everything.
+	"""
+	messages = get_customer_conversation(project, container_tracker=container_tracker)
+	if not messages:
+		return []
+
+	grouped: dict[str, list[dict]] = {}
+	for message in messages:
+		grouped.setdefault(message.get("parent_update") or message["name"], []).append(message)
+
+	if shipment_only:
+		grouped = {
+			root: thread
+			for root, thread in grouped.items()
+			if not sorted(thread, key=lambda m: m.get("posted_on") or "")[0].get("container_tracker")
+		}
+
+	summaries = []
+	for root_name, thread in grouped.items():
+		thread.sort(key=lambda m: m.get("posted_on") or "")
+		first, last = thread[0], thread[-1]
+		summaries.append(
+			{
+				"name": root_name,
+				"subject": first.get("subject") or _("Message"),
+				"from_cgm": bool(first.get("from_cgm")),
+				"container_number": first.get("container_number") or "",
+				"message_count": len(thread),
+				"unread_count": sum(1 for m in thread if m.get("unread")),
+				"status": first.get("response_status") or "",
+				"awaiting_response": bool(first.get("awaiting_response")),
+				"last_posted_on": last.get("posted_on") or "",
+				"last_preview": (last.get("message") or "").strip()[:160],
+				"last_from": _("CGM Worldwide Shipping")
+				if last.get("from_cgm")
+				else (last.get("posted_by_name") or _("You")),
+				"url": "/shipment?name="
+				+ quote(project, safe="")
+				+ "&thread="
+				+ quote(root_name, safe="")
+				+ "#messages",
+			}
+		)
+	summaries.sort(key=lambda x: x["last_posted_on"], reverse=True)
+	return summaries
+
+
+def shipment_conversation_thread(
+	project: str, root: str, container_tracker: str | None = None
+) -> list[dict]:
+	"""Messages of one conversation on a shipment, oldest first."""
+	if not root:
+		return []
+	messages = get_customer_conversation(project, container_tracker=container_tracker)
+	return [m for m in messages if (m.get("parent_update") or m["name"]) == root]
+
+
+@frappe.whitelist()
+def get_shipment_conversations(project: str) -> list[dict]:
+	"""Customer portal: every conversation on a shipment."""
+	customer = require_customer()
+	require_shipment(project, customer)
+	return shipment_conversation_summaries(project, shipment_only=True)
+
+
+@frappe.whitelist()
+def post_shipment_update(
+	project: str,
+	subject: str,
+	message: str,
+	parent_update: str | None = None,
+) -> dict:
+	"""Customer portal: post an operational Update (source=Customer) for a shipment."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		post_customer_update,
+	)
+
+	customer = require_customer()
+	require_shipment(project, customer)
+
+	return post_customer_update(
+		project,
+		subject,
+		message,
+		customer=customer,
+		parent_update=parent_update,
+	)
+
+
+@frappe.whitelist()
+def post_container_update(
+	container_tracker: str,
+	subject: str,
+	message: str,
+	parent_update: str | None = None,
+) -> dict:
+	"""Customer portal: post a message about one container."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		post_customer_update,
+	)
+
+	customer = require_customer()
+	container = require_container(container_tracker, customer)
+
+	return post_customer_update(
+		container.project,
+		subject,
+		message,
+		customer=customer,
+		container_tracker=container_tracker,
+		parent_update=parent_update,
+	)
+
+
+@frappe.whitelist()
+def get_shipment_updates_portal(project: str, thread: str | None = None) -> list[dict]:
+	"""Customer portal: one conversation, or everything on the shipment."""
+	customer = require_customer()
+	require_shipment(project, customer)
+	if thread:
+		return shipment_conversation_thread(project, thread)
+	return get_customer_conversation(project)
+
+
+@frappe.whitelist()
+def get_container_updates_portal(container_tracker: str) -> list[dict]:
+	"""Customer portal: the conversation on one container."""
+	customer = require_customer()
+	container = require_container(container_tracker, customer)
+	return get_customer_conversation(container.project, container_tracker=container_tracker)
+
+
+def get_customer_conversation(project: str, container_tracker: str | None = None) -> list[dict]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		get_customer_thread_for_project,
+	)
+
+	return get_customer_thread_for_project(project, container_tracker=container_tracker)
+
+
+@frappe.whitelist()
+def mark_shipment_updates_read(project: str, names) -> dict:
+	"""Customer portal: clear the unread flag on CGM messages they just opened."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		AUDIENCE_CUSTOMER,
+		mark_thread_read,
+	)
+
+	customer = require_customer()
+	require_shipment(project, customer)
+
+	if isinstance(names, str):
+		names = frappe.parse_json(names) if names.strip().startswith("[") else [names]
+	# Only messages that really sit on this shipment may be stamped.
+	allowed = set(
+		frappe.get_all(
+			"Shipment Update",
+			filters={"project": project, "name": ("in", list(names or []))},
+			pluck="name",
+			ignore_permissions=True,
+		)
+	)
+	marked = mark_thread_read([n for n in (names or []) if n in allowed], AUDIENCE_CUSTOMER)
+	return {"ok": True, "marked": marked}
+
+
+@frappe.whitelist()
+def set_conversation_status(name: str, status: str) -> dict:
+	"""Customer portal: close a conversation, or reopen it for a clarification.
+
+	The customer decides when their own question is settled, so this is theirs
+	to call - but only on a message they can actually see.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		set_thread_status,
+		thread_root,
+	)
+
+	customer = require_customer()
+	root = thread_root(name)
+	if not root or not _customer_owns_message(root, customer):
+		raise frappe.PermissionError(_("This conversation isn't yours."))
+	return set_thread_status(root, status)
+
+
+def _customer_owns_message(name: str, customer: str) -> bool:
+	row = frappe.db.get_value(
+		"Shipment Update",
+		name,
+		["customer", "project", "visible_to_customer"],
+		as_dict=True,
+	)
+	if not row or not row.visible_to_customer:
+		return False
+	if row.customer == customer:
+		return True
+	return bool(row.project and get_shipment_for_customer(row.project, customer))
+
+
+@frappe.whitelist()
+def submit_shipment_feedback(
+	project: str,
+	rating,
+	category: str | None = None,
+	comments: str | None = None,
+	would_recommend: int | str = 0,
+	containers=None,
+) -> dict:
+	"""Customer portal: rate a shipment, optionally naming the containers it is about."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.portal_feedback import (
+		PARTY_CUSTOMER,
+		submit_feedback,
+	)
+
+	customer = require_customer()
+	require_shipment(project, customer)
+
+	return submit_feedback(
+		party=PARTY_CUSTOMER,
+		project=project,
+		customer=customer,
+		stars=rating,
+		category=category,
+		comments=comments,
+		would_recommend=would_recommend,
+		containers=containers,
+	)
+
+
+def get_customer_feedback_context(project: str) -> dict:
+	"""Feedback block for a shipment page: what this user left, and CGM's reply."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.portal_feedback import (
+		FEEDBACK_CATEGORIES,
+		PARTY_CUSTOMER,
+		get_my_feedback,
+		project_container_options,
+	)
+
+	return {
+		"my_feedback": get_my_feedback(party=PARTY_CUSTOMER, project=project),
+		"categories": list(FEEDBACK_CATEGORIES),
+		"containers": project_container_options(project),
+	}
+
+@frappe.whitelist()
+def post_general_message(
+	subject: str = "",
+	message: str = "",
+	parent_update: str | None = None,
+) -> dict:
+	"""Customer portal: an enquiry that is not about a particular shipment."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		post_customer_update,
+	)
+
+	customer = require_customer()
+	parent = _validated_general_parent(parent_update, customer)
+	return post_customer_update(
+		None,
+		subject,
+		message,
+		customer=customer,
+		parent_update=parent,
+	)
+
+
+def _validated_general_parent(parent_update: str | None, customer: str) -> str | None:
+	"""Only thread onto a general message this customer can already see."""
+	parent_update = (parent_update or "").strip()
+	if not parent_update:
+		return None
+	row = frappe.db.get_value(
+		"Shipment Update",
+		parent_update,
+		["name", "customer", "project", "visible_to_customer", "parent_update"],
+		as_dict=True,
+	)
+	if not row or row.project or row.customer != customer or not row.visible_to_customer:
+		return None
+	# Always attach to the query's first message, so a thread stays flat.
+	return row.parent_update or row.name
+
+
+def _general_messages(customer: str) -> list[dict]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		get_customer_general_thread,
+	)
+
+	return get_customer_general_thread(customer)
+
+
+def _thread_key(message: dict) -> str:
+	"""The message that started this query - replies hang off it."""
+	return message.get("parent_update") or message["name"]
+
+
+def general_query_summaries(customer: str) -> list[dict]:
+	"""One row per general query: each is its own conversation, not one feed."""
+	messages = _general_messages(customer)
+	if not messages:
+		return []
+
+	grouped: dict[str, list[dict]] = {}
+	for message in messages:
+		grouped.setdefault(_thread_key(message), []).append(message)
+
+	summaries = []
+	for root, thread in grouped.items():
+		thread.sort(key=lambda m: m.get("posted_on") or "")
+		first, last = thread[0], thread[-1]
+		summaries.append(
+			{
+				"name": root,
+				"subject": first.get("subject") or _("Enquiry"),
+				"message_count": len(thread),
+				"unread_count": sum(1 for m in thread if m.get("unread")),
+				"last_posted_on": last.get("posted_on") or "",
+				"last_preview": (last.get("message") or "").strip()[:160],
+				"last_from": _("CGM Worldwide Shipping")
+				if last.get("from_cgm")
+				else (last.get("posted_by_name") or _("You")),
+				"awaiting_response": bool(first.get("awaiting_response")),
+				"url": "/my-messages?query=" + quote(root, safe=""),
+			}
+		)
+	summaries.sort(key=lambda s: s["last_posted_on"], reverse=True)
+	return summaries
+
+
+def general_query_thread(customer: str, root: str) -> list[dict]:
+	"""Messages of one general query, oldest first."""
+	if not root:
+		return []
+	return [m for m in _general_messages(customer) if _thread_key(m) == root]
+
+
+@frappe.whitelist()
+def get_general_queries_portal() -> list[dict]:
+	"""Customer portal: every general query this customer has raised."""
+	return general_query_summaries(require_customer())
+
+
+@frappe.whitelist()
+def get_general_messages_portal(query: str | None = None) -> list[dict]:
+	"""Customer portal: one general query's conversation.
+
+	Without `query` this returns every general message, which is what the
+	summaries are built from.
+	"""
+	customer = require_customer()
+	if query:
+		return general_query_thread(customer, query)
+	return _general_messages(customer)
+
+
+@frappe.whitelist()
+def mark_general_updates_read(names) -> dict:
+	"""Customer portal: clear unread on general enquiry replies."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		AUDIENCE_CUSTOMER,
+		mark_thread_read,
+	)
+
+	customer = require_customer()
+	if isinstance(names, str):
+		names = frappe.parse_json(names) if names.strip().startswith("[") else [names]
+	allowed = {
+		m["name"] for m in get_general_messages_portal()
+	} if names else set()
+	marked = mark_thread_read([n for n in (names or []) if n in allowed], AUDIENCE_CUSTOMER)
+	return {"ok": True, "marked": marked}
+
+
+@frappe.whitelist()
+def get_my_conversations(limit: int = 100) -> list[dict]:
+	"""Customer portal: every shipment this customer has messages on.
+
+	One row per shipment - the newest message, who sent it, and how many CGM
+	messages are still unread - so `/my-messages` is a single list rather than
+	one page per shipment.
+	"""
+	customer = require_customer()
+	return customer_conversation_summaries(customer, limit=limit)
+
+
+def customer_conversation_summaries(customer: str, limit: int = 100) -> list[dict]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		CGM_SOURCES,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
+		display_ref_from_values,
+	)
+
+	if not customer or not frappe.db.exists("DocType", "Shipment Update"):
+		return []
+
+	source_placeholders = ", ".join(["%s"] * len(CGM_SOURCES))
+	rows = frappe.db.sql(
+		f"""
+		SELECT
+			u.project,
+			COUNT(*) AS message_count,
+			MAX(u.posted_on) AS last_posted_on,
+			SUM(
+				CASE WHEN u.customer_read_on IS NULL
+					AND u.update_source IN ({source_placeholders})
+				THEN 1 ELSE 0 END
+			) AS unread_count
+		FROM `tabShipment Update` u
+		JOIN `tabProject` p ON p.name = u.project
+		WHERE p.customer = %s AND u.visible_to_customer = 1
+		GROUP BY u.project
+		ORDER BY last_posted_on DESC
+		LIMIT %s
+		""",
+		(*CGM_SOURCES, customer, cint(limit)),
+		as_dict=True,
+	)
+	if not rows:
+		return []
+
+	# One extra query for the newest message on each shipment, rather than one
+	# per row inside the loop.
+	latest = {}
+	for project in [r.project for r in rows]:
+		row = frappe.get_all(
+			"Shipment Update",
+			filters={"project": project, "visible_to_customer": 1},
+			fields=["subject", "message", "update_source", "posted_by", "posted_on"],
+			order_by="posted_on desc",
+			limit_page_length=1,
+			ignore_permissions=True,
+		)
+		if row:
+			latest[project] = row[0]
+
+	meta_fields = [f for f in shipment_list_fields() if f != "name"]
+	details = {
+		d.name: d
+		for d in frappe.get_all(
+			"Project",
+			filters={"name": ("in", [r.project for r in rows])},
+			fields=["name", *meta_fields],
+			ignore_permissions=True,
+		)
+	}
+
+	summaries = []
+	for row in rows:
+		project = details.get(row.project) or frappe._dict(name=row.project)
+		newest = latest.get(row.project) or frappe._dict()
+		from_cgm = newest.get("update_source") not in ("Customer", "Transporter")
+		summaries.append(
+			{
+				"project": row.project,
+				"ref": display_ref_from_values(project) or row.project,
+				"status": project.get("custom_shipment_status") or "",
+				"tone": status_tone(project.get("custom_shipment_status")),
+				"message_count": cint(row.message_count),
+				"unread_count": cint(row.unread_count),
+				"last_posted_on": str(row.last_posted_on or ""),
+				"last_subject": newest.get("subject") or "",
+				"last_preview": (newest.get("message") or "").strip()[:160],
+				"last_from": _("CGM Worldwide Shipping")
+				if from_cgm
+				else (
+					frappe.utils.get_fullname(newest.get("posted_by"))
+					or newest.get("posted_by")
+					or _("You")
+				),
+				"url": "/shipment?name=" + quote(row.project, safe="") + "#messages",
+			}
+		)
+	return summaries

@@ -6,13 +6,23 @@
  "engine": "InnoDB",
  "field_order": [
   "permit_type",
-  "invoice_amount",
+  "origin",
+  "is_amendment",
   "payment_invoice",
+  "invoice_uploaded_on",
+  "invoice_uploaded_by",
   "stage",
   "payment_reference",
   "payment_receipt",
   "permit_document",
+  "certificate_uploaded_on",
+  "certificate_uploaded_by",
   "invoice_verified",
+  "shared_with_client",
+  "shared_by",
+  "shared_on",
+  "client_reported_paid",
+  "client_reported_on",
   "column_break_sfrq",
   "clearance_phase",
   "application_date",
@@ -21,7 +31,6 @@
   "approval_date",
   "payment_entry",
   "journal_entry",
-  "purchase_invoice",
   "payment_date",
   "receipt_verified"
  ],
@@ -34,17 +43,30 @@
    "options": "Permit Type"
   },
   {
+   "default": "Local",
+   "fieldname": "origin",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Origin",
+   "options": "\nLocal\nForeign"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.origin != \"Foreign\"",
+   "description": "Additional invoice for this permit type after a prior payment (keeps the first paid row).",
+   "fieldname": "is_amendment",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Amendment"
+  },
+  {
    "columns": 3,
+   "depends_on": "eval:doc.origin != \"Foreign\"",
+   "description": "Required for Local (Finance payment). Hidden for Foreign - attach the Permit Certificate instead.",
    "fieldname": "payment_invoice",
    "fieldtype": "Attach",
    "in_list_view": 1,
    "label": "Permit Invoice (for Finance)"
-  },
-  {
-   "fieldname": "invoice_amount",
-   "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Invoice Amount"
   },
   {
    "fieldname": "permit_document",
@@ -88,21 +110,57 @@
   },
   {
    "default": "0",
+   "depends_on": "eval:doc.origin != \"Foreign\"",
    "fieldname": "invoice_verified",
    "fieldtype": "Check",
    "label": "Invoice Verified"
   },
   {
-   "fieldname": "purchase_invoice",
+   "default": "0",
+   "depends_on": "eval:doc.origin != \"Foreign\"",
+   "description": "Finance shared this permit invoice on the customer portal for the client to pay.",
+   "fieldname": "shared_with_client",
+   "fieldtype": "Check",
+   "label": "Shared with Client",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.shared_with_client",
+   "fieldname": "shared_by",
    "fieldtype": "Link",
-   "label": "Purchase Invoice",
-   "options": "Purchase Invoice"
+   "label": "Shared By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.shared_with_client",
+   "fieldname": "shared_on",
+   "fieldtype": "Datetime",
+   "label": "Shared On",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.shared_with_client",
+   "description": "Client confirmed payment on the portal (receipt may follow).",
+   "fieldname": "client_reported_paid",
+   "fieldtype": "Check",
+   "label": "Client Reported Paid",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.client_reported_paid",
+   "fieldname": "client_reported_on",
+   "fieldtype": "Datetime",
+   "label": "Client Reported On",
+   "read_only": 1
   },
   {
    "fieldname": "payment_entry",
    "fieldtype": "Link",
    "label": "Payment Entry",
-   "options": "Payment Entry"
+   "options": "Payment Entry",
+   "depends_on": "eval:doc.origin != \"Foreign\""
   },
   {
    "fieldname": "journal_entry",
@@ -110,40 +168,77 @@
    "in_list_view": 1,
    "label": "Journal Entry",
    "options": "Journal Entry",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:doc.origin != \"Foreign\""
   },
   {
    "fieldname": "payment_receipt",
    "fieldtype": "Attach",
    "in_list_view": 1,
-   "label": "Payment Receipt"
+   "label": "Payment Receipt",
+   "depends_on": "eval:doc.origin != \"Foreign\""
   },
   {
    "default": "0",
    "fieldname": "receipt_verified",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Receipt Verified"
+   "label": "Receipt Verified",
+   "depends_on": "eval:doc.origin != \"Foreign\""
   },
   {
    "fieldname": "payment_date",
    "fieldtype": "Date",
-   "label": "Payment Date"
+   "label": "Payment Date",
+   "depends_on": "eval:doc.origin != \"Foreign\""
   },
   {
    "fieldname": "payment_reference",
    "fieldtype": "Data",
-   "label": "Payment Reference"
+   "label": "Payment Reference",
+   "depends_on": "eval:doc.origin != \"Foreign\""
   },
   {
    "fieldname": "column_break_sfrq",
    "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.origin != \"Foreign\"",
+   "fieldname": "invoice_uploaded_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Invoice Uploaded On",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.origin != \"Foreign\"",
+   "fieldname": "invoice_uploaded_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Invoice Uploaded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "certificate_uploaded_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Certificate Uploaded On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "certificate_uploaded_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Certificate Uploaded By",
+   "options": "User",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-11 15:47:50.548241",
+ "modified": "2026-07-09 16:41:31.460248",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Permit Register",

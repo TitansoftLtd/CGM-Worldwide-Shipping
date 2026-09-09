@@ -20,12 +20,17 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
 	get_project_inspection_portal_context,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
+	apply_customer_portal_layout,
 	container_timeline,
 	customer_for_user,
 	get_containers_for_shipment,
+	get_customer_feedback_context,
+	shipment_conversation_summaries,
+	shipment_conversation_thread,
 	get_shipment_documents,
 	get_shipment_for_customer,
 	get_shipment_permits,
+	get_shipment_shared_fee_invoices,
 	shipment_display_ref,
 	shipment_progress,
 	status_tone,
@@ -35,8 +40,7 @@ no_cache = 1
 
 
 def get_context(context):
-	context.no_cache = 1
-	context.show_sidebar = False
+	apply_customer_portal_layout(context)
 
 	project = (frappe.form_dict.get("name") or "").strip()
 
@@ -106,14 +110,37 @@ def _build_context(context, project):
 	context.charges_total = sum(c["amount"] for c in charges)
 	context.charges_currency = frappe.defaults.get_global_default("currency")
 
-	containers = get_containers_for_shipment(project)
-	for c in containers:
-		c["timeline"] = container_timeline(c)
-		c["has_charges"] = bool(
-			(c.get("demurrage_days") or 0)
-		)
-	context.containers = containers
-
+	# Fee invoices first — must not depend on containers/docs succeeding.
+	context.fee_invoices = get_shipment_shared_fee_invoices(project)
 	context.documents = get_shipment_documents(project)
 	context.permits = get_shipment_permits(project)
 	context.inspection = get_project_inspection_portal_context(project, customer)
+
+	try:
+		containers = get_containers_for_shipment(project)
+		for c in containers:
+			c["timeline"] = container_timeline(c)
+			c["has_charges"] = bool(c.get("demurrage_days") or 0)
+			c["url"] = "/container?name=" + quote(c["name"], safe="")
+		context.containers = containers
+	except Exception:
+		frappe.log_error(
+			title="Shipment portal containers failed",
+			message=frappe.get_traceback(),
+		)
+		context.containers = []
+
+	# A shipment collects several conversations. The Messages tab lists them;
+	# `?thread=` opens one, the same shape as /my-messages.
+	# Container conversations live on the container's own page; this tab is the
+	# shipment's own.
+	context.conversations = shipment_conversation_summaries(project, shipment_only=True)
+	context.unread_count = sum(c["unread_count"] for c in context.conversations)
+
+	requested = (frappe.form_dict.get("thread") or "").strip()
+	open_thread = shipment_conversation_thread(project, requested) if requested else []
+	context.open_thread = requested if open_thread else ""
+	context.open_thread_subject = open_thread[0]["subject"] if open_thread else ""
+	context.open_thread_json = frappe.as_json(open_thread)
+	context.feedback = get_customer_feedback_context(project)
+	context.feedback_json = frappe.as_json(context.feedback)

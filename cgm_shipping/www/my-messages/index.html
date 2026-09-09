@@ -1,0 +1,208 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/portal_localize.html" import local_datetime %}
+
+{% block title %}{{ _("My Messages") }}{% endblock %}
+
+{% block head_include %}
+<style>
+  .mm-row { display:flex; align-items:flex-start; gap:1rem; padding:1rem 1.25rem; border-bottom:1px solid var(--cp-border); text-decoration:none; color:inherit; transition:background .12s ease; }
+  .mm-row:last-child { border-bottom:none; }
+  .mm-row:hover { background:var(--cp-surface-alt); text-decoration:none; }
+  .mm-icon { flex-shrink:0; width:38px; height:38px; border-radius:10px; background:var(--cp-brand-soft); color:var(--cp-brand); display:inline-flex; align-items:center; justify-content:center; }
+  .mm-body { flex:1; min-width:0; }
+  .mm-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight:700; font-size:.9rem; }
+  .mm-subject { font-size:.88rem; font-weight:600; margin-top:.15rem; }
+  .mm-preview { font-size:.82rem; color:var(--cp-text-muted); margin-top:.1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mm-end { flex-shrink:0; text-align:right; font-size:.75rem; color:var(--cp-text-muted); }
+  .mm-end .cp-unread-pill { margin-top:.35rem; display:inline-block; }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="cp-page cp-page-narrow">
+
+{% include "templates/includes/portal_back_link.html" %}
+
+{% if error_title %}
+  <div class="cp-banner-error"><h4>{{ error_title }}</h4><p>{{ error_message }}</p></div>
+{% elif no_customer %}
+  <div class="cp-empty"><h4>{{ _("Not connected yet") }}</h4>
+    <p>{{ _("Your portal account isn't linked to a Customer. Contact CGM Worldwide Shipping.") }}</p></div>
+{% else %}
+
+  <section class="cp-hero" style="padding:1.5rem 1.75rem;margin-bottom:1.5rem;">
+    <h1 style="font-size:1.4rem;">{{ _("Messages") }}</h1>
+    <p class="cp-sub">
+      {% if unread_total %}
+        {{ _("You have {0} new message(s) from CGM Worldwide Shipping.").format(unread_total) }}
+      {% else %}
+        {{ _("Your conversations with the operations team, newest first.") }}
+      {% endif %}
+    </p>
+  </section>
+
+  {% if open_query %}
+  <!-- ONE QUERY -->
+  <p style="margin:0 0 1rem;"><a class="cp-link" href="/my-messages">&larr; {{ _("All messages") }}</a></p>
+  <div class="cp-card" style="margin-bottom:1rem;">
+    <div class="cp-card-head"><h3>{{ open_query_subject }}</h3></div>
+    <div class="cp-card-body" id="cgm-general-thread-mount">
+      <div class="cp-thread-empty">{{ _("Loading messages…") }}</div>
+    </div>
+  </div>
+  <div class="cp-card" style="margin-bottom:1.5rem;">
+    <div class="cp-card-head"><h3>{{ _("Reply") }}</h3></div>
+    <div class="cp-card-body"><div id="cgm-general-form-mount"></div></div>
+  </div>
+
+  {% else %}
+  <!-- QUERY LIST -->
+  <div class="cp-section-h">
+    <h2>{{ _("General queries") }}</h2>
+    <a class="cp-link" href="#cgm-new-query">{{ _("Raise a new query") }}</a>
+  </div>
+  <div class="cp-card" style="margin-bottom:1rem;">
+    {% if queries %}
+      {% for q in queries %}
+        <a class="mm-row" href="{{ q.url }}">
+          <span class="mm-icon">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17h.01M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="12" r="10"/></svg>
+          </span>
+          <div class="mm-body">
+            <div class="mm-subject" style="margin-top:0;">{{ q.subject }}</div>
+            {% if q.last_preview %}<div class="mm-preview">{{ q.last_from }}: {{ q.last_preview }}</div>{% endif %}
+          </div>
+          <div class="mm-end">
+            {% if q.last_posted_on %}{{ local_datetime(q.last_posted_on) }}{% endif %}
+            <div>{{ _("{0} message(s)").format(q.message_count) }}</div>
+            {% if q.unread_count %}<span class="cp-unread-pill">{{ q.unread_count }}</span>
+            {% elif q.awaiting_response %}<div style="color:var(--cp-amber);font-weight:600;">{{ _("Awaiting reply") }}</div>{% endif %}
+          </div>
+        </a>
+      {% endfor %}
+    {% else %}
+      <div class="cp-card-body">
+        <p style="margin:0;color:var(--cp-text-muted);font-size:.88rem;">
+          {{ _("No general queries yet. Anything not about a particular shipment - quotes, accounts - starts here.") }}
+        </p>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="cp-card" id="cgm-new-query" style="margin-bottom:1.5rem;">
+    <div class="cp-card-head"><h3>{{ _("Raise a new query") }}</h3></div>
+    <div class="cp-card-body">
+      <p style="margin:0 0 1rem;color:var(--cp-text-muted);font-size:.88rem;">
+        {{ _("Each query is its own conversation. Operations replies here, and you will be emailed when they do.") }}
+      </p>
+      <div id="cgm-general-form-mount"></div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="cp-section-h"><h2>{{ _("By shipment") }}</h2></div>
+
+  <div class="cp-card">
+    {% if conversations %}
+      {% for c in conversations %}
+        <a class="mm-row" href="{{ c.url }}">
+          <span class="mm-icon">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <div class="mm-body">
+            <div class="mm-ref">{{ c.ref }}</div>
+            <div class="mm-subject">{{ c.last_subject }}</div>
+            {% if c.last_preview %}<div class="mm-preview">{{ c.last_from }}: {{ c.last_preview }}</div>{% endif %}
+          </div>
+          <div class="mm-end">
+            {% if c.last_posted_on %}{{ local_datetime(c.last_posted_on) }}{% endif %}
+            <div>{{ _("{0} message(s)").format(c.message_count) }}</div>
+            {% if c.unread_count %}<span class="cp-unread-pill">{{ c.unread_count }}</span>{% endif %}
+          </div>
+        </a>
+      {% endfor %}
+    {% else %}
+      <div class="cp-empty" style="border:none;padding:2.5rem 1.5rem;">
+        <h4>{{ _("No messages yet") }}</h4>
+        <p>{{ _("Open a shipment and use its Messages tab to reach the operations team.") }}</p>
+        <a class="cp-btn" href="/my-shipments">{{ _("Go to My Shipments") }}</a>
+      </div>
+    {% endif %}
+  </div>
+
+{% endif %}
+
+</div>
+{% if not error_title and not no_customer %}
+<script type="application/json" id="cgm-general-json">{{ thread_json | default("[]") | safe }}</script>
+<script>
+frappe.ready(function () {
+	const NS = "cgm_shipping.cgm_worldwide_shipping.customizations.portal.";
+	const OPEN_QUERY = {{ (open_query or "") | tojson }};
+
+	let thread = [];
+	try {
+		thread = JSON.parse((document.getElementById("cgm-general-json") || {}).textContent || "[]");
+	} catch (e) {
+		thread = [];
+	}
+
+	const mount = document.getElementById("cgm-general-thread-mount");
+	const view = mount
+		? cgm.portal.mountThread(mount, thread, {
+				emptyText: __("No messages on this query yet."),
+				markReadMethod: NS + "mark_general_updates_read",
+				statusMethod: NS + "set_conversation_status",
+				onStatusChanged: refresh,
+			})
+		: null;
+
+	function refresh() {
+		if (!view) {
+			// Raising a query from the list: show it straight away.
+			window.location.reload();
+			return;
+		}
+		frappe.call({
+			method: NS + "get_general_messages_portal",
+			args: { query: OPEN_QUERY },
+			callback(r) {
+				if (r.exc) return;
+				view.setMessages(r.message || []);
+			},
+		});
+	}
+
+	cgm.portal.mountComposer(document.getElementById("cgm-general-form-mount"), {
+		// Inside a query this is a reply; from the list it starts a new one.
+		replyTo: OPEN_QUERY,
+		subjectLabel: __("What is your query about?"),
+		subjectPlaceholder: __("e.g. Quote for a new shipment"),
+		sendLabel: OPEN_QUERY ? __("Send reply") : __("Raise query"),
+		onSend(values, done) {
+			let sent = false;
+			frappe.call({
+				method: NS + "post_general_message",
+				args: {
+					subject: values.subject,
+					message: values.message,
+					parent_update: values.parent_update,
+				},
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Message sent."),
+						indicator: "green",
+					});
+					sent = true;
+					refresh();
+				},
+				always() { done(sent); },
+			});
+		},
+	});
+});
+</script>
+{% endif %}
+{% endblock %}

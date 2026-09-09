@@ -9,15 +9,21 @@
  "field_order": [
   "document_type",
   "required",
-  "initial_attachment",
-  "final_attachment",
-  "attachment",
-  "version_status",
+  "draft_documents",
+  "draft_documents_uploaded_on",
+  "draft_documents_uploaded_by",
   "status",
-  "uploaded_by",
-  "uploaded_on",
+  "version_status",
   "verified_by",
   "verified_on",
+  "final_attachment",
+  "final_document_uploaded_on",
+  "final_document_uploaded_by",
+  "final_document_approved_on",
+  "final_document_approved_by",
+  "final_document_status",
+  "reason_for_rejection",
+  "attachment",
   "remarks"
  ],
  "fields": [
@@ -35,24 +41,18 @@
    "label": "Required"
   },
   {
-   "fieldname": "initial_attachment",
-   "fieldtype": "Attach",
-   "in_list_view": 1,
-   "label": "Initial Document"
-  },
-  {
    "fieldname": "final_attachment",
    "fieldtype": "Attach",
    "in_list_view": 1,
    "label": "Final Document"
   },
   {
+   "description": "Synced from Final Document when present, otherwise Draft Document.",
    "fieldname": "attachment",
    "fieldtype": "Attach",
    "hidden": 1,
    "label": "Primary Attachment",
-   "read_only": 1,
-   "description": "Synced from Final Document when present, otherwise Initial Document (for portal and legacy integrations)."
+   "read_only": 1
   },
   {
    "fieldname": "version_status",
@@ -86,31 +86,80 @@
    "read_only": 1
   },
   {
-   "fieldname": "uploaded_by",
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "final_document_uploaded_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Final Document Uploaded on",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_document_uploaded_by",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Uploaded By",
+   "label": "Final Document Uploaded By",
    "options": "User",
    "read_only": 1
   },
   {
-   "fieldname": "uploaded_on",
+   "fieldname": "draft_documents",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Draft Documents"
+  },
+  {
+   "fieldname": "draft_documents_uploaded_on",
    "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "Uploaded On",
+   "label": "Draft Documents Uploaded on",
    "read_only": 1
   },
   {
-   "fieldname": "remarks",
+   "fieldname": "draft_documents_uploaded_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Draft Documents Uploaded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_document_approved_on",
+   "fieldtype": "Datetime",
+   "label": "Final Document Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_document_approved_by",
+   "fieldtype": "Link",
+   "label": "Final Document Approved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "final_document_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Final Document Status",
+   "options": "Draft\nPending Review\nApproved\nRejected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reason_for_rejection",
    "fieldtype": "Small Text",
-   "label": "Remarks"
+   "label": "Reason For Rejection",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-10 12:41:24.889692",
+ "modified": "2026-07-09 22:02:13.630705",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Document",

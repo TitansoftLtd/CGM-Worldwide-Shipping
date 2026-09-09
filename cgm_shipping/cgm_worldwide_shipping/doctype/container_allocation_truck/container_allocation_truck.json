@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "creation": "2026-07-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "truck_number",
+  "driver_name",
+  "driver_contact",
+  "column_break_status",
+  "status",
+  "offered_on",
+  "offered_by"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "fieldname": "truck_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Truck Number",
+   "reqd": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Driver Name",
+   "reqd": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "driver_contact",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Driver Contact"
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Offered",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Offered\nAssigned\nWithdrawn",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "offered_on",
+   "fieldtype": "Datetime",
+   "label": "Offered On",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "offered_by",
+   "fieldtype": "Link",
+   "label": "Offered By",
+   "options": "User",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Container Allocation Truck",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

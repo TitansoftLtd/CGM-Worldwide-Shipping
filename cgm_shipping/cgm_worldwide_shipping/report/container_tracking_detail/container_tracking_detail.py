@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import tracker_cargo_size_field
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
 	enrich_container_row,
 )
@@ -75,7 +76,7 @@ CONTAINER_FIELDS = [
 	"days_outstanding",
 	"status",
 	"current_location",
-	"cargo_type",
+	tracker_cargo_size_field(),
 ]
 
 

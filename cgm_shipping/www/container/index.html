@@ -1,0 +1,194 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/portal_localize.html" import local_date %}
+
+{% block title %}{{ container_label or _("Container") }}{% endblock %}
+
+{% block head_include %}
+<style>
+  .ct-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+  .ct-head h1 { margin:0; font-size:1.5rem; font-weight:700; letter-spacing:-0.01em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .ct-sub { color: var(--cp-text-muted); font-size:.9rem; margin:.25rem 0 0; }
+  .ct-sub a { color: var(--cp-brand); font-weight:600; }
+  .ct-section-title { font-size:1.05rem; font-weight:700; margin: 1.75rem 0 .85rem; letter-spacing:-0.01em; }
+  .ct-charge { display:flex; gap:1.5rem; flex-wrap:wrap; }
+  .ct-charge .lab { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--cp-text-muted); font-weight:600; }
+  .ct-charge .val { font-size:.95rem; font-weight:700; }
+  .ct-charge .val.alert { color:#be123c; }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="cp-page cp-page-narrow">
+
+{% include "templates/includes/portal_back_link.html" %}
+
+{% if error_title %}
+  <div class="cp-banner-error"><h4>{{ error_title }}</h4><p>{{ error_message }}</p></div>
+  <a class="cp-btn" href="/my-shipments">{{ _("Go to My Shipments") }}</a>
+{% else %}
+
+  <div class="cp-hero" style="padding:1.5rem 1.75rem;">
+    <div class="ct-head">
+      <div>
+        <h1>{{ container_label }}</h1>
+        <p class="ct-sub">
+          <a href="{{ shipment_url }}">{{ shipment_ref }}</a>
+          {% if container.container_mode %} · {{ container.container_mode }}{% endif %}
+          {% if container.cargo_size %} · {{ container.cargo_size }}{% endif %}
+        </p>
+      </div>
+      {% if container.status %}
+      <span class="cp-status {{ 'success' if container.status in ('Delivered','Empty Returned') else ('danger' if container.status == 'Overdue' else 'info') }}"
+            style="font-size:.8rem;padding:.35rem .8rem;"><span class="dot"></span>{{ container.status }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ct-section-title">{{ _("Container details") }}</div>
+  <div class="cp-card"><div class="cp-card-body">
+    <div class="cp-defs">
+      {% if container.current_location %}<div><div class="cp-def-label">{{ _("Current Location") }}</div><div class="cp-def-value">{{ container.current_location }}</div></div>{% endif %}
+      {% if container.delivery_location %}<div><div class="cp-def-label">{{ _("Delivery Location") }}</div><div class="cp-def-value">{{ container.delivery_location }}</div></div>{% endif %}
+      {% if container.bl_number %}<div><div class="cp-def-label">{{ _("B/L Number") }}</div><div class="cp-def-value">{{ container.bl_number }}</div></div>{% endif %}
+      {% if container.shipping_line %}<div><div class="cp-def-label">{{ _("Shipping Line") }}</div><div class="cp-def-value">{{ container.shipping_line }}</div></div>{% endif %}
+      {% if container.truck_number %}<div><div class="cp-def-label">{{ _("Truck") }}</div><div class="cp-def-value">{{ container.truck_number }}</div></div>{% endif %}
+      {% if container.expected_empty_return %}<div><div class="cp-def-label">{{ _("Expected Empty Return") }}</div><div class="cp-def-value">{{ local_date(container.expected_empty_return) }}</div></div>{% endif %}
+    </div>
+
+    {% if container.free_days or container.demurrage_days or container.days_outstanding %}
+    <div class="ct-charge" style="margin-top:1.25rem;padding-top:1rem;border-top:1px dashed var(--cp-border);">
+      {% if container.free_days %}<div><div class="lab">{{ _("Free Days") }}</div><div class="val">{{ container.free_days }}{% if container.free_days_end_date %} · {{ _("to") }} {{ local_date(container.free_days_end_date) }}{% endif %}</div></div>{% endif %}
+      {% if container.demurrage_days %}<div><div class="lab">{{ _("Demurrage/Detention") }}</div><div class="val alert">{{ container.demurrage_days }} {{ _("days") }}{% if container.demurrage_amount %} · {{ frappe.utils.fmt_money(container.demurrage_amount) }}{% endif %}</div></div>{% endif %}
+      {% if container.days_outstanding %}<div><div class="lab">{{ _("Days Outstanding") }}</div><div class="val">{{ container.days_outstanding }}</div></div>{% endif %}
+    </div>
+    {% endif %}
+  </div></div>
+
+  <div class="ct-section-title">{{ _("Journey") }}</div>
+  <div class="cp-card"><div class="cp-card-body">
+    <ul class="cp-timeline">
+      {% for t in timeline %}
+        <li class="{{ 'done' if t.done else '' }}">
+          <div class="cp-tl-label">{{ t.label }}</div>
+          {% if t.date %}<div class="cp-tl-date">{{ local_date(t.date) }}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+
+  <div class="ct-section-title">
+    {{ _("Messages about this container") }}
+    {% if unread_count %}<span class="cp-unread-pill">{{ unread_count }}</span>{% endif %}
+  </div>
+
+  <div class="cp-card" style="margin-bottom:1rem;">
+    <div class="cp-card-body" id="cgm-container-updates-mount">
+      <div class="cp-thread-empty">{{ _("Loading messages…") }}</div>
+    </div>
+  </div>
+  <div class="cp-card">
+    <div class="cp-card-head"><h3>{% if conversation %}{{ _("Reply") }}{% else %}{{ _("Send a message") }}{% endif %}</h3></div>
+    <div class="cp-card-body">
+      <p style="margin:0 0 1rem;color:var(--cp-text-muted);font-size:.88rem;">
+        {{ _("Ask about this container specifically - collection, delivery, or empty return. Operations replies here.") }}
+      </p>
+      <div id="cgm-container-update-form-mount"></div>
+    </div>
+  </div>
+
+  <p style="margin:1.25rem 0 0;font-size:.85rem;color:var(--cp-text-muted);">
+    {{ _("Rating this shipment?") }}
+    <a href="{{ shipment_url }}" style="color:var(--cp-brand);font-weight:600;">{{ _("Leave feedback on {0}").format(shipment_ref) }}</a>
+  </p>
+
+{% endif %}
+
+</div>
+{% if not error_title and container %}
+<script type="application/json" id="cgm-container-conversation-json">{{ conversation_json | safe }}</script>
+<script>
+frappe.ready(function () {
+	const page = document.querySelector(".cp-page");
+	if (!page) return;
+
+	const TRACKER = {{ (container.name or "") | tojson }};
+	const PROJECT = {{ (container.project or "") | tojson }};
+
+	function readJSON(id, fallback) {
+		try {
+			return JSON.parse((document.getElementById(id) || {}).textContent || "null") || fallback;
+		} catch (e) {
+			return fallback;
+		}
+	}
+
+	const conversation = readJSON("cgm-container-conversation-json", []);
+
+	// A shipment or allocation can carry several separate conversations. Only
+	// treat the box as a reply when there is exactly one to reply to -
+	// otherwise a new message would be buried under whichever topic happened
+	// to be last, and would reopen it. With several, ask for a subject and
+	// start a new one.
+	function threadRoot(messages) {
+		if (!(messages || []).length) return "";
+		const roots = new Set(messages.map((m) => m.parent_update || m.name));
+		return roots.size === 1 ? [...roots][0] : "";
+	}
+
+	const thread = cgm.portal.mountThread(
+		document.getElementById("cgm-container-updates-mount"),
+		conversation,
+		{
+			emptyText: __("No messages about this container yet."),
+			markReadMethod:
+				"cgm_shipping.cgm_worldwide_shipping.customizations.portal.mark_shipment_updates_read",
+			markReadArgs: { project: PROJECT },
+			statusMethod: "cgm_shipping.cgm_worldwide_shipping.customizations.portal.set_conversation_status",
+			onStatusChanged: refreshThread,
+		}
+	);
+
+	function refreshThread() {
+		frappe.call({
+			method:
+				"cgm_shipping.cgm_worldwide_shipping.customizations.portal.get_container_updates_portal",
+			args: { container_tracker: TRACKER },
+			callback(r) {
+				if (r.exc || !thread) return;
+				thread.setMessages(r.message || []);
+			},
+		});
+	}
+
+	cgm.portal.mountComposer(document.getElementById("cgm-container-update-form-mount"), {
+		replyTo: threadRoot(conversation),
+		subjectPlaceholder: __("e.g. Empty return booking"),
+		onSend(values, done) {
+			let sent = false;
+			frappe.call({
+				method: "cgm_shipping.cgm_worldwide_shipping.customizations.portal.post_container_update",
+				args: {
+					container_tracker: TRACKER,
+					subject: values.subject,
+					message: values.message,
+					parent_update: values.parent_update,
+				},
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({
+						message: (r.message && r.message.message) || __("Message sent."),
+						indicator: "green",
+					});
+					sent = true;
+					refreshThread();
+				},
+				always() { done(sent); },
+			});
+		},
+	});
+
+});
+</script>
+{% endif %}
+{% endblock %}

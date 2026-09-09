@@ -56,25 +56,40 @@ def ensure_transporter_portal_user(user: str) -> None:
 
 
 def ensure_transporter_portal_menu() -> None:
-	"""Register `/transporter` on Portal Settings (same mechanism as customer portal nav)."""
+	"""Register transporter portal routes on Portal Settings."""
 	if not frappe.db.exists("DocType", "Portal Settings"):
 		return
 
 	settings = frappe.get_single("Portal Settings")
-	for row in settings.get("menu") or []:
-		if (row.route or "").strip("/") == "transporter":
-			return
-
-	settings.append(
-		"menu",
+	wanted = (
 		{
 			"title": _("Transporter Portal"),
 			"route": "transporter",
 			"enabled": 1,
 			"role": "Transporter",
 		},
+		{
+			"title": _("Invoices to CGM"),
+			"route": "transporter/invoices",
+			"enabled": 1,
+			"role": "Transporter",
+		},
 	)
-	settings.save(ignore_permissions=True)
+	by_route = {(row.route or "").strip("/"): row for row in settings.get("menu") or []}
+	changed = False
+	for item in wanted:
+		row = by_route.get(item["route"])
+		if row is None:
+			settings.append("menu", item)
+			changed = True
+			continue
+		# The row exists, so a title corrected in code would otherwise never
+		# reach a site that already has it.
+		if row.title != item["title"]:
+			row.title = item["title"]
+			changed = True
+	if changed:
+		settings.save(ignore_permissions=True)
 
 
 def sync_all_transporter_portal_users() -> None:

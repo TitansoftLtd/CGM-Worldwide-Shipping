@@ -1,0 +1,186 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-17 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sequence_no",
+  "subject",
+  "department_role",
+  "column_break_item",
+  "depends_on_sequences",
+  "description",
+  "section_role",
+  "task_role",
+  "payment_kind",
+  "permit_stage",
+  "section_flags",
+  "requires_finance_action",
+  "requires_document_upload",
+  "requires_container_update",
+  "requires_permit_action",
+  "column_break_flags",
+  "is_auto_completable",
+  "completion_condition",
+  "is_optional",
+  "section_documents",
+  "required_document_types"
+ ],
+ "fields": [
+  {
+   "fieldname": "sequence_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Sequence",
+   "reqd": 1
+  },
+  {
+   "fieldname": "subject",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Task Subject",
+   "reqd": 1
+  },
+  {
+   "description": "Department stem only, e.g. Operations, Finance, Declaration, Transport, Field. Company suffix added automatically on task creation.",
+   "fieldname": "department_role",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Department",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_item",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Comma-separated sequence numbers this task waits for. e.g. 1,2. For Finance Payment / Permit Finance, list the Application / Permit Application sequence so invoice copy and pairing work.",
+   "fieldname": "depends_on_sequences",
+   "fieldtype": "Data",
+   "label": "Depends On (sequences)"
+  },
+  {
+   "description": "Shown to the user when they open this task.",
+   "fieldname": "description",
+   "fieldtype": "Text",
+   "label": "Instructions"
+  },
+  {
+   "fieldname": "section_role",
+   "fieldtype": "Section Break",
+   "label": "Task Role (drives Desk UI + finance)"
+  },
+  {
+   "default": "Standard",
+   "description": "Controls which tables and finance/permit workflows run. Document = attach only. Application = Declarant attaches invoice (+ receipt later). Finance Payment = Finance verifies/pays. Permit Application / Permit Finance = permit register flow.",
+   "fieldname": "task_role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Task Role",
+   "options": "Standard\nDocument\nDocument Checkpoint\nApplication\nFinance Payment\nPermit Application\nPermit Finance\nAuto Complete",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:[\"Application\",\"Finance Payment\",\"Permit Finance\"].includes(doc.task_role)",
+   "description": "UCR / ENTRY_SLIP / Shipping Line / KPA / Permit - must match on the Application and Finance Payment pair.",
+   "fieldname": "payment_kind",
+   "fieldtype": "Link",
+   "label": "Payment Kind",
+   "options": "Payment Kind"
+  },
+  {
+   "depends_on": "eval:[\"Permit Application\",\"Permit Finance\"].includes(doc.task_role)",
+   "description": "Pre-clearance or Post-clearance permit stage.",
+   "fieldname": "permit_stage",
+   "fieldtype": "Select",
+   "label": "Permit Stage",
+   "options": "\nPre-clearance\nPost-clearance"
+  },
+  {
+   "fieldname": "section_flags",
+   "fieldtype": "Section Break",
+   "label": "Task Behaviour"
+  },
+  {
+   "default": "0",
+   "description": "Show finance-related actions (also implied by Finance Payment / Application roles).",
+   "fieldname": "requires_finance_action",
+   "fieldtype": "Check",
+   "label": "Finance Action Required"
+  },
+  {
+   "default": "0",
+   "description": "Show Task Documents (also implied by Document / Document Checkpoint roles).",
+   "fieldname": "requires_document_upload",
+   "fieldtype": "Check",
+   "label": "Document Upload Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_container_update",
+   "fieldtype": "Check",
+   "label": "Container Update Required"
+  },
+  {
+   "default": "0",
+   "description": "Show permit table (also implied by Permit Application / Permit Finance roles).",
+   "fieldname": "requires_permit_action",
+   "fieldtype": "Check",
+   "label": "Permit Action Required"
+  },
+  {
+   "fieldname": "column_break_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "System marks complete when condition is met.",
+   "fieldname": "is_auto_completable",
+   "fieldtype": "Check",
+   "label": "Auto-completable"
+  },
+  {
+   "depends_on": "eval:doc.is_auto_completable",
+   "description": "Dot-path to field that must be non-empty for auto-completion. e.g. project.custom_actual_time_of_arrival_ata",
+   "fieldname": "completion_condition",
+   "fieldtype": "Data",
+   "label": "Completion Condition"
+  },
+  {
+   "default": "0",
+   "description": "Task created but does not block project completion.",
+   "fieldname": "is_optional",
+   "fieldtype": "Check",
+   "label": "Optional Task"
+  },
+  {
+   "depends_on": "eval:[\"Document\",\"Document Checkpoint\",\"Application\"].includes(doc.task_role) || doc.requires_document_upload",
+   "fieldname": "section_documents",
+   "fieldtype": "Section Break",
+   "label": "Required Documents"
+  },
+  {
+   "depends_on": "eval:[\"Document\",\"Document Checkpoint\",\"Application\"].includes(doc.task_role) || doc.requires_document_upload",
+   "description": "Select Document Types from the master list. Each selection prefills Task Documents on the matching task and blocks Complete until attached.",
+   "fieldname": "required_document_types",
+   "fieldtype": "Data",
+   "label": "Required Document Types"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-12 05:20:00.000000",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "CGM Task Template Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

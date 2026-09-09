@@ -1,0 +1,37 @@
+[
+ {
+  "doctype": "Container Tracker Mode",
+  "mode_name": "Mombasa Port",
+  "description": "Import containers cleared and delivered from Mombasa port.",
+  "is_active": 1,
+  "name": "Mombasa Port"
+ },
+ {
+  "doctype": "Container Tracker Mode",
+  "mode_name": "ICD Nairobi",
+  "description": "Inland container depot clearance and delivery.",
+  "is_active": 1,
+  "name": "ICD Nairobi"
+ },
+ {
+  "doctype": "Container Tracker Mode",
+  "mode_name": "Transit Import",
+  "description": "Import with transit legs after port clearance.",
+  "is_active": 1,
+  "name": "Transit Import"
+ },
+ {
+  "doctype": "Container Tracker Mode",
+  "mode_name": "Transit Export",
+  "description": "Export with transit legs before port sailing.",
+  "is_active": 1,
+  "name": "Transit Export"
+ },
+ {
+  "doctype": "Container Tracker Mode",
+  "mode_name": "Export",
+  "description": "Outbound export container tracking.",
+  "is_active": 1,
+  "name": "Export"
+ }
+]

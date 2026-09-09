@@ -6,8 +6,11 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, today
+from frappe.utils import cint, flt, getdate, today
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import (
+	compute_container_charge_amounts,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	BULK_CONTAINER_TASK_SEQ_FIELDS,
 	CONTAINER_SPECIFIC_TASK_SEQ_FIELDS,
@@ -21,6 +24,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_STATUS_RETURN_OVERDUE,
 	CONTAINER_STATUS_VESSEL_BERTHED,
 	CONTAINER_TASK_SEQ_DEFAULTS,
+	DEPOSIT_PAYMENT_STATUSES,
 	DEPOSIT_REFUND_STATUSES,
 	TASK_CONTAINER_NUMBER_FIELD,
 	TASK_CONTAINER_TRACKER_FIELD,
@@ -33,6 +37,14 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates impo
 from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 	build_project_ata_updates,
 	get_project_ata,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	container_row_cargo_size,
+	tracker_cargo_size_field,
+	tracker_row_cargo_size,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
+	fill_missing_container_row_cargo_sizes,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 	get_container_table_field_for_doctype,
@@ -47,13 +59,57 @@ def get_container_task_sequence(fieldname: str) -> int:
 	default = CONTAINER_TASK_SEQ_DEFAULTS.get(fieldname)
 	if default is None:
 		frappe.throw(f"Unknown container task sequence field: {fieldname}")
-	if frappe.db.exists("DocType", "CGM Shipping Settings"):
-		meta = frappe.get_meta("CGM Shipping Settings")
-		if meta.has_field(fieldname):
-			val = frappe.db.get_single_value("CGM Shipping Settings", fieldname)
-			if val:
-				return int(val)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if settings and settings.meta.has_field(fieldname):
+		configured = cint(settings.get(fieldname) or 0)
+		if configured:
+			return configured
 	return default
+
+
+def project_shipping_line_finance_paid(project: str | None) -> bool:
+	"""True when the project's Shipping Line finance task is completed."""
+	if not project:
+		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		shipping_line_finance_payment_sequences,
+	)
+
+	finance_seqs = shipping_line_finance_payment_sequences()
+	if not finance_seqs:
+		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		task_flow_key_in_filter,
+	)
+
+	return bool(
+		frappe.db.exists(
+			"Task",
+			{
+				"project": project,
+				"custom_task_flow_key": task_flow_key_in_filter(),
+				"custom_sequence_no": ("in", list(finance_seqs)),
+				"status": "Completed",
+			},
+		)
+	)
+
+
+def refresh_deposit_payment_status(ct) -> None:
+	"""No-op: deposits are tracked on Bill of Lading, not Container Tracker."""
+	return
+
+
+def sync_project_deposit_payment_statuses(project: str | None) -> int:
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		sync_project_deposit_payment_statuses as _sync_project_deposit_payment_statuses,
+	)
+
+	return _sync_project_deposit_payment_statuses(project)
 
 
 def get_gate_out_task_sequence() -> int:
@@ -116,6 +172,23 @@ def _effective_return_date(actual_return, interchange):
 	return interchange or actual_return
 
 
+def _left_mombasa_port_date(gate_out, offloading, gate_in_wh, actual_return, interchange):
+	"""Date the box left Mombasa port (KPA storage ends).
+
+	KPA charges overstay at the port, not empty return to the shipping line.
+	Gate-out from Mombasa is the real event. Offload / warehouse gate-in / empty
+	return are only used when gate-out was not recorded, so we do not keep
+	charging until today after the box has already left.
+	"""
+	if gate_out:
+		return gate_out
+	if offloading:
+		return offloading
+	if gate_in_wh:
+		return gate_in_wh
+	return _effective_return_date(actual_return, interchange)
+
+
 def _inclusive_days_between(start, end) -> int | None:
 	start_date = _optional_date(start)
 	end_date = _optional_date(end)
@@ -174,7 +247,11 @@ def _project_delivery_destination(project_name: str | None) -> str:
 	if not project_name:
 		return default_destination_name()
 	meta = frappe.get_meta("Project")
-	for fieldname in ("custom_final_destination", "custom_delivery_destination"):
+	for fieldname in (
+		"custom_destination_country",
+		"custom_final_destination",
+		"custom_delivery_destination",
+	):
 		if meta.has_field(fieldname):
 			val = frappe.db.get_value("Project", project_name, fieldname)
 			if val:
@@ -240,25 +317,29 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		"alert_status": "",
 	}
 
+	effective_return = _effective_return_date(actual_return, interchange)
+	left_port = _left_mombasa_port_date(
+		gate_out, offloading, gate_in_wh, actual_return, interchange
+	)
+	# KPA / days in port: still in Mombasa → count to today; otherwise stop at exit.
+	port_clock_end = left_port or ref_date
+
 	if free_end:
+		# Shipping-line demurrage/detention: empty return / interchange, not KPA.
 		dem_start = free_end + timedelta(days=1)
-		effective_return = _effective_return_date(actual_return, interchange)
 		charge_end = effective_return or ref_date
 		if charge_end >= dem_start:
 			out["demurrage_days"] = (charge_end - dem_start).days + 1
 
 	if free_start:
-		end_port = gate_out or ref_date
-		out["port_days_used"] = max(0, (end_port - free_start).days + 1)
+		out["port_days_used"] = max(0, (port_clock_end - free_start).days + 1)
 
 	if kpa_free_end:
 		kpa_charge_start = kpa_free_end + timedelta(days=1)
-		kpa_charge_end = gate_out or ref_date
-		if kpa_charge_end >= kpa_charge_start:
-			out["kpa_days"] = (kpa_charge_end - kpa_charge_start).days + 1
+		if port_clock_end >= kpa_charge_start:
+			out["kpa_days"] = (port_clock_end - kpa_charge_start).days + 1
 
 	expected = _optional_date(out.get("expected_empty_return"))
-	effective_return = _effective_return_date(actual_return, interchange)
 	if expected and not effective_return and ref_date > expected:
 		out["days_outstanding"] = (ref_date - expected).days
 
@@ -273,6 +354,7 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		ref_date=ref_date,
 		free_configured=free_configured,
 	)
+	out.update(compute_container_charge_amounts(data, out))
 	return out
 
 
@@ -386,15 +468,17 @@ def _derive_alert_status(
 	free_configured=True,
 ) -> str:
 	"""Urgency overlay on operational status. Not stored in DB."""
-	if free_configured and free_end and not gate_out:
+	effective_return = _effective_return_date(actual_return, interchange)
+
+	# Still at port (no gate-out and not yet returned): count against today.
+	# Once empty return / interchange is set, do not keep accruing vs today.
+	if free_configured and free_end and not gate_out and not effective_return:
 		if ref_date > free_end:
 			overdue = (ref_date - free_end).days
 			return f"🔴 Demurrage Accruing ({overdue} day(s) past free period)"
 		days_remaining = (free_end - ref_date).days
 		if 0 <= days_remaining <= 2:
 			return "⚠️ Free Days Expiring Soon"
-
-	effective_return = _effective_return_date(actual_return, interchange)
 
 	if not effective_return and expected_return:
 		if ref_date > expected_return:
@@ -414,40 +498,49 @@ def _derive_alert_status(
 
 
 def _derive_container_mode(project) -> str:
-	project_type = (project.get("project_type") or "").strip()
-	if project_type:
-		return project_type
+	for fieldname in ("custom_container_tracker_mode", "project_type"):
+		value = (project.get(fieldname) or "").strip()
+		if value:
+			return value
 
-	return frappe.db.get_value("Project", project.name, "project_type") or "Mombasa Port"
+	if project.name:
+		for fieldname in ("custom_container_tracker_mode", "project_type"):
+			value = frappe.db.get_value("Project", project.name, fieldname) or ""
+			if str(value).strip():
+				return str(value).strip()
+
+	return "Mombasa Port"
 
 
 def find_tracker_by_identity(
 	project_name: str,
 	container_number: str,
-	cargo_type: str | None = None,
+	cargo_size: str | None = None,
 ) -> str | None:
 	if not project_name or not container_number:
 		return None
+	size_field = tracker_cargo_size_field()
 	filters: dict[str, Any] = {
 		"project": project_name,
 		"container_number": container_number,
 	}
-	if cargo_type:
-		filters["cargo_type"] = cargo_type
+	if cargo_size:
+		filters[size_field] = cargo_size
 	return frappe.db.get_value("Container Tracker", filters, "name")
 
 
 def _container_identity_filters(
 	project_name: str,
 	container_number: str,
-	cargo_type: str | None,
+	cargo_size: str | None,
 ) -> dict[str, Any]:
+	size_field = tracker_cargo_size_field()
 	filters: dict[str, Any] = {
 		"project": project_name,
 		"container_number": container_number,
 	}
-	if cargo_type:
-		filters["cargo_type"] = cargo_type
+	if cargo_size:
+		filters[size_field] = cargo_size
 	return filters
 
 
@@ -456,9 +549,11 @@ def resolve_single_tracker(
 	*,
 	container_tracker: str | None = None,
 	container_number: str | None = None,
+	cargo_size: str | None = None,
 	cargo_type: str | None = None,
 ) -> frappe.Document:
 	"""Resolve exactly one Container Tracker for a container-specific lifecycle event."""
+	cargo_size = cargo_size or cargo_type
 	if container_tracker:
 		if not frappe.db.exists("Container Tracker", container_tracker):
 			frappe.throw(
@@ -485,7 +580,7 @@ def resolve_single_tracker(
 		)
 
 	filters = _container_identity_filters(
-		project_name, container_number, cargo_type
+		project_name, container_number, cargo_size
 	)
 	names = frappe.get_all(
 		"Container Tracker",
@@ -501,12 +596,12 @@ def resolve_single_tracker(
 		frappe.throw(
 			_(
 				"Multiple Container Tracker records match container <b>{0}</b> on this project. "
-				"Set <b>Cargo Type</b> or link the exact <b>Container Tracker</b>."
+				"Set <b>Cargo Size</b> or link the exact <b>Container Tracker</b>."
 			).format(container_number),
 			ContainerEventResolutionError,
 		)
 
-	if not cargo_type:
+	if not cargo_size:
 		without_type = frappe.get_all(
 			"Container Tracker",
 			filters={"project": project_name, "container_number": container_number},
@@ -517,7 +612,7 @@ def resolve_single_tracker(
 			frappe.throw(
 				_(
 					"Container <b>{0}</b> appears more than once on this project. "
-					"Set <b>Cargo Type</b> or link the exact <b>Container Tracker</b>."
+					"Set <b>Cargo Size</b> or link the exact <b>Container Tracker</b>."
 				).format(container_number),
 				ContainerEventResolutionError,
 			)
@@ -548,12 +643,14 @@ def _resolve_tracker_from_row_link(project_name: str, row) -> frappe.Document | 
 	ct = frappe.get_doc("Container Tracker", tracker_name)
 	if ct.project != project_name:
 		return None
-	if (
-		ct.container_number == row.container_number
-		and (ct.cargo_type or "") == (row.get("cargo_type") or "")
-	):
-		return ct
-	return None
+	if ct.container_number != row.container_number:
+		return None
+	ct_size = tracker_row_cargo_size(ct)
+	row_size = container_row_cargo_size(row)
+	# Allow reuse when the tracker was created before cargo_size was known.
+	if ct_size and row_size and ct_size != row_size:
+		return None
+	return ct
 
 
 def _link_container_row(row, tracker_name: str) -> None:
@@ -569,13 +666,18 @@ def _link_bl_container_trackers(project) -> None:
 	for row in frappe.get_all(
 		"Container",
 		filters={"parent": bl_name, "parenttype": "Bill of Lading"},
-		fields=["name", "container_number", "cargo_type"],
+		fields=["name", "container_number", "cargo_size", "type_of_container"],
 	):
 		if not row.container_number:
 			continue
+		row_size = container_row_cargo_size(row)
 		tracker_name = find_tracker_by_identity(
-			project.name, row.container_number, row.cargo_type
+			project.name, row.container_number, row_size
 		)
+		if not tracker_name and row_size:
+			tracker_name = _find_tracker_allowing_empty_size(
+				project.name, row.container_number, row_size
+			)
 		if tracker_name and row.get("container_tracker") != tracker_name:
 			frappe.db.set_value(
 				"Container",
@@ -587,9 +689,10 @@ def _link_bl_container_trackers(project) -> None:
 
 
 def _populate_tracker_from_project_and_row(ct, project, row, *, at_creation: bool = False) -> None:
+	size_field = tracker_cargo_size_field()
 	ct.project = project.name
 	ct.container_number = row.container_number
-	ct.cargo_type = row.get("cargo_type")
+	ct.set(size_field, container_row_cargo_size(row))
 	ct.seal_no = row.get("seal_no")
 	ct.bl_number = project.get("custom_bill_of_lading")
 	ct.shipping_line = project.get("custom_shipping_line")
@@ -617,18 +720,49 @@ def _default_kpa_free_end_from_settings(doc) -> None:
 	doc.kpa_free_days_end_date = start + timedelta(days=allowance - 1)
 
 
+def _find_tracker_allowing_empty_size(
+	project_name: str,
+	container_number: str,
+	cargo_size: str | None,
+) -> str | None:
+	"""Find tracker by number when size was filled after tracker creation."""
+	if not cargo_size:
+		return find_tracker_by_identity(project_name, container_number, None)
+
+	size_field = tracker_cargo_size_field()
+	candidates = frappe.get_all(
+		"Container Tracker",
+		filters={"project": project_name, "container_number": container_number},
+		fields=["name", size_field],
+		limit=5,
+	)
+	exact = [c for c in candidates if (c.get(size_field) or "") == cargo_size]
+	if len(exact) == 1:
+		return exact[0].name
+	empty = [c for c in candidates if not (c.get(size_field) or "").strip()]
+	if len(empty) == 1 and (len(candidates) == 1 or not exact):
+		return empty[0].name
+	return None
+
+
 def create_or_sync_tracker_for_row(project, row) -> str:
-	"""Create or reuse tracker by (project, container_number, cargo_type)."""
+	"""Create or reuse tracker by (project, container_number, cargo_size)."""
+	row_size = container_row_cargo_size(row)
 	existing_name = find_tracker_by_identity(
 		project.name,
 		row.container_number,
-		row.get("cargo_type"),
+		row_size,
 	)
+	if not existing_name and row_size:
+		existing_name = _find_tracker_allowing_empty_size(
+			project.name, row.container_number, row_size
+		)
 	if existing_name:
 		ct = frappe.get_doc("Container Tracker", existing_name)
 		_populate_tracker_from_project_and_row(ct, project, row)
 		ct.save(ignore_permissions=True)
 		_link_container_row(row, existing_name)
+		_ensure_seal_record_for_tracker_row(project.name, row, existing_name)
 		return existing_name
 
 	linked = _resolve_tracker_from_row_link(project.name, row)
@@ -636,13 +770,39 @@ def create_or_sync_tracker_for_row(project, row) -> str:
 		_populate_tracker_from_project_and_row(linked, project, row)
 		linked.save(ignore_permissions=True)
 		_link_container_row(row, linked.name)
+		_ensure_seal_record_for_tracker_row(project.name, row, linked.name)
 		return linked.name
 
 	ct = frappe.new_doc("Container Tracker")
 	_populate_tracker_from_project_and_row(ct, project, row, at_creation=True)
 	ct.insert(ignore_permissions=True)
 	_link_container_row(row, ct.name)
+	_ensure_seal_record_for_tracker_row(project.name, row, ct.name)
 	return ct.name
+
+
+def _ensure_seal_record_for_tracker_row(project_name: str, row, tracker_name: str) -> None:
+	"""Create/update Seal Record when a container row carries a seal number."""
+	seal_no = (row.get("seal_no") or "").strip()
+	if not seal_no:
+		return
+	from cgm_shipping.cgm_worldwide_shipping.doctype.seal_record.seal_record import (
+		ensure_seal_record_for_container,
+	)
+
+	tracker = frappe.db.get_value(
+		"Container Tracker",
+		tracker_name,
+		["new_seal_number", "reason_for_new_seal_number"],
+		as_dict=True,
+	)
+	ensure_seal_record_for_container(
+		project_name,
+		seal_no,
+		tracker_name,
+		new_seal_number=(tracker.new_seal_number if tracker else "") or "",
+		reason_for_new_seal_number=(tracker.reason_for_new_seal_number if tracker else "") or "",
+	)
 
 
 def create_container_trackers_for_project(project_name: str) -> list[str]:
@@ -654,8 +814,14 @@ def create_container_trackers_for_project(project_name: str) -> list[str]:
 	if not container_field:
 		return []
 
+	rows = list(project.get(container_field) or [])
+	qty = (project.get("custom_quantity") or "").strip()
+	if fill_missing_container_row_cargo_sizes(rows, qty):
+		_persist_container_row_cargo_sizes(rows)
+		_backfill_bl_container_cargo_sizes(project, rows)
+
 	touched: list[str] = []
-	for row in project.get(container_field) or []:
+	for row in rows:
 		if not row.get("container_number"):
 			continue
 		touched.append(create_or_sync_tracker_for_row(project, row))
@@ -664,6 +830,43 @@ def create_container_trackers_for_project(project_name: str) -> list[str]:
 		_link_bl_container_trackers(project)
 		frappe.db.commit()
 	return touched
+
+
+def _persist_container_row_cargo_sizes(rows) -> None:
+	"""Write recovered cargo_size values onto Container child rows."""
+	for row in rows or []:
+		name = row.get("name") if hasattr(row, "get") else getattr(row, "name", None)
+		size = container_row_cargo_size(row)
+		if not name or not size:
+			continue
+		frappe.db.set_value("Container", name, "cargo_size", size, update_modified=False)
+
+
+def _backfill_bl_container_cargo_sizes(project, project_rows) -> None:
+	"""Mirror recovered sizes onto the linked Bill of Lading container rows."""
+	bl_name = (project.get("custom_bill_of_lading") or "").strip()
+	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
+		return
+
+	by_number = {}
+	for row in project_rows or []:
+		number = (row.get("container_number") or "").strip()
+		size = container_row_cargo_size(row)
+		if number and size:
+			by_number[number] = size
+	if not by_number:
+		return
+
+	for row in frappe.get_all(
+		"Container",
+		filters={"parent": bl_name, "parenttype": "Bill of Lading"},
+		fields=["name", "container_number", "cargo_size"],
+	):
+		number = (row.container_number or "").strip()
+		size = by_number.get(number)
+		if not number or not size or (row.cargo_size or "").strip():
+			continue
+		frappe.db.set_value("Container", row.name, "cargo_size", size, update_modified=False)
 
 
 def _trackers_for_project(project_name: str) -> list:
@@ -711,26 +914,48 @@ def _apply_bulk_eta(project, trackers: list) -> None:
 
 
 def _apply_bulk_vessel_arrival(project, trackers: list, today_date, task_doc=None) -> None:
-	"""Task 11 — create trackers (vessel arrived); discharge dates come from task grid."""
+	"""Create trackers (vessel arrived); copy Project ATA onto every tracker.
+
+	Also mirrors discharge/ATA onto the Create Entry container grid when that
+	task exists. Create Entry completion is never gated by this step.
+	"""
 	create_container_trackers_for_project(project.name)
 	trackers = _trackers_for_project(project.name)
 	ata = get_project_ata(project)
-	for ct in trackers:
-		if ata:
-			ct.ata = ata
-	_save_trackers(trackers)
+	if ata:
+		_apply_ata_to_trackers(trackers, ata)
 
 	if task_doc:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
-			apply_container_updates_from_task,
 			seed_container_update_rows,
 		)
 
 		if seed_container_update_rows(task_doc):
 			task_doc.save(ignore_permissions=True)
-		apply_container_updates_from_task(task_doc)
+	else:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			sync_vessel_arrival_task_rows_from_project,
+		)
+
+		sync_vessel_arrival_task_rows_from_project(project.name)
 
 	_notify_free_days_awareness(project.name)
+
+
+def _apply_ata_to_trackers(trackers: list, ata) -> None:
+	"""Persist ATA on every in-memory tracker and save.
+
+	When discharging_date is empty, default it to ATA so Create Entry's
+	container-update mirror has a discharge date after Project confirm.
+	"""
+	if not ata or not trackers:
+		return
+	ata_date = getdate(ata)
+	for ct in trackers:
+		ct.ata = ata_date
+		if not ct.get("discharging_date"):
+			ct.discharging_date = ata_date
+	_save_trackers(trackers)
 
 
 def _notify_free_days_awareness(project_name: str) -> None:
@@ -784,8 +1009,10 @@ def _apply_book_trucks_task(project, task_doc=None) -> None:
 
 
 def _apply_bulk_field_clearance(project, trackers: list) -> None:
-	location = project.get("custom_final_destination") or project.get(
-		"custom_clearance_station"
+	location = (
+		project.get("custom_destination_country")
+		or project.get("custom_final_destination")
+		or project.get("custom_clearance_station")
 	)
 	if not location or not trackers:
 		return
@@ -831,8 +1058,6 @@ def _apply_empty_return(ct, today_date) -> None:
 def _apply_interchange(ct, today_date, task_doc) -> None:
 	if not ct.interchange_date:
 		ct.interchange_date = today_date
-	if not ct.deposit_refund_status:
-		ct.deposit_refund_status = DEPOSIT_REFUND_STATUSES[0]
 	if task_doc:
 		meta = frappe.get_meta("Task")
 		if meta.has_field("custom_interchange_document") and task_doc.get(
@@ -976,9 +1201,13 @@ def ensure_container_trackers_at_port_arrival(
 	mark_confirmed: bool = False,
 	user: str | None = None,
 	ata=None,
+	require_project_write: bool = True,
 ) -> dict:
-	"""Create/sync container trackers when shipment arrives at port (early or on Entry task)."""
-	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	"""Create/sync container trackers when shipment arrives at port (Project confirm)."""
+	if require_project_write:
+		frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	elif not frappe.has_permission("Project", ptype="read", doc=project_name):
+		frappe.throw(_("Not permitted to read Project {0}").format(project_name))
 	if not frappe.db.exists("Project", project_name):
 		frappe.throw(_("Project not found"))
 
@@ -1012,6 +1241,19 @@ def ensure_container_trackers_at_port_arrival(
 	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 	handle_sea_task_container_event(project_name, seq, task_doc=task_doc)
 
+	# Guarantee ATA on every tracker even if they already existed before confirm.
+	final_ata = get_project_ata(project)
+	if final_ata:
+		_apply_ata_to_trackers(_trackers_for_project(project_name), final_ata)
+
+	# Refresh Create Entry mirror after final ATA/discharge write (Project-owned).
+	if not task_doc:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			sync_vessel_arrival_task_rows_from_project,
+		)
+
+		sync_vessel_arrival_task_rows_from_project(project_name)
+
 	trackers = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project_name},
@@ -1026,27 +1268,8 @@ def ensure_container_trackers_at_port_arrival(
 		"port_arrival_confirmed": bool(
 			project.get("custom_port_arrival_confirmed") or mark_confirmed
 		),
-		"ata": str(get_project_ata(project) or ""),
+		"ata": str(final_ata or ""),
 	}
-
-
-def ensure_container_trackers_on_entry_task_complete(task_doc) -> dict | None:
-	"""Fallback when Create Entry completes without an early port-arrival confirmation."""
-	project_name = task_doc.get("project")
-	if not project_name:
-		return None
-
-	project = frappe.get_cached_doc("Project", project_name)
-	if project.get("custom_port_arrival_confirmed"):
-		return None
-	if _trackers_for_project(project_name):
-		return None
-
-	return ensure_container_trackers_at_port_arrival(
-		project_name,
-		task_doc=task_doc,
-		mark_confirmed=False,
-	)
 
 
 CLOSED_CONTAINER_STATUSES = (
@@ -1075,7 +1298,14 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 			"css": "cgm-tl-red",
 		}
 
-	if free_end and not metrics.get("gate_out_date_port"):
+	if (
+		free_end
+		and not metrics.get("gate_out_date_port")
+		and not _effective_return_date(
+			_optional_date(metrics.get("actual_empty_return")),
+			_optional_date(metrics.get("interchange_date")),
+		)
+	):
 		days_remaining = (free_end - ref_date).days
 		if 0 < days_remaining <= 2:
 			return {"level": "amber", "label": _("ALMOST DUE"), "css": "cgm-tl-amber"}
@@ -1092,15 +1322,49 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 
 
 @frappe.whitelist()
-def confirm_shipment_arrival_at_port(project_name: str, ata: str | None = None) -> dict:
-	"""Confirm shipment arrival at port and create container trackers before Entry is paid."""
+def project_can_confirm_port_arrival(project: str) -> dict:
+	"""Whether the Project Actions menu should offer port arrival confirmation."""
+	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
+	if not frappe.db.exists("Project", project):
+		return {"can_confirm": False, "ata": ""}
+
+	doc = frappe.get_doc("Project", project)
+	ata = str(get_project_ata(doc) or "")
+	if (doc.get("custom_mode_of_transport") or "").strip() != "Sea":
+		return {"can_confirm": False, "ata": ata}
+	if doc.get("custom_port_arrival_confirmed"):
+		return {"can_confirm": False, "ata": ata}
+	if not _project_container_rows(doc):
+		return {"can_confirm": False, "ata": ata}
+	return {"can_confirm": True, "ata": ata}
+
+
+@frappe.whitelist()
+def confirm_shipment_arrival_at_port(
+	project_name: str, ata: str | None = None, task_name: str | None = None
+) -> dict:
+	"""Confirm shipment arrival at port from the Project form.
+
+	Requires Project write. ATA is required and is written to Project + every
+	Container Tracker. Create Entry is independent of this confirmation.
+	``task_name`` is accepted for backward compatibility but is ignored.
+	"""
+	if not ata:
+		frappe.throw(_("Actual Time of Arrival (ATA) is required to confirm port arrival."))
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
 	project = frappe.get_doc("Project", project_name)
 	if project.get("custom_port_arrival_confirmed"):
 		frappe.throw(_("Port arrival has already been confirmed for this project."))
+
+	# task_name is accepted for backward compatibility but is ignored.
+
 	return ensure_container_trackers_at_port_arrival(
 		project_name,
+		task_doc=None,
 		mark_confirmed=True,
 		ata=ata,
+		require_project_write=True,
 	)
 
 
@@ -1108,14 +1372,17 @@ def get_containers_for_project(project_name: str) -> list[dict]:
 	frappe.has_permission("Project", ptype="read", doc=project_name, throw=True)
 	if not frappe.db.exists("DocType", "Container Tracker"):
 		return []
+	# One SELECT for every column — Container Tracker has no child tables, so a
+	# per-row frappe.get_doc() only bought us N extra queries.
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project_name},
+		fields=["*"],
 		order_by="container_number asc",
 	)
 	out: list[dict] = []
-	for row in rows:
-		data = frappe.get_doc("Container Tracker", row.name).as_dict()
+	for data in rows:
+		data["doctype"] = "Container Tracker"
 		data.update(compute_container_metrics(data))
 		out.append(data)
 	return out

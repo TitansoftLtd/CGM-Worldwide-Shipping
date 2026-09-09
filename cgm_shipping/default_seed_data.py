@@ -5,18 +5,33 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-	DEFAULT_SEA_IMPORT_TASK_TEMPLATE,
 	DEFAULT_SEA_WORKFLOW_TASK_GATES,
-	build_requirement_seed_rows,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_type_seed_data import (
+	CUSTOMS_CALCULATION_MODES,
 	CUSTOMS_TAX_TYPES,
 	DEFAULT_CUSTOMS_TAX_RATES,
 )
 
+
+def seed_customs_calculation_modes() -> None:
+	if not frappe.db.exists("DocType", "Customs Calculation Mode"):
+		return
+
+	for row in CUSTOMS_CALCULATION_MODES:
+		name = row["mode_name"]
+		if frappe.db.exists("Customs Calculation Mode", name):
+			continue
+		frappe.get_doc({"doctype": "Customs Calculation Mode", **row}).insert(
+			ignore_permissions=True
+		)
+
+
 def seed_customs_tax_types() -> None:
 	if not frappe.db.exists("DocType", "Customs Tax Type"):
 		return
+
+	seed_customs_calculation_modes()
 
 	for row in CUSTOMS_TAX_TYPES:
 		name = row["tax_name"]
@@ -50,26 +65,24 @@ def seed_default_customs_tax_rates() -> None:
 
 
 def seed_cgm_shipping_settings() -> None:
+	"""Fill blank Settings tables that are safe to top-up on migrate.
+
+	Document responsibilities / CGM Role Groups are intentionally excluded —
+	those are one-time defaults (after_install + seed patch) so site edits stick.
+	"""
 	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
 		return
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
+		reseed_sea_clearance_task_requirements,
+	)
 
 	settings = frappe.get_doc("CGM Shipping Settings")
 	meta = frappe.get_meta("CGM Shipping Settings")
 	changed = False
 
-	if meta.has_field("custom_sea_import_task_template") and not settings.get(
-		"custom_sea_import_task_template"
-	):
-		for row in DEFAULT_SEA_IMPORT_TASK_TEMPLATE:
-			settings.append("custom_sea_import_task_template", row)
-		changed = True
-
-	if meta.has_field("custom_sea_clearance_task_requirements") and not settings.get(
-		"custom_sea_clearance_task_requirements"
-	):
-		for row in build_requirement_seed_rows():
-			settings.append("custom_sea_clearance_task_requirements", row)
-		changed = True
+	if meta.has_field("custom_sea_clearance_task_requirements"):
+		changed = reseed_sea_clearance_task_requirements(settings) or changed
 
 	if meta.has_field("custom_sea_workflow_task_gates") and not settings.get(
 		"custom_sea_workflow_task_gates"
@@ -78,12 +91,55 @@ def seed_cgm_shipping_settings() -> None:
 			settings.append("custom_sea_workflow_task_gates", row)
 		changed = True
 
+	if meta.has_field("sea_import_template") and not settings.get("sea_import_template"):
+		if frappe.db.exists("CGM Task Template", "Sea Import Workflow"):
+			settings.sea_import_template = "Sea Import Workflow"
+			changed = True
+
 	if changed:
+		settings.flags.skip_package_visibility_apply = True
 		settings.save(ignore_permissions=True)
+		frappe.clear_cache()
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.package_field_visibility import (
+		seed_package_visibility_defaults,
+	)
+
+	seed_package_visibility_defaults()
+
+
+def seed_document_responsibility_defaults() -> None:
+	"""One-time CGM Role Group + document responsibility matrix defaults."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ensure_document_responsibility_settings,
+	)
+
+	ensure_document_responsibility_settings()
 
 
 def seed_all_defaults() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		ensure_clearance_charge_items,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
+		seed_task_workflow_masters,
+	)
+
 	seed_customs_tax_types()
 	seed_default_customs_tax_rates()
 	seed_cgm_shipping_settings()
+	seed_document_responsibility_defaults()
+	seed_task_workflow_masters()
+	ensure_clearance_charge_items()
+	try:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+			ensure_sea_task_notifications,
+		)
+
+		ensure_sea_task_notifications()
+	except Exception:
+		frappe.log_error(
+			title="CGM seed sea task notifications failed",
+			message=frappe.get_traceback(),
+		)
 	frappe.db.commit()

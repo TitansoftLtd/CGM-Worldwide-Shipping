@@ -25,7 +25,7 @@
    "unique": 1
   },
   {
-   "description": "Optional short code retained for future use; Project naming uses LP {qty}X{size}-{batch}/{seq}.",
+   "description": "Optional short code retained for future use; Project naming uses Client Reference / Quantity / Batch.",
    "fieldname": "cgm_ref_prefix",
    "fieldtype": "Data",
    "in_list_view": 1,

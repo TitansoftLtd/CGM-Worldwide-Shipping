@@ -13,7 +13,10 @@
   "column_break_sjkp",
   "container_tracker",
   "date_applied",
-  "date_removed"
+  "date_removed",
+  "section_replacement",
+  "new_seal_number",
+  "reason_for_new_seal_number"
  ],
  "fields": [
   {
@@ -26,8 +29,11 @@
    "reqd": 1
   },
   {
+   "description": "Original seal applied to the container (from B/L). Document name is this value.",
    "fieldname": "seal_number",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Seal Number",
    "reqd": 1,
    "unique": 1
@@ -65,11 +71,28 @@
   {
    "fieldname": "column_break_sjkp",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_replacement",
+   "fieldtype": "Section Break",
+   "label": "Seal Replacement"
+  },
+  {
+   "description": "Fill only when the original seal is replaced.",
+   "fieldname": "new_seal_number",
+   "fieldtype": "Data",
+   "label": "New Seal Number"
+  },
+  {
+   "depends_on": "eval:doc.new_seal_number",
+   "fieldname": "reason_for_new_seal_number",
+   "fieldtype": "Small Text",
+   "label": "Reason for New Seal Number"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-08 22:12:21.969242",
+ "modified": "2026-07-22 03:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Seal Record",

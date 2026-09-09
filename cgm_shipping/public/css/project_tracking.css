@@ -1,13 +1,16 @@
 .cgm-shipment-progress {
 	--cgm-red-dark: #b8122c;
+	--cgm-red-shadow: rgba(227, 24, 55, 0.14);
 	--cgm-muted: #64748b;
 	margin: 0 0 1rem 0;
 	padding: 12px 14px;
-	background:
-		radial-gradient(900px 200px at 100% 0%, rgba(227, 24, 55, 0.11), transparent 60%),
-		linear-gradient(135deg, #fff8f9 0%, #ffebef 55%, #fff4f6 100%);
-	border: 1px solid rgba(227, 24, 55, 0.1);
+	background: var(--card-bg, #fff);
+	border: 1px solid rgba(227, 24, 55, 0.08);
 	border-radius: 8px;
+	box-shadow:
+		0 1px 2px rgba(184, 18, 44, 0.04),
+		0 6px 20px -4px var(--cgm-red-shadow),
+		0 2px 8px -2px rgba(227, 24, 55, 0.08);
 	font-size: 12px;
 }
 
@@ -371,6 +374,82 @@
 .cgm-container-card-body {
 	font-size: 12px;
 	line-height: 1.5;
+}
+
+.cgm-container-card-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 10px 14px;
+	margin-top: 4px;
+}
+
+.cgm-container-card-section {
+	min-width: 0;
+}
+
+.cgm-container-card-section-title {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: #6c7680;
+	margin-bottom: 4px;
+}
+
+.cgm-container-card-row {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 2px 0;
+}
+
+.cgm-container-card-label {
+	color: #6c7680;
+	flex: 0 0 auto;
+}
+
+.cgm-container-card-value {
+	color: #36414c;
+	text-align: right;
+	font-weight: 500;
+}
+
+.cgm-container-card-subtitle {
+	display: block;
+	margin-top: 2px;
+	font-size: 11px;
+	font-weight: 400;
+}
+
+.cgm-container-card-id {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	min-width: 0;
+}
+
+.cgm-container-card-charge-badge {
+	display: inline-block;
+	margin-top: 4px;
+	padding: 1px 6px;
+	border-radius: 10px;
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: #c62828;
+	background: #fdecea;
+}
+
+.cgm-container-card--charges {
+	border-color: #f5c2c0;
+	background: #fffafa;
+}
+
+.cgm-container-card-empty {
+	color: #6c7680;
+	font-size: 12px;
+	margin-bottom: 8px;
 }
 
 .cgm-container-card-alert {

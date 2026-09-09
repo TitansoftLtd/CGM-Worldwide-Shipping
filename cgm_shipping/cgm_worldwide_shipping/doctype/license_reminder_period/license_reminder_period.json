@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "creation": "2026-08-11 12:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "days_before",
+  "column_break_hvxt",
+  "label"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "days_before",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Days Before Expiry",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 5,
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Label"
+  },
+  {
+   "fieldname": "column_break_hvxt",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-11 15:28:03.288942",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "License Reminder Period",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "days_before",
+ "sort_order": "DESC",
+ "states": []
+}

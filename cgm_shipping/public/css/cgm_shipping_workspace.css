@@ -1,0 +1,57 @@
+/* CGM Shipping workspace — primary "Start New Shipment" CTA */
+
+.shortcut-widget-box.cgm-start-shipment-cta {
+	background: var(--card-bg, #fff) !important;
+	border: 1px solid var(--border-color, #e2e8f0) !important;
+	border-radius: var(--border-radius-lg);
+	box-shadow: 0 4px 14px rgba(220, 53, 69, 0.22);
+	min-height: 76px;
+	padding: 14px 16px;
+	transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.shortcut-widget-box.cgm-start-shipment-cta:hover,
+.shortcut-widget-box.cgm-start-shipment-cta:focus,
+.shortcut-widget-box.cgm-start-shipment-cta:focus-visible {
+	background: var(--card-bg, #fff) !important;
+	border-color: var(--border-color, #e2e8f0) !important;
+	box-shadow: 0 6px 18px rgba(220, 53, 69, 0.32);
+	transform: translateY(-1px);
+	--icon-stroke: var(--text-muted, #74808b);
+}
+
+.shortcut-widget-box.cgm-start-shipment-cta .widget-title,
+.shortcut-widget-box.cgm-start-shipment-cta .widget-title span {
+	color: var(--text-color, #1f272e) !important;
+	font-size: 1.05rem;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+
+.shortcut-widget-box.cgm-start-shipment-cta:hover .widget-title,
+.shortcut-widget-box.cgm-start-shipment-cta:hover .widget-title span,
+.shortcut-widget-box.cgm-start-shipment-cta:focus .widget-title,
+.shortcut-widget-box.cgm-start-shipment-cta:focus .widget-title span,
+.shortcut-widget-box.cgm-start-shipment-cta:focus-visible .widget-title,
+.shortcut-widget-box.cgm-start-shipment-cta:focus-visible .widget-title span {
+	color: var(--text-color, #1f272e) !important;
+}
+
+.shortcut-widget-box.cgm-start-shipment-cta .widget-control svg {
+	--icon-stroke: var(--text-muted, #74808b);
+}
+
+.shortcut-widget-box.cgm-start-shipment-cta:focus-visible {
+	outline: 2px solid rgba(220, 53, 69, 0.25);
+	outline-offset: 2px;
+}
+
+.shortcut-widget-box.cgm-start-shipment-cta .indicator-pill {
+	display: none !important;
+}
+
+.cgm-start-shipment-header,
+.cgm-start-shipment-header b {
+	color: var(--text-color, #1f272e) !important;
+	font-weight: 700;
+}

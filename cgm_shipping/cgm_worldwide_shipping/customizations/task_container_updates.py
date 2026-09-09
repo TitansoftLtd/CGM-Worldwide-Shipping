@@ -6,15 +6,22 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_UPDATE_TASK_SEQS,
-	SEA_TASK_FLOW_KEY,
 	TASK_CONTAINER_UPDATES_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	get_container_task_sequence,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
+	tracker_cargo_size_field,
+	tracker_row_cargo_size,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	is_sea_import_task,
+	task_flow_key_in_filter,
 )
 
 TRACKER_TO_TASK_FIELDS = (
@@ -44,7 +51,7 @@ TRANSPORT_TRACKER_FIELDS = (
 
 def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 	"""Task grid field → Container Tracker field, keyed by configured sequence number."""
-	return {
+	mapping: dict[int, list[tuple[str, str]]] = {
 		get_container_task_sequence("custom_vessel_arrival_task_seq"): [
 			("discharging_date", "discharging_date"),
 		],
@@ -81,6 +88,40 @@ def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 			("interchange_document", "interchange_document"),
 		],
 	}
+	# Shipping Line Application: deposit fields are mirrored from Bill of Lading (read-only).
+	# Do not map them onto Container Tracker.
+	return mapping
+
+
+def _shipping_line_application_seqs() -> frozenset[int]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		shipping_line_application_sequences,
+	)
+
+	return shipping_line_application_sequences()
+
+
+def _shipping_line_finance_seqs() -> frozenset[int]:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		shipping_line_finance_payment_sequences,
+	)
+
+	return shipping_line_finance_payment_sequences()
+
+
+def is_shipping_line_deposit_task(doc) -> bool:
+	return (
+		is_sea_import_task(doc)
+		and _sea_task_seq(doc) in _shipping_line_application_seqs()
+	)
+
+
+def is_shipping_line_deposit_mirror_task(doc) -> bool:
+	"""Shipping Line Application or Finance payment tasks that mirror BL deposit fields."""
+	if not is_sea_import_task(doc):
+		return False
+	seq = _sea_task_seq(doc)
+	return seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs()
 
 
 def _completion_field_by_seq() -> dict[int, str]:
@@ -134,8 +175,10 @@ def _containers_missing_step(project: str, seq: int) -> list[str]:
 TRACKER_SEED_FIELDS = [
 	"name",
 	"container_number",
-	"cargo_type",
+	tracker_cargo_size_field(),
 	"status",
+	"ata",
+	"discharging_date",
 	"truck_number",
 	"driver_name",
 	"driver_contact",
@@ -159,13 +202,17 @@ def _sea_task_seq(doc) -> int:
 
 
 def is_container_update_task(doc) -> bool:
+	if not is_sea_import_task(doc):
+		return False
+	seq = _sea_task_seq(doc)
 	return (
-		doc.get("custom_task_flow_key") == SEA_TASK_FLOW_KEY
-		and _sea_task_seq(doc) in CONTAINER_UPDATE_TASK_SEQS
+		seq in CONTAINER_UPDATE_TASK_SEQS
+		or seq in _shipping_line_application_seqs()
+		or seq in _shipping_line_finance_seqs()
 	)
 
 
-def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
+def _prefill_row_from_tracker(row, tracker: dict, seq: int, project: str | None = None) -> bool:
 	changed = False
 	if row.current_status != tracker.get("status"):
 		row.current_status = tracker.get("status")
@@ -177,8 +224,22 @@ def _prefill_row_from_tracker(row, tracker: dict, seq: int) -> bool:
 	offload_seq = get_container_task_sequence("custom_offload_task_seq")
 	empty_seq = get_container_task_sequence("custom_empty_return_task_seq")
 	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
+	vessel_arrival_seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 
-	if seq == book_seq:
+	if seq == vessel_arrival_seq:
+		# Project confirm is the source of truth — keep grid in sync with trackers.
+		discharge = tracker.get("discharging_date") or tracker.get("ata")
+		if discharge and row.get("discharging_date") != discharge:
+			row.discharging_date = discharge
+			changed = True
+	elif seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs():
+		bl_map = _bl_deposit_by_container_number(project or tracker.get("project") or "")
+		src = bl_map.get((tracker.get("container_number") or "").strip().upper()) or {}
+		new_amt = flt(src.get("deposit_amount"))
+		if flt(row.get("deposit_amount")) != new_amt:
+			row.deposit_amount = new_amt
+			changed = True
+	elif seq == book_seq:
 		for field in TRANSPORT_TRACKER_FIELDS:
 			if not row.get(field) and tracker.get(field):
 				row.set(field, tracker.get(field))
@@ -244,19 +305,28 @@ def seed_container_update_rows(doc) -> bool:
 	changed = False
 	book_seq = get_container_task_sequence("custom_book_trucks_task_seq")
 	monitor_seq = get_container_task_sequence("custom_monitor_delivery_task_seq")
+	vessel_arrival_seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 	for tracker in trackers:
 		if tracker.name in existing:
-			if _prefill_row_from_tracker(existing[tracker.name], tracker, seq):
+			if _prefill_row_from_tracker(existing[tracker.name], tracker, seq, doc.project):
 				changed = True
 			continue
 
 		row_data = {
 			"container_tracker": tracker.name,
 			"container_number": tracker.container_number,
-			"cargo_type": tracker.cargo_type,
+			"cargo_size": tracker_row_cargo_size(tracker),
 			"current_status": tracker.status,
 		}
-		if seq == book_seq:
+		if seq == vessel_arrival_seq:
+			row_data["discharging_date"] = (
+				tracker.get("discharging_date") or tracker.get("ata") or None
+			)
+		elif seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs():
+			bl_map = _bl_deposit_by_container_number(doc.project)
+			src = bl_map.get((tracker.container_number or "").strip().upper()) or {}
+			row_data["deposit_amount"] = flt(src.get("deposit_amount"))
+		elif seq == book_seq:
 			row_data.update(
 				{
 					"truck_number": tracker.truck_number or "",
@@ -279,17 +349,24 @@ def seed_container_update_rows(doc) -> bool:
 
 
 def apply_container_updates_from_task(doc) -> None:
-	"""Push filled task container grid rows to linked Container Trackers (partial saves OK)."""
+	"""Push filled task container grid rows to linked Container Trackers (partial saves OK).
+
+	Vessel-arrival / Create Entry grid is Project→Task only — never push back from Entry.
+	"""
 	if not is_container_update_task(doc):
 		return
 	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
 		return
 
 	seq = _sea_task_seq(doc)
+	if seq == get_container_task_sequence("custom_vessel_arrival_task_seq"):
+		return
+
 	field_pairs = _seq_field_map().get(seq, [])
 	if not field_pairs:
 		return
 
+	check_fields = set()
 	for row in doc.get(TASK_CONTAINER_UPDATES_FIELD) or []:
 		tracker_name = row.get("container_tracker")
 		if not tracker_name or not frappe.db.exists("Container Tracker", tracker_name):
@@ -298,6 +375,9 @@ def apply_container_updates_from_task(doc) -> None:
 		updates: dict[str, Any] = {}
 		for task_field, tracker_field in field_pairs:
 			val = row.get(task_field)
+			if task_field in check_fields:
+				updates[tracker_field] = cint(val)
+				continue
 			if val is not None and val != "":
 				updates[tracker_field] = val
 
@@ -316,12 +396,132 @@ def apply_container_updates_from_task(doc) -> None:
 		ct.save(ignore_permissions=True)
 
 
+def validate_shipping_line_deposit_declarations(doc) -> None:
+	"""Require BL container deposit amounts when arrangement is Container Deposit."""
+	if not is_shipping_line_deposit_task(doc):
+		return
+	if not doc.get("project"):
+		return
+
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		DEPOSIT_ARRANGEMENT_CONTAINER,
+		get_bill_of_lading_for_project,
+	)
+
+	bl_name = get_bill_of_lading_for_project(doc.project)
+	if not bl_name:
+		return
+
+	bl = frappe.get_doc("Bill of Lading", bl_name)
+	_mirror_bl_deposit_onto_task(doc, bl)
+
+	arrangement = (bl.get("deposit_arrangement") or "").strip()
+	if arrangement != DEPOSIT_ARRANGEMENT_CONTAINER:
+		return
+
+	amount_missing = []
+	for row in bl.get("container_information") or []:
+		if flt(row.get("deposit_amount")) <= 0:
+			amount_missing.append(row.container_number or row.name)
+	if amount_missing and flt(bl.get("deposit_amount")) <= 0:
+		frappe.throw(
+			_(
+				"Bill of Lading <b>{0}</b> has Container Deposit - enter deposit amounts "
+				"on each container row: {1}"
+			).format(bl.bl_number or bl.name, ", ".join(amount_missing))
+		)
+
+
+def _mirror_bl_deposit_onto_task(doc, bl) -> None:
+	"""Copy BL arrangement + per-container amounts onto the task (display only)."""
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		DEPOSIT_ARRANGEMENT_CONTAINER,
+	)
+
+	arrangement = (bl.get("deposit_arrangement") or "").strip()
+	if doc.meta.has_field("custom_bl_deposit_arrangement"):
+		doc.custom_bl_deposit_arrangement = arrangement
+	if doc.meta.has_field("custom_bl_has_deposit"):
+		doc.custom_bl_has_deposit = 1 if arrangement == DEPOSIT_ARRANGEMENT_CONTAINER else 0
+	if doc.meta.has_field("custom_deposit_payer") and bl.get("deposit_payer"):
+		doc.custom_deposit_payer = bl.get("deposit_payer")
+	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
+		return
+	by_number = {
+		(r.get("container_number") or "").strip().upper(): r
+		for r in (bl.get("container_information") or [])
+		if (r.get("container_number") or "").strip()
+	}
+	for row in doc.get(TASK_CONTAINER_UPDATES_FIELD) or []:
+		key = (row.get("container_number") or "").strip().upper()
+		src = by_number.get(key)
+		if not src:
+			continue
+		row.deposit_amount = flt(src.get("deposit_amount"))
+
+
+def _bl_deposit_by_container_number(project: str) -> dict[str, dict]:
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		get_bill_of_lading_for_project,
+	)
+
+	bl_name = get_bill_of_lading_for_project(project)
+	if not bl_name:
+		return {}
+	return {
+		(r.container_number or "").strip().upper(): r
+		for r in frappe.get_all(
+			"Container",
+			filters={"parent": bl_name, "parenttype": "Bill of Lading"},
+			fields=["container_number", "deposit_amount", "container_tracker"],
+		)
+		if (r.container_number or "").strip()
+	}
+
+
+def sync_vessel_arrival_task_rows_from_project(project_name: str) -> None:
+	"""Seed/refresh Create Entry container grid after Project port-arrival confirm.
+
+	Does not complete or block Create Entry — Entry paperwork stays independent.
+	"""
+	if not project_name or frappe.flags.get("cgm_syncing_tracker_to_task"):
+		return
+
+	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
+	rows = frappe.get_all(
+		"Task",
+		filters={
+			"project": project_name,
+			"custom_task_flow_key": task_flow_key_in_filter(),
+			"custom_sequence_no": seq,
+			"status": ["!=", "Cancelled"],
+		},
+		pluck="name",
+		order_by="creation desc",
+		limit=1,
+	)
+	if not rows:
+		return
+	task_name = rows[0]
+
+	frappe.flags.cgm_syncing_tracker_to_task = True
+	try:
+		task = frappe.get_doc("Task", task_name)
+		if seed_container_update_rows(task):
+			task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.cgm_syncing_tracker_to_task = False
+
+
 def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 	"""Push tracker edits back to open transport/delivery task grids."""
 	if not tracker.project or frappe.flags.get("cgm_syncing_tracker_to_task"):
 		return
 
 	sync_seqs = {
+		get_container_task_sequence("custom_vessel_arrival_task_seq"): (
+			"discharging_date",
+		),
 		get_container_task_sequence("custom_book_trucks_task_seq"): TRANSPORT_TRACKER_FIELDS,
 		get_container_task_sequence("custom_gate_out_task_seq"): (
 			"gate_out_date_port",
@@ -349,7 +549,7 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 		"Task",
 		filters={
 			"project": tracker.project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"custom_task_flow_key": task_flow_key_in_filter(),
 			"status": ["not in", ["Completed", "Cancelled"]],
 			"custom_sequence_no": ["in", list(sync_seqs.keys())],
 		},
@@ -373,6 +573,8 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 					continue
 				for field in fields:
 					val = tracker.get(field)
+					if field == "discharging_date" and not val:
+						val = tracker.get("ata")
 					if val and row.get(field) != val:
 						row.set(field, val)
 						changed = True
@@ -437,7 +639,7 @@ def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
 		"Task",
 		{
 			"project": project,
-			"custom_task_flow_key": SEA_TASK_FLOW_KEY,
+			"custom_task_flow_key": task_flow_key_in_filter(),
 			"custom_sequence_no": seq,
 			"status": ["not in", ["Completed", "Cancelled"]],
 		},
@@ -491,7 +693,7 @@ def check_task_container_completion(doc) -> None:
 
 def validate_container_step_task_completion(doc) -> None:
 	"""Manual Complete only when every container tracker has the step recorded."""
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return
 	if doc.status != "Completed":
 		return
@@ -530,7 +732,7 @@ def validate_container_step_task_completion(doc) -> None:
 
 def validate_task_19_container_updates(doc) -> None:
 	"""Book-trucks task: truck details for at least one container OR task-level reason."""
-	if doc.get("custom_task_flow_key") != SEA_TASK_FLOW_KEY:
+	if not is_sea_import_task(doc):
 		return
 	if _sea_task_seq(doc) != get_container_task_sequence("custom_book_trucks_task_seq"):
 		return
@@ -561,3 +763,20 @@ def on_task_onload_container_updates(doc) -> None:
 	if doc.is_new():
 		return
 	seed_container_update_rows(doc)
+	_sync_bl_deposit_fields_on_load(doc)
+
+
+def _sync_bl_deposit_fields_on_load(doc) -> None:
+	"""Mirror BL deposit arrangement onto task fields when the form loads."""
+	if not is_shipping_line_deposit_mirror_task(doc) or not doc.get("project"):
+		return
+
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		get_bill_of_lading_for_project,
+	)
+
+	bl_name = get_bill_of_lading_for_project(doc.project)
+	if not bl_name:
+		return
+	bl = frappe.get_doc("Bill of Lading", bl_name)
+	_mirror_bl_deposit_onto_task(doc, bl)

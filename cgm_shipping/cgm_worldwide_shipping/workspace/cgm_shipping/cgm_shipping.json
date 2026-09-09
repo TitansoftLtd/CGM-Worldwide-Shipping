@@ -1,13 +1,13 @@
 {
  "app": "cgm_shipping",
  "charts": [],
- "content": "[{\"id\":\"uWiLsJUdVJ\",\"type\":\"header\",\"data\":{\"text\":\"<span style=\\\"font-size: 16px;\\\"><b>Shortcuts</b></span>\",\"col\":12}},{\"id\":\"5slaFAopFc\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customer\",\"col\":3}},{\"id\":\"yNse_cDnTB\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Project\",\"col\":3}},{\"id\":\"qc7j4a49Sa\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bill Of Lading\",\"col\":3}},{\"id\":\"ZCVcZygZ0r\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Air Waybill\",\"col\":3}},{\"id\":\"iXULP7P6qN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Opportunity\",\"col\":3}},{\"id\":\"HooY9lDlzt\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Container Tracker\",\"col\":3}},{\"id\":\"cgmOpsBrd01\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Container Ops Board\",\"col\":3}},{\"id\":\"pt6I2_8o9i\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customs Entry\",\"col\":3}},{\"id\":\"mF1Spy7u2_\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"s-vIcHLenp\",\"type\":\"card\",\"data\":{\"card_name\":\"Shipments\",\"col\":3}},{\"id\":\"3UvHg06GlH\",\"type\":\"card\",\"data\":{\"card_name\":\"Clearance & Customs\",\"col\":3}},{\"id\":\"5280sQiiF1\",\"type\":\"card\",\"data\":{\"card_name\":\"Transport & Containers\",\"col\":3}},{\"id\":\"9lOSeVN8nN\",\"type\":\"card\",\"data\":{\"card_name\":\"Masters & Setup\",\"col\":3}}]",
+ "content": "[{\"id\": \"cgmStartHdr01\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"cgm-start-shipment-header\\\" style=\\\"font-size: 18px;\\\"><b>Start a New Shipment</b></span>\", \"col\": 12}}, {\"id\": \"cgmStartBtn01\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Start New Shipment\", \"col\": 6}}, {\"id\": \"cgmStartSp01\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"uWiLsJUdVJ\", \"type\": \"header\", \"data\": {\"text\": \"<span style=\\\"font-size: 16px;\\\"><b>Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"5slaFAopFc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer\", \"col\": 3}}, {\"id\": \"yNse_cDnTB\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Project\", \"col\": 3}}, {\"id\": \"qc7j4a49Sa\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bill Of Lading\", \"col\": 3}}, {\"id\": \"ZCVcZygZ0r\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Air Waybill\", \"col\": 3}}, {\"id\": \"iXULP7P6qN\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Opportunity\", \"col\": 3}}, {\"id\": \"HooY9lDlzt\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Container Tracker\", \"col\": 3}}, {\"id\": \"cgmOpsBrd01\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Container Ops Board\", \"col\": 3}}, {\"id\": \"pt6I2_8o9i\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customs Entry\", \"col\": 3}}, {\"id\": \"mF1Spy7u2_\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"s-vIcHLenp\", \"type\": \"card\", \"data\": {\"card_name\": \"Shipments\", \"col\": 3}}, {\"id\": \"3UvHg06GlH\", \"type\": \"card\", \"data\": {\"card_name\": \"Clearance & Customs\", \"col\": 3}}, {\"id\": \"5280sQiiF1\", \"type\": \"card\", \"data\": {\"card_name\": \"Transport & Containers\", \"col\": 3}}, {\"id\": \"9lOSeVN8nN\", \"type\": \"card\", \"data\": {\"card_name\": \"Masters & Setup\", \"col\": 3}}, {\"id\": \"cgmFundCard01\", \"type\": \"card\", \"data\": {\"card_name\": \"Requisitions & Funding\", \"col\": 3}}, {\"id\": \"cgmLicSp01\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"cgmLicHdr01\", \"type\": \"header\", \"data\": {\"text\": \"<span style=\\\"font-size: 16px;\\\"><b>Licences &amp; Permits</b></span>\", \"col\": 12}}, {\"id\": \"cgmLicSc01\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Licence Register\", \"col\": 3}}, {\"id\": \"cgmLicSc02\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Expiring Soon\", \"col\": 3}}, {\"id\": \"cgmLicSc03\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Expired Licences\", \"col\": 3}}, {\"id\": \"cgmLicCard01\", \"type\": \"card\", \"data\": {\"card_name\": \"Licences & Permits\", \"col\": 3}}]",
  "creation": "2026-06-09 22:50:45.113316",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
  "for_user": "",
- "hide_custom": 0,
+ "hide_custom": 1,
  "icon": "stock",
  "idx": 0,
  "is_hidden": 0,
@@ -16,206 +16,20 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Clearance & Customs",
-   "link_count": 5,
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Customs Entry",
-   "link_count": 0,
-   "link_to": "Customs Entry",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "IDF UCR Record",
-   "link_count": 0,
-   "link_to": "IDF UCR Record",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Clearance Station",
-   "link_count": 0,
-   "link_to": "Clearance Station",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Port Charges KPA Invoice",
-   "link_count": 0,
-   "link_to": "Port Charges KPA Invoice",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipping Line Charges",
-   "link_count": 0,
-   "link_to": "Shipping Line Charges",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Transport & Containers",
-   "link_count": 5,
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Container Tracker",
-   "link_count": 0,
-   "link_to": "Container Tracker",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Container Ops Board",
-   "link_count": 0,
-   "link_to": "container-ops-board",
-   "link_type": "Page",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Seal Record",
-   "link_count": 0,
-   "link_to": "Seal Record",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Interchange Receipt",
-   "link_count": 0,
-   "link_to": "Interchange Receipt",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "dependencies": "Container Tracker",
-   "hidden": 0,
-   "is_query_report": 1,
-   "label": "Container Tracking Detail",
-   "link_count": 0,
-   "link_to": "Container Tracking Detail",
-   "link_type": "Report",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Masters & Setup",
-   "link_count": 7,
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Cargo Type",
-   "link_count": 0,
-   "link_to": "Cargo Type",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shipment Type",
-   "link_count": 0,
-   "link_to": "Shipment Type",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Mode of Transport",
-   "link_count": 0,
-   "link_to": "Mode of Transport",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Document Type",
-   "link_count": 0,
-   "link_to": "Document Type",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Permit Type",
-   "link_count": 0,
-   "link_to": "Permit Type",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "CFS Location",
-   "link_count": 0,
-   "link_to": "CFS Location",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "CGM Shipping Settings",
-   "link_count": 0,
-   "link_to": "CGM Shipping Settings",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Shipments",
-   "link_count": 7,
-   "link_type": "DocType",
+   "link_count": 10,
    "onboard": 0,
    "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Start New Shipment",
+   "link_count": 0,
+   "link_to": "Opportunity",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   },
   {
    "hidden": 0,
@@ -260,6 +74,26 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Booking Confirmation",
+   "link_count": 0,
+   "link_to": "Booking Confirmation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shipment Route",
+   "link_count": 0,
+   "link_to": "Shipment Route",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Shipment tracker",
    "link_count": 0,
    "link_to": "Shipment tracker",
@@ -286,9 +120,445 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Clearance & Customs",
+   "link_count": 7,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Customs Entry",
+   "link_count": 0,
+   "link_to": "Customs Entry",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "IDF UCR Record",
+   "link_count": 0,
+   "link_to": "IDF UCR Record",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Clearance Station",
+   "link_count": 0,
+   "link_to": "Clearance Station",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Clearance Port",
+   "link_count": 0,
+   "link_to": "Clearance Port",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Port Charges KPA Invoice",
+   "link_count": 0,
+   "link_to": "Port Charges KPA Invoice",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Customs Tax Type",
+   "link_count": 0,
+   "link_to": "Customs Tax Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shipping Line Charges",
+   "link_count": 0,
+   "link_to": "Shipping Line Charges",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Transport & Containers",
+   "link_count": 7,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Container Tracker",
+   "link_count": 0,
+   "link_to": "Container Tracker",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Container Allocation",
+   "link_count": 0,
+   "link_to": "Container Allocation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Container Ops Board",
+   "link_count": 0,
+   "link_to": "container-ops-board",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Operations Overview",
+   "link_count": 0,
+   "link_to": "operations-overview",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Seal Record",
+   "link_count": 0,
+   "link_to": "Seal Record",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Interchange Receipt",
+   "link_count": 0,
+   "link_to": "Interchange Receipt",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "Container Tracker",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Container Tracking Detail",
+   "link_count": 0,
+   "link_to": "Container Tracking Detail",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Masters & Setup",
+   "link_count": 11,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cargo Type",
+   "link_count": 0,
+   "link_to": "Cargo Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cargo Size",
+   "link_count": 0,
+   "link_to": "Cargo Size",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shipment Type",
+   "link_count": 0,
+   "link_to": "Shipment Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Mode of Transport",
+   "link_count": 0,
+   "link_to": "Mode of Transport",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Package Type",
+   "link_count": 0,
+   "link_to": "Package Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Document Type",
+   "link_count": 0,
+   "link_to": "Document Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Permit Type",
+   "link_count": 0,
+   "link_to": "Permit Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Charge Item",
+   "link_count": 0,
+   "link_to": "Charge Item",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Clearance Charge Item",
+   "link_count": 0,
+   "link_to": "Clearance Charge Item",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Kind",
+   "link_count": 0,
+   "link_to": "Payment Kind",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Line Type",
+   "link_count": 0,
+   "link_to": "Line Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cost Type",
+   "link_count": 0,
+   "link_to": "Cost Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "CFS Location",
+   "link_count": 0,
+   "link_to": "CFS Location",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "CGM Shipping Settings",
+   "link_count": 0,
+   "link_to": "CGM Shipping Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Requisitions & Funding",
+   "link_count": 6,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Material Request",
+   "link_count": 0,
+   "link_to": "Material Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Funding Request",
+   "link_count": 0,
+   "link_to": "Funding Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Employee Advance",
+   "link_count": 0,
+   "link_to": "Employee Advance",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 1,
+   "is_query_report": 0,
+   "label": "Material Request Purpose",
+   "link_count": 0,
+   "link_to": "Material Request Purpose",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Funding Request Report",
+   "link_count": 0,
+   "link_to": "Funding Request Report",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Project Expense Summary",
+   "link_count": 0,
+   "link_to": "Project Expense Summary",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Licences & Permits",
+   "link_count": 0,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Licence Register",
+   "link_count": 0,
+   "link_to": "License Register",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Licensing Contact",
+   "link_count": 0,
+   "link_to": "Licensing Contact",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Reminder Log",
+   "link_count": 0,
+   "link_to": "License Reminder Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Licence Type",
+   "link_count": 0,
+   "link_to": "License Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "License Settings",
+   "link_count": 0,
+   "link_to": "License Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-07-08 19:08:17.786995",
+ "modified": "2026-08-24 11:55:41.120965",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping",
@@ -300,6 +570,13 @@
  "roles": [],
  "sequence_id": 2.0,
  "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "New",
+   "label": "Start New Shipment",
+   "link_to": "Opportunity",
+   "type": "DocType"
+  },
   {
    "color": "Grey",
    "doc_view": "List",
@@ -360,6 +637,29 @@
    "label": "Container Ops Board",
    "link_to": "container-ops-board",
    "type": "Page"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Licence Register",
+   "link_to": "License Register",
+   "type": "DocType"
+  },
+  {
+   "color": "Orange",
+   "doc_view": "List",
+   "label": "Expiring Soon",
+   "link_to": "License Register",
+   "stats_filter": "[[\"License Register\", \"status\", \"=\", \"Expiring Soon\"]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Red",
+   "doc_view": "List",
+   "label": "Expired Licences",
+   "link_to": "License Register",
+   "stats_filter": "[[\"License Register\", \"status\", \"=\", \"Expired\"]]",
+   "type": "DocType"
   }
  ],
  "title": "CGM Shipping",

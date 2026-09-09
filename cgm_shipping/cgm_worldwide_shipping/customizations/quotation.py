@@ -1,8 +1,7 @@
 """
-CGM Worldwide Shipping — import-cost & customs-tax calculations.
+CGM Worldwide Shipping — Quotation import-cost, customs-tax, and billing helpers.
 
-Covers Quotation and Sales Order so that grand totals stay
-consistent when a Sales Order is created from a Quotation.
+Primary commercial path: Quotation → Sales Invoice.
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 import frappe
 from erpnext import get_company_currency
 from erpnext.selling.doctype.quotation.quotation import Quotation
-from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from frappe.utils import cint, flt, round_based_on_smallest_currency_fraction
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
@@ -21,16 +19,14 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_calculation 
 	calculate_tax_amount,
 	get_tax_type_config,
 	get_uom_category,
-	import_duty_contribution,
 	is_volume_uom,
 	rate_label_for_mode,
 	resolve_company_currency,
-	should_feed_running_base,
+	should_include_in_subsequent_tax_base,
 	shipment_quantity,
 	validate_calculation_mode,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing import (
-	PRICING_ROW_FIELDS,
 	QUOTATION_ITEM_PRICING_TABLE,
 	apply_item_pricing_to_document,
 	calculate_quotation_item_pricing,
@@ -39,44 +35,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing import (
 # ── Child-table fieldnames ────────────────────────────────────────────────────
 IMPORT_COST_TABLE = "custom_import_cost_component"
 CUSTOMS_TAX_TABLE = "custom_customs_taxes"
-
-IMPORT_COST_ROW_FIELDS = (
-	"charge_item",
-	"amount",
-	"exchange_rate",
-	"amount_kes",
-)
-
-CUSTOMS_TAX_ROW_FIELDS = (
-	"tax_type",
-	"calculation_mode",
-	"rate",
-	"fixed_amount_kes",
-	"amount_kes",
-)
-
-CGM_QUOTATION_SO_SCALAR_FIELDS = (
-	"custom_uom",
-	"custom_weight",
-	"custom_volume",
-	"custom_hs_code",
-	"custom_shipment_type",
-	"custom_cargo_type",
-	"custom_cargo_size",
-	"custom_port_of_loading",
-	"custom_port_of_discharge",
-	"custom_transit_time_",
-	"custom_commodity",
-	"custom_custom_value",
-	"custom_base_customs_value",
-	"custom_total_tax",
-	"custom_quote_clause",
-	"custom_shipment",
-	"custom_coo",
-	"custom_idfno",
-	"custom_client_ref_no",
-	"custom_our_ref_no",
-)
 
 # Shipment metadata copied from Quotation to Sales Invoice when billing.
 # Values are mapped explicitly because Quotation and Sales Invoice field names differ.
@@ -98,7 +56,7 @@ CGM_QUOTATION_SI_EXTRA_FIELDS = (
 
 class _CGMCustomsTaxMixin:
     """
-    Reusable customs-tax logic injected into both CGMQuotation and CGMSalesOrder.
+    Customs-tax / import-cost / item-pricing logic for CGMQuotation.
 
     Concrete classes must be ERPNext selling controllers so that attributes like
     self.company, self.currency, self.conversion_rate, self.base_total and
@@ -158,10 +116,9 @@ class _CGMCustomsTaxMixin:
     # ── Customs Tax accumulation ──────────────────────────────────────────────
 
     def _sum_customs_taxes(self, customs_value_kes: float) -> float:
-        """Walk customs-tax rows in idx order and return total KES tax."""
+        """Walk customs-tax rows in idx order and return total tax in company currency."""
         shipment_qty = shipment_quantity(self)
-        running_base = customs_value_kes
-        import_duty_kes = 0.0
+        running_tax_base = customs_value_kes
         total_kes = 0.0
         seen: set[str] = set()
 
@@ -177,24 +134,24 @@ class _CGMCustomsTaxMixin:
             seen.add(tax_type)
 
             mode = validate_calculation_mode(row, tax_type)
+            if not (row.get("calculation_mode") or "").strip():
+                row.calculation_mode = mode
 
-            amount_kes = calculate_tax_amount(
+            result = calculate_tax_amount(
                 row,
                 tax_type,
-                customs_value_kes=customs_value_kes,
-                running_base=running_base,
-                import_duty_kes=import_duty_kes,
+                customs_value=customs_value_kes,
+                running_tax_base=running_tax_base,
                 shipment_qty=shipment_qty,
             )
-            amount_kes = self._money(amount_kes, "amount_kes", row)
-            duty_delta = import_duty_contribution(tax_type, mode, amount_kes)
+            amount_kes = self._money(result.amount, "amount_kes", row)
 
+            row.tax_base = flt(result.tax_base)
             row.amount_kes = amount_kes
             row.tax_amount_kes = amount_kes
 
-            if should_feed_running_base(tax_type, mode):
-                running_base += amount_kes
-                import_duty_kes += duty_delta
+            if should_include_in_subsequent_tax_base(tax_type):
+                running_tax_base += amount_kes
 
             total_kes += amount_kes
 
@@ -300,54 +257,8 @@ class CGMQuotation(_CGMCustomsTaxMixin, Quotation):
 
 
 # =============================================================================
-# SALES ORDER
+# QUOTATION → SALES INVOICE
 # =============================================================================
-
-class CGMSalesOrder(_CGMCustomsTaxMixin, SalesOrder):
-    """
-    Extends the standard Sales Order so that custom customs taxes (copied from
-    the source Quotation) are reflected in the grand total.
-    """
-
-    def validate(self):
-        super().validate()
-        if (
-            self.meta.has_field(IMPORT_COST_TABLE)
-            or self.meta.has_field(CUSTOMS_TAX_TABLE)
-            or self.meta.has_field(QUOTATION_ITEM_PRICING_TABLE)
-        ):
-            self._calculate_import_customs_taxes()
-
-
-# =============================================================================
-# SHARED MAPPING HELPERS
-# =============================================================================
-
-def _copy_child_table(source_doc, target_doc, table_field: str, row_fields: tuple[str, ...]) -> None:
-	if not (source_doc.meta.has_field(table_field) and target_doc.meta.has_field(table_field)):
-		return
-
-	target_doc.set(table_field, [])
-	for src in source_doc.get(table_field) or []:
-		target_doc.append(table_field, {field: src.get(field) for field in row_fields})
-
-
-def _copy_scalar_fields(source_doc, target_doc, fields: tuple[str, ...]) -> None:
-	for field in fields:
-		if source_doc.meta.has_field(field) and target_doc.meta.has_field(field):
-			target_doc.set(field, source_doc.get(field))
-
-
-def copy_cgm_quotation_fields(source_doc, target_doc) -> None:
-	"""Copy full CGM customs/import fields from Quotation to Sales Order."""
-	_copy_child_table(source_doc, target_doc, IMPORT_COST_TABLE, IMPORT_COST_ROW_FIELDS)
-	_copy_child_table(source_doc, target_doc, CUSTOMS_TAX_TABLE, CUSTOMS_TAX_ROW_FIELDS)
-	_copy_child_table(source_doc, target_doc, QUOTATION_ITEM_PRICING_TABLE, PRICING_ROW_FIELDS)
-	_copy_scalar_fields(source_doc, target_doc, CGM_QUOTATION_SO_SCALAR_FIELDS)
-
-	if target_doc.meta.has_field("project") and source_doc.get("custom_shipment"):
-		target_doc.project = source_doc.custom_shipment
-
 
 def copy_cgm_quotation_fields_to_sales_invoice(source_doc, target_doc) -> None:
 	"""Copy shipment metadata from Quotation to Sales Invoice billing fields."""
@@ -379,25 +290,6 @@ def _validate_quotation_for_billing(quotation) -> None:
 		)
 
 
-# =============================================================================
-# QUOTATION → SALES ORDER / SALES INVOICE
-# =============================================================================
-
-def on_submit_quotation(doc, method=None):
-	"""Hook placeholder kept for future Quotation on_submit actions."""
-	pass
-
-
-@frappe.whitelist()
-def make_sales_order(source_name: str, target_doc=None):
-	"""Extend ERPNext mapper to carry CGM customs/import fields to Sales Order."""
-	from erpnext.selling.doctype.quotation.quotation import make_sales_order as _std_make_so
-
-	so = _std_make_so(source_name, target_doc)
-	copy_cgm_quotation_fields(frappe.get_doc("Quotation", source_name), so)
-	return so
-
-
 @frappe.whitelist()
 def make_sales_invoice(source_name: str, target_doc=None, args=None):
 	"""Extend ERPNext mapper with CGM shipment metadata for the invoice print format."""
@@ -420,6 +312,7 @@ def get_customs_tax_type_info(
     tax_type: str,
     quotation_uom: str | None = None,
     company: str | None = None,
+    currency: str | None = None,
 ) -> dict:
     """
     Return calculation metadata for a Customs Tax Type.
@@ -429,27 +322,27 @@ def get_customs_tax_type_info(
         return {}
 
     config = get_tax_type_config(tax_type)
-    currency = resolve_company_currency(company=company)
+    company_currency = resolve_company_currency(company=company)
+    display_currency = (currency or "").strip() or company_currency
     default_rate = _get_default_rate_from_settings(tax_type)
     allowed_modes = list(config.allowed_modes)
     default_mode = config.default_mode
-    show_mode = len(allowed_modes) > 1
 
     return {
         "default_rate": default_rate,
         "allowed_modes": allowed_modes,
         "default_calculation_mode": default_mode,
-        "show_calculation_mode": show_mode,
-        "is_stacking": config.is_stacking,
-        "is_excise": config.is_excise,
-        "affects_import_duty": config.affects_import_duty,
-        "feeds_running_base": config.feeds_running_base,
-        "per_unit_skips_running_base": config.per_unit_skips_running_base,
-        "company_currency": currency,
+        "show_calculation_mode": len(allowed_modes) > 1,
+        "calculation_mode_read_only": len(allowed_modes) <= 1,
+        "percentage_base": config.percentage_base,
+        "include_in_subsequent_tax_base": config.include_in_subsequent_tax_base,
+        "company_currency": company_currency,
+        "display_currency": display_currency,
         "rate_labels": {
-            mode: rate_label_for_mode(mode, quotation_uom, currency) for mode in allowed_modes
+            mode: rate_label_for_mode(mode, quotation_uom, display_currency)
+            for mode in allowed_modes
         },
-        "rate_label": rate_label_for_mode(default_mode, quotation_uom, currency),
+        "rate_label": rate_label_for_mode(default_mode, quotation_uom, display_currency),
     }
 
 

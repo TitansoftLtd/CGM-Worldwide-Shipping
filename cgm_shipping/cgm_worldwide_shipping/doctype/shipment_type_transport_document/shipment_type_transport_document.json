@@ -27,7 +27,7 @@
   },
   {
    "default": "0",
-   "description": "Must be linked on the Opportunity before Start Shipment.",
+   "description": "Counts toward Start Shipment. For Bill of Lading and Booking Confirmation, either one is enough (whichever arrives first).",
    "fieldname": "is_required_for_start",
    "fieldtype": "Check",
    "in_list_view": 1,

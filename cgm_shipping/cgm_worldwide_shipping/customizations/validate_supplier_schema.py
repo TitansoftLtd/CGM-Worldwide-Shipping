@@ -6,7 +6,6 @@ import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates import (
 	DEMURRAGE_TIERS_FIELD,
-	DETENTION_TIERS_FIELD,
 	FREE_DAYS_RULES_FIELD,
 	SUPPLIER_CHILD_TABLE_FIELDS,
 	get_supplier_child_rows,
@@ -22,13 +21,11 @@ def validate_supplier_shipping_line_schema(supplier_name: str) -> dict:
 		"child_doctypes": {},
 		"fields": {},
 		"free_days_rules": [],
-		"detention_tiers": [],
 		"demurrage_tiers": [],
 	}
 	for doctype in (
 		"Shipping Line Free Days Rule",
 		"Shipping Line Demurrage Tier",
-		"Shipping Line Detention Tier",
 	):
 		result["child_doctypes"][doctype] = frappe.db.exists("DocType", doctype)
 
@@ -40,9 +37,6 @@ def validate_supplier_shipping_line_schema(supplier_name: str) -> dict:
 
 	result["free_days_rules"] = get_supplier_child_rows(
 		supplier_name, FREE_DAYS_RULES_FIELD
-	)
-	result["detention_tiers"] = get_supplier_child_rows(
-		supplier_name, DETENTION_TIERS_FIELD
 	)
 	result["demurrage_tiers"] = get_supplier_child_rows(
 		supplier_name, DEMURRAGE_TIERS_FIELD
@@ -56,7 +50,6 @@ def run(supplier_name: str = "MAERSK") -> None:
 	print("CHILD DOCTYPES:", data["child_doctypes"])
 	print("SUPPLIER SCHEMA:", data["fields"])
 	print("FREE DAYS RULES:", data["free_days_rules"])
-	print("DETENTION TIERS:", data["detention_tiers"])
 	print("DEMURRAGE TIERS:", data["demurrage_tiers"])
 	if not all(data["child_doctypes"].values()):
 		print("FIX: run bench migrate (child doctypes missing)")

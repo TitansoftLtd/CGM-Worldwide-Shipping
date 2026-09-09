@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "creation": "2026-05-31 17:34:14.307718",
  "doctype": "DocType",
@@ -14,6 +15,7 @@
   "uses_unit_tracking",
   "amended_from",
   "section_break_integration",
+  "task_template",
   "task_flow_key",
   "container_tracker_mode",
   "cgm_ref_prefix",
@@ -56,21 +58,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "0",
-   "fieldname": "use_sea_import_workflow",
-   "fieldtype": "Check",
-   "label": "Use Sea Import Workflow"
-  },
-  {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Active"
-  },
-  {
-   "fieldname": "section_break_2k6q",
-   "fieldtype": "Section Break"
   },
   {
    "default": "0",
@@ -93,40 +85,44 @@
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "section_break_integration",
-   "fieldtype": "Section Break",
-   "label": "Integration"
-  },
-  {
-   "description": "Matches a task plan in CGM Shipping Settings (e.g. SEA_IMPORT_E2E, SEA_TRANSIT_IMPORT_E2E). Create a new Shipment Type row and point this at your Settings template — no code change needed.",
-   "fieldname": "task_flow_key",
-   "fieldtype": "Data",
-   "label": "Task Flow Key"
-  },
-  {
-   "description": "Default Project Type for new projects using this shipment type. Container Tracker sections match Project.project_type. Add new types in the Project Type list (Setup) — names containing Mombasa, ICD, Transit, or Export control which tracker sections appear.",
    "fieldname": "container_tracker_mode",
    "fieldtype": "Link",
    "label": "Container Tracker Mode",
    "options": "Project Type"
   },
   {
+   "fieldname": "section_break_integration",
+   "fieldtype": "Section Break",
+   "label": "Integration"
+  },
+  {
+   "description": "CGM Task Template used when Start Shipment creates Project tasks.",
+   "fieldname": "task_template",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Task Template",
+   "options": "CGM Task Template"
+  },
+  {
+   "description": "Legacy fallback when Task Template is empty. Matches a seeded template via flow key (e.g. SEA_IMPORT_E2E).",
+   "fieldname": "task_flow_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Task Flow Key"
+  },
+  {
    "description": "Optional prefix for CGM tracking references on air/road shipments (e.g. AIR, ROD). Sea shipments can use Cargo Type CGM Ref Prefix instead.",
    "fieldname": "cgm_ref_prefix",
    "fieldtype": "Data",
-   "in_list_view": 1,
+   "hidden": 1,
    "label": "CGM Ref Prefix"
   },
   {
-   "description": "Deprecated — use Container Tracker Mode. Kept for legacy records.",
+   "description": "Deprecated - use Container Tracker Mode. Kept for legacy records.",
    "fieldname": "container_tracking_mode",
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Container Tracking Mode"
-  },
-  {
-   "fieldname": "column_break_st_flags",
-   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -179,13 +175,7 @@
    "options": "Shipment Type Transport Document"
   },
   {
-   "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",
-   "fieldname": "legacy_crm_labels",
-   "fieldtype": "Small Text",
-   "label": "Legacy CRM Labels"
-  },
-  {
-   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type — no code change needed.",
+   "description": "Documents that must be uploaded and verified on the Opportunity before Start Shipment. Configure per shipment type.",
    "fieldname": "section_required_documents",
    "fieldtype": "Section Break",
    "label": "Required Intake Documents"
@@ -204,11 +194,32 @@
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description"
+  },
+  {
+   "fieldname": "section_break_2k6q",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "use_sea_import_workflow",
+   "fieldtype": "Check",
+   "label": "Use Sea Import Workflow"
+  },
+  {
+   "fieldname": "column_break_st_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Former CRM labels to resolve to this Shipment Type (one per line). Use with Mode of Transport when labels are ambiguous (e.g. Import + Sea).",
+   "fieldname": "legacy_crm_labels",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Legacy CRM Labels"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-16 19:25:26.856538",
+ "modified": "2026-09-05 07:15:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Type",

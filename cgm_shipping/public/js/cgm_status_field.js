@@ -65,7 +65,6 @@ cgm_shipping.status_field = {
 				"UCR Paid",
 				"Pre-clearance",
 				"Final Docs Received",
-				"Manifest Requested",
 				"Entry Lodged",
 				"Post-clearance",
 				"Field Clearance",
@@ -110,6 +109,15 @@ cgm_shipping.status_field = {
 		});
 	},
 
+	tone_for_final_document_status(status) {
+		return cgm_status_match(status, {
+			Draft: "muted",
+			"Pending Review": "warning",
+			Approved: "success",
+			Rejected: "danger",
+		});
+	},
+
 	tone_for_project(status) {
 		return cgm_status_match(status, {
 			Open: "info",
@@ -118,12 +126,36 @@ cgm_shipping.status_field = {
 		});
 	},
 
+	tone_for_verified(value) {
+		return value ? "success" : "warning";
+	},
+
+	tone_for_deposit_payment(status) {
+		return cgm_status_match(
+			status,
+			{
+				Paid: "success",
+				Unpaid: "warning",
+				"Not Applicable": "muted",
+			},
+			"muted"
+		);
+	},
+
 	badge_html(value, tone) {
 		if (!value) {
 			return "";
 		}
 		const palette = CGM_STATUS_TONE_STYLES[tone] || CGM_STATUS_TONE_STYLES.muted;
-		const style = [
+		const style = this.badge_style(tone);
+		return `<span class="cgm-status-badge cgm-status-${tone}" style="${style}">${cgm_escape_html(
+			value
+		)}</span>`;
+	},
+
+	badge_style(tone) {
+		const palette = CGM_STATUS_TONE_STYLES[tone] || CGM_STATUS_TONE_STYLES.muted;
+		return [
 			"display:inline-flex",
 			"align-items:center",
 			"padding:1px 8px",
@@ -136,9 +168,21 @@ cgm_shipping.status_field = {
 			`background:${palette.background}`,
 			`color:${palette.color}`,
 		].join(";");
-		return `<span class="cgm-status-badge cgm-status-${tone}" style="${style}">${cgm_escape_html(
-			value
-		)}</span>`;
+	},
+
+	action_badge_button(label, tone) {
+		if (!label) {
+			return "";
+		}
+		const style = [
+			this.badge_style(tone),
+			"cursor:pointer",
+			"margin:0",
+			"box-shadow:none",
+		].join(";");
+		return `<button type="button" class="cgm-final-document-action cgm-status-action-badge cgm-status-${tone}" style="${style}">${cgm_escape_html(
+			label
+		)}</button>`;
 	},
 
 	tone_fn_for_docfield(df, doc) {
@@ -165,6 +209,12 @@ cgm_shipping.status_field = {
 		if (df.fieldname === "status" && doctype === "Project") {
 			return (value) => sf.tone_for_project(value);
 		}
+		if (doctype === "Task Finance Line" && df.fieldname === "verified") {
+			return (value) => sf.tone_for_verified(value);
+		}
+		if (doctype === "Bill of Lading" && df.fieldname === "deposit_payment_status") {
+			return (value) => sf.tone_for_deposit_payment(value);
+		}
 		return null;
 	},
 
@@ -175,6 +225,17 @@ cgm_shipping.status_field = {
 				return "";
 			}
 			return sf.badge_html(value, tone_fn(value, doc));
+		};
+	},
+
+	make_check_status_formatter(tone_fn, labels) {
+		const sf = this;
+		const verified_label = labels?.verified || __("Verified by Finance");
+		const pending_label = labels?.pending || __("Pending Verification");
+		return function (value, df, doc) {
+			const truthy = cint(value);
+			const label = truthy ? verified_label : pending_label;
+			return sf.badge_html(label, tone_fn(truthy, doc));
 		};
 	},
 
@@ -190,11 +251,29 @@ cgm_shipping.status_field = {
 		df.formatter = this.make_formatter(tone_fn);
 	},
 
+	register_meta_check_formatter(doctype, fieldname, tone_fn, labels) {
+		const df = frappe.meta.get_docfield(doctype, fieldname);
+		if (!df) {
+			return;
+		}
+		if (!frappe.meta.docfield_map[doctype]) {
+			frappe.meta.docfield_map[doctype] = {};
+		}
+		frappe.meta.docfield_map[doctype][fieldname] = df;
+		df.formatter = this.make_check_status_formatter(tone_fn, labels);
+	},
+
 	attach_grid_formatters(grid, fieldname, tone_fn) {
 		if (!grid) {
 			return;
 		}
-		const formatter = this.make_formatter(tone_fn);
+		const sample_df =
+			(grid.docfields || []).find((d) => d.fieldname === fieldname) ||
+			frappe.meta.get_docfield(grid.doctype, fieldname);
+		const is_check = sample_df?.fieldtype === "Check" || fieldname === "verified";
+		const formatter = is_check
+			? this.make_check_status_formatter(tone_fn)
+			: this.make_formatter(tone_fn);
 		for (const df of grid.docfields || []) {
 			if (df.fieldname === fieldname) {
 				df.formatter = formatter;
@@ -277,13 +356,22 @@ cgm_shipping.status_field = {
 
 		const sf = this;
 		const value = grid_row.doc[fieldname];
-		const tone = tone_fn(value, grid_row.doc);
-		const formatter = sf.make_formatter(tone_fn);
+		const df = grid_row.docfields?.find((d) => d.fieldname === fieldname);
+		const is_check = df?.fieldtype === "Check" || fieldname === "verified";
+		const tone = tone_fn(is_check ? cint(value) : value, grid_row.doc);
+		const formatter = is_check
+			? sf.make_check_status_formatter(tone_fn)
+			: sf.make_formatter(tone_fn);
+		const display_value = is_check
+			? cint(value)
+				? __("Verified by Finance")
+				: __("Pending Verification")
+			: value;
 		const column = grid_row.columns?.[fieldname];
 
-		for (const df of grid_row.docfields || []) {
-			if (df.fieldname === fieldname) {
-				df.formatter = formatter;
+		for (const row_df of grid_row.docfields || []) {
+			if (row_df.fieldname === fieldname) {
+				row_df.formatter = formatter;
 			}
 		}
 
@@ -292,13 +380,13 @@ cgm_shipping.status_field = {
 				sf.reset_select(column.find("select"));
 				return;
 			}
-			sf.paint_status_column(column, value, tone);
+			sf.paint_status_column(column, display_value, tone);
 			return;
 		}
 
 		const $col = grid_row.wrapper?.find(`.grid-static-col[data-fieldname="${fieldname}"]`).first();
 		if ($col.length && !sf.is_status_cell_editing(grid_row, $col)) {
-			sf.paint_status_column($col, value, tone);
+			sf.paint_status_column($col, display_value, tone);
 		}
 	},
 
@@ -374,8 +462,11 @@ cgm_shipping.status_field = {
 		const orig_refresh = grid.refresh.bind(grid);
 		grid.refresh = function (...args) {
 			const result = orig_refresh(...args);
-			setTimeout(() => sf.paint_grid(grid, fieldname, tone_fn), 0);
-			setTimeout(() => sf.paint_grid(grid, fieldname, tone_fn), 100);
+			clearTimeout(grid._cgm_status_paint_timer);
+			grid._cgm_status_paint_timer = setTimeout(
+				() => sf.paint_grid(grid, fieldname, tone_fn),
+				50
+			);
 			return result;
 		};
 	},
@@ -390,12 +481,12 @@ cgm_shipping.status_field = {
 		sf.register_meta_formatter(doctype, fieldname, (value, doc) => tone_fn(value, doc));
 		sf._patch_grid_refresh(grid, fieldname, tone_fn);
 
-		const paint_all = () => sf.paint_grid(grid, fieldname, tone_fn);
 		const schedule_paint = () => {
-			paint_all();
-			setTimeout(paint_all, 0);
-			setTimeout(paint_all, 120);
-			setTimeout(paint_all, 400);
+			clearTimeout(grid._cgm_status_paint_timer);
+			grid._cgm_status_paint_timer = setTimeout(
+				() => sf.paint_grid(grid, fieldname, tone_fn),
+				50
+			);
 		};
 
 		if (!grid._cgm_status_hooks) {
@@ -410,15 +501,13 @@ cgm_shipping.status_field = {
 			const status_select = `.grid-static-col[data-fieldname="${fieldname}"] select`;
 
 			if (frm?.wrapper) {
-				$(frm.wrapper)
-					.on(`grid-row-render${event_ns}`, (e, grid_row) => {
-						if (grid_row?.grid !== grid) {
-							return;
-						}
-						sf.patch_grid_row_refresh_field(grid_row, fieldname, tone_fn);
-						sf.paint_grid_row(grid_row, fieldname, tone_fn);
-					})
-					.on(`click${event_ns}`, () => schedule_paint());
+				$(frm.wrapper).on(`grid-row-render${event_ns}`, (e, grid_row) => {
+					if (grid_row?.grid !== grid) {
+						return;
+					}
+					sf.patch_grid_row_refresh_field(grid_row, fieldname, tone_fn);
+					sf.paint_grid_row(grid_row, fieldname, tone_fn);
+				});
 			}
 
 			$(grid.wrapper)
@@ -442,6 +531,21 @@ function cgm_register_global_status_formatters() {
 	const sf = cgm_shipping.status_field;
 	sf.register_meta_formatter("Permit Register", "status", (value) => sf.tone_for_permit(value));
 	sf.register_meta_formatter("Shipment Document", "status", (value) => sf.tone_for_document(value));
+	sf.register_meta_formatter(
+		"Shipment Document",
+		"final_document_status",
+		(value) => sf.tone_for_final_document_status(value)
+	);
+	sf.register_meta_check_formatter(
+		"Task Finance Line",
+		"verified",
+		(value) => sf.tone_for_verified(value)
+	);
+	sf.register_meta_formatter(
+		"Bill of Lading",
+		"deposit_payment_status",
+		(value) => sf.tone_for_deposit_payment(value)
+	);
 }
 
 function cgm_inject_status_styles() {
@@ -479,8 +583,13 @@ function cgm_patch_frappe_format() {
 
 	frappe.format = function (value, df, options, doc) {
 		const tone_fn = sf.tone_fn_for_docfield(df, doc);
-		if (tone_fn && value && df?.fieldname) {
-			return sf.badge_html(value, tone_fn(value, doc));
+		if (tone_fn && df?.fieldname) {
+			if (df.fieldtype === "Check" || df.fieldname === "verified") {
+				return sf.make_check_status_formatter(tone_fn)(value, df, doc);
+			}
+			if (value) {
+				return sf.badge_html(value, tone_fn(value, doc));
+			}
 		}
 		return orig_format.apply(this, arguments);
 	};
@@ -491,14 +600,19 @@ function cgm_schedule_status_field_setup(frm) {
 		return;
 	}
 	const run = () => {
-		cgm_register_global_status_formatters();
-		cgm_configure_document_status_grids(frm);
-		cgm_configure_permit_status_grids(frm);
-		if (frm.doctype === "Project") {
-			cgm_configure_project_status_fields(frm);
-		}
-		if (frm.doctype === "Task") {
-			cgm_configure_task_status_fields(frm);
+		try {
+			cgm_register_global_status_formatters();
+			cgm_configure_document_status_grids(frm);
+			cgm_configure_permit_status_grids(frm);
+			if (frm.doctype === "Project") {
+				cgm_configure_project_status_fields(frm);
+			}
+			if (frm.doctype === "Task") {
+				cgm_configure_task_status_fields(frm);
+			}
+		} catch (err) {
+			// Never block other form refresh handlers (e.g. Project toolbar buttons).
+			console.error("CGM status field setup failed", err);
 		}
 	};
 	run();
@@ -545,9 +659,19 @@ $(document).on("form-load", function (e, frm) {
 function cgm_configure_document_status_grids(frm) {
 	const sf = cgm_shipping.status_field;
 	const tone = (value, doc) => sf.tone_for_document(value, doc);
+	const final_tone = (value, doc) => sf.tone_for_final_document_status(value, doc);
 
-	for (const fieldname of ["custom_shipment_documents", "custom_task_documents"]) {
+	for (const fieldname of [
+		"custom_shipment_documents",
+		"custom_task_documents",
+		"custom_clients_documents",
+	]) {
 		sf.configure_grid(frm.fields_dict[fieldname]?.grid, "status", tone);
+		sf.configure_grid(
+			frm.fields_dict[fieldname]?.grid,
+			"final_document_status",
+			final_tone
+		);
 	}
 }
 
@@ -562,6 +686,10 @@ function cgm_configure_permit_status_grids(frm) {
 			grid.update_docfield_property("status", "in_list_view", 1);
 		}
 		sf.configure_grid(grid, "status", tone);
+		// Defined in shipment_document_grid.js (app_include / doctype_js). Guard for load order.
+		if (typeof cgm_configure_permit_attach_grid === "function") {
+			cgm_configure_permit_attach_grid(grid);
+		}
 	}
 }
 
@@ -582,7 +710,38 @@ function cgm_configure_task_status_fields(frm) {
 	);
 }
 
+function cgm_stamp_attachment_upload_metadata(cdt, cdn, attachmentField, onField, byField) {
+	const row = locals[cdt][cdn];
+	if (row[attachmentField]) {
+		frappe.model.set_value(cdt, cdn, byField, frappe.session.user);
+		frappe.model.set_value(cdt, cdn, onField, frappe.datetime.now_datetime());
+		return;
+	}
+	frappe.model.set_value(cdt, cdn, byField, "");
+	frappe.model.set_value(cdt, cdn, onField, "");
+}
+
 frappe.ui.form.on("Permit Register", {
+	payment_invoice(frm, cdt, cdn) {
+		cgm_stamp_attachment_upload_metadata(
+			cdt,
+			cdn,
+			"payment_invoice",
+			"invoice_uploaded_on",
+			"invoice_uploaded_by"
+		);
+	},
+
+	permit_document(frm, cdt, cdn) {
+		cgm_stamp_attachment_upload_metadata(
+			cdt,
+			cdn,
+			"permit_document",
+			"certificate_uploaded_on",
+			"certificate_uploaded_by"
+		);
+	},
+
 	status(frm) {
 		setTimeout(() => {
 			cgm_shipping.status_field.repaint_parent_grid(
@@ -612,6 +771,26 @@ frappe.ui.form.on("Permit Register", {
 });
 
 frappe.ui.form.on("Shipment Document", {
+	draft_documents(frm, cdt, cdn) {
+		cgm_stamp_attachment_upload_metadata(
+			cdt,
+			cdn,
+			"draft_documents",
+			"draft_documents_uploaded_on",
+			"draft_documents_uploaded_by"
+		);
+	},
+
+	final_attachment(frm, cdt, cdn) {
+		cgm_stamp_attachment_upload_metadata(
+			cdt,
+			cdn,
+			"final_attachment",
+			"final_document_uploaded_on",
+			"final_document_uploaded_by"
+		);
+	},
+
 	status(frm) {
 		setTimeout(() => {
 			cgm_shipping.status_field.repaint_parent_grid(

@@ -27,8 +27,19 @@ TASK_PERMITS_FIELD = "custom_task_permits"
 TASK_FINANCE_FIELD = "custom_task_finance_lines"
 PERMIT_JOURNAL_ENTRY_FIELD = "journal_entry"
 
+# Finance confirms the client settled a payment directly (no CGM disbursement,
+# so no Journal Entry / Payment Entry exists on the finance task).
+CLIENT_PAID_FIELD = "custom_client_paid_directly"
+CLIENT_PAID_BY_FIELD = "custom_client_paid_confirmed_by"
+CLIENT_PAID_ON_FIELD = "custom_client_paid_confirmed_on"
+
 # Intake documents required before Documents Received workflow state.
 INTAKE_DOCUMENT_CODES = ("CI", "PKL")
+
+# IDF/UCR certificate document codes. The "IDF CERT" Document Type carries the
+# code "IDF Certificate" on live sites, so it must be accepted alongside the
+# short codes or Create UCR (IDF) never auto-completes.
+IDF_CERTIFICATE_CODES = frozenset({"IDF_CERT", "UCR_CERT", "IDF", "IDF Certificate"})
 
 # Sea task completion requirement labels (Settings-driven; defaults for throws).
 PRE_CLEARANCE_STAGE = "Pre-clearance"
@@ -55,13 +66,44 @@ QUOTATION_SI_READY_STATES = frozenset(
 	}
 )
 
-# Sales Invoice finance approval workflow (reuses Quotation state names).
+# Shipment Document final attachment review workflow (child-table state machine).
+APPROVAL_STATUS_DRAFT = "Draft"
+APPROVAL_STATUS_PENDING_REVIEW = "Pending Review"
+APPROVAL_STATUS_APPROVED = "Approved"
+APPROVAL_STATUS_REJECTED = "Rejected"
+APPROVAL_WORKFLOW_ACTION_SEND = "Send for Review"
+APPROVAL_WORKFLOW_ACTION_APPROVE = "Approve"
+APPROVAL_WORKFLOW_ACTION_REJECT = "Reject"
+
+FINAL_DOCUMENT_STATUS_DRAFT = APPROVAL_STATUS_DRAFT
+FINAL_DOCUMENT_STATUS_PENDING_REVIEW = APPROVAL_STATUS_PENDING_REVIEW
+FINAL_DOCUMENT_STATUS_APPROVED = APPROVAL_STATUS_APPROVED
+FINAL_DOCUMENT_STATUS_REJECTED = APPROVAL_STATUS_REJECTED
+FINAL_DOCUMENT_WORKFLOW_ACTION_SEND = APPROVAL_WORKFLOW_ACTION_SEND
+FINAL_DOCUMENT_WORKFLOW_ACTION_APPROVE = APPROVAL_WORKFLOW_ACTION_APPROVE
+FINAL_DOCUMENT_WORKFLOW_ACTION_REJECT = APPROVAL_WORKFLOW_ACTION_REJECT
+FINAL_DOCUMENT_ATTACHMENT_FIELD = "final_attachment"
+FINAL_DOCUMENT_NOTIFICATION = "CGM Shipment Document - Final Document Review"
+
+# Sales Invoice approval workflow (Desk source of truth; distinct from Quotation).
 SALES_INVOICE_WORKFLOW_NAME = "CGM Sales Invoice Approval"
-SALES_INVOICE_WORKFLOW_STATE_DRAFT = QUOTATION_WORKFLOW_STATE_DRAFT
-SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE = QUOTATION_WORKFLOW_STATE_PENDING_FINANCE
-SALES_INVOICE_WORKFLOW_STATE_APPROVED = QUOTATION_WORKFLOW_STATE_APPROVED
-SALES_INVOICE_WORKFLOW_STATE_REJECTED = QUOTATION_WORKFLOW_STATE_REJECTED
+SALES_INVOICE_WORKFLOW_STATE_DRAFT = "Draft"
+SALES_INVOICE_WORKFLOW_STATE_PENDING = "Pending Approval"
+SALES_INVOICE_WORKFLOW_STATE_APPROVED = "Approved"
+SALES_INVOICE_WORKFLOW_STATE_CANCELLED = "Cancelled"
+SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW = "Submit for Review"
+SALES_INVOICE_WORKFLOW_ACTION_APPROVE = "Approve"
+SALES_INVOICE_WORKFLOW_ACTION_REJECT = "Reject"
+SALES_INVOICE_WORKFLOW_ACTION_CANCEL = "Cancel"
+# Legacy — rejection now returns to Draft; kept for migration/backward imports only.
+SALES_INVOICE_WORKFLOW_STATE_REJECTED = "Rejected"
+# Backward-compatible alias for older imports.
+SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE = SALES_INVOICE_WORKFLOW_STATE_PENDING
+# Approve sets this state then submits; ERPNext then owns Sales Invoice.status.
 SALES_INVOICE_SUBMITTABLE_STATES = frozenset({SALES_INVOICE_WORKFLOW_STATE_APPROVED})
+SALES_INVOICE_APPROVED_BY_FIELD = "custom_approved_by"
+SALES_INVOICE_REJECTED_BY_FIELD = "custom_rejected_by"
+SALES_INVOICE_REJECTION_REASON_FIELD = "custom_rejection_reason"
 
 # Customer attach field → Document Type code (until Settings child table exists).
 CUSTOMER_ATTACH_TO_DOCUMENT_CODE = {
@@ -127,15 +169,17 @@ CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 # tracking tasks to override these.
 CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
 	"custom_track_eta_task_seq": 8,
-	"custom_vessel_arrival_task_seq": 11,
-	"custom_field_clearance_task_seq": 18,
-	"custom_kpa_paid_task_seq": 20,
-	"custom_book_trucks_task_seq": 21,
-	"custom_gate_out_task_seq": 22,
-	"custom_monitor_delivery_task_seq": 23,
-	"custom_offload_task_seq": 24,
-	"custom_empty_return_task_seq": 25,
-	"custom_interchange_task_seq": 26,
+	# Bulk vessel-arrival event key used by Project port-arrival confirm.
+	# Not tied to Create Entry — Entry is paperwork-only.
+	"custom_vessel_arrival_task_seq": 12,
+	"custom_field_clearance_task_seq": 17,
+	"custom_kpa_paid_task_seq": 19,
+	"custom_book_trucks_task_seq": 20,
+	"custom_gate_out_task_seq": 21,
+	"custom_monitor_delivery_task_seq": 22,
+	"custom_offload_task_seq": 23,
+	"custom_empty_return_task_seq": 24,
+	"custom_interchange_task_seq": 25,
 }
 
 # Backward-compatible aliases.
@@ -147,10 +191,12 @@ TASK_CONTAINER_TRACKER_FIELD = "custom_container_tracker"
 TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
 TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 
-# Task child table for per-container data entry (tasks 11, 16, 18–24).
+# Task child table for per-container data entry (transport / field clearance / KPA).
+# Seq 12 (Create Entry / vessel-arrival) is a Project→Task mirror only — not a
+# completion gate.
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
-CONTAINER_UPDATE_TASK_SEQS = frozenset({11, 18, 20, 21, 22, 23, 24, 25, 26})
-CONTAINER_UPDATE_SEED_SEQS = frozenset({11, 18, 20, 21, 22, 23, 24, 25, 26})
+CONTAINER_UPDATE_TASK_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
+CONTAINER_UPDATE_SEED_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
 TRANSPORT_TASK_SEQS = frozenset({21, 22, 23, 24, 25, 26})
 
 # Settings fieldnames — bulk events update every tracker on the project.
@@ -178,7 +224,34 @@ DEPOSIT_REFUND_STATUSES = (
 	"Forfeited",
 )
 
-# ERPNext Notification fixture names (see fixtures/notification.json).
+DEPOSIT_PAYMENT_STATUSES = (
+	"Not Applicable",
+	"Unpaid",
+	"Paid",
+)
+
+DEPOSIT_ARRANGEMENT_CONTAINER = "Container Deposit"
+DEPOSIT_ARRANGEMENT_REVOLVING = "Revolving Fund"
+DEPOSIT_ARRANGEMENTS = (
+	DEPOSIT_ARRANGEMENT_CONTAINER,
+	DEPOSIT_ARRANGEMENT_REVOLVING,
+)
+
+DEPOSIT_PAYERS = (
+	"Agent",
+	"Customer",
+	"Company",
+)
+
+# High-level cargo classification (distinct from Container Type size masters).
+CARGO_TYPE_OPTIONS = (
+	"FCL",
+	"LCL",
+	"Breakbulk",
+	"Project Cargo",
+)
+
+# ERPNext Notification names (ensured by patches.ensure_sea_task_notifications).
 FINANCE_PAYMENT_ACTION = "CGM Task - Finance Payment Action"
 PERMIT_INVOICES_TO_FINANCE = "CGM Task - Permit Invoices to Finance"
 PERMIT_RECEIPTS_FOR_DECLARANT = "CGM Task - Permit Receipts for Declarant"
@@ -196,6 +269,30 @@ KPA_INVOICE_TO_FINANCE = "CGM Task - KPA Invoice to Finance"
 KPA_RECEIPT_FOR_SUPERVISOR = "CGM Task - KPA Receipt for Supervisor"
 KPA_RECEIPT_VERIFY_FINANCE = "CGM Task - KPA Receipt Verify Finance"
 DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
+TRANSPORTER_TRUCK_UPDATE = "CGM Operational Update"  # legacy alias
+OPERATIONAL_UPDATE_NOTIFICATION = "CGM Operational Update"
+CONTAINER_DEPOSIT_REFUND_REMINDER = "CGM Container - Deposit Refund Reminder"
+PORTAL_UPDATE_PUBLISHED_NOTIFICATION = "CGM Portal - Update Published"
+PORTAL_FEEDBACK_NOTIFICATION = "CGM Portal - Feedback Received"
+
+# Per-row decisions on Funding Request Material Request child table.
+FR_ROW_DECISION_PENDING = "Pending"
+FR_ROW_DECISION_APPROVED = "Approved"
+FR_ROW_DECISION_REJECTED = "Rejected"
+
+# ── Material Request workflow (separate DocType/workflow — configured in ERPNext) ──
+
+MR_WORKFLOW_STATE_FIELD = "workflow_state"
+MR_WORKFLOW_STATE_DRAFT = "Draft"
+MR_WORKFLOW_STATE_SUBMITTED = "Submitted"
+MR_WORKFLOW_STATE_UNFUNDED = "Unfunded"
+MR_WORKFLOW_STATE_ON_FUNDING_REQUEST = "On Funding Request"
+MR_WORKFLOW_STATE_APPROVED = "Approved"
+MR_WORKFLOW_STATE_DISBURSED = "Disbursed"
+MR_WORKFLOW_STATE_REJECTED = "Rejected"
+MR_WORKFLOW_STATE_CANCELLED = "Cancelled"
+
+MATERIAL_REQUEST_TYPE_OPERATIONAL = "Operational Expense"
 
 # Standard Task fields to hide on all sea clearance tasks (reduce noise).
 SEA_TASK_HIDDEN_FIELDS = (
@@ -217,3 +314,7 @@ SEA_TASK_HIDDEN_FIELDS = (
 	"closing_date",
 	"template_tasks",
 )
+
+# Sales Invoice numbering: INV-MMYY-#### / CR-MMYY-#### (MMYY = month+year from posting date).
+SALES_INVOICE_NAMING_SERIES = "INV-.MMYY.-.####"
+SALES_INVOICE_CREDIT_NOTE_NAMING_SERIES = "CR-.MMYY.-.####"

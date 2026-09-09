@@ -1,0 +1,64 @@
+{
+ "custom_fields": [
+  {
+   "dt": "Employee Advance",
+   "fieldname": "custom_funding_request",
+   "fieldtype": "Link",
+   "label": "Funding Request",
+   "insert_after": "custom_material_request",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Advance-custom_funding_request",
+   "options": "Funding Request",
+   "in_standard_filter": 1
+  },
+  {
+   "dt": "Employee Advance",
+   "fieldname": "custom_material_request",
+   "fieldtype": "Link",
+   "label": "Material Request",
+   "insert_after": "purpose",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Advance-custom_material_request",
+   "options": "Material Request",
+   "in_standard_filter": 1
+  },
+  {
+   "dt": "Employee Advance",
+   "fieldname": "custom_per_diem_days",
+   "fieldtype": "Float",
+   "label": "Per Diem Days",
+   "insert_after": "custom_project",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Advance-custom_per_diem_days",
+   "description": "Leave blank unless this advance is a per diem. Days set here price the advance from the employee's job group.",
+   "non_negative": 1
+  },
+  {
+   "dt": "Employee Advance",
+   "fieldname": "custom_per_diem_rate",
+   "fieldtype": "Currency",
+   "label": "Per Diem Rate (per Day)",
+   "insert_after": "custom_per_diem_days",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Advance-custom_per_diem_rate",
+   "depends_on": "custom_per_diem_days",
+   "read_only": 1
+  },
+  {
+   "dt": "Employee Advance",
+   "fieldname": "custom_project",
+   "fieldtype": "Link",
+   "label": "Project / Shipment",
+   "insert_after": "custom_funding_request",
+   "module": "CGM Worldwide Shipping",
+   "name": "Employee Advance-custom_project",
+   "options": "Project",
+   "in_standard_filter": 1
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "Employee Advance",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}

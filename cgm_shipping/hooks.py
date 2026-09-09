@@ -5,6 +5,12 @@ app_description = "CGM Customizations"
 app_email = "nkubitudouglas@gmail.com"
 app_license = "mit"
 
+naming_series_variables = {
+	"MMYY": [
+		"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.parse_mmyy_naming_series_variable"
+	],
+}
+
 # Apps
 # ------------------
 
@@ -27,21 +33,32 @@ app_license = "mit"
 # include js, css files in header of desk.html
 app_include_css = [
 	"/assets/cgm_shipping/css/project_tracking.css",
+	"/assets/cgm_shipping/css/operational_updates.css",
 	"/assets/cgm_shipping/css/opportunity_intake_wizard.css",
+	"/assets/cgm_shipping/css/cgm_shipping_workspace.css",
 ]
 app_include_js = [
+	# Must load before cgm_status_field.js - status grids call attach helpers from this file.
+	"/assets/cgm_shipping/js/shipment_document_grid.js",
 	"/assets/cgm_shipping/js/cgm_status_field.js",
 	"/assets/cgm_shipping/js/cgm_container_tracking.js",
+	"/assets/cgm_shipping/js/operational_updates_ui.js",
+	"/assets/cgm_shipping/js/cgm_shipping_workspace.js",
+	"/assets/cgm_shipping/js/supplier_link_filters.js",
+	"/assets/cgm_shipping/js/item_link_display.js",
 ]
 
 # include js, css files in header of web template
 # Customer portal: shared design-system CSS + browser-side timezone
 # localization for the /portal, /my-shipments, /shipment and /documents pages.
 web_include_css = [
-    "/assets/cgm_shipping/css/customer_portal.css",
+	"/assets/cgm_shipping/css/customer_portal.css",
+	"/assets/cgm_shipping/css/operational_updates.css",
 ]
 web_include_js = [
-    "/assets/cgm_shipping/js/portal_localize_time.js",
+	"/assets/cgm_shipping/js/portal_localize_time.js",
+	"/assets/cgm_shipping/js/operational_updates_ui.js",
+	"/assets/cgm_shipping/js/portal_conversation.js",
 ]
 
 # include custom scss in every website theme (without file extension ".scss")
@@ -56,40 +73,51 @@ web_include_js = [
 
 # include js in doctype views
 doctype_js = {
+	"CGM Task Template": "public/js/cgm_task_template.js",
+	"CGM Task Template Item": "public/js/cgm_task_template.js",
 	"Task": [
 		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
+		"public/js/attachment_approval_workflow.js",
 		"public/js/task.js",
 	],
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Project": [
-		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
+		"public/js/attachment_approval_workflow.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
+		"public/js/package_field_visibility.js",
 		"public/js/project.js",
-	],
-	"Lead": [
-		"public/js/cgm_transport_reference.js",
-		"public/js/cgm_bl_containers.js",
-		"public/js/crm_lead.js",
 	],
 	"Customer": "public/js/crm_customer.js",
 	"Item": "public/js/item_pricing_rule.js",
 	"Opportunity": [
+		"public/js/package_field_visibility.js",
 		"public/js/opportunity_shipment.js",
 		"public/js/cgm_transport_reference.js",
 		"public/js/cgm_bl_containers.js",
+		"public/js/shipment_document_grid.js",
 		"public/js/crm_opportunity.js",
 		"public/js/opportunity.js",
 	],
 	"Quotation": "public/js/quotation.js",
-	"Sales Order": "public/js/quotation.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
-	# Doctype folder *.js is auto-inlined; only list extra scripts here (not the doctype file itself).
+	"Supplier": "public/js/supplier.js",
+	"Leave Application": "public/js/leave_application.js",
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
+	"Container Tracker": "public/js/portal_engagement.js",
+	"Material Request": "public/js/material_request.js",
+	"Employee Advance": "public/js/employee_advance.js",
+	"Expense Claim": "public/js/expense_claim.js",
+	"Job Applicant": "public/js/job_applicant.js",
+	"Salary Component": "public/js/salary_component.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_list_js = {
+	"Task": "public/js/task_list.js",
+	"Material Request": "public/js/material_request_list.js",
+}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -149,6 +177,9 @@ after_install = "cgm_shipping.install.after_install"
 before_migrate = ["cgm_shipping.install.before_migrate"]
 after_migrate = ["cgm_shipping.install.after_migrate"]
 
+# Desk boot: package-field visibility lists from CGM Shipping Settings.
+extend_bootinfo = "cgm_shipping.boot.extend_bootinfo"
+
 # Uninstallation
 # ------------
 
@@ -200,8 +231,8 @@ override_doctype_class = {
     ["cgm_shipping.cgm_worldwide_shipping.customizations.task.CGMTask"],
     "Quotation":
     "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
-    "Sales Order":
-    "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMSalesOrder",
+    "Salary Slip":
+    "cgm_shipping.cgm_worldwide_shipping.overrides.salary_slip.CGMSalarySlip",
 }
 
 # Document Events
@@ -209,11 +240,25 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	"Salary Component": {
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.validate_net_pay_only_component"
+		],
+		"on_update": [
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
+		],
+		"on_trash": [
+			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.clear_net_pay_only_cache"
+		],
+	},
 	"Project": {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
+		"after_insert": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_after_insert",
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.project.on_project_onload",
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_update",
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_reference_on_save",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_ata_fields",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.apply_shipment_document_automation",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
@@ -221,35 +266,54 @@ doc_events = {
 		],
 	},
 	"Purchase Invoice": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_validate_from_task",
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_validate_from_task",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.transporter_invoice_share.validate_share_with_transporter",
+		],
 		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.task.purchase_invoice_on_submit",
 	},
 	"Payment Entry": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.overrides.payment_entry.validate_shipment_link",
+		],
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_submit",
+		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_payment_entry_on_cancel",
 	},
 	"Sales Invoice": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice_workflow",
+		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_insert_sales_invoice",
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.validate_sales_invoice",
+		"after_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.after_insert_sales_invoice",
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.before_submit_sales_invoice",
-		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
+		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_sales_invoice_cancel",
+		"on_update": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_update_sales_invoice_workflow",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice.on_sales_invoice_update",
+		],
 	},
 	"Journal Entry": {
-		"after_insert": (
+		"after_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_after_insert",
+		],
+		"on_update": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
-		),
-		"on_update": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
-		),
+		],
 		"on_submit": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_submit",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_on_submit",
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.sync_deposit_status_from_journal_entry",
 		],
 		"on_cancel": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.journal_entry_on_cancel",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_on_cancel",
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.sync_deposit_status_from_journal_entry",
 		],
-		"on_update_after_submit": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost"
-		),
+		"on_update_after_submit": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
+			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.sync_deposit_status_from_journal_entry",
+		],
 	},
 	"Customer": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.on_customer_update",
@@ -260,7 +324,47 @@ doc_events = {
 	"Item": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
 	},
+	"Leave Application": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
+	},
+	"Employee Grade": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_job_group_designations",
+	},
+	# before_validate, not validate: the amounts these derive have to be in place
+	# before the HRMS controllers total the document.
+	"Expense Claim": {
+		"before_validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_expense_claim_per_diem",
+	},
+	"Employee Advance": {
+		"before_validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_employee_advance_per_diem",
+	},
+	"Job Applicant": {
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_territory",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.recruitment.validate_job_applicant_opening",
+		],
+	},
+	"Material Request": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_validate",
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_material_request_on_submit",
+	},
+	"Purchase Order": {
+		"after_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_order_after_insert"
+		],
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
+	},
+	"Request for Quotation": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
+	},
+	"Supplier Quotation": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
+	},
+	"Stock Entry": {
+		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.copy_project_to_stock_entry",
+	},
 	"Opportunity": {
+		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.documents.on_opportunity_onload",
 		"before_insert": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.prepare_opportunity_intake",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.assign_opportunity_batch_on_insert",
@@ -270,20 +374,18 @@ doc_events = {
 		],
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.sync_opportunity_intake_on_save",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.sync_opportunity_batch_from_transport_doc",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.documents.normalize_opportunity_clients_documents",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.seed_required_documents_on_opportunity",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_bl_from_clients_documents",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_opportunity_from_linked_awb",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_linked_project_from_opportunity",
 		],
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
 		"before_update_after_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
 		"on_trash": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.clear_back_links_on_trash",
-	},
-	"Lead": {
-		"before_save": (
-			"cgm_shipping.cgm_worldwide_shipping.customizations.shipment.sync_preshipment_containers_from_bl"
-		),
 	},
 	"Task": {
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_onload",
@@ -293,6 +395,9 @@ doc_events = {
 		],
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_update",
 	},
+	"CGM Task Template": {
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.doctype.cgm_task_template.cgm_task_template.sync_open_tasks_from_template",
+	},
 }
 
 # Scheduled Tasks
@@ -301,6 +406,13 @@ doc_events = {
 scheduler_events = {
     "daily": [
         "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
+        "cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.post_all_container_charge_accruals",
+        "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.send_deposit_refund_reminders",
+        # Licence & permit expiry reminders. Periods and recipients live in License Settings.
+        "cgm_shipping.cgm_worldwide_shipping.customizations.license_reminders.send_license_expiry_reminders",
+    ],
+    "hourly": [
+        "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.send_deposit_refund_reminders",
     ],
 }
 
@@ -339,12 +451,17 @@ scheduler_events = {
 # ------------------------------
 #
 override_whitelisted_methods = {
-    "erpnext.selling.doctype.quotation.quotation.make_sales_order":
-    ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_order"
-     ),
     "erpnext.selling.doctype.quotation.quotation.make_sales_invoice":
     ("cgm_shipping.cgm_worldwide_shipping.customizations.quotation.make_sales_invoice"
      ),
+    "erpnext.stock.doctype.material_request.material_request.make_purchase_order":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_purchase_order",
+    "erpnext.stock.doctype.material_request.material_request.make_request_for_quotation":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_request_for_quotation",
+    "erpnext.stock.doctype.material_request.material_request.make_supplier_quotation":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_supplier_quotation",
+    "erpnext.stock.doctype.material_request.material_request.make_purchase_order_based_on_supplier":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_purchase_order_based_on_supplier",
 }
 #
 # each overriding function accepts a `data` argument;
@@ -356,6 +473,10 @@ override_whitelisted_methods = {
 override_doctype_dashboards = {
     "Opportunity":
     "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.get_dashboard_data",
+    "Project":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_project_dashboard_data",
+    "Material Request":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_material_request_dashboard_data",
 }
 
 # exempt linked doctypes from being automatically cancelled
@@ -417,6 +538,13 @@ before_request = [
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+# Fixtures loaded on migrate.
+# CGM Task Template is intentionally NOT listed: company admins edit templates in
+# the browser; seeding only creates missing defaults (see task_template_seed_data).
+fixtures = [
+	"Container Tracker Mode",
+]
 
 # Translation
 # ------------

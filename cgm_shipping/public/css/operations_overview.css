@@ -1,0 +1,988 @@
+/* CGM Operations Overview — management dashboard.
+
+   Shares the visual language of the Container Ops Board (same brand red, same
+   surfaces, same compact type scale) so moving between the two does not feel
+   like moving between two products. It does not share the board's stylesheet,
+   because the board is a height-constrained table view and this page is a
+   scrolling report: the layout rules genuinely differ. */
+
+.cgm-mgmt {
+	--cgm-red: #e31837;
+	--cgm-red-dark: #b8122c;
+	--cgm-surface: #ffffff;
+	--cgm-surface-alt: #f8fafc;
+	--cgm-border: var(--border-color, #e5e7eb);
+	--cgm-text: var(--text-color, #0f172a);
+	--cgm-muted: var(--text-muted, #64748b);
+	--cgm-radius: 12px;
+	--cgm-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.06);
+
+	/* Severity palette. Each level owns a text colour, a soft fill and a
+	   border so a state never depends on colour alone: the card also changes
+	   its left rule weight and, at critical, carries a text label. */
+	--sev-ok-text: #15803d;
+	--sev-ok-bg: #f0fdf4;
+	--sev-ok-border: #bbf7d0;
+	--sev-warn-text: #b45309;
+	--sev-warn-bg: #fffbeb;
+	--sev-warn-border: #fde68a;
+	--sev-crit-text: #b8122c;
+	--sev-crit-bg: #fff1f3;
+	--sev-crit-border: #fecdd3;
+	--sev-nodata-text: #475569;
+	--sev-nodata-bg: #f8fafc;
+	--sev-nodata-border: #e2e8f0;
+
+	background: var(--cgm-surface-alt);
+	color: var(--cgm-text);
+	/* The negative margin lets the page background run edge to edge. Every
+	   inner gutter therefore has to repay that 15px before it produces any
+	   visible breathing room, which is what --gutter does: the 15px is the
+	   repayment, and only the rem part is the margin anyone actually sees.
+	   At 1rem that left just 14px of visible space, so content sat almost
+	   against the window edge on a wide screen. */
+	--gutter: calc(15px + 1.5rem);
+	/* Sides only. Pulling the top up as well overlapped the page head, so the
+	   board sat on top of the header controls. */
+	margin: 0 -15px;
+	padding: 0 0 1.75rem;
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* ---------- header ---------- */
+
+.cgm-mgmt-top {
+	position: sticky;
+	/* Not top: 0. Frappe's .page-head is itself sticky at top: 0, is 48px
+	   tall and sits at z-index 6, so a bar pinned to 0 parks underneath it
+	   and is simply never seen. Parking below the page head instead is what
+	   makes this actually freeze on scroll. */
+	top: var(--page-head-height, 48px);
+	/* Below the page head, which owns the refresh and overflow controls:
+	   painting over those makes them unclickable, which is what once hid the
+	   menu. Above the page content, which sets no z-index of its own. */
+	z-index: 5;
+	/* Opaque, and with a shadow, because content scrolls behind it: a
+	   translucent bar would let rows show through the filters. */
+	background: var(--cgm-surface);
+	border-bottom: 1px solid var(--cgm-border);
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+	padding: 0.45rem var(--gutter) 0.4rem;
+}
+
+.cgm-mgmt-subtitle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	flex-wrap: wrap;
+	margin-bottom: 0.35rem;
+}
+
+/* The status chip takes the tone of the worst thing on the page, so its
+   colour is information rather than decoration. */
+.cgm-mgmt-subtitle span.tag {
+	border-radius: 999px;
+	padding: 0.15rem 0.6rem;
+	font-size: 0.62rem;
+	font-weight: 600;
+	border: 1px solid transparent;
+}
+
+.cgm-mgmt-subtitle span.tag.tone-ok {
+	background: var(--sev-ok-bg);
+	color: var(--sev-ok-text);
+	border-color: var(--sev-ok-border);
+}
+
+.cgm-mgmt-subtitle span.tag.tone-warn {
+	background: var(--sev-warn-bg);
+	color: var(--sev-warn-text);
+	border-color: var(--sev-warn-border);
+}
+
+.cgm-mgmt-subtitle span.tag.tone-critical {
+	background: var(--sev-crit-bg);
+	color: var(--sev-crit-text);
+	border-color: var(--sev-crit-border);
+}
+
+/* Holds the status chip. It shares the row with the timestamp, so it is
+   allowed to shrink rather than pushing the stamp off the edge on a long
+   list of findings. */
+.cgm-mgmt-status {
+	min-width: 0;
+}
+
+.cgm-mgmt-stamp {
+	font-size: 0.6rem;
+	color: var(--cgm-muted);
+}
+
+.cgm-mgmt-filters {
+	display: flex;
+	gap: 0.4rem;
+	flex-wrap: wrap;
+	align-items: flex-end;
+}
+
+.cgm-mgmt-filter-field {
+	flex: 1 1 118px;
+	min-width: 104px;
+	max-width: 175px;
+}
+
+/* A date range holds two dates and a separator, so it needs more room than
+   the single-value controls beside it. */
+.cgm-mgmt-filter-date_range {
+	flex: 1 1 186px;
+	min-width: 186px;
+	max-width: 230px;
+}
+
+.cgm-mgmt-filter-field .frappe-control {
+	margin-bottom: 0;
+}
+
+/* Every filter printed its label above the box and then repeated the same
+   words as the placeholder inside it, which cost a whole row of height for
+   no information. The label is hidden visually rather than deleted, so
+   screen readers still announce the field: a placeholder is not a label. */
+.cgm-mgmt-filter-field .control-label {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+.cgm-mgmt-filter-field input,
+.cgm-mgmt-filter-field select,
+.cgm-mgmt-filter-field .awesomplete input {
+	font-size: 0.7rem !important;
+	height: 24px !important;
+	min-height: 24px !important;
+	padding: 0 0.4rem !important;
+}
+
+.cgm-mgmt-filter-field .placeholder {
+	font-size: 0.7rem !important;
+}
+
+/* ---------- headline cards ---------- */
+
+.cgm-mgmt-kpis {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 0.5rem;
+	padding: 0.45rem var(--gutter) 0;
+}
+
+.cgm-mgmt-kpi {
+	position: relative;
+	background: var(--cgm-surface);
+	border: 1px solid var(--cgm-border);
+	border-left: 3px solid var(--cgm-border);
+	border-radius: var(--cgm-radius);
+	padding: 0.35rem 0.5rem 0.4rem;
+	box-shadow: var(--cgm-shadow);
+	overflow: hidden;
+}
+
+/* Value and severity badge share one line. The badge is centred against the
+   number rather than the top of the card, so a long currency string and a
+   short integer both sit level with their flag. */
+.cgm-mgmt-kpi-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.35rem;
+	min-width: 0;
+}
+
+.cgm-mgmt-kpi .value {
+	text-align: left;
+	font-size: 1rem;
+	font-weight: 700;
+	line-height: 1.2;
+	color: var(--cgm-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.cgm-mgmt-kpi .label {
+	font-size: 0.6rem;
+	font-weight: 600;
+	color: var(--cgm-text);
+	line-height: 1.25;
+}
+
+/* The hints vary from three words to a full sentence. Clamping to two lines
+   keeps every card in the row the same height, which is what makes the strip
+   scannable; the full text stays available on hover. */
+.cgm-mgmt-kpi .hint {
+	font-size: 0.55rem;
+	color: var(--cgm-muted);
+	margin-top: 0.1rem;
+	line-height: 1.25;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	overflow: hidden;
+}
+
+.cgm-mgmt-kpi.sev-ok {
+	border-left-color: var(--sev-ok-border);
+}
+
+.cgm-mgmt-kpi.sev-warn {
+	border-left-color: #f59e0b;
+	background: var(--sev-warn-bg);
+}
+
+.cgm-mgmt-kpi.sev-warn .value {
+	color: var(--sev-warn-text);
+}
+
+.cgm-mgmt-kpi.sev-critical {
+	border-left-color: var(--cgm-red);
+	background: var(--sev-crit-bg);
+}
+
+.cgm-mgmt-kpi.sev-critical .value {
+	color: var(--sev-crit-text);
+}
+
+.cgm-mgmt-kpi.sev-nodata {
+	border-left-color: var(--sev-nodata-border);
+	background: var(--sev-nodata-bg);
+}
+
+.cgm-mgmt-kpi.sev-nodata .value {
+	color: var(--sev-nodata-text);
+	opacity: 0.55;
+}
+
+/* A badge rather than colour alone, so the state survives greyscale printing
+   and colour vision deficiency. */
+.cgm-mgmt-kpi .flag {
+	font-size: 0.48rem;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	padding: 0.02rem 0.28rem;
+	border-radius: 999px;
+	white-space: nowrap;
+	flex: 0 0 auto;
+}
+
+.cgm-mgmt-kpi.sev-warn .flag {
+	background: var(--sev-warn-border);
+	color: var(--sev-warn-text);
+}
+
+.cgm-mgmt-kpi.sev-critical .flag {
+	background: var(--cgm-red);
+	color: #fff;
+}
+
+.cgm-mgmt-kpi.sev-nodata .flag {
+	background: var(--sev-nodata-border);
+	color: var(--sev-nodata-text);
+}
+
+/* The attention pulse for critical numbers. It is a slow 1.6s fade of a
+   surrounding glow, not a hard on/off blink: anything faster than about 3Hz
+   is both a seizure risk and unreadable, and the number itself must stay
+   legible the whole time. Motion is dropped entirely for anyone who has
+   asked their system for reduced motion, where the static ring carries the
+   same meaning. */
+@keyframes cgm-mgmt-pulse {
+	0%,
+	100% {
+		box-shadow: var(--cgm-shadow), 0 0 0 0 rgba(227, 24, 55, 0);
+	}
+	50% {
+		box-shadow: var(--cgm-shadow), 0 0 0 4px rgba(227, 24, 55, 0.22);
+	}
+}
+
+.cgm-mgmt-kpi.sev-critical.is-pulsing {
+	animation: cgm-mgmt-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.cgm-mgmt-kpi.sev-critical.is-pulsing {
+		animation: none;
+		box-shadow: var(--cgm-shadow), 0 0 0 3px rgba(227, 24, 55, 0.28);
+	}
+}
+
+/* ---------- panels ---------- */
+
+.cgm-mgmt-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+	gap: 0.6rem;
+	padding: 0.7rem var(--gutter) 0;
+	/* stretch, not start: the JS orders panels so that each row holds panels
+	   of similar height, and stretching then squares the row off exactly.
+	   With the old start alignment the row stayed ragged at the bottom. */
+	align-items: stretch;
+}
+
+.cgm-mgmt-panel {
+	display: flex;
+	flex-direction: column;
+	background: var(--cgm-surface);
+	border: 1px solid var(--cgm-border);
+	border-radius: var(--cgm-radius);
+	box-shadow: var(--cgm-shadow);
+	overflow: hidden;
+}
+
+.cgm-mgmt-panel.is-wide {
+	grid-column: 1 / -1;
+}
+
+.cgm-mgmt-panel-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem;
+	padding: 0.45rem 0.6rem;
+	background: linear-gradient(180deg, #f4f7fb 0%, #e7eef7 100%);
+	border-bottom: 2px solid rgba(227, 24, 55, 0.65);
+}
+
+.cgm-mgmt-panel-title {
+	font-size: 0.62rem;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: #33445c;
+}
+
+.cgm-mgmt-panel-note {
+	font-size: 0.58rem;
+	color: var(--cgm-muted);
+}
+
+.cgm-mgmt-panel-body {
+	flex: 1 1 auto;
+	padding: 0.5rem 0.6rem 0.6rem;
+}
+
+/* ---------- rows, bars, tables ---------- */
+
+.cgm-mgmt-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.22rem 0;
+	font-size: 0.66rem;
+}
+
+.cgm-mgmt-row + .cgm-mgmt-row {
+	border-top: 1px solid #f1f5f9;
+}
+
+.cgm-mgmt-row .name {
+	color: var(--cgm-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.cgm-mgmt-row .num {
+	font-weight: 700;
+	white-space: nowrap;
+}
+
+.cgm-mgmt-row .sub {
+	font-size: 0.58rem;
+	color: var(--cgm-muted);
+	font-weight: 500;
+	margin-left: 0.3rem;
+}
+
+.cgm-mgmt-bar {
+	grid-column: 1 / -1;
+	height: 4px;
+	border-radius: 999px;
+	background: #eef2f7;
+	overflow: hidden;
+}
+
+.cgm-mgmt-bar > span {
+	display: block;
+	height: 100%;
+	border-radius: 999px;
+	background: linear-gradient(90deg, #60a5fa, #2563eb);
+}
+
+.cgm-mgmt-bar.is-warn > span {
+	background: linear-gradient(90deg, #fbbf24, #d97706);
+}
+
+.cgm-mgmt-bar.is-critical > span {
+	background: linear-gradient(90deg, #fb7185, var(--cgm-red));
+}
+
+.cgm-mgmt-callout {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.4rem;
+	padding: 0.4rem 0.5rem;
+	border-radius: 8px;
+	font-size: 0.62rem;
+	line-height: 1.4;
+	margin-bottom: 0.45rem;
+}
+
+.cgm-mgmt-callout.tone-critical {
+	background: var(--sev-crit-bg);
+	border: 1px solid var(--sev-crit-border);
+	color: var(--sev-crit-text);
+}
+
+.cgm-mgmt-callout.tone-warn {
+	background: var(--sev-warn-bg);
+	border: 1px solid var(--sev-warn-border);
+	color: var(--sev-warn-text);
+}
+
+.cgm-mgmt-callout.tone-info {
+	background: #eff6ff;
+	border: 1px solid #bfdbfe;
+	color: #1d4ed8;
+}
+
+.cgm-mgmt-callout strong {
+	font-weight: 700;
+}
+
+.cgm-mgmt-money {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	margin-bottom: 0.45rem;
+}
+
+.cgm-mgmt-money-item {
+	flex: 1 1 120px;
+	background: var(--cgm-surface-alt);
+	border: 1px solid var(--cgm-border);
+	border-radius: 8px;
+	padding: 0.35rem 0.45rem;
+}
+
+.cgm-mgmt-money-item .amt {
+	font-size: 0.85rem;
+	font-weight: 700;
+	color: var(--cgm-text);
+}
+
+.cgm-mgmt-money-item .cur {
+	font-size: 0.58rem;
+	color: var(--cgm-muted);
+	font-weight: 600;
+}
+
+.cgm-mgmt-empty {
+	font-size: 0.62rem;
+	color: var(--cgm-muted);
+	padding: 0.5rem 0;
+	text-align: center;
+}
+
+.cgm-mgmt-loading {
+	padding: 2rem;
+	text-align: center;
+	font-size: 0.7rem;
+	color: var(--cgm-muted);
+}
+
+.cgm-mgmt-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.05rem 0.35rem;
+	border-radius: 999px;
+	font-size: 0.58rem;
+	font-weight: 600;
+	border: 1px solid transparent;
+}
+
+.cgm-mgmt-pill.tone-ok {
+	background: var(--sev-ok-bg);
+	color: var(--sev-ok-text);
+	border-color: var(--sev-ok-border);
+}
+
+.cgm-mgmt-pill.tone-warn {
+	background: var(--sev-warn-bg);
+	color: var(--sev-warn-text);
+	border-color: var(--sev-warn-border);
+}
+
+.cgm-mgmt-pill.tone-critical {
+	background: var(--sev-crit-bg);
+	color: var(--sev-crit-text);
+	border-color: var(--sev-crit-border);
+}
+
+.cgm-mgmt-pill.tone-muted {
+	background: var(--sev-nodata-bg);
+	color: var(--sev-nodata-text);
+	border-color: var(--sev-nodata-border);
+}
+
+/* Wide screens can spare more edge, narrow ones cannot: the gutter grows
+   with the window rather than being one fixed value everywhere. */
+@media (min-width: 1200px) {
+	.cgm-mgmt {
+		--gutter: calc(15px + 2rem);
+	}
+}
+
+@media (max-width: 640px) {
+	.cgm-mgmt {
+		--gutter: calc(15px + 0.75rem);
+	}
+
+	.cgm-mgmt-kpis {
+		grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+	}
+
+	.cgm-mgmt-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* ---------- finance panels ---------- */
+
+.cgm-mgmt-money-item .amt.is-pos {
+	color: var(--sev-ok-text);
+}
+
+.cgm-mgmt-money-item .amt.is-neg {
+	color: var(--sev-crit-text);
+}
+
+.cgm-mgmt-row .num.is-pos {
+	color: var(--sev-ok-text);
+}
+
+.cgm-mgmt-row .num.is-neg {
+	color: var(--sev-crit-text);
+}
+
+.cgm-mgmt-bar.is-ok > span {
+	background: linear-gradient(90deg, #4ade80, #15803d);
+}
+
+/* Income and expense stacked for the same month, so the gap between the two
+   bars is the month's margin at a glance. */
+.cgm-mgmt-dual {
+	grid-column: 1 / -1;
+	display: grid;
+	gap: 2px;
+}
+
+.cgm-mgmt-subhead {
+	font-size: 0.58rem;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--cgm-muted);
+	margin: 0.5rem 0 0.15rem;
+	padding-top: 0.35rem;
+	border-top: 1px solid var(--cgm-border);
+}
+
+/* Trend rows carry a two-bar stack, so they need a little more vertical room
+   than a plain row and a slightly quieter month label. */
+.cgm-mgmt-row.cgm-mgmt-trend {
+	padding: 0.3rem 0;
+}
+
+.cgm-mgmt-row.cgm-mgmt-trend .name {
+	color: var(--cgm-muted);
+	font-size: 0.62rem;
+}
+
+/* A card that drills through is a real <button>, so the browser's default
+   button chrome has to be reset back to the card's own look. */
+.cgm-mgmt-kpi.is-clickable {
+	display: block;
+	width: 100%;
+	text-align: left;
+	font: inherit;
+	cursor: pointer;
+	transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.cgm-mgmt-kpi.is-clickable:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 2px 4px rgba(15, 23, 42, 0.06), 0 8px 20px rgba(15, 23, 42, 0.1);
+}
+
+.cgm-mgmt-kpi.is-clickable:focus-visible {
+	outline: 2px solid var(--cgm-red);
+	outline-offset: 2px;
+}
+
+/* The hover lift must not fight the critical pulse, which also writes to
+   box-shadow: whichever declaration lands last would win outright. */
+.cgm-mgmt-kpi.is-clickable.is-pulsing:hover {
+	transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.cgm-mgmt-kpi.is-clickable {
+		transition: none;
+	}
+
+	.cgm-mgmt-kpi.is-clickable:hover {
+		transform: none;
+	}
+}
+
+/* Exposure tiles read as amount, then what the charge is, then how widely it
+   is spread. The currency code is a quiet tag: with KES and USD side by side
+   the symbol alone is not always enough to tell them apart. */
+.cgm-mgmt-money-item .cur .code {
+	display: inline-block;
+	margin-left: 0.2rem;
+	padding: 0 0.25rem;
+	border-radius: 4px;
+	background: #eef2f7;
+	color: var(--cgm-muted);
+	font-size: 0.52rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+}
+
+.cgm-mgmt-money-item .sub {
+	font-size: 0.54rem;
+	color: var(--cgm-muted);
+	margin-top: 0.1rem;
+}
+
+/* Currency chips. They live inside the Cost Exposure panel because that is
+   the only place the choice changes anything, so the scope of the control is
+   visible from where it sits. */
+.cgm-mgmt-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+	margin-bottom: 0.5rem;
+}
+
+.cgm-mgmt-chip {
+	border: 1px solid var(--cgm-border);
+	background: var(--cgm-surface);
+	color: var(--cgm-muted);
+	border-radius: 999px;
+	padding: 0.1rem 0.5rem;
+	font-size: 0.58rem;
+	font-weight: 600;
+	line-height: 1.5;
+	cursor: pointer;
+}
+
+.cgm-mgmt-chip:hover {
+	border-color: #cbd5e1;
+	color: var(--cgm-text);
+}
+
+.cgm-mgmt-chip.is-active {
+	background: var(--cgm-red);
+	border-color: var(--cgm-red);
+	color: #fff;
+}
+
+.cgm-mgmt-chip:focus-visible {
+	outline: 2px solid var(--cgm-red);
+	outline-offset: 2px;
+}
+
+/* While new numbers are loading the panels stay exactly where they are and
+   simply dim. Replacing them with a spinner collapsed the page height, which
+   is what made the view jump back to the top on every filter change. */
+.cgm-mgmt-grid.is-busy {
+	opacity: 0.5;
+	pointer-events: none;
+	transition: opacity 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.cgm-mgmt-grid.is-busy {
+		transition: none;
+	}
+}
+
+/* ---------- drill-down dialog ---------- */
+
+.cgm-mgmt-dialog-loading,
+.cgm-mgmt-dialog-empty {
+	padding: 1.5rem;
+	text-align: center;
+	font-size: 0.75rem;
+	color: var(--text-muted, #64748b);
+}
+
+/* Search on the left, the record count on the right, so the count sits
+   beside the thing that changes it. */
+.cgm-mgmt-dialog-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin-bottom: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.cgm-mgmt-dialog-search {
+	flex: 1 1 200px;
+	max-width: 320px;
+	height: 28px !important;
+	min-height: 28px !important;
+	font-size: 0.72rem !important;
+	padding: 0 0.5rem !important;
+}
+
+.cgm-mgmt-dialog-note {
+	font-size: 0.7rem;
+	color: var(--text-muted, #64748b);
+	text-align: right;
+	flex: 0 1 auto;
+}
+
+/* The dialog is capped in height and scrolls internally, so a hundred rows
+   cannot push the dialog past the bottom of the viewport. */
+.cgm-mgmt-dialog-scroll {
+	max-height: 60vh;
+	overflow: auto;
+	border: 1px solid var(--border-color, #e5e7eb);
+	border-radius: 8px;
+}
+
+.cgm-mgmt-dialog-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.72rem;
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+.cgm-mgmt-dialog-table th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	text-align: left;
+	font-size: 0.62rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	color: #33445c;
+	background: linear-gradient(180deg, #f4f7fb 0%, #e7eef7 100%);
+	border-bottom: 2px solid rgba(227, 24, 55, 0.65);
+	padding: 0.35rem 0.5rem;
+	white-space: nowrap;
+}
+
+.cgm-mgmt-dialog-table td {
+	padding: 0.3rem 0.5rem;
+	border-bottom: 1px solid #f1f5f9;
+	white-space: nowrap;
+}
+
+.cgm-mgmt-dialog-table tbody tr:last-child td {
+	border-bottom: 0;
+}
+
+.cgm-mgmt-dialog-table tbody tr:hover td {
+	background: #f8fafc;
+}
+
+.cgm-mgmt-dialog-table .muted {
+	color: var(--text-muted, #64748b);
+	opacity: 0.65;
+}
+
+/* Row numbers in the drill-down dialog. Narrow, right aligned so the digits
+   line up as the count passes 9 and 99, and muted because the number is a
+   position marker rather than data from the record. */
+.cgm-mgmt-dialog-table th.rownum,
+.cgm-mgmt-dialog-table td.rownum {
+	width: 1%;
+	text-align: right;
+	padding-right: 0.4rem;
+	color: var(--text-muted, #64748b);
+}
+
+.cgm-mgmt-dialog-table td.rownum {
+	font-size: 0.66rem;
+	background: #fafbfc;
+}
+
+/* When the empty state is a table cell rather than a panel, it needs to sit
+   centred across the full row without the standalone block padding. */
+.cgm-mgmt-dialog-table td.cgm-mgmt-dialog-empty {
+	padding: 1.25rem 0.5rem;
+	text-align: center;
+	white-space: normal;
+}
+
+/* The drill-down dialog's primary action. Scoped to .cgm-mgmt-dialog so it
+   restyles this one button and leaves every other frappe dialog alone.
+
+   Selector mirrors frappe's own get_primary_btn(), which looks the button up
+   as .standard-actions .btn-primary, and carries one extra class so it wins
+   the cascade outright rather than relying on load order.
+
+   Filled amber rather than a brighter orange: white on #ea580c measures
+   3.56:1, which fails for button text, while #c2410c clears it at 5.18:1
+   and still reads as warm. */
+.cgm-mgmt-dialog .modal-footer .standard-actions .btn-primary {
+	background: #c2410c;
+	border-color: #c2410c;
+	color: #ffffff;
+	font-weight: 600;
+	box-shadow: 0 1px 2px rgba(154, 52, 18, 0.25);
+}
+
+.cgm-mgmt-dialog .modal-footer .standard-actions .btn-primary:hover {
+	background: #9a3412;
+	border-color: #9a3412;
+	color: #ffffff;
+}
+
+.cgm-mgmt-dialog .modal-footer .standard-actions .btn-primary:focus-visible {
+	outline: 2px solid #9a3412;
+	outline-offset: 2px;
+}
+
+.cgm-mgmt-dialog .modal-footer .standard-actions .btn-primary:active {
+	background: #7c2d12;
+	border-color: #7c2d12;
+}
+
+/* ---------- filter dropdowns ---------- */
+
+/* Link filters render an Awesomplete list whose options are
+   "<strong>Label</strong><br><span class='small'>description</span>". Nothing
+   here sized them, so they inherited the desk's default and towered over a
+   dashboard whose own text is 0.62 to 0.7rem. Both halves are pinned to the
+   same scale the panels use: the label reads as a row, the description as the
+   quieter sub-line beneath it. */
+.cgm-mgmt-filter-field .awesomplete > [role="listbox"] {
+	z-index: 1000;
+	/* A long client list otherwise runs off the bottom of the screen with no
+	   way to reach the end. */
+	max-height: 320px;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	min-width: 100%;
+	width: max-content;
+	max-width: 320px;
+	padding: 0.25rem;
+	border: 1px solid var(--cgm-border);
+	border-radius: 10px;
+	background: var(--cgm-surface);
+	box-shadow: var(--cgm-shadow);
+}
+
+.cgm-mgmt-filter-field .awesomplete > [role="listbox"] li {
+	padding: 0.25rem 0.4rem;
+	border-radius: 7px;
+	font-size: 0.7rem;
+	line-height: 1.35;
+	/* Long company names stay readable rather than being cut mid-word. */
+	white-space: normal;
+	word-break: break-word;
+}
+
+.cgm-mgmt-filter-field .awesomplete > [role="listbox"] li strong {
+	font-weight: 600;
+}
+
+/* The description line. .small is a bootstrap class carrying its own size,
+   so it has to be set explicitly rather than left to inherit. */
+.cgm-mgmt-filter-field .awesomplete > [role="listbox"] li .small {
+	font-size: 0.62rem;
+	line-height: 1.3;
+	color: var(--cgm-muted);
+}
+
+.cgm-mgmt-filter-field .awesomplete > [role="listbox"] li[aria-selected="true"],
+.cgm-mgmt-filter-field .awesomplete > [role="listbox"] li:hover {
+	background: #fff7ed;
+	color: #9a3412;
+}
+
+.cgm-mgmt-filter-field .awesomplete > [role="listbox"] li[aria-selected="true"] .small,
+.cgm-mgmt-filter-field .awesomplete > [role="listbox"] li:hover .small {
+	color: #9a3412;
+}
+
+/* Note explaining which panels a filter has hidden. Quiet and neutral: it is
+   an explanation, not a warning about anything being wrong. */
+.cgm-mgmt-hidden-note {
+	padding: 0.45rem var(--gutter) 0;
+}
+
+.cgm-mgmt-hidden-note .tag {
+	display: inline-block;
+	background: var(--cgm-surface);
+	border: 1px dashed var(--cgm-border);
+	color: var(--cgm-muted);
+	border-radius: 999px;
+	padding: 0.12rem 0.6rem;
+	font-size: 0.6rem;
+	font-weight: 500;
+}
+
+/* Totals footer in the drill-down dialog. Pinned to the bottom of the scroll
+   box the same way the header is pinned to the top, so the total stays
+   readable while working down a long list rather than only appearing once the
+   reader has scrolled all the way to the end. */
+.cgm-mgmt-dialog-table tfoot td {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	background: #f8fafc;
+	border-top: 1px solid var(--border-color, #e5e7eb);
+	padding: 0.3rem 0.5rem;
+	white-space: nowrap;
+}
+
+.cgm-mgmt-dialog-table tfoot .total-value {
+	font-weight: 700;
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+.cgm-mgmt-dialog-table tfoot .total-label {
+	text-align: right;
+	font-weight: 700;
+	color: var(--text-muted, #64748b);
+}
+
+/* The caption sits under the figures rather than beside them, so the number
+   columns stay aligned with the rows above instead of being pushed across by
+   a label sharing their cells. */
+.cgm-mgmt-dialog-table tfoot .total-caption td {
+	bottom: 0;
+	border-top: 0;
+	padding-top: 0;
+	font-size: 0.6rem;
+	color: var(--text-muted, #64748b);
+	text-align: right;
+}

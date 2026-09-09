@@ -7,6 +7,7 @@ const CGM_CONTAINER_TRACKING_PROJECT_KEY = "cgm_container_tracking_project";
 const MODE_SECTIONS = {
 	"Mombasa Port": [
 		"section_identity",
+		"section_seal",
 		"section_dates",
 		"section_mombasa",
 		"section_warehouse",
@@ -17,6 +18,7 @@ const MODE_SECTIONS = {
 	],
 	"ICD Nairobi": [
 		"section_identity",
+		"section_seal",
 		"section_dates",
 		"section_icd",
 		"section_warehouse",
@@ -27,6 +29,7 @@ const MODE_SECTIONS = {
 	],
 	"Transit Export": [
 		"section_identity",
+		"section_seal",
 		"section_dates",
 		"section_mombasa",
 		"section_transit",
@@ -37,6 +40,7 @@ const MODE_SECTIONS = {
 	],
 	"Transit Import": [
 		"section_identity",
+		"section_seal",
 		"section_dates",
 		"section_mombasa",
 		"section_transit",
@@ -47,6 +51,7 @@ const MODE_SECTIONS = {
 	],
 	Export: [
 		"section_identity",
+		"section_seal",
 		"section_dates",
 		"section_export",
 		"section_transit",
@@ -55,6 +60,34 @@ const MODE_SECTIONS = {
 		"section_kpa_free_days",
 	],
 };
+
+const TRANSIT_ONLY_FIELDS = ["warehouse_loading_date"];
+
+const MODE_SECTION_FIELDNAMES = [...new Set(Object.values(MODE_SECTIONS).flat())];
+
+function is_transit_container_mode(mode) {
+	return (mode || "").includes("Transit");
+}
+
+function resolve_mode_sections(mode) {
+	const normalized = (mode || "").trim();
+	if (MODE_SECTIONS[normalized]) {
+		return MODE_SECTIONS[normalized];
+	}
+	if (normalized.includes("ICD")) {
+		return MODE_SECTIONS["ICD Nairobi"];
+	}
+	if (normalized.includes("Transit Export")) {
+		return MODE_SECTIONS["Transit Export"];
+	}
+	if (normalized.includes("Transit")) {
+		return MODE_SECTIONS["Transit Import"];
+	}
+	if (normalized.includes("Export")) {
+		return MODE_SECTIONS.Export;
+	}
+	return MODE_SECTIONS["Mombasa Port"];
+}
 
 function lock_transport_assignment_fields(frm) {
 	const can_override =
@@ -66,18 +99,51 @@ function lock_transport_assignment_fields(frm) {
 	});
 }
 
-function apply_container_mode_layout(frm) {
-	const mode = frm.doc.container_mode || "Mombasa Port";
-	const show = new Set(MODE_SECTIONS[mode] || MODE_SECTIONS["Mombasa Port"]);
-	Object.keys(frm.fields_dict).forEach((fn) => {
-		const f = frm.fields_dict[fn];
-		if (!f || f.df.fieldtype !== "Section Break") {
+function apply_container_mode_layout(frm, mode) {
+	const effective_mode = mode || frm.doc.container_mode;
+	const show = new Set(resolve_mode_sections(effective_mode));
+
+	MODE_SECTION_FIELDNAMES.forEach((section_fieldname) => {
+		if (!frm.fields_dict[section_fieldname]) {
 			return;
 		}
-		if (fn.startsWith("section_")) {
-			frm.set_df_property(fn, "hidden", show.has(fn) ? 0 : 1);
+		frm.set_df_property(section_fieldname, "hidden", show.has(section_fieldname) ? 0 : 1);
+	});
+
+	const show_transit_fields = is_transit_container_mode(effective_mode);
+	TRANSIT_ONLY_FIELDS.forEach((fieldname) => {
+		if (frm.fields_dict[fieldname]) {
+			frm.set_df_property(fieldname, "hidden", show_transit_fields ? 0 : 1);
 		}
 	});
+
+	if (frm.layout) {
+		frm.layout.refresh_sections();
+		frm.layout.refresh_tabs();
+	}
+}
+
+function refresh_container_mode_layout(frm) {
+	if (!frm.doc.project) {
+		apply_container_mode_layout(frm);
+		return;
+	}
+	frappe.db.get_value(
+		"Project",
+		frm.doc.project,
+		"custom_container_tracker_mode",
+		(r) => {
+			if (cur_frm !== frm) {
+				return;
+			}
+			const mode = r?.custom_container_tracker_mode || frm.doc.container_mode;
+			if (mode && frm.doc.container_mode !== mode) {
+				frm.set_value("container_mode", mode);
+				return;
+			}
+			apply_container_mode_layout(frm, mode);
+		}
+	);
 }
 
 function fetch_bl_container_options(bill_of_lading) {
@@ -274,8 +340,10 @@ function render_container_tracker_alerts(frm) {
 	frm.dashboard.clear_comment();
 	const d = frm.doc;
 	let alert = null;
+	const return_done = d.interchange_date || d.actual_empty_return;
 
-	if ((d.free_days_end_date || d.free_days_start_date) && !d.gate_out_date_port) {
+	// Still at port only: do not keep accruing against today after empty return / interchange.
+	if ((d.free_days_end_date || d.free_days_start_date) && !d.gate_out_date_port && !return_done) {
 		const today = frappe.datetime.get_today();
 		if (d.free_days_end_date) {
 			const remaining = frappe.datetime.get_diff(d.free_days_end_date, today);
@@ -283,7 +351,7 @@ function render_container_tracker_alerts(frm) {
 				const overdue = Math.abs(remaining);
 				alert = {
 					msg: __(
-						"Demurrage accruing — {0} day(s) past the free period end date",
+						"Demurrage accruing - {0} day(s) past the free period end date",
 						[overdue]
 					),
 					color: "red",
@@ -291,7 +359,7 @@ function render_container_tracker_alerts(frm) {
 			} else if (remaining <= 2) {
 				alert = {
 					msg: __(
-						"Free days expiring — only {0} day(s) remaining before demurrage starts",
+						"Free days expiring - only {0} day(s) remaining before demurrage starts",
 						[remaining]
 					),
 					color: "orange",
@@ -307,7 +375,6 @@ function render_container_tracker_alerts(frm) {
 		}
 	}
 
-	const return_done = d.interchange_date || d.actual_empty_return;
 	if (d.expected_empty_return && !return_done) {
 		const diff = frappe.datetime.get_diff(
 			frappe.datetime.get_today(),
@@ -316,7 +383,7 @@ function render_container_tracker_alerts(frm) {
 		if (diff > 0) {
 			alert = {
 				msg: __(
-					"Return overdue by {0} day(s) — contact transporter immediately. Demurrage/detention charges may be accruing.",
+					"Return overdue by {0} day(s) - contact transporter immediately. Demurrage/detention charges may be accruing.",
 					[diff]
 				),
 				color: "red",
@@ -324,7 +391,7 @@ function render_container_tracker_alerts(frm) {
 		} else if (diff >= -3) {
 			alert = {
 				msg: __(
-					"Container return due in {0} day(s) — arrange empty return now",
+					"Container return due in {0} day(s) - arrange empty return now",
 					[Math.abs(diff)]
 				),
 				color: "orange",
@@ -342,7 +409,7 @@ function render_container_tracker_alerts(frm) {
 		if (late > 0) {
 			alert = {
 				msg: __(
-					"Returned late — {0} day(s) past the shipping-line free period end date",
+					"Returned late - {0} day(s) past the shipping-line free period end date",
 					[late]
 				),
 				color: "orange",
@@ -401,10 +468,11 @@ frappe.ui.form.on("Container Tracker", {
 	},
 
 	refresh(frm) {
-		apply_container_mode_layout(frm);
+		refresh_container_mode_layout(frm);
 		lock_transport_assignment_fields(frm);
 		render_container_tracker_alerts(frm);
 		apply_container_tracker_status_indicator(frm);
+		render_container_tracker_truck_updates(frm);
 		if (frm.doc.custom_bill_of_lading) {
 			sync_bl_container_pick_list(frm);
 		}
@@ -414,8 +482,19 @@ frappe.ui.form.on("Container Tracker", {
 			}).addClass("btn-primary");
 		}
 		const task_name = localStorage.getItem(CGM_CONTAINER_TRACKING_TASK_KEY);
-		if (task_name) {
+		const tracking_project = localStorage.getItem(CGM_CONTAINER_TRACKING_PROJECT_KEY);
+		if (
+			task_name &&
+			tracking_project &&
+			frm.doc.project &&
+			frm.doc.project !== tracking_project
+		) {
+			localStorage.removeItem(CGM_CONTAINER_TRACKING_TASK_KEY);
+			localStorage.removeItem(CGM_CONTAINER_TRACKING_PROJECT_KEY);
+		} else if (task_name && (!tracking_project || frm.doc.project === tracking_project)) {
 			frm.add_custom_button(__("Back to Task"), () => {
+				localStorage.removeItem(CGM_CONTAINER_TRACKING_TASK_KEY);
+				localStorage.removeItem(CGM_CONTAINER_TRACKING_PROJECT_KEY);
 				frappe.set_route("Form", "Task", task_name);
 			}, __("CGM"));
 			frm.page.set_inner_btn_group_as_primary(__("CGM"));
@@ -423,14 +502,29 @@ frappe.ui.form.on("Container Tracker", {
 	},
 
 	project(frm) {
-		if (!frm.doc.project || frm.doc.custom_bill_of_lading) {
+		if (!frm.doc.project) {
+			apply_container_mode_layout(frm);
 			return;
 		}
-		frappe.db.get_value("Project", frm.doc.project, "custom_bill_of_lading", (values) => {
-			if (values?.custom_bill_of_lading) {
-				frm.set_value("custom_bill_of_lading", values.custom_bill_of_lading);
+		frappe.db.get_value(
+			"Project",
+			frm.doc.project,
+			["custom_bill_of_lading", "custom_container_tracker_mode"],
+			(values) => {
+				if (cur_frm !== frm) {
+					return;
+				}
+				if (!frm.doc.custom_bill_of_lading && values?.custom_bill_of_lading) {
+					frm.set_value("custom_bill_of_lading", values.custom_bill_of_lading);
+				}
+				const mode = values?.custom_container_tracker_mode;
+				if (mode && frm.doc.container_mode !== mode) {
+					frm.set_value("container_mode", mode);
+				} else {
+					refresh_container_mode_layout(frm);
+				}
 			}
-		});
+		);
 	},
 
 	custom_bill_of_lading(frm) {
@@ -451,7 +545,7 @@ frappe.ui.form.on("Container Tracker", {
 	},
 
 	container_mode(frm) {
-		apply_container_mode_layout(frm);
+		apply_container_mode_layout(frm, frm.doc.container_mode);
 	},
 
 	discharging_date(frm) {
@@ -484,3 +578,40 @@ frappe.ui.form.on("Container Tracker", {
 		prompt_track_next_container(frm);
 	},
 });
+
+function render_container_tracker_truck_updates(frm) {
+	if (!frm.doc.name || frm.doc.__islocal) {
+		return;
+	}
+	let section = frm.layout.wrapper.find(".cgm-tracker-truck-updates");
+	if (!section.length) {
+		section = $(`
+			<div class="cgm-tracker-truck-updates form-section">
+				<div class="section-head">${__("Transporter truck updates")}</div>
+				<div class="cgm-tracker-truck-updates-body text-muted">${__("Loading…")}</div>
+			</div>
+		`);
+		const transportSection = frm.fields_dict.section_transport;
+		if (transportSection && transportSection.$wrapper) {
+			section.insertAfter(transportSection.$wrapper);
+		} else {
+			section.prependTo(frm.layout.wrapper);
+		}
+	}
+
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates.get_tracker_truck_updates",
+		args: { container_tracker: frm.doc.name },
+		callback(r) {
+			const rows = r.message || [];
+			const body = section.find(".cgm-tracker-truck-updates-body");
+			if (!rows.length) {
+				body.html(`<p class="text-muted" style="margin:0;">${__("No transporter updates yet.")}</p>`);
+				return;
+			}
+			body.html(cgm.updates.renderList(rows));
+			cgm.updates.bindListClicks(body);
+		},
+	});
+}
