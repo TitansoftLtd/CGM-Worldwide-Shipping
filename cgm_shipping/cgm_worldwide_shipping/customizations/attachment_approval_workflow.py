@@ -1,8 +1,8 @@
 """Generic child-table attachment approval workflow driven from the parent form.
 
 Profiles declare attachment/status/approval field mappings. Parent bindings wire
-each child table on Task, Project, Opportunity, etc. to a profile. Submitters use
-parent-level Send for Review; approvers use a single Review dialog on the parent.
+each child table on Task and Project to a profile. Submitters use parent-level
+Send for Review; approvers use a single Review dialog on the parent.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	APPROVAL_WORKFLOW_ACTION_REJECT,
 	APPROVAL_WORKFLOW_ACTION_SEND,
 	FINAL_DOCUMENT_NOTIFICATION,
-	OPPORTUNITY_DOCUMENTS_FIELD,
 	SHIPMENT_DOCUMENTS_FIELD,
 	TASK_DOCUMENTS_FIELD,
 )
@@ -683,15 +682,10 @@ def _register_default_profiles() -> None:
 
 
 def _register_default_bindings() -> None:
-	for parent_doctype, table_field, send_label, review_label in (
-		("Task", TASK_DOCUMENTS_FIELD, _("Send Final Documents for Review"), _("Review Final Documents")),
-		("Project", SHIPMENT_DOCUMENTS_FIELD, _("Send Final Documents for Review"), _("Review Final Documents")),
-		(
-			"Opportunity",
-			OPPORTUNITY_DOCUMENTS_FIELD,
-			_("Send Final Documents for Review"),
-			_("Review Final Documents"),
-		),
+	# Parent-form Send/Review is for Project and Task only — not Opportunity.
+	for parent_doctype, table_field in (
+		("Task", TASK_DOCUMENTS_FIELD),
+		("Project", SHIPMENT_DOCUMENTS_FIELD),
 	):
 		register_binding(
 			ParentTableBinding(
@@ -699,8 +693,8 @@ def _register_default_bindings() -> None:
 				table_field=table_field,
 				child_doctype="Shipment Document",
 				profile_key="shipment_final_document",
-				send_button_label=send_label,
-				review_button_label=review_label,
+				send_button_label=_("Send Final Documents for Review"),
+				review_button_label=_("Review Final Documents"),
 			)
 		)
 

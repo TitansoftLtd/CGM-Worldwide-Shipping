@@ -1,8 +1,7 @@
 """
-CGM Worldwide Shipping — import-cost & customs-tax calculations.
+CGM Worldwide Shipping — Quotation import-cost, customs-tax, and billing helpers.
 
-Covers Quotation and Sales Order so that grand totals stay
-consistent when a Sales Order is created from a Quotation.
+Primary commercial path: Quotation → Sales Invoice.
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 import frappe
 from erpnext import get_company_currency
 from erpnext.selling.doctype.quotation.quotation import Quotation
-from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from frappe.utils import cint, flt, round_based_on_smallest_currency_fraction
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
@@ -29,7 +27,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_calculation 
 	validate_calculation_mode,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing import (
-	PRICING_ROW_FIELDS,
 	QUOTATION_ITEM_PRICING_TABLE,
 	apply_item_pricing_to_document,
 	calculate_quotation_item_pricing,
@@ -38,45 +35,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing import (
 # ── Child-table fieldnames ────────────────────────────────────────────────────
 IMPORT_COST_TABLE = "custom_import_cost_component"
 CUSTOMS_TAX_TABLE = "custom_customs_taxes"
-
-IMPORT_COST_ROW_FIELDS = (
-	"charge_item",
-	"amount",
-	"exchange_rate",
-	"amount_kes",
-)
-
-CUSTOMS_TAX_ROW_FIELDS = (
-	"tax_type",
-	"calculation_mode",
-	"tax_base",
-	"rate",
-	"fixed_amount_kes",
-	"amount_kes",
-)
-
-CGM_QUOTATION_SO_SCALAR_FIELDS = (
-	"custom_uom",
-	"custom_weight",
-	"custom_volume",
-	"custom_hs_code",
-	"custom_shipment_type",
-	"custom_cargo_type",
-	"custom_cargo_size",
-	"custom_port_of_loading",
-	"custom_port_of_discharge",
-	"custom_transit_time_",
-	"custom_commodity",
-	"custom_custom_value",
-	"custom_base_customs_value",
-	"custom_total_tax",
-	"custom_quote_clause",
-	"custom_shipment",
-	"custom_coo",
-	"custom_idfno",
-	"custom_client_ref_no",
-	"custom_our_ref_no",
-)
 
 # Shipment metadata copied from Quotation to Sales Invoice when billing.
 # Values are mapped explicitly because Quotation and Sales Invoice field names differ.
@@ -98,7 +56,7 @@ CGM_QUOTATION_SI_EXTRA_FIELDS = (
 
 class _CGMCustomsTaxMixin:
     """
-    Reusable customs-tax logic injected into both CGMQuotation and CGMSalesOrder.
+    Customs-tax / import-cost / item-pricing logic for CGMQuotation.
 
     Concrete classes must be ERPNext selling controllers so that attributes like
     self.company, self.currency, self.conversion_rate, self.base_total and
@@ -299,54 +257,8 @@ class CGMQuotation(_CGMCustomsTaxMixin, Quotation):
 
 
 # =============================================================================
-# SALES ORDER
+# QUOTATION → SALES INVOICE
 # =============================================================================
-
-class CGMSalesOrder(_CGMCustomsTaxMixin, SalesOrder):
-    """
-    Extends the standard Sales Order so that custom customs taxes (copied from
-    the source Quotation) are reflected in the grand total.
-    """
-
-    def validate(self):
-        super().validate()
-        if (
-            self.meta.has_field(IMPORT_COST_TABLE)
-            or self.meta.has_field(CUSTOMS_TAX_TABLE)
-            or self.meta.has_field(QUOTATION_ITEM_PRICING_TABLE)
-        ):
-            self._calculate_import_customs_taxes()
-
-
-# =============================================================================
-# SHARED MAPPING HELPERS
-# =============================================================================
-
-def _copy_child_table(source_doc, target_doc, table_field: str, row_fields: tuple[str, ...]) -> None:
-	if not (source_doc.meta.has_field(table_field) and target_doc.meta.has_field(table_field)):
-		return
-
-	target_doc.set(table_field, [])
-	for src in source_doc.get(table_field) or []:
-		target_doc.append(table_field, {field: src.get(field) for field in row_fields})
-
-
-def _copy_scalar_fields(source_doc, target_doc, fields: tuple[str, ...]) -> None:
-	for field in fields:
-		if source_doc.meta.has_field(field) and target_doc.meta.has_field(field):
-			target_doc.set(field, source_doc.get(field))
-
-
-def copy_cgm_quotation_fields(source_doc, target_doc) -> None:
-	"""Copy full CGM customs/import fields from Quotation to Sales Order."""
-	_copy_child_table(source_doc, target_doc, IMPORT_COST_TABLE, IMPORT_COST_ROW_FIELDS)
-	_copy_child_table(source_doc, target_doc, CUSTOMS_TAX_TABLE, CUSTOMS_TAX_ROW_FIELDS)
-	_copy_child_table(source_doc, target_doc, QUOTATION_ITEM_PRICING_TABLE, PRICING_ROW_FIELDS)
-	_copy_scalar_fields(source_doc, target_doc, CGM_QUOTATION_SO_SCALAR_FIELDS)
-
-	if target_doc.meta.has_field("project") and source_doc.get("custom_shipment"):
-		target_doc.project = source_doc.custom_shipment
-
 
 def copy_cgm_quotation_fields_to_sales_invoice(source_doc, target_doc) -> None:
 	"""Copy shipment metadata from Quotation to Sales Invoice billing fields."""
@@ -376,25 +288,6 @@ def _validate_quotation_for_billing(quotation) -> None:
 			),
 			title=frappe._("Not Allowed"),
 		)
-
-
-# =============================================================================
-# QUOTATION → SALES ORDER / SALES INVOICE
-# =============================================================================
-
-def on_submit_quotation(doc, method=None):
-	"""Hook placeholder kept for future Quotation on_submit actions."""
-	pass
-
-
-@frappe.whitelist()
-def make_sales_order(source_name: str, target_doc=None):
-	"""Extend ERPNext mapper to carry CGM customs/import fields to Sales Order."""
-	from erpnext.selling.doctype.quotation.quotation import make_sales_order as _std_make_so
-
-	so = _std_make_so(source_name, target_doc)
-	copy_cgm_quotation_fields(frappe.get_doc("Quotation", source_name), so)
-	return so
 
 
 @frappe.whitelist()

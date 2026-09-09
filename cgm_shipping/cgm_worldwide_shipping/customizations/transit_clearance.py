@@ -120,7 +120,7 @@ def bootstrap_transit_task_plan_for_project(project_name: str) -> dict | None:
 
 
 def create_sea_transit_import_task_plan_internal(project: str, reset: bool = False) -> dict:
-	"""Compose sea import shared steps + transit extension from Settings."""
+	"""Create sea transit import task plan from CGM Task Template."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 		resolve_department_name,
 	)

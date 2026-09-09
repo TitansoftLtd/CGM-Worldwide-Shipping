@@ -1,0 +1,26 @@
+/* CGM careers form: brand header plus a little more breathing room than the
+   stock web form. */
+
+/* Logo placed at the top of the card header by the form's client script.
+   Centred to sit above the (centred) form title. */
+.cgm-web-form-logo {
+	display: block;
+	height: 44px;
+	width: auto;
+	max-width: 100%;
+	margin: 0 auto var(--margin-md);
+}
+
+.web-form-wrapper .section-head {
+	border-bottom: 1px solid var(--border-color);
+	padding-bottom: var(--padding-xs);
+	margin-bottom: var(--margin-sm);
+}
+
+.web-form-wrapper .web-form-introduction {
+	margin-bottom: var(--margin-lg);
+}
+
+.web-form-wrapper .form-section {
+	margin-bottom: var(--margin-md);
+}

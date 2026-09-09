@@ -1,8 +1,6 @@
-# CGM Worldwide Shipping — Feature Documentation
+# CGM Worldwide Shipping - Feature Documentation
 
 ERPNext app (`cgm_shipping`) for end-to-end freight forwarding and customs clearance: CRM intake → sea-import clearance (25-task plan) → container lifecycle → quotations/invoicing → customer & transporter portals.
-
-> **Role-based guides:** see [README.md](README.md)
 
 ---
 
@@ -132,7 +130,6 @@ All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Ch
 
 | DocType | Notable fields |
 |---------|----------------|
-| **Lead** | `custom_ci_attachment`, `custom_pkl_attachment`, `custom_bill_of_lading`, `custom_container_information`, shipment type/mode |
 | **Opportunity** | `workflow_state`, `custom_clients_documents`, B/L/AWB, containers, clearance station, consignee |
 | **Project** | `custom_shipment_status`, `custom_cgm_ref_no`, `custom_source_opportunity`, shipment documents, permit register, container tracker, finance cost total, ETA/ATA |
 | **Task** | `custom_task_flow_key` (`SEA_IMPORT_E2E`), `custom_sequence_no`, task documents/permits/finance lines, container updates |
@@ -180,14 +177,14 @@ Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded 
 | 7 | Client conducts inspection | Operations |
 | 8 | Receive Final Clearance Documents (B/L, Invoice, PKL, COC) | Documentation |
 | 9 | Request Manifest and Local Import Charges | Documentation |
-| 10 | Create Entry (after vessel arrival confirmation) | Declaration |
+| 12 | Create Entry | Declaration |
 | 11 | Finance Pays Entry Slip | Finance |
 | 12 | Attach Shipping Line Invoice | Documentation |
 | 13 | Finance pays Shipping Line Charges | Finance |
 | 14 | Lodge Delivery Order | Operations |
 | 15 | Prepare Post-Clearance Permits | Declaration |
 | 16 | Finance pays for Post-Clearance Permits | Finance |
-| 17 | Field Officers conduct clearance | Field Operations |
+| 17 | Field Officers conduct clearance | Field Operations — attach any clearance document on **Task Documents**, or record CRO release / verification report |
 | 18 | Supervisor obtains KPA Invoice | Operations |
 | 19 | Finance pays KPA Invoice | Finance |
 | 20 | Book trucks and notify warehouse | Transport |
@@ -199,7 +196,7 @@ Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded 
 
 **Project workflow** (`CGM Sea Import Workflow` on `custom_shipment_status`):
 
-Draft → Documents Received → UCR Applied → UCR Paid → Pre-clearance → Client Inspection → In Transit → Final Docs Received → Manifest Requested → Entry Lodged → Entry Paid → Line Paid & DO Lodged → Post-clearance → Field Clearance → KPA Paid → In Delivery → Containers Returned → **Completed**
+Draft → Documents Received → UCR Applied → UCR Paid → Pre-clearance → Client Inspection → In Transit → Final Docs Received → Entry Lodged → Entry Paid → Line Paid & DO Lodged → Post-clearance → Field Clearance → KPA Paid → In Delivery → Containers Returned → **Completed**
 
 Each state advance is gated by minimum completed task seq (from Settings) and verified documents where configured.
 
@@ -392,7 +389,7 @@ On `bench migrate`, patches in `patches.txt` run idempotently:
 
 ### Scheduled jobs
 
-- **Daily:** `container_tracker.refresh_open_container_metrics` — recalculates open container demurrage/detention
+- **Daily:** `container_tracker.refresh_open_container_metrics` - recalculates open container demurrage/detention
 
 ---
 

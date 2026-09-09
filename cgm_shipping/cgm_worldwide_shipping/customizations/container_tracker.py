@@ -100,37 +100,16 @@ def project_shipping_line_finance_paid(project: str | None) -> bool:
 
 
 def refresh_deposit_payment_status(ct) -> None:
-	"""Derive deposit_payment_status from has_deposit + SL finance payment."""
-	if not ct.meta.has_field("deposit_payment_status"):
-		return
-	has_deposit = cint(ct.get("has_deposit")) if ct.meta.has_field("has_deposit") else 0
-	if not has_deposit:
-		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[0]  # Not Applicable
-		return
-	if project_shipping_line_finance_paid(ct.get("project")):
-		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[2]  # Paid
-	else:
-		ct.deposit_payment_status = DEPOSIT_PAYMENT_STATUSES[1]  # Unpaid
+	"""No-op: deposits are tracked on Bill of Lading, not Container Tracker."""
+	return
 
 
 def sync_project_deposit_payment_statuses(project: str | None) -> int:
-	"""Recompute deposit_payment_status on all trackers for a project. Returns updated count."""
-	if not project or not frappe.db.exists("DocType", "Container Tracker"):
-		return 0
-	meta = frappe.get_meta("Container Tracker")
-	if not meta.has_field("deposit_payment_status"):
-		return 0
-	updated = 0
-	for name in frappe.get_all(
-		"Container Tracker", filters={"project": project}, pluck="name"
-	):
-		ct = frappe.get_doc("Container Tracker", name)
-		before = ct.get("deposit_payment_status")
-		refresh_deposit_payment_status(ct)
-		if ct.get("deposit_payment_status") != before:
-			ct.db_set("deposit_payment_status", ct.deposit_payment_status, update_modified=False)
-			updated += 1
-	return updated
+	from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
+		sync_project_deposit_payment_statuses as _sync_project_deposit_payment_statuses,
+	)
+
+	return _sync_project_deposit_payment_statuses(project)
 
 
 def get_gate_out_task_sequence() -> int:
@@ -191,6 +170,23 @@ def _effective_return_date(actual_return, interchange):
 	if interchange and actual_return:
 		return max(interchange, actual_return)
 	return interchange or actual_return
+
+
+def _left_mombasa_port_date(gate_out, offloading, gate_in_wh, actual_return, interchange):
+	"""Date the box left Mombasa port (KPA storage ends).
+
+	KPA charges overstay at the port, not empty return to the shipping line.
+	Gate-out from Mombasa is the real event. Offload / warehouse gate-in / empty
+	return are only used when gate-out was not recorded, so we do not keep
+	charging until today after the box has already left.
+	"""
+	if gate_out:
+		return gate_out
+	if offloading:
+		return offloading
+	if gate_in_wh:
+		return gate_in_wh
+	return _effective_return_date(actual_return, interchange)
 
 
 def _inclusive_days_between(start, end) -> int | None:
@@ -321,25 +317,29 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		"alert_status": "",
 	}
 
+	effective_return = _effective_return_date(actual_return, interchange)
+	left_port = _left_mombasa_port_date(
+		gate_out, offloading, gate_in_wh, actual_return, interchange
+	)
+	# KPA / days in port: still in Mombasa → count to today; otherwise stop at exit.
+	port_clock_end = left_port or ref_date
+
 	if free_end:
+		# Shipping-line demurrage/detention: empty return / interchange, not KPA.
 		dem_start = free_end + timedelta(days=1)
-		effective_return = _effective_return_date(actual_return, interchange)
 		charge_end = effective_return or ref_date
 		if charge_end >= dem_start:
 			out["demurrage_days"] = (charge_end - dem_start).days + 1
 
 	if free_start:
-		end_port = gate_out or ref_date
-		out["port_days_used"] = max(0, (end_port - free_start).days + 1)
+		out["port_days_used"] = max(0, (port_clock_end - free_start).days + 1)
 
 	if kpa_free_end:
 		kpa_charge_start = kpa_free_end + timedelta(days=1)
-		kpa_charge_end = gate_out or ref_date
-		if kpa_charge_end >= kpa_charge_start:
-			out["kpa_days"] = (kpa_charge_end - kpa_charge_start).days + 1
+		if port_clock_end >= kpa_charge_start:
+			out["kpa_days"] = (port_clock_end - kpa_charge_start).days + 1
 
 	expected = _optional_date(out.get("expected_empty_return"))
-	effective_return = _effective_return_date(actual_return, interchange)
 	if expected and not effective_return and ref_date > expected:
 		out["days_outstanding"] = (ref_date - expected).days
 
@@ -468,15 +468,17 @@ def _derive_alert_status(
 	free_configured=True,
 ) -> str:
 	"""Urgency overlay on operational status. Not stored in DB."""
-	if free_configured and free_end and not gate_out:
+	effective_return = _effective_return_date(actual_return, interchange)
+
+	# Still at port (no gate-out and not yet returned): count against today.
+	# Once empty return / interchange is set, do not keep accruing vs today.
+	if free_configured and free_end and not gate_out and not effective_return:
 		if ref_date > free_end:
 			overdue = (ref_date - free_end).days
 			return f"🔴 Demurrage Accruing ({overdue} day(s) past free period)"
 		days_remaining = (free_end - ref_date).days
 		if 0 <= days_remaining <= 2:
 			return "⚠️ Free Days Expiring Soon"
-
-	effective_return = _effective_return_date(actual_return, interchange)
 
 	if not effective_return and expected_return:
 		if ref_date > expected_return:
@@ -912,26 +914,48 @@ def _apply_bulk_eta(project, trackers: list) -> None:
 
 
 def _apply_bulk_vessel_arrival(project, trackers: list, today_date, task_doc=None) -> None:
-	"""Task 11 — create trackers (vessel arrived); discharge dates come from task grid."""
+	"""Create trackers (vessel arrived); copy Project ATA onto every tracker.
+
+	Also mirrors discharge/ATA onto the Create Entry container grid when that
+	task exists. Create Entry completion is never gated by this step.
+	"""
 	create_container_trackers_for_project(project.name)
 	trackers = _trackers_for_project(project.name)
 	ata = get_project_ata(project)
-	for ct in trackers:
-		if ata:
-			ct.ata = ata
-	_save_trackers(trackers)
+	if ata:
+		_apply_ata_to_trackers(trackers, ata)
 
 	if task_doc:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
-			apply_container_updates_from_task,
 			seed_container_update_rows,
 		)
 
 		if seed_container_update_rows(task_doc):
 			task_doc.save(ignore_permissions=True)
-		apply_container_updates_from_task(task_doc)
+	else:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			sync_vessel_arrival_task_rows_from_project,
+		)
+
+		sync_vessel_arrival_task_rows_from_project(project.name)
 
 	_notify_free_days_awareness(project.name)
+
+
+def _apply_ata_to_trackers(trackers: list, ata) -> None:
+	"""Persist ATA on every in-memory tracker and save.
+
+	When discharging_date is empty, default it to ATA so Create Entry's
+	container-update mirror has a discharge date after Project confirm.
+	"""
+	if not ata or not trackers:
+		return
+	ata_date = getdate(ata)
+	for ct in trackers:
+		ct.ata = ata_date
+		if not ct.get("discharging_date"):
+			ct.discharging_date = ata_date
+	_save_trackers(trackers)
 
 
 def _notify_free_days_awareness(project_name: str) -> None:
@@ -1034,8 +1058,6 @@ def _apply_empty_return(ct, today_date) -> None:
 def _apply_interchange(ct, today_date, task_doc) -> None:
 	if not ct.interchange_date:
 		ct.interchange_date = today_date
-	if not ct.deposit_refund_status:
-		ct.deposit_refund_status = DEPOSIT_REFUND_STATUSES[0]
 	if task_doc:
 		meta = frappe.get_meta("Task")
 		if meta.has_field("custom_interchange_document") and task_doc.get(
@@ -1181,7 +1203,7 @@ def ensure_container_trackers_at_port_arrival(
 	ata=None,
 	require_project_write: bool = True,
 ) -> dict:
-	"""Create/sync container trackers when shipment arrives at port (early or on Entry task)."""
+	"""Create/sync container trackers when shipment arrives at port (Project confirm)."""
 	if require_project_write:
 		frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
 	elif not frappe.has_permission("Project", ptype="read", doc=project_name):
@@ -1212,13 +1234,25 @@ def ensure_container_trackers_at_port_arrival(
 		updates["custom_berth_phase"] = "After Vessel Berthed"
 
 	if updates:
-		# Declarants confirm arrival from Create Entry without Project write.
 		frappe.db.set_value("Project", project_name, updates, update_modified=True)
 		frappe.clear_document_cache("Project", project_name)
 		project = frappe.get_doc("Project", project_name)
 
 	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 	handle_sea_task_container_event(project_name, seq, task_doc=task_doc)
+
+	# Guarantee ATA on every tracker even if they already existed before confirm.
+	final_ata = get_project_ata(project)
+	if final_ata:
+		_apply_ata_to_trackers(_trackers_for_project(project_name), final_ata)
+
+	# Refresh Create Entry mirror after final ATA/discharge write (Project-owned).
+	if not task_doc:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			sync_vessel_arrival_task_rows_from_project,
+		)
+
+		sync_vessel_arrival_task_rows_from_project(project_name)
 
 	trackers = frappe.get_all(
 		"Container Tracker",
@@ -1234,28 +1268,8 @@ def ensure_container_trackers_at_port_arrival(
 		"port_arrival_confirmed": bool(
 			project.get("custom_port_arrival_confirmed") or mark_confirmed
 		),
-		"ata": str(get_project_ata(project) or ""),
+		"ata": str(final_ata or ""),
 	}
-
-
-def ensure_container_trackers_on_entry_task_complete(task_doc) -> dict | None:
-	"""Fallback when Create Entry completes without an early port-arrival confirmation."""
-	project_name = task_doc.get("project")
-	if not project_name:
-		return None
-
-	project = frappe.get_cached_doc("Project", project_name)
-	if project.get("custom_port_arrival_confirmed"):
-		return None
-	if _trackers_for_project(project_name):
-		return None
-
-	return ensure_container_trackers_at_port_arrival(
-		project_name,
-		task_doc=task_doc,
-		mark_confirmed=False,
-		require_project_write=False,
-	)
 
 
 CLOSED_CONTAINER_STATUSES = (
@@ -1284,7 +1298,14 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 			"css": "cgm-tl-red",
 		}
 
-	if free_end and not metrics.get("gate_out_date_port"):
+	if (
+		free_end
+		and not metrics.get("gate_out_date_port")
+		and not _effective_return_date(
+			_optional_date(metrics.get("actual_empty_return")),
+			_optional_date(metrics.get("interchange_date")),
+		)
+	):
 		days_remaining = (free_end - ref_date).days
 		if 0 < days_remaining <= 2:
 			return {"level": "amber", "label": _("ALMOST DUE"), "css": "cgm-tl-amber"}
@@ -1302,7 +1323,7 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 
 @frappe.whitelist()
 def project_can_confirm_port_arrival(project: str) -> dict:
-	"""Whether the Project / Create Entry Actions menu should offer port arrival confirmation."""
+	"""Whether the Project Actions menu should offer port arrival confirmation."""
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
 	if not frappe.db.exists("Project", project):
 		return {"can_confirm": False, "ata": ""}
@@ -1322,39 +1343,28 @@ def project_can_confirm_port_arrival(project: str) -> dict:
 def confirm_shipment_arrival_at_port(
 	project_name: str, ata: str | None = None, task_name: str | None = None
 ) -> dict:
-	"""Confirm shipment arrival at port and create container trackers before Entry is paid.
+	"""Confirm shipment arrival at port from the Project form.
 
-	From Project: requires Project write.
-	From Create Entry task: requires Task write on that entry task (Declarants).
+	Requires Project write. ATA is required and is written to Project + every
+	Container Tracker. Create Entry is independent of this confirmation.
+	``task_name`` is accepted for backward compatibility but is ignored.
 	"""
+	if not ata:
+		frappe.throw(_("Actual Time of Arrival (ATA) is required to confirm port arrival."))
+
+	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
 	project = frappe.get_doc("Project", project_name)
 	if project.get("custom_port_arrival_confirmed"):
 		frappe.throw(_("Port arrival has already been confirmed for this project."))
 
-	task_doc = None
-	require_project_write = True
-	if task_name:
-		frappe.has_permission("Task", ptype="write", doc=task_name, throw=True)
-		task_doc = frappe.get_doc("Task", task_name)
-		if (task_doc.get("project") or "") != project_name:
-			frappe.throw(_("Task does not belong to this project."))
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-			is_entry_application_task,
-		)
-
-		seq = int(task_doc.get("custom_sequence_no") or 0)
-		if not is_entry_application_task(seq):
-			frappe.throw(_("Port arrival can only be confirmed from the Create Entry task."))
-		require_project_write = False
-	else:
-		frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
+	# task_name is accepted for backward compatibility but is ignored.
 
 	return ensure_container_trackers_at_port_arrival(
 		project_name,
-		task_doc=task_doc,
+		task_doc=None,
 		mark_confirmed=True,
 		ata=ata,
-		require_project_write=require_project_write,
+		require_project_write=True,
 	)
 
 

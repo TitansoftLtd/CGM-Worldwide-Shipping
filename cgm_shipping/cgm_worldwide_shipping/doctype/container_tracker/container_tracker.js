@@ -61,14 +61,9 @@ const MODE_SECTIONS = {
 	],
 };
 
-const TAB_SECTIONS = {
-	transport_and_delivery_tab: ["section_transport"],
-	warehouse_tab: ["section_warehouse"],
-	empty_return_and_interchange_tab: ["section_empty_return"],
-	free_days_tab: ["section_shipping_line_free_days", "section_kpa_free_days"],
-};
-
 const TRANSIT_ONLY_FIELDS = ["warehouse_loading_date"];
+
+const MODE_SECTION_FIELDNAMES = [...new Set(Object.values(MODE_SECTIONS).flat())];
 
 function is_transit_container_mode(mode) {
 	return (mode || "").includes("Transit");
@@ -104,32 +99,51 @@ function lock_transport_assignment_fields(frm) {
 	});
 }
 
-function apply_container_mode_layout(frm) {
-	const show = new Set(resolve_mode_sections(frm.doc.container_mode));
-	Object.keys(frm.fields_dict).forEach((fn) => {
-		const f = frm.fields_dict[fn];
-		if (!f || f.df.fieldtype !== "Section Break") {
+function apply_container_mode_layout(frm, mode) {
+	const effective_mode = mode || frm.doc.container_mode;
+	const show = new Set(resolve_mode_sections(effective_mode));
+
+	MODE_SECTION_FIELDNAMES.forEach((section_fieldname) => {
+		if (!frm.fields_dict[section_fieldname]) {
 			return;
 		}
-		if (fn.startsWith("section_")) {
-			frm.set_df_property(fn, "hidden", show.has(fn) ? 0 : 1);
-		}
+		frm.set_df_property(section_fieldname, "hidden", show.has(section_fieldname) ? 0 : 1);
 	});
 
-	Object.entries(TAB_SECTIONS).forEach(([tab_field, section_fields]) => {
-		if (!frm.fields_dict[tab_field]) {
-			return;
-		}
-		const tab_visible = section_fields.some((section) => show.has(section));
-		frm.set_df_property(tab_field, "hidden", tab_visible ? 0 : 1);
-	});
-
-	const show_transit_fields = is_transit_container_mode(frm.doc.container_mode);
+	const show_transit_fields = is_transit_container_mode(effective_mode);
 	TRANSIT_ONLY_FIELDS.forEach((fieldname) => {
 		if (frm.fields_dict[fieldname]) {
 			frm.set_df_property(fieldname, "hidden", show_transit_fields ? 0 : 1);
 		}
 	});
+
+	if (frm.layout) {
+		frm.layout.refresh_sections();
+		frm.layout.refresh_tabs();
+	}
+}
+
+function refresh_container_mode_layout(frm) {
+	if (!frm.doc.project) {
+		apply_container_mode_layout(frm);
+		return;
+	}
+	frappe.db.get_value(
+		"Project",
+		frm.doc.project,
+		"custom_container_tracker_mode",
+		(r) => {
+			if (cur_frm !== frm) {
+				return;
+			}
+			const mode = r?.custom_container_tracker_mode || frm.doc.container_mode;
+			if (mode && frm.doc.container_mode !== mode) {
+				frm.set_value("container_mode", mode);
+				return;
+			}
+			apply_container_mode_layout(frm, mode);
+		}
+	);
 }
 
 function fetch_bl_container_options(bill_of_lading) {
@@ -326,8 +340,10 @@ function render_container_tracker_alerts(frm) {
 	frm.dashboard.clear_comment();
 	const d = frm.doc;
 	let alert = null;
+	const return_done = d.interchange_date || d.actual_empty_return;
 
-	if ((d.free_days_end_date || d.free_days_start_date) && !d.gate_out_date_port) {
+	// Still at port only: do not keep accruing against today after empty return / interchange.
+	if ((d.free_days_end_date || d.free_days_start_date) && !d.gate_out_date_port && !return_done) {
 		const today = frappe.datetime.get_today();
 		if (d.free_days_end_date) {
 			const remaining = frappe.datetime.get_diff(d.free_days_end_date, today);
@@ -335,7 +351,7 @@ function render_container_tracker_alerts(frm) {
 				const overdue = Math.abs(remaining);
 				alert = {
 					msg: __(
-						"Demurrage accruing — {0} day(s) past the free period end date",
+						"Demurrage accruing - {0} day(s) past the free period end date",
 						[overdue]
 					),
 					color: "red",
@@ -343,7 +359,7 @@ function render_container_tracker_alerts(frm) {
 			} else if (remaining <= 2) {
 				alert = {
 					msg: __(
-						"Free days expiring — only {0} day(s) remaining before demurrage starts",
+						"Free days expiring - only {0} day(s) remaining before demurrage starts",
 						[remaining]
 					),
 					color: "orange",
@@ -359,7 +375,6 @@ function render_container_tracker_alerts(frm) {
 		}
 	}
 
-	const return_done = d.interchange_date || d.actual_empty_return;
 	if (d.expected_empty_return && !return_done) {
 		const diff = frappe.datetime.get_diff(
 			frappe.datetime.get_today(),
@@ -368,7 +383,7 @@ function render_container_tracker_alerts(frm) {
 		if (diff > 0) {
 			alert = {
 				msg: __(
-					"Return overdue by {0} day(s) — contact transporter immediately. Demurrage/detention charges may be accruing.",
+					"Return overdue by {0} day(s) - contact transporter immediately. Demurrage/detention charges may be accruing.",
 					[diff]
 				),
 				color: "red",
@@ -376,7 +391,7 @@ function render_container_tracker_alerts(frm) {
 		} else if (diff >= -3) {
 			alert = {
 				msg: __(
-					"Container return due in {0} day(s) — arrange empty return now",
+					"Container return due in {0} day(s) - arrange empty return now",
 					[Math.abs(diff)]
 				),
 				color: "orange",
@@ -394,7 +409,7 @@ function render_container_tracker_alerts(frm) {
 		if (late > 0) {
 			alert = {
 				msg: __(
-					"Returned late — {0} day(s) past the shipping-line free period end date",
+					"Returned late - {0} day(s) past the shipping-line free period end date",
 					[late]
 				),
 				color: "orange",
@@ -453,7 +468,7 @@ frappe.ui.form.on("Container Tracker", {
 	},
 
 	refresh(frm) {
-		apply_container_mode_layout(frm);
+		refresh_container_mode_layout(frm);
 		lock_transport_assignment_fields(frm);
 		render_container_tracker_alerts(frm);
 		apply_container_tracker_status_indicator(frm);
@@ -487,14 +502,29 @@ frappe.ui.form.on("Container Tracker", {
 	},
 
 	project(frm) {
-		if (!frm.doc.project || frm.doc.custom_bill_of_lading) {
+		if (!frm.doc.project) {
+			apply_container_mode_layout(frm);
 			return;
 		}
-		frappe.db.get_value("Project", frm.doc.project, "custom_bill_of_lading", (values) => {
-			if (values?.custom_bill_of_lading) {
-				frm.set_value("custom_bill_of_lading", values.custom_bill_of_lading);
+		frappe.db.get_value(
+			"Project",
+			frm.doc.project,
+			["custom_bill_of_lading", "custom_container_tracker_mode"],
+			(values) => {
+				if (cur_frm !== frm) {
+					return;
+				}
+				if (!frm.doc.custom_bill_of_lading && values?.custom_bill_of_lading) {
+					frm.set_value("custom_bill_of_lading", values.custom_bill_of_lading);
+				}
+				const mode = values?.custom_container_tracker_mode;
+				if (mode && frm.doc.container_mode !== mode) {
+					frm.set_value("container_mode", mode);
+				} else {
+					refresh_container_mode_layout(frm);
+				}
 			}
-		});
+		);
 	},
 
 	custom_bill_of_lading(frm) {
@@ -515,7 +545,7 @@ frappe.ui.form.on("Container Tracker", {
 	},
 
 	container_mode(frm) {
-		apply_container_mode_layout(frm);
+		apply_container_mode_layout(frm, frm.doc.container_mode);
 	},
 
 	discharging_date(frm) {

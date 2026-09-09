@@ -65,6 +65,11 @@ def seed_default_customs_tax_rates() -> None:
 
 
 def seed_cgm_shipping_settings() -> None:
+	"""Fill blank Settings tables that are safe to top-up on migrate.
+
+	Document responsibilities / CGM Role Groups are intentionally excluded —
+	those are one-time defaults (after_install + seed patch) so site edits stick.
+	"""
 	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
 		return
 
@@ -92,12 +97,30 @@ def seed_cgm_shipping_settings() -> None:
 			changed = True
 
 	if changed:
+		settings.flags.skip_package_visibility_apply = True
 		settings.save(ignore_permissions=True)
 		frappe.clear_cache()
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.package_field_visibility import (
+		seed_package_visibility_defaults,
+	)
+
+	seed_package_visibility_defaults()
+
+
+def seed_document_responsibility_defaults() -> None:
+	"""One-time CGM Role Group + document responsibility matrix defaults."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
+		ensure_document_responsibility_settings,
+	)
+
+	ensure_document_responsibility_settings()
 
 
 def seed_all_defaults() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		ensure_clearance_charge_items,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
 		seed_task_workflow_masters,
 	)
@@ -105,5 +128,18 @@ def seed_all_defaults() -> None:
 	seed_customs_tax_types()
 	seed_default_customs_tax_rates()
 	seed_cgm_shipping_settings()
+	seed_document_responsibility_defaults()
 	seed_task_workflow_masters()
+	ensure_clearance_charge_items()
+	try:
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
+			ensure_sea_task_notifications,
+		)
+
+		ensure_sea_task_notifications()
+	except Exception:
+		frappe.log_error(
+			title="CGM seed sea task notifications failed",
+			message=frappe.get_traceback(),
+		)
 	frappe.db.commit()

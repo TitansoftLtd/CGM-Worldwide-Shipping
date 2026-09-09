@@ -54,6 +54,56 @@ class TestContainerCharges(IntegrationTestCase):
 		self.assertGreater(flt(metrics["demurrage_amount"]), 0)
 		self.assertGreater(flt(metrics["kpa_amount"]), 0)
 
+	def test_returned_on_time_without_gate_out_does_not_accrue(self):
+		"""Empty return/interchange must stop demurrage alerts and KPA even if gate-out is blank."""
+		data = {
+			"free_days_start_date": "2026-08-04",
+			"free_days_end_date": "2026-08-14",
+			"kpa_free_days_start_date": "2026-08-06",
+			"kpa_free_days_end_date": "2026-08-11",
+			"actual_empty_return": "2026-08-10",
+			"interchange_date": "2026-08-10",
+			"offloading_date": "2026-08-10",
+			"ata": "2026-08-05",
+		}
+		metrics = compute_container_metrics(data)
+		self.assertEqual(metrics["demurrage_days"], 0)
+		self.assertEqual(metrics["kpa_days"], 0)
+		self.assertIn("Returned On Time", metrics["alert_status"])
+		self.assertNotIn("Demurrage Accruing", metrics["alert_status"])
+
+	def test_kpa_stops_at_offload_before_empty_return(self):
+		"""UACU5791431-style: offloaded before KPA free end; empty return a day later is not KPA time."""
+		data = {
+			"free_days_start_date": "2026-08-03",
+			"free_days_end_date": "2026-08-14",
+			"kpa_free_days_start_date": "2026-08-04",
+			"kpa_free_days_end_date": "2026-08-09",
+			"offloading_date": "2026-08-08",
+			"actual_empty_return": "2026-08-10",
+			"interchange_date": "2026-08-10",
+			"ata": "2026-08-05",
+		}
+		metrics = compute_container_metrics(data)
+		self.assertEqual(metrics["demurrage_days"], 0)
+		self.assertEqual(metrics["kpa_days"], 0)
+		self.assertIn("Returned On Time", metrics["alert_status"])
+
+	def test_kpa_uses_gate_out_not_empty_return(self):
+		"""KPA is Mombasa overstay until gate-out; empty return is shipping-line only."""
+		data = {
+			"free_days_start_date": "2026-08-03",
+			"free_days_end_date": "2026-08-14",
+			"kpa_free_days_start_date": "2026-08-04",
+			"kpa_free_days_end_date": "2026-08-09",
+			"gate_out_date_port": "2026-08-08",
+			"actual_empty_return": "2026-08-15",
+			"interchange_date": "2026-08-15",
+		}
+		metrics = compute_container_metrics(data)
+		self.assertEqual(metrics["kpa_days"], 0)
+		self.assertEqual(metrics["demurrage_days"], 1)
+
 	def test_charge_type_labels(self):
 		self.assertEqual(CHARGE_TYPE_DEMURRAGE, "Demurrage/Detention")
 		self.assertEqual(CHARGE_TYPE_KPA_PORT, "KPA Port")

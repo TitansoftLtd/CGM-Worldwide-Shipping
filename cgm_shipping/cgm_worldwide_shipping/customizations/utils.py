@@ -213,23 +213,12 @@ def load_sea_task_template() -> list[dict[str, str]]:
 
 
 def load_sea_transit_import_task_template() -> list[dict]:
-	"""Return composed sea transit import tasks from CGM Task Template."""
+	"""Return sea transit import tasks from CGM Task Template."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		SEA_IMPORT_TEMPLATE,
 		SEA_TRANSIT_IMPORT_TEMPLATE,
 	)
 
-	parent_count = len(load_cgm_task_template_items(SEA_IMPORT_TEMPLATE))
-	rows = load_cgm_task_template_items(SEA_TRANSIT_IMPORT_TEMPLATE)
-	composed: list[dict] = []
-	for row in rows:
-		composed.append(
-			{
-				**row,
-				"shared": int(row["sequence_no"]) <= parent_count,
-			}
-		)
-	return composed
+	return load_cgm_task_template_items(SEA_TRANSIT_IMPORT_TEMPLATE)
 
 
 def load_sea_transit_export_task_template() -> list[dict[str, str]]:

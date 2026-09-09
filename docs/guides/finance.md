@@ -32,24 +32,35 @@ For the **Finance** team: task payments, quotation approval, sales invoice appro
 Each finance task follows the same pattern:
 
 ```
-1. Ops/Declaration attaches invoice on the Task (finance lines / documents)
-2. Finance creates Journal Entry or Payment Entry
-3. Declarant uploads payment receipt
-4. Finance verifies receipt on Task
-5. Task can be marked complete → Project status may advance
+1. Ops/Declaration attaches invoice on the application Task (finance lines / documents)
+2. Finance verifies the invoice and creates Journal Entry or Payment Entry (or Client will pay)
+3. Finance uploads the payment receipt on the finance Task and verifies it (Declarant can view on the application Task)
+4. Application and finance Tasks auto-complete when their rules are satisfied → Project status may advance
 ```
+
+**Entry Slip:** Create Entry / Create transit entry (Application) completes only after Finance has verified **and paid** the invoice. Finance Pays Entry Slip completes after payment **and receipt verification**.
 
 **Task Finance Line** child table holds line items (UCR, permits, entry slip, shipping line, KPA).
 
+Declarants attach invoices (and certificates where required). Finance verifies invoices, pays, uploads receipts, and verifies receipts on the finance task.
+
 ### Notifications you receive
 
-ERPNext Notifications alert Finance when invoices are ready, e.g.:
+Each payment kind has its own round trip, and all of them are seeded as ERPNext Notifications. They are named with a **`CGM Task - `** prefix, which matters when you go looking for one in the Notification list - searching for "UCR Invoice to Finance" alone will not find it.
 
-- UCR Invoice to Finance
-- Entry Invoice to Finance
-- Shipping Line Invoice to Finance
-- Permit Invoices to Finance
-- KPA Invoice to Finance
+| Stage | Notification | Goes to |
+|-------|--------------|---------|
+| Invoice attached, ready to pay | `CGM Task - UCR Invoice to Finance` | Finance |
+| | `CGM Task - Entry Invoice to Finance` | Finance |
+| | `CGM Task - Shipping Line Invoice to Finance` | Finance |
+| | `CGM Task - Permit Invoices to Finance` | Finance |
+| | `CGM Task - KPA Invoice to Finance` | Finance |
+| Paid, receipt needed | `CGM Task - UCR Receipt for Declarant`, and the Entry, Shipping Line, Permit and KPA equivalents | Whoever attaches the receipt |
+| Receipt attached, needs checking | `CGM Task - UCR Receipt Verify Finance`, and the same four equivalents | Finance |
+
+There is also a generic **`CGM Task - Finance Payment Action`**, and a **Your Turn** notification per department - see the [Operations Guide](operations.md).
+
+**Changing them:** the code fires a stable *event* (for example "UCR Invoice to Finance") and **CGM Shipping Settings** maps that event to whichever Notification you point it at. So you can rewrite the wording, change recipients, or swap in your own Notification without touching code - migrate only ever seeds the defaults that are missing, it does not overwrite what you have edited.
 
 ---
 
@@ -87,19 +98,44 @@ Print formats: **CGM Quotation Full**, **CGM Quotation Local Charges**.
 
 ## Sales Invoice approval
 
-**Workflow:** `CGM Sales Invoice Approval`
+**Workflow:** `CGM Sales Invoice Approval` (maker-checker gate before submit)
 
-| State | Meaning |
-|-------|---------|
-| Draft | Being prepared |
-| Pending Finance Approval | Awaiting your review |
-| Approved | **Submit** is now allowed |
-| Rejected | Returned to Draft |
+| Approval state | docstatus | Who can edit |
+|----------------|-----------|--------------|
+| **Draft** | 0 | Accounts User (preparer) |
+| **Pending Approval** | 0 | Accounts Manager only (preparer locked out) |
+| **Approved** | 1 | Submitted - ERPNext controls payment status |
+| **Cancelled** | 2 | Cancelled via workflow or native Cancel |
 
-!!! warning "Submit guard"
-    You cannot **Submit** a Sales Invoice until `workflow_state = Approved`.
+### Transitions
 
-After approval, use normal ERPNext payment entry against the invoice.
+| From | Action | To | Role |
+|------|--------|-----|------|
+| Draft | Submit for Review | Pending Approval | Accounts User |
+| Pending Approval | Approve | Approved (submits) | Accounts Manager |
+| Pending Approval | Reject | Draft | Accounts Manager |
+| Approved | Cancel | Cancelled | Accounts Manager |
+
+Rejection returns to **Draft** (no permanent Rejected state). Rejection reason is mandatory via the Reject dialog.
+
+After **Approve**, ERPNext owns payment **Status**:
+
+| Payment status | Meaning |
+|----------------|---------|
+| **Unpaid** | Submitted; customer sees it on **My Invoices** |
+| **Partly Paid** | Partial payment recorded |
+| **Paid** | Fully settled |
+| **Overdue** | Past due with balance outstanding |
+
+Workflow uses **Don't Override Status** - the list indicator and customer portal show **Unpaid / Paid**, not the approval state.
+
+Email notifications (queued):
+
+- **Submit for Review** → Accounts Manager
+- **Approve** → invoice creator (notes approval + payment status)
+- **Reject** → invoice creator (includes rejection reason)
+
+Post-approval corrections: **Cancel → Amend → Draft → Submit for Review → Approve** (full approval cycle again).
 
 ---
 
@@ -112,7 +148,7 @@ Journal Entries linked to a sea task (`custom_cgm_source_task`) automatically up
 | JE insert / update / submit | Costs added to project summary |
 | JE cancel | Costs reversed |
 
-**Do not** manually edit the finance cost total on Project — the field is protected.
+**Do not** manually edit the finance cost total on Project - the field is protected.
 
 Cost categories are mapped in **CGM Shipping Settings → Finance Cost Category Map**.
 
@@ -131,23 +167,10 @@ Tasks may expose **Create Journal Entry** actions when finance lines are ready. 
 
 ---
 
-## Checklist: finance on a new shipment
-
-- [ ] UCR paid (task 4) after Declaration creates UCR (task 3)
-- [ ] Pre-clearance permits paid (task 6)
-- [ ] Entry slip paid (task 11) after entry lodged (task 10)
-- [ ] Shipping line charges paid (task 13)
-- [ ] Post-clearance permits paid (task 16)
-- [ ] KPA invoice paid (task 19)
-- [ ] Review quotation before client billing
-- [ ] Approve sales invoice before submit
-- [ ] Monitor project cost total vs budget
-
----
-
 ## Related guides
 
 - [Operations](operations.md)
 - [Declaration & Customs](declaration-customs.md)
 - [Commercial](commercial.md)
-- [Admin & Setup](admin-setup.md)
+- [Funding Request](funding.md)
+- [Shipment Modes](shipment-modes.md)

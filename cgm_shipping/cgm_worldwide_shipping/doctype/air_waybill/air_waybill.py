@@ -5,8 +5,8 @@
 Mirrors the Bill of Lading flow for air freight: an Air Waybill branches a CRM
 Opportunity (carrying the customer, shipment type, description and the AWB
 document) and an Opportunity surfaces its Air Waybill under Connections. Air
-freight has no container manifest, so the container/quantity sync the Bill of
-Lading carries does not apply here.
+freight has no container manifest. Quantity is derived from packages the same
+way LCL does (package count + package type), not from a container table.
 """
 
 import frappe

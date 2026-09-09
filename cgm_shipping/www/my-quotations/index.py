@@ -13,6 +13,7 @@ import frappe
 from frappe import _
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
+	apply_customer_portal_layout,
 	customer_display_name,
 	customer_for_user,
 	get_customer_quotations,
@@ -22,8 +23,7 @@ no_cache = 1
 
 
 def get_context(context):
-	context.no_cache = 1
-	context.show_sidebar = False
+	apply_customer_portal_layout(context)
 
 	if frappe.session.user == "Guest":
 		frappe.local.flags.redirect_location = "/login?redirect-to=" + quote("/my-quotations", safe="")

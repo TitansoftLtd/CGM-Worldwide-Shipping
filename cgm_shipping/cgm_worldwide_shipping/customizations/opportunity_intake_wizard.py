@@ -19,6 +19,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment imp
 	evaluate_start_shipment_readiness,
 	get_shipment_type_flags,
 	has_any_transport_document,
+	transport_documents_deferred,
 )
 
 STAGE_INTAKE = "intake"
@@ -55,7 +56,7 @@ def sync_opportunity_intake_stage(doc) -> None:
 		if not doc.get("custom_mode_of_transport") or doc.has_value_changed("custom_shipment_type"):
 			doc.custom_mode_of_transport = mode
 
-	primary_linked = has_any_transport_document(doc)
+	primary_linked = has_any_transport_document(doc) or transport_documents_deferred(doc)
 	if doc.meta.has_field("custom_primary_doc_linked"):
 		doc.custom_primary_doc_linked = int(primary_linked)
 
@@ -171,7 +172,19 @@ def build_intake_wizard_html(stage: str, readiness: dict | None = None) -> str:
 		else:
 			message = _("Upload and verify all required client documents, then submit for approval.")
 	elif stage == STAGE_AUTHORIZATION:
-		message = _("All requirements met. Approve this record, then click <b>Start Shipment</b>.")
+		state = (flags.get("workflow_state") or "").strip()
+		if flags.get("transport_docs_deferred"):
+			message = _(
+				"Transport documents can be attached later on the Project. "
+				"Approve this record, then click <b>Start Shipment</b>."
+			)
+		elif state and state != "Approved":
+			message = _(
+				"All requirements met. Approve this record (currently {0}), "
+				"then click <b>Start Shipment</b>."
+			).format(frappe.utils.escape_html(state))
+		else:
+			message = _("Approved. Click <b>Start Shipment</b> to create the project.")
 
 	if message:
 		parts.append(f'<div class="cgm-shipment-intake-message">{message}</div>')

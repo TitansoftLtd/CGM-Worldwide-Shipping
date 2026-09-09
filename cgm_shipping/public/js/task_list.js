@@ -46,3 +46,24 @@ frappe.listview_settings.Task.onload = function (listview) {
 		});
 	};
 };
+
+frappe.realtime.on("cgm_task_status_changed", (data) => {
+	if (!data?.task || !data?.status) {
+		return;
+	}
+	const listview = cur_list;
+	if (!listview || listview.doctype !== "Task") {
+		return;
+	}
+	const row = (listview.data || []).find((doc) => doc.name === data.task);
+	if (!row || row.status === data.status) {
+		return;
+	}
+	row.status = data.status;
+	if (data.status === "Completed") {
+		row.progress = 100;
+	} else if (data.status === "Open") {
+		row.progress = 0;
+	}
+	listview.render();
+});

@@ -32,7 +32,13 @@ PRIMARY_DOC_TO_DOCTYPE = {
 }
 
 # First document on sea shipments may be either of these; one is enough to Start Shipment.
+# Do not apply this OR-gate to Air — air starts with Air Waybill.
 START_GATE_ALTERNATES = frozenset({"Bill of Lading", "Booking Confirmation"})
+
+
+def transport_mode_is_air(row: dict | None = None, *, mode: str | None = None) -> bool:
+	value = (mode or "").strip() or ((row or {}).get("default_mode_of_transport") or "")
+	return str(value).strip().lower() == "air"
 
 
 def _transport_doctype_exists(label: str) -> bool:
@@ -82,12 +88,18 @@ def _apply_primary_start_requirement(
 			if entry:
 				out.insert(0, entry)
 
-	# Sea start-gate alternates: both count toward Start Shipment (OR).
-	labels = {item["transport_document"] for item in out}
-	if labels & START_GATE_ALTERNATES:
+	# Sea start-gate: BL or Booking (OR). Air starts with Air Waybill only —
+	# never require Booking Confirmation / BL on air types.
+	if transport_mode_is_air(row):
 		for item in out:
 			if item["transport_document"] in START_GATE_ALTERNATES:
-				item["is_required_for_start"] = True
+				item["is_required_for_start"] = False
+	else:
+		labels = {item["transport_document"] for item in out}
+		if labels & START_GATE_ALTERNATES:
+			for item in out:
+				if item["transport_document"] in START_GATE_ALTERNATES:
+					item["is_required_for_start"] = True
 
 	return sorted(out, key=lambda item: (item["sort_order"], item["transport_document"]))
 

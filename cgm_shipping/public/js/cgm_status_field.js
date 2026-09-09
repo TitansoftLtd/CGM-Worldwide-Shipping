@@ -65,7 +65,6 @@ cgm_shipping.status_field = {
 				"UCR Paid",
 				"Pre-clearance",
 				"Final Docs Received",
-				"Manifest Requested",
 				"Entry Lodged",
 				"Post-clearance",
 				"Field Clearance",
@@ -213,7 +212,7 @@ cgm_shipping.status_field = {
 		if (doctype === "Task Finance Line" && df.fieldname === "verified") {
 			return (value) => sf.tone_for_verified(value);
 		}
-		if (doctype === "Container Tracker" && df.fieldname === "deposit_payment_status") {
+		if (doctype === "Bill of Lading" && df.fieldname === "deposit_payment_status") {
 			return (value) => sf.tone_for_deposit_payment(value);
 		}
 		return null;
@@ -463,8 +462,11 @@ cgm_shipping.status_field = {
 		const orig_refresh = grid.refresh.bind(grid);
 		grid.refresh = function (...args) {
 			const result = orig_refresh(...args);
-			setTimeout(() => sf.paint_grid(grid, fieldname, tone_fn), 0);
-			setTimeout(() => sf.paint_grid(grid, fieldname, tone_fn), 100);
+			clearTimeout(grid._cgm_status_paint_timer);
+			grid._cgm_status_paint_timer = setTimeout(
+				() => sf.paint_grid(grid, fieldname, tone_fn),
+				50
+			);
 			return result;
 		};
 	},
@@ -479,12 +481,12 @@ cgm_shipping.status_field = {
 		sf.register_meta_formatter(doctype, fieldname, (value, doc) => tone_fn(value, doc));
 		sf._patch_grid_refresh(grid, fieldname, tone_fn);
 
-		const paint_all = () => sf.paint_grid(grid, fieldname, tone_fn);
 		const schedule_paint = () => {
-			paint_all();
-			setTimeout(paint_all, 0);
-			setTimeout(paint_all, 120);
-			setTimeout(paint_all, 400);
+			clearTimeout(grid._cgm_status_paint_timer);
+			grid._cgm_status_paint_timer = setTimeout(
+				() => sf.paint_grid(grid, fieldname, tone_fn),
+				50
+			);
 		};
 
 		if (!grid._cgm_status_hooks) {
@@ -499,15 +501,13 @@ cgm_shipping.status_field = {
 			const status_select = `.grid-static-col[data-fieldname="${fieldname}"] select`;
 
 			if (frm?.wrapper) {
-				$(frm.wrapper)
-					.on(`grid-row-render${event_ns}`, (e, grid_row) => {
-						if (grid_row?.grid !== grid) {
-							return;
-						}
-						sf.patch_grid_row_refresh_field(grid_row, fieldname, tone_fn);
-						sf.paint_grid_row(grid_row, fieldname, tone_fn);
-					})
-					.on(`click${event_ns}`, () => schedule_paint());
+				$(frm.wrapper).on(`grid-row-render${event_ns}`, (e, grid_row) => {
+					if (grid_row?.grid !== grid) {
+						return;
+					}
+					sf.patch_grid_row_refresh_field(grid_row, fieldname, tone_fn);
+					sf.paint_grid_row(grid_row, fieldname, tone_fn);
+				});
 			}
 
 			$(grid.wrapper)
@@ -542,7 +542,7 @@ function cgm_register_global_status_formatters() {
 		(value) => sf.tone_for_verified(value)
 	);
 	sf.register_meta_formatter(
-		"Container Tracker",
+		"Bill of Lading",
 		"deposit_payment_status",
 		(value) => sf.tone_for_deposit_payment(value)
 	);

@@ -1,0 +1,241 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-09-04 12:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "section_reference",
+  "project",
+  "submitted_by_party",
+  "customer",
+  "transporter",
+  "column_break_reference",
+  "submitted_by",
+  "submitted_on",
+  "section_break_sdnr",
+  "containers",
+  "section_rating",
+  "rating",
+  "category",
+  "column_break_rating",
+  "would_recommend",
+  "comments",
+  "section_response",
+  "status",
+  "response",
+  "column_break_response",
+  "responded_by",
+  "responded_on",
+  "title"
+ ],
+ "fields": [
+  {
+   "default": "FDBK-.YY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "no_copy": 1,
+   "options": "FDBK-.YY.-.#####",
+   "print_hide": 1,
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "section_reference",
+   "fieldtype": "Section Break",
+   "label": "Shipment"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project / Shipment",
+   "options": "Project",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_reference",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Customer",
+   "fieldname": "submitted_by_party",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Submitted By",
+   "options": "Customer\nTransporter",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.submitted_by_party=='Customer'",
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.submitted_by_party=='Transporter'",
+   "fieldname": "transporter",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Transporter",
+   "options": "Supplier",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitted_by",
+   "fieldtype": "Link",
+   "label": "Submitted By User",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitted_on",
+   "fieldtype": "Datetime",
+   "label": "Submitted On",
+   "read_only": 1
+  },
+  {
+   "description": "Leave empty when the feedback is about the whole shipment.",
+   "fieldname": "containers",
+   "fieldtype": "Table",
+   "label": "Containers",
+   "options": "Portal Feedback Container"
+  },
+  {
+   "fieldname": "section_rating",
+   "fieldtype": "Section Break",
+   "label": "Feedback"
+  },
+  {
+   "fieldname": "rating",
+   "fieldtype": "Rating",
+   "in_list_view": 1,
+   "label": "Rating",
+   "reqd": 1
+  },
+  {
+   "default": "Overall Service",
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "Overall Service\nCommunication\nTimeliness\nDocumentation\nContainer Handling\nTransport & Delivery\nOther"
+  },
+  {
+   "fieldname": "column_break_rating",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "would_recommend",
+   "fieldtype": "Check",
+   "label": "Would Recommend CGM"
+  },
+  {
+   "fieldname": "comments",
+   "fieldtype": "Small Text",
+   "label": "Comments"
+  },
+  {
+   "fieldname": "section_response",
+   "fieldtype": "Section Break",
+   "label": "CGM Response"
+  },
+  {
+   "default": "New",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "New\nAcknowledged\nResolved"
+  },
+  {
+   "fieldname": "response",
+   "fieldtype": "Small Text",
+   "label": "Response to Customer / Transporter"
+  },
+  {
+   "fieldname": "column_break_response",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "responded_by",
+   "fieldtype": "Link",
+   "label": "Responded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "responded_on",
+   "fieldtype": "Datetime",
+   "label": "Responded On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Title",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_sdnr",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-04 14:27:37.796531",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "Portal Feedback",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Operations Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Transport Officer",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "submitted_on",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

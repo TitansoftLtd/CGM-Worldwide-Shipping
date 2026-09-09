@@ -27,6 +27,24 @@ cgm_shipping.supplier_filters.transporter_query = function () {
 	};
 };
 
+cgm_shipping.supplier_filters.non_shipping_line_query = function () {
+	return {
+		filters: {
+			disabled: 0,
+			custom_is_shipping_line: 0,
+		},
+	};
+};
+
+cgm_shipping.supplier_filters.apply_non_shipping_line_supplier = function (frm) {
+	if (!frm?.fields_dict?.supplier) {
+		return;
+	}
+	frm.set_query("supplier", cgm_shipping.supplier_filters.non_shipping_line_query);
+};
+
+const NON_SHIPPING_LINE_SUPPLIER_DOCTYPES = new Set(["Purchase Order", "Purchase Invoice"]);
+
 function _label_kind(df) {
 	const label = ((df && df.label) || "").trim().toLowerCase();
 	if (label === "shipping line" || label.endsWith(" shipping line")) {
@@ -96,4 +114,7 @@ cgm_shipping.supplier_filters.apply = function (frm) {
 
 $(document).on("form-refresh", (_e, frm) => {
 	cgm_shipping.supplier_filters.apply(frm);
+	if (NON_SHIPPING_LINE_SUPPLIER_DOCTYPES.has(frm.doctype)) {
+		cgm_shipping.supplier_filters.apply_non_shipping_line_supplier(frm);
+	}
 });

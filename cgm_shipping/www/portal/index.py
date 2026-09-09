@@ -15,14 +15,16 @@ from urllib.parse import quote
 
 import frappe
 from frappe import _
-from frappe.utils import getdate
+from frappe.utils import fmt_money, getdate
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
+	apply_customer_portal_layout,
 	customer_display_name,
 	customer_for_user,
 	get_customer_invoices,
 	get_customer_quotations,
 	get_customer_shipments,
+	outstanding_totals_by_currency,
 	shipment_display_ref,
 	status_tone,
 )
@@ -36,17 +38,18 @@ _DEFAULTS = {
 	"stat_delivered": 0,
 	"stat_demurrage": 0,
 	"stat_open_quotations": 0,
+	"stat_unread_updates": 0,
 	"stat_amount_due": 0,
 	"amount_due_currency": None,
+	"amount_due_display": None,
+	"outstanding_totals": [],
 	"arriving_soon": [],
 	"recent_shipments": [],
 }
 
 
 def get_context(context):
-	context.no_cache = 1
-	context.show_sidebar = False
-	context.full_width = True
+	apply_customer_portal_layout(context)
 
 	if frappe.session.user == "Guest":
 		frappe.local.flags.redirect_location = "/login?redirect-to=" + quote("/portal", safe="")
@@ -163,10 +166,26 @@ def _populate(context, customer):
 		1 for q in quotations if q.status in ("Open", "Replied")
 	)
 	invoices = get_customer_invoices(customer)
-	context.stat_amount_due = sum(flt(i.outstanding_amount) for i in invoices)
+	outstanding_totals = outstanding_totals_by_currency(invoices)
+	context.outstanding_totals = outstanding_totals
+	context.stat_amount_due = sum(flt(t["amount"]) for t in outstanding_totals)
 	context.amount_due_currency = (
-		invoices[0].currency if invoices else frappe.defaults.get_global_default("currency")
+		outstanding_totals[0]["currency"]
+		if outstanding_totals
+		else frappe.defaults.get_global_default("currency")
 	)
+	if outstanding_totals:
+		context.amount_due_display = " · ".join(
+			fmt_money(t["amount"], currency=t["currency"]) for t in outstanding_totals
+		)
+	else:
+		context.amount_due_display = fmt_money(0, currency=context.amount_due_currency)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
+		count_unread_customer_updates,
+	)
+
+	context.stat_unread_updates = count_unread_customer_updates(customer)
 
 	recent = []
 	for s in shipments[:8]:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 import frappe
+from frappe.utils import cint, flt
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 	filter_sea_tasks_for_user,
@@ -18,8 +19,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	get_project_reference,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+	derive_workflow_passed_states,
 	derive_workflow_progress_from_tasks,
-	get_tracking_workflow_states,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
 	GENERIC_WORKFLOW_STATES,
@@ -634,7 +635,7 @@ def ensure_task_container_update_fields() -> None:
 		"Task",
 		{
 			"fieldname": "custom_not_emptied_reason",
-			"label": "If containers not exiting port — reason",
+			"label": "If containers not exiting port - reason",
 			"fieldtype": "Small Text",
 			"insert_after": "custom_container_updates",
 			"depends_on": (
@@ -645,6 +646,65 @@ def ensure_task_container_update_fields() -> None:
 				"Required when task is completed but no truck details are filled "
 				"for any container."
 			),
+		},
+	)
+	frappe.clear_cache(doctype="Task")
+
+
+def ensure_client_paid_task_fields() -> None:
+	"""Finance marks the client-pays path (no company JE; verify still required, receipt optional)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CLIENT_PAID_BY_FIELD,
+		CLIENT_PAID_FIELD,
+		CLIENT_PAID_ON_FIELD,
+	)
+
+	label = "Client will pay"
+	description = (
+		"Tick when the client settles this fee (no company Journal Entry). "
+		"Finance must still verify the invoice. Receipt attachment is optional."
+	)
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_FIELD,
+			"label": label,
+			"fieldtype": "Check",
+			"insert_after": "custom_journal_entry",
+			"description": description,
+			"allow_on_submit": 0,
+		},
+	)
+	# _ensure_cf skips label/description on existing fields — update intentionally.
+	cf_name = f"Task-{CLIENT_PAID_FIELD}"
+	if frappe.db.exists("Custom Field", cf_name):
+		frappe.db.set_value(
+			"Custom Field",
+			cf_name,
+			{"label": label, "description": description},
+			update_modified=False,
+		)
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_BY_FIELD,
+			"label": "Client Payment Confirmed By",
+			"fieldtype": "Link",
+			"options": "User",
+			"insert_after": CLIENT_PAID_FIELD,
+			"read_only": 1,
+			"depends_on": f"eval:doc.{CLIENT_PAID_FIELD}",
+		},
+	)
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": CLIENT_PAID_ON_FIELD,
+			"label": "Client Payment Confirmed On",
+			"fieldtype": "Datetime",
+			"insert_after": CLIENT_PAID_BY_FIELD,
+			"read_only": 1,
+			"depends_on": f"eval:doc.{CLIENT_PAID_FIELD}",
 		},
 	)
 	frappe.clear_cache(doctype="Task")
@@ -854,7 +914,7 @@ def ensure_project_inspection_notification_fields() -> None:
 
 
 def ensure_project_port_arrival_fields() -> None:
-	"""Early port-arrival confirmation (creates container trackers before Entry is paid)."""
+	"""Port-arrival confirmation on Project (creates container trackers; independent of Entry)."""
 	_create_cf(
 		"Project",
 		{
@@ -1069,7 +1129,7 @@ def _ensure_tracking_fields() -> None:
 			"in_list_view": 1,
 			"hidden": 0,
 			"read_only": 0,
-			"description": "Company CGM reference — enter manually; not the same as Project Name.",
+			"description": "Company CGM reference - enter manually; not the same as Project Name.",
 		},
 	)
 	_create_cf(
@@ -1214,7 +1274,16 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	doc = frappe.get_doc("Project", project)
 	workflow_status = doc.get("custom_shipment_status") or "Draft"
 	use_clearance_states = project_uses_clearance_workflow_states(doc)
-	states = get_tracking_workflow_states() if use_clearance_states else list(GENERIC_WORKFLOW_STATES)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_clearance_workflow_gates_for_project,
+		get_clearance_workflow_states_for_project,
+	)
+
+	states = (
+		get_clearance_workflow_states_for_project(doc)
+		if use_clearance_states
+		else list(GENERIC_WORKFLOW_STATES)
+	)
 	try:
 		workflow_index = states.index(workflow_status)
 	except ValueError:
@@ -1226,9 +1295,17 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	total = len(tasks) or workflow_task_count_for_project(doc)
 
 	if use_clearance_states:
-		progress_status, progress_index = derive_workflow_progress_from_tasks(tasks, states)
+		gates = get_clearance_workflow_gates_for_project(doc)
+		progress_status, progress_index = derive_workflow_progress_from_tasks(
+			tasks, states=states, gates=gates
+		)
+		passed_states = sorted(
+			derive_workflow_passed_states(tasks, states=states, gates=gates),
+			key=lambda s: states.index(s) if s in states else 999,
+		)
 	else:
 		progress_status, progress_index = derive_generic_workflow_progress(tasks)
+		passed_states = []
 
 	visible_tasks = filter_sea_tasks_for_user(tasks)
 	open_tasks = [t for t in visible_tasks if t.get("status") not in ("Completed", "Cancelled")]
@@ -1236,11 +1313,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	workflow_behind = workflow_index < progress_index
 	workflow_ahead = workflow_index > progress_index
 	# Keep the shipment status field aligned with tasks — advance OR rewind.
-	if (
-		(workflow_behind or workflow_ahead)
-		and use_clearance_states
-		and doc.get("custom_mode_of_transport") == "Sea"
-	):
+	if (workflow_behind or workflow_ahead) and use_clearance_states:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 			sync_project_shipment_status_from_tasks,
 		)
@@ -1266,6 +1339,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	)
 
 	containers = enrich_containers_with_allocation(containers)
+	containers = _enrich_containers_with_bl_deposits(doc, containers)
 
 	berth_phase = doc.get("custom_berth_phase") or "Before Vessel Berth"
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import get_project_ata
@@ -1292,6 +1366,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	payload = {
 		"current_status": progress_status,
 		"current_index": progress_index,
+		"passed_states": passed_states,
 		"workflow_status": workflow_status,
 		"workflow_index": workflow_index,
 		"workflow_behind": workflow_behind,
@@ -1306,6 +1381,8 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"uses_clearance_states": use_clearance_states,
 		"has_workflow_tasks": bool(visible_tasks or tasks),
 		"task_progress_label": "clearance tasks" if use_clearance_states else "workflow tasks",
+		"show_berth_phase": use_clearance_states
+		and (doc.get("custom_mode_of_transport") or "").strip().lower() == "sea",
 		"berth_phase": berth_phase,
 		"project_reference": get_project_reference(doc) or doc.name,
 		"cgm_ref_no": (doc.get("custom_cgm_ref_no") or "").strip()
@@ -1341,6 +1418,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		"total_demurrage_amount": sum(c.get("demurrage_amount") or 0 for c in containers),
 		"total_kpa_amount": sum(c.get("kpa_amount") or 0 for c in containers),
 		"total_detention_amount": sum(c.get("detention_amount") or 0 for c in containers),
+		**_project_bl_deposit_kpis(doc),
 	}
 	if doc.meta.has_field("custom_inspection_notification_status"):
 		payload["inspection_notification_status"] = (
@@ -1354,6 +1432,96 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		payload["port_arrival_confirmed_on"] = doc.get("custom_port_arrival_confirmed_on")
 		payload["port_arrival_confirmed_by"] = doc.get("custom_port_arrival_confirmed_by")
 	return payload
+
+
+def _project_bl_deposit_summary(doc) -> dict | None:
+	"""Load Bill of Lading deposit fields for this project's linked BL."""
+	bl_name = (doc.get("custom_bill_of_lading") or "").strip()
+	if not bl_name or not frappe.db.exists("Bill of Lading", bl_name):
+		return None
+	meta = frappe.get_meta("Bill of Lading")
+	if not meta.has_field("deposit_arrangement"):
+		return None
+	fields = [
+		"name",
+		"deposit_arrangement",
+		"deposit_payer",
+		"deposit_amount",
+		"deposit_payment_status",
+		"deposit_refund_status",
+		"deposit_return_date",
+	]
+	fields = [f for f in fields if meta.has_field(f) or f == "name"]
+	return frappe.db.get_value("Bill of Lading", bl_name, fields, as_dict=True)
+
+
+def _project_bl_deposit_kpis(doc) -> dict:
+	"""Project dashboard deposit KPIs from the linked Bill of Lading (0 or 1)."""
+	empty = {
+		"deposits_unpaid": 0,
+		"deposits_paid_outstanding": 0,
+		"deposits_refund_pending": 0,
+	}
+	bl = _project_bl_deposit_summary(doc)
+	if not bl or (bl.get("deposit_arrangement") or "").strip() != "Container Deposit":
+		return empty
+	payment = (bl.get("deposit_payment_status") or "").strip()
+	refund = (bl.get("deposit_refund_status") or "").strip()
+	return {
+		"deposits_unpaid": 1 if payment == "Unpaid" else 0,
+		"deposits_paid_outstanding": (
+			1
+			if payment == "Paid" and refund not in ("Received", "Forfeited")
+			else 0
+		),
+		"deposits_refund_pending": 1 if refund == "Pending" else 0,
+	}
+
+
+def _enrich_containers_with_bl_deposits(doc, containers: list[dict]) -> list[dict]:
+	"""Overlay BL deposit amount (per child) + BL payment/refund status onto tracker cards."""
+	bl = _project_bl_deposit_summary(doc)
+	has_arrangement = bl and (bl.get("deposit_arrangement") or "").strip() == "Container Deposit"
+	if not has_arrangement:
+		for c in containers:
+			c.setdefault("deposit_arrangement", "")
+			c.setdefault("has_deposit", 0)
+			c.setdefault("deposit_amount", 0)
+			c.setdefault("deposit_payment_status", "")
+			c.setdefault("deposit_refund_status", "")
+		return containers
+
+	bl_name = bl.name
+	child_by_number = {}
+	child_by_tracker = {}
+	for row in frappe.get_all(
+		"Container",
+		filters={"parent": bl_name, "parenttype": "Bill of Lading"},
+		fields=["container_number", "container_tracker", "deposit_amount"],
+	):
+		key = (row.container_number or "").strip().upper()
+		if key:
+			child_by_number[key] = row
+		if row.container_tracker:
+			child_by_tracker[row.container_tracker] = row
+
+	payment = (bl.get("deposit_payment_status") or "").strip()
+	refund = (bl.get("deposit_refund_status") or "").strip()
+	return_date = bl.get("deposit_return_date")
+	payer = (bl.get("deposit_payer") or "").strip()
+
+	for c in containers:
+		src = child_by_tracker.get(c.get("name")) or child_by_number.get(
+			(c.get("container_number") or "").strip().upper()
+		)
+		amount = flt(src.get("deposit_amount")) if src else 0
+		c["deposit_arrangement"] = "Container Deposit"
+		c["has_deposit"] = 1 if amount > 0 else 0
+		c["deposit_amount"] = amount
+		c["deposit_payment_status"] = payment if amount > 0 else ""
+		c["deposit_refund_status"] = refund if amount > 0 and payer != "Agent" else ""
+		c["deposit_return_date"] = return_date if amount > 0 else None
+	return containers
 
 
 OBSOLETE_FINANCE_COST_PROJECT_FIELDS = (
@@ -1390,7 +1558,7 @@ def ensure_project_finance_cost_fields() -> None:
 		"Project",
 		{
 			"fieldname": "custom_finance_cost_total",
-			"label": "Total Billed Amount (via Journal Entry) — numeric",
+			"label": "Total Billed Amount (via Journal Entry) - numeric",
 			"fieldtype": "Currency",
 			"insert_after": "custom_section_finance_cost_summary",
 			"read_only": 1,

@@ -2,7 +2,7 @@
 
 frappe.provide("cgm_shipping.attachment_approval");
 
-const CGM_ATTACHMENT_APPROVAL_PARENT_DOCTYPES = ["Task", "Project", "Opportunity"];
+const CGM_ATTACHMENT_APPROVAL_PARENT_DOCTYPES = ["Task", "Project"];
 
 cgm_shipping.attachment_approval = {
 	refresh(frm) {
@@ -34,33 +34,80 @@ cgm_shipping.attachment_approval = {
 		frm.__cgm_attachment_state_promise.then((state) => {
 			// Ignore a response that a newer revision has already superseded.
 			if (frm.__cgm_attachment_state_key === key) {
-				cgm_shipping.attachment_approval.configure_buttons(frm, state);
+				cgm_shipping.attachment_approval._schedule_buttons_after_workflow(frm, state);
 			}
 		});
 	},
 
+	// Re-apply the cached decision without another server round trip. The parent form
+	// clears every custom button when it rebuilds its own toolbar, which drops these
+	// items; it calls this straight after so they never go missing until a refresh.
+	repaint_buttons(frm) {
+		const promise = frm.__cgm_attachment_state_promise;
+		const key = frm.__cgm_attachment_state_key;
+		if (!promise || !key) {
+			return;
+		}
+		promise.then((state) => {
+			// The key carries doctype:name:modified, so a stale response cannot paint
+			// buttons for a task the user has already navigated away from.
+			if (cur_frm === frm && frm.__cgm_attachment_state_key === key) {
+				cgm_shipping.attachment_approval.configure_buttons(frm, state || {});
+			}
+		});
+	},
+
+	_schedule_buttons_after_workflow(frm, state) {
+		const paint = () => cgm_shipping.attachment_approval.configure_buttons(frm, state);
+		const workflow_field = frappe.workflow.get_state_fieldname(frm.doctype);
+		if (workflow_field && !frm.doc.__islocal && !frm.doc.__unsaved) {
+			frappe.workflow.get_transitions(frm.doc).then(() => setTimeout(paint, 50));
+			return;
+		}
+		paint();
+	},
+
 	configure_buttons(frm, state) {
-		frm.remove_custom_button(__("Send Final Documents for Review"));
-		frm.remove_custom_button(__("Review Final Documents"));
-		frm.remove_custom_button(__("Send for Review"));
+		if (frm.doctype === "Opportunity" || frm.doctype === "Project") {
+			// Those forms build their own single Actions menu and append these items to it.
+			return;
+		}
+		const action_group = __("Actions");
+		[
+			__("Send Final Documents for Review"),
+			__("Review Final Documents"),
+			__("Send for Review"),
+			__("Review Documents"),
+		].forEach((label) => {
+			frm.remove_custom_button(label, action_group);
+			frm.remove_custom_button(label);
+		});
+
+		// One Actions menu per form: these items join the inner-toolbar group the parent
+		// form builds (task.js), and the page-header Actions menu stays empty and hidden —
+		// the same shape project.js and crm_opportunity.js already use. Two menus sharing
+		// the label "Actions" is what made the toolbar show the button twice.
+		frm.page.clear_actions_menu();
+		frm.page.hide_actions_menu();
+
+		const add_action = (label, fn) => {
+			frm.add_custom_button(label, fn, action_group);
+			frm.page.set_inner_btn_group_as_primary(action_group);
+		};
 
 		if (state.can_send) {
 			const label =
 				state.profiles?.length === 1
 					? state.profiles[0].send_button_label
 					: __("Send for Review");
-			frm.add_custom_button(label, () => cgm_shipping.attachment_approval.open_send_dialog(frm), __("Actions"));
+			add_action(label, () => cgm_shipping.attachment_approval.open_send_dialog(frm));
 		}
 
 		if (state.can_review) {
 			const label =
 				state.profiles?.find((profile) => profile.pending_count)?.review_button_label ||
 				__("Review Documents");
-			frm.add_custom_button(
-				label,
-				() => cgm_shipping.attachment_approval.open_review_dialog(frm),
-				__("Actions")
-			);
+			add_action(label, () => cgm_shipping.attachment_approval.open_review_dialog(frm));
 		}
 	},
 

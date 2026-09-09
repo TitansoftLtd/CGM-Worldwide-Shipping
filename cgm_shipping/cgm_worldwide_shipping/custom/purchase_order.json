@@ -1,0 +1,23 @@
+{
+ "custom_fields": [
+  {
+   "allow_on_submit": 1,
+   "dt": "Purchase Order",
+   "fieldname": "custom_funding_request",
+   "fieldtype": "Link",
+   "insert_after": "company",
+   "label": "Funding Request",
+   "module": "CGM Worldwide Shipping",
+   "name": "Purchase Order-custom_funding_request",
+   "no_copy": 1,
+   "options": "Funding Request",
+   "read_only": 1,
+   "in_standard_filter": 1
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "Purchase Order",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}
