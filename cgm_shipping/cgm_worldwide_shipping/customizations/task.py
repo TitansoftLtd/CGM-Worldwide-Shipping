@@ -690,6 +690,17 @@ def _cached_sea_task_ui_sequence_lists() -> dict:
 	)
 	kpa_finance = sorted(s for s in finance_payment_sequences() if is_kpa_finance_payment_task(s))
 	stage_by_seq = permit_stage_by_sequence()
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_TASK_SEQ_DEFAULTS,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+		get_container_task_sequence,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+		container_update_task_sequences,
+	)
+
 	payload = {
 		"payment_seqs": sorted(finance_payment_sequences()),
 		"auto_complete_seqs": sorted(auto_complete_sequences()),
@@ -707,6 +718,13 @@ def _cached_sea_task_ui_sequence_lists() -> dict:
 		"shipping_line_finance_seqs": shipping_line_finance,
 		"kpa_finance_seqs": kpa_finance,
 		"permit_stage_by_seq": {str(k): v for k, v in stage_by_seq.items()},
+		# Container / field-clearance steps are settings-driven too. The desk used to
+		# hardcode these numbers, which drifted from CGM Shipping Settings.
+		"container_task_seqs": {
+			fieldname: get_container_task_sequence(fieldname)
+			for fieldname in CONTAINER_TASK_SEQ_DEFAULTS
+		},
+		"container_update_seqs": sorted(container_update_task_sequences()),
 		"finance_department": frappe.db.get_single_value(
 			"CGM Shipping Settings", "custom_finance_department"
 		)
@@ -4550,11 +4568,11 @@ def validate_task_completion_requirements(doc, _method=None):
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
 		validate_container_step_task_completion,
-		validate_task_19_container_updates,
+		validate_book_trucks_container_updates,
 	)
 
 	validate_container_step_task_completion(doc)
-	validate_task_19_container_updates(doc)
+	validate_book_trucks_container_updates(doc)
 
 
 # ==================== CGMTask override ====================

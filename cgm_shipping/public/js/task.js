@@ -410,8 +410,31 @@ const CGM_SEA_UI_SEQUENCES_EMPTY = {
 	shipping_line_finance_seqs: [],
 	kpa_finance_seqs: [],
 	permit_stage_by_seq: {},
+	container_task_seqs: {},
+	container_update_seqs: [],
 	permissions: {},
 };
+
+// Mirrors CONTAINER_TASK_SEQ_DEFAULTS in customizations/constants.py. Only used
+// before get_sea_task_ui_sequences answers, or when that call fails.
+const CONTAINER_TASK_SEQ_FALLBACK = {
+	custom_track_eta_task_seq: 8,
+	custom_vessel_arrival_task_seq: 12,
+	custom_field_clearance_task_seq: 17,
+	custom_kpa_paid_task_seq: 19,
+	custom_book_trucks_task_seq: 20,
+	custom_gate_out_task_seq: 21,
+	custom_monitor_delivery_task_seq: 22,
+	custom_offload_task_seq: 23,
+	custom_empty_return_task_seq: 24,
+	custom_interchange_task_seq: 25,
+};
+
+/** Settings-driven sequence for a container/field-clearance step. */
+function container_task_seq(frm, fieldname) {
+	const configured = get_cgm_sea_seq_config(frm).container_task_seqs || {};
+	return Number(configured[fieldname] || CONTAINER_TASK_SEQ_FALLBACK[fieldname] || 0);
+}
 
 function sea_task_permits_depends_on(frm) {
 	const cfg = get_cgm_sea_seq_config(frm);
@@ -1141,29 +1164,67 @@ function apply_sea_task_form_layout(frm, ui) {
 	toggle("custom_external_ref_no", ui.show_external_ref);
 	toggle("description", ui.show_description);
 	apply_field_officer_task_fields(frm);
+	apply_container_update_field_visibility(frm);
 	apply_client_inspection_task_fields(frm);
 	toggle("sb_timeline", false);
 	toggle("sb_costing", false);
 	toggle("depends_on_tab", false);
 }
 
+const FIELD_CLEARANCE_FIELDS = [
+	"custom_section_field_clearance",
+	"custom_verification_type",
+	"custom_verification_status",
+	"custom_customs_issue",
+	"custom_delivery_note_status",
+	"custom_coc_status",
+	"custom_verification_report_attached",
+];
+
 function apply_field_officer_task_fields(frm) {
-	const seq = sea_task_sequence(frm);
-	const show = is_sea_clearance_task(frm) && seq === 18;
-	const fields = [
-		"custom_section_field_clearance",
-		"custom_verification_type",
-		"custom_verification_status",
-		"custom_customs_issue",
-		"custom_delivery_note_status",
-		"custom_coc_status",
-		"custom_verification_report_attached",
-	];
-	fields.forEach((fieldname) => {
-		if (frm.fields_dict[fieldname]) {
-			frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
+	// Sequence comes from CGM Shipping Settings — validate_field_clearance_task
+	// throws against the same number, so a hardcoded one hides the very fields
+	// the server then demands.
+	const field_seq = container_task_seq(frm, "custom_field_clearance_task_seq");
+	const show = is_sea_clearance_task(frm) && sea_task_sequence(frm) === field_seq;
+	const depends_on = field_seq
+		? `eval:${SEA_FLOW_KEYS_EXPR} && doc.custom_sequence_no == ${field_seq}`
+		: "";
+	FIELD_CLEARANCE_FIELDS.forEach((fieldname) => {
+		if (!frm.fields_dict[fieldname]) {
+			return;
 		}
+		// The stored depends_on still carries the old number; override it or the
+		// dependency keeps the field hidden even with hidden = 0.
+		frm.set_df_property(fieldname, "depends_on", depends_on);
+		frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
 	});
+}
+
+function apply_container_update_field_visibility(frm) {
+	// container_update_seqs mirrors is_container_update_task() on the server, which
+	// covers the shipping-line application AND finance steps as well as the
+	// transport steps. The stored depends_on lists only some of them.
+	const seqs = get_cgm_sea_seq_config(frm).container_update_seqs || [];
+	if (seqs.length) {
+		const expr = `eval:${SEA_FLOW_KEYS_EXPR} && [${seqs.join(",")}].includes(doc.custom_sequence_no)`;
+		["custom_section_container_updates", "custom_container_updates"].forEach((fieldname) => {
+			if (frm.fields_dict[fieldname]) {
+				frm.set_df_property(fieldname, "depends_on", expr);
+			}
+		});
+	}
+
+	// "Reason containers are not exiting port" is demanded by
+	// validate_task_19_container_updates on the book-trucks step, not gate-out.
+	const book_seq = container_task_seq(frm, "custom_book_trucks_task_seq");
+	if (book_seq && frm.fields_dict.custom_not_emptied_reason) {
+		frm.set_df_property(
+			"custom_not_emptied_reason",
+			"depends_on",
+			`eval:${SEA_FLOW_KEYS_EXPR} && doc.custom_sequence_no == ${book_seq}`
+		);
+	}
 }
 
 const CLIENT_INSPECTION_TASK_SEQ = 7;
