@@ -3826,10 +3826,26 @@ def _is_sea_task(doc) -> bool:
 
 
 def on_task_onload(doc, _method=None):
-	"""Remove orphan UCR Invoice rows from DB before the form is shown (link validation runs before before_save)."""
+	"""Reconcile the task, then prepare it for the form.
 
+	Reconciliation writes (it seeds finance lines and permit rows, and can
+	auto-complete or reopen the task), so it is gated on write permission: a
+	read-only viewer must not mutate a task, bump its ``modified`` - which hands
+	whoever has it open a "Document has been modified" conflict - or write around
+	the department permission layer via ``ignore_permissions``.
+
+	Form presentation below the gate is read-only and always runs, so viewers
+	still get the correct status and documents grid.
+	"""
 	if doc.is_new():
 		return
+	if frappe.has_permission("Task", ptype="write", doc=doc.name):
+		_reconcile_task_on_load(doc)
+	_prepare_task_for_form(doc)
+
+
+def _reconcile_task_on_load(doc) -> None:
+	"""Writes performed when a task form is opened by someone who can edit it."""
 	if purge_invoice_rows_from_task_documents_db(doc.name):
 		doc.reload()
 	if _is_sea_task(doc):
@@ -3938,10 +3954,6 @@ def on_task_onload(doc, _method=None):
 	on_task_onload_container_updates(doc)
 
 	if doc.meta.has_field(TASK_DOCUMENTS_FIELD):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-			prepare_shipment_documents_for_form,
-		)
-
 		# Prefill Task Documents from CGM Task Template Required Document Types.
 		if ensure_stamped_required_documents_saved(doc):
 			doc.reload()
@@ -3952,6 +3964,15 @@ def on_task_onload(doc, _method=None):
 				preserve_completed_status_against_stale_save(doc)
 				doc.save(ignore_permissions=True)
 				doc.reload()
+
+
+def _prepare_task_for_form(doc) -> None:
+	"""Read-only form presentation. Safe for viewers without write access."""
+	if doc.meta.has_field(TASK_DOCUMENTS_FIELD):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+			prepare_shipment_documents_for_form,
+		)
+
 		prepare_shipment_documents_for_form(doc, TASK_DOCUMENTS_FIELD)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_status import (
