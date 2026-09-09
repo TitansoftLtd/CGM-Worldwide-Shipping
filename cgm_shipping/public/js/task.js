@@ -418,7 +418,7 @@ const CGM_SEA_UI_SEQUENCES_EMPTY = {
 // Mirrors CONTAINER_TASK_SEQ_DEFAULTS in customizations/constants.py. Only used
 // before get_sea_task_ui_sequences answers, or when that call fails.
 const CONTAINER_TASK_SEQ_FALLBACK = {
-	custom_track_eta_task_seq: 8,
+	custom_eta_refresh_task_seq: 8,
 	custom_vessel_arrival_task_seq: 12,
 	custom_field_clearance_task_seq: 17,
 	custom_kpa_paid_task_seq: 19,
@@ -1165,7 +1165,6 @@ function apply_sea_task_form_layout(frm, ui) {
 	toggle("description", ui.show_description);
 	apply_field_officer_task_fields(frm);
 	apply_container_update_field_visibility(frm);
-	apply_client_inspection_task_fields(frm);
 	toggle("sb_timeline", false);
 	toggle("sb_costing", false);
 	toggle("depends_on_tab", false);
@@ -1225,65 +1224,6 @@ function apply_container_update_field_visibility(frm) {
 			`eval:${SEA_FLOW_KEYS_EXPR} && doc.custom_sequence_no == ${book_seq}`
 		);
 	}
-}
-
-const CLIENT_INSPECTION_TASK_SEQ = 7;
-
-function is_client_inspection_task(frm) {
-	return is_sea_clearance_task(frm) && sea_task_sequence(frm) === CLIENT_INSPECTION_TASK_SEQ;
-}
-
-function apply_client_inspection_task_fields(frm) {
-	const show = is_client_inspection_task(frm);
-	const fields = [
-		"custom_section_client_inspection",
-		"custom_client_notified_on",
-		"custom_client_notified_by",
-		"custom_inspection_confirmed_on",
-		"custom_inspection_confirmed_by",
-	];
-	fields.forEach((fieldname) => {
-		if (frm.fields_dict[fieldname]) {
-			frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
-		}
-	});
-}
-
-function setup_client_inspection_buttons(frm) {
-	if (!is_client_inspection_task(frm) || frm.is_new()) {
-		return;
-	}
-	if (frm.doc.custom_inspection_confirmed_on) {
-		const when = frappe.datetime.str_to_user(frm.doc.custom_inspection_confirmed_on);
-		const by = frm.doc.custom_inspection_confirmed_by || "";
-		set_task_intro(
-			frm,
-			__("Inspection confirmed on {0}{1}", [
-				when,
-				by ? ` (${frappe.utils.escape_html(by)})` : "",
-			]),
-			"green"
-		);
-		return;
-	}
-	if (frm.doc.custom_client_notified_on) {
-		const when = frappe.datetime.str_to_user(frm.doc.custom_client_notified_on);
-		const by = frm.doc.custom_client_notified_by || "";
-		set_task_intro(frm, __("Notified on {0} by {1}", [when, by]), "blue");
-		add_cgm_toolbar_button(frm, __("Notify Again"), () => notify_client_for_inspection_from_form(frm));
-		add_cgm_toolbar_button(
-			frm,
-			__("Client Has Completed Inspection"),
-			() => confirm_client_inspection_from_task_form(frm)
-		);
-		return;
-	}
-	add_cgm_toolbar_button(
-		frm,
-		__("Notify Client for Inspection"),
-		() => notify_client_for_inspection_from_form(frm),
-		{ primary: true }
-	);
 }
 
 function finance_task_has_shareable_invoice(frm) {
@@ -1357,51 +1297,6 @@ function share_invoices_with_client_from_form(frm) {
 			});
 			frm.reload_doc();
 		},
-	});
-}
-
-function notify_client_for_inspection_from_form(frm) {
-	if (frm.is_dirty()) {
-		frappe.msgprint({
-			title: __("Save first"),
-			message: __("Save the task, then notify the client."),
-			indicator: "orange",
-		});
-		return;
-	}
-	frappe.call({
-		method:
-			"cgm_shipping.cgm_worldwide_shipping.customizations.inspection.notify_client_for_inspection",
-		args: { task_name: frm.doc.name },
-		freeze: true,
-		freeze_message: __("Notifying client…"),
-		callback(r) {
-			showWorkflowNotifyResult(r, __("Client notified for inspection."));
-			if (!r.exc) {
-				frm.reload_doc();
-			}
-		},
-	});
-}
-
-function confirm_client_inspection_from_task_form(frm) {
-	frappe.confirm(__("Record that the client has completed inspection for this shipment?"), () => {
-		frappe.call({
-			method:
-				"cgm_shipping.cgm_worldwide_shipping.customizations.inspection.confirm_client_inspection_from_task",
-			args: { task_name: frm.doc.name },
-			freeze: true,
-			callback(r) {
-				if (r.exc) {
-					return;
-				}
-				frappe.show_alert({
-					message: r.message?.message || __("Inspection marked as complete."),
-					indicator: "green",
-				});
-				frm.reload_doc();
-			},
-		});
 	});
 }
 
@@ -2365,8 +2260,6 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	) {
 		setup_shipping_line_deposit_payment_buttons(frm);
 	}
-
-	setup_client_inspection_buttons(frm);
 
 	const line_client_pays = form_has_client_paid_invoice_line(frm);
 	if (

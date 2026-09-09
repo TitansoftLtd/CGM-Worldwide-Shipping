@@ -4250,12 +4250,11 @@ def before_task_save(doc, _method=None):
 		for profile in APPLICATION_FINANCE_PROFILES.values():
 			normalize_application_finance_verification(doc, profile)
 			enforce_application_finance_line_permissions(doc, profile)
-		if doc.status != "Cancelled":
-			sync_ucr_payment_to_idf_record(doc)
-			for profile in APPLICATION_FINANCE_PROFILES.values():
-				sync_application_payment_hooks(doc, profile)
+		sync_ucr_payment_to_idf_record(doc)
+		for profile in APPLICATION_FINANCE_PROFILES.values():
+			sync_application_payment_hooks(doc, profile)
 
-		if _is_sea_task(doc) and task_is_document_checkpoint(doc):
+		if task_is_document_checkpoint(doc):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 				normalize_shipment_documents_table,
 				promote_checkpoint_task_final_uploads,
@@ -4265,21 +4264,20 @@ def before_task_save(doc, _method=None):
 			promote_checkpoint_task_final_uploads(doc)
 			normalize_shipment_documents_table(doc.get(TASK_DOCUMENTS_FIELD))
 			sync_checkpoint_finals_to_project(doc)
-		elif _is_sea_task(doc) and doc.get(TASK_DOCUMENTS_FIELD):
+		elif doc.get(TASK_DOCUMENTS_FIELD):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 				sync_single_task_documents_to_project,
 			)
 
 			sync_single_task_documents_to_project(doc)
 
-		if _is_sea_task(doc):
-			from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
-				apply_container_updates_from_task,
-				validate_shipping_line_deposit_declarations,
-			)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			apply_container_updates_from_task,
+			validate_shipping_line_deposit_declarations,
+		)
 
-			apply_container_updates_from_task(doc)
-			validate_shipping_line_deposit_declarations(doc)
+		apply_container_updates_from_task(doc)
+		validate_shipping_line_deposit_declarations(doc)
 
 	# After line verification is normalized so this save can write Completed once.
 	promote_ready_finance_task_before_save(doc)
@@ -4320,7 +4318,6 @@ def on_task_update(doc, _method=None):
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		get_permit_finance_for_behaviour,
 		task_is_application_finance_for_profile,
-		task_is_auto_complete,
 		task_is_configured_application_workflow,
 		task_is_permit_application,
 		task_is_permit_finance,

@@ -255,7 +255,10 @@ doc_events = {
 		"before_insert": "cgm_shipping.cgm_worldwide_shipping.customizations.project.assign_project_reference_on_insert",
 		"after_insert": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_after_insert",
 		"onload": "cgm_shipping.cgm_worldwide_shipping.customizations.project.on_project_onload",
-		"on_update": "cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_update",
+		"on_update": [
+			"cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_update",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.sync_project_dates_to_trackers",
+		],
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_reference_on_save",

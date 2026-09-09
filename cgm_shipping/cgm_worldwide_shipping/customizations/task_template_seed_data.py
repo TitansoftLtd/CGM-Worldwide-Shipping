@@ -118,7 +118,6 @@ def sea_import_tasks() -> list[dict]:
 			permit_stage="Pre-clearance",
 			payment_kind="Permit",
 		),
-		_row(7, "Client conducts inspection", "Operations"),
 		_row(
 			8,
 			"Receive Final Clearance Documents (B/L, Invoice, PKL, COC)",
@@ -126,7 +125,6 @@ def sea_import_tasks() -> list[dict]:
 			doc=1,
 			role="Document Checkpoint",
 		),
-		_row(9, "Request Manifest and Local Import Charges", "Documentation", doc=1, role="Document"),
 		_row(
 			10,
 			"Attach Shipping Line Invoice",

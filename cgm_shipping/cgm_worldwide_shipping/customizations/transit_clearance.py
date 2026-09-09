@@ -226,7 +226,7 @@ def create_sea_transit_export_task_plan_internal(project: str, reset: bool = Fal
 			task.subject = subject
 			task.project = project
 			task.custom_task_flow_key = canonical_flow_key
-			task.custom_sequence_no = idx
+			task.custom_sequence_no = int(item.get("sequence_no") or idx)
 			task.department = resolve_department_name(
 				item.get("department"), company=project_doc.company
 			)
