@@ -121,8 +121,8 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 def furthest_contiguous_completed_seq(completed_seqs: set[int]) -> int:
 	"""Highest sequence reachable without gaps from seq 1.
 
-	Prevents a later completed task (or drifted sequence) from unlocking
-	workflow stages that earlier open tasks still block.
+	Used for closure gates that require sequential progress. The clearance
+	workflow chart uses gate-based progress instead (see derive_workflow_*).
 	"""
 	seq = 0
 	while (seq + 1) in completed_seqs:
@@ -130,35 +130,104 @@ def furthest_contiguous_completed_seq(completed_seqs: set[int]) -> int:
 	return seq
 
 
+def all_clearance_tasks_completed(tasks: list, gates: dict | None = None) -> bool:
+	"""True when every workflow task on the project is done (nothing left open)."""
+	if not tasks:
+		return False
+	if any(t.get("status") not in ("Completed", "Cancelled") for t in tasks):
+		return False
+	completed_seqs = effective_completed_task_seqs(tasks)
+	if not completed_seqs:
+		return False
+	gates = _resolve_workflow_gates(gates)
+	task_seqs = {
+		int(t.get("custom_sequence_no") or 0)
+		for t in tasks
+		if int(t.get("custom_sequence_no") or 0)
+	}
+	if not task_seqs or not task_seqs.issubset(completed_seqs):
+		return False
+	last_gate_seq = max(
+		(row.get("min_completed_task_seq") or 0 for row in gates.values()),
+		default=0,
+	)
+	# Full plan must exist before Completed — partial plans stay on the furthest gate.
+	if last_gate_seq and max(task_seqs) < last_gate_seq:
+		return False
+	return True
+
+
+def _resolve_workflow_gates(gates: dict | None) -> dict:
+	if gates is not None:
+		return gates
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		get_workflow_task_gates,
+	)
+
+	return get_workflow_task_gates()
+
+
+def derive_workflow_passed_states(
+	tasks: list,
+	states: list[str] | None = None,
+	gates: dict | None = None,
+) -> set[str]:
+	"""Workflow states whose task gate is satisfied (supports out-of-order completion)."""
+	states = states or get_tracking_workflow_states()
+	if not states:
+		return set()
+	gates = _resolve_workflow_gates(gates)
+	completed_seqs = effective_completed_task_seqs(tasks)
+	passed: set[str] = set()
+	for state in states:
+		if state == "Completed":
+			continue
+		gate_row = gates.get(state) if gates else None
+		gate_seq = gate_row.get("min_completed_task_seq") if gate_row else None
+		if gate_seq and gate_seq in completed_seqs:
+			passed.add(state)
+	# Draft has no task gate — pass it together with Documents Received (seq 1 / intake).
+	if "Draft" in states and "Documents Received" in passed:
+		passed.add("Draft")
+	if all_clearance_tasks_completed(tasks, gates=gates) and "Completed" in states:
+		passed.add("Completed")
+	return passed
+
+
 def derive_workflow_progress_from_tasks(
 	tasks: list,
 	states: list[str] | None = None,
 	gates: dict | None = None,
 ) -> tuple[str, int]:
-	"""Furthest workflow state supported by completed clearance tasks (progress chart)."""
+	"""Furthest workflow state reached from completed clearance tasks (progress chart).
+
+	Each workflow pill maps to a task sequence gate. A state counts as reached when
+	that specific task is done — work may finish out of order (e.g. Shipping Line
+	before UCR). When every clearance task is Completed, status is Completed.
+	"""
 	states = states or get_tracking_workflow_states()
 	if not states:
 		return "Draft", 0
 	completed_seqs = effective_completed_task_seqs(tasks)
-	if not completed_seqs:
+	if not completed_seqs and not all_clearance_tasks_completed(tasks, gates=gates):
 		return states[0], 0
-	# Contiguous progress — not max(seq) — so the chart cannot jump past open tasks.
-	progress_seq = furthest_contiguous_completed_seq(completed_seqs)
+
+	gates = _resolve_workflow_gates(gates)
+	passed = derive_workflow_passed_states(tasks, states=states, gates=gates)
+
+	if all_clearance_tasks_completed(tasks, gates=gates) and "Completed" in states:
+		idx = states.index("Completed")
+		return "Completed", idx
+
 	progress_status = states[0]
 	progress_index = 0
-	if gates is None:
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-			get_workflow_task_gates,
-		)
-
-		gates = get_workflow_task_gates()
-
-	for state in states:
-		gate_row = gates.get(state) if gates else None
-		gate = gate_row.get("min_completed_task_seq") if gate_row else None
-		if gate and progress_seq >= gate:
+	all_done = all_clearance_tasks_completed(tasks, gates=gates)
+	for i, state in enumerate(states):
+		if state == "Completed" and not all_done:
+			continue
+		if state in passed:
 			progress_status = state
-			progress_index = states.index(state)
+			progress_index = i
 	return progress_status, progress_index
 
 

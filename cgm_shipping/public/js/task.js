@@ -43,20 +43,7 @@ frappe.ui.form.on("Task", {
 			localStorage.removeItem("cgm_return_task");
 		}
 		reset_cgm_task_sea_ui_state_if_needed(frm);
-		frm._cgm_declarant_status = null;
-		frm._cgm_declarant_status_loading = false;
-		frm._cgm_declarant_status_loaded = false;
-		frm._cgm_entry_declarant_status = null;
-		frm._cgm_entry_declarant_status_loading = false;
-		frm._cgm_entry_declarant_status_loaded = false;
-		frm._cgm_shipping_line_declarant_status = null;
-		frm._cgm_shipping_line_declarant_status_loading = false;
-		frm._cgm_shipping_line_declarant_status_loaded = false;
-		frm._cgm_kpa_declarant_status = null;
-		frm._cgm_kpa_declarant_status_loading = false;
-		frm._cgm_kpa_declarant_status_loaded = false;
-		frm._cgm_finance_lines_ensuring = false;
-		frm._cgm_checkpoint_seed_requested = false;
+		reset_cgm_task_async_state(frm);
 		frm.set_query("department", () => ({
 			filters: { parent_department: ["like", "Operations%"] },
 		}));
@@ -221,14 +208,14 @@ frappe.ui.form.on("Task", {
 				intro = form_has_client_paid_invoice_line(frm)
 					? __(
 							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
-								"<b>1</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
-								"<b>2</b> <b>Share Invoice with Client</b> (optional). " +
-								"<b>Entry Slip Receipt</b> is optional."
+								"<b>1</b> Verify <b>Entry Slip Invoice</b> · " +
+								"<b>2</b> <b>Share Invoice with Client</b> (optional) · " +
+								"<b>3</b> Attach and verify <b>Entry Slip Receipt</b> - then this task completes."
 						)
 					: __(
-							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> (Create Entry completes on verify) · " +
-								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row). " +
-								"This finance task completes after payment - <b>Entry Slip Receipt</b> is optional."
+							"<b>1 Finance:</b> Verify <b>Entry Slip Invoice</b> · " +
+								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row) · " +
+								"<b>3</b> Attach and verify <b>Entry Slip Receipt</b> - then this task completes."
 						);
 				if (clientReported) {
 					intro +=
@@ -1563,11 +1550,16 @@ function ensure_permit_finance_reopened_for_pending(frm) {
 		return;
 	}
 	frm._cgm_permit_finance_reopen_checking = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow.reopen_permit_finance_for_pending_payments",
-		args: { task_name: frm.doc.name },
+		args: { task_name: cgm_call_task },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm._cgm_permit_finance_reopen_checking = false;
 			if (r.exc || !r.message) {
 				return;
@@ -1617,11 +1609,16 @@ function ensure_finance_permit_task_completed_on_form(frm) {
 		return;
 	}
 	frm._cgm_permit_finance_complete_checking = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow.ensure_permit_finance_task_completed",
-		args: { task_name: frm.doc.name },
+		args: { task_name: cgm_call_task },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm._cgm_permit_finance_complete_checking = false;
 			if (r.exc || !r.message?.auto_completed) {
 				return;
@@ -1760,12 +1757,17 @@ function ensure_checkpoint_task_documents_on_form(frm) {
 		return;
 	}
 	frm._cgm_checkpoint_seed_requested = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.documents.ensure_checkpoint_task_documents",
-		args: { task_name: frm.doc.name },
+		args: { task_name: cgm_call_task },
 		freeze: true,
 		freeze_message: __("Loading clearance documents from Project…"),
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			if (r.exc) {
 				return;
 			}
@@ -2009,9 +2011,14 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		return;
 	}
 	const fingerprint = cgm_task_toolbar_fingerprint(frm);
-	const has_buttons =
-		frm.custom_buttons && Object.keys(frm.custom_buttons || {}).length > 0;
-	if (frm._cgm_toolbar_fingerprint === fingerprint && has_buttons) {
+	// Frappe clears custom buttons on every form refresh, so "already painted" has to
+	// mean *our* buttons are still there. Counting every custom button was wrong: one
+	// button added by another script (the attachment approval items) made this look
+	// painted, and the task buttons were then never rebuilt.
+	const still_painted =
+		Array.isArray(frm._cgm_toolbar_labels) &&
+		frm._cgm_toolbar_labels.every((label) => frm.custom_buttons?.[label]);
+	if (frm._cgm_toolbar_fingerprint === fingerprint && still_painted) {
 		return;
 	}
 	// Settlement / status changed — allow ensure-complete to run again once.
@@ -2025,6 +2032,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	const ui = get_sea_task_ui(frm);
 	frm.clear_custom_buttons();
 	frm._cgm_toolbar_fingerprint = fingerprint;
+	frm._cgm_toolbar_labels = [];
 
 	// Only Open Shipment Project stays top-level — everything else under Actions.
 	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
@@ -2032,6 +2040,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 			frappe.set_route("Form", "Project", frm.doc.project);
 		});
 		openProjectBtn?.addClass?.("btn-primary");
+		frm._cgm_toolbar_labels.push(__("Open Shipment Project"));
 	}
 
 	if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
@@ -2124,52 +2133,10 @@ function mount_cgm_task_toolbar_buttons(frm) {
 
 	add_client_paid_application_mark_complete_button(frm, ui);
 
-	// On completed permit / app↔finance application tasks the dedicated
-	// "Add more…" buttons already reopen and unlock docs — skip generic Re-open.
-	const has_dedicated_add_more =
-		(ui.show_permits && is_permit_application_step(frm)) ||
-		ui.is_ucr_application ||
-		ui.is_entry_application ||
-		ui.is_shipping_line_application ||
-		ui.is_kpa_application;
-
-	if (
-		frm.doc.status === "Completed" &&
-		!frm.is_new() &&
-		(is_sea_clearance_task(frm) || frm.doc.custom_sequence_no) &&
-		!has_dedicated_add_more
-	) {
-		add_cgm_toolbar_button(frm, __("Re-open Task"), () => {
-			frappe.confirm(
-				__(
-					"Re-open this completed task so you can attach or replace documents? " +
-						"You will need to mark it complete again when finished."
-				),
-				() => {
-					frappe.call({
-						method:
-							"cgm_shipping.cgm_worldwide_shipping.customizations.task.reopen_completed_task",
-						args: {
-							task_name: frm.doc.name,
-							reason: "Reopened to correct or replace attachments",
-						},
-						freeze: true,
-						freeze_message: __("Re-opening task…"),
-						callback(r) {
-							if (r.exc || !r.message) {
-								return;
-							}
-							frappe.show_alert({
-								message: __(r.message.message || "Task reopened."),
-								indicator: r.message.reopened ? "orange" : "blue",
-							});
-							frm.reload_doc();
-						},
-					});
-				}
-			);
-		});
-	}
+	// No generic "Re-open Task" button: users read it as an invitation to undo a
+	// finished task. The dedicated "Add more…" buttons already reopen and unlock the
+	// documents on the steps where reopening is actually part of the flow, and
+	// task.reopen_completed_task stays available for the server-side paths.
 
 	if (
 		is_permit_application_step(frm) &&
@@ -2372,12 +2339,69 @@ function mount_cgm_task_toolbar_buttons(frm) {
 			verify_all_permit_invoices_from_form(frm);
 		});
 	}
+
+	// This rebuild cleared every custom button, including the attachment approval
+	// items that share the Actions group. They are painted from a cached promise, so
+	// replay them here instead of leaving them missing until the next form refresh.
+	window.cgm_shipping?.attachment_approval?.repaint_buttons?.(frm);
+}
+
+function reset_cgm_task_async_state(frm) {
+	// One Task form object serves every task the user opens, so per-document state has
+	// to be wiped on load. A cached status or an in-flight flag left over from the
+	// previous task is what made the toolbar show buttons for a task that was no
+	// longer on screen, or stop rebuilding them at all.
+	[
+		"_cgm_declarant_status",
+		"_cgm_entry_declarant_status",
+		"_cgm_shipping_line_declarant_status",
+		"_cgm_kpa_declarant_status",
+	].forEach((key) => {
+		frm[key] = null;
+		frm[`${key}_loading`] = false;
+		frm[`${key}_loaded`] = false;
+	});
+	[
+		"_cgm_checkpoint_seed_requested",
+		"_cgm_entry_finance_complete_checking",
+		"_cgm_entry_finance_ensure_done",
+		"_cgm_entry_finance_lines_ensuring",
+		"_cgm_finance_complete_checking",
+		"_cgm_finance_lines_ensuring",
+		"_cgm_finance_permit_rows_ensuring",
+		"_cgm_kpa_finance_ensure_done",
+		"_cgm_permit_finance_complete_checking",
+		"_cgm_permit_finance_reopen_checking",
+		"_cgm_shipping_line_finance_ensure_done",
+		"_cgm_task_action_busy",
+		"_cgm_ucr_finance_ensure_done",
+	].forEach((key) => {
+		frm[key] = false;
+	});
+	// Application↔finance profiles build their flag names at runtime.
+	["entry", "shipping_line", "kpa"].forEach((profile) => {
+		frm[`_cgm_${profile}_finance_lines_ensuring`] = false;
+		frm[`_cgm_${profile}_finance_lines_ensured`] = false;
+		frm[`_cgm_${profile}_finance_complete_checking`] = false;
+	});
+	// Force the next mount to rebuild rather than trust the previous task's paint.
+	frm._cgm_toolbar_fingerprint = null;
+	frm._cgm_toolbar_labels = null;
+}
+
+function cgm_task_form_still_on(frm, task_name) {
+	// The Task form object is reused when the user opens another task, so a response
+	// that arrives late must not reload or repaint whatever is on screen now.
+	return cur_frm === frm && !frm.is_new() && frm.doc?.name === task_name;
 }
 
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
 	const btn = frm.add_custom_button(label, fn, CGM_ACTION_GROUP);
 	if (btn) {
 		frm.page.set_inner_btn_group_as_primary(CGM_ACTION_GROUP);
+		if (Array.isArray(frm._cgm_toolbar_labels) && !frm._cgm_toolbar_labels.includes(label)) {
+			frm._cgm_toolbar_labels.push(label);
+		}
 	}
 	return btn;
 }
@@ -2407,10 +2431,15 @@ function ensure_finance_permit_rows_on_form(frm) {
 		return;
 	}
 	frm._cgm_finance_permit_rows_ensuring = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.ensure_finance_permit_rows",
-		args: { task_name: frm.doc.name },
+		args: { task_name: cgm_call_task },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm._cgm_finance_permit_rows_ensuring = false;
 			if (r.exc || !r.message) {
 				return;
@@ -2439,10 +2468,15 @@ function ensure_ucr_finance_lines_on_form(frm) {
 		return;
 	}
 	frm._cgm_finance_lines_ensuring = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.ensure_ucr_finance_lines",
-		args: { task_name: frm.doc.name },
+		args: { task_name: cgm_call_task },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm._cgm_finance_lines_ensuring = false;
 			if (!r.exc && r.message?.added) {
 				frm.reload_doc();
@@ -2469,10 +2503,16 @@ function load_ucr_declarant_workflow_status(frm) {
 		return;
 	}
 	frm._cgm_declarant_status_loading = true;
+	const ucr_status_task = frm.doc.name;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.get_ucr_declarant_workflow_status",
-		args: { task_name: frm.doc.name },
+		args: { task_name: ucr_status_task },
 		callback(r) {
+			// The form object is reused across tasks, so a response that lands after the
+			// user opened another task must be dropped — it described the old one.
+			if (cur_frm !== frm || frm.doc.name !== ucr_status_task) {
+				return;
+			}
 			frm._cgm_declarant_status_loading = false;
 			if (r.exc || !r.message) {
 				set_task_intro(
@@ -2721,6 +2761,13 @@ frappe.ui.form.on("Task Finance Line", {
 			if (is_shipping_line_application_step(frm, seq) && row.line_type === "Receipt") {
 				attachment_editable = user_can_upload_receipt(frm);
 				verified_editable = false;
+			} else if (
+				(is_entry_application_step(frm, seq) || is_kpa_application_step(frm, seq)) &&
+				row.line_type === "Receipt"
+			) {
+				// Entry / KPA receipts are uploaded on the Finance payment task.
+				attachment_editable = false;
+				verified_editable = false;
 			} else if (user_may_attach_receipt_on_application(frm, row)) {
 				// UCR: Declarant attaches the supplier receipt on Create UCR after payment.
 				attachment_editable = true;
@@ -2768,6 +2815,30 @@ frappe.ui.form.on("Task Finance Line", {
 		)) {
 			if (is_shipping_line_application_step(frm) && row.line_type === "Receipt") {
 				// Documentation attaches receipt here after POP is mirrored from Finance.
+			} else if (is_entry_application_step(frm) && row.line_type === "Receipt") {
+				frappe.show_alert({
+					message: __(
+						"Attach and verify the <b>Entry Slip Receipt</b> on the finance task " +
+							"<b>Finance pays transit entry taxes</b> (Finance role)."
+					),
+					indicator: "orange",
+				});
+				if (row.attachment) {
+					frappe.model.set_value(cdt, cdn, "attachment", "");
+				}
+				return;
+			} else if (is_kpa_application_step(frm) && row.line_type === "Receipt") {
+				frappe.show_alert({
+					message: __(
+						"Attach and verify the <b>KPA Receipt</b> on the paired Finance payment task " +
+							"(Finance role)."
+					),
+					indicator: "orange",
+				});
+				if (row.attachment) {
+					frappe.model.set_value(cdt, cdn, "attachment", "");
+				}
+				return;
 			} else if (user_may_attach_receipt_on_application(frm, row)) {
 				// Declarant attaches UCR receipt here after Finance records payment.
 			} else if (is_shipping_line_application_step(frm) && row.line_type === "POP") {
@@ -3183,10 +3254,15 @@ function ensure_ucr_finance_task_completed_on_form(frm) {
 		return;
 	}
 	frm._cgm_finance_complete_checking = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.workflow.ensure_ucr_finance_task_completed",
-		args: { task_name: frm.doc.name },
+		args: { task_name: cgm_call_task },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm._cgm_finance_complete_checking = false;
 			if (r.exc || !r.message) {
 				return;
@@ -3316,11 +3392,16 @@ function ensure_entry_finance_lines_on_form(frm) {
 		return;
 	}
 	frm._cgm_entry_finance_lines_ensuring = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.ensure_application_finance_lines",
-		args: { task_name: frm.doc.name, profile_key: "entry" },
+		args: { task_name: cgm_call_task, profile_key: "entry" },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm._cgm_entry_finance_lines_ensuring = false;
 			if (!r.exc && r.message?.added) {
 				frm.reload_doc();
@@ -3337,11 +3418,17 @@ function load_entry_declarant_workflow_status(frm) {
 		return;
 	}
 	frm._cgm_entry_declarant_status_loading = true;
+	const entry_status_task = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.get_application_declarant_workflow_status",
-		args: { task_name: frm.doc.name, profile_key: "entry" },
+		args: { task_name: entry_status_task, profile_key: "entry" },
 		callback(r) {
+			// The form object is reused across tasks, so a response that lands after the
+			// user opened another task must be dropped — it described the old one.
+			if (cur_frm !== frm || frm.doc.name !== entry_status_task) {
+				return;
+			}
 			frm._cgm_entry_declarant_status_loading = false;
 			if (r.exc || !r.message) {
 				set_task_intro(
@@ -3389,10 +3476,10 @@ function apply_entry_application_intro(frm, status) {
 	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
 	} else if (status.application_ready_to_complete) {
-		intro = __("<b>Entry Slip invoice verified by Finance.</b> Completing this task…");
+		intro = __("<b>Finance has verified and paid the Entry Slip invoice.</b> Completing this task…");
 	} else if (status.client_paid_directly && status.invoice_verified) {
 		intro = __(
-			"<b>Finance verified the invoice</b> (client-pays path). Completing this task…"
+			"<b>Finance verified the invoice</b> (client-pays path). Waiting for payment settlement…"
 		);
 	} else if (status.client_paid_directly) {
 		intro = __(
@@ -3402,22 +3489,23 @@ function apply_entry_application_intro(frm, status) {
 		);
 	} else if (status.invoice_verified) {
 		intro = __(
-			"<b>{0} verified by Finance.</b> Completing this task… Finance continues payment and " +
-				"<b>{1}</b> on the finance task. You may still attach the ENTRY document under " +
+			"<b>{0} verified by Finance.</b> Waiting for Finance to pay (or confirm client payment). " +
+				"Finance attaches and verifies <b>{1}</b> on the finance task " +
+				"<b>Finance pays transit entry taxes</b>. You may attach the ENTRY document under " +
 				"<b>Clearance Documents</b> when issued.",
 			[invoiceLabel, receiptLabel]
 		);
 	} else if (status.invoice_submitted) {
 		intro = __(
-			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify - this task completes " +
-				"when the invoice is approved.",
+			"<b>{0} submitted to Finance.</b> Waiting for Finance to verify and pay - this task completes " +
+				"after payment is recorded.",
 			[invoiceLabel]
 		);
 	} else {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>{0}</b> and save on " +
 				"<b>Invoices & Receipts</b> - Finance is notified automatically. " +
-				"This task completes once Finance verifies the invoice. " +
+				"This task completes once Finance verifies and pays the invoice. " +
 				"ENTRY document under <b>Clearance Documents</b> remains optional when issued.",
 			[invoiceLabel]
 		);
@@ -3440,11 +3528,16 @@ function ensure_entry_finance_task_completed_on_form(frm) {
 		return;
 	}
 	frm._cgm_entry_finance_complete_checking = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.ensure_application_finance_task_completed",
-		args: { task_name: frm.doc.name, profile_key: "entry" },
+		args: { task_name: cgm_call_task, profile_key: "entry" },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm._cgm_entry_finance_complete_checking = false;
 			if (r.exc || !r.message) {
 				return;
@@ -3555,11 +3648,16 @@ function ensure_app_finance_lines_on_form(frm, profileKey) {
 		return;
 	}
 	frm[ensuringKey] = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.ensure_application_finance_lines",
-		args: { task_name: frm.doc.name, profile_key: profileKey },
+		args: { task_name: cgm_call_task, profile_key: profileKey },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm[ensuringKey] = false;
 			frm[ensuredKey] = true;
 			if (!r.exc && r.message?.added) {
@@ -3581,11 +3679,17 @@ function load_app_finance_declarant_status(frm, profileKey) {
 		return;
 	}
 	frm[loadingKey] = true;
+	const status_task = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.get_application_declarant_workflow_status",
-		args: { task_name: frm.doc.name, profile_key: profileKey },
+		args: { task_name: status_task, profile_key: profileKey },
 		callback(r) {
+			// The form object is reused across tasks, so a response that lands after the
+			// user opened another task must be dropped — it described the old one.
+			if (cur_frm !== frm || frm.doc.name !== status_task) {
+				return;
+			}
 			frm[loadingKey] = false;
 			if (r.exc || !r.message) {
 				set_task_intro(
@@ -3695,7 +3799,9 @@ function configure_client_paid_field(frm, ui) {
 		const editable =
 			finance_step && user_can_confirm_client_paid(frm) && frm.doc.status !== "Completed";
 		frm.set_df_property("custom_client_paid_directly", "read_only", editable ? 0 : 1);
-		const receiptOptional = Boolean(ui.is_entry_finance || ui.is_entry_application);
+		const receiptOptional = Boolean(
+			ui.is_kpa_finance || ui.is_kpa_application
+		);
 		frm.set_df_property(
 			"custom_client_paid_directly",
 			"description",
@@ -4000,17 +4106,26 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 		}
 	} else {
 		const rec = get_finance_line(frm, "Receipt");
-		// KPA: receipt required when present on the row; settlement is per invoice line.
-		if (rec?.attachment && !cint(rec.verified)) {
+		if (profileKey === "entry") {
+			if (!rec?.attachment || !cint(rec.verified)) {
+				return;
+			}
+		} else if (rec?.attachment && !cint(rec.verified)) {
+			// KPA: receipt required when present on the row; settlement is per invoice line.
 			return;
 		}
 	}
 	frm[checkingKey] = true;
+	const cgm_call_task = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance.ensure_application_finance_task_completed",
-		args: { task_name: frm.doc.name, profile_key: profileKey },
+		args: { task_name: cgm_call_task, profile_key: profileKey },
 		callback(r) {
+			// Late response: the form may already be showing another task.
+			if (!cgm_task_form_still_on(frm, cgm_call_task)) {
+				return;
+			}
 			frm[checkingKey] = false;
 			if (r.exc || !r.message) {
 				return;
@@ -4491,12 +4606,16 @@ function setup_shipping_line_deposit_payment_buttons(frm) {
 	if (!user_can_make_payment(frm) || !frm.doc.project || frm.is_new()) {
 		return;
 	}
+	// The form object is reused when the user opens another Task, so `cur_frm === frm`
+	// is not enough: without the name check a slow response painted this task's deposit
+	// buttons onto whichever task was open when it landed.
+	const task_name = frm.doc.name;
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_deposit_bl_for_task",
-		args: { task_name: frm.doc.name },
+		args: { task_name: task_name },
 		callback(r) {
-			if (r.exc || cur_frm !== frm) {
+			if (r.exc || cur_frm !== frm || frm.doc.name !== task_name) {
 				return;
 			}
 			const bl = r.message;

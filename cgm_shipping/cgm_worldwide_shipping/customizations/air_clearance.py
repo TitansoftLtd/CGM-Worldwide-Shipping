@@ -15,7 +15,6 @@ DEFAULT_AIR_IMPORT_WORKFLOW_GATES: list[dict] = [
 	{"shipment_workflow_state": "Pre-clearance", "min_completed_task_seq": 5},
 	{"shipment_workflow_state": "Client Inspection", "min_completed_task_seq": 7},
 	{"shipment_workflow_state": "Final Docs Received", "min_completed_task_seq": 8},
-	{"shipment_workflow_state": "Manifest Requested", "min_completed_task_seq": 9},
 	{"shipment_workflow_state": "Entry Lodged", "min_completed_task_seq": 10},
 	{"shipment_workflow_state": "Entry Paid", "min_completed_task_seq": 12},
 	{"shipment_workflow_state": "Post-clearance", "min_completed_task_seq": 13},

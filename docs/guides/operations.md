@@ -110,6 +110,8 @@ Nobody creates these by hand. The moment a Project is created, the task engine r
 | Sea Transit | Sea Transit Import Workflow | 15 |
 | Road Transit Import | Road Transit Inbound Workflow | 11 |
 
+**Sea Transit** uses a shorter clearance chart (no UCR, permits, client inspection, or Manifest Requested): Draft → Documents Received → Line Paid & DO Lodged → Entry Lodged → Entry Paid → Field Clearance → Post-clearance → KPA Paid → In Delivery → Completed.
+
 **A Project saved without a Shipment Type gets no tasks at all**, silently - there is nothing in the form to tell you. The same is true of a type with no template behind it (**Import** and **Sea FCL** currently have none). If a shipment has an empty task list, that is the first thing to check.
 
 The whole plan lands on the shipment at once, in sequence, with the first steps already closed where intake documents were verified:
@@ -117,6 +119,21 @@ The whole plan lands on the shipment at once, in sequence, with the first steps 
 ![The task list for one shipment: the generated clearance plan in sequence](../images/project-tasks.png)
 
 Because the plan is written at creation, editing a template changes shipments created **after** the edit. It does not rewrite shipments already running - those keep the plan they were opened with, and setting the Shipment Type later does not backfill them.
+
+### Template task rows (Required Document Types)
+
+Open **CGM Task Template** → pencil on a task row:
+
+| Field | Purpose |
+|-------|---------|
+| **Task Role** | Drives Desk UI: Document, Application, Finance Payment, etc. |
+| **Document Upload Required** | Shows **Task Documents** on Standard rows too |
+| **Required Document Types** | Multi-select from **Document Type** master (exact names). Prefills **Task Documents** on matching live tasks and **blocks Complete** until each selected type is attached. |
+| **Payment Kind** | Pairs Application ↔ Finance Payment rows (UCR, Entry Slip, Shipping Line, KPA) |
+
+Users may still add extra rows on **Task Documents** during clearance — Required Document Types only enforce the minimum for completion, they do not delete user-added documents.
+
+Saving a template runs **sync open tasks from template** so role, payment kind, and required-document stamps update on non-cancelled tasks for that workflow.
 
 ---
 
@@ -135,8 +152,7 @@ Each move is an action on the form, in this order:
 | Pre-clearance | Request Client Inspection | Client Inspection |
 | Client Inspection | Start Shipment Tracking | In Transit |
 | In Transit | Receive Final Documents | Final Docs Received |
-| Final Docs Received | Request Manifest and Charges | Manifest Requested |
-| Manifest Requested | Lodge Customs Entry | Entry Lodged |
+| Final Docs Received | Lodge Customs Entry | Entry Lodged |
 | Entry Lodged | Confirm Line Paid and DO Lodged | Line Paid & DO Lodged |
 | Line Paid & DO Lodged | Confirm Entry Paid | Entry Paid |
 | Entry Paid | Complete Post-clearance Permits | Post-clearance |
@@ -247,6 +263,8 @@ Tasks 17-19 in the plan. On the ground at the terminal it runs like this:
 12. **Book trucks** to collect the cargo - Transport takes over for tasks 20-25.
 
 Steps 3 to 9 are the part that takes unpredictable time: everything there waits on KRA, KPA or an agency.
+
+**Completing task 17 (Field Officers conduct clearance):** attach any clearance proof on **Task Documents** (for example **DO**, **FIELD**, or another **Document Type** from the master list) and mark the task **Completed**. Alternatively, set **Verification Status** to *Released by CRO* or attach the **Verification Report**. The task does not require a specific document code — any attached file on Task Documents is enough unless the template stamps **Required Document Types** for that row.
 
 ---
 

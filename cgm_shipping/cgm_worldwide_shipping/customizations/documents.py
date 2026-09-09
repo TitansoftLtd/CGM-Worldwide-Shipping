@@ -297,12 +297,11 @@ def resolve_document_row_slots(row) -> tuple[str, str]:
 
 def promote_checkpoint_task_final_uploads(task) -> None:
 	"""When ops attach via Primary, move the file into Final Document on checkpoint tasks."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_document_checkpoint_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_document_checkpoint,
 	)
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_document_checkpoint_task(seq):
+	if not task_is_document_checkpoint(task):
 		return
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
@@ -698,12 +697,11 @@ def normalize_opportunity_clients_documents(doc, _method=None) -> None:
 
 def seed_checkpoint_task_documents_from_project(task) -> bool:
 	"""Document-checkpoint tasks mirror Project rows (initial + any existing final)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_document_checkpoint_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_document_checkpoint,
 	)
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_document_checkpoint_task(seq) or not task.project:
+	if not task_is_document_checkpoint(task) or not task.project:
 		return False
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return False
@@ -748,12 +746,11 @@ def seed_checkpoint_task_documents_from_project(task) -> bool:
 
 def backfill_checkpoint_task_documents_from_project(task) -> bool:
 	"""Fill missing initial/final slots on existing checkpoint rows from Project."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_document_checkpoint_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_document_checkpoint,
 	)
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_document_checkpoint_task(seq) or not task.project:
+	if not task_is_document_checkpoint(task) or not task.project:
 		return False
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return False
@@ -785,14 +782,13 @@ def backfill_checkpoint_task_documents_from_project(task) -> bool:
 @frappe.whitelist()
 def ensure_checkpoint_task_documents(task_name: str) -> dict:
 	"""Seed document-checkpoint task rows from Project (client reloads after)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_document_checkpoint_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_document_checkpoint,
 	)
 
 	task = frappe.get_doc("Task", task_name)
 	frappe.has_permission("Task", ptype="write", doc=task, throw=True)
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_document_checkpoint_task(seq):
+	if not task_is_document_checkpoint(task):
 		return {"seeded": False}
 
 	if task.get(TASK_DOCUMENTS_FIELD):
@@ -818,12 +814,11 @@ def ensure_checkpoint_task_documents(task_name: str) -> dict:
 
 def apply_checkpoint_task_documents_to_project(project_doc, task) -> bool:
 	"""Merge document-checkpoint task rows onto Project (in-memory only)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_document_checkpoint_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_document_checkpoint,
 	)
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_document_checkpoint_task(seq):
+	if not task_is_document_checkpoint(task):
 		return False
 	if not project_doc.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
 		return False
@@ -890,6 +885,12 @@ def merge_checkpoint_task_documents_into_project(project_doc) -> bool:
 		if not task_name:
 			continue
 		task = frappe.get_doc("Task", task_name)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+			task_is_document_checkpoint,
+		)
+
+		if not task_is_document_checkpoint(task):
+			continue
 		if apply_checkpoint_task_documents_to_project(project_doc, task):
 			changed = True
 	return changed
@@ -897,12 +898,11 @@ def merge_checkpoint_task_documents_into_project(project_doc) -> bool:
 
 def sync_checkpoint_finals_to_project(task) -> bool:
 	"""Push final (and new initial) document slots from checkpoint task → Project."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_document_checkpoint_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_document_checkpoint,
 	)
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_document_checkpoint_task(seq) or not task.project:
+	if not task_is_document_checkpoint(task) or not task.project:
 		return False
 	if frappe.flags.get("cgm_syncing_shipment_documents"):
 		return False
@@ -1299,12 +1299,17 @@ def carry_task_documents_to_project(project_doc, project_name=None):
 
 def sync_single_task_documents_to_project(task) -> bool:
 	"""Push this task's document rows onto the Project (manifest, DO, etc.)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_document_checkpoint_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_FINANCE_PAYMENT,
+		ROLE_PERMIT_FINANCE,
+		get_task_behaviour,
+		task_is_document_checkpoint,
 	)
 
-	seq = int(task.get("custom_sequence_no") or 0)
-	if is_document_checkpoint_task(seq):
+	if task_is_document_checkpoint(task):
+		return False
+	behaviour = get_task_behaviour(task)
+	if behaviour.role in (ROLE_FINANCE_PAYMENT, ROLE_PERMIT_FINANCE):
 		return False
 	if not task.project or not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return False

@@ -74,6 +74,7 @@ web_include_js = [
 # include js in doctype views
 doctype_js = {
 	"CGM Task Template": "public/js/cgm_task_template.js",
+	"CGM Task Template Item": "public/js/cgm_task_template.js",
 	"Task": [
 		"public/js/cgm_status_field.js",
 		"public/js/shipment_document_grid.js",
@@ -393,6 +394,9 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.validate_task_completion_requirements",
 		],
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_update",
+	},
+	"CGM Task Template": {
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.doctype.cgm_task_template.cgm_task_template.sync_open_tasks_from_template",
 	},
 }
 

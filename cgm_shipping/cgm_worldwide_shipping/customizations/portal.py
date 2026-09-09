@@ -89,7 +89,7 @@ def customer_display_name(customer: str | None) -> str:
 
 # ─── Shipment lifecycle model ────────────────────────────────────────────────
 
-# The granular Project.custom_shipment_status chart (18 ordered states).
+# The granular Project.custom_shipment_status chart (17 ordered states).
 SHIPMENT_STAGES = [
 	"Draft",
 	"Documents Received",
@@ -99,7 +99,6 @@ SHIPMENT_STAGES = [
 	"Client Inspection",
 	"In Transit",
 	"Final Docs Received",
-	"Manifest Requested",
 	"Entry Lodged",
 	"Line Paid & DO Lodged",
 	"Entry Paid",
@@ -112,7 +111,7 @@ SHIPMENT_STAGES = [
 ]
 _STAGE_INDEX = {name: i for i, name in enumerate(SHIPMENT_STAGES)}
 
-# Customer-facing milestones: the 18 internal states rolled up into six
+# Customer-facing milestones: the 17 internal states rolled up into six
 # steps a consignee actually cares about. Each milestone owns a contiguous
 # slice of the chart; a shipment's current milestone is whichever slice its
 # status falls into.
@@ -124,7 +123,6 @@ MILESTONES = [
 		"Arrival & Customs Entry",
 		(
 			"Final Docs Received",
-			"Manifest Requested",
 			"Entry Lodged",
 			"Line Paid & DO Lodged",
 			"Entry Paid",
@@ -151,7 +149,7 @@ def shipment_progress(status: str | None) -> dict:
 	    'done' | 'current' | 'upcoming'
 	  - ``current_label``: the friendly milestone label
 	  - ``status``: the raw granular status (e.g. "Entry Lodged")
-	  - ``percent``: 0-100 completion across the 18-state chart
+	  - ``percent``: 0-100 completion across the 17-state chart
 	  - ``is_complete``: True once the shipment reaches "Completed"
 	"""
 	status = status or "Draft"

@@ -124,7 +124,7 @@ Where they live: `cgm_shipping/cgm_worldwide_shipping/custom/<doctype>.json`, ap
 
 | Workflow | On | States |
 |----------|-----|--------|
-| **CGM Sea Import Workflow** | Project | 18, Draft to Completed - see [Operations](operations.md#project-workflow-shipment-status) |
+| **CGM Sea Import Workflow** | Project | 17, Draft to Completed - see [Operations](operations.md#project-workflow-shipment-status) |
 | **CGM Opportunity Pre-Shipment** | Opportunity | Ops Intake, Pending Approval, Approved, Rejected, Cancelled - see [CRM & Intake](crm-intake.md) |
 | **CGM Sales Invoice Approval** | Sales Invoice | Draft, Pending Approval, Approved, Cancelled |
 | **CGM Funding Request Approval** | Funding Request | Draft, Pending, Approved, Partially Approved, Disbursement in Progress, Disbursed, Completed, Rejected, Cancelled |

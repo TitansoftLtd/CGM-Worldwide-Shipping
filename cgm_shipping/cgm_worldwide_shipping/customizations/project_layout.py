@@ -19,6 +19,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	get_project_reference,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+	derive_workflow_passed_states,
 	derive_workflow_progress_from_tasks,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
@@ -1298,8 +1299,13 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		progress_status, progress_index = derive_workflow_progress_from_tasks(
 			tasks, states=states, gates=gates
 		)
+		passed_states = sorted(
+			derive_workflow_passed_states(tasks, states=states, gates=gates),
+			key=lambda s: states.index(s) if s in states else 999,
+		)
 	else:
 		progress_status, progress_index = derive_generic_workflow_progress(tasks)
+		passed_states = []
 
 	visible_tasks = filter_sea_tasks_for_user(tasks)
 	open_tasks = [t for t in visible_tasks if t.get("status") not in ("Completed", "Cancelled")]
@@ -1360,6 +1366,7 @@ def get_project_tracking_dashboard(project: str) -> dict:
 	payload = {
 		"current_status": progress_status,
 		"current_index": progress_index,
+		"passed_states": passed_states,
 		"workflow_status": workflow_status,
 		"workflow_index": workflow_index,
 		"workflow_behind": workflow_behind,

@@ -709,10 +709,16 @@ function render_shipment_progress_chart(frm, { force = false } = {}) {
 
 function paint_shipment_progress_chart(frm, field, payload) {
 	const d = payload;
+	const passedSet = new Set(d.passed_states || []);
 	const steps = (d.states || [])
 		.map((state, i) => {
 			let cls = "cgm-progress-step";
-			if (i < d.current_index) cls += " is-done";
+			// Clearance chart: green only when that gate's task is actually done.
+			// Do not infer passed from index — out-of-order completion leaves gaps.
+			const isPassed = d.uses_clearance_states
+				? passedSet.has(state)
+				: passedSet.has(state) || i < d.current_index;
+			if (isPassed && state !== d.current_status) cls += " is-done";
 			if (state === d.current_status) cls += " is-current";
 			return `<span class="${cls}" title="${frappe.utils.escape_html(state)}">${frappe.utils.escape_html(state)}</span>`;
 		})
@@ -724,6 +730,8 @@ function paint_shipment_progress_chart(frm, field, payload) {
 		let nextHint = __("Next open task");
 		if (d.first_open_task) {
 			nextHint = `Task ${d.first_open_task.seq}: ${d.first_open_task.subject}`;
+		} else if (d.tasks_completed >= d.tasks_total) {
+			nextHint = __("All clearance tasks completed");
 		}
 		const taskLabel = d.task_progress_label || __("workflow tasks");
 		taskLine = `<div class="cgm-progress-meta"><b>${d.tasks_completed}/${d.tasks_total}</b> ${frappe.utils.escape_html(taskLabel)} completed - next open: <b>${frappe.utils.escape_html(nextHint)}</b></div>`;
