@@ -11,11 +11,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 	can_complete_finance_permit_task,
 	finance_permit_row_payloads,
 	finance_permit_rows_out_of_sync,
-	permit_application_invoices_ready_for_finance,
 	submitted_journal_entry,
 	sync_permit_invoices_to_finance_task,
 )
-from cgm_shipping.patches.ensure_task_permits_field_visibility import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	TASK_PERMITS_DEPENDS_ON,
 )
 

@@ -21,11 +21,16 @@ def after_install() -> None:
 	)
 	from cgm_shipping.default_seed_data import seed_all_defaults
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.branding import apply_cgm_branding
+
 	seed_all_defaults()
 	ensure_license_setup()
+	ensure_app_setup()
 	# Reminder schedule defaults are fresh-install only, so removing a period on a
 	# live site is not undone by the next migrate.
 	seed_license_settings()
+	# Branding is a starting point for a new site; the desk owns it afterwards.
+	apply_cgm_branding()
 
 
 def after_migrate() -> None:
@@ -66,6 +71,7 @@ def after_migrate() -> None:
 		("transporter portal setup", ensure_transporter_portal_setup),
 		("customer invoice share fields", ensure_customer_invoice_share_schema),
 		("sales invoice approval workflow", ensure_sales_invoice_workflow_setup),
+		("workflows, notifications and fields", ensure_app_setup),
 		("task workflow masters", ensure_task_workflow_masters),
 		("package field visibility", ensure_package_field_visibility),
 		("licence register roles", ensure_license_setup),
@@ -86,11 +92,9 @@ def after_migrate() -> None:
 def ensure_wiki_docs_published() -> None:
 	"""Publish `docs/` into the CGM Shipping wiki space on every migrate.
 
-	The sync itself lives in `patches.ensure_cgm_frappe_wiki`, but a patch runs once
-	and is then recorded in Patch Log forever - so every later edit to a guide, and
-	every new page added to `docs/.wiki.json`, silently never reached the wiki. Docs
-	are only useful if what is published matches what is in the repo, so the sync
-	belongs here, where it re-runs.
+	The sync lives in `customizations.wiki_docs`. It runs here rather than in a patch
+	because a patch runs once, and every later edit to a guide, and every new page
+	added to `docs/.wiki.json`, must still reach the wiki.
 
 	The files are the source of truth: the space is created with
 	`allow_contributions = 0`, so a re-sync cannot overwrite someone's edit.
@@ -98,7 +102,7 @@ def ensure_wiki_docs_published() -> None:
 	if not frappe.db.exists("DocType", "Wiki Space"):
 		return
 
-	from cgm_shipping.patches.ensure_cgm_frappe_wiki import execute as sync_wiki_docs
+	from cgm_shipping.cgm_worldwide_shipping.customizations.wiki_docs import sync_wiki_docs
 
 	sync_wiki_docs()
 
@@ -163,6 +167,8 @@ def ensure_package_field_visibility() -> None:
 
 	seed_package_visibility_defaults()
 	apply_package_field_depends_on()
+
+
 def ensure_license_setup() -> None:
 	"""Roles the licence & permit register doctypes grant permissions to.
 
@@ -189,15 +195,32 @@ def ensure_customer_invoice_share_schema() -> None:
 
 def ensure_sales_invoice_workflow_setup() -> None:
 	"""Add any Sales Invoice workflow states/transitions the code needs; keep desk edits."""
-	if not frappe.db.exists("DocType", "Workflow"):
-		return
-	from cgm_shipping.patches.ensure_sales_invoice_workflow import (
-		_ensure_workflow_action_masters,
-		_sync_workflow,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sales_invoice_workflow import (
+		ensure_sales_invoice_workflow,
 	)
 
-	_ensure_workflow_action_masters()
-	_sync_workflow()
+	ensure_sales_invoice_workflow()
+
+
+def ensure_app_setup() -> None:
+	"""Workflows, notifications and custom fields the code relies on, created when missing.
+
+	Only what is missing is created, so a desk edit to any of them survives every
+	migrate. A new site gets them from after_install.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.app_custom_fields import (
+		ensure_app_custom_fields,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.app_notifications import (
+		ensure_app_notifications,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_setup import (
+		ensure_app_workflows,
+	)
+
+	ensure_app_custom_fields()
+	ensure_app_workflows()
+	ensure_app_notifications()
 
 
 def ensure_transporter_portal_setup() -> None:
@@ -308,18 +331,19 @@ def reinstall_supplier_shipping_line_schema() -> None:
 	frappe.db.commit()
 
 
-def export_cgm_customizations(
-	module: str = "CGM Worldwide Shipping",
-	with_permissions: bool = True,
-) -> None:
-	"""Write desk customizations into custom/*.json for git (applied on migrate).
+def export_cgm_customizations(module: str = "CGM Worldwide Shipping") -> None:
+	"""Write desk customizations of other apps' doctypes into custom/*.json for git.
 
-	Exports Custom Field, Property Setter, and Custom DocPerm for every doctype
-	touched in *module*. Run after Customize Form / Role Permission Manager::
+	Exports Custom Field and Property Setter for every ERPNext / HRMS / Frappe
+	doctype touched in *module*, applied on migrate. ``custom_perms`` is always
+	written empty: migrate would otherwise delete and re-insert those doctypes'
+	role permissions every time, undoing Role Permission Manager edits. The app's
+	own doctypes are skipped - their fields belong in their DocType JSON. Run after
+	Customize Form::
 
 	    bench --site <site> execute cgm_shipping.install.export_cgm_customizations
 
-	Workflows, Role Profiles, and User role assignments are **not** included —
+	Workflows, Role Profiles, and User role assignments are **not** included -
 	see the ``export_cgm_customizations`` notes in docs/guides/patches.md.
 	"""
 	from frappe.modules.utils import export_customizations
@@ -335,13 +359,13 @@ def export_cgm_customizations(
 
 	exported: list[str] = []
 	for doctype in sorted(doctypes):
-		if not doctype:
+		if not doctype or frappe.db.get_value("DocType", doctype, "module") == module:
 			continue
 		path = export_customizations(
 			module=module,
 			doctype=doctype,
 			sync_on_migrate=1,
-			with_permissions=with_permissions,
+			with_permissions=0,
 		)
 		if path:
 			exported.append(path)

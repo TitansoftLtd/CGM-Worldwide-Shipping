@@ -352,16 +352,15 @@ Dispatcher: `customizations/notifications.py`
 
 ## 7. Installation & patches
 
-On `bench migrate`, patches in `patches.txt` run idempotently:
+Patches in `patches.txt` are one-time data fixes. Frappe runs each one once per site, and a fresh install marks them all done without running them, so nothing a site needs comes from a patch:
 
-| Category | Examples |
-|----------|----------|
-| **Seed data** | Sea task template, task requirements, workflow gates, clearance stations, CFS locations, customs tax types |
-| **Workflows** | Quotation approval, Sales Invoice approval, entry/shipping-line/post-clearance/KPA finance subflows |
-| **Schema** | Supplier shipping-line tables, task container updates, quotation pricing fields, print formats |
-| **Workspace** | Container Ops Board link |
+| Where | What |
+|-------|------|
+| **DocType JSON, `custom/*.json`** | Schema, Custom Fields, Property Setters (synced on every migrate) |
+| **`install.after_install`** | Default masters and settings, CGM branding (logo, favicon, app name) |
+| **`install.after_migrate`** | Task templates and shipment status gates, CGM Shipping Settings defaults, the Sales Invoice and Sea Import workflows, the notifications and custom fields the code sends or writes to, transporter portal, wiki docs |
 
-`install.after_migrate` re-applies critical schema and transporter portal setup.
+Workflows, notifications and fields are only created when missing, so an edit made in the desk survives every migrate. Branding is set once at install; the desk owns it after that.
 
 ---
 

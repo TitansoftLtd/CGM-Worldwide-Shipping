@@ -469,12 +469,8 @@ def ensure_bl_cargo_type(doc) -> None:
 			doc.cargo_type = requested
 			return
 
-	for opp_field in ("linked_opportunity", "custom_linked_opportunity"):
-		if not doc.meta.has_field(opp_field):
-			continue
-		opp_name = doc.get(opp_field)
-		if not is_valid_opportunity_link(opp_name):
-			continue
+	opp_name = doc.get("linked_opportunity")
+	if is_valid_opportunity_link(opp_name):
 		opp = frappe.get_doc("Opportunity", opp_name)
 		cargo_field = get_cargo_type_field(opp.meta)
 		if cargo_field and opp.get(cargo_field):

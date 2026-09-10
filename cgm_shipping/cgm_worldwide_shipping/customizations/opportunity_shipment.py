@@ -225,7 +225,6 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_port_of_discharge", "custom_port_of_discharge"),
 		("custom_voyage_number", "custom_voyage_number"),
 		("custom_cargo_cutoff", "custom_cargo_cutoff"),
-		("custom_cargo_cut_off", "custom_cargo_cutoff"),
 		("custom_booking_confirmation", "custom_booking_confirmation"),
 		("custom_bill_of_lading", "custom_bill_of_lading"),
 		("custom_air_waybill", "custom_air_waybill"),

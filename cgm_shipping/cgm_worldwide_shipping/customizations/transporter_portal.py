@@ -21,7 +21,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation imp
 	OFFERED_TRUCK_WITHDRAWN,
 	acknowledge_allocation,
 	submit_offered_trucks,
-	sync_interchange_from_item,
 	withdraw_offered_truck,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
@@ -441,44 +440,6 @@ def withdraw_offered_truck_portal(allocation_name: str, offered_truck_name: str)
 
 
 @frappe.whitelist()
-def save_truck_assignment(
-	allocation_name: str,
-	item_name: str,
-	truck_number: str,
-	driver_name: str,
-	driver_contact: str = "",
-) -> dict:
-	"""Deprecated: transporters offer trucks in batch; CGM assigns containers."""
-	transporter = require_transporter_portal_access()
-	_get_allocation_for_transporter(allocation_name, transporter)
-	frappe.throw(
-		_(
-			"Offer trucks in the Offered Trucks section. CGM assigns each container to a truck."
-		),
-		title=_("Use Offered Trucks"),
-	)
-
-
-@frappe.whitelist()
-def submit_truck_assignment_portal(
-	allocation_name: str,
-	item_name: str,
-	truck_number: str,
-	driver_name: str,
-	driver_contact: str = "",
-) -> dict:
-	"""Deprecated: transporters offer trucks in batch; CGM assigns containers."""
-	transporter = require_transporter_portal_access()
-	_get_allocation_for_transporter(allocation_name, transporter)
-	frappe.throw(
-		_(
-			"Offer trucks in the Offered Trucks section. CGM assigns each container to a truck."
-		),
-		title=_("Use Offered Trucks"),
-	)
-
-
-@frappe.whitelist()
 def save_interchange_draft_portal(
 	allocation_name: str,
 	item_name: str,
@@ -513,28 +474,6 @@ def submit_interchange_portal(
 	)
 
 	return submit_interchange_from_item(allocation_name, item_name)
-
-
-@frappe.whitelist()
-def upload_interchange(
-	allocation_name: str,
-	item_name: str,
-	interchange_document: str,
-	interchange_date: str | None = None,
-) -> dict:
-	"""Backward-compatible alias — saves interchange as draft."""
-	transporter = require_transporter_portal_access()
-	_assert_allocation_for_transporter(allocation_name, transporter)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.container_allocation import (
-		save_interchange_draft,
-	)
-
-	return save_interchange_draft(
-		allocation_name,
-		item_name,
-		interchange_document,
-		interchange_date,
-	)
 
 
 @frappe.whitelist()

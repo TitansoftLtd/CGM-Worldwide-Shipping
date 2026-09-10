@@ -14,7 +14,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	ALL_TEMPLATE_NAMES,
 	ROAD_TRANSIT_INBOUND_TEMPLATE,
 	SEA_IMPORT_TEMPLATE,
-	SEA_TRANSIT_IMPORT_TEMPLATE,
 	normalize_template_name,
 	workflow_flow_keys_for_template,
 )
@@ -108,16 +107,6 @@ def project_uses_clearance_workflow_states(project) -> bool:
 			AIR_EXPORT_TEMPLATE,
 		):
 			return True
-	return False
-
-
-def project_is_sea_transit_import(project) -> bool:
-	for key in get_project_workflow_flow_keys(project):
-		if normalize_template_name(key) == SEA_TRANSIT_IMPORT_TEMPLATE:
-			return True
-	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
-	if shipment_type and get_task_template_for_shipment_type(shipment_type) == SEA_TRANSIT_IMPORT_TEMPLATE:
-		return True
 	return False
 
 

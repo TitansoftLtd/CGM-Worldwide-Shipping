@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations import sea_settings_seed_data as sea_seed
-from cgm_shipping.patches import ensure_sales_invoice_workflow as si_workflow
+from cgm_shipping.cgm_worldwide_shipping.customizations import sales_invoice_workflow as si_workflow
 
 REQUIREMENTS = "custom_sea_clearance_task_requirements"
 

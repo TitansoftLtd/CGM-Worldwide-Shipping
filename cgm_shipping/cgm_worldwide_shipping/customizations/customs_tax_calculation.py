@@ -169,10 +169,6 @@ def allowed_modes_for_tax(tax_type: str) -> tuple[str, ...]:
 	return get_tax_type_config(tax_type).allowed_modes
 
 
-def default_mode_for_tax(tax_type: str) -> str:
-	return get_tax_type_config(tax_type).default_mode
-
-
 def resolve_calculation_mode(row, tax_type: str) -> str:
 	"""Return the row's mode if set, else the tax type default. Never silently remaps."""
 	config = get_tax_type_config(tax_type)

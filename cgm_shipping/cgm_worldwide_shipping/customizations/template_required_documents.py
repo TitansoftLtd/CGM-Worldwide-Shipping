@@ -101,11 +101,6 @@ def document_type_names_from_template_row(row) -> list[str]:
 	return names
 
 
-def valid_document_type_names(tokens: list[str]) -> list[str]:
-	"""Keep only tokens that match a Document Type name exactly (strict / new data)."""
-	return [token for token in tokens if token and frappe.db.exists("Document Type", token)]
-
-
 def resolve_required_document_type_name(token: str) -> str | None:
 	"""Resolve a stored token when seeding Task Documents (supports legacy stamps)."""
 	return resolve_legacy_document_type_name(token)
@@ -115,15 +110,4 @@ def normalize_required_document_type_stamp(value: str | None) -> str:
 	"""Rewrite a Task stamp string to canonical Document Type names."""
 	return serialize_required_document_types(
 		coerce_legacy_document_type_tokens(parse_required_document_types(value))
-	)
-
-
-def set_template_row_required_document_types(row, names: list[str]) -> None:
-	"""Set validated Document Type names on a template row (comma-separated Data field)."""
-	row.required_document_types = serialize_required_document_types(valid_document_type_names(names))
-
-
-def set_template_row_required_document_types_from_string(row, value: str | None) -> None:
-	set_template_row_required_document_types(
-		row, coerce_legacy_document_type_tokens(parse_required_document_types(value))
 	)

@@ -52,12 +52,8 @@ SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
 # Opportunity pre-shipment workflow approved state.
 APPROVED_WORKFLOW_STATE = "Approved"
 
-# Quotation finance approval workflow.
-QUOTATION_WORKFLOW_NAME = "CGM Quotation Approval"
-QUOTATION_WORKFLOW_STATE_DRAFT = "Draft"
-QUOTATION_WORKFLOW_STATE_PENDING_FINANCE = "Pending Finance Approval"
+# Quotation states that allow billing (quotation.py / quotation.js).
 QUOTATION_WORKFLOW_STATE_APPROVED = "Approved"
-QUOTATION_WORKFLOW_STATE_REJECTED = "Rejected"
 QUOTATION_WORKFLOW_STATE_SHARED = "Shared with Client"
 QUOTATION_SI_READY_STATES = frozenset(
 	{
@@ -95,10 +91,6 @@ SALES_INVOICE_WORKFLOW_ACTION_SUBMIT_FOR_REVIEW = "Submit for Review"
 SALES_INVOICE_WORKFLOW_ACTION_APPROVE = "Approve"
 SALES_INVOICE_WORKFLOW_ACTION_REJECT = "Reject"
 SALES_INVOICE_WORKFLOW_ACTION_CANCEL = "Cancel"
-# Legacy — rejection now returns to Draft; kept for migration/backward imports only.
-SALES_INVOICE_WORKFLOW_STATE_REJECTED = "Rejected"
-# Backward-compatible alias for older imports.
-SALES_INVOICE_WORKFLOW_STATE_PENDING_FINANCE = SALES_INVOICE_WORKFLOW_STATE_PENDING
 # Approve sets this state then submits; ERPNext then owns Sales Invoice.status.
 SALES_INVOICE_SUBMITTABLE_STATES = frozenset({SALES_INVOICE_WORKFLOW_STATE_APPROVED})
 SALES_INVOICE_APPROVED_BY_FIELD = "custom_approved_by"
@@ -418,6 +410,11 @@ TRANSPORT_CONTAINER_STEPS = (
 	CONTAINER_STEP_EMPTY_RETURN,
 	CONTAINER_STEP_INTERCHANGE,
 )
+# Task Permits table shows on permit steps, by role - the rule custom/task.json carries.
+TASK_PERMITS_DEPENDS_ON = (
+	"eval:['Permit Application','Permit Finance'].includes(doc.custom_task_role) || "
+	"doc.custom_requires_permit_action"
+)
 
 # Task form depends_on for the container grid. custom/task.json carries the same
 # text, and project_layout.ensure_task_container_update_fields writes it on
@@ -455,15 +452,8 @@ DEPOSIT_PAYERS = (
 	"Company",
 )
 
-# High-level cargo classification (distinct from Container Type size masters).
-CARGO_TYPE_OPTIONS = (
-	"FCL",
-	"LCL",
-	"Breakbulk",
-	"Project Cargo",
-)
 
-# ERPNext Notification names (ensured by patches.ensure_sea_task_notifications).
+# ERPNext Notification names (created by sea_task_notifications.ensure_sea_task_notifications).
 FINANCE_PAYMENT_ACTION = "CGM Task - Finance Payment Action"
 PERMIT_INVOICES_TO_FINANCE = "CGM Task - Permit Invoices to Finance"
 PERMIT_RECEIPTS_FOR_DECLARANT = "CGM Task - Permit Receipts for Declarant"
@@ -502,7 +492,6 @@ MR_WORKFLOW_STATE_ON_FUNDING_REQUEST = "On Funding Request"
 MR_WORKFLOW_STATE_APPROVED = "Approved"
 MR_WORKFLOW_STATE_DISBURSED = "Disbursed"
 MR_WORKFLOW_STATE_REJECTED = "Rejected"
-MR_WORKFLOW_STATE_CANCELLED = "Cancelled"
 
 MATERIAL_REQUEST_TYPE_OPERATIONAL = "Operational Expense"
 

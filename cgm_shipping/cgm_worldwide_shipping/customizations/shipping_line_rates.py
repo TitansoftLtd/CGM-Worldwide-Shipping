@@ -12,11 +12,6 @@ DEMURRAGE_TIERS_FIELD = "custom_shipping_line_demurrage_tiers"
 COUNT_FROM_BERTHING = "Berthing Date"
 COUNT_FROM_DISCHARGE = "Discharge Date"
 
-SUPPLIER_CHILD_TABLE_FIELDS = (
-	FREE_DAYS_RULES_FIELD,
-	DEMURRAGE_TIERS_FIELD,
-)
-
 
 @frappe.request_cache
 def get_valid_destinations() -> list[str]:

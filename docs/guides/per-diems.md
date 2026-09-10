@@ -141,8 +141,7 @@ Every message below is the system working as intended, not a fault:
 ## How it was applied
 
 - The A–M grades, their rates, and the **Per Diem** claim type are seeded by `install.after_migrate`, so a fresh site gets them too.
-- `backfill_employee_job_groups` graded active employees: by **office holder name** first (the people named in the document), then by **designation**. It only ever fills a blank grade, so anything HR sets or corrects afterwards stands.
-- The designation match reads the **live** Employee Grade tables, not the original document. Add a designation to a grade and re-running the assignment will place the people holding it.
-- Employees the document does not cover, and office holders with no Employee record, are printed in the migrate output rather than guessed at.
+- When per diems went live, a one-time backfill graded the active employees: by **office holder name** first (the people named in the document), then by **designation**. It only filled a blank grade, so anything HR sets or corrects stands.
+- Employees the document did not cover, and office holders with no Employee record, were listed in that migrate's output rather than guessed at.
 
 Code: [`customizations/per_diem.py`](../../cgm_shipping/cgm_worldwide_shipping/customizations/per_diem.py)

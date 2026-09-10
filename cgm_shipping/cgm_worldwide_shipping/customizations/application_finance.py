@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import frappe
-from frappe.utils import cint, flt, now_datetime
+from frappe.utils import cint, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	ENTRY_INVOICE_TO_FINANCE,
@@ -177,22 +177,6 @@ def profile_by_payment_item(payment_item: str) -> ApplicationFinanceProfile | No
 	return None
 
 
-def _rows_by_sequence():
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import rows_by_sequence
-
-	return rows_by_sequence()
-
-
-def _get_finance_payment_kind(sequence_no: int) -> str | None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_finance_payment_kind
-
-	return get_finance_payment_kind(sequence_no)
-
-
-def is_application_finance_task(sequence_no: int, profile: ApplicationFinanceProfile) -> bool:
-	return _get_finance_payment_kind(sequence_no) == profile.finance_payment_kind
-
-
 def task_matches_application(task, profile: ApplicationFinanceProfile) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_application_for_profile,
@@ -213,32 +197,6 @@ def task_matches_application_workflow(task, profile: ApplicationFinanceProfile) 
 	return task_matches_application(task, profile) or task_matches_application_finance(
 		task, profile
 	)
-
-
-def application_sequences(profile: ApplicationFinanceProfile) -> frozenset[int]:
-	return frozenset(
-		seq
-		for seq, rows in _rows_by_sequence().items()
-		if any(r.requirement_type == profile.application_requirement_type for r in rows)
-	)
-
-
-def application_finance_sequences(profile: ApplicationFinanceProfile) -> frozenset[int]:
-	return frozenset(
-		seq
-		for seq in _rows_by_sequence()
-		if is_application_finance_task(seq, profile)
-	)
-
-
-def get_application_sequence(profile: ApplicationFinanceProfile) -> int | None:
-	seqs = sorted(application_sequences(profile))
-	return seqs[0] if seqs else None
-
-
-def get_application_finance_sequence(profile: ApplicationFinanceProfile) -> int | None:
-	seqs = sorted(application_finance_sequences(profile))
-	return seqs[0] if seqs else None
 
 
 def _project_task_by_role(project: str, role: str, profile: ApplicationFinanceProfile) -> str | None:
@@ -2135,13 +2093,3 @@ def enforce_application_finance_line_permissions(
 				frappe.throw(
 					f"Record payment before uploading the <b>{profile.receipt_label}</b>."
 				)
-
-
-def linked_application_finance_pairs() -> tuple[tuple[int, int], ...]:
-	pairs: list[tuple[int, int]] = []
-	for profile in all_profiles():
-		app = get_application_sequence(profile)
-		fin = get_application_finance_sequence(profile)
-		if app and fin:
-			pairs.append((app, fin))
-	return tuple(pairs)
