@@ -12,6 +12,7 @@ cgm_shipping.patches.backup_template_required_document_strings
 # Idempotent patches — re-apply config from source on every migrate.
 # One-time migrations already applied on existing sites live in git history only.
 # Patch authoring rules: docs/guides/patches.md
+cgm_shipping.patches.fix_cargo_size_link_drift
 cgm_shipping.patches.ensure_quotation_workflow
 cgm_shipping.patches.ensure_sales_invoice_workflow_fields
 cgm_shipping.patches.ensure_sales_invoice_naming_series
@@ -106,3 +107,4 @@ cgm_shipping.patches.purge_finance_task_intake_documents
 cgm_shipping.patches.reopen_entry_finance_without_receipt
 cgm_shipping.patches.resync_sea_transit_workflow_status
 cgm_shipping.patches.remove_manifest_requested_workflow_state
+cgm_shipping.patches.backfill_container_tracker_eta

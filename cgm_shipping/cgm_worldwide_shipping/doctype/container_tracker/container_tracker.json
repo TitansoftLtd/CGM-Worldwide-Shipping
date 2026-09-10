@@ -31,7 +31,6 @@
   "discharging_date",
   "column_break_dates",
   "gate_out_date_port",
-  "free_days_count_from",
   "section_icd",
   "get_in_mombasa",
   "get_out_mombasa",
@@ -102,10 +101,10 @@
   "actual_empty_return",
   "expected_empty_return",
   "gate_in_date_depot",
-  "interchange_date",
-  "interchange_document",
   "column_break_empty",
-  "days_outstanding"
+  "days_outstanding",
+  "interchange_date",
+  "interchange_document"
  ],
  "fields": [
   {
@@ -245,13 +244,6 @@
    "fieldname": "gate_out_date_port",
    "fieldtype": "Date",
    "label": "Gate Out Mombasa"
-  },
-  {
-   "fieldname": "free_days_count_from",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Free Days Count From",
-   "read_only": 1
   },
   {
    "fieldname": "section_icd",
@@ -643,7 +635,7 @@
    "link_fieldname": "container_tracker"
   }
  ],
- "modified": "2026-09-04 15:00:00.000000",
+ "modified": "2026-09-09 18:54:46.930813",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

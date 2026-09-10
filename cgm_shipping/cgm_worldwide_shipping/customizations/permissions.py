@@ -135,10 +135,9 @@ def resolve_department_name(department_value, company=None):
 def _department_stem_by_sequence() -> dict[int, str]:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
 
-	return {
-		sequence_no: row["department"]
-		for sequence_no, row in enumerate(load_sea_task_template(), start=1)
-	}
+	# Key on the template's own sequence_no. Enumerating positionally silently
+	# shifted every department once steps were removed from the live template.
+	return {int(row["sequence_no"]): row["department"] for row in load_sea_task_template()}
 
 
 def user_roles(user: str | None = None) -> set[str]:

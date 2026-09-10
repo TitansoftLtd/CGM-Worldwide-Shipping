@@ -24,6 +24,17 @@ from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_cha
 
 
 class ContainerTracker(Document):
+	def onload(self):
+		"""Tell the form whether this user may set transporter / truck / driver.
+
+		Resolved from the configured Transport roles (CGM Role Group → Settings →
+		seeded defaults) rather than a hardcoded list in the form script, so
+		adding a transport role does not need a code change.
+		"""
+		self.set_onload(
+			"can_edit_transport_assignment", user_can_edit_transport_assignment()
+		)
+
 	def validate(self):
 		from cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading import (
 			sync_bl_deposit_from_tracker_update,
@@ -120,7 +131,6 @@ _CONTAINER_TRACKER_FIELDS = [
 	"demurrage_daily_rate",
 	"detention_daily_rate",
 	"kpa_daily_rate",
-	"free_days_count_from",
 	"icd_mombasa_discharge_date",
 	"icd_gate_in_date",
 	"icd_gate_out_date",
@@ -306,3 +316,20 @@ def resync_project_container_child_rows(project: str) -> int:
 		count += 1
 	frappe.db.commit()
 	return count
+
+
+def user_can_edit_transport_assignment(user: str | None = None) -> bool:
+	"""True when the user may set transporter / truck number / driver on a tracker.
+
+	Operations keep their override; the Transport department owns the data entry
+	(the book-trucks step maps those very fields onto Container Tracker), so the
+	configured Transport roles must be able to edit them here too.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		user_has_transport_department_access,
+		user_roles,
+	)
+
+	if {"System Manager", "Operations Manager"} & user_roles(user):
+		return True
+	return user_has_transport_department_access(user)

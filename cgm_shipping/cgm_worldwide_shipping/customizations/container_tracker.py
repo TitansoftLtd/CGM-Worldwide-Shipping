@@ -913,6 +913,60 @@ def _apply_bulk_eta(project, trackers: list) -> None:
 	_save_trackers(trackers)
 
 
+def sync_project_dates_to_trackers(doc, method=None) -> None:
+	"""Push revised Project shipment dates onto every Container Tracker.
+
+	ETA, ATA and Custom Release Date previously reached containers only at
+	tracker creation, or when a specific clearance task fired - so revising any
+	of them on the Project silently never arrived. The Project value wins: a
+	vessel delay or a customs release must land on every container.
+
+	Custom Release Date also drives the derived container status ("KRA
+	Released"), which is recomputed by apply_metrics_to_doc in _save_trackers.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
+		PROJECT_ATA_FIELDS,
+	)
+
+	previous = doc.get_doc_before_save()
+
+	def _changed(fieldname: str) -> bool:
+		return not previous or previous.get(fieldname) != doc.get(fieldname)
+
+	eta = doc.get("custom_eta")
+	ata = get_project_ata(doc)
+	release_date = doc.get("custom_custom_release_date")
+
+	sync_eta = bool(eta) and _changed("custom_eta")
+	sync_ata = bool(ata) and any(_changed(f) for f in PROJECT_ATA_FIELDS)
+	sync_release = bool(release_date) and _changed("custom_custom_release_date")
+
+	if not (sync_eta or sync_ata or sync_release):
+		return
+
+	trackers = _trackers_for_project(doc.name)
+	if not trackers:
+		return
+
+	if sync_eta:
+		eta_date = getdate(eta)
+		for ct in trackers:
+			ct.eta = eta_date
+	if sync_ata:
+		ata_date = getdate(ata)
+		for ct in trackers:
+			ct.ata = ata_date
+			# Mirrors _apply_ata_to_trackers: Create Entry needs a discharge date.
+			if not ct.get("discharging_date"):
+				ct.discharging_date = ata_date
+	if sync_release:
+		release = getdate(release_date)
+		for ct in trackers:
+			ct.custom_release_date = release
+
+	_save_trackers(trackers)
+
+
 def _apply_bulk_vessel_arrival(project, trackers: list, today_date, task_doc=None) -> None:
 	"""Create trackers (vessel arrived); copy Project ATA onto every tracker.
 
@@ -1159,7 +1213,7 @@ def handle_sea_task_container_event(
 	today_date = getdate(today())
 	trackers = _trackers_for_project(project_name)
 
-	if seq == get_container_task_sequence("custom_track_eta_task_seq"):
+	if seq == get_container_task_sequence("custom_eta_refresh_task_seq"):
 		_apply_bulk_eta(project, trackers)
 	elif seq == get_container_task_sequence("custom_vessel_arrival_task_seq"):
 		_apply_bulk_vessel_arrival(project, trackers, today_date, task_doc=task_doc)

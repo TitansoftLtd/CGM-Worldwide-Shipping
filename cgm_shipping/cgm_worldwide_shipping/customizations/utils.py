@@ -200,16 +200,18 @@ def load_cgm_task_template_items(template_name: str) -> list[dict]:
 	return out
 
 
-def load_sea_task_template() -> list[dict[str, str]]:
-	"""Return sea import tasks from CGM Task Template master."""
+def load_sea_task_template() -> list[dict]:
+	"""Return sea import tasks from CGM Task Template master.
+
+	Keeps ``sequence_no``: template rows are not contiguous (steps get removed in
+	the browser), so callers must key on the stored number rather than the row's
+	position in this list.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		SEA_IMPORT_TEMPLATE,
 	)
 
-	return [
-		{"subject": row["subject"], "department": row["department"]}
-		for row in load_cgm_task_template_items(SEA_IMPORT_TEMPLATE)
-	]
+	return load_cgm_task_template_items(SEA_IMPORT_TEMPLATE)
 
 
 def load_sea_transit_import_task_template() -> list[dict]:
@@ -221,13 +223,13 @@ def load_sea_transit_import_task_template() -> list[dict]:
 	return load_cgm_task_template_items(SEA_TRANSIT_IMPORT_TEMPLATE)
 
 
-def load_sea_transit_export_task_template() -> list[dict[str, str]]:
-	"""Return sea transit export tasks from CGM Task Template."""
+def load_sea_transit_export_task_template() -> list[dict]:
+	"""Return sea transit export tasks from CGM Task Template.
+
+	Keeps ``sequence_no`` for the same reason as ``load_sea_task_template``.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		SEA_TRANSIT_EXPORT_TEMPLATE,
 	)
 
-	return [
-		{"subject": row["subject"], "department": row["department"]}
-		for row in load_cgm_task_template_items(SEA_TRANSIT_EXPORT_TEMPLATE)
-	]
+	return load_cgm_task_template_items(SEA_TRANSIT_EXPORT_TEMPLATE)
