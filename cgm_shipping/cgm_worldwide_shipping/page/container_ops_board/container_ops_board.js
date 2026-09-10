@@ -298,8 +298,9 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			"in_demurrage",
 		];
 
+		// From the shared status table, so transit statuses can be filtered too.
 		const CONTAINER_STATUS_OPTIONS =
-			"\nPending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received";
+			window.cgm_shipping?.container_tracking?.status_select_options?.() || "";
 
 		// Filled in from the shipment payload. The board is a desk Page, so
 		// Project's meta is never loaded in the browser and get_docfield()

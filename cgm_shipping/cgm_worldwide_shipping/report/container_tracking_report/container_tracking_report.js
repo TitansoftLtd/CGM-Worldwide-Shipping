@@ -29,8 +29,8 @@ frappe.query_reports["Container Tracking Report"] = {
 			fieldname: "status",
 			label: __("Status"),
 			fieldtype: "Select",
-			options:
-				"\nPending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received",
+			// From the shared status table, so transit statuses can be filtered too.
+			options: window.cgm_shipping?.container_tracking?.status_select_options?.() || "",
 		},
 		{
 			fieldname: "from_date",

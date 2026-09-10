@@ -4512,13 +4512,15 @@ def on_task_update(doc, _method=None):
 		apply_finance_payment_to_project_permits(doc)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			close_permit_application_when_finance_done,
-		)
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			close_ucr_application_when_finance_done,
+			complete_permit_finance_when_application_done,
 		)
 
 		close_permit_application_when_finance_done(doc)
 		close_ucr_application_when_finance_done(doc)
+		# And the reverse for permits: the declarant closing the application
+		# closes its Finance task too (pre- and post-clearance).
+		complete_permit_finance_when_application_done(doc)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 			APPLICATION_FINANCE_PROFILES,
 			is_application_finance_task,

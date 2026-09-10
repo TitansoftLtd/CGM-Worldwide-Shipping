@@ -63,6 +63,9 @@ def derive_container_status(**kwargs) -> str | None:
 
 
 def apply_metrics_to_doc(doc) -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_LOCATION_REFRESH_STATUSES,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 		apply_metrics_to_doc as apply_core,
 		populate_rates_from_shipping_line,
@@ -77,11 +80,8 @@ def apply_metrics_to_doc(doc) -> None:
 		discharge=doc.get("discharging_date"),
 		delivery_date=doc.get("delivery_date"),
 	)
-	if not doc.get("current_location") or doc.get("status") in (
-		"Released / In Transit",
-		"At Warehouse",
-		"Cargo Offloaded",
-		"Discharged / At Port",
-		"Vessel Berthed",
+	if (
+		not doc.get("current_location")
+		or doc.get("status") in CONTAINER_LOCATION_REFRESH_STATUSES
 	):
 		doc.current_location = location

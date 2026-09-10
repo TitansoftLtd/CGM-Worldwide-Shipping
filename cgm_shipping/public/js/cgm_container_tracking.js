@@ -1,35 +1,25 @@
 frappe.provide("cgm_shipping.container_tracking");
 frappe.provide("cgm_shipping.grid_attach");
 
-cgm_shipping.container_tracking.OFFLOADED_STATUSES = [
-	"Cargo Offloaded",
-	"Offloaded at Destination",
-	"Empty Returned",
-];
+// Container status table - served from CONTAINER_STATUS_TABLE in
+// customizations/constants.py via boot, so the Desk and the server read the
+// same rows instead of each keeping a copy.
+cgm_shipping.container_tracking.status_info = function (status) {
+	return frappe.boot?.cgm_container_statuses?.statuses?.[status] || null;
+};
 
 cgm_shipping.container_tracking.status_color = function (status) {
-	if (!status) {
-		return "gray";
-	}
-	if (status.includes("Overdue")) {
-		return "red";
-	}
-	if (status === "Interchange Received") {
-		return "green";
-	}
-	if (cgm_shipping.container_tracking.OFFLOADED_STATUSES.includes(status)) {
-		return "orange";
-	}
-	if (status === "At Warehouse") {
-		return "blue";
-	}
-	if (status === "Released / In Transit") {
-		return "orange";
-	}
-	if (["Vessel Berthed", "Discharged / At Port"].includes(status)) {
-		return "yellow";
-	}
-	return "gray";
+	return cgm_shipping.container_tracking.status_info(status)?.colour || "gray";
+};
+
+cgm_shipping.container_tracking.is_return_open = function (status) {
+	return Boolean(cgm_shipping.container_tracking.status_info(status)?.return_open);
+};
+
+// "\nStatus A\nStatus B..." for Select filters, in lifecycle order.
+cgm_shipping.container_tracking.status_select_options = function () {
+	const order = frappe.boot?.cgm_container_statuses?.order || [];
+	return ["", ...order].join("\n");
 };
 
 cgm_shipping.grid_attach.should_show_attach_in_idle_cell = function (row, column) {
