@@ -215,7 +215,7 @@ class TestFieldClearanceValidation(UnitTestCase):
 			validate_field_clearance_task,
 		)
 
-		task = _TaskStub(custom_sequence_no=17)
+		task = _TaskStub(custom_sequence_no=17, custom_container_step="Field Clearance")
 		task.append(
 			TASK_DOCUMENTS_FIELD,
 			{"document_type": "DO", "attachment": "/files/delivery-order.pdf"},
@@ -227,6 +227,6 @@ class TestFieldClearanceValidation(UnitTestCase):
 			validate_field_clearance_task,
 		)
 
-		task = _TaskStub(custom_sequence_no=17)
+		task = _TaskStub(custom_sequence_no=17, custom_container_step="Field Clearance")
 		with self.assertRaises(frappe.ValidationError):
 			validate_field_clearance_task(task)

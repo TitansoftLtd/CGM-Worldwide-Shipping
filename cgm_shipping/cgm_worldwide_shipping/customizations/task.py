@@ -2219,6 +2219,12 @@ def validate_sea_task_can_complete(task) -> None:
 	# numbers, so only Sea Import tasks use them.
 	sea_import = is_sea_import_task(task)
 	validate_required_documents(task, seq if sea_import else 0)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_STEP_FIELD_CLEARANCE,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+		container_step_for_task,
+	)
 
 	if task_is_permit_application(task):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -2274,7 +2280,7 @@ def validate_sea_task_can_complete(task) -> None:
 		validate_document_checkpoint_task(task)
 	elif sea_import and is_light_proof_task(seq):
 		validate_light_proof_task(task)
-	elif sea_import and seq == _field_clearance_seq():
+	elif container_step_for_task(task) == CONTAINER_STEP_FIELD_CLEARANCE:
 		validate_field_clearance_task(task)
 
 	if is_sea_finance_payment_task(task) or any(
@@ -2426,22 +2432,19 @@ def validate_light_proof_task(task) -> None:
 		)
 
 
-def _field_clearance_seq() -> int:
-	"""Field clearance step number, as configured in CGM Shipping Settings."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
-		get_container_task_sequence,
-	)
-
-	return get_container_task_sequence("custom_field_clearance_task_seq")
-
-
 def validate_field_clearance_task(task) -> None:
 	"""Field clearance completes when ops attach a document or record CRO release."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_STEP_FIELD_CLEARANCE,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+		container_step_for_task,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		primary_attachment,
 	)
 
-	if int(task.get("custom_sequence_no") or 0) != _field_clearance_seq():
+	if container_step_for_task(task) != CONTAINER_STEP_FIELD_CLEARANCE:
 		return
 
 	released = (task.get("custom_verification_status") or "") == "Released by CRO"
@@ -4485,9 +4488,7 @@ def notify_sea_task_your_turn(task) -> dict | None:
 
 
 def on_task_update(doc, _method=None):
-	seq = _sea_task_seq(doc)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		get_permit_finance_for_behaviour,
 		task_is_application_finance_for_profile,
 		task_is_configured_application_workflow,
 		task_is_permit_application,
@@ -4637,15 +4638,13 @@ def on_task_update(doc, _method=None):
 		if _is_sea_task(doc):
 			if task_is_permit_application(doc):
 				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-					get_permit_finance_task,
+					finance_permit_task_for_application,
 					permit_work_changed as _permit_rows_changed,
 					sync_permit_invoices_to_finance_task,
 				)
 
 				if _permit_rows_changed(doc):
-					fin_name = get_permit_finance_for_behaviour(doc) or get_permit_finance_task(
-						doc.project, seq
-					)
+					fin_name = finance_permit_task_for_application(doc)
 					if fin_name and not frappe.flags.get("cgm_permit_finance_completing"):
 						sync_permit_invoices_to_finance_task(
 							frappe.get_doc("Task", fin_name), save=True

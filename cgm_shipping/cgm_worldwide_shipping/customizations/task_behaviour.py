@@ -699,4 +699,19 @@ def ensure_task_behaviour_fields() -> None:
 			"description": "Stamped from CGM Task Template Item. Task cannot Complete until these Document Types are attached on Task Documents.",
 		},
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import CONTAINER_STEPS
+
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_step",
+			"label": "Container Step",
+			"fieldtype": "Select",
+			"options": "\n" + "\n".join(CONTAINER_STEPS),
+			"insert_after": "custom_permit_stage",
+			"read_only": 1,
+			"allow_on_submit": 0,
+			"description": "Stamped from CGM Task Template Item. Which container lifecycle event this task records.",
+		},
+	)
 	frappe.clear_cache(doctype="Task")

@@ -9,10 +9,13 @@ from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CONTAINER_UPDATE_STEPS,
 	CONTAINER_UPDATE_TASK_SEQ_FIELDS,
 	TASK_CONTAINER_UPDATES_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+	container_seq_for_task,
+	container_step_for_task,
 	get_container_task_sequence,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
@@ -110,18 +113,23 @@ def _shipping_line_finance_seqs() -> frozenset[int]:
 
 
 def is_shipping_line_deposit_task(doc) -> bool:
-	return (
-		is_sea_import_task(doc)
-		and _sea_task_seq(doc) in _shipping_line_application_seqs()
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_shipping_line_application,
 	)
+
+	return is_sea_import_task(doc) and task_is_shipping_line_application(doc)
 
 
 def is_shipping_line_deposit_mirror_task(doc) -> bool:
 	"""Shipping Line Application or Finance payment tasks that mirror BL deposit fields."""
-	if not is_sea_import_task(doc):
-		return False
-	seq = _sea_task_seq(doc)
-	return seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs()
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_shipping_line_application,
+		task_is_shipping_line_finance,
+	)
+
+	return is_sea_import_task(doc) and (
+		task_is_shipping_line_application(doc) or task_is_shipping_line_finance(doc)
+	)
 
 
 def _completion_field_by_seq() -> dict[int, str]:
@@ -197,8 +205,43 @@ TRACKER_SEED_FIELDS = [
 ]
 
 
-def _sea_task_seq(doc) -> int:
-	return int(doc.get("custom_sequence_no") or 0)
+def _container_seq(doc) -> int:
+	"""Settings key number of the task's Container Step (see container_step_for_task).
+
+	Container code keys on this, never on the task's own position in the plan.
+	"""
+	return container_seq_for_task(doc)
+
+
+def _container_step_task_rows(
+	project: str, seqs, *, exclude_statuses=("Completed", "Cancelled")
+) -> list:
+	"""The project's tasks recording one of the container steps keyed by *seqs*.
+
+	Matched on each task's Container Step stamp, so its own step number never
+	decides it. Rows carry ``container_seq``; newest first.
+	"""
+	if not project or not seqs:
+		return []
+	fields = ["name", "creation", "custom_sequence_no", "custom_task_flow_key", "custom_task_role"]
+	if frappe.get_meta("Task").has_field("custom_container_step"):
+		fields.append("custom_container_step")
+	rows = frappe.get_all(
+		"Task",
+		filters={
+			"project": project,
+			"custom_task_flow_key": task_flow_key_in_filter(),
+			"status": ["not in", list(exclude_statuses)],
+		},
+		fields=fields,
+		order_by="creation desc",
+	)
+	out = []
+	for row in rows:
+		row.container_seq = container_seq_for_task(row)
+		if row.container_seq in seqs:
+			out.append(row)
+	return out
 
 
 def container_update_task_sequences() -> frozenset[int]:
@@ -216,12 +259,15 @@ def container_update_task_sequences() -> frozenset[int]:
 
 
 def is_container_update_task(doc) -> bool:
+	"""Container step tasks and the Shipping Line deposit steps show the grid."""
 	if not is_sea_import_task(doc):
 		return False
-	return _sea_task_seq(doc) in container_update_task_sequences()
+	return container_step_for_task(doc) in CONTAINER_UPDATE_STEPS or is_shipping_line_deposit_mirror_task(doc)
 
 
-def _prefill_row_from_tracker(row, tracker: dict, seq: int, project: str | None = None) -> bool:
+def _prefill_row_from_tracker(
+	row, tracker: dict, seq: int, project: str | None = None, *, shipping_line: bool = False
+) -> bool:
 	changed = False
 	if row.current_status != tracker.get("status"):
 		row.current_status = tracker.get("status")
@@ -241,7 +287,7 @@ def _prefill_row_from_tracker(row, tracker: dict, seq: int, project: str | None 
 		if discharge and row.get("discharging_date") != discharge:
 			row.discharging_date = discharge
 			changed = True
-	elif seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs():
+	elif shipping_line:
 		bl_map = _bl_deposit_by_container_number(project or tracker.get("project") or "")
 		src = bl_map.get((tracker.get("container_number") or "").strip().upper()) or {}
 		new_amt = flt(src.get("deposit_amount"))
@@ -297,7 +343,8 @@ def seed_container_update_rows(doc) -> bool:
 	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
 		return False
 
-	seq = _sea_task_seq(doc)
+	seq = _container_seq(doc)
+	shipping_line = is_shipping_line_deposit_mirror_task(doc)
 	existing = {
 		row.container_tracker: row
 		for row in doc.get(TASK_CONTAINER_UPDATES_FIELD) or []
@@ -317,7 +364,9 @@ def seed_container_update_rows(doc) -> bool:
 	vessel_arrival_seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 	for tracker in trackers:
 		if tracker.name in existing:
-			if _prefill_row_from_tracker(existing[tracker.name], tracker, seq, doc.project):
+			if _prefill_row_from_tracker(
+				existing[tracker.name], tracker, seq, doc.project, shipping_line=shipping_line
+			):
 				changed = True
 			continue
 
@@ -331,7 +380,7 @@ def seed_container_update_rows(doc) -> bool:
 			row_data["discharging_date"] = (
 				tracker.get("discharging_date") or tracker.get("ata") or None
 			)
-		elif seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs():
+		elif shipping_line:
 			bl_map = _bl_deposit_by_container_number(doc.project)
 			src = bl_map.get((tracker.container_number or "").strip().upper()) or {}
 			row_data["deposit_amount"] = flt(src.get("deposit_amount"))
@@ -367,7 +416,7 @@ def apply_container_updates_from_task(doc) -> None:
 	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
 		return
 
-	seq = _sea_task_seq(doc)
+	seq = _container_seq(doc)
 	if seq == get_container_task_sequence("custom_vessel_arrival_task_seq"):
 		return
 
@@ -497,21 +546,10 @@ def sync_vessel_arrival_task_rows_from_project(project_name: str) -> None:
 		return
 
 	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
-	rows = frappe.get_all(
-		"Task",
-		filters={
-			"project": project_name,
-			"custom_task_flow_key": task_flow_key_in_filter(),
-			"custom_sequence_no": seq,
-			"status": ["!=", "Cancelled"],
-		},
-		pluck="name",
-		order_by="creation desc",
-		limit=1,
-	)
+	rows = _container_step_task_rows(project_name, {seq}, exclude_statuses=("Cancelled",))
 	if not rows:
 		return
-	task_name = rows[0]
+	task_name = rows[0].name
 
 	frappe.flags.cgm_syncing_tracker_to_task = True
 	try:
@@ -554,23 +592,14 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 		),
 	}
 
-	tasks = frappe.get_all(
-		"Task",
-		filters={
-			"project": tracker.project,
-			"custom_task_flow_key": task_flow_key_in_filter(),
-			"status": ["not in", ["Completed", "Cancelled"]],
-			"custom_sequence_no": ["in", list(sync_seqs.keys())],
-		},
-		fields=["name", "custom_sequence_no"],
-	)
+	tasks = _container_step_task_rows(tracker.project, set(sync_seqs))
 	if not tasks:
 		return
 
 	frappe.flags.cgm_syncing_tracker_to_task = True
 	try:
 		for task_row in tasks:
-			fields = sync_seqs.get(int(task_row.custom_sequence_no or 0))
+			fields = sync_seqs.get(task_row.container_seq)
 			if not fields:
 				continue
 			task = frappe.get_doc("Task", task_row.name)
@@ -644,20 +673,11 @@ def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
 	if _containers_missing_step(project, seq):
 		return False
 
-	task_name = frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": task_flow_key_in_filter(),
-			"custom_sequence_no": seq,
-			"status": ["not in", ["Completed", "Cancelled"]],
-		},
-		"name",
-	)
-	if not task_name:
+	rows = _container_step_task_rows(project, {seq})
+	if not rows:
 		return False
 
-	return _auto_complete_container_task(task_name, project)
+	return _auto_complete_container_task(rows[0].name, project)
 
 
 def check_all_container_tasks_for_project(project: str) -> None:
@@ -693,7 +713,7 @@ def check_task_container_completion(doc) -> None:
 	if not doc.get("project"):
 		return
 
-	seq = _sea_task_seq(doc)
+	seq = _container_seq(doc)
 	if not _completion_field_by_seq().get(seq):
 		return
 
@@ -711,7 +731,7 @@ def validate_container_step_task_completion(doc) -> None:
 	if prev and prev.status == "Completed":
 		return
 
-	seq = _sea_task_seq(doc)
+	seq = _container_seq(doc)
 	if not doc.get("project"):
 		return
 	if not _completion_field_by_seq().get(seq) and seq != get_container_task_sequence(
@@ -743,7 +763,7 @@ def validate_book_trucks_container_updates(doc) -> None:
 	"""Book-trucks task: truck details for at least one container OR task-level reason."""
 	if not is_sea_import_task(doc):
 		return
-	if _sea_task_seq(doc) != get_container_task_sequence("custom_book_trucks_task_seq"):
+	if _container_seq(doc) != get_container_task_sequence("custom_book_trucks_task_seq"):
 		return
 	if doc.status != "Completed":
 		return

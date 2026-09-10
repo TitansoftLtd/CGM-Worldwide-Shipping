@@ -20,6 +20,7 @@
   "requires_finance_action",
   "requires_document_upload",
   "requires_container_update",
+  "container_step",
   "requires_permit_action",
   "column_break_flags",
   "is_auto_completable",
@@ -124,6 +125,13 @@
    "label": "Container Update Required"
   },
   {
+   "description": "Which container lifecycle event this step records. Drives the container grid, tracker updates and completion checks - the step's number does not.",
+   "fieldname": "container_step",
+   "fieldtype": "Select",
+   "label": "Container Step",
+   "options": "\nETA Refresh\nVessel Arrival\nField Clearance\nKPA Paid\nBook Trucks\nGate Out\nMonitor Delivery\nOffload\nEmpty Return\nInterchange"
+  },
+  {
    "default": "0",
    "description": "Show permit table (also implied by Permit Application / Permit Finance roles).",
    "fieldname": "requires_permit_action",
@@ -171,7 +179,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-12 05:20:00.000000",
+ "modified": "2026-09-10 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Task Template Item",

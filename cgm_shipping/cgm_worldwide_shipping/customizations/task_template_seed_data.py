@@ -34,6 +34,7 @@ def _row(
 	payment_kind: str = "",
 	permit_stage: str = "",
 	required_docs: str = "",
+	container_step: str = "",
 ) -> dict:
 	deps = ""
 	if depends is not None:
@@ -70,6 +71,7 @@ def _row(
 		"is_optional": optional,
 		"description": description,
 		"required_document_types": required_docs or "",
+		"container_step": container_step or "",
 	}
 
 
@@ -124,6 +126,7 @@ def sea_import_tasks() -> list[dict]:
 			"Documentation",
 			doc=1,
 			role="Document Checkpoint",
+			container_step="ETA Refresh",
 		),
 		_row(
 			10,
@@ -149,6 +152,7 @@ def sea_import_tasks() -> list[dict]:
 			doc=1,
 			role="Application",
 			payment_kind="ENTRY_SLIP",
+			container_step="Vessel Arrival",
 		),
 		_row(
 			13,
@@ -179,7 +183,7 @@ def sea_import_tasks() -> list[dict]:
 			permit_stage="Post-clearance",
 			payment_kind="Permit",
 		),
-		_row(17, "Field Officers conduct clearance", "Field Operations"),
+		_row(17, "Field Officers conduct clearance", "Field Operations", container_step="Field Clearance"),
 		_row(
 			18,
 			"Supervisor obtains KPA Invoice",
@@ -195,13 +199,14 @@ def sea_import_tasks() -> list[dict]:
 			finance=1,
 			role="Finance Payment",
 			payment_kind="KPA",
+			container_step="KPA Paid",
 		),
-		_row(20, "Book trucks and notify warehouse", "Transport", container=1),
-		_row(21, "Load trucks and exit port", "Transport", container=1),
-		_row(22, "Monitor delivery to destination", "Transport", container=1),
-		_row(23, "Offload cargo", "Transport", container=1),
-		_row(24, "Return empty container to depot", "Transport", container=1),
-		_row(25, "Receive interchange confirmation", "Transport", container=1),
+		_row(20, "Book trucks and notify warehouse", "Transport", container=1, container_step="Book Trucks"),
+		_row(21, "Load trucks and exit port", "Transport", container=1, container_step="Gate Out"),
+		_row(22, "Monitor delivery to destination", "Transport", container=1, container_step="Monitor Delivery"),
+		_row(23, "Offload cargo", "Transport", container=1, container_step="Offload"),
+		_row(24, "Return empty container to depot", "Transport", container=1, container_step="Empty Return"),
+		_row(25, "Receive interchange confirmation", "Transport", container=1, container_step="Interchange"),
 	]
 
 
@@ -841,6 +846,7 @@ def sync_tasks_for_template(template_name: str) -> int:
 		fields=["name", "subject", "custom_sequence_no", "custom_task_role"],
 	)
 	updated = 0
+	has_container_step = frappe.get_meta("Task").has_field("custom_container_step")
 	for task_row in tasks:
 		item = template_item_for_task(task_row, items)
 		if not item:
@@ -852,10 +858,12 @@ def sync_tasks_for_template(template_name: str) -> int:
 		current = frappe.db.get_value(
 			"Task",
 			task_row.name,
-			["custom_task_role", "custom_payment_kind", "custom_permit_stage", "custom_required_document_types"],
+			["custom_task_role", "custom_payment_kind", "custom_permit_stage", "custom_required_document_types"]
+			+ (["custom_container_step"] if has_container_step else []),
 			as_dict=True,
 		) or {}
 		want_stage = (item.get("permit_stage") or "").strip()
+		want_step = (item.get("container_step") or "").strip() if has_container_step else ""
 		current_role = (current.get("custom_task_role") or "").strip()
 		current_kind = (current.get("custom_payment_kind") or "").strip()
 		current_stage = (current.get("custom_permit_stage") or "").strip()
@@ -866,6 +874,7 @@ def sync_tasks_for_template(template_name: str) -> int:
 			and current_kind == want_kind
 			and current_stage == want_stage
 			and current_docs == want_docs
+			and (current.get("custom_container_step") or "").strip() == want_step
 		)
 		if behaviour_changed:
 			values = {
@@ -880,6 +889,8 @@ def sync_tasks_for_template(template_name: str) -> int:
 			# stay behind on a re-stamped task.
 			values["custom_payment_kind"] = want_kind
 			values["custom_permit_stage"] = want_stage
+			if has_container_step:
+				values["custom_container_step"] = want_step
 			if frappe.get_meta("Task").has_field("custom_required_document_types"):
 				values["custom_required_document_types"] = want_docs
 			frappe.db.set_value("Task", task_row.name, values, update_modified=False)
