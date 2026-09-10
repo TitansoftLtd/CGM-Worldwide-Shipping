@@ -24,11 +24,9 @@ def _row(
 	depends: str | int | None = None,
 	finance: int = 0,
 	doc: int = 0,
-	container: int = 0,
 	permit: int = 0,
 	auto: int = 0,
 	condition: str = "",
-	optional: int = 0,
 	description: str = "",
 	role: str = "Standard",
 	payment_kind: str = "",
@@ -64,11 +62,9 @@ def _row(
 		"permit_stage": permit_stage or "",
 		"requires_finance_action": finance,
 		"requires_document_upload": doc or (1 if required_docs else 0),
-		"requires_container_update": container,
 		"requires_permit_action": permit,
 		"is_auto_completable": auto,
 		"completion_condition": condition,
-		"is_optional": optional,
 		"description": description,
 		"required_document_types": required_docs or "",
 		"container_step": container_step or "",
@@ -201,12 +197,12 @@ def sea_import_tasks() -> list[dict]:
 			payment_kind="KPA",
 			container_step="KPA Paid",
 		),
-		_row(20, "Book trucks and notify warehouse", "Transport", container=1, container_step="Book Trucks"),
-		_row(21, "Load trucks and exit port", "Transport", container=1, container_step="Gate Out"),
-		_row(22, "Monitor delivery to destination", "Transport", container=1, container_step="Monitor Delivery"),
-		_row(23, "Offload cargo", "Transport", container=1, container_step="Offload"),
-		_row(24, "Return empty container to depot", "Transport", container=1, container_step="Empty Return"),
-		_row(25, "Receive interchange confirmation", "Transport", container=1, container_step="Interchange"),
+		_row(20, "Book trucks and notify warehouse", "Transport", container_step="Book Trucks"),
+		_row(21, "Load trucks and exit port", "Transport", container_step="Gate Out"),
+		_row(22, "Monitor delivery to destination", "Transport", container_step="Monitor Delivery"),
+		_row(23, "Offload cargo", "Transport", container_step="Offload"),
+		_row(24, "Return empty container to depot", "Transport", container_step="Empty Return"),
+		_row(25, "Receive interchange confirmation", "Transport", container_step="Interchange"),
 	]
 
 
@@ -214,9 +210,9 @@ def sea_export_tasks() -> list[dict]:
 	return [
 		_row(1, "Receive booking from shipping line", "Operations", doc=1),
 		_row(2, "Receive invoice and packing list from client", "Documentation", depends=1, doc=1),
-		_row(3, "Collect empty container from depot", "Transport", depends=1, container=1),
+		_row(3, "Collect empty container from depot", "Transport", depends=1),
 		_row(4, "Weigh truck with empty container", "Transport", depends=3),
-		_row(5, "Loading and stuffing at warehouse", "Field Operations", depends=4, container=1),
+		_row(5, "Loading and stuffing at warehouse", "Field Operations", depends=4),
 		_row(6, "Lodge mother entry (customs export entry)", "Declaration", depends=5),
 		_row(7, "Capture child entry", "Declaration", depends=6),
 		_row(8, "Container armed by KRA and shipping line", "Field Operations", depends=7),
@@ -427,14 +423,13 @@ def sea_transit_import_tasks() -> list[dict]:
 		),
 		_row(10, "Obtain C2 and exit note", "Declaration", doc=1, role="Document"),
 		_row(11, "Obtain KPA release order", "Field Operations"),
-		_row(12, "Book trucks", "Transport", container=1),
+		_row(12, "Book trucks", "Transport"),
 		_row(13, "Create delivery note", "Documentation", doc=1, role="Document"),
-		_row(14, "Fit ECMD devices and dispatch trucks", "Transport", container=1),
+		_row(14, "Fit ECMD devices and dispatch trucks", "Transport"),
 		_row(
 			15,
 			"Monitor to border and destination warehouse",
 			"Transport",
-			container=1,
 		),
 	]
 
@@ -445,9 +440,9 @@ def sea_transit_export_tasks() -> list[dict]:
 		_row(2, "Uganda side prepare entry and UBS permit", "Operations", depends=1),
 		_row(3, "Kenya side prepare COC and EAC certificate", "Operations", depends=1, doc=1),
 		_row(4, "Uganda side facilitates entry release", "Operations", depends=2),
-		_row(5, "Goods depart Uganda toward Mombasa", "Transport", depends=4, container=1),
+		_row(5, "Goods depart Uganda toward Mombasa", "Transport", depends=4),
 		_row(6, "Border crossing and Kenya entry", "Field Operations", depends=5),
-		_row(7, "Goods arrive Mombasa stuffed into container", "Field Operations", depends=6, container=1),
+		_row(7, "Goods arrive Mombasa stuffed into container", "Field Operations", depends=6),
 		_row(8, "Lodge Kenya export entry", "Declaration", depends=7),
 		_row(9, "KPA pre-advice and vessel sailing", "Finance", depends=8, finance=1),
 		_row(10, "Receive Certificate of Export", "Operations", depends=9, doc=1),
@@ -461,11 +456,11 @@ def road_transit_outbound_tasks() -> list[dict]:
 		_row(3, "Finance pays COC and EAC fees", "Finance", depends=2, finance=1),
 		_row(4, "Process destination country entry", "Declaration", depends=3, finance=1),
 		_row(5, "Destination country releases entry", "Operations", depends=4),
-		_row(6, "Transporter shares truck details", "Transport", depends=5, container=1),
+		_row(6, "Transporter shares truck details", "Transport", depends=5),
 		_row(7, "Generate exit note", "Declaration", depends=6),
 		_row(8, "Obtain C2 document", "Declaration", depends=7),
-		_row(9, "Fit ECMD devices and load trucks", "Transport", depends=8, container=1),
-		_row(10, "Track Kenya to border to destination", "Transport", depends=9, container=1),
+		_row(9, "Fit ECMD devices and load trucks", "Transport", depends=8),
+		_row(10, "Track Kenya to border to destination", "Transport", depends=9),
 	]
 
 
@@ -552,9 +547,9 @@ def road_transit_inbound_tasks() -> list[dict]:
 			payment_kind="Permit",
 		),
 		_row(10, "Border and ICD clearance", "Field Operations", depends=9),
-		_row(11, "Book trucks", "Transport", depends=10, container=1),
+		_row(11, "Book trucks", "Transport", depends=10),
 		_row(12, "Obtain C2", "Declaration", depends=11, doc=1, role="Document"),
-		_row(13, "Monitor delivery to Kenya destination", "Transport", depends=12, container=1),
+		_row(13, "Monitor delivery to Kenya destination", "Transport", depends=12),
 	]
 
 
@@ -686,7 +681,6 @@ _BEHAVIOUR_FIELDS = (
 	"permit_stage",
 	"requires_finance_action",
 	"requires_document_upload",
-	"requires_container_update",
 	"requires_permit_action",
 	"is_auto_completable",
 	"required_document_types",
@@ -882,7 +876,6 @@ def sync_tasks_for_template(template_name: str) -> int:
 				"custom_requires_finance_action": 1 if item.get("requires_finance_action") else 0,
 				"custom_requires_document_upload": 1 if item.get("requires_document_upload") else 0,
 				"custom_requires_permit_action": 1 if item.get("requires_permit_action") else 0,
-				"custom_requires_container_update": 1 if item.get("requires_container_update") else 0,
 				"custom_is_auto_completable": 1 if item.get("is_auto_completable") else 0,
 			}
 			# Write blanks too: a kind or stage the row no longer carries must not

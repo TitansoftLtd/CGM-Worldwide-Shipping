@@ -16,6 +16,13 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	sql_task_flow_key_in,
 )
 
+# Payment kinds (Task Role stamps from CGM Task Template Item) the access rules use.
+PAYMENT_KIND_UCR = "UCR"
+PAYMENT_KIND_SHIPPING_LINE = "Shipping Line"
+PAYMENT_KIND_KPA = "KPA"
+# Application and Finance Payment steps of these kinds may read each other.
+LINKED_PAYMENT_KINDS = (PAYMENT_KIND_UCR, PAYMENT_KIND_SHIPPING_LINE)
+
 
 def get_department_name_stem(raw):
 	"""Extract the department name before the company abbreviation suffix."""
@@ -132,12 +139,16 @@ def resolve_department_name(department_value, company=None):
 
 
 @frappe.request_cache
-def _department_stem_by_sequence() -> dict[int, str]:
+def _sea_template_rows() -> tuple[dict, ...]:
+	"""Sea Import template rows: department plus the Task Role stamps of each step."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
 
-	# Key on the template's own sequence_no. Enumerating positionally silently
-	# shifted every department once steps were removed from the live template.
-	return {int(row["sequence_no"]): row["department"] for row in load_sea_task_template()}
+	return tuple(load_sea_task_template())
+
+
+def _template_departments(matches) -> frozenset[str]:
+	"""Department stems of the template rows *matches* accepts."""
+	return frozenset(row["department"] for row in _sea_template_rows() if matches(row))
 
 
 def user_roles(user: str | None = None) -> set[str]:
@@ -145,11 +156,7 @@ def user_roles(user: str | None = None) -> set[str]:
 
 
 def get_sea_task_template_department_stems() -> frozenset[str]:
-	return frozenset(_department_stem_by_sequence().values())
-
-
-def department_stem_for_sequence(sequence_no: int) -> str | None:
-	return _department_stem_by_sequence().get(int(sequence_no or 0))
+	return _template_departments(lambda row: True)
 
 
 def get_user_sea_task_department_stems(user: str | None = None) -> set[str]:
@@ -270,53 +277,15 @@ def user_has_field_operations_department_access(user: str | None = None) -> bool
 	return bool(_department_grant_roles(user_roles(user)) & configured_field_operations_roles())
 
 
-def user_has_department_for_sequence(user: str | None, sequence_no: int) -> bool:
-	stem = department_stem_for_sequence(sequence_no)
-	if stem and stem in user_roles(user):
-		return True
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_entry_application_task,
-		is_kpa_application_task,
-		is_permit_application_task,
-		is_shipping_line_application_task,
-		is_ucr_application_task,
-	)
-
-	if is_kpa_application_task(sequence_no):
-		# KPA application task: Operations/Declarant attach the invoice (receipt is Finance-owned).
-		return (
-			user_has_operations_department_access(user)
-			or user_has_declarant_department_access(user)
-		)
-
-	if (
-		is_permit_application_task(sequence_no)
-		or is_ucr_application_task(sequence_no)
-		or is_entry_application_task(sequence_no)
-		or is_shipping_line_application_task(sequence_no)
-	):
-		return user_has_declarant_department_access(user)
-
-	ops_stems = operations_department_stems()
-	if stem and ops_stems and stem in ops_stems:
-		return user_has_operations_department_access(user)
-
-	return False
-
-
 @frappe.request_cache
 def operations_department_stems() -> frozenset[str]:
 	"""Department stems for KPA / supervisor application steps (from sea task template)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		kpa_application_sequences,
-	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import ROLE_APPLICATION
 
-	stems: set[str] = set()
-	for seq in kpa_application_sequences():
-		stem = department_stem_for_sequence(seq)
-		if stem:
-			stems.add(stem)
-	return frozenset(stems)
+	return _template_departments(
+		lambda row: row.get("task_role") == ROLE_APPLICATION
+		and row.get("payment_kind") == PAYMENT_KIND_KPA
+	)
 
 
 def _default_stems_for_role_group(group_name: str) -> frozenset[str]:
@@ -372,25 +341,6 @@ def finance_payment_department_stems() -> frozenset[str]:
 	which previously opened Operations / Declaration / Transport to Finance users.
 	"""
 	return frozenset({"Finance"})
-
-
-def finance_visibility_payment_sequences() -> frozenset[int]:
-	"""Finance Payment sequences whose live template department is actually Finance."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
-
-	aligned = {
-		seq
-		for seq in finance_payment_sequences()
-		if department_stem_for_sequence(seq) == "Finance"
-	}
-	if aligned:
-		return frozenset(aligned)
-	# Fallback: every template row on the Finance department.
-	return frozenset(
-		seq
-		for seq, stem in _department_stem_by_sequence().items()
-		if stem == "Finance"
-	)
 
 
 @frappe.request_cache
@@ -508,60 +458,47 @@ def visibility_department_stems_for_user(user: str | None = None) -> set[str]:
 	return stems
 
 
-def application_department_stems_for_linked_pairs(
-	pairs: tuple[tuple[int, int], ...],
-) -> frozenset[str]:
-	stems: set[str] = set()
-	for app_seq, _fin_seq in pairs:
-		stem = department_stem_for_sequence(app_seq)
-		if stem:
-			stems.add(stem)
-	return frozenset(stems)
-
-
-def finance_department_stems_for_linked_pairs(
-	pairs: tuple[tuple[int, int], ...],
-) -> frozenset[str]:
-	stems: set[str] = set()
-	for _app_seq, fin_seq in pairs:
-		stem = department_stem_for_sequence(fin_seq)
-		if stem:
-			stems.add(stem)
-	return frozenset(stems)
-
-
 # ============================================================
 # Restrict sea clearance Task list/form access by department and role.
 
-# UCR / permit: cross-read on paired workflow steps (Settings-driven sequences).
-def _ucr_linked_pairs() -> tuple[tuple[int, int], ...]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import ucr_linked_task_pairs
 
-	return ucr_linked_task_pairs()
+def _link_rules() -> tuple[tuple[str, str, str, tuple[str, ...] | None], ...]:
+	"""Paired steps that may read each other, by Task Role stamp.
 
-
-def _permit_linked_pairs() -> tuple[tuple[int, int], ...]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import permit_linked_task_pairs
-
-	return permit_linked_task_pairs()
-
-
-def _shipping_line_linked_pairs() -> tuple[tuple[int, int], ...]:
-	"""(application_seq, finance_seq) for Shipping Line POP/receipt handoff."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
-		get_application_finance_sequence,
-		get_application_sequence,
+	Each rule is (application role, finance role, the stamp both carry, the values
+	it is limited to): a UCR / Shipping Line application and the Finance Payment of
+	the same kind, and each permit stage's application and Finance step.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_APPLICATION,
+		ROLE_FINANCE_PAYMENT,
+		ROLE_PERMIT_APPLICATION,
+		ROLE_PERMIT_FINANCE,
 	)
 
-	profile = APPLICATION_FINANCE_PROFILES.get("Shipping Line Application")
-	if not profile:
-		return ()
-	app = get_application_sequence(profile)
-	fin = get_application_finance_sequence(profile)
-	if app and fin:
-		return ((int(app), int(fin)),)
-	return ()
+	return (
+		(ROLE_APPLICATION, ROLE_FINANCE_PAYMENT, "custom_payment_kind", LINKED_PAYMENT_KINDS),
+		(ROLE_PERMIT_APPLICATION, ROLE_PERMIT_FINANCE, "custom_permit_stage", None),
+	)
+
+
+def _is_linked_step(row: dict, role: str, column: str, values) -> bool:
+	"""Whether a template row is the *role* side of a link rule."""
+	if row.get("task_role") != role:
+		return False
+	return values is None or row.get(column.removeprefix("custom_")) in values
+
+
+def _linked_application_department_stems() -> frozenset[str]:
+	return _template_departments(
+		lambda row: any(_is_linked_step(row, app, col, vals) for app, _fin, col, vals in _link_rules())
+	)
+
+
+def _linked_finance_department_stems() -> frozenset[str]:
+	return _template_departments(
+		lambda row: any(_is_linked_step(row, fin, col, vals) for _app, fin, col, vals in _link_rules())
+	)
 
 
 def user_bypasses_sea_task_department_filter(user: str | None = None) -> bool:
@@ -607,18 +544,48 @@ def user_is_assigned_to_task(doc, user: str) -> bool:
 	return False
 
 
-def _project_has_sea_task(project: str, sequence_no: int) -> bool:
-	if not project:
-		return False
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		get_task_name_by_sequence,
+def _task_stamps(doc) -> frappe._dict:
+	"""Task Role stamps of *doc*; reads them when a SQL row was fetched without."""
+	if isinstance(doc, dict) and "custom_task_role" not in doc and doc.get("name"):
+		return frappe._dict(
+			frappe.db.get_value(
+				"Task",
+				doc["name"],
+				["custom_task_role", "custom_payment_kind", "custom_permit_stage"],
+				as_dict=True,
+			)
+			or {}
+		)
+	return frappe._dict(
+		custom_task_role=doc.get("custom_task_role"),
+		custom_payment_kind=doc.get("custom_payment_kind"),
+		custom_permit_stage=doc.get("custom_permit_stage"),
 	)
 
-	return bool(get_task_name_by_sequence(project, sequence_no))
+
+def _project_has_linked_task(project: str, role: str, column: str, value) -> bool:
+	"""Whether the Sea Import project has a *role* step whose *column* stamp is *value*."""
+	if not project or not value:
+		return False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		sea_import_flow_keys,
+	)
+
+	return bool(
+		frappe.db.exists(
+			"Task",
+			{
+				"project": project,
+				"custom_task_flow_key": ["in", sea_import_flow_keys()],
+				"custom_task_role": role,
+				column: value,
+			},
+		)
+	)
 
 
 def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
-	"""Cross-access paired application ↔ finance tasks.
+	"""Cross-access paired application ↔ finance tasks, by Task Role stamp.
 
 	- Finance may open the paired application task.
 	- Declaration may open the paired Finance pays task when they own Upload Receipt
@@ -630,51 +597,56 @@ def _user_can_access_linked_sea_project_task(doc, user: str) -> bool:
 		return False
 	if not is_sea_import_task(doc):
 		return False
-	seq = int(doc.get("custom_sequence_no") or 0)
 	project = doc.get("project")
 	if not project:
 		return False
 
-	if user_has_finance_department_access(user):
-		for app_seq, fin_seq in _ucr_linked_pairs():
-			if seq == app_seq and _project_has_sea_task(project, fin_seq):
-				return True
-		for app_seq, _fin_seq in _permit_linked_pairs():
-			if seq == app_seq:
-				return True
-		for app_seq, fin_seq in _shipping_line_linked_pairs():
-			if seq == app_seq and _project_has_sea_task(project, fin_seq):
-				return True
-
-	if user_has_declarant_department_access(user):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
-			ACTION_UPLOAD_RECEIPT,
-			FLOW_PERMIT,
-			FLOW_UCR,
-			user_has_responsibility,
-		)
-
-		if user_has_responsibility(FLOW_UCR, ACTION_UPLOAD_RECEIPT, user):
-			for app_seq, fin_seq in _ucr_linked_pairs():
-				if seq == fin_seq and _project_has_sea_task(project, app_seq):
-					return True
-		if user_has_responsibility(FLOW_PERMIT, ACTION_UPLOAD_RECEIPT, user):
-			for _app_seq, fin_seq in _permit_linked_pairs():
-				if seq == fin_seq:
-					return True
-
 	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
 		ACTION_UPLOAD_RECEIPT,
+		FLOW_PERMIT,
 		FLOW_SHIPPING_LINE,
+		FLOW_UCR,
 		user_has_responsibility,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_APPLICATION,
+		ROLE_FINANCE_PAYMENT,
+		ROLE_PERMIT_APPLICATION,
+		ROLE_PERMIT_FINANCE,
+	)
 
-	if user_has_responsibility(FLOW_SHIPPING_LINE, ACTION_UPLOAD_RECEIPT, user):
-		for app_seq, fin_seq in _shipping_line_linked_pairs():
-			if seq == fin_seq and _project_has_sea_task(project, app_seq):
-				return True
+	stamps = _task_stamps(doc)
+	role, kind = stamps.custom_task_role, stamps.custom_payment_kind
 
-	return False
+	if user_has_finance_department_access(user):
+		if role == ROLE_PERMIT_APPLICATION:
+			return True
+		if (
+			role == ROLE_APPLICATION
+			and kind in LINKED_PAYMENT_KINDS
+			and _project_has_linked_task(project, ROLE_FINANCE_PAYMENT, "custom_payment_kind", kind)
+		):
+			return True
+
+	if user_has_declarant_department_access(user):
+		if (
+			role == ROLE_FINANCE_PAYMENT
+			and kind == PAYMENT_KIND_UCR
+			and user_has_responsibility(FLOW_UCR, ACTION_UPLOAD_RECEIPT, user)
+			and _project_has_linked_task(project, ROLE_APPLICATION, "custom_payment_kind", kind)
+		):
+			return True
+		if role == ROLE_PERMIT_FINANCE and user_has_responsibility(
+			FLOW_PERMIT, ACTION_UPLOAD_RECEIPT, user
+		):
+			return True
+
+	return bool(
+		role == ROLE_FINANCE_PAYMENT
+		and kind == PAYMENT_KIND_SHIPPING_LINE
+		and user_has_responsibility(FLOW_SHIPPING_LINE, ACTION_UPLOAD_RECEIPT, user)
+		and _project_has_linked_task(project, ROLE_APPLICATION, "custom_payment_kind", kind)
+	)
 
 
 def user_can_access_sea_task(
@@ -711,16 +683,15 @@ def user_can_access_sea_task(
 
 
 def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
-	"""Finance payment tasks — Settings finance roles / Finance department stem."""
+	"""Finance steps (Finance Payment / Permit Finance stamps) for Settings finance roles."""
 	if not hasattr(doc, "get"):
 		return False
-	seq = int(doc.get("custom_sequence_no") or 0)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import finance_payment_sequences
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_FINANCE_PAYMENT,
+		ROLE_PERMIT_FINANCE,
+	)
 
-	if seq not in finance_payment_sequences():
-		return False
-	# Stale Settings markers must not open non-Finance template steps.
-	if department_stem_for_sequence(seq) != "Finance":
+	if _task_stamps(doc).custom_task_role not in (ROLE_FINANCE_PAYMENT, ROLE_PERMIT_FINANCE):
 		return False
 	stem = normalize_department_stem(doc.get("department"))
 	if stem and stem not in finance_payment_department_stems():
@@ -749,81 +720,34 @@ def _build_department_sql_conditions(stems: set[str]) -> str:
 	return "(" + " OR ".join(parts) + ")"
 
 
-def _linked_pairs_aligned_to_finance_department(
-	pairs: tuple[tuple[int, int], ...],
-) -> tuple[tuple[int, int], ...]:
-	"""Keep only (app, finance) pairs whose finance sequence is on Finance in the live template."""
-	return tuple(
-		(app_seq, fin_seq)
-		for app_seq, fin_seq in pairs
-		if department_stem_for_sequence(fin_seq) == "Finance"
-	)
-
-
 def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
-	"""SQL OR-clauses for linked UCR / permit / Shipping Line tasks in list views."""
+	"""SQL OR-clauses for linked UCR / permit / Shipping Line tasks in list views.
+
+	A department that owns one side of a link rule also sees the other side, when
+	the project has both steps. Matched on Task Role stamps, not step numbers.
+	"""
 	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="lk.custom_task_flow_key")
+	# (show the finance side?, show the application side?)
+	sees_finance = bool(stems & _linked_application_department_stems())
+	sees_application = bool(stems & _linked_finance_department_stems())
+
 	parts: list[str] = []
-	ucr_pairs = _linked_pairs_aligned_to_finance_department(_ucr_linked_pairs())
-	permit_pairs = _linked_pairs_aligned_to_finance_department(_permit_linked_pairs())
-	shipping_pairs = _linked_pairs_aligned_to_finance_department(_shipping_line_linked_pairs())
-
-	app_stems = set(application_department_stems_for_linked_pairs(ucr_pairs))
-	app_stems |= set(application_department_stems_for_linked_pairs(permit_pairs))
-	app_stems |= set(application_department_stems_for_linked_pairs(shipping_pairs))
-	fin_stems = set(finance_department_stems_for_linked_pairs(ucr_pairs))
-	fin_stems |= set(finance_department_stems_for_linked_pairs(permit_pairs))
-	fin_stems |= set(finance_department_stems_for_linked_pairs(shipping_pairs))
-
-	if stems & app_stems:
-		for app_seq, fin_seq in ucr_pairs:
+	for app_role, fin_role, column, values in _link_rules():
+		limit = (
+			f" AND `tabTask`.`{column}` IN ({', '.join(frappe.db.escape(v) for v in values)})"
+			if values
+			else ""
+		)
+		for shown, other, wanted in ((fin_role, app_role, sees_finance), (app_role, fin_role, sees_application)):
+			if not wanted:
+				continue
 			parts.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
+				f"(`tabTask`.`custom_task_role` = {frappe.db.escape(shown)}{limit} "
 				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
 				f"WHERE lk.project = `tabTask`.project "
 				f"AND {flow_in} "
-				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
-			)
-		for app_seq, fin_seq in permit_pairs:
-			parts.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
-				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
-				f"WHERE lk.project = `tabTask`.project "
-				f"AND {flow_in} "
-				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
-			)
-		for app_seq, fin_seq in shipping_pairs:
-			parts.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {fin_seq} "
-				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
-				f"WHERE lk.project = `tabTask`.project "
-				f"AND {flow_in} "
-				f"AND lk.custom_sequence_no = {app_seq} LIMIT 1))"
-			)
-	if stems & fin_stems:
-		for app_seq, fin_seq in ucr_pairs:
-			parts.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
-				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
-				f"WHERE lk.project = `tabTask`.project "
-				f"AND {flow_in} "
-				f"AND lk.custom_sequence_no = {fin_seq} LIMIT 1))"
-			)
-		for app_seq, fin_seq in permit_pairs:
-			parts.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
-				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
-				f"WHERE lk.project = `tabTask`.project "
-				f"AND {flow_in} "
-				f"AND lk.custom_sequence_no = {fin_seq} LIMIT 1))"
-			)
-		for app_seq, fin_seq in shipping_pairs:
-			parts.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) = {app_seq} "
-				f"AND EXISTS (SELECT 1 FROM `tabTask` lk "
-				f"WHERE lk.project = `tabTask`.project "
-				f"AND {flow_in} "
-				f"AND lk.custom_sequence_no = {fin_seq} LIMIT 1))"
+				f"AND lk.custom_task_role = {frappe.db.escape(other)} "
+				f"AND lk.`{column}` = `tabTask`.`{column}` LIMIT 1))"
 			)
 	if not parts:
 		return None
@@ -901,12 +825,9 @@ def _department_only_sql(
 	restricted: str,
 	assigned_only: str,
 	stems: set[str],
-	extra_parts: list[str] | None = None,
 ) -> str:
-	"""List filter locked to the given department stems (+ optional extras like assignment)."""
+	"""List filter locked to the given department stems, plus tasks assigned to the user."""
 	visibility_parts = [assigned_only, _build_department_sql_conditions(stems)]
-	if extra_parts:
-		visibility_parts.extend(extra_parts)
 	restricted_visible = f"({restricted} AND ({' OR '.join(visibility_parts)}))"
 	unrestricted = f"(NOT ({restricted}))"
 	return f"({unrestricted} OR {restricted_visible})"
@@ -957,20 +878,10 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 			stems=set(field_operations_visibility_department_stems()) or {"Field Operations"},
 		)
 	if _finance_only_visibility(user):
-		fin_stems = set(finance_payment_department_stems()) or {"Finance"}
-		extra: list[str] = []
-		finance_seqs = sorted(finance_visibility_payment_sequences())
-		if finance_seqs:
-			seq_list = ", ".join(str(s) for s in finance_seqs)
-			extra.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}) "
-				f"AND {_build_department_sql_conditions(fin_stems)})"
-			)
 		return _department_only_sql(
 			restricted=restricted,
 			assigned_only=assigned_only,
-			stems=fin_stems,
-			extra_parts=extra,
+			stems=set(finance_payment_department_stems()) or {"Finance"},
 		)
 	if _declaration_only_visibility(user):
 		# Declaration department only — never Finance via stale application markers.
@@ -994,13 +905,6 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 		visibility_parts = [assigned_only]
 		if stems:
 			visibility_parts.insert(0, _build_department_sql_conditions(stems))
-		finance_seqs = sorted(finance_visibility_payment_sequences())
-		if finance_seqs:
-			seq_list = ", ".join(str(s) for s in finance_seqs)
-			visibility_parts.append(
-				f"(IFNULL(`tabTask`.`custom_sequence_no`, 0) IN ({seq_list}) "
-				f"AND {_build_department_sql_conditions(set(finance_payment_department_stems()) or {'Finance'})})"
-			)
 		linked = _build_linked_sea_task_sql(stems)
 		if linked:
 			visibility_parts.append(linked)

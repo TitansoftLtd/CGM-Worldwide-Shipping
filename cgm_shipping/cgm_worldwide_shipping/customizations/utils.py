@@ -191,6 +191,9 @@ def load_cgm_task_template_items(template_name: str) -> list[dict]:
 				"subject": subject,
 				"department": dept,
 				"sequence_no": item["sequence_no"],
+				"task_role": item.get("task_role") or "",
+				"payment_kind": item.get("payment_kind") or "",
+				"permit_stage": item.get("permit_stage") or "",
 			}
 		)
 

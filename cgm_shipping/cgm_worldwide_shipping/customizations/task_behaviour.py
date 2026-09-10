@@ -43,7 +43,6 @@ class TaskBehaviour:
 	requires_finance_action: bool
 	requires_document_upload: bool
 	requires_permit_action: bool
-	requires_container_update: bool
 	is_auto_completable: bool
 	from_template: bool
 	# Document Type names stamped from the template. The task cannot be
@@ -118,7 +117,6 @@ def get_task_behaviour(task) -> TaskBehaviour:
 			requires_finance_action=False,
 			requires_document_upload=True,
 			requires_permit_action=False,
-			requires_container_update=False,
 			is_auto_completable=False,
 			from_template=False,
 		)
@@ -132,7 +130,6 @@ def get_task_behaviour(task) -> TaskBehaviour:
 			requires_finance_action=bool(cint(task.get("custom_requires_finance_action"))),
 			requires_document_upload=bool(cint(task.get("custom_requires_document_upload"))),
 			requires_permit_action=bool(cint(task.get("custom_requires_permit_action"))),
-			requires_container_update=bool(cint(task.get("custom_requires_container_update"))),
 			is_auto_completable=role == ROLE_AUTO_COMPLETE
 			or bool(cint(task.get("custom_is_auto_completable"))),
 			from_template=True,
@@ -168,7 +165,6 @@ def _behaviour_from_sea_settings(task) -> TaskBehaviour:
 			requires_finance_action=False,
 			requires_document_upload=True,
 			requires_permit_action=False,
-			requires_container_update=False,
 			is_auto_completable=False,
 			from_template=False,
 		)

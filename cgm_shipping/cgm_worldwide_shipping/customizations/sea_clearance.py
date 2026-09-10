@@ -488,7 +488,8 @@ def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list
 	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
 	rows = frappe.db.sql(
 		f"""
-		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign
+		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign,
+			custom_task_role, custom_payment_kind, custom_permit_stage
 		FROM `tabTask`
 		WHERE project = %s
 		  AND {flow_in}
@@ -508,7 +509,8 @@ def get_open_sea_tasks(project: str, user: str | None = None) -> list[dict]:
 	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
 	rows = frappe.db.sql(
 		f"""
-		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign
+		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign,
+			custom_task_role, custom_payment_kind, custom_permit_stage
 		FROM `tabTask`
 		WHERE project = %s
 		  AND {flow_in}

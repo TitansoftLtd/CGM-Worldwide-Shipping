@@ -169,11 +169,9 @@ def _collect_items(template, _visited: set | None = None) -> list[dict]:
 				"container_step": (row.get("container_step") or "").strip(),
 				"requires_finance_action": bool(row.requires_finance_action),
 				"requires_document_upload": bool(row.requires_document_upload),
-				"requires_container_update": bool(row.requires_container_update),
 				"requires_permit_action": bool(row.requires_permit_action),
 				"is_auto_completable": bool(row.is_auto_completable),
 				"completion_condition": row.completion_condition or "",
-				"is_optional": bool(row.is_optional),
 				"required_document_type_names": doc_names,
 				"required_document_types": _serialize_required_document_types(doc_names),
 			}
@@ -222,7 +220,6 @@ def _create_single_task(
 		("requires_finance_action", "custom_requires_finance_action"),
 		("requires_document_upload", "custom_requires_document_upload"),
 		("requires_permit_action", "custom_requires_permit_action"),
-		("requires_container_update", "custom_requires_container_update"),
 		("is_auto_completable", "custom_is_auto_completable"),
 	):
 		if meta.has_field(dst):

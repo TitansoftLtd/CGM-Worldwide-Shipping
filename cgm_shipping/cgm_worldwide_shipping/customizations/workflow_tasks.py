@@ -250,6 +250,10 @@ def get_workflow_tasks_for_project(
 		"owner",
 		"_assign",
 		"custom_permit_invoices_submitted",
+		# Task Role stamps: the visibility filter reads these (permissions._task_stamps).
+		"custom_task_role",
+		"custom_payment_kind",
+		"custom_permit_stage",
 	]
 	query_fields = fields or default_fields
 	filters: dict = {
