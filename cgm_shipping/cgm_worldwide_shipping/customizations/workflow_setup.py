@@ -4,10 +4,8 @@ Only a missing workflow is created. An existing one - its states, transitions,
 roles, even whether it is active - is left exactly as the desk has it. The
 Sales Invoice approval workflow lives in sales_invoice_workflow.py.
 
-CGM Quotation Approval is deliberately not created here. Production runs
-without it, so creating it on migrate would put a new approval gate on every
-quotation. quotation.py still reads its Approved / Shared with Client states
-before billing; whether the workflow should come back is a product decision.
+CGM Quotation Approval is deliberately not created here: production removed
+it, and migrate must not bring it back.
 """
 
 from __future__ import annotations
