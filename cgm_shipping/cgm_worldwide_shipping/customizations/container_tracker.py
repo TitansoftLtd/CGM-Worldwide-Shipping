@@ -13,6 +13,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	BULK_CONTAINER_TASK_SEQ_FIELDS,
+	CONTAINER_CLOSED_STATUSES,
 	CONTAINER_SPECIFIC_TASK_SEQ_FIELDS,
 	CONTAINER_STATUS_AT_WAREHOUSE,
 	CONTAINER_STATUS_CARGO_OFFLOADED,
@@ -1330,10 +1331,8 @@ def ensure_container_trackers_at_port_arrival(
 	}
 
 
-CLOSED_CONTAINER_STATUSES = (
-	CONTAINER_STATUS_EMPTY_RETURNED,
-	CONTAINER_STATUS_INTERCHANGE,
-)
+# Kept under this name for existing importers; defined by the status table.
+CLOSED_CONTAINER_STATUSES = CONTAINER_CLOSED_STATUSES
 
 
 def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
@@ -1346,8 +1345,12 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 	free_end = _optional_date(metrics.get("free_days_end_date"))
 	expected = _optional_date(metrics.get("expected_empty_return"))
 
-	if status in CLOSED_CONTAINER_STATUSES:
+	if status == CONTAINER_STATUS_INTERCHANGE:
 		return {"level": "green", "label": _("CLEARED"), "css": "cgm-tl-green"}
+	if status in CLOSED_CONTAINER_STATUSES:
+		# Empty is back but the interchange is not confirmed. Charges have
+		# stopped, so this is no alarm - but it is not cleared either.
+		return {"level": "amber", "label": _("AWAITING INTERCHANGE"), "css": "cgm-tl-amber"}
 
 	if dem > 0 or overdue > 0:
 		return {

@@ -367,10 +367,14 @@ def get_permit_application_for_behaviour(task) -> str | None:
 	if behaviour.is_permit_application:
 		return task.name
 	if behaviour.is_permit_finance:
+		# No Payment Kind filter: only the Finance row of a permit pair carries it
+		# (the template stamps "Permit" there and nothing on the application), so
+		# filtering on it made this lookup fail for every Finance task. Project,
+		# flow, role and permit stage already identify the application.
 		return find_paired_task(
 			task,
 			want_role=ROLE_PERMIT_APPLICATION,
-			payment_kind=behaviour.payment_kind or "Permit",
+			payment_kind=None,
 			permit_stage=behaviour.permit_stage or None,
 		)
 	return None

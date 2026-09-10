@@ -7,6 +7,10 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, today
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CONTAINER_RETURN_OPEN_STATUSES,
+	CONTAINER_STATUS_PILL,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	CLOSED_CONTAINER_STATUSES,
 	compute_container_metrics,
@@ -28,15 +32,9 @@ from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tra
 	enrich_container_row,
 )
 
-OPEN_RETURN_STATUSES = frozenset(
-	{
-		"Released / In Transit",
-		"At Warehouse",
-		"Cargo Offloaded",
-		"Return Overdue",
-		"Empty Returned",
-	}
-)
+# From the shared status table: includes the transit statuses, so gated-out
+# transit containers appear on the return tracker.
+OPEN_RETURN_STATUSES = CONTAINER_RETURN_OPEN_STATUSES
 
 _TRAFFIC_SORT = {"red": 0, "amber": 1, "grey": 2, "green": 3}
 
@@ -56,18 +54,8 @@ def _eta_sort_key(row: dict) -> tuple:
 		ordinal = _MISSING_ETA_ORDINAL
 	return (ordinal, row.get("sort_key", 9))
 
-_STATUS_PILL = {
-	"Pending Arrival": "muted",
-	"Vessel Berthed": "info",
-	"Discharged / At Port": "warning",
-	"Released / In Transit": "primary",
-	"At Warehouse": "primary",
-	"Cargo Offloaded": "active",
-	"Offloaded at Destination": "active",
-	"Empty Returned": "active",
-	"Return Overdue": "danger",
-	"Interchange Received": "success",
-}
+# From the shared status table ("active" is orange, "success" green).
+_STATUS_PILL = CONTAINER_STATUS_PILL
 
 
 def _parse_filters(filters) -> frappe._dict:

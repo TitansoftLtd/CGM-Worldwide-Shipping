@@ -934,9 +934,9 @@ function render_container_card_body(c) {
 	}
 	if (
 		c.expected_empty_return &&
-		["Released / In Transit", "At Warehouse", "Cargo Offloaded", "Empty Returned", "Return Overdue"].includes(
-			status
-		)
+		// Return cycle still open - from the shared status table, so transit
+		// containers show their expected return too.
+		window.cgm_shipping?.container_tracking?.is_return_open?.(status)
 	) {
 		movementRows.push(
 			container_card_row(

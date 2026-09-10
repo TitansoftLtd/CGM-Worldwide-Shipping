@@ -164,6 +164,104 @@ CONTAINER_STATUS_DELIVERED = CONTAINER_STATUS_AT_WAREHOUSE
 CONTAINER_STATUS_EMPTY_PENDING = CONTAINER_STATUS_CARGO_OFFLOADED
 CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 
+# Every container status, and what each view does with it. All status lists in
+# the app are generated from this table, so a status the derivers start
+# returning only needs a row here to be coloured, counted and return-tracked.
+# Transit statuses used to exist only inside _derive_transit_status, so every
+# downstream list silently ignored transit containers.
+#
+#   phase   lifecycle stage - drives the Project tab counts and return tracking
+#   colour  Desk indicator colour (tracker form, report, Project tab)
+#   pill    Ops Board pill tone
+#
+# Colour rule: unchanged before offloading, orange once the offloading date is
+# recorded, green only when the interchange is confirmed. Return Overdue stays
+# red - it is a live demurrage alarm and must not blend in.
+PHASE_AWAITING = "awaiting"  # not at port yet, or outbound not loaded
+PHASE_AT_PORT = "at_port"
+PHASE_RELEASED = "released"  # out of port, on the road / in transit
+PHASE_AT_DESTINATION = "at_destination"  # warehouse or destination, offloaded or not
+PHASE_OVERDUE = "overdue"
+PHASE_RETURNED = "returned"  # empty back, interchange not yet confirmed
+PHASE_COMPLETE = "complete"  # interchange confirmed
+
+CONTAINER_STATUS_TABLE = (
+	# (status, phase, colour, pill)
+	(CONTAINER_STATUS_PENDING_ARRIVAL, PHASE_AWAITING, "gray", "muted"),
+	(CONTAINER_STATUS_VESSEL_BERTHED, PHASE_AT_PORT, "yellow", "info"),
+	(CONTAINER_STATUS_DISCHARGED_AT_PORT, PHASE_AT_PORT, "yellow", "warning"),
+	("KRA Released", PHASE_AT_PORT, "yellow", "warning"),
+	(CONTAINER_STATUS_RELEASED_IN_TRANSIT, PHASE_RELEASED, "orange", "primary"),
+	("Released from Port", PHASE_RELEASED, "orange", "primary"),
+	("Release Order Obtained", PHASE_RELEASED, "orange", "primary"),
+	("Loading Slip Received", PHASE_RELEASED, "orange", "primary"),
+	("Delivery Note Ready", PHASE_RELEASED, "orange", "primary"),
+	("C2 Obtained", PHASE_RELEASED, "orange", "primary"),
+	("Departed / ECMD Active", PHASE_RELEASED, "orange", "primary"),
+	("In Transit", PHASE_RELEASED, "orange", "primary"),
+	("Border Cleared", PHASE_RELEASED, "orange", "primary"),
+	(CONTAINER_STATUS_AT_WAREHOUSE, PHASE_AT_DESTINATION, "blue", "primary"),
+	("Arrived at Destination", PHASE_AT_DESTINATION, "blue", "primary"),
+	(CONTAINER_STATUS_CARGO_OFFLOADED, PHASE_AT_DESTINATION, "orange", "active"),
+	("Offloaded at Destination", PHASE_AT_DESTINATION, "orange", "active"),
+	(CONTAINER_STATUS_RETURN_OVERDUE, PHASE_OVERDUE, "red", "danger"),
+	(CONTAINER_STATUS_EMPTY_RETURNED, PHASE_RETURNED, "orange", "active"),
+	(CONTAINER_STATUS_INTERCHANGE, PHASE_COMPLETE, "green", "success"),
+	# Outbound transit, before the box is loaded.
+	("Pending Loading", PHASE_AWAITING, "gray", "muted"),
+	("Loading at Warehouse", PHASE_AWAITING, "yellow", "warning"),
+)
+
+
+def container_statuses_in(*phases: str) -> frozenset[str]:
+	"""Every status in the given lifecycle phases."""
+	return frozenset(status for status, phase, _c, _p in CONTAINER_STATUS_TABLE if phase in phases)
+
+
+CONTAINER_STATUS_COLOUR = {status: colour for status, _ph, colour, _p in CONTAINER_STATUS_TABLE}
+CONTAINER_STATUS_PILL = {status: pill for status, _ph, _c, pill in CONTAINER_STATUS_TABLE}
+
+# Charges stop and the container leaves the active lists.
+CONTAINER_CLOSED_STATUSES = container_statuses_in(PHASE_RETURNED, PHASE_COMPLETE)
+# Out of port with the return cycle still open (includes awaiting interchange).
+CONTAINER_RETURN_OPEN_STATUSES = container_statuses_in(
+	PHASE_RELEASED, PHASE_AT_DESTINATION, PHASE_OVERDUE, PHASE_RETURNED
+)
+# Out of port and the empty is not back yet.
+CONTAINER_EMPTY_PENDING_STATUSES = container_statuses_in(
+	PHASE_RELEASED, PHASE_AT_DESTINATION, PHASE_OVERDUE
+)
+
+# Statuses whose current_location is re-derived on every save. Port-side only on
+# purpose: derive_current_location does not model the transit legs, so transit
+# containers keep the location that was entered for them.
+CONTAINER_LOCATION_REFRESH_STATUSES = frozenset(
+	{
+		CONTAINER_STATUS_VESSEL_BERTHED,
+		CONTAINER_STATUS_DISCHARGED_AT_PORT,
+		CONTAINER_STATUS_RELEASED_IN_TRANSIT,
+		CONTAINER_STATUS_AT_WAREHOUSE,
+		CONTAINER_STATUS_CARGO_OFFLOADED,
+	}
+)
+
+
+def container_status_boot() -> dict:
+	"""The table as the Desk reads it (frappe.boot.cgm_container_statuses)."""
+	return {
+		"order": [status for status, *_ in CONTAINER_STATUS_TABLE],
+		"statuses": {
+			status: {
+				"phase": phase,
+				"colour": colour,
+				"pill": pill,
+				"return_open": status in CONTAINER_RETURN_OPEN_STATUSES,
+				"closed": status in CONTAINER_CLOSED_STATUSES,
+			}
+			for status, phase, colour, pill in CONTAINER_STATUS_TABLE
+		},
+	}
+
 # Sequence numbers for the container lifecycle steps. These read as overridable
 # from CGM Shipping Settings, but none of these fields exist on that doctype
 # today, so get_container_task_sequence() always returns the value below.

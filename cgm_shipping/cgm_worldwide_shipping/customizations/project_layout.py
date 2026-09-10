@@ -1359,9 +1359,19 @@ def get_project_tracking_dashboard(project: str) -> dict:
 		or (c.get("demurrage_days") or 0) > 0
 		or (c.get("days_outstanding") or 0) > 0
 	)
-	released = _count_status("Released / In Transit")
-	at_warehouse = _count_status("At Warehouse", "Cargo Offloaded")
-	returned = _count_status("Empty Returned", "Interchange Received")
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_CLOSED_STATUSES,
+		CONTAINER_EMPTY_PENDING_STATUSES,
+		CONTAINER_STATUS_RETURN_OVERDUE,
+		PHASE_AT_DESTINATION,
+		PHASE_RELEASED,
+		container_statuses_in,
+	)
+
+	# From the shared status table, so transit containers are counted too.
+	released = _count_status(*container_statuses_in(PHASE_RELEASED))
+	at_warehouse = _count_status(*container_statuses_in(PHASE_AT_DESTINATION))
+	returned = _count_status(*CONTAINER_CLOSED_STATUSES)
 
 	payload = {
 		"current_status": progress_status,
