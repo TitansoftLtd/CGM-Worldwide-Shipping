@@ -1,4 +1,4 @@
-# CGM Shipping — Patch Rules & Lifecycle
+# CGM Shipping - Patch Rules & Lifecycle
 
 Guide for authors adding or cleaning `cgm_shipping` database patches.
 Location: `cgm_shipping/patches/` · Registry: `cgm_shipping/patches.txt`
@@ -11,7 +11,7 @@ Reference this document **before** creating any new patch.
 
 1. **Prefer not to patch.** Prefer DocType JSON, `custom/*.json` (Customize Form export), `fixtures/`, or `after_migrate` / `ensure_*` hooks in [`install.py`](../../cgm_shipping/install.py).
 2. **Patches are for upgrades.** Fresh installs should get correct schema and masters from DocTypes + fixtures + `after_install` / `after_migrate`, not from one-shot migrations.
-3. **`patches.txt` header policy:** Idempotent `ensure_*` / `sync_*` that re-apply current config may stay in `patches.txt`. One-time migrations that already ran everywhere should live in **git history only** (remove from `patches.txt` and delete the file after approval).
+3. **A patch runs once.** Frappe records it in Patch Log and never runs it again, and a fresh install marks every patch done without running it. So `patches.txt` holds one-time data fixes only. Config that must stay in step with the code (workflows, notifications, Custom Fields not exported to `custom/*.json`) is a create-if-missing helper called from `install.after_migrate`, so a desk edit survives. One-time migrations that already ran everywhere live in **git history only** (remove from `patches.txt` and delete the file after approval).
 4. **Do not delete patches without approval.** Audit first (KEEP / REMOVE / REVIEW), then wait for explicit go-ahead before editing `patches.txt` or removing files.
 5. **Never use `--no-verify` or skip Patch Log.** Frappe records executed patches; removing a patch from `patches.txt` does not re-run it, and does not undo work.
 
@@ -23,23 +23,22 @@ Reference this document **before** creating any new patch.
 |-----------|--------------|----------------|
 | New Custom Field / Property Setter that belongs in Customize Form | No | Export to `custom/<doctype>.json` (`bench execute cgm_shipping.install.export_cgm_customizations`) |
 | New native DocType field | No | DocType JSON + `bench migrate` |
-| Workflow / Notification that must exist on every site and may change | Yes (`ensure_*`) **or** fixture | Prefer fixture if stable; `ensure_*` if logic must sync transitions/states |
+| Workflow / Notification that must exist on every site | No | Create-if-missing helper called from `install.after_migrate` (see `customizations/workflow_setup.py`, `app_notifications.py`); a fixture only if code should own the whole record |
 | One-time data rewrite (rename values, backfill blanks, drop obsolete column) | Yes (one-time) | Plan to **retire** after all staging/production sites have applied it |
-| Config that `after_migrate` already calls | No | Add to `install.after_migrate` only — avoid duplicate patch |
+| Config that `after_migrate` already calls | No | Add to `install.after_migrate` only - avoid duplicate patch |
 | Pre-schema-sync snapshot needed before ALTER | Yes (`[pre_model_sync]`) | Pair with a matching `migrate_*` in `[post_model_sync]` |
 
 ---
 
 ## Patch categories
 
-### A — KEEP (idempotent / ongoing)
+### A - KEEP (not yet applied everywhere)
 
-- Name: `ensure_*`, `sync_*`, or explicit ongoing aligners.
-- Safe to re-run every migrate.
-- Still required for **fresh installs** and **upgrades**.
-- Examples: workflows not in fixtures, notifications used by runtime code, charge Custom Fields not fully in `custom/*.json`.
+- One-time fixes that some live site has not run yet (no Patch Log row on production).
+- Safe to run on a site where the work is already done (early return).
+- Ongoing config is never a KEEP patch - it belongs in `install.after_migrate`, which a fresh install also runs.
 
-### B — SAFE TO REMOVE (one-time / superseded)
+### B - SAFE TO REMOVE (one-time / superseded)
 
 Candidates after confirming Patch Log on all live sites:
 
@@ -48,7 +47,7 @@ Candidates after confirming Patch Log on all live sites:
 - Seed patches for settings fields that no longer exist on the DocType.
 - Patches whose only work is already done in `after_migrate`.
 
-### C — REVIEW MANUALLY
+### C - REVIEW MANUALLY
 
 - Removal might break upgrades from older cloud/staging DBs that have not run the patch yet.
 - Confirm: `tabPatch Log` on each environment, then reclassify to KEEP or REMOVE.
@@ -59,8 +58,8 @@ Candidates after confirming Patch Log on all live sites:
 
 | Prefix | Meaning |
 |--------|---------|
-| `ensure_*` | Idempotent: create/update config to match source of truth |
-| `sync_*` | Idempotent: re-align template/order/settings with seed |
+| `ensure_*` | Helper (not a patch) called from `install.after_migrate`: create what is missing |
+| `sync_*` | Helper (not a patch): re-align data with its source of truth |
 | `migrate_*` | One-time (or long-lived upgrade) data/schema transform |
 | `capture_*` | `[pre_model_sync]` snapshot before ALTER; always pair with `migrate_*` |
 | `backfill_*` | One-time fill of blank fields |
@@ -79,8 +78,8 @@ Candidates after confirming Patch Log on all live sites:
 4. Write a short module docstring: **why**, **what**, **idempotent or not**.
 5. Implement `execute()` with early returns when already applied.
 6. Add the module path under the correct section in `patches.txt`:
-   - `[pre_model_sync]` — only if work must run **before** DocType sync.
-   - `[post_model_sync]` — default.
+   - `[pre_model_sync]` - only if work must run **before** DocType sync.
+   - `[post_model_sync]` - default.
 7. Run locally: `bench --site <site> migrate` (or `bench --site <site> execute cgm_shipping.patches.<name>.execute`).
 8. If the patch is one-time, file a follow-up: “retire after staging+production Patch Log shows success”.
 
@@ -119,6 +118,8 @@ Before deleting a file or line from `patches.txt`:
 |------|--------|
 | App hooks | `cgm_shipping/hooks.py` (`after_install`, `after_migrate`, `fixtures`) |
 | Migrate installers | `cgm_shipping/install.py` |
+| Workflows, notifications, custom fields code relies on | `…/customizations/workflow_setup.py`, `app_notifications.py`, `app_custom_fields.py`, `sales_invoice_workflow.py` |
+| Fresh-install branding | `…/customizations/branding.py` (`after_install` only) |
 | Default masters / settings seed | `cgm_shipping/default_seed_data.py`, `…/sea_settings_seed_data.py` |
 | Desk customizations | `cgm_shipping/cgm_worldwide_shipping/custom/*.json` |
 | Fixtures | `cgm_shipping/fixtures/` (e.g. Container Tracker Mode). CGM Task Template is seed-only so site edits are not overwritten on migrate. |

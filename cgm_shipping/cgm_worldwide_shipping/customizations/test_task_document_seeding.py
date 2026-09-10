@@ -20,7 +20,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_docume
 	normalize_required_document_type_stamp,
 	resolve_legacy_document_type_name,
 	resolve_required_document_type_name,
-	valid_document_type_names,
 )
 
 
@@ -200,13 +199,6 @@ class TestTaskDocumentSeeding(UnitTestCase):
 				normalize_required_document_type_stamp("Entry Slip, Entry"),
 				"Entry",
 			)
-
-	def test_valid_document_type_names_filters_missing_master_rows(self):
-		with patch(
-			"cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents.frappe.db.exists",
-			side_effect=lambda _dt, name: name == "Entry",
-		):
-			self.assertEqual(valid_document_type_names(["Entry", "Entry Slip"]), ["Entry"])
 
 
 class TestFieldClearanceValidation(UnitTestCase):

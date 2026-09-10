@@ -15,7 +15,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 	submitted_journal_entry,
 	sync_permit_invoices_to_finance_task,
 )
-from cgm_shipping.patches.ensure_task_permits_field_visibility import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	TASK_PERMITS_DEPENDS_ON,
 )
 

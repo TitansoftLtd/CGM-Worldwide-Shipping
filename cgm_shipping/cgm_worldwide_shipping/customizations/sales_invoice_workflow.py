@@ -1,10 +1,10 @@
-"""Install CGM Sales Invoice approval workflow (idempotent).
+"""CGM Sales Invoice approval workflow, kept in step with the code on every migrate.
 
 Maker-checker gate only: Draft → Pending Approval → Approved (submitted).
 Rejection returns to Draft. Cancellation uses Approved → Cancelled.
 
 ERPNext owns payment Status (Unpaid / Partly Paid / Paid / Overdue) via
-override_status on the Workflow — workflow_state is approval-only.
+override_status on the Workflow - workflow_state is approval-only.
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	SALES_INVOICE_WORKFLOW_STATE_CANCELLED,
 	SALES_INVOICE_WORKFLOW_STATE_DRAFT,
 	SALES_INVOICE_WORKFLOW_STATE_PENDING,
-	SALES_INVOICE_WORKFLOW_STATE_REJECTED,
 )
 
 WORKFLOW_ACTIONS = (
@@ -32,14 +31,12 @@ WORKFLOW_ACTIONS = (
 )
 
 
-def execute() -> None:
+def ensure_sales_invoice_workflow() -> None:
+	"""Add any Sales Invoice workflow states/transitions the code needs; keep desk edits."""
 	if not frappe.db.exists("DocType", "Workflow"):
 		return
-
 	_ensure_workflow_action_masters()
 	_sync_workflow()
-	_backfill_existing_sales_invoices()
-	frappe.db.commit()
 
 
 def _sync_workflow() -> None:
@@ -175,59 +172,3 @@ def _ensure_workflow_action_masters() -> None:
 				"workflow_action_name": action_name,
 			}
 		).insert(ignore_permissions=True)
-
-
-def _backfill_existing_sales_invoices() -> None:
-	if not frappe.db.has_column("Sales Invoice", "workflow_state"):
-		return
-
-	frappe.db.sql(
-		"""
-		UPDATE `tabSales Invoice`
-		SET workflow_state = %s
-		WHERE docstatus = 1
-			AND (workflow_state IS NULL OR workflow_state = '' OR workflow_state = %s)
-		""",
-		(SALES_INVOICE_WORKFLOW_STATE_APPROVED, SALES_INVOICE_WORKFLOW_STATE_REJECTED),
-	)
-	frappe.db.sql(
-		"""
-		UPDATE `tabSales Invoice`
-		SET workflow_state = %s
-		WHERE docstatus = 2
-			AND (workflow_state IS NULL OR workflow_state = '' OR workflow_state != %s)
-		""",
-		(SALES_INVOICE_WORKFLOW_STATE_CANCELLED, SALES_INVOICE_WORKFLOW_STATE_CANCELLED),
-	)
-	frappe.db.sql(
-		"""
-		UPDATE `tabSales Invoice`
-		SET workflow_state = %s
-		WHERE docstatus = 0
-			AND (workflow_state IS NULL OR workflow_state = '')
-		""",
-		SALES_INVOICE_WORKFLOW_STATE_DRAFT,
-	)
-	frappe.db.sql(
-		"""
-		UPDATE `tabSales Invoice`
-		SET workflow_state = %s
-		WHERE docstatus = 0
-			AND workflow_state IN (%s, %s)
-		""",
-		(
-			SALES_INVOICE_WORKFLOW_STATE_DRAFT,
-			SALES_INVOICE_WORKFLOW_STATE_REJECTED,
-			"Pending Finance Approval",
-		),
-	)
-	# Approved-but-draft must re-enter review so Approve can submit.
-	frappe.db.sql(
-		"""
-		UPDATE `tabSales Invoice`
-		SET workflow_state = %s
-		WHERE docstatus = 0
-			AND workflow_state = %s
-		""",
-		(SALES_INVOICE_WORKFLOW_STATE_PENDING, SALES_INVOICE_WORKFLOW_STATE_APPROVED),
-	)

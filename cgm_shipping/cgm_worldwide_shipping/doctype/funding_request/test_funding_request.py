@@ -477,33 +477,6 @@ class TestFundingRequestHelpers(unittest.TestCase):
 		self.assertTrue(wf_map.is_disbursed("Disbursed"))
 		self.assertEqual(wf_map.cancel_state, "Cancelled")
 
-	def test_intended_transitions_are_not_copied_per_role(self):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
-			_funding_request_transitions,
-			_material_request_transitions,
-		)
-
-		mr = _material_request_transitions()
-		self.assertEqual(len(mr), 5)
-		self.assertEqual({row["allowed"] for row in mr}, {"All"})
-		self.assertEqual(sum(1 for row in mr if row["action"] == "Submit"), 2)
-		self.assertEqual({row["action"] for row in mr if row["state"] == "Draft"}, {"Submit"})
-
-		fr = _funding_request_transitions()
-		self.assertEqual({row["allowed"] for row in fr}, {"Finance User", "Funding Approver"})
-		self.assertEqual(
-			{row["allowed"] for row in fr if row["action"] in {"Approve", "Reject"}},
-			{"Funding Approver"},
-		)
-		self.assertTrue(all(row.get("allow_self_approval") for row in fr))
-		self.assertEqual(
-			{row["allowed"] for row in fr if row["action"] not in {"Approve", "Reject"}},
-			{"Finance User"},
-		)
-		self.assertEqual(len(fr), 8)
-		keys = [(row["state"], row["action"], row["next_state"], row.get("condition")) for row in fr]
-		self.assertEqual(len(keys), len(set(keys)))
-
 	def test_live_workflows_have_no_role_copied_transitions(self):
 		if not getattr(frappe.local, "site", None):
 			self.skipTest("Needs a Frappe site")

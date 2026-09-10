@@ -639,11 +639,6 @@ def ensure_sea_task_notifications(*, sync_message: bool = False) -> int:
 	return created
 
 
-def sync_receipt_notification_recipients() -> int:
-	"""Deprecated no-op: Desk Notification content must not be overwritten by migrate."""
-	return 0
-
-
 def sync_sea_task_notification_templates(
 	*,
 	names: frozenset[str] | set[str] | None = None,

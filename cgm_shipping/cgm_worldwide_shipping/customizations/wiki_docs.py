@@ -1,4 +1,10 @@
-"""Seed CGM Shipping documentation into a Frappe Wiki space from docs/ (idempotent)."""
+"""Publish the repo's docs/ folder into the CGM Shipping Frappe Wiki space.
+
+Runs on every migrate (install.ensure_wiki_docs_published), so an edit to a guide
+or a new page in docs/.wiki.json reaches the wiki. The files are the source of
+truth: the space is created with `allow_contributions = 0`, so a re-sync cannot
+overwrite someone's edit.
+"""
 
 from __future__ import annotations
 
@@ -12,16 +18,17 @@ WIKI_SPACE_ROUTE = "cgm-shipping"
 WIKI_SPACE_NAME = "CGM Shipping"
 WIKI_CONFIG_FILENAME = ".wiki.json"
 LANDING_BASENAMES = ("readme.md", "index.md", "readme.mdx", "index.mdx")
+# customizations/ -> cgm_worldwide_shipping/ -> cgm_shipping (package) -> app root
+DOCS_DIR = Path(__file__).resolve().parents[3] / "docs"
 
 
-def execute() -> None:
+def sync_wiki_docs() -> None:
 	if not frappe.db.exists("DocType", "Wiki Space"):
 		return
 
 	from wiki.wiki.git_sync import _sync_to_live
 
-	docs_dir = Path(__file__).resolve().parents[2] / "docs"
-	config_path = docs_dir / WIKI_CONFIG_FILENAME
+	config_path = DOCS_DIR / WIKI_CONFIG_FILENAME
 	if not config_path.is_file():
 		frappe.log_error(
 			title="CGM Frappe Wiki",
@@ -39,8 +46,8 @@ def execute() -> None:
 		return
 
 	space = _get_or_create_space()
-	nodes = _build_nodes_from_local_config(docs_dir, sidebar)
-	_import_local_images(space, docs_dir, nodes)
+	nodes = _build_nodes_from_local_config(DOCS_DIR, sidebar)
+	_import_local_images(space, DOCS_DIR, nodes)
 	_sync_to_live(space, nodes, None, None)
 	_ensure_space_published(space.name)
 	frappe.db.commit()

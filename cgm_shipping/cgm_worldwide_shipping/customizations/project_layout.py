@@ -1521,32 +1521,6 @@ def ensure_project_finance_cost_fields() -> None:
 	frappe.clear_cache(doctype="Project")
 
 
-def ensure_cargo_type_fields() -> None:
-	"""Select Cargo Type on Project / Opportunity / Quotation (from CARGO_TYPE_OPTIONS)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import CARGO_TYPE_OPTIONS
-
-	options = "\n" + "\n".join(CARGO_TYPE_OPTIONS)
-	targets = (
-		("Project", "custom_shipment_type"),
-		("Opportunity", "custom_shipment_type"),
-		("Quotation", "custom_shipment_type"),
-	)
-	for dt, insert_after in targets:
-		if not frappe.db.exists("DocType", dt):
-			continue
-		_create_cf(
-			dt,
-			{
-				"fieldname": "custom_cargo_type",
-				"label": "Cargo Type",
-				"fieldtype": "Select",
-				"options": options,
-				"insert_after": insert_after,
-			},
-		)
-		frappe.clear_cache(doctype=dt)
-
-
 def ensure_transit_project_fields() -> None:
 	"""Project fields for container tracker mode, transit entry, and UBS permit tracking."""
 	_ensure_cf(
