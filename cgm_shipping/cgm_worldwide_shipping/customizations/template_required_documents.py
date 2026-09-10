@@ -71,25 +71,33 @@ def coerce_legacy_document_type_tokens(tokens: list[str]) -> list[str]:
 
 
 def document_type_names_from_template_row(row) -> list[str]:
-	"""Document Type names selected on a CGM Task Template Item row."""
-	names: list[str] = []
-	children = row.get("required_document_types") if isinstance(row, dict) else getattr(
-		row, "required_document_types", None
-	)
-	if children:
-		for child in children or []:
-			if isinstance(child, dict):
-				dt_name = (child.get("document_type") or "").strip()
-			else:
-				dt_name = (getattr(child, "document_type", None) or "").strip()
-			if dt_name and frappe.db.exists("Document Type", dt_name):
-				names.append(dt_name)
-		return names
+	"""Document Type names selected on a CGM Task Template Item row.
 
-	# Legacy Data field (pre Table MultiSelect migration).
-	raw = row.get("required_document_types") if isinstance(row, dict) else None
-	if isinstance(raw, str) and raw.strip():
+	The field is a comma-separated Data field. It was a Table MultiSelect before
+	flatten_template_required_document_multiselect; child rows are still accepted
+	so a row read before that patch ran does not lose its selections.
+	"""
+	raw = (
+		row.get("required_document_types")
+		if isinstance(row, dict)
+		else getattr(row, "required_document_types", None)
+	)
+	if not raw:
+		return []
+
+	# Current shape: "COC, LOA". Iterating this as child rows walks characters and
+	# yields nothing, which silently dropped every requirement at task creation.
+	if isinstance(raw, str):
 		return coerce_legacy_document_type_tokens(parse_required_document_types(raw))
+
+	names: list[str] = []
+	for child in raw:
+		if isinstance(child, dict):
+			dt_name = (child.get("document_type") or "").strip()
+		else:
+			dt_name = (getattr(child, "document_type", "") or "").strip()
+		if dt_name and frappe.db.exists("Document Type", dt_name):
+			names.append(dt_name)
 	return names
 
 

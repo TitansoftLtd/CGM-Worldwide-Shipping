@@ -674,131 +674,26 @@ def backfill_intake_documents_on_sea_tasks(project):
 	return {"tasks_updated": carried}
 
 
-def bootstrap_sea_task_plan_for_project(project_name: str) -> dict | None:
-	"""
-	For Sea projects with CRM-approved CI/PKL: create the 24-task plan and auto-complete tasks 1–2.
-	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
-		project_ready_for_documents_received,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-		sea_import_enabled_for_project,
-	)
-
-	project_doc = frappe.get_doc("Project", project_name)
-
-	if not sea_import_enabled_for_project(project_doc):
-		return None
-	if not project_ready_for_documents_received(project_doc):
-		return None
-
-	if frappe.db.exists(
-		"Task",
-		{"project": project_name, "custom_task_flow_key": task_flow_key_in_filter()},
-	):
-		done = auto_complete_initial_sea_tasks(project_name)
-		return {"auto_completed": done, "created": 0}
-
-	result = create_sea_import_task_plan_internal(project_name)
-	result["auto_completed"] = auto_complete_initial_sea_tasks(project_name)
-	return result
-
-
-def create_sea_import_task_plan_internal(project, reset=False):
-	"""Generate ordered sea-import tasks (internal; no duplicate check unless reset)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
-		project_ready_for_documents_received,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
-		sea_import_enabled_for_project,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		ensure_sea_task_requirements_configured,
-	)
-
-	ensure_sea_task_requirements_configured()
-
-	project_doc = frappe.get_doc("Project", project)
-
-	if not sea_import_enabled_for_project(project_doc):
-		frappe.throw("This task plan is for sea-import shipment types only.")
-
-	flow_filter = task_flow_key_in_filter()
-	existing = frappe.get_all(
-		"Task",
-		filters={"project": project, "custom_task_flow_key": flow_filter},
-		fields=["name"],
-		limit=1,
-	)
-	if existing and not frappe.utils.cint(reset):
-		frappe.throw("Sea task plan already exists. Use reset=1 if you want to regenerate it.")
-	if existing and frappe.utils.cint(reset):
-		for d in frappe.get_all(
-			"Task",
-			filters={"project": project, "custom_task_flow_key": flow_filter},
-			fields=["name"],
-		):
-			frappe.delete_doc("Task", d.name, ignore_permissions=True, force=True)
-
-	task_template = load_sea_task_template()
-	created = []
-	created_by_seq: dict[int, str] = {}
-	canonical_flow_key = stored_task_flow_key(SEA_IMPORT_TEMPLATE)
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		resolve_department_name,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		sea_finance_dependency_pairs,
-	)
-
-	finance_depends_on_app = {fin: app for app, fin in sea_finance_dependency_pairs()}
-
-	frappe.flags.cgm_skip_task_project_sync = True
-	try:
-		for idx, item in enumerate(task_template, start=1):
-			subject = item.get("subject")
-			if not subject:
-				frappe.throw(f"Task template item at position {idx} has no subject.")
-
-			seq = int(item["sequence_no"])
-			task = frappe.new_doc("Task")
-			task.subject = subject
-			task.project = project
-			task.custom_task_flow_key = canonical_flow_key
-			task.custom_sequence_no = seq
-			task.department = resolve_department_name(item.get("department"), company=project_doc.company)
-			task.status = "Open"
-
-			# Only link finance payment tasks to their application counterpart.
-			app_seq = finance_depends_on_app.get(seq)
-			if app_seq and app_seq in created_by_seq:
-				task.append("depends_on", {"task": created_by_seq[app_seq]})
-
-			task.insert(ignore_permissions=True)
-			if task.owner != "Administrator" and frappe.db.exists("User", "Administrator"):
-				frappe.db.set_value(
-					"Task", task.name, "owner", "Administrator", update_modified=False
-				)
-				task.owner = "Administrator"
-
-			created_by_seq[seq] = task.name
-			created.append(task.name)
-	finally:
-		frappe.flags.cgm_skip_task_project_sync = False
-
-	out = {"created": created, "count": len(created)}
-	if project_ready_for_documents_received(project_doc):
-		frappe.flags.cgm_skip_task_project_sync = True
-		try:
-			out["auto_completed"] = auto_complete_initial_sea_tasks(project)
-		finally:
-			frappe.flags.cgm_skip_task_project_sync = False
-	return out
-
 
 @frappe.whitelist()
 def create_sea_import_task_plan(project, reset=False):
-	"""Generate sea-import tasks; only application↔finance pairs get depends_on links."""
+	"""Create the workflow task plan for a project.
+
+	Delegates to task_engine, which is the single builder. The former local
+	implementation rebuilt the plan from template row order and stamped only
+	flow key and sequence number - tasks it produced carried no task_role or
+	required document types, so role behaviour and document gating silently did
+	not apply to them.
+	"""
 	frappe.has_permission("Task", ptype="create", throw=True)
-	return create_sea_import_task_plan_internal(project, reset=reset)
+
+	from cgm_shipping.cgm_worldwide_shipping.task_engine import create_project_tasks
+
+	if frappe.utils.cint(reset):
+		flow_filter = task_flow_key_in_filter()
+		for row in frappe.get_all(
+			"Task", filters={"project": project, "custom_task_flow_key": flow_filter}, pluck="name"
+		):
+			frappe.delete_doc("Task", row, ignore_permissions=True, force=True)
+
+	return {"created": create_project_tasks(project)}
