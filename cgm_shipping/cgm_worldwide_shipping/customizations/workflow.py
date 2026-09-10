@@ -70,16 +70,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
 	POST_CLEARANCE_STAGE,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-	get_application_sequence_for_finance_task,
-	get_permit_finance_sequence_for_application,
-	get_permit_stage_for_sequence,
-	get_post_clearance_permit_application_sequence,
-	get_pre_clearance_permit_application_sequence,
-	is_permit_application_task,
-	permit_application_sequences,
-	permit_finance_by_application_sequence,
-)
 
 # ------------------------------------------------------------------
 # Constants
@@ -121,34 +111,8 @@ def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 	return None
 
 
-def get_permit_application_task_name(project: str, sequence_no: int) -> str | None:
-	return get_task_name_by_sequence(project, sequence_no)
-
-
-def get_finance_permit_task_name(
-	project: str,
-	application_sequence_no: int | None = None,
-) -> str | None:
-	if application_sequence_no is None:
-		application_sequence_no = get_pre_clearance_permit_application_sequence()
-	if not application_sequence_no:
-		return None
-	finance_seq = get_permit_finance_sequence_for_application(application_sequence_no)
-	if not finance_seq:
-		return None
-	return get_task_name_by_sequence(project, finance_seq)
-
-
-def get_pre_clearance_permit_application_task_name(project: str) -> str | None:
-	names = _permit_application_task_names(project, PRE_CLEARANCE_STAGE)
-	return names[0] if names else None
-
-
 def _permit_application_task_names(project: str, stage: str) -> list[str]:
-	"""Permit application steps of *stage* on the project (Task Role stamps).
-
-	Unstamped (legacy) projects fall back to the step numbers.
-	"""
+	"""Permit application steps of *stage* on the project (Task Role stamps)."""
 	if not project:
 		return []
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
@@ -158,7 +122,7 @@ def _permit_application_task_names(project: str, stage: str) -> list[str]:
 		sea_import_flow_keys,
 	)
 
-	names = frappe.get_all(
+	return frappe.get_all(
 		"Task",
 		filters={
 			"project": project,
@@ -169,24 +133,10 @@ def _permit_application_task_names(project: str, stage: str) -> list[str]:
 		pluck="name",
 		order_by="custom_sequence_no asc",
 	)
-	if names:
-		return names
-	return [
-		name
-		for name in (
-			get_task_name_by_sequence(project, seq)
-			for seq in sorted(permit_application_sequences())
-			if get_permit_stage_for_sequence(seq) == stage
-		)
-		if name
-	]
 
 
 def finance_permit_task_for_application(application_task) -> str | None:
-	"""Paired Permit Finance step of a permit application, by Task Role stamps.
-
-	Unstamped (legacy) tasks fall back to pairing by step number.
-	"""
+	"""Paired Permit Finance step of a permit application, by Task Role stamps."""
 	if not application_task or not application_task.get("project"):
 		return None
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
@@ -194,9 +144,7 @@ def finance_permit_task_for_application(application_task) -> str | None:
 	)
 
 	name = get_permit_finance_for_behaviour(application_task)
-	if name and name != application_task.name:
-		return name
-	return get_finance_permit_task_name(application_task.project, task_sequence(application_task))
+	return name if name and name != application_task.name else None
 
 
 def permit_finance_paid_for_application(application_task) -> bool:
@@ -208,25 +156,21 @@ def permit_finance_paid_for_application(application_task) -> bool:
 
 
 def permit_stage_for_task(task) -> str:
-	"""Permit stage of a permit application / finance step (stamp first)."""
+	"""Permit stage of a permit application / finance step, from its stamp."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		get_task_behaviour,
 	)
 
-	return get_task_behaviour(task).permit_stage or get_permit_stage_for_sequence(task_sequence(task))
+	return get_task_behaviour(task).permit_stage or PRE_CLEARANCE_STAGE
 
 
 def is_pre_clearance_permit_application_task(task) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		get_task_behaviour,
-		task_is_permit_application,
 	)
 
 	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return task_is_permit_application(task) and behaviour.permit_stage == PRE_CLEARANCE_STAGE
-	seq = task_sequence(task)
-	return is_permit_application_task(seq) and get_permit_stage_for_sequence(seq) == PRE_CLEARANCE_STAGE
+	return behaviour.is_permit_application and behaviour.permit_stage == PRE_CLEARANCE_STAGE
 
 
 def is_pre_clearance_finance_permit_task(task) -> bool:
@@ -246,30 +190,13 @@ def get_permit_application_task_for_finance(finance_task) -> str | None:
 		return None
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		get_permit_application_for_behaviour,
-		get_task_behaviour,
 	)
 
-	behaviour = get_task_behaviour(finance_task)
-	if behaviour.from_template:
-		return get_permit_application_for_behaviour(finance_task)
-	app_seq = get_application_sequence_for_finance_task(finance_task)
-	if not app_seq:
-		return None
-	return get_task_name_by_sequence(finance_task.project, app_seq)
+	return get_permit_application_for_behaviour(finance_task)
 
 
 def permit_stage_for_finance_task(finance_task) -> str:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		get_task_behaviour,
-	)
-
-	behaviour = get_task_behaviour(finance_task)
-	if behaviour.from_template and behaviour.permit_stage:
-		return behaviour.permit_stage
-	app_seq = get_application_sequence_for_finance_task(finance_task)
-	if app_seq:
-		return get_permit_stage_for_sequence(app_seq)
-	return PRE_CLEARANCE_STAGE
+	return permit_stage_for_task(finance_task)
 
 
 def finance_permit_task_label(finance_task) -> str:
@@ -981,10 +908,6 @@ def finance_permit_rows_out_of_sync(finance_task) -> bool:
 		return False
 	if not finance_task.project:
 		return False
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		get_application_sequence_for_finance_task,
-	)
-
 	app_name = get_permit_application_task_for_finance(finance_task)
 	if not app_name:
 		return False
@@ -2206,8 +2129,7 @@ def complete_permit_application_task(task_name: str) -> dict:
 			validate_permit_application_task,
 		)
 
-		seq = task_sequence(task)
-		validate_permit_application_task(task, seq)
+		validate_permit_application_task(task)
 		validate_permit_application_can_complete(task)
 
 		task.status = "Completed"
@@ -2348,7 +2270,6 @@ def get_permit_finance_workflow_status(task_name: str) -> dict:
 permit_invoices_ready = permit_invoices_submitted
 permit_invoices_ready_for_project = project_has_submitted_permit_invoices
 try_auto_complete_permit_finance_task = auto_complete_finance_permit_task
-get_permit_finance_task = get_finance_permit_task_name
 
 
 # ============================================================
@@ -2383,11 +2304,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	ucr_receipt_attached,
 	ucr_receipt_verified,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-	get_ucr_create_sequence,
-	get_ucr_payment_sequence,
-	is_ucr_application_task,
-)
 # FINANCE_AUDIENCE / DECLARANT_AUDIENCE and the task_sequence /
 # get_task_name_by_sequence lookups are already defined at the top of this module
 # (this file merges the permit- and UCR-payment workflows); the UCR section below
@@ -2415,15 +2331,7 @@ def get_ucr_task(project: str, task_type: str) -> str | None:
 		)
 		if name:
 			return name
-
-	seq_by_type = {
-		"create": get_ucr_create_sequence(),
-		"payment": get_ucr_payment_sequence(),
-	}
-	seq = seq_by_type.get(task_type)
-	if not seq:
-		return None
-	return get_task_name_by_sequence(project, seq)
+	return None
 
 
 def get_ucr_create_task(project: str) -> str | None:

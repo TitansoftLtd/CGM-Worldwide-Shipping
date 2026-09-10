@@ -111,6 +111,8 @@ class TestWorkflowProgressFromTasks(UnitTestCase):
 				"custom_sequence_no": 5,
 				"status": "Open",
 				"custom_permit_invoices_submitted": 1,
+				"custom_task_role": "Permit Application",
+				"custom_permit_stage": "Pre-clearance",
 			},
 		]
 		seqs = effective_completed_task_seqs(tasks)

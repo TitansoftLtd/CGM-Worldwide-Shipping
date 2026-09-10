@@ -102,9 +102,25 @@ class TestFinancePermitRowPayloads(UnitTestCase):
 
 
 class TestTaskPermitsFieldVisibilityPatch(UnitTestCase):
-	def test_depends_on_includes_post_clearance_finance(self):
-		self.assertIn("16", TASK_PERMITS_DEPENDS_ON)
+	def test_depends_on_follows_the_task_role(self):
+		"""Permit finance steps show the table by their role, not step number 16."""
+		self.assertIn("Permit Application", TASK_PERMITS_DEPENDS_ON)
 		self.assertIn("Permit Finance", TASK_PERMITS_DEPENDS_ON)
+		self.assertNotIn("custom_sequence_no", TASK_PERMITS_DEPENDS_ON)
+
+	def test_patch_writes_what_task_json_carries(self):
+		import json
+		import os
+
+		import cgm_shipping
+
+		path = os.path.join(
+			os.path.dirname(cgm_shipping.__file__), "cgm_worldwide_shipping", "custom", "task.json"
+		)
+		with open(path) as f:
+			fields = {f["fieldname"]: f for f in json.load(f)["custom_fields"]}
+		for fieldname in ("custom_section_task_permits", "custom_task_permits"):
+			self.assertEqual(fields[fieldname]["depends_on"], TASK_PERMITS_DEPENDS_ON)
 
 
 class TestSubmittedJournalEntry(UnitTestCase):

@@ -189,21 +189,8 @@ def _get_finance_payment_kind(sequence_no: int) -> str | None:
 	return get_finance_payment_kind(sequence_no)
 
 
-def is_application_task(sequence_no: int, profile: ApplicationFinanceProfile) -> bool:
-	return any(
-		r.requirement_type == profile.application_requirement_type
-		for r in _rows_by_sequence().get(sequence_no, [])
-	)
-
-
 def is_application_finance_task(sequence_no: int, profile: ApplicationFinanceProfile) -> bool:
 	return _get_finance_payment_kind(sequence_no) == profile.finance_payment_kind
-
-
-def is_application_workflow_task(sequence_no: int, profile: ApplicationFinanceProfile) -> bool:
-	return is_application_task(sequence_no, profile) or is_application_finance_task(
-		sequence_no, profile
-	)
 
 
 def task_matches_application(task, profile: ApplicationFinanceProfile) -> bool:
@@ -254,66 +241,37 @@ def get_application_finance_sequence(profile: ApplicationFinanceProfile) -> int 
 	return seqs[0] if seqs else None
 
 
-def get_application_task(project: str, profile: ApplicationFinanceProfile) -> str | None:
-	"""Resolve application task for profile within a project (template-aware)."""
+def _project_task_by_role(project: str, role: str, profile: ApplicationFinanceProfile) -> str | None:
 	if not project:
 		return None
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		ROLE_APPLICATION,
 		task_has_behaviour_fields,
 	)
 
-	if task_has_behaviour_fields():
-		name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project,
-				"custom_task_role": ROLE_APPLICATION,
-				"custom_payment_kind": profile.payment_item,
-			},
-			"name",
-			order_by="custom_sequence_no asc",
-		)
-		if name:
-			return name
-
-	seq = get_application_sequence(profile)
-	if not seq:
+	if not task_has_behaviour_fields():
 		return None
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_task_name_by_sequence
+	return frappe.db.get_value(
+		"Task",
+		{"project": project, "custom_task_role": role, "custom_payment_kind": profile.payment_item},
+		"name",
+		order_by="custom_sequence_no asc",
+	)
 
-	return get_task_name_by_sequence(project, seq)
+
+def get_application_task(project: str, profile: ApplicationFinanceProfile) -> str | None:
+	"""The project's application task for this profile, by its Task Role stamps."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import ROLE_APPLICATION
+
+	return _project_task_by_role(project, ROLE_APPLICATION, profile)
 
 
 def get_application_finance_task(project: str, profile: ApplicationFinanceProfile) -> str | None:
-	"""Resolve finance task for profile within a project (template-aware)."""
-	if not project:
-		return None
+	"""The project's finance task for this profile, by its Task Role stamps."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		ROLE_FINANCE_PAYMENT,
-		task_has_behaviour_fields,
 	)
 
-	if task_has_behaviour_fields():
-		name = frappe.db.get_value(
-			"Task",
-			{
-				"project": project,
-				"custom_task_role": ROLE_FINANCE_PAYMENT,
-				"custom_payment_kind": profile.payment_item,
-			},
-			"name",
-			order_by="custom_sequence_no asc",
-		)
-		if name:
-			return name
-
-	seq = get_application_finance_sequence(profile)
-	if not seq:
-		return None
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_task_name_by_sequence
-
-	return get_task_name_by_sequence(project, seq)
+	return _project_task_by_role(project, ROLE_FINANCE_PAYMENT, profile)
 
 
 def profile_for_task(task) -> ApplicationFinanceProfile | None:
@@ -1555,9 +1513,7 @@ def sync_application_finance_lines_to_idf_record(task, profile: ApplicationFinan
 	if rec and rec.verified:
 		doc.receipt_verified = 1
 		doc.payment_status = "Receipt Verified"
-	if task.status == "Completed" and is_application_finance_task(
-		int(task.get("custom_sequence_no") or 0), profile
-	):
+	if task.status == "Completed" and task_matches_application_finance(task, profile):
 		doc.payment_status = "Complete"
 	doc.save(ignore_permissions=True)
 
@@ -2179,17 +2135,6 @@ def enforce_application_finance_line_permissions(
 				frappe.throw(
 					f"Record payment before uploading the <b>{profile.receipt_label}</b>."
 				)
-
-
-def get_profile_for_sequence(sequence_no: int) -> ApplicationFinanceProfile | None:
-	for profile in all_profiles():
-		if is_application_workflow_task(sequence_no, profile):
-			return profile
-	return None
-
-
-def is_any_application_workflow_task(sequence_no: int) -> bool:
-	return get_profile_for_sequence(sequence_no) is not None
 
 
 def linked_application_finance_pairs() -> tuple[tuple[int, int], ...]:

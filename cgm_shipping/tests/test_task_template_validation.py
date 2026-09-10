@@ -139,15 +139,7 @@ class TestTaskTemplateValidation(unittest.TestCase):
 		self.assertNotIn("Unpaired Finance Task", titles)
 
 	def test_no_warnings_on_shipped_templates(self):
-		"""Saving any template as it ships must be silent.
-
-		Except Sea Import's Client Inspection gate, which points at a step the plan
-		no longer has (test_template_gates.KNOWN_MISSING_STEPS). The warning stays
-		until someone decides which task reaches that status.
-		"""
-		known = {TEMPLATE: ["Unreachable Status"]}
+		"""Saving any template as it ships must be silent."""
 		for name in frappe.get_all("CGM Task Template", pluck="name"):
 			with self.subTest(template=name):
-				self.assertEqual(
-					self._warnings(frappe.get_doc("CGM Task Template", name)), known.get(name, [])
-				)
+				self.assertEqual(self._warnings(frappe.get_doc("CGM Task Template", name)), [])

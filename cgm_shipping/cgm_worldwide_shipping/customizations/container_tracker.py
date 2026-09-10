@@ -110,34 +110,6 @@ def container_seq_for_task(task) -> int:
 	return container_step_sequence(container_step_for_task(task))
 
 
-def project_shipping_line_finance_paid(project: str | None) -> bool:
-	"""True when the project's Shipping Line finance task is completed."""
-	if not project:
-		return False
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		shipping_line_finance_payment_sequences,
-	)
-
-	finance_seqs = shipping_line_finance_payment_sequences()
-	if not finance_seqs:
-		return False
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		task_flow_key_in_filter,
-	)
-
-	return bool(
-		frappe.db.exists(
-			"Task",
-			{
-				"project": project,
-				"custom_task_flow_key": task_flow_key_in_filter(),
-				"custom_sequence_no": ("in", list(finance_seqs)),
-				"status": "Completed",
-			},
-		)
-	)
-
-
 def refresh_deposit_payment_status(ct) -> None:
 	"""No-op: deposits are tracked on Bill of Lading, not Container Tracker."""
 	return

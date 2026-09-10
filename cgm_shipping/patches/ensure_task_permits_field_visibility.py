@@ -6,6 +6,8 @@ Desk ``depends_on`` before task.js could override it — Finance saw no permit i
 even when the child rows existed in the database.
 
 Idempotent: yes — updates Custom Field depends_on when it still matches the old rule.
+The rule it writes is the Task Role one custom/task.json carries; the step numbers
+it once listed are gone.
 """
 
 from __future__ import annotations
@@ -13,9 +15,8 @@ from __future__ import annotations
 import frappe
 
 TASK_PERMITS_DEPENDS_ON = (
-	"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
-	"(['Permit Application','Permit Finance'].includes(doc.custom_task_role) || "
-	"doc.custom_requires_permit_action || [5,6,15,16].includes(doc.custom_sequence_no))"
+	"eval:['Permit Application','Permit Finance'].includes(doc.custom_task_role) || "
+	"doc.custom_requires_permit_action"
 )
 
 OLD_DEPENDS_ON = (

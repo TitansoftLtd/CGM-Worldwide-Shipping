@@ -25,16 +25,15 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	SEA_IMPORT_TEMPLATE,
 	SEA_TRANSIT_IMPORT_TEMPLATE,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
+	DEFAULT_SEA_IMPORT_WORKFLOW_STATES,
+	DEFAULT_SEA_WORKFLOW_TASK_GATES,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
 	TEMPLATE_DEFINITIONS,
 )
 
 DOCTYPE_DIR = os.path.join(os.path.dirname(cgm_shipping.__file__), "cgm_worldwide_shipping", "doctype")
-
-# Seeded gates whose task is not in the seeded plan, so the status is never
-# reached. Copied as they were when the gates moved, so the move changed nothing;
-# fix them on the template.
-KNOWN_MISSING_STEPS = {(SEA_IMPORT_TEMPLATE, "Client Inspection")}
 
 ROWS = (
 	{"shipment_workflow_state": "Documents Received", "min_completed_task_seq": 1, "gate_rule": None},
@@ -68,12 +67,16 @@ class TestSeededGates(unittest.TestCase):
 		for definition in TEMPLATE_DEFINITIONS:
 			sequences = {row["sequence_no"] for row in definition["tasks"]}
 			for row in definition.get("gates") or []:
-				key = (definition["template_name"], row["shipment_workflow_state"])
-				with self.subTest(template=key[0], state=key[1]):
-					if key in KNOWN_MISSING_STEPS:
-						self.assertNotIn(row["min_completed_task_seq"], sequences)
-					else:
-						self.assertIn(row["min_completed_task_seq"], sequences)
+				with self.subTest(template=definition["template_name"], state=row["shipment_workflow_state"]):
+					self.assertIn(row["min_completed_task_seq"], sequences)
+
+	def test_sea_import_in_delivery_waits_for_the_trucks(self):
+		gates = tg.gate_map(DEFAULT_SEA_WORKFLOW_TASK_GATES)
+		self.assertEqual(gates["In Delivery"]["min_completed_task_seq"], 21)
+
+	def test_client_inspection_stays_a_status_without_a_gate(self):
+		self.assertNotIn("Client Inspection", tg.gate_map(DEFAULT_SEA_WORKFLOW_TASK_GATES))
+		self.assertIn("Client Inspection", DEFAULT_SEA_IMPORT_WORKFLOW_STATES)
 
 	def test_each_status_once_per_template(self):
 		for definition in TEMPLATE_DEFINITIONS:

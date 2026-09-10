@@ -58,9 +58,8 @@ frappe.ui.form.on("Task", {
 		reset_cgm_task_sea_ui_state_if_needed(frm);
 		ensure_cgm_finance_department_loaded(frm);
 		const ui = get_sea_task_ui(frm);
-		// Permit table depends_on must be corrected on every refresh — the Desk
-		// Custom Field default omits post-clearance Finance (seq 16) and would
-		// hide invoices even when child rows exist in the database.
+		// Permit table depends_on is set from the task's behaviour on every refresh,
+		// so the table shows on every task that works with permits.
 		apply_permit_field_visibility(frm, ui);
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
@@ -125,10 +124,7 @@ frappe.ui.form.on("Task", {
 								"(and certificates are attached on the application task)."
 						);
 					} else {
-						const appLabel = permit_application_task_label(
-							frm,
-							get_paired_permit_application_seq(frm, seq)
-						);
+						const appLabel = permit_application_task_label(frm);
 						intro = __(
 							"<b>1 Finance:</b> Verify permit invoices (tick <b>Invoice Verified</b> or <b>Verify Invoices</b>) · " +
 								"<b>2</b> Use <b>Make Payment</b> on each permit row (or tick <b>Client will pay</b>) · " +
@@ -145,10 +141,7 @@ frappe.ui.form.on("Task", {
 							"Attach <b>Permit Certificate</b> on each row; this task completes when receipts and certificates are in."
 					);
 				} else if (frm.doc.custom_permit_invoices_submitted) {
-					const finLabel = permit_finance_task_label(
-						frm,
-						get_paired_permit_finance_seq(frm, seq)
-					);
+					const finLabel = permit_finance_task_label(frm);
 					intro = __(
 						"<b>After invoices go to Finance:</b> Finance verifies invoices and pays on <b>{0}</b>. " +
 							"Then upload payment receipts on that finance task (same department that attached the invoices). " +
@@ -382,7 +375,6 @@ frappe.ui.form.on("Task", {
 
 const SEA_FLOW_KEY = "SEA_IMPORT_E2E";
 const SEA_IMPORT_TEMPLATE = "Sea Import Workflow";
-const SEA_FLOW_KEYS_EXPR = "['SEA_IMPORT_E2E','Sea Import Workflow'].includes(doc.custom_task_flow_key)";
 
 function isSeaImportFlowKey(flowKey) {
 	const key = (flowKey || "").trim();
@@ -393,56 +385,22 @@ function get_task_flow_key(frm) {
 	return (frm.doc.custom_task_flow_key || "").trim();
 }
 
-/** Empty shell until get_sea_task_ui_sequences returns (no hardcoded business rules). */
+/** Empty shell until get_sea_task_ui_sequences returns the user's permissions. */
 const CGM_SEA_UI_SEQUENCES_EMPTY = {
-	payment_seqs: [],
-	auto_complete_seqs: [],
-	permit_application_seqs: [],
-	light_proof_seqs: [],
-	ucr_application_seqs: [],
-	entry_application_seqs: [],
-	shipping_line_application_seqs: [],
-	kpa_application_seqs: [],
-	finance_document_seqs: [],
-	permit_finance_seqs: [],
-	ucr_finance_seqs: [],
-	entry_finance_seqs: [],
-	shipping_line_finance_seqs: [],
-	kpa_finance_seqs: [],
-	permit_stage_by_seq: {},
-	container_task_seqs: {},
-	container_update_seqs: [],
 	permissions: {},
 };
 
-
-function sea_task_permits_depends_on(frm) {
-	const cfg = get_cgm_sea_seq_config(frm);
-	const seqs = [
-		...new Set([
-			...(cfg.permit_application_seqs || []),
-			...(cfg.permit_finance_seqs || []),
-		]),
-	].sort((a, b) => a - b);
-	if (!seqs.length) {
-		return `eval:${SEA_FLOW_KEYS_EXPR} && (['Permit Application','Permit Finance'].includes(doc.custom_task_role) || doc.custom_requires_permit_action)`;
-	}
-	return `eval:${SEA_FLOW_KEYS_EXPR} && (['Permit Application','Permit Finance'].includes(doc.custom_task_role) || doc.custom_requires_permit_action || [${seqs.join(",")}].includes(doc.custom_sequence_no))`;
-}
 
 function apply_permit_field_visibility(frm, ui) {
 	if (!ui?.show_permits) {
 		return;
 	}
+	// The task's behaviour already decided the table shows; drop the field rule.
 	["custom_section_task_permits", "custom_task_permits"].forEach((fieldname) => {
 		if (!frm.fields_dict[fieldname]) {
 			return;
 		}
-		frm.set_df_property(
-			fieldname,
-			"depends_on",
-			ui.from_template ? "" : sea_task_permits_depends_on(frm)
-		);
+		frm.set_df_property(fieldname, "depends_on", "");
 		frm.set_df_property(fieldname, "hidden", 0);
 	});
 }
@@ -508,143 +466,68 @@ function get_cgm_permissions(frm) {
 	return get_cgm_sea_seq_config(frm).permissions || {};
 }
 
-function seq_in_list(seq, list) {
-	return (list || []).includes(seq);
-}
-
+// Every check below reads the task's Task Role stamps. The step number means
+// something different on every template, so it decides nothing here.
 function role_payment_match(frm, role, kind) {
-	const r = (frm.doc.custom_task_role || "").trim();
-	if (!r) {
-		return null;
-	}
-	return r === role && (frm.doc.custom_payment_kind || "").trim() === kind;
+	return (
+		(frm.doc.custom_task_role || "").trim() === role &&
+		(frm.doc.custom_payment_kind || "").trim() === kind
+	);
 }
 
-function is_ucr_application_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Application", "UCR");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).ucr_application_seqs);
+function is_ucr_application_step(frm) {
+	return role_payment_match(frm, "Application", "UCR");
 }
 
-function is_ucr_finance_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Finance Payment", "UCR");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).ucr_finance_seqs);
+function is_ucr_finance_step(frm) {
+	return role_payment_match(frm, "Finance Payment", "UCR");
 }
 
-function is_entry_application_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Application", "ENTRY_SLIP");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).entry_application_seqs);
+function is_entry_application_step(frm) {
+	return role_payment_match(frm, "Application", "ENTRY_SLIP");
 }
 
-function is_entry_finance_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Finance Payment", "ENTRY_SLIP");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).entry_finance_seqs);
+function is_entry_finance_step(frm) {
+	return role_payment_match(frm, "Finance Payment", "ENTRY_SLIP");
 }
 
-function is_shipping_line_application_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Application", "Shipping Line");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).shipping_line_application_seqs);
+function is_shipping_line_application_step(frm) {
+	return role_payment_match(frm, "Application", "Shipping Line");
 }
 
-function is_shipping_line_finance_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Finance Payment", "Shipping Line");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).shipping_line_finance_seqs);
+function is_shipping_line_finance_step(frm) {
+	return role_payment_match(frm, "Finance Payment", "Shipping Line");
 }
 
 const CGM_APP_FINANCE_PROFILES = {
-	shipping_line: {
-		application_seqs_key: "shipping_line_application_seqs",
-		finance_seqs_key: "shipping_line_finance_seqs",
-		upload_role: __("Documentation"),
-	},
-	kpa: {
-		application_seqs_key: "kpa_application_seqs",
-		finance_seqs_key: "kpa_finance_seqs",
-		upload_role: __("Supervisor"),
-	},
+	shipping_line: { payment_kind: "Shipping Line", upload_role: __("Documentation") },
+	kpa: { payment_kind: "KPA", upload_role: __("Supervisor") },
 };
 
 function is_app_finance_application_step(frm, seq, profileKey) {
-	const kindByProfile = { shipping_line: "Shipping Line", kpa: "KPA" };
-	const kind = kindByProfile[profileKey];
-	if (kind) {
-		const stamped = role_payment_match(frm, "Application", kind);
-		if (stamped !== null) {
-			return stamped;
-		}
-	}
 	const profile = CGM_APP_FINANCE_PROFILES[profileKey];
-	if (!profile) {
-		return false;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm)[profile.application_seqs_key] || []);
+	return Boolean(profile) && role_payment_match(frm, "Application", profile.payment_kind);
 }
 
 function is_app_finance_finance_step(frm, seq, profileKey) {
-	const kindByProfile = { shipping_line: "Shipping Line", kpa: "KPA" };
-	const kind = kindByProfile[profileKey];
-	if (kind) {
-		const stamped = role_payment_match(frm, "Finance Payment", kind);
-		if (stamped !== null) {
-			return stamped;
-		}
-	}
 	const profile = CGM_APP_FINANCE_PROFILES[profileKey];
-	if (!profile) {
-		return false;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm)[profile.finance_seqs_key] || []);
+	return Boolean(profile) && role_payment_match(frm, "Finance Payment", profile.payment_kind);
 }
 
-function is_kpa_application_step(frm, seq) {
-	return is_app_finance_application_step(frm, seq, "kpa");
+function is_kpa_application_step(frm) {
+	return is_app_finance_application_step(frm, null, "kpa");
 }
 
-function is_kpa_finance_step(frm, seq) {
-	return is_app_finance_finance_step(frm, seq, "kpa");
+function is_kpa_finance_step(frm) {
+	return is_app_finance_finance_step(frm, null, "kpa");
 }
 
-function is_permit_application_step(frm, seq) {
-	const role = (frm.doc.custom_task_role || "").trim();
-	if (role) {
-		return role === "Permit Application";
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).permit_application_seqs);
+function is_permit_application_step(frm) {
+	return (frm.doc.custom_task_role || "").trim() === "Permit Application";
 }
 
-function is_permit_finance_step(frm, seq) {
-	const role = (frm.doc.custom_task_role || "").trim();
-	if (role) {
-		return role === "Permit Finance";
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).permit_finance_seqs);
+function is_permit_finance_step(frm) {
+	return (frm.doc.custom_task_role || "").trim() === "Permit Finance";
 }
 
 function is_permit_payment_pattern(frm) {
@@ -671,75 +554,34 @@ function permit_rows_all_have_journal_entry(frm) {
 	);
 }
 
-function get_permit_stage_for_seq(frm, seq) {
-	const stamped = (frm.doc.custom_permit_stage || "").trim();
-	if (stamped && (frm.doc.custom_task_role || "").trim()) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	const map = get_cgm_sea_seq_config(frm).permit_stage_by_seq || {};
-	return map[String(s)] || map[s] || null;
+function get_permit_stage_for_seq(frm) {
+	// The task's own Permit Stage stamp.
+	return (frm.doc.custom_permit_stage || "").trim() || null;
 }
 
-function is_pre_clearance_permit_application_step(frm, seq) {
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
+function is_pre_clearance_permit_application_step(frm) {
+	return is_permit_application_step(frm) && get_permit_stage_for_seq(frm) === "Pre-clearance";
+}
+
+function is_post_clearance_permit_application_step(frm) {
+	return is_permit_application_step(frm) && get_permit_stage_for_seq(frm) === "Post-clearance";
+}
+
+function is_permit_application_step_for_stage(frm) {
 	return (
-		is_permit_application_step(frm, s) &&
-		get_permit_stage_for_seq(frm, s) === "Pre-clearance"
+		is_pre_clearance_permit_application_step(frm) ||
+		is_post_clearance_permit_application_step(frm)
 	);
 }
 
-function is_post_clearance_permit_application_step(frm, seq) {
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return (
-		is_permit_application_step(frm, s) &&
-		get_permit_stage_for_seq(frm, s) === "Post-clearance"
-	);
+// The paired permit step shares this task's Permit Stage, so it is named by that
+// stage - templates word the task subjects differently.
+function permit_application_task_label(frm) {
+	return __("the {0} permit application task", [get_permit_stage_for_seq(frm) || "Pre-clearance"]);
 }
 
-function is_permit_application_step_for_stage(frm, seq) {
-	return (
-		is_pre_clearance_permit_application_step(frm, seq) ||
-		is_post_clearance_permit_application_step(frm, seq)
-	);
-}
-
-function get_paired_permit_application_seq(frm, financeSeq) {
-	const stage = get_permit_stage_for_seq(frm, financeSeq);
-	if (!stage) {
-		return null;
-	}
-	const cfg = get_cgm_sea_seq_config(frm);
-	return (cfg.permit_application_seqs || []).find(
-		(seq) => get_permit_stage_for_seq(frm, seq) === stage
-	);
-}
-
-function get_paired_permit_finance_seq(frm, applicationSeq) {
-	const stage = get_permit_stage_for_seq(frm, applicationSeq);
-	if (!stage) {
-		return null;
-	}
-	const cfg = get_cgm_sea_seq_config(frm);
-	return (cfg.permit_finance_seqs || []).find(
-		(seq) => get_permit_stage_for_seq(frm, seq) === stage
-	);
-}
-
-function permit_application_task_label(frm, seq) {
-	const stage = get_permit_stage_for_seq(frm, seq);
-	if (stage === "Post-clearance") {
-		return __("Prepare Post-Clearance Permits");
-	}
-	return __("Apply for Pre-Clearance Permits");
-}
-
-function permit_finance_task_label(frm, financeSeq) {
-	const stage = get_permit_stage_for_seq(frm, financeSeq);
-	if (stage === "Post-clearance") {
-		return __("Finance pays for Post-Clearance Permits");
-	}
-	return __("Finance pays Pre-Clearance Permits");
+function permit_finance_task_label(frm) {
+	return __("the {0} permit finance task", [get_permit_stage_for_seq(frm) || "Pre-clearance"]);
 }
 
 const SEA_TASK_HIDDEN_FIELDS = [
@@ -827,195 +669,14 @@ function get_sea_task_ui(frm) {
 	if ((frm.doc.custom_task_role || "").trim()) {
 		return ui_from_task_role(frm);
 	}
-	const seq = sea_task_sequence(frm);
-	const cfg = get_cgm_sea_seq_config(frm);
-	if (!is_sea_clearance_task(frm)) {
-		return {
-			is_sea_task: false,
-			show_documents: true,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: false,
-		};
-	}
-	if (seq_in_list(seq, cfg.auto_complete_seqs)) {
-		const completed = frm.doc.status === "Completed";
-		return {
-			is_sea_task: true,
-			show_documents: true,
-			// Allow correcting intake docs after an explicit Re-open.
-			documents_read_only: completed,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: false,
-			show_description: true,
-			auto_intake_intro: completed,
-			hide_mark_complete: completed,
-		};
-	}
-	if (seq_in_list(seq, cfg.ucr_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: true,
-			is_ucr_finance: false,
-			is_entry_application: false,
-			is_entry_finance: false,
-			show_finance_lines: true,
-			show_documents: true,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.entry_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: false,
-			is_entry_application: true,
-			is_entry_finance: false,
-			is_shipping_line_application: false,
-			is_shipping_line_finance: false,
-			show_finance_lines: true,
-			show_documents: true,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.shipping_line_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: false,
-			is_entry_application: false,
-			is_entry_finance: false,
-			is_shipping_line_application: true,
-			is_shipping_line_finance: false,
-			is_kpa_application: false,
-			is_kpa_finance: false,
-			show_finance_lines: true,
-			show_documents: false,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.kpa_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: false,
-			is_entry_application: false,
-			is_entry_finance: false,
-			is_shipping_line_application: false,
-			is_shipping_line_finance: false,
-			is_kpa_application: true,
-			is_kpa_finance: false,
-			show_finance_lines: true,
-			show_documents: false,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.permit_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: false,
-			show_documents: false,
-			documents_read_only: false,
-			show_permits: true,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.payment_seqs)) {
-		const ucr_finance = seq_in_list(seq, cfg.ucr_finance_seqs);
-		const entry_finance = seq_in_list(seq, cfg.entry_finance_seqs);
-		const shipping_line_finance = seq_in_list(seq, cfg.shipping_line_finance_seqs);
-		const kpa_finance = seq_in_list(seq, cfg.kpa_finance_seqs);
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: ucr_finance,
-			is_entry_application: false,
-			is_entry_finance: entry_finance,
-			is_shipping_line_application: false,
-			is_shipping_line_finance: shipping_line_finance,
-			is_kpa_application: false,
-			is_kpa_finance: kpa_finance,
-			show_finance_lines: ucr_finance || entry_finance || shipping_line_finance || kpa_finance,
-			show_documents: seq_in_list(seq, cfg.finance_document_seqs),
-			documents_read_only: false,
-			show_permits: seq_in_list(seq, cfg.permit_finance_seqs),
-			show_payments: true,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.light_proof_seqs)) {
-		return {
-			is_sea_task: true,
-			show_documents: false,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: false,
-		};
-	}
-	if (seq_in_list(seq, cfg.document_checkpoint_seqs)) {
-		return {
-			is_sea_task: true,
-			is_document_checkpoint: true,
-			show_documents: true,
-			documents_read_only: false,
-			documents_versioned: true,
-			documents_initial_read_only: true,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: false,
-		};
-	}
+	// No Task Role: not a workflow step, so the plain Task form.
 	return {
-		is_sea_task: true,
+		is_sea_task: false,
 		show_documents: true,
 		documents_read_only: false,
 		show_permits: false,
 		show_payments: false,
-		show_external_ref: seq >= 3,
+		show_external_ref: true,
 		show_description: true,
 		auto_intake_intro: false,
 		hide_mark_complete: false,

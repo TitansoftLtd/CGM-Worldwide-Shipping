@@ -322,10 +322,10 @@ def ensure_project_shipment_core_fields() -> None:
 	)
 	# Shipment documents table (may already exist from ensure_project_documents_field).
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		ensure_project_shipment_documents_field,
+		ensure_project_documents_field,
 	)
 
-	ensure_project_shipment_documents_field()
+	ensure_project_documents_field()
 	if frappe.db.exists("Custom Field", "Project-custom_shipment_documents"):
 		frappe.db.set_value(
 			"Custom Field",
@@ -788,70 +788,6 @@ def ensure_field_officer_task_fields() -> None:
 			"label": "Verification Report Attached",
 			"fieldtype": "Check",
 			"insert_after": "custom_coc_status",
-			"depends_on": depends,
-		},
-	)
-	frappe.clear_cache(doctype="Task")
-
-
-def ensure_client_inspection_task_fields() -> None:
-	"""Task 7 client inspection notification / confirmation fields."""
-	depends = (
-		"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && doc.custom_sequence_no == 7"
-	)
-	_create_cf(
-		"Task",
-		{
-			"fieldname": "custom_section_client_inspection",
-			"label": "Client Inspection",
-			"fieldtype": "Section Break",
-			"insert_after": "custom_task_documents",
-			"collapsible": 1,
-			"depends_on": depends,
-		},
-	)
-	_create_cf(
-		"Task",
-		{
-			"fieldname": "custom_client_notified_on",
-			"label": "Client Notified On",
-			"fieldtype": "Datetime",
-			"insert_after": "custom_section_client_inspection",
-			"read_only": 1,
-			"depends_on": depends,
-		},
-	)
-	_create_cf(
-		"Task",
-		{
-			"fieldname": "custom_client_notified_by",
-			"label": "Client Notified By",
-			"fieldtype": "Link",
-			"options": "User",
-			"insert_after": "custom_client_notified_on",
-			"read_only": 1,
-			"depends_on": depends,
-		},
-	)
-	_create_cf(
-		"Task",
-		{
-			"fieldname": "custom_inspection_confirmed_on",
-			"label": "Inspection Confirmed On",
-			"fieldtype": "Datetime",
-			"insert_after": "custom_client_notified_by",
-			"read_only": 1,
-			"depends_on": depends,
-		},
-	)
-	_create_cf(
-		"Task",
-		{
-			"fieldname": "custom_inspection_confirmed_by",
-			"label": "Inspection Confirmed By",
-			"fieldtype": "Data",
-			"insert_after": "custom_inspection_confirmed_on",
-			"read_only": 1,
 			"depends_on": depends,
 		},
 	)

@@ -24,6 +24,7 @@
   "column_break_flags",
   "is_auto_completable",
   "completion_condition",
+  "completes_on_intake",
   "section_documents",
   "required_document_types"
  ],
@@ -159,6 +160,13 @@
    "label": "Completion Condition"
   },
   {
+   "default": "0",
+   "description": "When the project is created with the client's intake documents already on it (CI and packing list), the documents are copied onto this task and it is marked Completed.",
+   "fieldname": "completes_on_intake",
+   "fieldtype": "Check",
+   "label": "Complete When Client Documents Are In"
+  },
+  {
    "fieldname": "section_documents",
    "fieldtype": "Section Break",
    "label": "Required Documents"
@@ -174,7 +182,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-10 18:00:00.000000",
+ "modified": "2026-09-10 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Task Template Item",

@@ -76,18 +76,3 @@ class TestSequenceLookup(unittest.TestCase):
 	def test_setting_overrides_the_code_default(self):
 		self.assertEqual(self._lookup("custom_track_eta_task_seq", _settings(custom_track_eta_task_seq=9)), 9)
 
-	def test_update_grid_steps_follow_settings(self):
-		settings = _settings(custom_gate_out_task_seq=30)
-		with (
-			patch(
-				"cgm_shipping.cgm_worldwide_shipping.customizations.utils.get_cgm_shipping_settings",
-				return_value=settings,
-			),
-			patch.object(task_container_updates, "_shipping_line_application_seqs", return_value=frozenset()),
-			patch.object(task_container_updates, "_shipping_line_finance_seqs", return_value=frozenset()),
-		):
-			seqs = task_container_updates.container_update_task_sequences()
-		self.assertIn(30, seqs)
-		self.assertNotIn(CONTAINER_TASK_SEQ_DEFAULTS["custom_gate_out_task_seq"], seqs)
-		self.assertNotIn(CONTAINER_TASK_SEQ_DEFAULTS["custom_track_eta_task_seq"], seqs)
-		self.assertEqual(len(seqs), len(CONTAINER_UPDATE_TASK_SEQ_FIELDS))
