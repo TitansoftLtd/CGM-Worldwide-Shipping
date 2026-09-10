@@ -5,7 +5,6 @@ import frappe
 from frappe import _
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-	CONTAINER_TASK_SEQ_DEFAULTS,
 	PERMIT_REGISTER_FIELD,
 	PRE_CLEARANCE_STAGE,
 	POST_CLEARANCE_STAGE,
@@ -2161,7 +2160,7 @@ def validate_sea_task_can_complete(task) -> None:
 		validate_document_checkpoint_task(task)
 	elif is_light_proof_task(seq):
 		validate_light_proof_task(task)
-	elif seq == CONTAINER_TASK_SEQ_DEFAULTS["custom_field_clearance_task_seq"]:
+	elif seq == _field_clearance_seq():
 		validate_field_clearance_task(task)
 
 	if is_finance_payment_task(seq) or any(
@@ -2313,17 +2312,22 @@ def validate_light_proof_task(task) -> None:
 		)
 
 
+def _field_clearance_seq() -> int:
+	"""Field clearance step number, as configured in CGM Shipping Settings."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+		get_container_task_sequence,
+	)
+
+	return get_container_task_sequence("custom_field_clearance_task_seq")
+
+
 def validate_field_clearance_task(task) -> None:
 	"""Field clearance completes when ops attach a document or record CRO release."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-		CONTAINER_TASK_SEQ_DEFAULTS,
-	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		primary_attachment,
 	)
 
-	field_seq = CONTAINER_TASK_SEQ_DEFAULTS["custom_field_clearance_task_seq"]
-	if int(task.get("custom_sequence_no") or 0) != field_seq:
+	if int(task.get("custom_sequence_no") or 0) != _field_clearance_seq():
 		return
 
 	released = (task.get("custom_verification_status") or "") == "Released by CRO"

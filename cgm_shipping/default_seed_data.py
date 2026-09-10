@@ -91,11 +91,6 @@ def seed_cgm_shipping_settings() -> None:
 			settings.append("custom_sea_workflow_task_gates", row)
 		changed = True
 
-	if meta.has_field("sea_import_template") and not settings.get("sea_import_template"):
-		if frappe.db.exists("CGM Task Template", "Sea Import Workflow"):
-			settings.sea_import_template = "Sea Import Workflow"
-			changed = True
-
 	if changed:
 		settings.flags.skip_package_visibility_apply = True
 		settings.save(ignore_permissions=True)

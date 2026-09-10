@@ -262,16 +262,17 @@ def container_status_boot() -> dict:
 		},
 	}
 
-# Sequence numbers for the container lifecycle steps. These read as overridable
-# from CGM Shipping Settings, but none of these fields exist on that doctype
-# today, so get_container_task_sequence() always returns the value below.
+# Sequence numbers for the container lifecycle steps. Each key is a field on CGM
+# Shipping Settings ("Container tracking tasks"), where 0 means "use the value
+# below". Read them through get_container_task_sequence(), never from this dict
+# directly, or a changed Setting is silently ignored.
 CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
 	# Documents checkpoint. Completing it pushes the Project ETA onto every
 	# container tracker; this is not a separate "track ETA" step (that was
-	# retired from the template).
-	"custom_eta_refresh_task_seq": 8,
+	# retired from the template - the Settings field kept its name).
+	"custom_track_eta_task_seq": 8,
 	# Bulk vessel-arrival event key used by Project port-arrival confirm.
-	# Not tied to Create Entry — Entry is paperwork-only.
+	# Not tied to Create Entry - Entry is paperwork-only.
 	"custom_vessel_arrival_task_seq": 12,
 	"custom_field_clearance_task_seq": 17,
 	"custom_kpa_paid_task_seq": 19,
@@ -283,27 +284,26 @@ CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
 	"custom_interchange_task_seq": 25,
 }
 
-# Backward-compatible aliases.
-TASK_SEQ_LOAD_AND_EXIT_PORT = CONTAINER_TASK_SEQ_DEFAULTS["custom_gate_out_task_seq"]
-TASK_SEQ_EMPTY_RETURN = CONTAINER_TASK_SEQ_DEFAULTS["custom_empty_return_task_seq"]
-
 # Task fields used to identify a single container for container-specific lifecycle events.
 TASK_CONTAINER_TRACKER_FIELD = "custom_container_tracker"
 TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
 TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 
 # Task child table for per-container data entry (transport / field clearance / KPA).
-# Seq 12 (Create Entry / vessel-arrival) is a Project→Task mirror only — not a
+# Seq 12 (Create Entry / vessel-arrival) is a Project→Task mirror only - not a
 # completion gate.
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
-# Base set only. The grid also shows on the shipping line application / finance
-# steps — use task_container_updates.container_update_task_sequences() for the
-# full set, never this constant on its own.
-CONTAINER_UPDATE_TASK_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
+# Settings fields for the steps that show the grid: every container step except
+# the ETA refresh. Base set only - the grid also shows on the shipping line
+# application / finance steps, so use
+# task_container_updates.container_update_task_sequences() for the full set.
+CONTAINER_UPDATE_TASK_SEQ_FIELDS = tuple(
+	fieldname for fieldname in CONTAINER_TASK_SEQ_DEFAULTS if fieldname != "custom_track_eta_task_seq"
+)
 
-# Settings fieldnames — bulk events update every tracker on the project.
+# Settings fieldnames - bulk events update every tracker on the project.
 BULK_CONTAINER_TASK_SEQ_FIELDS = (
-	"custom_eta_refresh_task_seq",
+	"custom_track_eta_task_seq",
 	"custom_vessel_arrival_task_seq",
 	"custom_field_clearance_task_seq",
 	"custom_kpa_paid_task_seq",

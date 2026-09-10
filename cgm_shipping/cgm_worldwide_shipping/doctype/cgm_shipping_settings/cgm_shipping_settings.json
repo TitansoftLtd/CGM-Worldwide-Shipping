@@ -8,13 +8,10 @@
   "tab_task_workflow_settings",
   "section_task_workflow_settings",
   "default_company",
-  "sea_import_template",
   "section_package_field_visibility",
   "package_visibility_modes",
   "package_visibility_cargo_types",
   "tab_container_port_settings",
-  "section_container_port_settings",
-  "kpa_default_free_days",
   "section_kpa_port_charges",
   "kpa_port_rate_currency",
   "kpa_port_daily_rate",
@@ -28,7 +25,6 @@
   "default_operational_expense_account",
   "tab_notification_settings",
   "section_notification_settings",
-  "inspection_reminder_hours",
   "portal_url",
   "ops_notification_email",
   "section_container_deposit_settings",
@@ -258,61 +254,52 @@
    "label": "Container tracking tasks"
   },
   {
-   "default": "8",
+   "description": "Documents checkpoint that pushes the Project ETA onto every container tracker.",
    "fieldname": "custom_track_eta_task_seq",
    "fieldtype": "Int",
-   "label": "Track Eta"
+   "label": "ETA Refresh"
   },
   {
-   "default": "11",
    "fieldname": "custom_vessel_arrival_task_seq",
    "fieldtype": "Int",
    "label": "Vessel Arrival"
   },
   {
-   "default": "18",
    "fieldname": "custom_field_clearance_task_seq",
    "fieldtype": "Int",
    "label": "Field Clearance"
   },
   {
-   "default": "20",
    "fieldname": "custom_kpa_paid_task_seq",
    "fieldtype": "Int",
    "label": "Kpa Paid"
   },
   {
-   "default": "21",
    "fieldname": "custom_book_trucks_task_seq",
    "fieldtype": "Int",
    "label": "Book Trucks"
   },
   {
-   "default": "22",
    "fieldname": "custom_gate_out_task_seq",
    "fieldtype": "Int",
    "label": "Gate Out"
   },
   {
-   "default": "23",
    "fieldname": "custom_monitor_delivery_task_seq",
    "fieldtype": "Int",
    "label": "Monitor Delivery"
   },
   {
-   "default": "24",
    "fieldname": "custom_offload_task_seq",
    "fieldtype": "Int",
    "label": "Offload"
   },
   {
-   "default": "25",
    "fieldname": "custom_empty_return_task_seq",
    "fieldtype": "Int",
    "label": "Empty Return"
   },
   {
-   "default": "26",
    "fieldname": "custom_interchange_task_seq",
    "fieldtype": "Int",
    "label": "Interchange"
@@ -322,7 +309,7 @@
    "description": "Default KPA free days applied to new Container Tracker records.",
    "fieldname": "custom_kpa_free_days",
    "fieldtype": "Int",
-   "label": "Default KPA Free Days (legacy alias)"
+   "label": "Default KPA Free Days"
   },
   {
    "fieldname": "tab_task_workflow_settings",
@@ -341,13 +328,6 @@
    "fieldtype": "Link",
    "label": "Default Company",
    "options": "Company"
-  },
-  {
-   "description": "Optional fallback template name for manual migration only. Shipment Types should use Task Workflow Template instead.",
-   "fieldname": "sea_import_template",
-   "fieldtype": "Link",
-   "label": "Sea Import Fallback Template",
-   "options": "CGM Task Template"
   },
   {
    "description": "Show Number of Packages and Package Type when Mode of Transport or Cargo Type matches a value listed here. Changing this list updates Opportunity and Project forms on save.",
@@ -371,17 +351,6 @@
    "fieldname": "tab_container_port_settings",
    "fieldtype": "Tab Break",
    "label": "Container & Port Settings"
-  },
-  {
-   "fieldname": "section_container_port_settings",
-   "fieldtype": "Section Break",
-   "label": "Container & Port Settings"
-  },
-  {
-   "default": "5",
-   "fieldname": "kpa_default_free_days",
-   "fieldtype": "Int",
-   "label": "KPA Default Free Days"
   },
   {
    "description": "Daily rate after KPA free days end until gate out at Mombasa.",
@@ -456,13 +425,6 @@
    "fieldname": "section_notification_settings",
    "fieldtype": "Section Break",
    "label": "Notification Settings"
-  },
-  {
-   "default": "48",
-   "description": "Hours after permit payment before reminding client to inspect.",
-   "fieldname": "inspection_reminder_hours",
-   "fieldtype": "Int",
-   "label": "Inspection Reminder (hours)"
   },
   {
    "fieldname": "portal_url",
@@ -549,7 +511,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-08 06:20:00.000000",
+ "modified": "2026-09-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
