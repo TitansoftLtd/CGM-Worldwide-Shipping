@@ -337,12 +337,15 @@ def export_cgm_customizations(
 ) -> None:
 	"""Write desk customizations into custom/*.json for git (applied on migrate).
 
-	Exports Custom Field, Property Setter, and Custom DocPerm for every doctype
-	touched in *module*. Run after Customize Form / Role Permission Manager::
+	Exports Custom Field and Property Setter for every doctype touched in *module*,
+	plus Custom DocPerm for the app's own doctypes only. ERPNext / HRMS doctypes get
+	an empty ``custom_perms``: migrate would otherwise delete and re-insert their role
+	permissions every time, undoing Role Permission Manager edits. Run after
+	Customize Form / Role Permission Manager::
 
 	    bench --site <site> execute cgm_shipping.install.export_cgm_customizations
 
-	Workflows, Role Profiles, and User role assignments are **not** included —
+	Workflows, Role Profiles, and User role assignments are **not** included -
 	see the ``export_cgm_customizations`` notes in docs/guides/patches.md.
 	"""
 	from frappe.modules.utils import export_customizations
@@ -360,11 +363,12 @@ def export_cgm_customizations(
 	for doctype in sorted(doctypes):
 		if not doctype:
 			continue
+		own_doctype = frappe.db.get_value("DocType", doctype, "module") == module
 		path = export_customizations(
 			module=module,
 			doctype=doctype,
 			sync_on_migrate=1,
-			with_permissions=with_permissions,
+			with_permissions=with_permissions and own_doctype,
 		)
 		if path:
 			exported.append(path)
