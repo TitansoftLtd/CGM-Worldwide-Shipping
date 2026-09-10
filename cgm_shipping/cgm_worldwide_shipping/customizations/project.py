@@ -383,8 +383,24 @@ def enforce_document_gate_on_workflow_change(doc):
 		labels = ", ".join(sorted(set(missing)))
 		frappe.throw(f"Cannot move shipment to <b>{new_status}</b>. Verify required documents first: {labels}")
 
+def runs_sea_import_workflow(doc) -> bool:
+	"""True when the project is on the Sea Import task plan.
+
+	Sea Import's status gates and closure checks look for Sea Import tasks, so they
+	key on the plan rather than the transport mode: Sea Transit and Sea Export
+	shipments are Sea too, and have none of those tasks to find.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		SEA_IMPORT_TEMPLATE,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_workflow_template_name,
+	)
+
+	return get_workflow_template_name(doc) == SEA_IMPORT_TEMPLATE
+
 def enforce_sea_workflow_task_gates(doc):
-	"""Sea import: each workflow state requires prior tasks in the 24-step clearance chart."""
+	"""Sea Import: each shipment status needs the task its Shipment Status Gate names."""
 	prev = doc.get_doc_before_save()
 	if not prev:
 		return
@@ -392,7 +408,7 @@ def enforce_sea_workflow_task_gates(doc):
 	new_status = doc.get("custom_shipment_status")
 	if not new_status or new_status == prev_status:
 		return
-	if doc.get("custom_mode_of_transport") != "Sea":
+	if not runs_sea_import_workflow(doc):
 		return
 	enforce_workflow_task_gate(doc.name, new_status)
 
@@ -489,7 +505,7 @@ def enforce_project_closure_on_workflow_change(doc):
 
 	blockers = []
 
-	if doc.get("custom_mode_of_transport") == "Sea":
+	if runs_sea_import_workflow(doc):
 		blockers.extend(get_sea_closure_blockers(doc.name))
 	else:
 		open_tasks = frappe.get_all(

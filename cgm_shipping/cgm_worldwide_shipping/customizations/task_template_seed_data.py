@@ -30,6 +30,7 @@ def _row(
 	permit: int = 0,
 	auto: int = 0,
 	condition: str = "",
+	intake: int = 0,
 	description: str = "",
 	role: str = "Standard",
 	payment_kind: str = "",
@@ -68,6 +69,7 @@ def _row(
 		"requires_permit_action": permit,
 		"is_auto_completable": auto,
 		"completion_condition": condition,
+		"completes_on_intake": intake,
 		"description": description,
 		"required_document_types": required_docs or "",
 		"container_step": container_step or "",
@@ -81,8 +83,8 @@ def sea_import_tasks() -> list[dict]:
 	non-finance steps (inspection, Lodge DO, field clearance, …) independently.
 	"""
 	return [
-		_row(1, "Receive shipment documents from Client", "Operations", auto=1, role="Auto Complete"),
-		_row(2, "Share documents with Declarants", "Operations", auto=1, role="Auto Complete"),
+		_row(1, "Receive shipment documents from Client", "Operations", auto=1, role="Auto Complete", intake=1),
+		_row(2, "Share documents with Declarants", "Operations", auto=1, role="Auto Complete", intake=1),
 		_row(
 			3,
 			"Create UCR (IDF)",
@@ -352,6 +354,7 @@ def sea_transit_import_tasks() -> list[dict]:
 			"Documentation",
 			doc=1,
 			role="Document Checkpoint",
+			intake=1,
 			description="Collect the bill of lading and supporting import documents.",
 		),
 		_row(
@@ -473,7 +476,7 @@ def road_transit_inbound_tasks() -> list[dict]:
 	Book trucks and Obtain C2 are separate Transport / Declaration steps.
 	"""
 	return [
-		_row(1, "Receive shipment documents", "Documentation", doc=1, role="Document"),
+		_row(1, "Receive shipment documents", "Documentation", doc=1, role="Document", intake=1),
 		_row(
 			2,
 			"IDF application (UCR)",
