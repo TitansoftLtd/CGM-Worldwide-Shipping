@@ -1,12 +1,36 @@
 frappe.provide("cgm_shipping.container_tracking");
 frappe.provide("cgm_shipping.grid_attach");
 
-// ---------------------------------------------------------------------------
-// Child-table Attach fields: render controls on idle rows.
-// Frappe's grid_row.js only idle-renders Button fields via
-// should_show_button_in_idle_grid_cell(). GridRow is an ES module and is NOT
-// on frappe.ui.form — patch the live prototype from grid instances instead.
-// ---------------------------------------------------------------------------
+cgm_shipping.container_tracking.OFFLOADED_STATUSES = [
+	"Cargo Offloaded",
+	"Offloaded at Destination",
+	"Empty Returned",
+];
+
+cgm_shipping.container_tracking.status_color = function (status) {
+	if (!status) {
+		return "gray";
+	}
+	if (status.includes("Overdue")) {
+		return "red";
+	}
+	if (status === "Interchange Received") {
+		return "green";
+	}
+	if (cgm_shipping.container_tracking.OFFLOADED_STATUSES.includes(status)) {
+		return "orange";
+	}
+	if (status === "At Warehouse") {
+		return "blue";
+	}
+	if (status === "Released / In Transit") {
+		return "orange";
+	}
+	if (["Vessel Berthed", "Discharged / At Port"].includes(status)) {
+		return "yellow";
+	}
+	return "gray";
+};
 
 cgm_shipping.grid_attach.should_show_attach_in_idle_cell = function (row, column) {
 	const df = column.df || {};

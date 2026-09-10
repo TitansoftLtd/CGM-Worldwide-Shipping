@@ -63,7 +63,8 @@ _STATUS_PILL = {
 	"Released / In Transit": "primary",
 	"At Warehouse": "primary",
 	"Cargo Offloaded": "active",
-	"Empty Returned": "success",
+	"Offloaded at Destination": "active",
+	"Empty Returned": "active",
 	"Return Overdue": "danger",
 	"Interchange Received": "success",
 }
