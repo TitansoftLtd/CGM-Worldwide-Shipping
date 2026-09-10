@@ -166,13 +166,12 @@ def _collect_items(template, _visited: set | None = None) -> list[dict]:
 				"task_role": (row.get("task_role") or "Standard").strip() or "Standard",
 				"payment_kind": (row.get("payment_kind") or "").strip(),
 				"permit_stage": (row.get("permit_stage") or "").strip(),
+				"container_step": (row.get("container_step") or "").strip(),
 				"requires_finance_action": bool(row.requires_finance_action),
 				"requires_document_upload": bool(row.requires_document_upload),
-				"requires_container_update": bool(row.requires_container_update),
 				"requires_permit_action": bool(row.requires_permit_action),
 				"is_auto_completable": bool(row.is_auto_completable),
 				"completion_condition": row.completion_condition or "",
-				"is_optional": bool(row.is_optional),
 				"required_document_type_names": doc_names,
 				"required_document_types": _serialize_required_document_types(doc_names),
 			}
@@ -215,11 +214,12 @@ def _create_single_task(
 		payload["custom_payment_kind"] = item["payment_kind"]
 	if meta.has_field("custom_permit_stage") and item.get("permit_stage"):
 		payload["custom_permit_stage"] = item["permit_stage"]
+	if meta.has_field("custom_container_step") and item.get("container_step"):
+		payload["custom_container_step"] = item["container_step"]
 	for src, dst in (
 		("requires_finance_action", "custom_requires_finance_action"),
 		("requires_document_upload", "custom_requires_document_upload"),
 		("requires_permit_action", "custom_requires_permit_action"),
-		("requires_container_update", "custom_requires_container_update"),
 		("is_auto_completable", "custom_is_auto_completable"),
 	):
 		if meta.has_field(dst):

@@ -784,32 +784,23 @@ def user_has_responsibility(flow: str, action: str, user: str | None = None) -> 
 
 
 def flow_for_task(task) -> str | None:
-	"""Best-effort workflow flow label for a Task doc / dict."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_entry_application_task,
-		is_entry_finance_payment_task,
-		is_kpa_application_task,
-		is_kpa_finance_payment_task,
-		is_permit_application_task,
-		is_permit_finance_payment_task,
-		is_shipping_line_application_task,
-		is_shipping_line_finance_payment_task,
-		is_ucr_application_task,
-		is_ucr_finance_payment_task,
-		task_sequence,
+	"""Workflow flow label for a Task doc / dict, from its Task Role stamps."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
 	)
 
-	seq = task_sequence(task) if not isinstance(task, int) else int(task or 0)
-	if is_permit_application_task(seq) or is_permit_finance_payment_task(seq):
+	behaviour = get_task_behaviour(task)
+	if behaviour.is_permit_application or behaviour.is_permit_finance:
 		return FLOW_PERMIT
-	if is_ucr_application_task(seq) or is_ucr_finance_payment_task(seq):
-		return FLOW_UCR
-	if is_entry_application_task(seq) or is_entry_finance_payment_task(seq):
-		return FLOW_ENTRY
-	if is_shipping_line_application_task(seq) or is_shipping_line_finance_payment_task(seq):
-		return FLOW_SHIPPING_LINE
-	if is_kpa_application_task(seq) or is_kpa_finance_payment_task(seq):
-		return FLOW_KPA
+	if behaviour.is_application or behaviour.is_finance_payment:
+		flow = {
+			"UCR": FLOW_UCR,
+			"ENTRY_SLIP": FLOW_ENTRY,
+			"Shipping Line": FLOW_SHIPPING_LINE,
+			"KPA": FLOW_KPA,
+		}.get(behaviour.payment_kind)
+		if flow:
+			return flow
 	return FLOW_CLEARANCE_DOCUMENT
 
 

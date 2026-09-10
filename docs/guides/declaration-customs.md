@@ -142,7 +142,7 @@ Upload via **Shipment Document** rows on Project or Task. Documents must reach *
 | Entry Paid | Task 11 complete |
 | Post-clearance | Task 15 complete |
 
-Task sequence minimums are configured in **CGM Shipping Settings → Sea Workflow Task Gates**.
+The task behind each status is set in **CGM Task Template → Sea Import Workflow → Shipment Status Gates**.
 
 ---
 

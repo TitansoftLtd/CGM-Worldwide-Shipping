@@ -415,26 +415,6 @@ const CGM_SEA_UI_SEQUENCES_EMPTY = {
 	permissions: {},
 };
 
-// Mirrors CONTAINER_TASK_SEQ_DEFAULTS in customizations/constants.py. Only used
-// before get_sea_task_ui_sequences answers, or when that call fails.
-const CONTAINER_TASK_SEQ_FALLBACK = {
-	custom_track_eta_task_seq: 8,
-	custom_vessel_arrival_task_seq: 12,
-	custom_field_clearance_task_seq: 17,
-	custom_kpa_paid_task_seq: 19,
-	custom_book_trucks_task_seq: 20,
-	custom_gate_out_task_seq: 21,
-	custom_monitor_delivery_task_seq: 22,
-	custom_offload_task_seq: 23,
-	custom_empty_return_task_seq: 24,
-	custom_interchange_task_seq: 25,
-};
-
-/** Settings-driven sequence for a container/field-clearance step. */
-function container_task_seq(frm, fieldname) {
-	const configured = get_cgm_sea_seq_config(frm).container_task_seqs || {};
-	return Number(configured[fieldname] || CONTAINER_TASK_SEQ_FALLBACK[fieldname] || 0);
-}
 
 function sea_task_permits_depends_on(frm) {
 	const cfg = get_cgm_sea_seq_config(frm);
@@ -466,61 +446,6 @@ function apply_permit_field_visibility(frm, ui) {
 		frm.set_df_property(fieldname, "hidden", 0);
 	});
 }
-
-const CGM_TASK_PERMISSIONS_FALLBACK = {
-	can_make_payment: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_receipt: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"System Manager",
-		"CGM Documentation",
-		"Documentation",
-		"Declarant",
-		"Declaration User",
-	],
-	can_upload_pop: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"System Manager",
-	],
-	can_verify_invoice: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_invoice: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-		"CGM Documentation",
-		"Documentation",
-	],
-	can_upload_certificate: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-	],
-	can_confirm_client_paid: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_document: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-	],
-	can_record_purchase_invoice: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"Purchase Manager",
-		"Purchase User",
-	],
-};
 
 // Desk-session cache: sequence lists are settings, not per-task. Avoid re-hitting
 // get_sea_task_ui_sequences on every Task open (that endpoint walks CGM Settings).
@@ -577,24 +502,10 @@ function get_cgm_sea_seq_config(frm) {
 }
 
 function get_cgm_permissions(frm) {
-	const perms = get_cgm_sea_seq_config(frm).permissions;
-	if (perms && Object.keys(perms).length) {
-		return perms;
-	}
-	const roles = frappe.user_roles || [];
-	const from_fallback = (key) =>
-		(CGM_TASK_PERMISSIONS_FALLBACK[key] || []).some((r) => roles.includes(r));
-	return {
-		can_make_payment: from_fallback("can_make_payment"),
-		can_upload_receipt: from_fallback("can_upload_receipt"),
-		can_upload_pop: from_fallback("can_upload_pop"),
-		can_verify_invoice: from_fallback("can_verify_invoice"),
-		can_upload_invoice: from_fallback("can_upload_invoice"),
-		can_upload_certificate: from_fallback("can_upload_certificate"),
-		can_confirm_client_paid: from_fallback("can_confirm_client_paid"),
-		can_upload_document: from_fallback("can_upload_document"),
-		can_record_purchase_invoice: from_fallback("can_record_purchase_invoice"),
-	};
+	// The user's permissions come from the server with the sea task config
+	// (CGM Shipping Settings → Document responsibilities). Until they arrive,
+	// nothing is permitted; the form refreshes when they do.
+	return get_cgm_sea_seq_config(frm).permissions || {};
 }
 
 function seq_in_list(seq, list) {
@@ -1163,68 +1074,11 @@ function apply_sea_task_form_layout(frm, ui) {
 	configure_ucr_finance_fields(frm, ui);
 	toggle("custom_external_ref_no", ui.show_external_ref);
 	toggle("description", ui.show_description);
-	apply_field_officer_task_fields(frm);
-	apply_container_update_field_visibility(frm);
 	toggle("sb_timeline", false);
 	toggle("sb_costing", false);
 	toggle("depends_on_tab", false);
 }
 
-const FIELD_CLEARANCE_FIELDS = [
-	"custom_section_field_clearance",
-	"custom_verification_type",
-	"custom_verification_status",
-	"custom_customs_issue",
-	"custom_delivery_note_status",
-	"custom_coc_status",
-	"custom_verification_report_attached",
-];
-
-function apply_field_officer_task_fields(frm) {
-	// Sequence comes from CGM Shipping Settings — validate_field_clearance_task
-	// throws against the same number, so a hardcoded one hides the very fields
-	// the server then demands.
-	const field_seq = container_task_seq(frm, "custom_field_clearance_task_seq");
-	const show = is_sea_clearance_task(frm) && sea_task_sequence(frm) === field_seq;
-	const depends_on = field_seq
-		? `eval:${SEA_FLOW_KEYS_EXPR} && doc.custom_sequence_no == ${field_seq}`
-		: "";
-	FIELD_CLEARANCE_FIELDS.forEach((fieldname) => {
-		if (!frm.fields_dict[fieldname]) {
-			return;
-		}
-		// The stored depends_on still carries the old number; override it or the
-		// dependency keeps the field hidden even with hidden = 0.
-		frm.set_df_property(fieldname, "depends_on", depends_on);
-		frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
-	});
-}
-
-function apply_container_update_field_visibility(frm) {
-	// container_update_seqs mirrors is_container_update_task() on the server, which
-	// covers the shipping-line application AND finance steps as well as the
-	// transport steps. The stored depends_on lists only some of them.
-	const seqs = get_cgm_sea_seq_config(frm).container_update_seqs || [];
-	if (seqs.length) {
-		const expr = `eval:${SEA_FLOW_KEYS_EXPR} && [${seqs.join(",")}].includes(doc.custom_sequence_no)`;
-		["custom_section_container_updates", "custom_container_updates"].forEach((fieldname) => {
-			if (frm.fields_dict[fieldname]) {
-				frm.set_df_property(fieldname, "depends_on", expr);
-			}
-		});
-	}
-
-	// "Reason containers are not exiting port" is demanded by
-	// validate_task_19_container_updates on the book-trucks step, not gate-out.
-	const book_seq = container_task_seq(frm, "custom_book_trucks_task_seq");
-	if (book_seq && frm.fields_dict.custom_not_emptied_reason) {
-		frm.set_df_property(
-			"custom_not_emptied_reason",
-			"depends_on",
-			`eval:${SEA_FLOW_KEYS_EXPR} && doc.custom_sequence_no == ${book_seq}`
-		);
-	}
-}
 
 function finance_task_has_shareable_invoice(frm) {
 	return (
@@ -4167,9 +4021,7 @@ function user_can_make_payment(frm) {
 	if (perms) {
 		return !!perms.can_make_payment;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_make_payment.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_can_upload_receipt(frm) {
@@ -4177,9 +4029,7 @@ function user_can_upload_receipt(frm) {
 	if (perms) {
 		return !!perms.can_upload_receipt;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_receipt.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_may_attach_receipt_on_application(frm, row) {
@@ -4213,9 +4063,7 @@ function user_can_upload_pop(frm) {
 	if (perms && perms.can_upload_pop !== undefined) {
 		return !!perms.can_upload_pop;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_pop.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_can_verify_invoice(frm) {
@@ -4231,9 +4079,7 @@ function user_can_upload_invoice(frm) {
 	if (perms && perms.can_upload_invoice !== undefined) {
 		return !!perms.can_upload_invoice;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_invoice.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	) || frm?.doc?.owner === frappe.session.user;
+	return frm?.doc?.owner === frappe.session.user;
 }
 
 function user_can_upload_certificate(frm) {
@@ -4791,9 +4637,7 @@ function user_can_record_purchase_invoice(frm) {
 	if (perms) {
 		return !!perms.can_record_purchase_invoice;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_record_purchase_invoice.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function open_next_task_prompt(frm) {

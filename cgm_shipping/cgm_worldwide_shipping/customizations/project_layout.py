@@ -542,8 +542,8 @@ def ensure_task_container_fields() -> None:
 			"insert_after": "custom_sequence_no",
 			"collapsible": 1,
 			"depends_on": (
-				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
-				"[22,23,24,25,26].includes(doc.custom_sequence_no)"
+				"eval:['Gate Out','Monitor Delivery','Offload','Empty Return','Interchange']"
+				".includes(doc.custom_container_step)"
 			),
 		},
 	)
@@ -556,8 +556,8 @@ def ensure_task_container_fields() -> None:
 			"options": "Container Tracker",
 			"insert_after": "custom_section_container_event",
 			"depends_on": (
-				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
-				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
+				"eval:['Book Trucks','Gate Out','Monitor Delivery','Offload','Empty Return']"
+				".includes(doc.custom_container_step)"
 			),
 		},
 	)
@@ -569,8 +569,8 @@ def ensure_task_container_fields() -> None:
 			"fieldtype": "Data",
 			"insert_after": "custom_container_tracker",
 			"depends_on": (
-				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
-				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
+				"eval:['Book Trucks','Gate Out','Monitor Delivery','Offload','Empty Return']"
+				".includes(doc.custom_container_step)"
 			),
 		},
 	)
@@ -583,8 +583,8 @@ def ensure_task_container_fields() -> None:
 			"options": "Cargo Type",
 			"insert_after": "custom_container_number",
 			"depends_on": (
-				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
-				"[21,22,23,24,25].includes(doc.custom_sequence_no)"
+				"eval:['Book Trucks','Gate Out','Monitor Delivery','Offload','Empty Return']"
+				".includes(doc.custom_container_step)"
 			),
 		},
 	)
@@ -593,12 +593,13 @@ def ensure_task_container_fields() -> None:
 
 def ensure_task_container_update_fields() -> None:
 	"""Task child table for per-container data entry (SL deposit + transport steps)."""
-	# Include Shipping Line application (10) for deposit confirmation.
-	container_seqs = "10,12,17,19,20,21,22,23,24,25"
-	depends = (
-		f"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
-		f"[{container_seqs}].includes(doc.custom_sequence_no)"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_UPDATES_DEPENDS_ON,
 	)
+
+	# Container Step stamps plus the Shipping Line deposit steps - same text as
+	# custom/task.json, so migrate and the export never flip it back and forth.
+	depends = CONTAINER_UPDATES_DEPENDS_ON
 	for fieldname, values in (
 		(
 			"custom_section_container_updates",
@@ -638,10 +639,7 @@ def ensure_task_container_update_fields() -> None:
 			"label": "If containers not exiting port - reason",
 			"fieldtype": "Small Text",
 			"insert_after": "custom_container_updates",
-			"depends_on": (
-				"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && "
-				"doc.custom_sequence_no == 21"
-			),
+			"depends_on": "eval:doc.custom_container_step == 'Book Trucks'",
 			"description": (
 				"Required when task is completed but no truck details are filled "
 				"for any container."
@@ -712,9 +710,7 @@ def ensure_client_paid_task_fields() -> None:
 
 def ensure_field_officer_task_fields() -> None:
 	"""Task 16 field-officer clearance tracking fields."""
-	depends = (
-		"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && doc.custom_sequence_no == 18"
-	)
+	depends = "eval:doc.custom_container_step == 'Field Clearance'"
 	_create_cf(
 		"Task",
 		{

@@ -1,0 +1,73 @@
+{
+ "actions": [],
+ "creation": "2026-09-10 19:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "shipment_workflow_state",
+  "min_completed_task_seq",
+  "column_break_rxcu",
+  "task_subject",
+  "gate_rule"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "description": "The Project shipment status this row gates.",
+   "fieldname": "shipment_workflow_state",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Shipment Status",
+   "options": "Documents Received\nUCR Applied\nUCR Paid\nPre-clearance\nClient Inspection\nIn Transit\nFinal Docs Received\nEntry Lodged\nLine Paid & DO Lodged\nEntry Paid\nPost-clearance\nField Clearance\nKPA Paid\nIn Delivery\nContainers Returned\nCompleted",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "description": "Sequence of the task in this template's Tasks table. The status is reached once that task is Completed.",
+   "fieldname": "min_completed_task_seq",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Task Sequence",
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "description": "Filled from the Tasks table on save. Blank means the sequence is not in this template.",
+   "fieldname": "task_subject",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Task",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "default": "Standard",
+   "description": "Extra check when someone sets this status by hand on a Sea Import shipment. Standard: every earlier task is Completed. The other rules check that finance or permit step instead.",
+   "fieldname": "gate_rule",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Gate Rule",
+   "options": "Standard\nPermit Invoices Submitted\nUCR Finance Complete\nEntry Finance Complete\nKPA Finance Complete\nAll Sea Tasks Complete",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_rxcu",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-10 17:30:21.706881",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "CGM Task Template Gate",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

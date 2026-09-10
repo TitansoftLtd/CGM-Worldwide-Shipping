@@ -13,10 +13,6 @@ import unittest
 
 import cgm_shipping
 from cgm_shipping.cgm_worldwide_shipping.customizations import portal
-from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
-	DEFAULT_AIR_EXPORT_WORKFLOW_GATES,
-	DEFAULT_AIR_IMPORT_WORKFLOW_GATES,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	SHIPMENT_MILESTONES,
 	SHIPMENT_STATUS_TABLE,
@@ -24,14 +20,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	shipment_status_boot,
 	shipment_status_tone,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.road_transit_inbound_workflow import (
-	DEFAULT_ROAD_TRANSIT_INBOUND_WORKFLOW_GATES,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-	DEFAULT_SEA_WORKFLOW_TASK_GATES,
-)
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_transit_import_workflow import (
-	DEFAULT_SEA_TRANSIT_IMPORT_WORKFLOW_GATES,
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
+	TEMPLATE_DEFINITIONS,
 )
 
 PROJECT_CUSTOM_JSON = os.path.join(
@@ -77,13 +67,7 @@ MILESTONES_BEFORE = [
 	("Delivery", ("In Delivery", "Containers Returned", "Completed")),
 ]
 
-GATE_TABLES = {
-	"sea import": DEFAULT_SEA_WORKFLOW_TASK_GATES,
-	"sea transit import": DEFAULT_SEA_TRANSIT_IMPORT_WORKFLOW_GATES,
-	"road transit inbound": DEFAULT_ROAD_TRANSIT_INBOUND_WORKFLOW_GATES,
-	"air import": DEFAULT_AIR_IMPORT_WORKFLOW_GATES,
-	"air export": DEFAULT_AIR_EXPORT_WORKFLOW_GATES,
-}
+GATE_TABLES = {d["template_name"]: d["gates"] for d in TEMPLATE_DEFINITIONS if d.get("gates")}
 
 
 def _select_options():

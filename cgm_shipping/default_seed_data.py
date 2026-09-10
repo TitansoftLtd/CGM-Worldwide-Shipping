@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-	DEFAULT_SEA_WORKFLOW_TASK_GATES,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_type_seed_data import (
 	CUSTOMS_CALCULATION_MODES,
 	CUSTOMS_TAX_TYPES,
@@ -83,13 +80,6 @@ def seed_cgm_shipping_settings() -> None:
 
 	if meta.has_field("custom_sea_clearance_task_requirements"):
 		changed = top_up_sea_clearance_task_requirements(settings) or changed
-
-	if meta.has_field("custom_sea_workflow_task_gates") and not settings.get(
-		"custom_sea_workflow_task_gates"
-	):
-		for row in DEFAULT_SEA_WORKFLOW_TASK_GATES:
-			settings.append("custom_sea_workflow_task_gates", row)
-		changed = True
 
 	if changed:
 		settings.flags.skip_package_visibility_apply = True

@@ -19,17 +19,17 @@
   "section_flags",
   "requires_finance_action",
   "requires_document_upload",
-  "requires_container_update",
+  "container_step",
   "requires_permit_action",
   "column_break_flags",
   "is_auto_completable",
   "completion_condition",
-  "is_optional",
   "section_documents",
   "required_document_types"
  ],
  "fields": [
   {
+   "columns": 1,
    "fieldname": "sequence_no",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -37,6 +37,7 @@
    "reqd": 1
   },
   {
+   "columns": 3,
    "fieldname": "subject",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -44,6 +45,7 @@
    "reqd": 1
   },
   {
+   "columns": 1,
    "description": "Department stem only, e.g. Operations, Finance, Declaration, Transport, Field. Company suffix added automatically on task creation.",
    "fieldname": "department_role",
    "fieldtype": "Data",
@@ -56,10 +58,12 @@
    "fieldtype": "Column Break"
   },
   {
+   "columns": 1,
    "description": "Comma-separated sequence numbers this task waits for. e.g. 1,2. For Finance Payment / Permit Finance, list the Application / Permit Application sequence so invoice copy and pairing work.",
    "fieldname": "depends_on_sequences",
    "fieldtype": "Data",
-   "label": "Depends On (sequences)"
+   "in_list_view": 1,
+   "label": "Depends On"
   },
   {
    "description": "Shown to the user when they open this task.",
@@ -73,6 +77,7 @@
    "label": "Task Role (drives Desk UI + finance)"
   },
   {
+   "columns": 2,
    "default": "Standard",
    "description": "Controls which tables and finance/permit workflows run. Document = attach only. Application = Declarant attaches invoice (+ receipt later). Finance Payment = Finance verifies/pays. Permit Application / Permit Finance = permit register flow.",
    "fieldname": "task_role",
@@ -83,10 +88,12 @@
    "reqd": 1
   },
   {
+   "columns": 1,
    "depends_on": "eval:[\"Application\",\"Finance Payment\",\"Permit Finance\"].includes(doc.task_role)",
    "description": "UCR / ENTRY_SLIP / Shipping Line / KPA / Permit - must match on the Application and Finance Payment pair.",
    "fieldname": "payment_kind",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Payment Kind",
    "options": "Payment Kind"
   },
@@ -118,10 +125,13 @@
    "label": "Document Upload Required"
   },
   {
-   "default": "0",
-   "fieldname": "requires_container_update",
-   "fieldtype": "Check",
-   "label": "Container Update Required"
+   "columns": 1,
+   "description": "Which container lifecycle event this step records. Drives the container grid, tracker updates and completion checks - the step's number does not.",
+   "fieldname": "container_step",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Container Step",
+   "options": "\nETA Refresh\nVessel Arrival\nField Clearance\nKPA Paid\nBook Trucks\nGate Out\nMonitor Delivery\nOffload\nEmpty Return\nInterchange"
   },
   {
    "default": "0",
@@ -149,13 +159,6 @@
    "label": "Completion Condition"
   },
   {
-   "default": "0",
-   "description": "Task created but does not block project completion.",
-   "fieldname": "is_optional",
-   "fieldtype": "Check",
-   "label": "Optional Task"
-  },
-  {
    "fieldname": "section_documents",
    "fieldtype": "Section Break",
    "label": "Required Documents"
@@ -171,7 +174,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-12 05:20:00.000000",
+ "modified": "2026-09-10 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Task Template Item",

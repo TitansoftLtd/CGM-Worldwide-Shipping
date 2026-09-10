@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
+	DEFAULT_SEA_WORKFLOW_TASK_GATES,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 	AIR_EXPORT_TEMPLATE,
 	AIR_IMPORT_TEMPLATE,
@@ -24,16 +27,15 @@ def _row(
 	depends: str | int | None = None,
 	finance: int = 0,
 	doc: int = 0,
-	container: int = 0,
 	permit: int = 0,
 	auto: int = 0,
 	condition: str = "",
-	optional: int = 0,
 	description: str = "",
 	role: str = "Standard",
 	payment_kind: str = "",
 	permit_stage: str = "",
 	required_docs: str = "",
+	container_step: str = "",
 ) -> dict:
 	deps = ""
 	if depends is not None:
@@ -63,13 +65,12 @@ def _row(
 		"permit_stage": permit_stage or "",
 		"requires_finance_action": finance,
 		"requires_document_upload": doc or (1 if required_docs else 0),
-		"requires_container_update": container,
 		"requires_permit_action": permit,
 		"is_auto_completable": auto,
 		"completion_condition": condition,
-		"is_optional": optional,
 		"description": description,
 		"required_document_types": required_docs or "",
+		"container_step": container_step or "",
 	}
 
 
@@ -124,6 +125,7 @@ def sea_import_tasks() -> list[dict]:
 			"Documentation",
 			doc=1,
 			role="Document Checkpoint",
+			container_step="ETA Refresh",
 		),
 		_row(
 			10,
@@ -149,6 +151,7 @@ def sea_import_tasks() -> list[dict]:
 			doc=1,
 			role="Application",
 			payment_kind="ENTRY_SLIP",
+			container_step="Vessel Arrival",
 		),
 		_row(
 			13,
@@ -179,7 +182,7 @@ def sea_import_tasks() -> list[dict]:
 			permit_stage="Post-clearance",
 			payment_kind="Permit",
 		),
-		_row(17, "Field Officers conduct clearance", "Field Operations"),
+		_row(17, "Field Officers conduct clearance", "Field Operations", container_step="Field Clearance"),
 		_row(
 			18,
 			"Supervisor obtains KPA Invoice",
@@ -195,13 +198,14 @@ def sea_import_tasks() -> list[dict]:
 			finance=1,
 			role="Finance Payment",
 			payment_kind="KPA",
+			container_step="KPA Paid",
 		),
-		_row(20, "Book trucks and notify warehouse", "Transport", container=1),
-		_row(21, "Load trucks and exit port", "Transport", container=1),
-		_row(22, "Monitor delivery to destination", "Transport", container=1),
-		_row(23, "Offload cargo", "Transport", container=1),
-		_row(24, "Return empty container to depot", "Transport", container=1),
-		_row(25, "Receive interchange confirmation", "Transport", container=1),
+		_row(20, "Book trucks and notify warehouse", "Transport", container_step="Book Trucks"),
+		_row(21, "Load trucks and exit port", "Transport", container_step="Gate Out"),
+		_row(22, "Monitor delivery to destination", "Transport", container_step="Monitor Delivery"),
+		_row(23, "Offload cargo", "Transport", container_step="Offload"),
+		_row(24, "Return empty container to depot", "Transport", container_step="Empty Return"),
+		_row(25, "Receive interchange confirmation", "Transport", container_step="Interchange"),
 	]
 
 
@@ -209,9 +213,9 @@ def sea_export_tasks() -> list[dict]:
 	return [
 		_row(1, "Receive booking from shipping line", "Operations", doc=1),
 		_row(2, "Receive invoice and packing list from client", "Documentation", depends=1, doc=1),
-		_row(3, "Collect empty container from depot", "Transport", depends=1, container=1),
+		_row(3, "Collect empty container from depot", "Transport", depends=1),
 		_row(4, "Weigh truck with empty container", "Transport", depends=3),
-		_row(5, "Loading and stuffing at warehouse", "Field Operations", depends=4, container=1),
+		_row(5, "Loading and stuffing at warehouse", "Field Operations", depends=4),
 		_row(6, "Lodge mother entry (customs export entry)", "Declaration", depends=5),
 		_row(7, "Capture child entry", "Declaration", depends=6),
 		_row(8, "Container armed by KRA and shipping line", "Field Operations", depends=7),
@@ -422,14 +426,13 @@ def sea_transit_import_tasks() -> list[dict]:
 		),
 		_row(10, "Obtain C2 and exit note", "Declaration", doc=1, role="Document"),
 		_row(11, "Obtain KPA release order", "Field Operations"),
-		_row(12, "Book trucks", "Transport", container=1),
+		_row(12, "Book trucks", "Transport"),
 		_row(13, "Create delivery note", "Documentation", doc=1, role="Document"),
-		_row(14, "Fit ECMD devices and dispatch trucks", "Transport", container=1),
+		_row(14, "Fit ECMD devices and dispatch trucks", "Transport"),
 		_row(
 			15,
 			"Monitor to border and destination warehouse",
 			"Transport",
-			container=1,
 		),
 	]
 
@@ -440,9 +443,9 @@ def sea_transit_export_tasks() -> list[dict]:
 		_row(2, "Uganda side prepare entry and UBS permit", "Operations", depends=1),
 		_row(3, "Kenya side prepare COC and EAC certificate", "Operations", depends=1, doc=1),
 		_row(4, "Uganda side facilitates entry release", "Operations", depends=2),
-		_row(5, "Goods depart Uganda toward Mombasa", "Transport", depends=4, container=1),
+		_row(5, "Goods depart Uganda toward Mombasa", "Transport", depends=4),
 		_row(6, "Border crossing and Kenya entry", "Field Operations", depends=5),
-		_row(7, "Goods arrive Mombasa stuffed into container", "Field Operations", depends=6, container=1),
+		_row(7, "Goods arrive Mombasa stuffed into container", "Field Operations", depends=6),
 		_row(8, "Lodge Kenya export entry", "Declaration", depends=7),
 		_row(9, "KPA pre-advice and vessel sailing", "Finance", depends=8, finance=1),
 		_row(10, "Receive Certificate of Export", "Operations", depends=9, doc=1),
@@ -456,11 +459,11 @@ def road_transit_outbound_tasks() -> list[dict]:
 		_row(3, "Finance pays COC and EAC fees", "Finance", depends=2, finance=1),
 		_row(4, "Process destination country entry", "Declaration", depends=3, finance=1),
 		_row(5, "Destination country releases entry", "Operations", depends=4),
-		_row(6, "Transporter shares truck details", "Transport", depends=5, container=1),
+		_row(6, "Transporter shares truck details", "Transport", depends=5),
 		_row(7, "Generate exit note", "Declaration", depends=6),
 		_row(8, "Obtain C2 document", "Declaration", depends=7),
-		_row(9, "Fit ECMD devices and load trucks", "Transport", depends=8, container=1),
-		_row(10, "Track Kenya to border to destination", "Transport", depends=9, container=1),
+		_row(9, "Fit ECMD devices and load trucks", "Transport", depends=8),
+		_row(10, "Track Kenya to border to destination", "Transport", depends=9),
 	]
 
 
@@ -547,10 +550,71 @@ def road_transit_inbound_tasks() -> list[dict]:
 			payment_kind="Permit",
 		),
 		_row(10, "Border and ICD clearance", "Field Operations", depends=9),
-		_row(11, "Book trucks", "Transport", depends=10, container=1),
+		_row(11, "Book trucks", "Transport", depends=10),
 		_row(12, "Obtain C2", "Declaration", depends=11, doc=1, role="Document"),
-		_row(13, "Monitor delivery to Kenya destination", "Transport", depends=12, container=1),
+		_row(13, "Monitor delivery to Kenya destination", "Transport", depends=12),
 	]
+
+
+def _gate(state: str, seq: int, rule: str = "Standard") -> dict:
+	return {"shipment_workflow_state": state, "min_completed_task_seq": seq, "gate_rule": rule}
+
+
+# Shipment Status Gates: the task whose completion reaches each status, in status
+# chart order. Sea Import's are DEFAULT_SEA_WORKFLOW_TASK_GATES, next to its
+# workflow states. Seeds only - sites edit them on the template.
+
+# Air Import: proforma → UCR → permits → AWB/arrival → entry → release.
+AIR_IMPORT_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("UCR Applied", 2),
+	_gate("UCR Paid", 3),
+	_gate("Pre-clearance", 5),
+	_gate("Client Inspection", 7),
+	_gate("Final Docs Received", 8),
+	_gate("Entry Lodged", 10),
+	_gate("Entry Paid", 12),
+	_gate("Post-clearance", 13),
+	_gate("Field Clearance", 15),
+	_gate("Completed", 16),
+]
+
+# Air Export: client docs → AWB → export entry → airport → flight → COE.
+AIR_EXPORT_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("Final Docs Received", 4),
+	_gate("Entry Lodged", 5),
+	_gate("Entry Paid", 8),
+	_gate("In Transit", 10),
+	_gate("Completed", 11),
+]
+
+# Sea Transit Import leaves out the Sea Import-only statuses (UCR, permits,
+# client inspection).
+SEA_TRANSIT_IMPORT_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("Line Paid & DO Lodged", 5),
+	_gate("Entry Lodged", 7),
+	_gate("Entry Paid", 8, "Entry Finance Complete"),
+	_gate("Field Clearance", 9),
+	_gate("Post-clearance", 10),
+	_gate("KPA Paid", 11),
+	_gate("In Delivery", 14),
+	_gate("Completed", 15),
+]
+
+ROAD_TRANSIT_INBOUND_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("UCR Applied", 2),
+	_gate("UCR Paid", 3),
+	_gate("Pre-clearance", 5),
+	_gate("Entry Lodged", 6),
+	_gate("Entry Paid", 7),
+	_gate("Post-clearance", 9),
+	_gate("Field Clearance", 10),
+	_gate("In Delivery", 12),
+	_gate("Completed", 13),
+]
 
 
 TEMPLATE_DEFINITIONS: list[dict] = [
@@ -559,6 +623,7 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 		"description": "Standard sea import clearance from document intake through container return.",
 		"extends_template": None,
 		"tasks": sea_import_tasks(),
+		"gates": DEFAULT_SEA_WORKFLOW_TASK_GATES,
 	},
 	{
 		"template_name": SEA_EXPORT_TEMPLATE,
@@ -571,12 +636,14 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 		"description": "Air import from proforma through release.",
 		"extends_template": None,
 		"tasks": air_import_tasks(),
+		"gates": AIR_IMPORT_GATES,
 	},
 	{
 		"template_name": AIR_EXPORT_TEMPLATE,
 		"description": "Air export from client documents through COE.",
 		"extends_template": None,
 		"tasks": air_export_tasks(),
+		"gates": AIR_EXPORT_GATES,
 	},
 	{
 		"template_name": SEA_TRANSIT_IMPORT_TEMPLATE,
@@ -586,6 +653,7 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 		),
 		"extends_template": None,
 		"tasks": sea_transit_import_tasks(),
+		"gates": SEA_TRANSIT_IMPORT_GATES,
 	},
 	{
 		"template_name": SEA_TRANSIT_EXPORT_TEMPLATE,
@@ -604,6 +672,7 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 		"description": "Road transit import into Kenya.",
 		"extends_template": None,
 		"tasks": road_transit_inbound_tasks(),
+		"gates": ROAD_TRANSIT_INBOUND_GATES,
 	},
 ]
 
@@ -672,6 +741,8 @@ def seed_cgm_task_templates() -> None:
 		)
 		for task in definition.get("tasks") or []:
 			doc.append("tasks", task)
+		for gate in definition.get("gates") or []:
+			doc.append("gates", gate)
 		doc.insert(ignore_permissions=True)
 
 
@@ -681,7 +752,6 @@ _BEHAVIOUR_FIELDS = (
 	"permit_stage",
 	"requires_finance_action",
 	"requires_document_upload",
-	"requires_container_update",
 	"requires_permit_action",
 	"is_auto_completable",
 	"required_document_types",
@@ -787,6 +857,29 @@ def backfill_open_task_behaviour_from_templates() -> int:
 	return updated
 
 
+def _subject_key(value) -> str:
+	return " ".join((value or "").split()).lower()
+
+
+def template_item_for_task(task_row, items: list[dict]) -> dict | None:
+	"""The template row an existing Task came from, or None.
+
+	Matched by subject when it is unique in the template, else by step number -
+	but only if that row still has the task's subject. Matching by step alone
+	re-stamped tasks with a neighbour's role whenever rows moved: PROJ-0035's
+	"Taxes paid" became Permit Finance when the Road template grew from 9 to 13
+	steps.
+	"""
+	key = _subject_key(task_row.get("subject"))
+	if not key:
+		return None
+	same_subject = [item for item in items if _subject_key(item.get("subject")) == key]
+	if len(same_subject) == 1:
+		return same_subject[0]
+	seq = int(task_row.get("custom_sequence_no") or 0)
+	return next((item for item in same_subject if int(item.get("sequence_no") or 0) == seq), None)
+
+
 def sync_tasks_for_template(template_name: str) -> int:
 	"""Push template behaviour + required Task Documents onto open Tasks for one template."""
 	import frappe
@@ -805,8 +898,8 @@ def sync_tasks_for_template(template_name: str) -> int:
 		return 0
 
 	template = frappe.get_doc("CGM Task Template", template_name)
-	by_seq = {int(i["sequence_no"]): i for i in _collect_items(template)}
-	if not by_seq:
+	items = _collect_items(template)
+	if not items:
 		return 0
 
 	tasks = frappe.get_all(
@@ -815,11 +908,12 @@ def sync_tasks_for_template(template_name: str) -> int:
 			"custom_task_flow_key": template_name,
 			"status": ["!=", "Cancelled"],
 		},
-		fields=["name", "custom_sequence_no", "custom_task_role"],
+		fields=["name", "subject", "custom_sequence_no", "custom_task_role"],
 	)
 	updated = 0
+	has_container_step = frappe.get_meta("Task").has_field("custom_container_step")
 	for task_row in tasks:
-		item = by_seq.get(int(task_row.custom_sequence_no or 0))
+		item = template_item_for_task(task_row, items)
 		if not item:
 			continue
 		role = (item.get("task_role") or "Standard").strip() or "Standard"
@@ -829,17 +923,23 @@ def sync_tasks_for_template(template_name: str) -> int:
 		current = frappe.db.get_value(
 			"Task",
 			task_row.name,
-			["custom_task_role", "custom_payment_kind", "custom_required_document_types"],
+			["custom_task_role", "custom_payment_kind", "custom_permit_stage", "custom_required_document_types"]
+			+ (["custom_container_step"] if has_container_step else []),
 			as_dict=True,
 		) or {}
+		want_stage = (item.get("permit_stage") or "").strip()
+		want_step = (item.get("container_step") or "").strip() if has_container_step else ""
 		current_role = (current.get("custom_task_role") or "").strip()
 		current_kind = (current.get("custom_payment_kind") or "").strip()
+		current_stage = (current.get("custom_permit_stage") or "").strip()
 		current_docs = (current.get("custom_required_document_types") or "").strip()
 		behaviour_changed = not (
 			current_role
 			and current_role == role
 			and current_kind == want_kind
+			and current_stage == want_stage
 			and current_docs == want_docs
+			and (current.get("custom_container_step") or "").strip() == want_step
 		)
 		if behaviour_changed:
 			values = {
@@ -847,13 +947,14 @@ def sync_tasks_for_template(template_name: str) -> int:
 				"custom_requires_finance_action": 1 if item.get("requires_finance_action") else 0,
 				"custom_requires_document_upload": 1 if item.get("requires_document_upload") else 0,
 				"custom_requires_permit_action": 1 if item.get("requires_permit_action") else 0,
-				"custom_requires_container_update": 1 if item.get("requires_container_update") else 0,
 				"custom_is_auto_completable": 1 if item.get("is_auto_completable") else 0,
 			}
-			if want_kind:
-				values["custom_payment_kind"] = want_kind
-			if item.get("permit_stage"):
-				values["custom_permit_stage"] = item["permit_stage"]
+			# Write blanks too: a kind or stage the row no longer carries must not
+			# stay behind on a re-stamped task.
+			values["custom_payment_kind"] = want_kind
+			values["custom_permit_stage"] = want_stage
+			if has_container_step:
+				values["custom_container_step"] = want_step
 			if frappe.get_meta("Task").has_field("custom_required_document_types"):
 				values["custom_required_document_types"] = want_docs
 			frappe.db.set_value("Task", task_row.name, values, update_modified=False)

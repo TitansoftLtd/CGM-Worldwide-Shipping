@@ -1570,18 +1570,6 @@ function user_can_record_project_sales_invoice(frm) {
 	return frappe.model.can_create("Sales Invoice");
 }
 
-const CGM_DEPOSIT_REFUND_ROLES = new Set([
-	"Finance Manager",
-	"Finance User",
-	"Accounts User",
-	"Accounts Manager",
-	"System Manager",
-]);
-
-function user_can_manage_deposit_refund() {
-	return [...CGM_DEPOSIT_REFUND_ROLES].some((role) => frappe.user.has_role(role));
-}
-
 function refresh_project_deposit_refund_mirror(frm) {
 	if (!frm.doc.name || frm.is_new() || !frm.doc.custom_bill_of_lading) {
 		return;
@@ -1614,9 +1602,8 @@ function setup_project_deposit_refund_buttons(frm) {
 	if (!frm.doc.name || frm.is_new() || !frm.doc.custom_bill_of_lading) {
 		return;
 	}
-	if (!user_can_manage_deposit_refund()) {
-		return;
-	}
+	// Who may act is decided on the server from the configured finance roles; the
+	// context's can_* flags stay false for everyone else, so no buttons appear.
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_project_deposit_refund_context",

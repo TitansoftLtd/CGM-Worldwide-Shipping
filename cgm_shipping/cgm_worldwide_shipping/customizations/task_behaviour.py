@@ -43,7 +43,6 @@ class TaskBehaviour:
 	requires_finance_action: bool
 	requires_document_upload: bool
 	requires_permit_action: bool
-	requires_container_update: bool
 	is_auto_completable: bool
 	from_template: bool
 	# Document Type names stamped from the template. The task cannot be
@@ -118,7 +117,6 @@ def get_task_behaviour(task) -> TaskBehaviour:
 			requires_finance_action=False,
 			requires_document_upload=True,
 			requires_permit_action=False,
-			requires_container_update=False,
 			is_auto_completable=False,
 			from_template=False,
 		)
@@ -132,7 +130,6 @@ def get_task_behaviour(task) -> TaskBehaviour:
 			requires_finance_action=bool(cint(task.get("custom_requires_finance_action"))),
 			requires_document_upload=bool(cint(task.get("custom_requires_document_upload"))),
 			requires_permit_action=bool(cint(task.get("custom_requires_permit_action"))),
-			requires_container_update=bool(cint(task.get("custom_requires_container_update"))),
 			is_auto_completable=role == ROLE_AUTO_COMPLETE
 			or bool(cint(task.get("custom_is_auto_completable"))),
 			from_template=True,
@@ -168,7 +165,6 @@ def _behaviour_from_sea_settings(task) -> TaskBehaviour:
 			requires_finance_action=False,
 			requires_document_upload=True,
 			requires_permit_action=False,
-			requires_container_update=False,
 			is_auto_completable=False,
 			from_template=False,
 		)
@@ -454,6 +450,36 @@ def task_is_kpa_finance(task) -> bool:
 	return is_kpa_finance_payment_task(int(task.get("custom_sequence_no") or 0))
 
 
+def task_is_shipping_line_application(task) -> bool:
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_application and behaviour.payment_kind == "Shipping Line"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_shipping_line_application_task,
+	)
+
+	return is_shipping_line_application_task(int(task.get("custom_sequence_no") or 0))
+
+
+def task_is_kpa_application(task) -> bool:
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_application and behaviour.payment_kind == "KPA"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_kpa_application_task
+
+	return is_kpa_application_task(int(task.get("custom_sequence_no") or 0))
+
+
+def task_permit_stage(task, default: str | None = None) -> str | None:
+	"""Permit stage of a permit step: its stamp, else the Sea Import step's stage, else *default*."""
+	stage = get_task_behaviour(task).permit_stage
+	if stage:
+		return stage
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import permit_stage_by_sequence
+
+	return permit_stage_by_sequence().get(int(task.get("custom_sequence_no") or 0)) or default
+
+
 def task_is_permit_application(task) -> bool:
 	behaviour = get_task_behaviour(task)
 	if behaviour.from_template:
@@ -667,6 +693,21 @@ def ensure_task_behaviour_fields() -> None:
 			"read_only": 1,
 			"allow_on_submit": 0,
 			"description": "Stamped from CGM Task Template Item. Task cannot Complete until these Document Types are attached on Task Documents.",
+		},
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import CONTAINER_STEPS
+
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_step",
+			"label": "Container Step",
+			"fieldtype": "Select",
+			"options": "\n" + "\n".join(CONTAINER_STEPS),
+			"insert_after": "custom_permit_stage",
+			"read_only": 1,
+			"allow_on_submit": 0,
+			"description": "Stamped from CGM Task Template Item. Which container lifecycle event this task records.",
 		},
 	)
 	frappe.clear_cache(doctype="Task")

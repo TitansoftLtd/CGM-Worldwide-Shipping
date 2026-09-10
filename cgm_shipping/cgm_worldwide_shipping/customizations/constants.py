@@ -378,6 +378,49 @@ CONTAINER_SPECIFIC_TASK_SEQ_FIELDS = (
 	"custom_interchange_task_seq",
 )
 
+# Container lifecycle steps: CGM Task Template Item "Container Step", stamped on
+# Task as custom_container_step. The stamp decides which container event a task
+# records - its own step number does not, so moving template rows cannot misroute
+# one. Keyed by the Settings field that used to identify each step by number;
+# that number is now only an internal key and the fallback for Sea Import tasks
+# created before the stamp existed.
+CONTAINER_STEP_ETA_REFRESH = "ETA Refresh"
+CONTAINER_STEP_VESSEL_ARRIVAL = "Vessel Arrival"
+CONTAINER_STEP_FIELD_CLEARANCE = "Field Clearance"
+CONTAINER_STEP_KPA_PAID = "KPA Paid"
+CONTAINER_STEP_BOOK_TRUCKS = "Book Trucks"
+CONTAINER_STEP_GATE_OUT = "Gate Out"
+CONTAINER_STEP_MONITOR_DELIVERY = "Monitor Delivery"
+CONTAINER_STEP_OFFLOAD = "Offload"
+CONTAINER_STEP_EMPTY_RETURN = "Empty Return"
+CONTAINER_STEP_INTERCHANGE = "Interchange"
+
+CONTAINER_STEP_BY_SEQ_FIELD: dict[str, str] = {
+	"custom_track_eta_task_seq": CONTAINER_STEP_ETA_REFRESH,
+	"custom_vessel_arrival_task_seq": CONTAINER_STEP_VESSEL_ARRIVAL,
+	"custom_field_clearance_task_seq": CONTAINER_STEP_FIELD_CLEARANCE,
+	"custom_kpa_paid_task_seq": CONTAINER_STEP_KPA_PAID,
+	"custom_book_trucks_task_seq": CONTAINER_STEP_BOOK_TRUCKS,
+	"custom_gate_out_task_seq": CONTAINER_STEP_GATE_OUT,
+	"custom_monitor_delivery_task_seq": CONTAINER_STEP_MONITOR_DELIVERY,
+	"custom_offload_task_seq": CONTAINER_STEP_OFFLOAD,
+	"custom_empty_return_task_seq": CONTAINER_STEP_EMPTY_RETURN,
+	"custom_interchange_task_seq": CONTAINER_STEP_INTERCHANGE,
+}
+CONTAINER_STEPS = tuple(CONTAINER_STEP_BY_SEQ_FIELD.values())
+# Steps whose task shows the Task Container Updates grid (all but the ETA refresh).
+CONTAINER_UPDATE_STEPS = tuple(s for s in CONTAINER_STEPS if s != CONTAINER_STEP_ETA_REFRESH)
+
+# Task form depends_on for the container grid. custom/task.json carries the same
+# text, and project_layout.ensure_task_container_update_fields writes it on
+# migrate - tests pin that they agree.
+CONTAINER_UPDATES_DEPENDS_ON = (
+	"eval:['Sea Import Workflow','SEA_IMPORT_E2E'].includes(doc.custom_task_flow_key) && ("
+	"[" + ",".join(f"'{s}'" for s in CONTAINER_UPDATE_STEPS) + "].includes(doc.custom_container_step)"
+	" || (['Application','Finance Payment'].includes(doc.custom_task_role)"
+	" && doc.custom_payment_kind == 'Shipping Line'))"
+)
+
 DEPOSIT_REFUND_STATUSES = (
 	"Pending",
 	"Applied",

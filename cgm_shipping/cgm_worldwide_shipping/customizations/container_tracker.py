@@ -24,6 +24,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_STATUS_RELEASED_IN_TRANSIT,
 	CONTAINER_STATUS_RETURN_OVERDUE,
 	CONTAINER_STATUS_VESSEL_BERTHED,
+	CONTAINER_STEP_BY_SEQ_FIELD,
 	CONTAINER_TASK_SEQ_DEFAULTS,
 	DEPOSIT_PAYMENT_STATUSES,
 	DEPOSIT_REFUND_STATUSES,
@@ -70,6 +71,43 @@ def get_container_task_sequence(fieldname: str) -> int:
 		if configured:
 			return configured
 	return default
+
+
+def container_step_sequence(step: str | None) -> int:
+	"""Settings key number of a Container Step (0 when *step* is not one)."""
+	fieldname = next((f for f, s in CONTAINER_STEP_BY_SEQ_FIELD.items() if s == step), None)
+	return get_container_task_sequence(fieldname) if fieldname else 0
+
+
+def container_step_for_task(task) -> str:
+	"""Container Step a task records.
+
+	The task's Container Step stamp (from its CGM Task Template row) decides; its
+	own step number does not, so moving template rows cannot misroute container
+	events. Sea Import tasks created before the stamp fall back to matching their
+	step number against CGM Shipping Settings.
+	"""
+	step = (task.get("custom_container_step") or "").strip()
+	if step:
+		return step
+	if task.get("custom_task_role") and frappe.get_meta("Task").has_field("custom_container_step"):
+		return ""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_task,
+	)
+
+	if not is_sea_import_task(task):
+		return ""
+	seq = int(task.get("custom_sequence_no") or 0)
+	for fieldname, name in CONTAINER_STEP_BY_SEQ_FIELD.items():
+		if seq and get_container_task_sequence(fieldname) == seq:
+			return name
+	return ""
+
+
+def container_seq_for_task(task) -> int:
+	"""Settings key number of the task's Container Step - what container code keys on."""
+	return container_step_sequence(container_step_for_task(task))
 
 
 def project_shipping_line_finance_paid(project: str | None) -> bool:

@@ -120,7 +120,7 @@ All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Ch
 |---------|---------|
 | **Sea Import Task Template Item** | Subject + department per task seq (1–25) |
 | **Sea Clearance Task Requirement Item** | Completion rules per seq (documents, finance, permits, UCR, etc.) |
-| **Sea Workflow Task Gate Item** | Maps `custom_shipment_status` → minimum completed task seq |
+| **CGM Task Template Gate** | Shipment Status Gates on each CGM Task Template: the task that reaches each `custom_shipment_status` |
 | **Workflow Stage Requirement Item** | Document verification stages per workflow state |
 | **Finance Cost Category Map** | Maps payment items to project cost buckets |
 | **Default Customs Tax** | Default tax rates on Settings |
@@ -282,7 +282,7 @@ Website users with role **Customer** land on `/portal` after login. They can vie
 | Guard | Enforces |
 |-------|----------|
 | Document gate on workflow change | Verified documents before advancing `custom_shipment_status` |
-| Sea workflow task gates | Min completed task seq per workflow state |
+| Shipment status gates | The task that reaches each status, per CGM Task Template (blocks manual changes on Sea Import) |
 | Intake documents | CI + PKL before **Documents Received** |
 | Permit rules | Post-clearance permit rules before **Entry Lodged** |
 | Project closure | All sea tasks complete before **Completed** |

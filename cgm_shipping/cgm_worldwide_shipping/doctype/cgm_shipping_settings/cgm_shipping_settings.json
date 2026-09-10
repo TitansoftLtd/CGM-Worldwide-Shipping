@@ -59,9 +59,6 @@
   "tab_sea_task_requirements",
   "section_sea_task_requirements",
   "custom_sea_clearance_task_requirements",
-  "tab_sea_workflow_task_gates",
-  "section_sea_workflow_task_gates",
-  "custom_sea_workflow_task_gates",
   "tab_workflow_document_gates",
   "section_workflow_document_gates",
   "custom_workflow_stage_requirements",
@@ -114,24 +111,6 @@
    "fieldtype": "Table",
    "label": "Sea clearance task requirements",
    "options": "Sea Clearance Task Requirement Item"
-  },
-  {
-   "fieldname": "tab_sea_workflow_task_gates",
-   "fieldtype": "Tab Break",
-   "hidden": 1,
-   "label": "Sea workflow task gates (legacy)"
-  },
-  {
-   "description": "Before Project shipment status can move to each workflow state, these sea task steps must be satisfied. Aligns with CGM Sea Import Workflow on Project.",
-   "fieldname": "section_sea_workflow_task_gates",
-   "fieldtype": "Section Break",
-   "label": "Workflow status gates"
-  },
-  {
-   "fieldname": "custom_sea_workflow_task_gates",
-   "fieldtype": "Table",
-   "label": "Sea workflow task gates",
-   "options": "Sea Workflow Task Gate Item"
   },
   {
    "fieldname": "tab_workflow_document_gates",
@@ -511,7 +490,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-10 12:00:00.000000",
+ "modified": "2026-09-10 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

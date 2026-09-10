@@ -1187,9 +1187,9 @@ def sync_bl_deposit_to_shipping_line_tasks(bl) -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		TASK_CONTAINER_UPDATES_FIELD,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		shipping_line_application_sequences,
-		shipping_line_finance_payment_sequences,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_APPLICATION,
+		ROLE_FINANCE_PAYMENT,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		task_flow_key_in_filter,
@@ -1201,12 +1201,6 @@ def sync_bl_deposit_to_shipping_line_tasks(bl) -> None:
 		"Project", filters={"custom_bill_of_lading": bl.name}, pluck="name"
 	)
 	if not projects:
-		return
-
-	seqs = sorted(
-		set(shipping_line_application_sequences()) | set(shipping_line_finance_payment_sequences())
-	)
-	if not seqs:
 		return
 
 	arrangement = bl_deposit_arrangement(bl)
@@ -1224,7 +1218,9 @@ def sync_bl_deposit_to_shipping_line_tasks(bl) -> None:
 				filters={
 					"project": project,
 					"custom_task_flow_key": task_flow_key_in_filter(),
-					"custom_sequence_no": ["in", seqs],
+					# The Shipping Line application and Finance steps, by Task Role stamp.
+					"custom_task_role": ["in", [ROLE_APPLICATION, ROLE_FINANCE_PAYMENT]],
+					"custom_payment_kind": "Shipping Line",
 					"status": ["!=", "Cancelled"],
 				},
 				pluck="name",
@@ -1341,10 +1337,12 @@ def get_project_company_deposit_invoice_context(project: str) -> dict | None:
 
 
 def _user_can_manage_deposit_refund() -> bool:
-	return bool(
-		{"Finance Manager", "Finance User", "Accounts User", "Accounts Manager", "System Manager"}
-		& set(frappe.get_roles())
+	"""Finance roles from CGM Shipping Settings / the Finance role group, plus System Manager."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		configured_finance_roles,
 	)
+
+	return bool((configured_finance_roles() | {"System Manager"}) & set(frappe.get_roles()))
 
 
 def _project_for_bl(bill_of_lading: str) -> str | None:
