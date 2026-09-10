@@ -11,6 +11,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	TASK_DOCUMENTS_FIELD,
 	TASK_FINANCE_FIELD,
 	TASK_PERMITS_FIELD,
+	TRANSPORT_CONTAINER_STEPS,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import refresh_project_documents
 
@@ -60,6 +61,11 @@ def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 
 
 # ==================== Sea task requirements ====================
+# Step-number lookups over the Sea Import template. Runtime code no longer uses
+# them - task behaviour comes from each task's Task Role stamps. They stay only
+# for three one-time patches (settle_stale_open_finance_tasks,
+# backfill_finance_line_journal_entries, unlink_non_finance_sea_task_deps) and
+# their test; delete them when those patches are retired.
 
 """
 Sea task requirements per step, as requirement rows keyed by sequence number.
@@ -92,27 +98,6 @@ _BEHAVIOUR_REQUIREMENT_TYPES = frozenset(
 		"KPA Application",
 	}
 )
-
-
-def ensure_sea_task_requirements_configured() -> None:
-	"""Fail fast when sea task requirements cannot be resolved."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
-		get_cgm_shipping_settings,
-	)
-
-	if not get_cgm_shipping_settings():
-		frappe.throw("CGM Shipping Settings is not installed. Run <b>bench migrate</b>.")
-
-	if not rows_by_sequence():
-		frappe.throw(
-			f"Set the Task Roles on <b>{_TEMPLATE_LINK}</b> before using the sea import workflow."
-		)
-
-	for seq in permit_application_sequences():
-		_permit_stage_value_for_application(seq)
-
-	for seq in finance_payment_sequences():
-		_finance_payment_kind_value(seq)
 
 
 def _template_requirement_rows() -> list | None:
@@ -202,64 +187,10 @@ def rows_by_sequence() -> dict[int, list]:
 	return grouped
 
 
-def get_required_document_codes(sequence_no: int) -> list[str]:
-	rows = rows_by_sequence().get(sequence_no) or []
-	return [
-		(row.value or "").strip().upper()
-		for row in rows
-		if row.requirement_type == "Document" and (row.value or "").strip()
-	]
-
-
-def is_permit_application_task(sequence_no: int) -> bool:
-	return any(
-		r.requirement_type == "Permit Application" for r in rows_by_sequence().get(sequence_no, [])
-	)
-
-
-def is_light_proof_task(sequence_no: int) -> bool:
-	return any(r.requirement_type == "Light Proof" for r in rows_by_sequence().get(sequence_no, []))
-
-
-def is_document_checkpoint_task(sequence_no: int) -> bool:
-	return any(
-		r.requirement_type == "Document Checkpoint" for r in rows_by_sequence().get(sequence_no, [])
-	)
-
-
-def is_ucr_application_task(sequence_no: int) -> bool:
-	return any(
-		r.requirement_type == "UCR Application" for r in rows_by_sequence().get(sequence_no, [])
-	)
-
-
-def is_entry_application_task(sequence_no: int) -> bool:
-	return any(
-		r.requirement_type == "Entry Application" for r in rows_by_sequence().get(sequence_no, [])
-	)
-
-
-def is_shipping_line_application_task(sequence_no: int) -> bool:
-	return any(
-		r.requirement_type == "Shipping Line Application"
-		for r in rows_by_sequence().get(sequence_no, [])
-	)
-
-
-def is_kpa_application_task(sequence_no: int) -> bool:
-	return any(
-		r.requirement_type == "KPA Application" for r in rows_by_sequence().get(sequence_no, [])
-	)
-
-
 def is_finance_payment_task(sequence_no: int) -> bool:
 	return any(
 		r.requirement_type == "Finance Payment" for r in rows_by_sequence().get(sequence_no, [])
 	)
-
-
-def is_auto_complete_task(sequence_no: int) -> bool:
-	return any(r.requirement_type == "Auto Complete" for r in rows_by_sequence().get(sequence_no, []))
 
 
 def _permit_stage_value_for_application(sequence_no: int) -> str:
@@ -269,18 +200,6 @@ def _permit_stage_value_for_application(sequence_no: int) -> str:
 	frappe.throw(
 		f"Permit Application at sequence <b>{sequence_no}</b> needs a "
 		f"<b>Permit Stage</b> on {_TEMPLATE_LINK}."
-	)
-
-
-def get_permit_stage_for_sequence(sequence_no: int) -> str:
-	if is_permit_application_task(sequence_no):
-		return _permit_stage_value_for_application(sequence_no)
-	stages = permit_stage_by_sequence()
-	if sequence_no in stages:
-		return stages[sequence_no]
-	frappe.throw(
-		f"No permit stage for sequence <b>{sequence_no}</b>. "
-		f"Check the permit application / finance steps on {_TEMPLATE_LINK}."
 	)
 
 
@@ -340,46 +259,6 @@ def ucr_application_sequences() -> frozenset[int]:
 	)
 
 
-def entry_application_sequences() -> frozenset[int]:
-	return frozenset(
-		seq
-		for seq, rows in rows_by_sequence().items()
-		if any(r.requirement_type == "Entry Application" for r in rows)
-	)
-
-
-def shipping_line_application_sequences() -> frozenset[int]:
-	return frozenset(
-		seq
-		for seq, rows in rows_by_sequence().items()
-		if any(r.requirement_type == "Shipping Line Application" for r in rows)
-	)
-
-
-def kpa_application_sequences() -> frozenset[int]:
-	return frozenset(
-		seq
-		for seq, rows in rows_by_sequence().items()
-		if any(r.requirement_type == "KPA Application" for r in rows)
-	)
-
-
-def light_proof_sequences() -> frozenset[int]:
-	return frozenset(
-		seq
-		for seq, rows in rows_by_sequence().items()
-		if any(r.requirement_type == "Light Proof" for r in rows)
-	)
-
-
-def document_checkpoint_sequences() -> frozenset[int]:
-	return frozenset(
-		seq
-		for seq, rows in rows_by_sequence().items()
-		if any(r.requirement_type == "Document Checkpoint" for r in rows)
-	)
-
-
 def finance_payment_sequences() -> frozenset[int]:
 	return frozenset(
 		seq
@@ -388,65 +267,12 @@ def finance_payment_sequences() -> frozenset[int]:
 	)
 
 
-def auto_complete_sequences() -> frozenset[int]:
-	return frozenset(
-		seq
-		for seq, rows in rows_by_sequence().items()
-		if any(r.requirement_type == "Auto Complete" for r in rows)
-	)
-
-
 def is_ucr_finance_payment_task(sequence_no: int) -> bool:
 	return get_finance_payment_kind(sequence_no) == "UCR"
 
 
-def is_entry_finance_payment_task(sequence_no: int) -> bool:
-	return get_finance_payment_kind(sequence_no) == "Entry Slip"
-
-
-def is_shipping_line_finance_payment_task(sequence_no: int) -> bool:
-	return get_finance_payment_kind(sequence_no) == "Shipping Line"
-
-
-def shipping_line_finance_payment_sequences() -> frozenset[int]:
-	return frozenset(
-		s for s in finance_payment_sequences() if is_shipping_line_finance_payment_task(s)
-	)
-
-
-def is_kpa_finance_payment_task(sequence_no: int) -> bool:
-	return get_finance_payment_kind(sequence_no) == "KPA"
-
-
 def is_permit_finance_payment_task(sequence_no: int) -> bool:
 	return get_finance_payment_kind(sequence_no) == "Permit"
-
-
-def is_ucr_workflow_task(sequence_no: int) -> bool:
-	return is_ucr_application_task(sequence_no) or is_ucr_finance_payment_task(sequence_no)
-
-
-def is_entry_workflow_task(sequence_no: int) -> bool:
-	return is_entry_application_task(sequence_no) or is_entry_finance_payment_task(sequence_no)
-
-
-def is_shipping_line_workflow_task(sequence_no: int) -> bool:
-	return is_shipping_line_application_task(sequence_no) or is_shipping_line_finance_payment_task(
-		sequence_no
-	)
-
-
-def is_kpa_workflow_task(sequence_no: int) -> bool:
-	return is_kpa_application_task(sequence_no) or is_kpa_finance_payment_task(sequence_no)
-
-
-def is_configured_application_workflow_task(sequence_no: int) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		all_profiles,
-		is_application_workflow_task,
-	)
-
-	return any(is_application_workflow_task(sequence_no, profile) for profile in all_profiles())
 
 
 def get_ucr_create_sequence() -> int | None:
@@ -456,16 +282,6 @@ def get_ucr_create_sequence() -> int | None:
 
 def get_ucr_payment_sequence() -> int | None:
 	seqs = sorted(s for s in finance_payment_sequences() if is_ucr_finance_payment_task(s))
-	return seqs[0] if seqs else None
-
-
-def get_entry_create_sequence() -> int | None:
-	seqs = sorted(entry_application_sequences())
-	return seqs[0] if seqs else None
-
-
-def get_entry_payment_sequence() -> int | None:
-	seqs = sorted(s for s in finance_payment_sequences() if is_entry_finance_payment_task(s))
 	return seqs[0] if seqs else None
 
 
@@ -489,35 +305,6 @@ def permit_finance_by_application_sequence() -> dict[int, int]:
 		elif stage == POST_CLEARANCE_STAGE and post_finance:
 			mapping[app_seq] = post_finance
 	return mapping
-
-
-def get_permit_finance_sequence_for_application(application_seq: int) -> int | None:
-	return permit_finance_by_application_sequence().get(application_seq)
-
-
-def get_pre_clearance_permit_application_sequence() -> int | None:
-	for seq in sorted(permit_application_sequences()):
-		if _permit_stage_value_for_application(seq) == PRE_CLEARANCE_STAGE:
-			return seq
-	return None
-
-
-def get_post_clearance_permit_application_sequence() -> int | None:
-	for seq in sorted(permit_application_sequences()):
-		if _permit_stage_value_for_application(seq) == POST_CLEARANCE_STAGE:
-			return seq
-	return None
-
-
-def get_application_sequence_for_finance_task(task) -> int | None:
-	"""Permit application seq paired with this finance permit payment task."""
-	fin_seq = int(task.get("custom_sequence_no") or 0)
-	if not is_permit_finance_payment_task(fin_seq):
-		return None
-	for app_seq, mapped_fin in permit_finance_by_application_sequence().items():
-		if mapped_fin == fin_seq:
-			return app_seq
-	return None
 
 
 @frappe.request_cache
@@ -570,37 +357,13 @@ def sea_finance_dependency_pairs() -> tuple[tuple[int, int], ...]:
 	return tuple(sorted((app, fin) for fin, app in pairs.items()))
 
 
-def application_sequence_for_finance_sequence(finance_seq: int) -> int | None:
-	for app, fin in sea_finance_dependency_pairs():
-		if fin == finance_seq:
-			return app
-	return None
-
-
-def finance_payment_with_supplier_invoice_sequences() -> frozenset[int]:
-	"""Finance steps that require supplier invoice on Task Documents (not UCR/permit payment)."""
-	return frozenset(
-		seq
-		for seq in finance_payment_sequences()
-		if get_finance_payment_kind(seq) == "Standard"
-	)
-
-
 def is_sea_finance_payment_task(task) -> bool:
 	"""Task is a finance payment step (template role or Sea Settings)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		get_task_behaviour,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		is_sea_import_task,
-	)
-
 	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_finance_payment or behaviour.is_permit_finance
-	return is_sea_import_task(task) and is_finance_payment_task(
-		int(task.get("custom_sequence_no") or 0)
-	)
+	return behaviour.is_finance_payment or behaviour.is_permit_finance
 
 
 def enforce_client_paid_confirmation(task) -> None:
@@ -727,64 +490,23 @@ def sync_client_paid_to_application_task(task) -> str | None:
 
 @frappe.whitelist()
 def get_sea_task_ui_sequences() -> dict:
-	"""Sequence lists and role flags for Task form UI (from CGM Shipping Settings).
+	"""Task form config: the user's permissions and the Finance department.
 
-	Sequence lists are settings-scoped and Redis-cached briefly so opening many
-	Task forms does not recompute them on every request. Permissions stay
-	per-user and are not cached here.
+	It used to carry Sea Import step-number lists too; the form now reads each
+	task's Task Role stamps instead.
 	"""
-	ensure_sea_task_requirements_configured()
-
 	from cgm_shipping.cgm_worldwide_shipping.customizations.notifications import (
 		get_task_form_permissions,
 	)
 
-	payload = dict(_cached_sea_task_ui_sequence_lists())
-	payload["permissions"] = get_task_form_permissions()
-	return payload
-
-
-def _cached_sea_task_ui_sequence_lists() -> dict:
-	cache_key = "cgm:sea_task_ui_sequence_lists"
-	cached = frappe.cache.get_value(cache_key)
-	if isinstance(cached, dict) and cached.get("payment_seqs") is not None:
-		return cached
-
-	permit_finance = sorted(s for s in finance_payment_sequences() if is_permit_finance_payment_task(s))
-	ucr_finance = sorted(s for s in finance_payment_sequences() if is_ucr_finance_payment_task(s))
-	entry_finance = sorted(s for s in finance_payment_sequences() if is_entry_finance_payment_task(s))
-	shipping_line_finance = sorted(
-		s for s in finance_payment_sequences() if is_shipping_line_finance_payment_task(s)
-	)
-	kpa_finance = sorted(s for s in finance_payment_sequences() if is_kpa_finance_payment_task(s))
-	stage_by_seq = permit_stage_by_sequence()
-
-	payload = {
-		"payment_seqs": sorted(finance_payment_sequences()),
-		"auto_complete_seqs": sorted(auto_complete_sequences()),
-		"permit_application_seqs": sorted(permit_application_sequences()),
-		"light_proof_seqs": sorted(light_proof_sequences()),
-		"document_checkpoint_seqs": sorted(document_checkpoint_sequences()),
-		"ucr_application_seqs": sorted(ucr_application_sequences()),
-		"entry_application_seqs": sorted(entry_application_sequences()),
-		"shipping_line_application_seqs": sorted(shipping_line_application_sequences()),
-		"kpa_application_seqs": sorted(kpa_application_sequences()),
-		"finance_document_seqs": sorted(finance_payment_with_supplier_invoice_sequences()),
-		"permit_finance_seqs": permit_finance,
-		"ucr_finance_seqs": ucr_finance,
-		"entry_finance_seqs": entry_finance,
-		"shipping_line_finance_seqs": shipping_line_finance,
-		"kpa_finance_seqs": kpa_finance,
-		"permit_stage_by_seq": {str(k): v for k, v in stage_by_seq.items()},
+	return {
+		"permissions": get_task_form_permissions(),
 		"finance_department": frappe.db.get_single_value(
 			"CGM Shipping Settings", "custom_finance_department"
 		)
 		if frappe.db.exists("DocType", "CGM Shipping Settings")
 		else None,
 	}
-	# Short TTL: settings change rarely; desk keeps its own session copy too.
-	frappe.cache.set_value(cache_key, payload, expires_in_sec=300)
-	return payload
 
 
 # ==================== Task finance lines ====================
@@ -2091,69 +1813,13 @@ def seed_required_task_document_rows(task) -> None:
 	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
 		return
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		get_task_behaviour,
 		task_is_document_checkpoint,
-		task_is_ucr_application,
 	)
 
-	behaviour = get_task_behaviour(task)
-	seq = int(task.get("custom_sequence_no") or 0)
-	if behaviour.from_template:
-		if task_is_document_checkpoint(task):
-			seed_checkpoint_task_documents(task)
-		else:
-			seed_stamped_required_document_rows(task)
-		return
-
-	# Legacy (non-template) tasks — settings sequence + profile helpers.
-	seed_stamped_required_document_rows(task)
-	if task_is_document_checkpoint(task) or is_document_checkpoint_task(seq):
+	if task_is_document_checkpoint(task):
 		seed_checkpoint_task_documents(task)
-		return
-	if get_stamped_required_document_types(task):
-		return
-	if task_is_ucr_application(task) or is_ucr_application_task(seq):
-		ensure_idf_certificate_document_row(task)
-		return
-	if is_entry_application_task(seq):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			APPLICATION_FINANCE_PROFILES,
-			ensure_certificate_document_row,
-		)
-
-		ensure_certificate_document_row(task, APPLICATION_FINANCE_PROFILES["Entry Application"])
-		return
-	if is_shipping_line_application_task(seq):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			APPLICATION_FINANCE_PROFILES,
-			ensure_certificate_document_row,
-		)
-
-		ensure_certificate_document_row(task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"])
-		return
-	if is_kpa_application_task(seq):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			APPLICATION_FINANCE_PROFILES,
-			ensure_certificate_document_row,
-		)
-
-		ensure_certificate_document_row(task, APPLICATION_FINANCE_PROFILES["KPA Application"])
-		return
-
-	required = get_required_document_codes(seq)
-	if not required:
-		return
-
-	existing_types = {row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or [] if row.document_type}
-	for code in required:
-		dt_name = get_document_type_link_name(code)
-		if not dt_name or dt_name in existing_types:
-			continue
-		task.append(
-			TASK_DOCUMENTS_FIELD,
-			{"document_type": dt_name, "status": "Missing"},
-		)
-		existing_types.add(dt_name)
+	else:
+		seed_stamped_required_document_rows(task)
 
 
 def validate_sea_task_can_complete(task) -> None:
@@ -2251,7 +1917,8 @@ def validate_sea_task_can_complete(task) -> None:
 		)
 	elif task_is_document_checkpoint(task):
 		validate_document_checkpoint_task(task)
-	elif sea_import and is_light_proof_task(seq):
+	elif sea_import and container_step_for_task(task) in TRANSPORT_CONTAINER_STEPS:
+		# Transport steps (Book Trucks to Interchange) need only light proof.
 		validate_light_proof_task(task)
 	elif container_step_for_task(task) == CONTAINER_STEP_FIELD_CLEARANCE:
 		validate_field_clearance_task(task)
@@ -2322,36 +1989,20 @@ def validate_sea_task_can_complete(task) -> None:
 
 def validate_required_documents(task, seq: int) -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		get_task_behaviour,
-	)
-
 	required = get_effective_required_document_types(task)
-	behaviour = get_task_behaviour(task)
-	# Template tasks with no required docs do not gate completion on Task Documents.
-	if behaviour.from_template and not required:
+	# A task with no required documents does not gate completion on Task Documents.
+	if not required:
 		return
 
 	attached = attached_document_codes(task)
 	missing = []
-
-	if required:
-		for token in required:
-			if required_document_code_is_attached(token, attached):
-				continue
-			dt_name = resolve_required_document_type_name(token)
-			if dt_name and required_document_code_is_attached(dt_name, attached):
-				continue
-			missing.append(dt_name or token)
-	else:
-		required_codes = get_required_document_codes(seq)
-		if not required_codes:
-			return
-		for code in required_codes:
-			if required_document_code_is_attached(code, attached):
-				continue
-			label = frappe.db.get_value("Document Type", {"code": code}, "name") or code
-			missing.append(label)
+	for token in required:
+		if required_document_code_is_attached(token, attached):
+			continue
+		dt_name = resolve_required_document_type_name(token)
+		if dt_name and required_document_code_is_attached(dt_name, attached):
+			continue
+		missing.append(dt_name or token)
 
 	if missing:
 		frappe.throw(
@@ -2360,12 +2011,7 @@ def validate_required_documents(task, seq: int) -> None:
 		)
 
 	# Only enforce empty-row cleanup for required rows.
-	required_names = set(_required_document_type_names(task, required or None))
-	if not required_names:
-		for token in get_required_document_codes(seq):
-			name = resolve_required_document_type_name(token) or token
-			if name:
-				required_names.add(name)
+	required_names = set(_required_document_type_names(task, required))
 	empty_rows = [
 		row.document_type or "Document"
 		for row in task.get(TASK_DOCUMENTS_FIELD) or []
@@ -4186,7 +3832,6 @@ def block_premature_shipping_line_completion(doc) -> None:
 		return
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 		can_complete_application_task,
-		is_application_task,
 		profile_for_task,
 	)
 
@@ -4698,7 +4343,7 @@ def validate_task_completion_requirements(doc, _method=None):
 			get_incomplete_finance_pair_blockers,
 		)
 
-		incomplete = get_incomplete_finance_pair_blockers(doc.project, seq)
+		incomplete = get_incomplete_finance_pair_blockers(doc)
 		if incomplete:
 			prev_task = incomplete[0]
 			frappe.throw(

@@ -322,10 +322,10 @@ def ensure_project_shipment_core_fields() -> None:
 	)
 	# Shipment documents table (may already exist from ensure_project_documents_field).
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		ensure_project_shipment_documents_field,
+		ensure_project_documents_field,
 	)
 
-	ensure_project_shipment_documents_field()
+	ensure_project_documents_field()
 	if frappe.db.exists("Custom Field", "Project-custom_shipment_documents"):
 		frappe.db.set_value(
 			"Custom Field",

@@ -10,7 +10,6 @@ from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_UPDATE_STEPS,
-	CONTAINER_UPDATE_TASK_SEQ_FIELDS,
 	TASK_CONTAINER_UPDATES_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
@@ -94,22 +93,6 @@ def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 	# Shipping Line Application: deposit fields are mirrored from Bill of Lading (read-only).
 	# Do not map them onto Container Tracker.
 	return mapping
-
-
-def _shipping_line_application_seqs() -> frozenset[int]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		shipping_line_application_sequences,
-	)
-
-	return shipping_line_application_sequences()
-
-
-def _shipping_line_finance_seqs() -> frozenset[int]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		shipping_line_finance_payment_sequences,
-	)
-
-	return shipping_line_finance_payment_sequences()
 
 
 def is_shipping_line_deposit_task(doc) -> bool:
@@ -242,20 +225,6 @@ def _container_step_task_rows(
 		if row.container_seq in seqs:
 			out.append(row)
 	return out
-
-
-def container_update_task_sequences() -> frozenset[int]:
-	"""Every sequence that shows the Task Container Updates grid.
-
-	Single source of truth for the server gate and the Task form ``depends_on``
-	(see ``get_sea_task_ui_sequences``) so the grid can never render on a task the
-	server refuses to seed, or hide on one it validates.
-	"""
-	return frozenset(
-		{get_container_task_sequence(fieldname) for fieldname in CONTAINER_UPDATE_TASK_SEQ_FIELDS}
-		| _shipping_line_application_seqs()
-		| _shipping_line_finance_seqs()
-	)
 
 
 def is_container_update_task(doc) -> bool:

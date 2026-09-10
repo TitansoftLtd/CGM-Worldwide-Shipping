@@ -23,7 +23,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	get_receipt_line,
 	invoice_attached,
 	invoice_submitted,
-	is_application_finance_task,
 	prepare_application_task_tables,
 	profile_by_finance_kind,
 	profile_for_task,

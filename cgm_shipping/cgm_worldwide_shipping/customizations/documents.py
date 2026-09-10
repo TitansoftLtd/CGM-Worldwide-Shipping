@@ -871,11 +871,6 @@ def apply_checkpoint_task_documents_to_project(project_doc, task) -> bool:
 
 def merge_checkpoint_task_documents_into_project(project_doc) -> bool:
 	"""Pull initial/final slots from all document-checkpoint tasks on this Project."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		document_checkpoint_sequences,
-		get_task_name_by_sequence,
-	)
-
 	if not project_doc.name:
 		return False
 
@@ -884,18 +879,13 @@ def merge_checkpoint_task_documents_into_project(project_doc) -> bool:
 		task_is_document_checkpoint,
 	)
 
-	# Checkpoint tasks by their Task Role, on any template. The Sea Import step
-	# numbers still find checkpoints on tasks created before the stamps.
+	# Checkpoint tasks by their Task Role, on any template.
 	names = frappe.get_all(
 		"Task",
 		filters={"project": project_doc.name, "custom_task_role": ROLE_DOCUMENT_CHECKPOINT},
 		pluck="name",
 		order_by="custom_sequence_no asc",
 	)
-	for seq in document_checkpoint_sequences():
-		task_name = get_task_name_by_sequence(project_doc.name, seq)
-		if task_name and task_name not in names:
-			names.append(task_name)
 
 	changed = False
 	for task_name in names:
@@ -1217,16 +1207,16 @@ def carry_project_documents_to_sea_tasks(project_name, task_sequences=None):
 	Copy Project shipment document rows onto the intake tasks (audit trail on the task).
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		auto_complete_sequences,
 		get_task_name_by_sequence,
 	)
 
+	# The template's intake steps (task_engine.intake_sequences) - callers pass them.
+	if not task_sequences:
+		return []
 	if not project_name or not frappe.db.exists("Project", project_name):
 		return []
 	if not frappe.get_meta("Task").has_field(TASK_DOCUMENTS_FIELD):
 		return []
-
-	task_sequences = task_sequences or sorted(auto_complete_sequences())
 	project = frappe.get_doc("Project", project_name)
 	source_rows = [
 		r

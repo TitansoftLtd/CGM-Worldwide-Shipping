@@ -82,12 +82,8 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 	"""Task sequences that count as done for workflow progress.
 
 	A permit application with its invoices submitted counts as done - it stays
-	Open until Finance completes. Its Task Role says which rows those are; Sea
-	Import's step numbers only cover rows without one.
+	Open until Finance completes. Its Task Role says which rows those are.
 	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_permit_application_task,
-	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		ROLE_PERMIT_APPLICATION,
 	)
@@ -99,14 +95,9 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 			continue
 		if row.get("status") == "Completed":
 			completed.add(seq)
-			continue
-		if not row.get("custom_permit_invoices_submitted"):
-			continue
-		role = (row.get("custom_task_role") or "").strip()
-		is_permit_application = (
-			role == ROLE_PERMIT_APPLICATION if role else is_permit_application_task(seq)
-		)
-		if is_permit_application:
+		elif row.get("custom_permit_invoices_submitted") and (
+			(row.get("custom_task_role") or "").strip() == ROLE_PERMIT_APPLICATION
+		):
 			completed.add(seq)
 	return completed
 
@@ -313,28 +304,26 @@ def get_incomplete_sea_tasks(
 	"""
 	if before_sequence <= 1:
 		return []
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		get_permit_stage_for_sequence,
-		is_entry_application_task,
-		is_kpa_application_task,
-		is_permit_application_task,
-		is_shipping_line_application_task,
-		is_ucr_application_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		invoice_submitted as application_invoice_submitted,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		PAYMENT_KIND_TO_PROFILE_KEY,
+		ROLE_APPLICATION,
+		ROLE_PERMIT_APPLICATION,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		permit_invoices_ready,
 		ucr_invoice_ready,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
-		invoice_submitted as application_invoice_submitted,
 	)
 
 	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
 	rows = frappe.db.sql(
 		f"""
 		SELECT name, subject, custom_sequence_no AS seq, status,
-			custom_container_step AS container_step
+			custom_container_step AS container_step,
+			custom_task_role AS role, custom_payment_kind AS kind, custom_permit_stage AS stage
 		FROM `tabTask`
 		WHERE project = %s
 		  AND {flow_in}
@@ -345,35 +334,20 @@ def get_incomplete_sea_tasks(
 		(project, before_sequence),
 		as_dict=True,
 	)
-	# UCR / pre-clearance permit application tasks stay Open while Finance pays; invoice submitted unlocks finance.
-	filtered = [
-		r
-		for r in rows
-		if not (
-			is_permit_application_task(r.seq)
-			and get_permit_stage_for_sequence(r.seq) == PRE_CLEARANCE_STAGE
-			and permit_invoices_ready(r.name)
-		)
-		and not (is_ucr_application_task(r.seq) and ucr_invoice_ready(r.name))
-		and not (
-			is_entry_application_task(r.seq)
-			and application_invoice_submitted(
-				r.name, APPLICATION_FINANCE_PROFILES["Entry Application"]
-			)
-		)
-		and not (
-			is_shipping_line_application_task(r.seq)
-			and application_invoice_submitted(
-				r.name, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
-			)
-		)
-		and not (
-			is_kpa_application_task(r.seq)
-			and application_invoice_submitted(
-				r.name, APPLICATION_FINANCE_PROFILES["KPA Application"]
-			)
-		)
-	]
+
+	def handed_to_finance(row) -> bool:
+		"""Applications stay Open while Finance pays: once the invoice is with Finance
+		(pre-clearance permits: every permit invoice) they no longer hold up the chart."""
+		if row.role == ROLE_PERMIT_APPLICATION:
+			return row.stage == PRE_CLEARANCE_STAGE and permit_invoices_ready(row.name)
+		if row.role != ROLE_APPLICATION:
+			return False
+		key = PAYMENT_KIND_TO_PROFILE_KEY.get(row.kind or "")
+		if key == "UCR Application":
+			return ucr_invoice_ready(row.name)
+		return bool(key) and application_invoice_submitted(row.name, APPLICATION_FINANCE_PROFILES[key])
+
+	filtered = [r for r in rows if not handed_to_finance(r)]
 	if parallel_transport:
 		gate_seq = before_sequence - 1
 		filtered = _without_parallel_transport(
@@ -414,58 +388,10 @@ def _without_parallel_transport(rows: list, gate_seq: int, gate_is_transport: bo
 	]
 
 
-def _application_invoice_ready_for_finance(app_name: str, app_seq: int) -> bool:
-	"""True when the paired application has submitted its invoice (finance may proceed)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
-		invoice_submitted as application_invoice_submitted,
-		profile_by_requirement_type,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_entry_application_task,
-		is_kpa_application_task,
-		is_permit_application_task,
-		is_shipping_line_application_task,
-		is_ucr_application_task,
-		rows_by_sequence,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		permit_invoices_ready,
-		ucr_invoice_ready,
-	)
-
-	if is_ucr_application_task(app_seq) and ucr_invoice_ready(app_name):
-		return True
-	if is_permit_application_task(app_seq):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-			permit_application_invoices_ready_for_finance,
-		)
-
-		return permit_application_invoices_ready_for_finance(app_name)
-	if is_entry_application_task(app_seq) and application_invoice_submitted(
-		app_name, APPLICATION_FINANCE_PROFILES["Entry Application"]
-	):
-		return True
-	if is_shipping_line_application_task(app_seq) and application_invoice_submitted(
-		app_name, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
-	):
-		return True
-	if is_kpa_application_task(app_seq) and application_invoice_submitted(
-		app_name, APPLICATION_FINANCE_PROFILES["KPA Application"]
-	):
-		return True
-	for row in rows_by_sequence().get(app_seq, []):
-		profile = profile_by_requirement_type(row.requirement_type)
-		if profile and application_invoice_submitted(app_name, profile):
-			return True
-	return False
-
-
 def application_ready_for_finance(app_name: str) -> bool:
 	"""True when a finance step's parent application has handed Finance its invoice.
 
-	Read from the application's stamps, so it holds on every template. The
-	step-number reading above is Sea Import's; it stays for tasks without stamps.
+	Read from the application's stamps, so it holds on every template.
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 		invoice_submitted as application_invoice_submitted,
@@ -480,12 +406,7 @@ def application_ready_for_finance(app_name: str) -> bool:
 		ucr_invoice_ready,
 	)
 
-	task = frappe.get_doc("Task", app_name)
-	behaviour = get_task_behaviour(task)
-	if not behaviour.from_template:
-		return _application_invoice_ready_for_finance(
-			app_name, int(task.get("custom_sequence_no") or 0)
-		)
+	behaviour = get_task_behaviour(frappe.get_doc("Task", app_name))
 	if behaviour.is_permit_application:
 		return bool(permit_application_invoices_ready_for_finance(app_name))
 	if not behaviour.is_application:
@@ -498,44 +419,48 @@ def application_ready_for_finance(app_name: str) -> bool:
 	return bool(profile and application_invoice_submitted(app_name, profile))
 
 
-def get_incomplete_finance_pair_blockers(project: str, finance_sequence: int) -> list[dict]:
-	"""For finance payment steps only: block if the paired application is not ready.
+def get_incomplete_finance_pair_blockers(finance_task) -> list[dict]:
+	"""Sea Import finance steps: block while the paired application is not ready.
 
-	Non-finance sequences return [] so inspection / Lodge DO / field clearance can
-	complete without waiting on earlier chart steps.
+	The pair comes from the Task Role stamps. Other steps return [] so Lodge DO,
+	field clearance and the like complete without waiting on earlier chart steps;
+	other templates are held by their Depends On links (CGMTask.validate_status).
 	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		application_sequence_for_finance_sequence,
-		is_finance_payment_task,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		get_application_task,
+		profile_for_task,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_permit_application_for_behaviour,
+		get_task_behaviour,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_task,
 	)
 
-	if not project or not is_finance_payment_task(finance_sequence):
+	if not finance_task.get("project") or not is_sea_import_task(finance_task):
 		return []
-	app_seq = application_sequence_for_finance_sequence(finance_sequence)
-	if not app_seq:
+	behaviour = get_task_behaviour(finance_task)
+	if behaviour.is_permit_finance:
+		app_name = get_permit_application_for_behaviour(finance_task)
+	elif behaviour.is_finance_payment:
+		profile = profile_for_task(finance_task)
+		app_name = get_application_task(finance_task.project, profile) if profile else None
+	else:
 		return []
-
-	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
-	rows = frappe.db.sql(
-		f"""
-		SELECT name, subject, custom_sequence_no AS seq, status
-		FROM `tabTask`
-		WHERE project = %s
-		  AND {flow_in}
-		  AND custom_sequence_no = %s
-		LIMIT 1
-		""",
-		(project, app_seq),
-		as_dict=True,
+	if not app_name or app_name == finance_task.name:
+		return []
+	rows = frappe.get_all(
+		"Task",
+		filters={"name": app_name},
+		fields=["name", "subject", "custom_sequence_no as seq", "status"],
+		limit=1,
 	)
-	if not rows:
+	if not rows or rows[0].status in ("Completed", "Cancelled"):
 		return []
-	app = rows[0]
-	if app.status in ("Completed", "Cancelled"):
+	if application_ready_for_finance(app_name):
 		return []
-	if _application_invoice_ready_for_finance(app.name, app.seq):
-		return []
-	return [app]
+	return rows
 
 
 def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
@@ -612,18 +537,26 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 	enforce_sea_tasks_exist(project)
 
 	if gate_rule == "Permit Invoices Submitted":
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-			get_permit_stage_for_sequence,
-			is_permit_application_task,
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+			ROLE_PERMIT_APPLICATION,
 		)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			permit_invoices_ready_for_project,
 		)
 
+		# The gate's own task is the permit application whose invoices it waits on.
 		stage = (
-			get_permit_stage_for_sequence(required_seq)
-			if is_permit_application_task(required_seq)
-			else PRE_CLEARANCE_STAGE
+			frappe.db.get_value(
+				"Task",
+				{
+					"project": project,
+					"custom_task_flow_key": ["in", list(sea_import_flow_keys())],
+					"custom_sequence_no": required_seq,
+					"custom_task_role": ROLE_PERMIT_APPLICATION,
+				},
+				"custom_permit_stage",
+			)
+			or PRE_CLEARANCE_STAGE
 		)
 		if not permit_invoices_ready_for_project(project, stage):
 			frappe.throw(

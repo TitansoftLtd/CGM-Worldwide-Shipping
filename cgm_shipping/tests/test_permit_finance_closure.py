@@ -127,7 +127,6 @@ class TestVerificationGate(unittest.TestCase):
 		app = frappe._dict(name="APP", project="PROJ", custom_sequence_no=5)
 		with (
 			patch(f"{BEHAVIOUR}.get_permit_finance_for_behaviour", return_value=finance),
-			patch.object(wf, "get_finance_permit_task_name", return_value=None),
 			patch.object(frappe, "get_doc", return_value=frappe._dict(name=finance)),
 			patch.object(wf, "permit_finance_rows", return_value=rows),
 			patch.object(frappe.db, "get_value", return_value="Finance pays Pre-Clearance Permits"),

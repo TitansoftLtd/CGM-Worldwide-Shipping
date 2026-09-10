@@ -122,8 +122,5 @@ class TestPermitPairingByStamp(unittest.TestCase):
 	def test_a_finance_step_is_not_its_own_pair(self):
 		fin = _task("Permit Finance", "Permit", "Pre-clearance", seq=6)
 		fin.project = "PROJ"
-		with (
-			patch.object(tb, "get_permit_finance_for_behaviour", return_value="TASK-TEST"),
-			patch.object(wf, "get_finance_permit_task_name", return_value=None),
-		):
+		with patch.object(tb, "get_permit_finance_for_behaviour", return_value="TASK-TEST"):
 			self.assertIsNone(wf.finance_permit_task_for_application(fin))
