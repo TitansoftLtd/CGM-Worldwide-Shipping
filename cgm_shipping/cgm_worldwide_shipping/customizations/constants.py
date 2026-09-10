@@ -52,12 +52,8 @@ SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
 # Opportunity pre-shipment workflow approved state.
 APPROVED_WORKFLOW_STATE = "Approved"
 
-# Quotation finance approval workflow.
-QUOTATION_WORKFLOW_NAME = "CGM Quotation Approval"
-QUOTATION_WORKFLOW_STATE_DRAFT = "Draft"
-QUOTATION_WORKFLOW_STATE_PENDING_FINANCE = "Pending Finance Approval"
+# Quotation states that allow billing (quotation.py / quotation.js).
 QUOTATION_WORKFLOW_STATE_APPROVED = "Approved"
-QUOTATION_WORKFLOW_STATE_REJECTED = "Rejected"
 QUOTATION_WORKFLOW_STATE_SHARED = "Shared with Client"
 QUOTATION_SI_READY_STATES = frozenset(
 	{

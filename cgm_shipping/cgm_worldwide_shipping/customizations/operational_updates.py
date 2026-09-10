@@ -1125,34 +1125,6 @@ def allocation_scope_filters(allocation_name: str) -> list[list] | None:
 
 
 @frappe.whitelist()
-def get_allocation_truck_updates(allocation_name: str) -> list[dict]:
-	"""Updates linked to this allocation, its containers, or its shipment."""
-	require_desk_access()
-	frappe.has_permission("Container Allocation", ptype="read", doc=allocation_name, throw=True)
-	or_filters = allocation_scope_filters(allocation_name)
-	if or_filters is None:
-		return []
-
-	rows = frappe.get_all(
-		UPDATE_DOCTYPE,
-		or_filters=or_filters,
-		fields=_UPDATE_LIST_FIELDS,
-		order_by="posted_on desc",
-		limit_page_length=200,
-		ignore_permissions=True,
-	)
-
-	seen: set[str] = set()
-	result: list[dict] = []
-	for row in rows:
-		if row.name in seen:
-			continue
-		seen.add(row.name)
-		result.append(serialize_update(frappe._dict(row)))
-	return result
-
-
-@frappe.whitelist()
 def get_tracker_truck_updates(container_tracker: str) -> list[dict]:
 	require_desk_access()
 	frappe.has_permission("Container Tracker", ptype="read", doc=container_tracker, throw=True)
@@ -1799,9 +1771,6 @@ def get_update_detail(name: str, include_source: int | str | None = 1) -> dict:
 		with_transcript=bool(payload["thread"]),
 	)
 	return payload
-
-
-
 
 
 # ─── Portal conversation threads ─────────────────────────────────────────────
