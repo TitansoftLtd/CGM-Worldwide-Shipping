@@ -314,8 +314,8 @@ function render_container_tracker_alerts(frm) {
 }
 
 function container_tracker_status_color(status) {
-	// Shared rule, defined once in public/js/cgm_container_tracking.js.
-	return cgm_shipping.container_tracking.status_color(status);
+	const status_color = window.cgm_shipping?.container_tracking?.status_color;
+	return status_color ? status_color(status) : "gray";
 }
 
 function apply_container_tracker_status_indicator(frm) {
