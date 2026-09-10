@@ -46,6 +46,9 @@ class TaskBehaviour:
 	requires_container_update: bool
 	is_auto_completable: bool
 	from_template: bool
+	# Document Type names stamped from the template. The task cannot be
+	# completed until each one is attached, so the grid must stay reachable.
+	required_document_types: str = ""
 
 	@property
 	def is_application(self) -> bool:
@@ -79,6 +82,12 @@ class TaskBehaviour:
 
 	@property
 	def show_documents(self) -> bool:
+		# A task that requires documents must always be able to receive them,
+		# whatever its role. Otherwise Complete is blocked on a grid the user
+		# cannot see, with no way out. Now that any template row can carry
+		# requirements, this guard is what keeps that from being reachable.
+		if self.required_document_types:
+			return True
 		if self.role in (ROLE_APPLICATION,) and self.payment_kind == "Shipping Line":
 			return False
 		if self.is_permit_application or self.is_permit_finance:
@@ -127,6 +136,7 @@ def get_task_behaviour(task) -> TaskBehaviour:
 			is_auto_completable=role == ROLE_AUTO_COMPLETE
 			or bool(cint(task.get("custom_is_auto_completable"))),
 			from_template=True,
+			required_document_types=(task.get("custom_required_document_types") or "").strip(),
 		)
 
 	return _behaviour_from_sea_settings(task)

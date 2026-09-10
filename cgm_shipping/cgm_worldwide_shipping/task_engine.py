@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 	SEA_IMPORT_TEMPLATE,
@@ -29,8 +30,17 @@ def create_project_tasks(project_name: str) -> list[str]:
 	template_name = _resolve_template(shipment_type_name)
 
 	if not template_name:
+		# A log line alone made this invisible: the project simply had no tasks and
+		# nobody knew why. Tell the user, since it is fixed by configuration.
 		frappe.logger("task_engine").info(
 			f"No task template for shipment type {shipment_type_name}. No tasks created."
+		)
+		frappe.msgprint(
+			_("No task plan was created: Shipment Type {0} has no Task Template linked.").format(
+				frappe.bold(shipment_type_name)
+			),
+			title=_("No Task Template"),
+			indicator="orange",
 		)
 		return []
 

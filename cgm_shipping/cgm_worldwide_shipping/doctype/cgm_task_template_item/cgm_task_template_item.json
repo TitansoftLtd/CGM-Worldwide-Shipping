@@ -156,14 +156,12 @@
    "label": "Optional Task"
   },
   {
-   "depends_on": "eval:[\"Document\",\"Document Checkpoint\",\"Application\"].includes(doc.task_role) || doc.requires_document_upload",
    "fieldname": "section_documents",
    "fieldtype": "Section Break",
    "label": "Required Documents"
   },
   {
-   "depends_on": "eval:[\"Document\",\"Document Checkpoint\",\"Application\"].includes(doc.task_role) || doc.requires_document_upload",
-   "description": "Select Document Types from the master list. Each selection prefills Task Documents on the matching task and blocks Complete until attached.",
+   "description": "Select Document Types from the master list. Each selection prefills Task Documents on the matching task and blocks Complete until attached. Available on every task role - document needs differ per step, not per role.",
    "fieldname": "required_document_types",
    "fieldtype": "Data",
    "label": "Required Document Types"
