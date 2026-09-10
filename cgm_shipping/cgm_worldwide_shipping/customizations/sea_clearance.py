@@ -3,7 +3,7 @@ Sea Freight Clearance - ordered task plan and workflow gates.
 
 Task plan: CGM Task Template → Sea Import Workflow (via task_engine)
 Workflow states: CGM Sea Import Workflow (Project)
-Task gates: CGM Shipping Settings → custom_sea_workflow_task_gates
+Task gates: CGM Task Template → Sea Import Workflow → Shipment Status Gates
 """
 from __future__ import annotations
 

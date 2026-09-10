@@ -33,6 +33,7 @@ class CGMTaskTemplate(Document):
 		self.validate_finance_pairs()
 		self.validate_completion_conditions()
 		self.validate_required_document_types()
+		self.validate_gates()
 
 	def _rows(self):
 		return self.get("tasks") or []
@@ -256,6 +257,62 @@ class CGMTaskTemplate(Document):
 				)
 
 			row.required_document_types = serialize_required_document_types(resolved)
+
+	def validate_gates(self) -> None:
+		"""Each Shipment Status Gate points at a task of this template.
+
+		The task subject is copied onto the row so the table can be read without
+		cross-referencing sequence numbers. A status listed twice is rejected - the
+		chart keeps only one. A task that is not in the plan only warns: that status
+		is never reached, which is how the gate already behaved, and an unrelated
+		edit should not be held up by it.
+		"""
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+			SEA_IMPORT_TEMPLATE,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
+			task_subjects_by_sequence,
+		)
+
+		subjects = task_subjects_by_sequence(self._rows())
+		states: list[str] = []
+		unreachable: list[str] = []
+		for gate in self.get("gates") or []:
+			state = (gate.get("shipment_workflow_state") or "").strip()
+			if state in states:
+				frappe.throw(
+					_("Shipment Status Gates: {0} is listed twice. One task reaches each status.").format(
+						frappe.bold(state)
+					),
+					title=_("Duplicate Status Gate"),
+				)
+			states.append(state)
+			seq = int(gate.get("min_completed_task_seq") or 0)
+			gate.task_subject = subjects.get(seq, "")
+			if not gate.task_subject:
+				unreachable.append(_("{0} (task {1})").format(state, seq))
+
+		if unreachable:
+			frappe.msgprint(
+				_("These statuses point at a task sequence that is not in the Tasks table, "
+				  "so the status chart never reaches them: {0}").format(", ".join(unreachable)),
+				title=_("Unreachable Status"),
+				indicator="orange",
+			)
+
+		if self.template_name == SEA_IMPORT_TEMPLATE and states:
+			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+				get_sea_import_workflow_states,
+			)
+
+			outside = [s for s in states if s not in get_sea_import_workflow_states()]
+			if outside:
+				frappe.msgprint(
+					_("The Sea Import status chart follows CGM Sea Import Workflow, which has "
+					  "no {0} state, so those rows are never shown.").format(", ".join(outside)),
+					title=_("Status Not In Workflow"),
+					indicator="orange",
+				)
 
 
 def sync_open_tasks_from_template(doc, _method=None):

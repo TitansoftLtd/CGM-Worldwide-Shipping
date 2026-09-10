@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
+	DEFAULT_SEA_WORKFLOW_TASK_GATES,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 	AIR_EXPORT_TEMPLATE,
 	AIR_IMPORT_TEMPLATE,
@@ -553,12 +556,74 @@ def road_transit_inbound_tasks() -> list[dict]:
 	]
 
 
+def _gate(state: str, seq: int, rule: str = "Standard") -> dict:
+	return {"shipment_workflow_state": state, "min_completed_task_seq": seq, "gate_rule": rule}
+
+
+# Shipment Status Gates: the task whose completion reaches each status, in status
+# chart order. Sea Import's are DEFAULT_SEA_WORKFLOW_TASK_GATES, next to its
+# workflow states. Seeds only - sites edit them on the template.
+
+# Air Import: proforma → UCR → permits → AWB/arrival → entry → release.
+AIR_IMPORT_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("UCR Applied", 2),
+	_gate("UCR Paid", 3),
+	_gate("Pre-clearance", 5),
+	_gate("Client Inspection", 7),
+	_gate("Final Docs Received", 8),
+	_gate("Entry Lodged", 10),
+	_gate("Entry Paid", 12),
+	_gate("Post-clearance", 13),
+	_gate("Field Clearance", 15),
+	_gate("Completed", 16),
+]
+
+# Air Export: client docs → AWB → export entry → airport → flight → COE.
+AIR_EXPORT_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("Final Docs Received", 4),
+	_gate("Entry Lodged", 5),
+	_gate("Entry Paid", 8),
+	_gate("In Transit", 10),
+	_gate("Completed", 11),
+]
+
+# Sea Transit Import leaves out the Sea Import-only statuses (UCR, permits,
+# client inspection).
+SEA_TRANSIT_IMPORT_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("Line Paid & DO Lodged", 5),
+	_gate("Entry Lodged", 7),
+	_gate("Entry Paid", 8, "Entry Finance Complete"),
+	_gate("Field Clearance", 9),
+	_gate("Post-clearance", 10),
+	_gate("KPA Paid", 11),
+	_gate("In Delivery", 14),
+	_gate("Completed", 15),
+]
+
+ROAD_TRANSIT_INBOUND_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("UCR Applied", 2),
+	_gate("UCR Paid", 3),
+	_gate("Pre-clearance", 5),
+	_gate("Entry Lodged", 6),
+	_gate("Entry Paid", 7),
+	_gate("Post-clearance", 9),
+	_gate("Field Clearance", 10),
+	_gate("In Delivery", 12),
+	_gate("Completed", 13),
+]
+
+
 TEMPLATE_DEFINITIONS: list[dict] = [
 	{
 		"template_name": SEA_IMPORT_TEMPLATE,
 		"description": "Standard sea import clearance from document intake through container return.",
 		"extends_template": None,
 		"tasks": sea_import_tasks(),
+		"gates": DEFAULT_SEA_WORKFLOW_TASK_GATES,
 	},
 	{
 		"template_name": SEA_EXPORT_TEMPLATE,
@@ -571,12 +636,14 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 		"description": "Air import from proforma through release.",
 		"extends_template": None,
 		"tasks": air_import_tasks(),
+		"gates": AIR_IMPORT_GATES,
 	},
 	{
 		"template_name": AIR_EXPORT_TEMPLATE,
 		"description": "Air export from client documents through COE.",
 		"extends_template": None,
 		"tasks": air_export_tasks(),
+		"gates": AIR_EXPORT_GATES,
 	},
 	{
 		"template_name": SEA_TRANSIT_IMPORT_TEMPLATE,
@@ -586,6 +653,7 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 		),
 		"extends_template": None,
 		"tasks": sea_transit_import_tasks(),
+		"gates": SEA_TRANSIT_IMPORT_GATES,
 	},
 	{
 		"template_name": SEA_TRANSIT_EXPORT_TEMPLATE,
@@ -604,6 +672,7 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 		"description": "Road transit import into Kenya.",
 		"extends_template": None,
 		"tasks": road_transit_inbound_tasks(),
+		"gates": ROAD_TRANSIT_INBOUND_GATES,
 	},
 ]
 
@@ -672,6 +741,8 @@ def seed_cgm_task_templates() -> None:
 		)
 		for task in definition.get("tasks") or []:
 			doc.append("tasks", task)
+		for gate in definition.get("gates") or []:
+			doc.append("gates", gate)
 		doc.insert(ignore_permissions=True)
 
 

@@ -168,7 +168,7 @@ Note the order around the entry: **Line Paid & DO Lodged sits between Entry Lodg
 
 | Rule | Meaning |
 |------|---------|
-| **Task gates** | You cannot skip ahead of incomplete tasks (configured in CGM Shipping Settings) |
+| **Task gates** | You cannot skip ahead of incomplete tasks (set per workflow in the CGM Task Template's **Shipment Status Gates** table) |
 | **Document gates** | Required documents must be **Verified** before some state changes |
 | **Intake documents** | **CI** and **PKL** required before **Documents Received** |
 | **Closure** | All 25 sea tasks must be complete before **Completed** |

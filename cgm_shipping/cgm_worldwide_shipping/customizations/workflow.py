@@ -8,26 +8,16 @@ import frappe
 SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
 
 
-@frappe.request_cache
 def get_workflow_task_gates() -> dict[str, dict]:
-	"""Map shipment workflow status → gate row from CGM Shipping Settings."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
-		get_cgm_shipping_settings,
+	"""Sea Import's shipment status gates (its CGM Task Template → Shipment Status Gates)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		SEA_IMPORT_TEMPLATE,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
+		get_template_gates,
 	)
 
-	settings = get_cgm_shipping_settings()
-	if not settings or not settings.meta.has_field("custom_sea_workflow_task_gates"):
-		return {}
-
-	rows = settings.get("custom_sea_workflow_task_gates") or []
-	return {
-		(row.shipment_workflow_state or "").strip(): {
-			"min_completed_task_seq": int(row.min_completed_task_seq or 0),
-			"gate_rule": row.gate_rule or "Standard",
-		}
-		for row in rows
-		if (row.shipment_workflow_state or "").strip()
-	}
+	return get_template_gates(SEA_IMPORT_TEMPLATE)
 
 
 def get_gate_for_state(workflow_state: str) -> dict | None:
