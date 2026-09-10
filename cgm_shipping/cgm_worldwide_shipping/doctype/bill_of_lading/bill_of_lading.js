@@ -88,21 +88,14 @@ frappe.ui.form.on("Bill of Lading", {
 		setup_bl_batch_autocomplete(frm);
 		defer_opportunity_link_on_create(frm);
 		if (frm.is_new()) {
-			if (frappe.route_options?.custom_linked_opportunity) {
-				remember_return_opportunity(frm, frappe.route_options.custom_linked_opportunity);
-			} else if (frappe.route_options?.linked_opportunity) {
+			if (frappe.route_options?.linked_opportunity) {
 				remember_return_opportunity(frm, frappe.route_options.linked_opportunity);
-			} else if (frm.doc.custom_linked_opportunity) {
-				remember_return_opportunity(frm, frm.doc.custom_linked_opportunity);
 			} else if (frm.doc.linked_opportunity) {
 				remember_return_opportunity(frm, frm.doc.linked_opportunity);
 			}
 			apply_bl_seed_from_opportunity_or_booking(frm);
-		} else if (frm.doc.custom_linked_opportunity || frm.doc.linked_opportunity) {
-			remember_return_opportunity(
-				frm,
-				frm.doc.linked_opportunity || frm.doc.custom_linked_opportunity
-			);
+		} else if (frm.doc.linked_opportunity) {
+			remember_return_opportunity(frm, frm.doc.linked_opportunity);
 		}
 		clear_draft_linked_opportunity_link(frm);
 		hide_linked_opportunity_field(frm);
@@ -292,7 +285,6 @@ function apply_bl_seed_from_opportunity_or_booking(frm) {
 
 	const opportunity =
 		frm.doc.linked_opportunity ||
-		frm.doc.custom_linked_opportunity ||
 		localStorage.getItem(CGM_BL_SEED_OPPORTUNITY_KEY) ||
 		localStorage.getItem(CGM_RETURN_OPPORTUNITY_KEY);
 	const booking = frm.doc.booking_confirmation;
@@ -401,9 +393,6 @@ function is_opportunity_route_name(name) {
 }
 
 function hide_linked_opportunity_field(frm) {
-	if (frm.fields_dict.custom_linked_opportunity) {
-		frm.set_df_property("custom_linked_opportunity", "hidden", 1);
-	}
 	if (frm.fields_dict.linked_opportunity) {
 		frm.set_df_property("linked_opportunity", "hidden", 1);
 	}
@@ -414,12 +403,6 @@ function remember_return_opportunity(frm, opportunity) {
 		return;
 	}
 	localStorage.setItem(CGM_RETURN_OPPORTUNITY_KEY, opportunity);
-	if (
-		frm.fields_dict.custom_linked_opportunity &&
-		is_saved_opportunity_name(opportunity)
-	) {
-		frm.doc.custom_linked_opportunity = opportunity;
-	}
 	if (frm.fields_dict.linked_opportunity && is_saved_opportunity_name(opportunity)) {
 		frm.doc.linked_opportunity = opportunity;
 	}
@@ -442,13 +425,6 @@ function defer_opportunity_link_on_create(frm) {
 
 function clear_draft_linked_opportunity_link(frm) {
 	if (
-		frm.fields_dict.custom_linked_opportunity &&
-		frm.doc.custom_linked_opportunity &&
-		!is_saved_opportunity_name(frm.doc.custom_linked_opportunity)
-	) {
-		frm.doc.custom_linked_opportunity = null;
-	}
-	if (
 		frm.fields_dict.linked_opportunity &&
 		frm.doc.linked_opportunity &&
 		!is_saved_opportunity_name(frm.doc.linked_opportunity)
@@ -461,9 +437,6 @@ function sync_linked_opportunity_on_bl(frm) {
 	const opportunity = get_cgm_return_opportunity(frm);
 	if (!opportunity || !is_saved_opportunity_name(opportunity)) {
 		return;
-	}
-	if (frm.fields_dict.custom_linked_opportunity) {
-		frm.doc.custom_linked_opportunity = opportunity;
 	}
 	if (frm.fields_dict.linked_opportunity) {
 		frm.doc.linked_opportunity = opportunity;
@@ -478,18 +451,12 @@ function get_cgm_return_opportunity(frm) {
 	if (is_saved_opportunity_name(frm.doc.linked_opportunity)) {
 		return frm.doc.linked_opportunity;
 	}
-	if (is_saved_opportunity_name(frm.doc.custom_linked_opportunity)) {
-		return frm.doc.custom_linked_opportunity;
-	}
 	return null;
 }
 
 function get_bl_linked_opportunity_name(frm) {
 	if (is_saved_opportunity_name(frm.doc.linked_opportunity)) {
 		return frm.doc.linked_opportunity;
-	}
-	if (is_saved_opportunity_name(frm.doc.custom_linked_opportunity)) {
-		return frm.doc.custom_linked_opportunity;
 	}
 	const from_return = get_cgm_return_opportunity(frm);
 	if (is_saved_opportunity_name(from_return)) {

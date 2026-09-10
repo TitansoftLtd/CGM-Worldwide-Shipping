@@ -331,17 +331,15 @@ def reinstall_supplier_shipping_line_schema() -> None:
 	frappe.db.commit()
 
 
-def export_cgm_customizations(
-	module: str = "CGM Worldwide Shipping",
-	with_permissions: bool = True,
-) -> None:
-	"""Write desk customizations into custom/*.json for git (applied on migrate).
+def export_cgm_customizations(module: str = "CGM Worldwide Shipping") -> None:
+	"""Write desk customizations of other apps' doctypes into custom/*.json for git.
 
-	Exports Custom Field and Property Setter for every doctype touched in *module*,
-	plus Custom DocPerm for the app's own doctypes only. ERPNext / HRMS doctypes get
-	an empty ``custom_perms``: migrate would otherwise delete and re-insert their role
-	permissions every time, undoing Role Permission Manager edits. Run after
-	Customize Form / Role Permission Manager::
+	Exports Custom Field and Property Setter for every ERPNext / HRMS / Frappe
+	doctype touched in *module*, applied on migrate. ``custom_perms`` is always
+	written empty: migrate would otherwise delete and re-insert those doctypes'
+	role permissions every time, undoing Role Permission Manager edits. The app's
+	own doctypes are skipped - their fields belong in their DocType JSON. Run after
+	Customize Form::
 
 	    bench --site <site> execute cgm_shipping.install.export_cgm_customizations
 
@@ -361,14 +359,13 @@ def export_cgm_customizations(
 
 	exported: list[str] = []
 	for doctype in sorted(doctypes):
-		if not doctype:
+		if not doctype or frappe.db.get_value("DocType", doctype, "module") == module:
 			continue
-		own_doctype = frappe.db.get_value("DocType", doctype, "module") == module
 		path = export_customizations(
 			module=module,
 			doctype=doctype,
 			sync_on_migrate=1,
-			with_permissions=with_permissions and own_doctype,
+			with_permissions=0,
 		)
 		if path:
 			exported.append(path)
