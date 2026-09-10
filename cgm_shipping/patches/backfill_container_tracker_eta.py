@@ -17,8 +17,8 @@ import frappe
 
 def execute():
 	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
-		_save_trackers,
 		_trackers_for_project,
+		apply_metrics_to_doc,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import get_project_ata
 
@@ -40,6 +40,8 @@ def execute():
 		pluck=True,
 	)
 
+	repaired = skipped = 0
+
 	for project_name in projects:
 		project = frappe.get_doc("Project", project_name)
 		trackers = _trackers_for_project(project_name)
@@ -52,18 +54,38 @@ def execute():
 		release = frappe.utils.getdate(release) if release else None
 
 		for ct in trackers:
+			values = {}
 			if eta:
-				ct.eta = eta
+				values["eta"] = eta
 			if ata:
-				ct.ata = ata
+				values["ata"] = ata
 				if not ct.get("discharging_date"):
-					ct.discharging_date = ata
+					values["discharging_date"] = ata
 			if release:
-				ct.custom_release_date = release
+				values["custom_release_date"] = release
+			if not values:
+				continue
 
-		_save_trackers(trackers)
+			ct.update(values)
+			frappe.db.savepoint("cgm_tracker_dates")
+			try:
+				ct.flags.ignore_links = True
+				apply_metrics_to_doc(ct)
+				ct.save(ignore_permissions=True)
+				repaired += 1
+			except Exception as exc:
+				frappe.db.rollback(save_point="cgm_tracker_dates")
+				for field, value in values.items():
+					frappe.db.set_value(
+						"Container Tracker", ct.name, field, value, update_modified=False
+					)
+				skipped += 1
+				print(f"  {ct.name}: dates written directly ({type(exc).__name__}: {exc})")
+
 		frappe.db.commit()
 		print(
 			f"{project_name}: aligned {len(trackers)} container(s) "
 			f"(ETA {eta}, ATA {ata}, release {release})"
 		)
+
+	print(f"Container Tracker dates aligned: {repaired} saved, {skipped} written directly")
