@@ -188,7 +188,7 @@ def ensure_customer_invoice_share_schema() -> None:
 
 
 def ensure_sales_invoice_workflow_setup() -> None:
-	"""Keep CGM Sales Invoice workflow states/transitions aligned with app code."""
+	"""Add any Sales Invoice workflow states/transitions the code needs; keep desk edits."""
 	if not frappe.db.exists("DocType", "Workflow"):
 		return
 	from cgm_shipping.patches.ensure_sales_invoice_workflow import (
