@@ -410,6 +410,15 @@ CONTAINER_STEP_BY_SEQ_FIELD: dict[str, str] = {
 CONTAINER_STEPS = tuple(CONTAINER_STEP_BY_SEQ_FIELD.values())
 # Steps whose task shows the Task Container Updates grid (all but the ETA refresh).
 CONTAINER_UPDATE_STEPS = tuple(s for s in CONTAINER_STEPS if s != CONTAINER_STEP_ETA_REFRESH)
+# Transport runs in parallel: these steps do not hold each other up on a status gate.
+TRANSPORT_CONTAINER_STEPS = (
+	CONTAINER_STEP_BOOK_TRUCKS,
+	CONTAINER_STEP_GATE_OUT,
+	CONTAINER_STEP_MONITOR_DELIVERY,
+	CONTAINER_STEP_OFFLOAD,
+	CONTAINER_STEP_EMPTY_RETURN,
+	CONTAINER_STEP_INTERCHANGE,
+)
 
 # Task form depends_on for the container grid. custom/task.json carries the same
 # text, and project_layout.ensure_task_container_update_fields writes it on

@@ -53,50 +53,43 @@ def is_sea_payment_task(task) -> bool:
 
 
 def auto_complete_initial_sea_tasks(project: str) -> list[str]:
-	"""Attach Project docs to auto-complete steps, then mark them Completed."""
-	from frappe.utils import now_datetime
+	"""Attach Project docs to the intake tasks, then mark them Completed.
 
+	The intake tasks are the project template's rows marked Complete When Client
+	Documents Are In. Sea Import's step numbers would pick other tasks on another
+	template - that is how Sea Transit's step 2 got completed.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		carry_project_documents_to_sea_tasks,
 	)
-
-	carry_project_documents_to_sea_tasks(project)
-
-	completed = []
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		auto_complete_sequences,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_workflow_template_name,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.task_engine import (
+		_auto_complete_intake_tasks,
+		intake_sequences,
 	)
 
-	for seq in sorted(auto_complete_sequences()):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-			get_task_name_by_sequence,
-		)
-
-		task_name = get_task_name_by_sequence(project, seq)
-		if not task_name:
-			continue
-		if frappe.db.get_value("Task", task_name, "status") == "Completed":
-			completed.append(task_name)
-			continue
-		task = frappe.get_doc("Task", task_name)
-		task.status = "Completed"
-		task.completed_by = frappe.session.user
-		task.completed_on = now_datetime()
-		task.description = AUTO_COMPLETE_INTAKE_REMARK
-		frappe.flags.cgm_auto_completing_sea_task = True
-		try:
-			task.save(ignore_permissions=True)
-		finally:
-			frappe.flags.cgm_auto_completing_sea_task = False
-		completed.append(task_name)
-	return completed
+	template = get_workflow_template_name(project)
+	seqs = intake_sequences(template) if template else []
+	if not seqs:
+		return []
+	carry_project_documents_to_sea_tasks(project, task_sequences=seqs)
+	return _auto_complete_intake_tasks(project, template, sequences=seqs)
 
 
 def effective_completed_task_seqs(tasks: list) -> set[int]:
-	"""Task sequences that count as done for workflow progress."""
+	"""Task sequences that count as done for workflow progress.
+
+	A permit application with its invoices submitted counts as done - it stays
+	Open until Finance completes. Its Task Role says which rows those are; Sea
+	Import's step numbers only cover rows without one.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		get_permit_stage_for_sequence,
 		is_permit_application_task,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_PERMIT_APPLICATION,
 	)
 
 	completed: set[int] = set()
@@ -106,11 +99,14 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 			continue
 		if row.get("status") == "Completed":
 			completed.add(seq)
-		elif (
-			is_permit_application_task(seq)
-			and row.get("custom_permit_invoices_submitted")
-		):
-			# Permit application stays Open until finance completes - still unlocks finance step.
+			continue
+		if not row.get("custom_permit_invoices_submitted"):
+			continue
+		role = (row.get("custom_task_role") or "").strip()
+		is_permit_application = (
+			role == ROLE_PERMIT_APPLICATION if role else is_permit_application_task(seq)
+		)
+		if is_permit_application:
 			completed.add(seq)
 	return completed
 
@@ -234,6 +230,9 @@ def _sea_task_progress_fields() -> list[str]:
 	meta = frappe.get_meta("Task")
 	if meta.has_field("custom_ucr_invoice_submitted"):
 		fields.append("custom_ucr_invoice_submitted")
+	if meta.has_field("custom_task_role"):
+		# effective_completed_task_seqs tells permit applications by their role.
+		fields.append("custom_task_role")
 	return fields
 
 
@@ -313,11 +312,16 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	return progress_status
 
 
-def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
+def get_incomplete_sea_tasks(
+	project: str, before_sequence: int, *, parallel_transport: bool = True
+) -> list[dict]:
 	"""Tasks with sequence < before_sequence that are not Completed/Cancelled.
 
 	Used for Project status / closure gates (chart progress), not for everyday
-	task completion — non-finance steps may finish out of order.
+	task completion — non-finance steps may finish out of order. With
+	``parallel_transport``, a gate on a transport task is not held up by earlier
+	transport tasks - they run in parallel - but its own task still counts.
+	Transport is told by the task's Container Step, not its step number.
 	"""
 	if before_sequence <= 1:
 		return []
@@ -341,14 +345,14 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
 	rows = frappe.db.sql(
 		f"""
-		SELECT name, subject, custom_sequence_no AS seq, status
+		SELECT name, subject, custom_sequence_no AS seq, status,
+			custom_container_step AS container_step
 		FROM `tabTask`
 		WHERE project = %s
 		  AND {flow_in}
 		  AND custom_sequence_no < %s
 		  AND status NOT IN ('Completed', 'Cancelled')
 		ORDER BY custom_sequence_no ASC
-		LIMIT 10
 		""",
 		(project, before_sequence),
 		as_dict=True,
@@ -382,12 +386,44 @@ def get_incomplete_sea_tasks(project: str, before_sequence: int) -> list[dict]:
 			)
 		)
 	]
-	# Transport tasks (21–26) run in parallel — do not block each other.
-	if 21 <= before_sequence <= 26:
-		filtered = [
-			r for r in filtered if not (21 <= r.seq < before_sequence)
-		]
+	if parallel_transport:
+		gate_seq = before_sequence - 1
+		filtered = _without_parallel_transport(
+			filtered, gate_seq, _gate_task_is_transport(project, gate_seq)
+		)
 	return filtered
+
+
+def _gate_task_is_transport(project: str, gate_seq: int) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		TRANSPORT_CONTAINER_STEPS,
+	)
+
+	step = frappe.db.get_value(
+		"Task",
+		{
+			"project": project,
+			"custom_task_flow_key": ["in", list(sea_import_flow_keys())],
+			"custom_sequence_no": gate_seq,
+		},
+		"custom_container_step",
+	)
+	return step in TRANSPORT_CONTAINER_STEPS
+
+
+def _without_parallel_transport(rows: list, gate_seq: int, gate_is_transport: bool) -> list:
+	"""Drop open transport tasks before a transport gate's own task - they run in parallel."""
+	if not gate_is_transport:
+		return rows
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		TRANSPORT_CONTAINER_STEPS,
+	)
+
+	return [
+		r
+		for r in rows
+		if not (r.get("container_step") in TRANSPORT_CONTAINER_STEPS and r.get("seq") < gate_seq)
+	]
 
 
 def _application_invoice_ready_for_finance(app_name: str, app_seq: int) -> bool:
@@ -435,6 +471,43 @@ def _application_invoice_ready_for_finance(app_name: str, app_seq: int) -> bool:
 		if profile and application_invoice_submitted(app_name, profile):
 			return True
 	return False
+
+
+def application_ready_for_finance(app_name: str) -> bool:
+	"""True when a finance step's parent application has handed Finance its invoice.
+
+	Read from the application's stamps, so it holds on every template. The
+	step-number reading above is Sea Import's; it stays for tasks without stamps.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		invoice_submitted as application_invoice_submitted,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		PAYMENT_KIND_TO_PROFILE_KEY,
+		get_task_behaviour,
+		profile_for_payment_kind,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		permit_application_invoices_ready_for_finance,
+		ucr_invoice_ready,
+	)
+
+	task = frappe.get_doc("Task", app_name)
+	behaviour = get_task_behaviour(task)
+	if not behaviour.from_template:
+		return _application_invoice_ready_for_finance(
+			app_name, int(task.get("custom_sequence_no") or 0)
+		)
+	if behaviour.is_permit_application:
+		return bool(permit_application_invoices_ready_for_finance(app_name))
+	if not behaviour.is_application:
+		return False
+	if PAYMENT_KIND_TO_PROFILE_KEY.get(behaviour.payment_kind) == "UCR Application" and ucr_invoice_ready(
+		app_name
+	):
+		return True
+	profile = profile_for_payment_kind(behaviour.payment_kind)
+	return bool(profile and application_invoice_submitted(app_name, profile))
 
 
 def get_incomplete_finance_pair_blockers(project: str, finance_sequence: int) -> list[dict]:
@@ -637,7 +710,12 @@ def get_sea_closure_blockers(project: str) -> list[str]:
 			f"Sea task plan has {created} tasks; the clearance chart requires {total}. "
 			"Regenerate the Sea Task Plan (reset) for this project."
 		)
-	incomplete = get_incomplete_sea_tasks(project, total + 1)
+	# Every task up to the last step, transport included. The row count is not the
+	# last step: removed steps leave gaps (Sea Import ends at 25 with 23 rows).
+	last_step = max(
+		(int(row.get("sequence_no") or 0) for row in load_sea_task_template()), default=total
+	)
+	incomplete = get_incomplete_sea_tasks(project, last_step + 1, parallel_transport=False)
 	if incomplete:
 		lines = [f"Task {r.seq}: {r.subject} ({r.status or 'Open'})" for r in incomplete[:8]]
 		blockers.append(
@@ -665,15 +743,13 @@ def mark_task_completed(task) -> None:
 
 @frappe.whitelist()
 def backfill_intake_documents_on_sea_tasks(project):
-	"""Copy Project shipment documents onto tasks 1–2 (for projects created before this feature)."""
-	frappe.has_permission("Project", ptype="write", throw=True)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		carry_project_documents_to_sea_tasks,
-	)
+	"""Copy Project shipment documents onto the intake tasks and complete them.
 
-	carried = carry_project_documents_to_sea_tasks(project)
-	auto_complete_initial_sea_tasks(project)
-	return {"tasks_updated": carried}
+	For projects created before intake carry existed. The intake tasks come from
+	the project's template (see auto_complete_initial_sea_tasks).
+	"""
+	frappe.has_permission("Project", ptype="write", throw=True)
+	return {"tasks_updated": auto_complete_initial_sea_tasks(project)}
 
 
 

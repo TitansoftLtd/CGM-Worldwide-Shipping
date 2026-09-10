@@ -879,16 +879,27 @@ def merge_checkpoint_task_documents_into_project(project_doc) -> bool:
 	if not project_doc.name:
 		return False
 
-	changed = False
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_DOCUMENT_CHECKPOINT,
+		task_is_document_checkpoint,
+	)
+
+	# Checkpoint tasks by their Task Role, on any template. The Sea Import step
+	# numbers still find checkpoints on tasks created before the stamps.
+	names = frappe.get_all(
+		"Task",
+		filters={"project": project_doc.name, "custom_task_role": ROLE_DOCUMENT_CHECKPOINT},
+		pluck="name",
+		order_by="custom_sequence_no asc",
+	)
 	for seq in document_checkpoint_sequences():
 		task_name = get_task_name_by_sequence(project_doc.name, seq)
-		if not task_name:
-			continue
-		task = frappe.get_doc("Task", task_name)
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-			task_is_document_checkpoint,
-		)
+		if task_name and task_name not in names:
+			names.append(task_name)
 
+	changed = False
+	for task_name in names:
+		task = frappe.get_doc("Task", task_name)
 		if not task_is_document_checkpoint(task):
 			continue
 		if apply_checkpoint_task_documents_to_project(project_doc, task):

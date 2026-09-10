@@ -1555,9 +1555,7 @@ def sync_application_finance_lines_to_idf_record(task, profile: ApplicationFinan
 	if rec and rec.verified:
 		doc.receipt_verified = 1
 		doc.payment_status = "Receipt Verified"
-	if task.status == "Completed" and is_application_finance_task(
-		int(task.get("custom_sequence_no") or 0), profile
-	):
+	if task.status == "Completed" and task_matches_application_finance(task, profile):
 		doc.payment_status = "Complete"
 	doc.save(ignore_permissions=True)
 

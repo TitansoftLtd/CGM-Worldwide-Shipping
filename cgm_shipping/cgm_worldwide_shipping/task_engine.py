@@ -311,45 +311,39 @@ def _auto_complete_intake_tasks(
 	template_name: str,
 	*,
 	sequences: list[int] | None = None,
-) -> None:
-	"""Mark template intake tasks complete when CRM documents already cover them."""
+) -> list[str]:
+	"""Mark template intake tasks complete when CRM documents already cover them.
+
+	Only this template's tasks: a step number alone would also match another
+	plan's task on the same project. Returns the intake tasks now Completed.
+	"""
 	from frappe.utils import now_datetime
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 		AUTO_COMPLETE_INTAKE_REMARK,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		auto_complete_sequences,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		workflow_flow_keys_for_template,
 	)
 
-	seqs = sequences if sequences is not None else sorted(auto_complete_sequences())
-	flow_keys = {
-		template_name,
-		normalize_template_name(template_name) or template_name,
-	}
+	seqs = sequences if sequences is not None else intake_sequences(template_name)
+	name = normalize_template_name(template_name) or template_name
+	flow_keys = list(dict.fromkeys([template_name, name, *workflow_flow_keys_for_template(name)]))
+	completed: list[str] = []
 	for seq in seqs:
-		task_name = None
-		for flow_key in flow_keys:
-			task_name = frappe.db.get_value(
-				"Task",
-				{
-					"project": project_name,
-					"custom_task_flow_key": flow_key,
-					"custom_sequence_no": seq,
-				},
-				"name",
-			)
-			if task_name:
-				break
-		if not task_name:
-			task_name = frappe.db.get_value(
-				"Task",
-				{"project": project_name, "custom_sequence_no": seq},
-				"name",
-			)
+		task_name = frappe.db.get_value(
+			"Task",
+			{
+				"project": project_name,
+				"custom_task_flow_key": ["in", flow_keys],
+				"custom_sequence_no": seq,
+			},
+			"name",
+		)
 		if not task_name:
 			continue
 		if frappe.db.get_value("Task", task_name, "status") == "Completed":
+			completed.append(task_name)
 			continue
 		task = frappe.get_doc("Task", task_name)
 		task.status = "Completed"
@@ -361,6 +355,8 @@ def _auto_complete_intake_tasks(
 			task.save(ignore_permissions=True)
 		finally:
 			frappe.flags.cgm_auto_completing_sea_task = False
+		completed.append(task_name)
+	return completed
 
 
 def check_auto_completable_tasks(project_name: str) -> None:

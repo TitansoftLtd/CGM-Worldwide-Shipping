@@ -4767,21 +4767,15 @@ class CGMTask(Task):
 			self.status = "Open"
 		if self.status != self.get_db_value("status") and self.status == "Completed":
 			from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-				_application_invoice_ready_for_finance,
+				application_ready_for_finance,
 			)
 
 			for d in self.depends_on:
 				parent_status = frappe.db.get_value("Task", d.task, "status")
 				if parent_status in ("Completed", "Cancelled"):
 					continue
-				if _is_sea_task(self):
-					parent_seq = int(
-						frappe.db.get_value("Task", d.task, "custom_sequence_no") or 0
-					)
-					if parent_seq and _application_invoice_ready_for_finance(
-						d.task, parent_seq
-					):
-						continue
+				if _is_sea_task(self) and application_ready_for_finance(d.task):
+					continue
 				frappe.throw(
 					_(
 						"Cannot complete task {0} as its dependant task {1} are not completed / cancelled."

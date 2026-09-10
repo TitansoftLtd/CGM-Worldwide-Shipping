@@ -242,7 +242,7 @@ def profile_for_payment_kind(payment_kind: str | None):
 
 
 def profile_for_behaviour_task(task):
-	"""Profile from stamped payment kind, else legacy Settings seq mapping."""
+	"""Profile from stamped payment kind, else legacy Settings seq mapping (Sea Import only)."""
 	behaviour = get_task_behaviour(task)
 	if behaviour.from_template and behaviour.payment_kind:
 		profile = profile_for_payment_kind(behaviour.payment_kind)
@@ -253,6 +253,14 @@ def profile_for_behaviour_task(task):
 		):
 			return profile
 
+	# The step-number fallback reads Sea Import's numbering; on another template's
+	# task it names the wrong profile (Road Transit's permit step 4 came out as UCR).
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_task,
+	)
+
+	if not is_sea_import_task(task):
+		return None
 	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
 		all_profiles,
 		is_application_workflow_task,
