@@ -76,9 +76,11 @@ cgm_shipping.opportunity_shipment.init_intake_wizard = function (frm, opts = {})
 	cgm_shipping.opportunity_shipment._ensure_intake_fields_visible(frm);
 	cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
 	if (!opts.defer_refresh) {
-		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm).then(() => {
-			cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
-		});
+		cgm_shipping.opportunity_shipment
+			.refresh_wizard_ui(frm, { skip_writes: Boolean(opts.skip_writes) })
+			.then(() => {
+				cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+			});
 	}
 };
 
@@ -875,7 +877,9 @@ cgm_shipping.opportunity_shipment.apply_awb_payload = function (frm, pending) {
 		if (value == null || value === "" || !frm.fields_dict[fieldname]) {
 			return;
 		}
-		if (String(frm.doc[fieldname] ?? "") === String(value ?? "")) {
+		// Compare trimmed - the server strips text on save, so a stray space in the
+		// linked document would mark the form Not Saved after every save.
+		if (String(frm.doc[fieldname] ?? "").trim() === String(value ?? "").trim()) {
 			return;
 		}
 		frm.set_value(fieldname, value);
@@ -975,7 +979,9 @@ cgm_shipping.opportunity_shipment.apply_booking_payload = function (frm, pending
 		if (value == null || value === "" || !frm.fields_dict[fieldname]) {
 			return;
 		}
-		if (String(frm.doc[fieldname] ?? "") === String(value ?? "")) {
+		// Compare trimmed - the server strips text on save, so a stray space in the
+		// linked document would mark the form Not Saved after every save.
+		if (String(frm.doc[fieldname] ?? "").trim() === String(value ?? "").trim()) {
 			return;
 		}
 		frm.set_value(fieldname, value);

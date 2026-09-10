@@ -16,6 +16,9 @@ def extend_bootinfo(bootinfo) -> None:
 	# on both sides. Plain constants, so it cannot fail at boot.
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		container_status_boot,
+		shipment_status_boot,
 	)
 
 	bootinfo["cgm_container_statuses"] = container_status_boot()
+	# Shipment status table - Desk pill colours (portal reads it server-side).
+	bootinfo["cgm_shipment_statuses"] = shipment_status_boot()

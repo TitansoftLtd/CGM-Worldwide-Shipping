@@ -74,7 +74,7 @@ def seed_cgm_shipping_settings() -> None:
 		return
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-		reseed_sea_clearance_task_requirements,
+		top_up_sea_clearance_task_requirements,
 	)
 
 	settings = frappe.get_doc("CGM Shipping Settings")
@@ -82,7 +82,7 @@ def seed_cgm_shipping_settings() -> None:
 	changed = False
 
 	if meta.has_field("custom_sea_clearance_task_requirements"):
-		changed = reseed_sea_clearance_task_requirements(settings) or changed
+		changed = top_up_sea_clearance_task_requirements(settings) or changed
 
 	if meta.has_field("custom_sea_workflow_task_gates") and not settings.get(
 		"custom_sea_workflow_task_gates"
@@ -90,11 +90,6 @@ def seed_cgm_shipping_settings() -> None:
 		for row in DEFAULT_SEA_WORKFLOW_TASK_GATES:
 			settings.append("custom_sea_workflow_task_gates", row)
 		changed = True
-
-	if meta.has_field("sea_import_template") and not settings.get("sea_import_template"):
-		if frappe.db.exists("CGM Task Template", "Sea Import Workflow"):
-			settings.sea_import_template = "Sea Import Workflow"
-			changed = True
 
 	if changed:
 		settings.flags.skip_package_visibility_apply = True

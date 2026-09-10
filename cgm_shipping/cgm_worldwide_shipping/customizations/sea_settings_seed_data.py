@@ -197,6 +197,24 @@ def reseed_sea_clearance_task_requirements(settings) -> bool:
 	return True
 
 
+def top_up_sea_clearance_task_requirements(settings) -> bool:
+	"""Seed the requirement rows when the table is empty; never overwrite edits.
+
+	Runs on every migrate. A table that differs from the defaults is reported, not
+	reset - reset it on purpose with ensure_sea_clearance_task_requirements.
+	"""
+	if settings.get("custom_sea_clearance_task_requirements"):
+		if sea_clearance_requirements_need_reseed(settings):
+			print(
+				"CGM Shipping Settings: sea clearance task requirements differ from the app "
+				"defaults and were left as edited. To reset them: bench --site <site> execute "
+				"cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data."
+				"ensure_sea_clearance_task_requirements"
+			)
+		return False
+	return reseed_sea_clearance_task_requirements(settings)
+
+
 def ensure_sea_clearance_task_requirements() -> bool:
 	"""Idempotent: align CGM Shipping Settings requirement rows with seed defaults."""
 	import frappe

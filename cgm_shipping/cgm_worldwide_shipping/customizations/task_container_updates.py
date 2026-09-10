@@ -9,7 +9,7 @@ from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-	CONTAINER_UPDATE_TASK_SEQS,
+	CONTAINER_UPDATE_TASK_SEQ_FIELDS,
 	TASK_CONTAINER_UPDATES_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
@@ -209,7 +209,7 @@ def container_update_task_sequences() -> frozenset[int]:
 	server refuses to seed, or hide on one it validates.
 	"""
 	return frozenset(
-		CONTAINER_UPDATE_TASK_SEQS
+		{get_container_task_sequence(fieldname) for fieldname in CONTAINER_UPDATE_TASK_SEQ_FIELDS}
 		| _shipping_line_application_seqs()
 		| _shipping_line_finance_seqs()
 	)

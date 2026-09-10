@@ -1218,7 +1218,7 @@ def handle_sea_task_container_event(
 	today_date = getdate(today())
 	trackers = _trackers_for_project(project_name)
 
-	if seq == get_container_task_sequence("custom_eta_refresh_task_seq"):
+	if seq == get_container_task_sequence("custom_track_eta_task_seq"):
 		_apply_bulk_eta(project, trackers)
 	elif seq == get_container_task_sequence("custom_vessel_arrival_task_seq"):
 		_apply_bulk_vessel_arrival(project, trackers, today_date, task_doc=task_doc)

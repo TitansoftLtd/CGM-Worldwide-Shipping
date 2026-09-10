@@ -43,29 +43,43 @@ def execute() -> None:
 
 
 def _sync_workflow() -> None:
+	"""Create the workflow, or add the states and transitions the code needs.
+
+	Runs on every migrate (install.after_migrate). Rows already on the workflow are
+	left alone, so a role or edit rule changed in the desk survives; changing an
+	existing row from code needs a patch.
+	"""
 	_ensure_workflow_states()
 
-	if frappe.db.exists("Workflow", SALES_INVOICE_WORKFLOW_NAME):
-		workflow = frappe.get_doc("Workflow", SALES_INVOICE_WORKFLOW_NAME)
-	else:
+	if not frappe.db.exists("Workflow", SALES_INVOICE_WORKFLOW_NAME):
 		workflow = frappe.new_doc("Workflow")
 		workflow.workflow_name = SALES_INVOICE_WORKFLOW_NAME
+		workflow.document_type = "Sales Invoice"
+		workflow.workflow_state_field = "workflow_state"
+		workflow.is_active = 1
+		workflow.send_email_alert = 0
+		# Don't Override Status - list/form indicators use ERPNext payment status.
+		workflow.override_status = 1
+		for row in _workflow_states():
+			workflow.append("states", row)
+		for row in _workflow_transitions():
+			workflow.append("transitions", row)
+		workflow.insert(ignore_permissions=True)
+		return
 
-	workflow.document_type = "Sales Invoice"
-	workflow.workflow_state_field = "workflow_state"
-	workflow.is_active = 1
-	workflow.send_email_alert = 0
-	# Don't Override Status — list/form indicators use ERPNext payment status.
-	workflow.override_status = 1
-
-	workflow.states = []
-	for row in _workflow_states():
+	workflow = frappe.get_doc("Workflow", SALES_INVOICE_WORKFLOW_NAME)
+	have_states = {row.state for row in workflow.states}
+	have_transitions = {(row.state, row.action) for row in workflow.transitions}
+	missing_states = [row for row in _workflow_states() if row["state"] not in have_states]
+	missing_transitions = [
+		row for row in _workflow_transitions() if (row["state"], row["action"]) not in have_transitions
+	]
+	if not (missing_states or missing_transitions):
+		return
+	for row in missing_states:
 		workflow.append("states", row)
-
-	workflow.transitions = []
-	for row in _workflow_transitions():
+	for row in missing_transitions:
 		workflow.append("transitions", row)
-
 	workflow.save(ignore_permissions=True)
 
 

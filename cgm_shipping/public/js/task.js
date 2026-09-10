@@ -418,7 +418,7 @@ const CGM_SEA_UI_SEQUENCES_EMPTY = {
 // Mirrors CONTAINER_TASK_SEQ_DEFAULTS in customizations/constants.py. Only used
 // before get_sea_task_ui_sequences answers, or when that call fails.
 const CONTAINER_TASK_SEQ_FALLBACK = {
-	custom_eta_refresh_task_seq: 8,
+	custom_track_eta_task_seq: 8,
 	custom_vessel_arrival_task_seq: 12,
 	custom_field_clearance_task_seq: 17,
 	custom_kpa_paid_task_seq: 19,

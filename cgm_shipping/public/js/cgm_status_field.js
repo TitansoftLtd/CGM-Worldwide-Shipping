@@ -46,36 +46,12 @@ cgm_shipping.status_field = {
 	},
 
 	tone_for_shipment(status) {
-		if (!status || status === "Draft") {
+		// Desk column of the shipment status table (constants.py), sent via boot.
+		// A stale boot degrades to "in progress" rather than failing.
+		if (!status) {
 			return "muted";
 		}
-		if (status === "Completed") {
-			return "success";
-		}
-		if (status === "Containers Returned") {
-			return "primary";
-		}
-		if (["In Transit", "In Delivery", "Client Inspection"].includes(status)) {
-			return "info";
-		}
-		if (
-			[
-				"Documents Received",
-				"UCR Applied",
-				"UCR Paid",
-				"Pre-clearance",
-				"Final Docs Received",
-				"Entry Lodged",
-				"Post-clearance",
-				"Field Clearance",
-			].includes(status)
-		) {
-			return "primary";
-		}
-		if (["Line Paid & DO Lodged", "Entry Paid", "KPA Paid"].includes(status)) {
-			return "warning";
-		}
-		return "active";
+		return frappe.boot?.cgm_shipment_statuses?.statuses?.[status]?.tone || "active";
 	},
 
 	tone_for_inspection(status) {
