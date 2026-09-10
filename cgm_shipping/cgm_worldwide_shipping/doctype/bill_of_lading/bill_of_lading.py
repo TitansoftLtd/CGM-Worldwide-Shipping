@@ -1341,10 +1341,12 @@ def get_project_company_deposit_invoice_context(project: str) -> dict | None:
 
 
 def _user_can_manage_deposit_refund() -> bool:
-	return bool(
-		{"Finance Manager", "Finance User", "Accounts User", "Accounts Manager", "System Manager"}
-		& set(frappe.get_roles())
+	"""Finance roles from CGM Shipping Settings / the Finance role group, plus System Manager."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		configured_finance_roles,
 	)
+
+	return bool((configured_finance_roles() | {"System Manager"}) & set(frappe.get_roles()))
 
 
 def _project_for_bl(bill_of_lading: str) -> str | None:

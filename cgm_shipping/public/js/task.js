@@ -467,61 +467,6 @@ function apply_permit_field_visibility(frm, ui) {
 	});
 }
 
-const CGM_TASK_PERMISSIONS_FALLBACK = {
-	can_make_payment: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_receipt: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"System Manager",
-		"CGM Documentation",
-		"Documentation",
-		"Declarant",
-		"Declaration User",
-	],
-	can_upload_pop: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"System Manager",
-	],
-	can_verify_invoice: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_invoice: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-		"CGM Documentation",
-		"Documentation",
-	],
-	can_upload_certificate: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-	],
-	can_confirm_client_paid: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_document: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-	],
-	can_record_purchase_invoice: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"Purchase Manager",
-		"Purchase User",
-	],
-};
-
 // Desk-session cache: sequence lists are settings, not per-task. Avoid re-hitting
 // get_sea_task_ui_sequences on every Task open (that endpoint walks CGM Settings).
 let CGM_SEA_UI_SEQUENCES_CACHE = null;
@@ -577,24 +522,10 @@ function get_cgm_sea_seq_config(frm) {
 }
 
 function get_cgm_permissions(frm) {
-	const perms = get_cgm_sea_seq_config(frm).permissions;
-	if (perms && Object.keys(perms).length) {
-		return perms;
-	}
-	const roles = frappe.user_roles || [];
-	const from_fallback = (key) =>
-		(CGM_TASK_PERMISSIONS_FALLBACK[key] || []).some((r) => roles.includes(r));
-	return {
-		can_make_payment: from_fallback("can_make_payment"),
-		can_upload_receipt: from_fallback("can_upload_receipt"),
-		can_upload_pop: from_fallback("can_upload_pop"),
-		can_verify_invoice: from_fallback("can_verify_invoice"),
-		can_upload_invoice: from_fallback("can_upload_invoice"),
-		can_upload_certificate: from_fallback("can_upload_certificate"),
-		can_confirm_client_paid: from_fallback("can_confirm_client_paid"),
-		can_upload_document: from_fallback("can_upload_document"),
-		can_record_purchase_invoice: from_fallback("can_record_purchase_invoice"),
-	};
+	// The user's permissions come from the server with the sea task config
+	// (CGM Shipping Settings → Document responsibilities). Until they arrive,
+	// nothing is permitted; the form refreshes when they do.
+	return get_cgm_sea_seq_config(frm).permissions || {};
 }
 
 function seq_in_list(seq, list) {
@@ -4167,9 +4098,7 @@ function user_can_make_payment(frm) {
 	if (perms) {
 		return !!perms.can_make_payment;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_make_payment.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_can_upload_receipt(frm) {
@@ -4177,9 +4106,7 @@ function user_can_upload_receipt(frm) {
 	if (perms) {
 		return !!perms.can_upload_receipt;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_receipt.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_may_attach_receipt_on_application(frm, row) {
@@ -4213,9 +4140,7 @@ function user_can_upload_pop(frm) {
 	if (perms && perms.can_upload_pop !== undefined) {
 		return !!perms.can_upload_pop;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_pop.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_can_verify_invoice(frm) {
@@ -4231,9 +4156,7 @@ function user_can_upload_invoice(frm) {
 	if (perms && perms.can_upload_invoice !== undefined) {
 		return !!perms.can_upload_invoice;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_invoice.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	) || frm?.doc?.owner === frappe.session.user;
+	return frm?.doc?.owner === frappe.session.user;
 }
 
 function user_can_upload_certificate(frm) {
@@ -4791,9 +4714,7 @@ function user_can_record_purchase_invoice(frm) {
 	if (perms) {
 		return !!perms.can_record_purchase_invoice;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_record_purchase_invoice.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function open_next_task_prompt(frm) {
