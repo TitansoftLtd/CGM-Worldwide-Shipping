@@ -787,6 +787,29 @@ def backfill_open_task_behaviour_from_templates() -> int:
 	return updated
 
 
+def _subject_key(value) -> str:
+	return " ".join((value or "").split()).lower()
+
+
+def template_item_for_task(task_row, items: list[dict]) -> dict | None:
+	"""The template row an existing Task came from, or None.
+
+	Matched by subject when it is unique in the template, else by step number -
+	but only if that row still has the task's subject. Matching by step alone
+	re-stamped tasks with a neighbour's role whenever rows moved: PROJ-0035's
+	"Taxes paid" became Permit Finance when the Road template grew from 9 to 13
+	steps.
+	"""
+	key = _subject_key(task_row.get("subject"))
+	if not key:
+		return None
+	same_subject = [item for item in items if _subject_key(item.get("subject")) == key]
+	if len(same_subject) == 1:
+		return same_subject[0]
+	seq = int(task_row.get("custom_sequence_no") or 0)
+	return next((item for item in same_subject if int(item.get("sequence_no") or 0) == seq), None)
+
+
 def sync_tasks_for_template(template_name: str) -> int:
 	"""Push template behaviour + required Task Documents onto open Tasks for one template."""
 	import frappe
@@ -805,8 +828,8 @@ def sync_tasks_for_template(template_name: str) -> int:
 		return 0
 
 	template = frappe.get_doc("CGM Task Template", template_name)
-	by_seq = {int(i["sequence_no"]): i for i in _collect_items(template)}
-	if not by_seq:
+	items = _collect_items(template)
+	if not items:
 		return 0
 
 	tasks = frappe.get_all(
@@ -815,11 +838,11 @@ def sync_tasks_for_template(template_name: str) -> int:
 			"custom_task_flow_key": template_name,
 			"status": ["!=", "Cancelled"],
 		},
-		fields=["name", "custom_sequence_no", "custom_task_role"],
+		fields=["name", "subject", "custom_sequence_no", "custom_task_role"],
 	)
 	updated = 0
 	for task_row in tasks:
-		item = by_seq.get(int(task_row.custom_sequence_no or 0))
+		item = template_item_for_task(task_row, items)
 		if not item:
 			continue
 		role = (item.get("task_role") or "Standard").strip() or "Standard"
@@ -829,16 +852,19 @@ def sync_tasks_for_template(template_name: str) -> int:
 		current = frappe.db.get_value(
 			"Task",
 			task_row.name,
-			["custom_task_role", "custom_payment_kind", "custom_required_document_types"],
+			["custom_task_role", "custom_payment_kind", "custom_permit_stage", "custom_required_document_types"],
 			as_dict=True,
 		) or {}
+		want_stage = (item.get("permit_stage") or "").strip()
 		current_role = (current.get("custom_task_role") or "").strip()
 		current_kind = (current.get("custom_payment_kind") or "").strip()
+		current_stage = (current.get("custom_permit_stage") or "").strip()
 		current_docs = (current.get("custom_required_document_types") or "").strip()
 		behaviour_changed = not (
 			current_role
 			and current_role == role
 			and current_kind == want_kind
+			and current_stage == want_stage
 			and current_docs == want_docs
 		)
 		if behaviour_changed:
@@ -850,10 +876,10 @@ def sync_tasks_for_template(template_name: str) -> int:
 				"custom_requires_container_update": 1 if item.get("requires_container_update") else 0,
 				"custom_is_auto_completable": 1 if item.get("is_auto_completable") else 0,
 			}
-			if want_kind:
-				values["custom_payment_kind"] = want_kind
-			if item.get("permit_stage"):
-				values["custom_permit_stage"] = item["permit_stage"]
+			# Write blanks too: a kind or stage the row no longer carries must not
+			# stay behind on a re-stamped task.
+			values["custom_payment_kind"] = want_kind
+			values["custom_permit_stage"] = want_stage
 			if frappe.get_meta("Task").has_field("custom_required_document_types"):
 				values["custom_required_document_types"] = want_docs
 			frappe.db.set_value("Task", task_row.name, values, update_modified=False)

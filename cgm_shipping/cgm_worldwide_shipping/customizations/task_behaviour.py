@@ -454,6 +454,36 @@ def task_is_kpa_finance(task) -> bool:
 	return is_kpa_finance_payment_task(int(task.get("custom_sequence_no") or 0))
 
 
+def task_is_shipping_line_application(task) -> bool:
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_application and behaviour.payment_kind == "Shipping Line"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		is_shipping_line_application_task,
+	)
+
+	return is_shipping_line_application_task(int(task.get("custom_sequence_no") or 0))
+
+
+def task_is_kpa_application(task) -> bool:
+	behaviour = get_task_behaviour(task)
+	if behaviour.from_template:
+		return behaviour.is_application and behaviour.payment_kind == "KPA"
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_kpa_application_task
+
+	return is_kpa_application_task(int(task.get("custom_sequence_no") or 0))
+
+
+def task_permit_stage(task, default: str | None = None) -> str | None:
+	"""Permit stage of a permit step: its stamp, else the Sea Import step's stage, else *default*."""
+	stage = get_task_behaviour(task).permit_stage
+	if stage:
+		return stage
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import permit_stage_by_sequence
+
+	return permit_stage_by_sequence().get(int(task.get("custom_sequence_no") or 0)) or default
+
+
 def task_is_permit_application(task) -> bool:
 	behaviour = get_task_behaviour(task)
 	if behaviour.from_template:
