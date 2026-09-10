@@ -111,3 +111,41 @@ class TestPermitInvoicesCountAsDone(unittest.TestCase):
 			 "custom_task_role": "Permit Finance"},
 		]
 		self.assertEqual(sc.effective_completed_task_seqs(rows), set())
+
+
+class TestStepSevenAndStepDocuments(unittest.TestCase):
+	"""Settings keyed two requirements on step numbers the template has moved past."""
+
+	def test_delivery_order_and_field_documents_are_on_the_template(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
+			sea_import_tasks,
+		)
+
+		rows = {row["subject"]: row for row in sea_import_tasks()}
+		self.assertEqual(rows["Lodge Delivery Order"]["required_document_types"], "DO")
+		self.assertEqual(
+			rows["Field Officers conduct clearance"]["required_document_types"], "FIELD, Delivery Note"
+		)
+
+	def test_client_inspection_task_fields_are_gone(self):
+		"""They showed only on step 7, which Sea Import no longer has."""
+		import json
+		import os
+
+		import cgm_shipping
+
+		path = os.path.join(
+			os.path.dirname(cgm_shipping.__file__), "cgm_worldwide_shipping", "custom", "task.json"
+		)
+		with open(path) as f:
+			data = json.load(f)
+		gone = {
+			"custom_section_client_inspection",
+			"custom_client_notified_on",
+			"custom_client_notified_by",
+			"custom_inspection_confirmed_on",
+			"custom_inspection_confirmed_by",
+		}
+		self.assertFalse(gone & {f["fieldname"] for f in data["custom_fields"]})
+		order = next(p for p in data["property_setters"] if p["property"] == "field_order")
+		self.assertFalse(gone & set(json.loads(order["value"])))

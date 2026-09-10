@@ -164,7 +164,7 @@ def sea_import_tasks() -> list[dict]:
 			role="Finance Payment",
 			payment_kind="ENTRY_SLIP",
 		),
-		_row(14, "Lodge Delivery Order", "Operations", doc=1, role="Document"),
+		_row(14, "Lodge Delivery Order", "Operations", doc=1, role="Document", required_docs="DO"),
 		_row(
 			15,
 			"Prepare Post-Clearance Permits",
@@ -184,7 +184,13 @@ def sea_import_tasks() -> list[dict]:
 			permit_stage="Post-clearance",
 			payment_kind="Permit",
 		),
-		_row(17, "Field Officers conduct clearance", "Field Operations", container_step="Field Clearance"),
+		_row(
+			17,
+			"Field Officers conduct clearance",
+			"Field Operations",
+			container_step="Field Clearance",
+			required_docs="FIELD, Delivery Note",
+		),
 		_row(
 			18,
 			"Supervisor obtains KPA Invoice",

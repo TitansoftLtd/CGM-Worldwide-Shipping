@@ -266,7 +266,6 @@ def ensure_task_container_schema() -> None:
 		ensure_shipment_document_version_fields,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
-		ensure_client_inspection_task_fields,
 		ensure_client_paid_task_fields,
 		ensure_container_tracking_settings_fields,
 		ensure_field_officer_task_fields,
@@ -282,7 +281,6 @@ def ensure_task_container_schema() -> None:
 		ensure_task_container_update_fields()
 	if frappe.db.exists("DocType", "Task"):
 		ensure_field_officer_task_fields()
-		ensure_client_inspection_task_fields()
 		ensure_client_paid_task_fields()
 		frappe.db.commit()
 	if frappe.db.exists("DocType", "Project"):
