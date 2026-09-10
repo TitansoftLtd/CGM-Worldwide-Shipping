@@ -342,16 +342,19 @@ cgm_shipping.opportunity_shipment.refresh_wizard_ui = function (frm, opts = {}) 
 				frm.get_field("custom_shipment_intake_wizard_html").html(ctx.html || "");
 			}
 
+			// The server has already saved this stage (get_intake_wizard_context), so only
+			// patch the local copy - set_value would mark a just-saved form Not Saved.
+			if (ctx.stage && frm.doc.custom_intake_stage !== ctx.stage && !frm.is_new()) {
+				frm.doc.custom_intake_stage = ctx.stage;
+				frm.layout?.refresh_dependency?.();
+			}
+
 			const stage = cgm_shipping.opportunity_shipment._current_stage(frm);
 			cgm_shipping.opportunity_shipment._render_readiness_html(
 				frm,
 				stage,
 				ctx.readiness || {}
 			);
-
-			if (!skip_writes && ctx.stage && frm.doc.custom_intake_stage !== ctx.stage && !frm.is_new()) {
-				frm.set_value("custom_intake_stage", ctx.stage);
-			}
 
 			const flags = ctx.readiness || {};
 			frm._cgm_shipment_type_flags = flags;
@@ -363,7 +366,7 @@ cgm_shipping.opportunity_shipment.refresh_wizard_ui = function (frm, opts = {}) 
 			cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
 			cgm_shipping.opportunity_shipment.render_transport_documents_dashboard(frm, flags);
 			cgm_shipping.opportunity_shipment.toggle_package_fields(frm);
-			if (!frm.is_new() && frm.doc.custom_air_waybill) {
+			if (!skip_writes && !frm.is_new() && frm.doc.custom_air_waybill) {
 				cgm_shipping.opportunity_shipment.sync_from_linked_awb(frm);
 			}
 			if (
@@ -513,7 +516,9 @@ cgm_shipping.opportunity_shipment.toggle_package_fields = function (frm) {
 };
 
 cgm_shipping.opportunity_shipment.on_after_save = function (frm) {
-	return cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
+	// before_save has just run every server sync; a write here could only repeat or
+	// undo it, and any write marks the saved form Not Saved again.
+	return cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm, { skip_writes: true });
 };
 
 cgm_shipping.opportunity_shipment._reveal_transport_documents_html = function (frm) {
