@@ -15,7 +15,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	seed_stamped_required_document_rows,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
-	coerce_legacy_document_type_tokens,
 	document_type_names_from_template_row,
 	normalize_required_document_type_stamp,
 	resolve_legacy_document_type_name,

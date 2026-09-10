@@ -9,13 +9,12 @@ from __future__ import annotations
 import json
 
 import frappe
-from frappe.utils import cint, flt
+from frappe.utils import flt
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
 	filter_sea_tasks_for_user,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
-	display_ref_from_values,
 	get_project_reference,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (

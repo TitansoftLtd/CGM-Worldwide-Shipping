@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import frappe
-from frappe.utils import cint, flt, now_datetime
+from frappe.utils import cint, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	ENTRY_INVOICE_TO_FINANCE,
