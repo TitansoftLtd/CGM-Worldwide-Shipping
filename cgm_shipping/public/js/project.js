@@ -856,16 +856,13 @@ function container_status_dot(status, alert_status) {
 	if (alert.includes("⚠️")) {
 		return "🟡";
 	}
-	// Same rule as the badge. Green only once the interchange is confirmed -
-	// "✅ Returned On Time" alone no longer turns it green, the container is
-	// still open until interchange.
 	return {
 		green: "🟢",
 		orange: "🟠",
 		yellow: "🟡",
 		blue: "🔵",
 		red: "🔴",
-	}[cgm_shipping.container_tracking.status_color(status)];
+	}[container_status_badge_class(status)];
 	return "⚪";
 }
 
@@ -1158,8 +1155,13 @@ function container_allocation_detail(c) {
 }
 
 function container_status_badge_class(status) {
-	// Shared rule, defined once in public/js/cgm_container_tracking.js.
-	return cgm_shipping.container_tracking.status_color(status);
+	// Shared rule, defined once in public/js/cgm_container_tracking.js
+	// (app_include_js). Guarded: that file is cached separately from this one,
+	// and when the browser still holds an older copy an unguarded call throws
+	// inside the card loop - blanking the whole Container Tracker tab instead of
+	// just losing a colour.
+	const status_color = window.cgm_shipping?.container_tracking?.status_color;
+	return status_color ? status_color(status) : "gray";
 }
 
 function render_container_tracking_table(frm, dashboard) {
