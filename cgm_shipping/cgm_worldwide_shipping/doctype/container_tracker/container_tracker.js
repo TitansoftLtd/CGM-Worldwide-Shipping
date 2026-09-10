@@ -4,91 +4,6 @@
 const CGM_CONTAINER_TRACKING_TASK_KEY = "cgm_container_tracking_task";
 const CGM_CONTAINER_TRACKING_PROJECT_KEY = "cgm_container_tracking_project";
 
-const MODE_SECTIONS = {
-	"Mombasa Port": [
-		"section_identity",
-		"section_seal",
-		"section_dates",
-		"section_mombasa",
-		"section_warehouse",
-		"section_transport",
-		"section_shipping_line_free_days",
-		"section_kpa_free_days",
-		"section_empty_return",
-	],
-	"ICD Nairobi": [
-		"section_identity",
-		"section_seal",
-		"section_dates",
-		"section_icd",
-		"section_warehouse",
-		"section_transport",
-		"section_shipping_line_free_days",
-		"section_kpa_free_days",
-		"section_empty_return",
-	],
-	"Transit Export": [
-		"section_identity",
-		"section_seal",
-		"section_dates",
-		"section_mombasa",
-		"section_transit",
-		"section_warehouse",
-		"section_transport",
-		"section_shipping_line_free_days",
-		"section_kpa_free_days",
-	],
-	"Transit Import": [
-		"section_identity",
-		"section_seal",
-		"section_dates",
-		"section_mombasa",
-		"section_transit",
-		"section_warehouse",
-		"section_transport",
-		"section_shipping_line_free_days",
-		"section_kpa_free_days",
-	],
-	Export: [
-		"section_identity",
-		"section_seal",
-		"section_dates",
-		"section_export",
-		"section_transit",
-		"section_transport",
-		"section_shipping_line_free_days",
-		"section_kpa_free_days",
-	],
-};
-
-const TRANSIT_ONLY_FIELDS = ["warehouse_loading_date"];
-
-const MODE_SECTION_FIELDNAMES = [...new Set(Object.values(MODE_SECTIONS).flat())];
-
-function is_transit_container_mode(mode) {
-	return (mode || "").includes("Transit");
-}
-
-function resolve_mode_sections(mode) {
-	const normalized = (mode || "").trim();
-	if (MODE_SECTIONS[normalized]) {
-		return MODE_SECTIONS[normalized];
-	}
-	if (normalized.includes("ICD")) {
-		return MODE_SECTIONS["ICD Nairobi"];
-	}
-	if (normalized.includes("Transit Export")) {
-		return MODE_SECTIONS["Transit Export"];
-	}
-	if (normalized.includes("Transit")) {
-		return MODE_SECTIONS["Transit Import"];
-	}
-	if (normalized.includes("Export")) {
-		return MODE_SECTIONS.Export;
-	}
-	return MODE_SECTIONS["Mombasa Port"];
-}
-
 function lock_transport_assignment_fields(frm) {
 	// Resolved server-side from the configured Transport roles (see
 	// user_can_edit_transport_assignment). Falls back to the Operations override
@@ -105,51 +20,21 @@ function lock_transport_assignment_fields(frm) {
 	});
 }
 
-function apply_container_mode_layout(frm, mode) {
-	const effective_mode = mode || frm.doc.container_mode;
-	const show = new Set(resolve_mode_sections(effective_mode));
-
-	MODE_SECTION_FIELDNAMES.forEach((section_fieldname) => {
-		if (!frm.fields_dict[section_fieldname]) {
-			return;
-		}
-		frm.set_df_property(section_fieldname, "hidden", show.has(section_fieldname) ? 0 : 1);
-	});
-
-	const show_transit_fields = is_transit_container_mode(effective_mode);
-	TRANSIT_ONLY_FIELDS.forEach((fieldname) => {
-		if (frm.fields_dict[fieldname]) {
-			frm.set_df_property(fieldname, "hidden", show_transit_fields ? 0 : 1);
-		}
-	});
-
-	if (frm.layout) {
-		frm.layout.refresh_sections();
-		frm.layout.refresh_tabs();
-	}
-}
-
-function refresh_container_mode_layout(frm) {
+function sync_container_mode_from_project(frm) {
+	// Data sync only - the Project owns the mode, and container lifecycle events
+	// and reports read it off the tracker.
 	if (!frm.doc.project) {
-		apply_container_mode_layout(frm);
 		return;
 	}
-	frappe.db.get_value(
-		"Project",
-		frm.doc.project,
-		"custom_container_tracker_mode",
-		(r) => {
-			if (cur_frm !== frm) {
-				return;
-			}
-			const mode = r?.custom_container_tracker_mode || frm.doc.container_mode;
-			if (mode && frm.doc.container_mode !== mode) {
-				frm.set_value("container_mode", mode);
-				return;
-			}
-			apply_container_mode_layout(frm, mode);
+	frappe.db.get_value("Project", frm.doc.project, "custom_container_tracker_mode", (r) => {
+		if (cur_frm !== frm) {
+			return;
 		}
-	);
+		const mode = r?.custom_container_tracker_mode;
+		if (mode && frm.doc.container_mode !== mode) {
+			frm.set_value("container_mode", mode);
+		}
+	});
 }
 
 function fetch_bl_container_options(bill_of_lading) {
@@ -474,7 +359,7 @@ frappe.ui.form.on("Container Tracker", {
 	},
 
 	refresh(frm) {
-		refresh_container_mode_layout(frm);
+		sync_container_mode_from_project(frm);
 		lock_transport_assignment_fields(frm);
 		render_container_tracker_alerts(frm);
 		apply_container_tracker_status_indicator(frm);
@@ -509,7 +394,6 @@ frappe.ui.form.on("Container Tracker", {
 
 	project(frm) {
 		if (!frm.doc.project) {
-			apply_container_mode_layout(frm);
 			return;
 		}
 		frappe.db.get_value(
@@ -526,8 +410,6 @@ frappe.ui.form.on("Container Tracker", {
 				const mode = values?.custom_container_tracker_mode;
 				if (mode && frm.doc.container_mode !== mode) {
 					frm.set_value("container_mode", mode);
-				} else {
-					refresh_container_mode_layout(frm);
 				}
 			}
 		);
@@ -548,10 +430,6 @@ frappe.ui.form.on("Container Tracker", {
 
 	custom_bl_container_select(frm) {
 		apply_selected_bl_container(frm);
-	},
-
-	container_mode(frm) {
-		apply_container_mode_layout(frm, frm.doc.container_mode);
 	},
 
 	discharging_date(frm) {
