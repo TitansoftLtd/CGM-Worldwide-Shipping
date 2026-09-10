@@ -856,18 +856,16 @@ function container_status_dot(status, alert_status) {
 	if (alert.includes("⚠️")) {
 		return "🟡";
 	}
-	if (status === "Interchange Received" || alert.includes("✅")) {
-		return "🟢";
-	}
-	if (["At Warehouse", "Cargo Offloaded", "Empty Returned"].includes(status)) {
-		return "🟢";
-	}
-	if (["Discharged / At Port", "Vessel Berthed"].includes(status)) {
-		return "🟡";
-	}
-	if (status === "Released / In Transit") {
-		return "🟠";
-	}
+	// Same rule as the badge. Green only once the interchange is confirmed -
+	// "✅ Returned On Time" alone no longer turns it green, the container is
+	// still open until interchange.
+	return {
+		green: "🟢",
+		orange: "🟠",
+		yellow: "🟡",
+		blue: "🔵",
+		red: "🔴",
+	}[cgm_shipping.container_tracking.status_color(status)];
 	return "⚪";
 }
 
@@ -1160,25 +1158,8 @@ function container_allocation_detail(c) {
 }
 
 function container_status_badge_class(status) {
-	if (!status) {
-		return "gray";
-	}
-	if (status.includes("Overdue")) {
-		return "red";
-	}
-	if (status === "Interchange Received" || status === "Empty Returned") {
-		return "green";
-	}
-	if (["At Warehouse", "Cargo Offloaded"].includes(status)) {
-		return "blue";
-	}
-	if (status === "Released / In Transit") {
-		return "orange";
-	}
-	if (["Vessel Berthed", "Discharged / At Port"].includes(status)) {
-		return "yellow";
-	}
-	return "gray";
+	// Shared rule, defined once in public/js/cgm_container_tracking.js.
+	return cgm_shipping.container_tracking.status_color(status);
 }
 
 function render_container_tracking_table(frm, dashboard) {

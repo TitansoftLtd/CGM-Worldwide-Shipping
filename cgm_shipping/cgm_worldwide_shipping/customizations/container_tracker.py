@@ -390,6 +390,10 @@ def _derive_transit_status(data: dict[str, Any]) -> str:
 	mode = data.get("container_mode") or ""
 	is_outbound = "Export" in mode
 
+	if data.get("interchange_date"):
+		return CONTAINER_STATUS_INTERCHANGE
+	if data.get("actual_empty_return"):
+		return CONTAINER_STATUS_EMPTY_RETURNED
 	if data.get("offloading_date"):
 		return "Offloaded at Destination"
 	if data.get("gate_in_date_warehouse"):
