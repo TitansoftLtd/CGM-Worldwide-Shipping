@@ -262,6 +262,65 @@ def container_status_boot() -> dict:
 		},
 	}
 
+# Shipment status (Project.custom_shipment_status) - one row per status, in chart
+# order: (status, customer milestone, Desk tone, portal tone). The Select options
+# on Project list the same statuses in the same order (tests pin it), and every
+# workflow gate table must use these names. The Desk and portal colours differ
+# today; to unify them, make the two tone columns agree here.
+SHIPMENT_MILESTONES = (
+	"Booking & Documents",
+	"Pre-Clearance",
+	"In Transit",
+	"Arrival & Customs Entry",
+	"Clearance",
+	"Delivery",
+)
+
+SHIPMENT_STATUS_TABLE = (
+	("Draft", "Booking & Documents", "muted", "muted"),
+	("Documents Received", "Booking & Documents", "primary", "active"),
+	("UCR Applied", "Booking & Documents", "primary", "active"),
+	("UCR Paid", "Booking & Documents", "primary", "active"),
+	("Pre-clearance", "Pre-Clearance", "primary", "active"),
+	("Client Inspection", "Pre-Clearance", "info", "active"),
+	("In Transit", "In Transit", "info", "info"),
+	("Final Docs Received", "Arrival & Customs Entry", "primary", "active"),
+	("Entry Lodged", "Arrival & Customs Entry", "primary", "active"),
+	("Line Paid & DO Lodged", "Arrival & Customs Entry", "warning", "active"),
+	("Entry Paid", "Arrival & Customs Entry", "warning", "active"),
+	("Post-clearance", "Clearance", "primary", "active"),
+	("Field Clearance", "Clearance", "primary", "active"),
+	("KPA Paid", "Clearance", "warning", "active"),
+	("In Delivery", "Delivery", "info", "info"),
+	("Containers Returned", "Delivery", "primary", "primary"),
+	("Completed", "Delivery", "success", "success"),
+)
+
+SHIPMENT_STATUSES = tuple(row[0] for row in SHIPMENT_STATUS_TABLE)
+_SHIPMENT_STATUS_ROWS = {row[0]: row for row in SHIPMENT_STATUS_TABLE}
+
+
+def shipment_status_tone(status: str | None, *, portal: bool = False) -> str:
+	"""Pill tone for a shipment status; unknown statuses read as in progress."""
+	if not status:
+		return "muted"
+	row = _SHIPMENT_STATUS_ROWS.get(status)
+	if not row:
+		return "active"
+	return row[3] if portal else row[2]
+
+
+def shipment_status_boot() -> dict:
+	"""The shipment status table for the Desk, via frappe.boot."""
+	return {
+		"order": list(SHIPMENT_STATUSES),
+		"statuses": {
+			status: {"milestone": milestone, "tone": desk, "portal_tone": portal}
+			for status, milestone, desk, portal in SHIPMENT_STATUS_TABLE
+		},
+	}
+
+
 # Sequence numbers for the container lifecycle steps. Each key is a field on CGM
 # Shipping Settings ("Container tracking tasks"), where 0 means "use the value
 # below". Read them through get_container_task_sequence(), never from this dict

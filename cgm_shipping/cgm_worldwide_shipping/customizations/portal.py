@@ -26,6 +26,13 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	SHIPMENT_MILESTONES,
+	SHIPMENT_STATUS_TABLE,
+	SHIPMENT_STATUSES,
+	shipment_status_tone,
+)
+
 # ─── Page layout ─────────────────────────────────────────────────────────────
 
 
@@ -124,47 +131,17 @@ def get_customer_notification_emails(customer: str) -> list[str]:
 
 # ─── Shipment lifecycle model ────────────────────────────────────────────────
 
-# The granular Project.custom_shipment_status chart (17 ordered states).
-SHIPMENT_STAGES = [
-	"Draft",
-	"Documents Received",
-	"UCR Applied",
-	"UCR Paid",
-	"Pre-clearance",
-	"Client Inspection",
-	"In Transit",
-	"Final Docs Received",
-	"Entry Lodged",
-	"Line Paid & DO Lodged",
-	"Entry Paid",
-	"Post-clearance",
-	"Field Clearance",
-	"KPA Paid",
-	"In Delivery",
-	"Containers Returned",
-	"Completed",
-]
+# The granular Project.custom_shipment_status chart, from the shipment status
+# table in constants.py.
+SHIPMENT_STAGES = list(SHIPMENT_STATUSES)
 _STAGE_INDEX = {name: i for i, name in enumerate(SHIPMENT_STAGES)}
 
-# Customer-facing milestones: the 17 internal states rolled up into six
-# steps a consignee actually cares about. Each milestone owns a contiguous
-# slice of the chart; a shipment's current milestone is whichever slice its
-# status falls into.
+# Customer-facing milestones: the internal states rolled up into six steps a
+# consignee actually cares about. Each milestone owns a contiguous slice of the
+# chart; a shipment's current milestone is whichever slice its status falls into.
 MILESTONES = [
-	("Booking & Documents", ("Draft", "Documents Received", "UCR Applied", "UCR Paid")),
-	("Pre-Clearance", ("Pre-clearance", "Client Inspection")),
-	("In Transit", ("In Transit",)),
-	(
-		"Arrival & Customs Entry",
-		(
-			"Final Docs Received",
-			"Entry Lodged",
-			"Line Paid & DO Lodged",
-			"Entry Paid",
-		),
-	),
-	("Clearance", ("Post-clearance", "Field Clearance", "KPA Paid")),
-	("Delivery", ("In Delivery", "Containers Returned", "Completed")),
+	(label, tuple(status for status, milestone, *_ in SHIPMENT_STATUS_TABLE if milestone == label))
+	for label in SHIPMENT_MILESTONES
 ]
 
 
@@ -219,16 +196,8 @@ def shipment_progress(status: str | None) -> dict:
 
 
 def status_tone(status: str | None) -> str:
-	"""CSS tone class for a shipment status pill on lists/cards."""
-	if not status or status == "Draft":
-		return "muted"
-	if status == "Completed":
-		return "success"
-	if status in ("In Transit", "In Delivery"):
-		return "info"
-	if status in ("Containers Returned",):
-		return "primary"
-	return "active"
+	"""CSS tone class for a shipment status pill on lists/cards (portal column)."""
+	return shipment_status_tone(status, portal=True)
 
 
 # ─── Shipment queries ────────────────────────────────────────────────────────

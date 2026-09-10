@@ -635,6 +635,10 @@ def awb_propagation_payload(awb_doc) -> dict:
 	}
 	for src_field, dest_field in AWB_TO_OPPORTUNITY_FIELDS:
 		value = awb_doc.get(src_field)
+		# Strip like _set_doc_field_if_changed does on save: the form compares these
+		# with what the server stored, so a stray space re-dirtied it on every load.
+		if isinstance(value, str):
+			value = value.strip()
 		if value in (None, ""):
 			continue
 		if src_field == "number_of_packages" and value in (0, "0", "0.0"):

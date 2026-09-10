@@ -91,3 +91,29 @@ class TestStageSyncHandsOverTheDoc(unittest.TestCase):
 
 	def test_not_ready_stays_on_documents(self):
 		self.assertEqual(self._stage(False), wizard.STAGE_DOCUMENTS)
+
+
+class TestAwbPayloadMatchesWhatIsSaved(unittest.TestCase):
+	"""CRM-OPP-2026-00071: the AWB said "MEDICAL EQUIPMENTS " (trailing space).
+
+	The browser wrote it onto the form on every load, the save stripped it, and
+	the form showed Not Saved again - forever.
+	"""
+
+	def test_text_is_stripped_like_the_save(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import awb_propagation_payload
+
+		awb = frappe._dict(name="AWB-TEST", description="MEDICAL EQUIPMENTS ", airline=" AIR ARABIA", number_of_packages=0)
+		with patch("cgm_shipping.cgm_worldwide_shipping.customizations.shipment.awb_quantity_summary", return_value=""):
+			payload = awb_propagation_payload(awb)
+
+		self.assertEqual(payload["custom_description_of_goods"], "MEDICAL EQUIPMENTS")
+		self.assertEqual(payload["custom_airline"], "AIR ARABIA")
+		self.assertNotIn("custom_number_of_packages", payload)
+
+	def test_blank_after_stripping_is_skipped(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import awb_propagation_payload
+
+		with patch("cgm_shipping.cgm_worldwide_shipping.customizations.shipment.awb_quantity_summary", return_value=""):
+			payload = awb_propagation_payload(frappe._dict(name="AWB-TEST", airline="   "))
+		self.assertNotIn("custom_airline", payload)
