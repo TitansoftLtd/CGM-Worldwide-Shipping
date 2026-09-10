@@ -2206,8 +2206,7 @@ def complete_permit_application_task(task_name: str) -> dict:
 			validate_permit_application_task,
 		)
 
-		seq = task_sequence(task)
-		validate_permit_application_task(task, seq)
+		validate_permit_application_task(task)
 		validate_permit_application_can_complete(task)
 
 		task.status = "Completed"

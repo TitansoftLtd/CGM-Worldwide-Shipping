@@ -111,18 +111,6 @@ def effective_completed_task_seqs(tasks: list) -> set[int]:
 	return completed
 
 
-def furthest_contiguous_completed_seq(completed_seqs: set[int]) -> int:
-	"""Highest sequence reachable without gaps from seq 1.
-
-	Used for closure gates that require sequential progress. The clearance
-	workflow chart uses gate-based progress instead (see derive_workflow_*).
-	"""
-	seq = 0
-	while (seq + 1) in completed_seqs:
-		seq += 1
-	return seq
-
-
 def all_clearance_tasks_completed(tasks: list, gates: dict | None = None) -> bool:
 	"""True when every workflow task on the project is done (nothing left open)."""
 	if not tasks:
@@ -179,7 +167,7 @@ def derive_workflow_passed_states(
 		gate_seq = gate_row.get("min_completed_task_seq") if gate_row else None
 		if gate_seq and gate_seq in completed_seqs:
 			passed.add(state)
-	# Draft has no task gate — pass it together with Documents Received (seq 1 / intake).
+	# Draft has no task gate - pass it together with Documents Received (the intake step).
 	if "Draft" in states and "Documents Received" in passed:
 		passed.add("Draft")
 	if all_clearance_tasks_completed(tasks, gates=gates) and "Completed" in states:

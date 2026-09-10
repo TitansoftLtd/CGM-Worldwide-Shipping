@@ -2179,17 +2179,6 @@ def enforce_application_finance_line_permissions(
 				)
 
 
-def get_profile_for_sequence(sequence_no: int) -> ApplicationFinanceProfile | None:
-	for profile in all_profiles():
-		if is_application_workflow_task(sequence_no, profile):
-			return profile
-	return None
-
-
-def is_any_application_workflow_task(sequence_no: int) -> bool:
-	return get_profile_for_sequence(sequence_no) is not None
-
-
 def linked_application_finance_pairs() -> tuple[tuple[int, int], ...]:
 	pairs: list[tuple[int, int]] = []
 	for profile in all_profiles():

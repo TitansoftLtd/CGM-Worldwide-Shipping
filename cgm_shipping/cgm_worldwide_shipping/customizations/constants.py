@@ -349,8 +349,7 @@ TASK_CONTAINER_NUMBER_FIELD = "custom_container_number"
 TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 
 # Task child table for per-container data entry (transport / field clearance / KPA).
-# Seq 12 (Create Entry / vessel-arrival) is a Project→Task mirror only - not a
-# completion gate.
+# The Vessel Arrival step is a Project→Task mirror only - not a completion gate.
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
 # Settings fields for the steps that show the grid: every container step except
 # the ETA refresh. Base set only - the grid also shows on the shipping line

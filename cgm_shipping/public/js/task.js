@@ -58,9 +58,8 @@ frappe.ui.form.on("Task", {
 		reset_cgm_task_sea_ui_state_if_needed(frm);
 		ensure_cgm_finance_department_loaded(frm);
 		const ui = get_sea_task_ui(frm);
-		// Permit table depends_on must be corrected on every refresh — the Desk
-		// Custom Field default omits post-clearance Finance (seq 16) and would
-		// hide invoices even when child rows exist in the database.
+		// Permit table depends_on is set from the task's behaviour on every refresh,
+		// so the table shows on every task that works with permits.
 		apply_permit_field_visibility(frm, ui);
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
@@ -410,8 +409,6 @@ const CGM_SEA_UI_SEQUENCES_EMPTY = {
 	shipping_line_finance_seqs: [],
 	kpa_finance_seqs: [],
 	permit_stage_by_seq: {},
-	container_task_seqs: {},
-	container_update_seqs: [],
 	permissions: {},
 };
 

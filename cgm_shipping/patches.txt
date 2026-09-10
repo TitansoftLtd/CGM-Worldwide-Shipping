@@ -116,3 +116,4 @@ cgm_shipping.patches.fix_sea_import_status_gates
 cgm_shipping.patches.reopen_tasks_closed_by_intake_bug
 cgm_shipping.patches.remove_client_inspection_task_fields
 cgm_shipping.patches.require_sea_import_step_documents
+cgm_shipping.patches.remove_dead_step_document_requirements

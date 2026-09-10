@@ -41,9 +41,7 @@ DEFAULT_SEA_IMPORT_TASK_TEMPLATE: list[dict[str, str]] = [
 DEFAULT_DOC_CODES: dict[int, list[str]] = {
 	3: [],
 	4: [],
-	7: ["INSPECT"],
 	8: [],
-	9: ["MANIFEST"],
 	10: [],
 	11: [],
 	14: ["DO"],

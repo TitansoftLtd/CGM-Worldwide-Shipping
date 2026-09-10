@@ -725,16 +725,6 @@ def sync_client_paid_to_application_task(task) -> str | None:
 	return app_name
 
 
-def is_sea_auto_complete_task(task) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		is_sea_import_task,
-	)
-
-	return is_sea_import_task(task) and is_auto_complete_task(
-		int(task.get("custom_sequence_no") or 0)
-	)
-
-
 @frappe.whitelist()
 def get_sea_task_ui_sequences() -> dict:
 	"""Sequence lists and role flags for Task form UI (from CGM Shipping Settings).
@@ -769,16 +759,6 @@ def _cached_sea_task_ui_sequence_lists() -> dict:
 	kpa_finance = sorted(s for s in finance_payment_sequences() if is_kpa_finance_payment_task(s))
 	stage_by_seq = permit_stage_by_sequence()
 
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-		CONTAINER_TASK_SEQ_DEFAULTS,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
-		get_container_task_sequence,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
-		container_update_task_sequences,
-	)
-
 	payload = {
 		"payment_seqs": sorted(finance_payment_sequences()),
 		"auto_complete_seqs": sorted(auto_complete_sequences()),
@@ -796,13 +776,6 @@ def _cached_sea_task_ui_sequence_lists() -> dict:
 		"shipping_line_finance_seqs": shipping_line_finance,
 		"kpa_finance_seqs": kpa_finance,
 		"permit_stage_by_seq": {str(k): v for k, v in stage_by_seq.items()},
-		# Container / field-clearance steps are settings-driven too. The desk used to
-		# hardcode these numbers, which drifted from CGM Shipping Settings.
-		"container_task_seqs": {
-			fieldname: get_container_task_sequence(fieldname)
-			for fieldname in CONTAINER_TASK_SEQ_DEFAULTS
-		},
-		"container_update_seqs": sorted(container_update_task_sequences()),
 		"finance_department": frappe.db.get_single_value(
 			"CGM Shipping Settings", "custom_finance_department"
 		)
@@ -1560,8 +1533,8 @@ def sync_idf_certificate_to_project(task) -> None:
 def _sync_ucr_line_verification_to_application(
 	finance_task, line_getter, line_type, app_field, seed=False
 ) -> bool:
-	"""Mirror one UCR finance line's verification from Finance pays UCR (seq 4) onto the
-	matching line + flag on the Create UCR task (seq 3). Shared by invoice/receipt."""
+	"""Mirror one UCR finance line's verification from the UCR finance task onto the
+	matching line + flag on the UCR application task. Shared by invoice/receipt."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_ucr_finance,
 	)
@@ -1661,7 +1634,7 @@ def sync_ucr_verification_to_application_task(finance_task) -> bool:
 
 
 def sync_ucr_receipt_verification_to_application_task(finance_task) -> bool:
-	"""Mirror receipt verification from Finance pays UCR (seq 4) → Create UCR task (seq 3)."""
+	"""Mirror receipt verification from the UCR finance task to the UCR application task."""
 	return _sync_ucr_line_verification_to_application(
 		finance_task, get_ucr_receipt_line, LINE_RECEIPT, "custom_ucr_receipt_verified"
 	)
@@ -2231,7 +2204,7 @@ def validate_sea_task_can_complete(task) -> None:
 			validate_permit_application_can_complete,
 		)
 
-		validate_permit_application_task(task, seq)
+		validate_permit_application_task(task)
 		validate_permit_application_can_complete(task)
 	elif task_is_ucr_application(task):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -2474,7 +2447,7 @@ def _permit_type_examples(limit: int = 5) -> str:
 	return ", ".join(names)
 
 
-def validate_permit_application_task(task, seq: int) -> None:
+def validate_permit_application_task(task) -> None:
 	if not task.meta.has_field(TASK_PERMITS_FIELD):
 		frappe.throw("Task Permits table is not available on this site. Run <b>bench migrate</b>.")
 
@@ -2541,7 +2514,6 @@ def validate_permit_application_task(task, seq: int) -> None:
 
 
 def validate_finance_task(task) -> None:
-	seq = int(task.get("custom_sequence_no") or 0)
 	attached = attached_document_codes(task)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_permit_finance,

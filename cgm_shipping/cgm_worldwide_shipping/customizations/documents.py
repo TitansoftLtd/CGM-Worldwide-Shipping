@@ -1214,7 +1214,7 @@ def append_task_document_row(task_doc, document_type, attachment_url, status=Non
 
 def carry_project_documents_to_sea_tasks(project_name, task_sequences=None):
 	"""
-	Copy Project shipment document rows onto sea clearance tasks (audit trail on Task 1–2).
+	Copy Project shipment document rows onto the intake tasks (audit trail on the task).
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		auto_complete_sequences,
@@ -1474,7 +1474,7 @@ def sync_project_documents_from_tasks(project_name: str) -> dict:
 
 @frappe.whitelist()
 def sync_project_finals_from_checkpoint(project_name: str) -> dict:
-	"""Backfill Project Final Document from Task 9 checkpoint rows."""
+	"""Backfill Project Final Document from the document checkpoint tasks."""
 	frappe.has_permission("Project", ptype="write", throw=True)
 	if not project_name or not frappe.db.exists("Project", project_name):
 		frappe.throw(_("Project not found"))
