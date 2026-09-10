@@ -16,9 +16,6 @@ from urllib.parse import quote
 import frappe
 from frappe import _
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
-	get_project_inspection_portal_context,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	apply_customer_portal_layout,
 	container_timeline,
@@ -114,7 +111,6 @@ def _build_context(context, project):
 	context.fee_invoices = get_shipment_shared_fee_invoices(project)
 	context.documents = get_shipment_documents(project)
 	context.permits = get_shipment_permits(project)
-	context.inspection = get_project_inspection_portal_context(project, customer)
 
 	try:
 		containers = get_containers_for_shipment(project)

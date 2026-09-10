@@ -164,11 +164,14 @@ CONTAINER_STATUS_DELIVERED = CONTAINER_STATUS_AT_WAREHOUSE
 CONTAINER_STATUS_EMPTY_PENDING = CONTAINER_STATUS_CARGO_OFFLOADED
 CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 
-# Fallback sequence numbers used when CGM Shipping Settings fields are
-# not yet configured. Configure in CGM Shipping Settings → Container
-# tracking tasks to override these.
+# Sequence numbers for the container lifecycle steps. These read as overridable
+# from CGM Shipping Settings, but none of these fields exist on that doctype
+# today, so get_container_task_sequence() always returns the value below.
 CONTAINER_TASK_SEQ_DEFAULTS: dict[str, int] = {
-	"custom_track_eta_task_seq": 8,
+	# Documents checkpoint. Completing it pushes the Project ETA onto every
+	# container tracker; this is not a separate "track ETA" step (that was
+	# retired from the template).
+	"custom_eta_refresh_task_seq": 8,
 	# Bulk vessel-arrival event key used by Project port-arrival confirm.
 	# Not tied to Create Entry — Entry is paperwork-only.
 	"custom_vessel_arrival_task_seq": 12,
@@ -195,13 +198,14 @@ TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 # Seq 12 (Create Entry / vessel-arrival) is a Project→Task mirror only — not a
 # completion gate.
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
+# Base set only. The grid also shows on the shipping line application / finance
+# steps — use task_container_updates.container_update_task_sequences() for the
+# full set, never this constant on its own.
 CONTAINER_UPDATE_TASK_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
-CONTAINER_UPDATE_SEED_SEQS = frozenset({12, 17, 19, 20, 21, 22, 23, 24, 25})
-TRANSPORT_TASK_SEQS = frozenset({21, 22, 23, 24, 25, 26})
 
 # Settings fieldnames — bulk events update every tracker on the project.
 BULK_CONTAINER_TASK_SEQ_FIELDS = (
-	"custom_track_eta_task_seq",
+	"custom_eta_refresh_task_seq",
 	"custom_vessel_arrival_task_seq",
 	"custom_field_clearance_task_seq",
 	"custom_kpa_paid_task_seq",
@@ -294,26 +298,9 @@ MR_WORKFLOW_STATE_CANCELLED = "Cancelled"
 
 MATERIAL_REQUEST_TYPE_OPERATIONAL = "Operational Expense"
 
-# Standard Task fields to hide on all sea clearance tasks (reduce noise).
-SEA_TASK_HIDDEN_FIELDS = (
-	"is_template",
-	"issue",
-	"type",
-	"color",
-	"is_milestone",
-	"task_weight",
-	"exp_start_date",
-	"exp_end_date",
-	"expected_time",
-	"duration",
-	"progress",
-	"total_costing_amount",
-	"total_billing_amount",
-	"total_expense_claim",
-	"review_date",
-	"closing_date",
-	"template_tasks",
-)
+# Standard Task fields hidden on sea clearance tasks live in SEA_TASK_HIDDEN_FIELDS
+# in public/js/task.js — hiding is a form concern and only the desk applies it.
+# A second copy here was never imported and had already drifted from that list.
 
 # Sales Invoice numbering: INV-MMYY-#### / CR-MMYY-#### (MMYY = month+year from posting date).
 SALES_INVOICE_NAMING_SERIES = "INV-.MMYY.-.####"

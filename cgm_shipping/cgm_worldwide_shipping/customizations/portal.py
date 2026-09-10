@@ -87,6 +87,41 @@ def customer_display_name(customer: str | None) -> str:
 	return frappe.db.get_value("Customer", customer, "customer_name") or customer
 
 
+def get_customer_notification_emails(customer: str) -> list[str]:
+	"""Primary contact, customer email, and portal user addresses."""
+	if not customer:
+		return []
+
+	emails: list[str] = []
+	seen: set[str] = set()
+
+	def _add(value: str | None) -> None:
+		addr = (value or "").strip()
+		if addr and addr not in seen:
+			seen.add(addr)
+			emails.append(addr)
+
+	row = frappe.db.get_value(
+		"Customer",
+		customer,
+		["email_id", "customer_primary_contact"],
+		as_dict=True,
+	)
+	if row:
+		_add(row.email_id)
+		if row.customer_primary_contact:
+			_add(frappe.db.get_value("Contact", row.customer_primary_contact, "email_id"))
+
+	for pu in frappe.get_all(
+		"Portal User",
+		filters={"parent": customer, "parenttype": "Customer"},
+		fields=["user"],
+	):
+		_add(pu.user)
+
+	return emails
+
+
 # ─── Shipment lifecycle model ────────────────────────────────────────────────
 
 # The granular Project.custom_shipment_status chart (17 ordered states).

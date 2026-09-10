@@ -14,9 +14,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
 	POST_CLEARANCE_STAGE,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
-	sea_import_task_sequence_no,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 	SEA_IMPORT_TEMPLATE,
 	sea_import_flow_keys,
@@ -764,7 +761,7 @@ def create_sea_import_task_plan_internal(project, reset=False):
 			if not subject:
 				frappe.throw(f"Task template item at position {idx} has no subject.")
 
-			seq = sea_import_task_sequence_no(idx)
+			seq = int(item["sequence_no"])
 			task = frappe.new_doc("Task")
 			task.subject = subject
 			task.project = project

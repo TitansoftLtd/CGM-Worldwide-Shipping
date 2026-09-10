@@ -90,8 +90,14 @@ function resolve_mode_sections(mode) {
 }
 
 function lock_transport_assignment_fields(frm) {
+	// Resolved server-side from the configured Transport roles (see
+	// user_can_edit_transport_assignment). Falls back to the Operations override
+	// only when the flag is absent, e.g. an unsaved form with no onload yet.
+	const flag = frm.doc.__onload?.can_edit_transport_assignment;
 	const can_override =
-		frappe.user.has_role("System Manager") || frappe.user.has_role("Operations Manager");
+		flag !== undefined
+			? Boolean(flag)
+			: frappe.user.has_role("System Manager") || frappe.user.has_role("Operations Manager");
 	["transporter", "truck_number", "driver_name", "driver_contact"].forEach((fieldname) => {
 		if (frm.fields_dict[fieldname]) {
 			frm.set_df_property(fieldname, "read_only", can_override ? 0 : 1);

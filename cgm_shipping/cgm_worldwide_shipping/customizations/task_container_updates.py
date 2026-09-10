@@ -201,15 +201,24 @@ def _sea_task_seq(doc) -> int:
 	return int(doc.get("custom_sequence_no") or 0)
 
 
+def container_update_task_sequences() -> frozenset[int]:
+	"""Every sequence that shows the Task Container Updates grid.
+
+	Single source of truth for the server gate and the Task form ``depends_on``
+	(see ``get_sea_task_ui_sequences``) so the grid can never render on a task the
+	server refuses to seed, or hide on one it validates.
+	"""
+	return frozenset(
+		CONTAINER_UPDATE_TASK_SEQS
+		| _shipping_line_application_seqs()
+		| _shipping_line_finance_seqs()
+	)
+
+
 def is_container_update_task(doc) -> bool:
 	if not is_sea_import_task(doc):
 		return False
-	seq = _sea_task_seq(doc)
-	return (
-		seq in CONTAINER_UPDATE_TASK_SEQS
-		or seq in _shipping_line_application_seqs()
-		or seq in _shipping_line_finance_seqs()
-	)
+	return _sea_task_seq(doc) in container_update_task_sequences()
 
 
 def _prefill_row_from_tracker(row, tracker: dict, seq: int, project: str | None = None) -> bool:
@@ -730,7 +739,7 @@ def validate_container_step_task_completion(doc) -> None:
 		)
 
 
-def validate_task_19_container_updates(doc) -> None:
+def validate_book_trucks_container_updates(doc) -> None:
 	"""Book-trucks task: truck details for at least one container OR task-level reason."""
 	if not is_sea_import_task(doc):
 		return

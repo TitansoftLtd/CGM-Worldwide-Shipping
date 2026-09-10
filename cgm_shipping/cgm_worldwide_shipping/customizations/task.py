@@ -690,6 +690,17 @@ def _cached_sea_task_ui_sequence_lists() -> dict:
 	)
 	kpa_finance = sorted(s for s in finance_payment_sequences() if is_kpa_finance_payment_task(s))
 	stage_by_seq = permit_stage_by_sequence()
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		CONTAINER_TASK_SEQ_DEFAULTS,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+		get_container_task_sequence,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+		container_update_task_sequences,
+	)
+
 	payload = {
 		"payment_seqs": sorted(finance_payment_sequences()),
 		"auto_complete_seqs": sorted(auto_complete_sequences()),
@@ -707,6 +718,13 @@ def _cached_sea_task_ui_sequence_lists() -> dict:
 		"shipping_line_finance_seqs": shipping_line_finance,
 		"kpa_finance_seqs": kpa_finance,
 		"permit_stage_by_seq": {str(k): v for k, v in stage_by_seq.items()},
+		# Container / field-clearance steps are settings-driven too. The desk used to
+		# hardcode these numbers, which drifted from CGM Shipping Settings.
+		"container_task_seqs": {
+			fieldname: get_container_task_sequence(fieldname)
+			for fieldname in CONTAINER_TASK_SEQ_DEFAULTS
+		},
+		"container_update_seqs": sorted(container_update_task_sequences()),
 		"finance_department": frappe.db.get_single_value(
 			"CGM Shipping Settings", "custom_finance_department"
 		)
@@ -3808,10 +3826,26 @@ def _is_sea_task(doc) -> bool:
 
 
 def on_task_onload(doc, _method=None):
-	"""Remove orphan UCR Invoice rows from DB before the form is shown (link validation runs before before_save)."""
+	"""Reconcile the task, then prepare it for the form.
 
+	Reconciliation writes (it seeds finance lines and permit rows, and can
+	auto-complete or reopen the task), so it is gated on write permission: a
+	read-only viewer must not mutate a task, bump its ``modified`` - which hands
+	whoever has it open a "Document has been modified" conflict - or write around
+	the department permission layer via ``ignore_permissions``.
+
+	Form presentation below the gate is read-only and always runs, so viewers
+	still get the correct status and documents grid.
+	"""
 	if doc.is_new():
 		return
+	if frappe.has_permission("Task", ptype="write", doc=doc.name):
+		_reconcile_task_on_load(doc)
+	_prepare_task_for_form(doc)
+
+
+def _reconcile_task_on_load(doc) -> None:
+	"""Writes performed when a task form is opened by someone who can edit it."""
 	if purge_invoice_rows_from_task_documents_db(doc.name):
 		doc.reload()
 	if _is_sea_task(doc):
@@ -3920,10 +3954,6 @@ def on_task_onload(doc, _method=None):
 	on_task_onload_container_updates(doc)
 
 	if doc.meta.has_field(TASK_DOCUMENTS_FIELD):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-			prepare_shipment_documents_for_form,
-		)
-
 		# Prefill Task Documents from CGM Task Template Required Document Types.
 		if ensure_stamped_required_documents_saved(doc):
 			doc.reload()
@@ -3934,6 +3964,15 @@ def on_task_onload(doc, _method=None):
 				preserve_completed_status_against_stale_save(doc)
 				doc.save(ignore_permissions=True)
 				doc.reload()
+
+
+def _prepare_task_for_form(doc) -> None:
+	"""Read-only form presentation. Safe for viewers without write access."""
+	if doc.meta.has_field(TASK_DOCUMENTS_FIELD):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+			prepare_shipment_documents_for_form,
+		)
+
 		prepare_shipment_documents_for_form(doc, TASK_DOCUMENTS_FIELD)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_status import (
@@ -4232,12 +4271,11 @@ def before_task_save(doc, _method=None):
 		for profile in APPLICATION_FINANCE_PROFILES.values():
 			normalize_application_finance_verification(doc, profile)
 			enforce_application_finance_line_permissions(doc, profile)
-		if doc.status != "Cancelled":
-			sync_ucr_payment_to_idf_record(doc)
-			for profile in APPLICATION_FINANCE_PROFILES.values():
-				sync_application_payment_hooks(doc, profile)
+		sync_ucr_payment_to_idf_record(doc)
+		for profile in APPLICATION_FINANCE_PROFILES.values():
+			sync_application_payment_hooks(doc, profile)
 
-		if _is_sea_task(doc) and task_is_document_checkpoint(doc):
+		if task_is_document_checkpoint(doc):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 				normalize_shipment_documents_table,
 				promote_checkpoint_task_final_uploads,
@@ -4247,21 +4285,20 @@ def before_task_save(doc, _method=None):
 			promote_checkpoint_task_final_uploads(doc)
 			normalize_shipment_documents_table(doc.get(TASK_DOCUMENTS_FIELD))
 			sync_checkpoint_finals_to_project(doc)
-		elif _is_sea_task(doc) and doc.get(TASK_DOCUMENTS_FIELD):
+		elif doc.get(TASK_DOCUMENTS_FIELD):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 				sync_single_task_documents_to_project,
 			)
 
 			sync_single_task_documents_to_project(doc)
 
-		if _is_sea_task(doc):
-			from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
-				apply_container_updates_from_task,
-				validate_shipping_line_deposit_declarations,
-			)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			apply_container_updates_from_task,
+			validate_shipping_line_deposit_declarations,
+		)
 
-			apply_container_updates_from_task(doc)
-			validate_shipping_line_deposit_declarations(doc)
+		apply_container_updates_from_task(doc)
+		validate_shipping_line_deposit_declarations(doc)
 
 	# After line verification is normalized so this save can write Completed once.
 	promote_ready_finance_task_before_save(doc)
@@ -4302,7 +4339,6 @@ def on_task_update(doc, _method=None):
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		get_permit_finance_for_behaviour,
 		task_is_application_finance_for_profile,
-		task_is_auto_complete,
 		task_is_configured_application_workflow,
 		task_is_permit_application,
 		task_is_permit_finance,
@@ -4550,11 +4586,11 @@ def validate_task_completion_requirements(doc, _method=None):
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
 		validate_container_step_task_completion,
-		validate_task_19_container_updates,
+		validate_book_trucks_container_updates,
 	)
 
 	validate_container_step_task_completion(doc)
-	validate_task_19_container_updates(doc)
+	validate_book_trucks_container_updates(doc)
 
 
 # ==================== CGMTask override ====================

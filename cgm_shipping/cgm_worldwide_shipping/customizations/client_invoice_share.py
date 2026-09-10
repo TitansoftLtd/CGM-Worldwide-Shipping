@@ -19,7 +19,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	TASK_FINANCE_FIELD,
 	TASK_PERMITS_FIELD,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.inspection import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	get_customer_notification_emails,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (

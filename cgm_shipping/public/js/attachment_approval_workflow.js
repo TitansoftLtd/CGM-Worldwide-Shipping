@@ -39,6 +39,24 @@ cgm_shipping.attachment_approval = {
 		});
 	},
 
+	// Re-apply the cached decision without another server round trip. The parent form
+	// clears every custom button when it rebuilds its own toolbar, which drops these
+	// items; it calls this straight after so they never go missing until a refresh.
+	repaint_buttons(frm) {
+		const promise = frm.__cgm_attachment_state_promise;
+		const key = frm.__cgm_attachment_state_key;
+		if (!promise || !key) {
+			return;
+		}
+		promise.then((state) => {
+			// The key carries doctype:name:modified, so a stale response cannot paint
+			// buttons for a task the user has already navigated away from.
+			if (cur_frm === frm && frm.__cgm_attachment_state_key === key) {
+				cgm_shipping.attachment_approval.configure_buttons(frm, state || {});
+			}
+		});
+	},
+
 	_schedule_buttons_after_workflow(frm, state) {
 		const paint = () => cgm_shipping.attachment_approval.configure_buttons(frm, state);
 		const workflow_field = frappe.workflow.get_state_fieldname(frm.doctype);
@@ -51,6 +69,7 @@ cgm_shipping.attachment_approval = {
 
 	configure_buttons(frm, state) {
 		if (frm.doctype === "Opportunity" || frm.doctype === "Project") {
+			// Those forms build their own single Actions menu and append these items to it.
 			return;
 		}
 		const action_group = __("Actions");
@@ -63,33 +82,32 @@ cgm_shipping.attachment_approval = {
 			frm.remove_custom_button(label, action_group);
 			frm.remove_custom_button(label);
 		});
-		// Older builds used an inner-toolbar Actions group — remove it when empty so
-		// only the page Actions menu (workflow + these items) remains.
-		const $inner_actions = frm.page.get_inner_group_button?.(action_group);
-		if ($inner_actions?.length && !$inner_actions.find(".dropdown-menu .dropdown-item").length) {
-			$inner_actions.remove();
-		}
-		if (frm.page.inner_toolbar?.children?.().length === 0) {
-			frm.page.inner_toolbar?.addClass("hide");
-		}
+
+		// One Actions menu per form: these items join the inner-toolbar group the parent
+		// form builds (task.js), and the page-header Actions menu stays empty and hidden —
+		// the same shape project.js and crm_opportunity.js already use. Two menus sharing
+		// the label "Actions" is what made the toolbar show the button twice.
+		frm.page.clear_actions_menu();
+		frm.page.hide_actions_menu();
+
+		const add_action = (label, fn) => {
+			frm.add_custom_button(label, fn, action_group);
+			frm.page.set_inner_btn_group_as_primary(action_group);
+		};
 
 		if (state.can_send) {
 			const label =
 				state.profiles?.length === 1
 					? state.profiles[0].send_button_label
 					: __("Send for Review");
-			frm.page.add_action_item(label, () =>
-				cgm_shipping.attachment_approval.open_send_dialog(frm)
-			);
+			add_action(label, () => cgm_shipping.attachment_approval.open_send_dialog(frm));
 		}
 
 		if (state.can_review) {
 			const label =
 				state.profiles?.find((profile) => profile.pending_count)?.review_button_label ||
 				__("Review Documents");
-			frm.page.add_action_item(label, () =>
-				cgm_shipping.attachment_approval.open_review_dialog(frm)
-			);
+			add_action(label, () => cgm_shipping.attachment_approval.open_review_dialog(frm));
 		}
 	},
 
