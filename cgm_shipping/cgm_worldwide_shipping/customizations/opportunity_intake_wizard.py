@@ -75,7 +75,7 @@ def sync_opportunity_intake_stage(doc) -> None:
 		doc.custom_intake_stage = STAGE_AWAITING_PRIMARY
 		return
 
-	readiness = evaluate_start_shipment_readiness(doc.name)
+	readiness = evaluate_start_shipment_readiness(doc.name, doc=doc)
 	if readiness.get("ok"):
 		doc.custom_intake_stage = STAGE_AUTHORIZATION
 	else:

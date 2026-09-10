@@ -327,8 +327,12 @@ def get_required_intake_documents(shipment_type: str | None) -> list[dict]:
 	return out
 
 
-def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
-	"""Check primary transport doc + required documents uploaded & verified."""
+def evaluate_start_shipment_readiness(opportunity_name: str, doc=None) -> dict:
+	"""Check primary transport doc + required documents uploaded & verified.
+
+	Save hooks pass ``doc``: the database still holds the previous version there,
+	so re-reading it would judge readiness on the documents before this save.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		document_types_match,
 		get_opportunity_documents_field,
@@ -337,7 +341,7 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 	)
 
 	frappe.has_permission("Opportunity", ptype="read", doc=opportunity_name, throw=True)
-	opp = frappe.get_doc("Opportunity", opportunity_name)
+	opp = doc or frappe.get_doc("Opportunity", opportunity_name)
 	shipment_type = opp.get("custom_shipment_type")
 	flags = get_shipment_type_flags(shipment_type)
 
