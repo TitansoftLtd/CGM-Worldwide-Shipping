@@ -3408,18 +3408,14 @@ def _reconcile_task_on_load(doc) -> None:
 					changed = True
 		elif task_is_ucr_finance(doc) and doc.status not in ("Completed", "Cancelled"):
 			if doc.project:
-				from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-					copy_ucr_receipt_to_finance_task,
-				)
 				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-					get_ucr_application_task,
 					try_auto_complete_ucr_finance_task,
 				)
 
-				app_name = get_ucr_application_task(doc.project)
-				if app_name:
-					copy_ucr_receipt_to_finance_task(frappe.get_doc("Task", app_name))
-					doc.reload()
+				# The receipt is copied from Create UCR when the declarant saves it
+				# (on_task_update -> handle_ucr_application_receipt_upload). Copying it
+				# again here - on every open, and on every save, since savedocs runs
+				# onload - put back a receipt Finance had just cleared.
 				if try_auto_complete_ucr_finance_task(doc):
 					changed = True
 		if changed:

@@ -1728,10 +1728,10 @@ def process_application_workflow_onload(task) -> bool:
 
 				if copy_finance_pop_to_application_task(task, profile):
 					changed = True
-			had_receipt = receipt_attached(task, profile)
-			if ensure_application_receipt_on_finance_task(task, profile) and not had_receipt:
-				task.reload()
-				changed = True
+			# The application's receipt is copied here when the declarant saves it
+			# (process_application_workflow_on_update -> handle_application_receipt_upload).
+			# Copying it again on every open - and on every save, since savedocs runs
+			# onload - put back a receipt Finance had just cleared.
 			if try_auto_complete_application_finance_task(task, profile):
 				changed = True
 	return changed
