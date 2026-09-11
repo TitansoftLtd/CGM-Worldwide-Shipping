@@ -2954,6 +2954,80 @@ def journal_entry_on_submit(doc, method=None):
 	notify_declarant_upload_application_receipt(task, entry_profile)
 
 
+def draft_journal_entries_for_task(task) -> list[dict]:
+	"""Draft Journal Entries linked from this task that the user may submit.
+
+	Make Payment creates the entry as a draft for Finance to check; the task form
+	offers a Submit button for each one (task.js add_submit_draft_journal_entry_buttons).
+	Finance payment tasks only - application tasks mirror the same entries.
+	"""
+	if not is_sea_finance_payment_task(task):
+		return []
+	links: list[tuple[str, str]] = []
+	for row in task.get(TASK_PERMITS_FIELD) or []:
+		if row.get("journal_entry"):
+			label = row.get("permit_type") or ""
+			if cint(row.get("is_amendment")):
+				label = frappe._("{0} (amendment)").format(label)
+			links.append((row.journal_entry, label))
+	for row in task.get("custom_task_finance_lines") or []:
+		if row.get("journal_entry"):
+			label = row.get("charge_item") or row.get("line_label") or (
+				frappe._("Invoice (amendment)") if cint(row.get("is_amendment")) else frappe._("Invoice")
+			)
+			links.append((row.journal_entry, label))
+	if task.get("custom_journal_entry"):
+		links.append((task.custom_journal_entry, ""))
+	names = list(dict.fromkeys(je for je, _label in links))
+	if not names:
+		return []
+	drafts = {
+		d.name: d
+		for d in frappe.get_all(
+			"Journal Entry",
+			filters={"name": ["in", names], "docstatus": 0},
+			fields=["name", "total_debit", "posting_date"],
+		)
+	}
+	out: list[dict] = []
+	for je, label in links:
+		draft = drafts.get(je)
+		if not draft or any(o["journal_entry"] == je for o in out):
+			continue
+		if not frappe.has_permission("Journal Entry", "submit", doc=je):
+			continue
+		out.append(
+			{
+				"journal_entry": je,
+				"label": label,
+				"amount": draft.total_debit,
+				"posting_date": str(draft.posting_date or ""),
+			}
+		)
+	return out
+
+
+@frappe.whitelist()
+def submit_task_journal_entry(task_name: str, journal_entry: str) -> dict:
+	"""Submit a draft Journal Entry linked from this task (the task's Submit button).
+
+	The usual on_submit hooks run - a Permit Finance task completes once its last
+	entry is posted.
+	"""
+	task = frappe.get_doc("Task", task_name)
+	task.check_permission("read")
+	if journal_entry not in {d["journal_entry"] for d in draft_journal_entries_for_task(task)}:
+		frappe.throw(
+			frappe._("{0} is not a draft Journal Entry linked to this task.").format(journal_entry)
+		)
+	je = frappe.get_doc("Journal Entry", journal_entry)
+	je.submit()
+	return {
+		"journal_entry": je.name,
+		"task_status": frappe.db.get_value("Task", task_name, "status"),
+	}
+
+
 def journal_entry_on_cancel(doc, method=None):
 	"""Journal Entry cancel — finance cost ledger refresh handled in finance_cost_ledger hook."""
 	return
@@ -3495,6 +3569,7 @@ def _prepare_task_for_form(doc) -> None:
 	)
 
 	finalize_task_status_for_form(doc)
+	doc.set_onload("cgm_draft_journal_entries", draft_journal_entries_for_task(doc))
 
 
 def preserve_completed_status_against_stale_save(doc) -> None:
