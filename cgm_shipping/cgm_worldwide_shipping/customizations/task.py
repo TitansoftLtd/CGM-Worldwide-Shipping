@@ -2904,15 +2904,31 @@ def payment_entry_on_submit(doc, method=None) -> None:
 
 
 def journal_entry_on_submit(doc, method=None):
-	"""Notify declarant after Finance submits a Journal Entry linked to a finance task."""
+	"""Act on the finance task a submitted Journal Entry pays for.
+
+	UCR and Entry finance notify the declarant; Permit Finance completes once its
+	last entry is posted. That entry is usually submitted after the task's last
+	save, and nothing else saves the task then - a form-load heal runs in a GET
+	request and is never committed - so the task stayed Open in the list while the
+	form showed Completed.
+	"""
 	task_name = doc.get("custom_cgm_source_task")
 	if not task_name or not frappe.db.exists("Task", task_name):
 		return
 	task = frappe.get_doc("Task", task_name)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_entry_finance,
+		task_is_permit_finance,
 		task_is_ucr_finance,
 	)
+
+	if task_is_permit_finance(task):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			auto_complete_finance_permit_task,
+		)
+
+		auto_complete_finance_permit_task(task)
+		return
 
 	if task_is_ucr_finance(task):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
