@@ -2904,15 +2904,31 @@ def payment_entry_on_submit(doc, method=None) -> None:
 
 
 def journal_entry_on_submit(doc, method=None):
-	"""Notify declarant after Finance submits a Journal Entry linked to a finance task."""
+	"""Act on the finance task a submitted Journal Entry pays for.
+
+	UCR and Entry finance notify the declarant; Permit Finance completes once its
+	last entry is posted. That entry is usually submitted after the task's last
+	save, and nothing else saves the task then - a form-load heal runs in a GET
+	request and is never committed - so the task stayed Open in the list while the
+	form showed Completed.
+	"""
 	task_name = doc.get("custom_cgm_source_task")
 	if not task_name or not frappe.db.exists("Task", task_name):
 		return
 	task = frappe.get_doc("Task", task_name)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_entry_finance,
+		task_is_permit_finance,
 		task_is_ucr_finance,
 	)
+
+	if task_is_permit_finance(task):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			auto_complete_finance_permit_task,
+		)
+
+		auto_complete_finance_permit_task(task)
+		return
 
 	if task_is_ucr_finance(task):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
@@ -3312,9 +3328,39 @@ def on_task_onload(doc, _method=None):
 	"""
 	if doc.is_new():
 		return
-	if frappe.has_permission("Task", ptype="write", doc=doc.name):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_status import (
+		get_persisted_task_completion_fields,
+	)
+
+	persisted = get_persisted_task_completion_fields(doc.name)
+	can_write = frappe.has_permission("Task", ptype="write", doc=doc.name)
+	if can_write:
 		_reconcile_task_on_load(doc)
 	_prepare_task_for_form(doc)
+	_settle_status_worked_out_on_load(doc, persisted, can_write)
+
+
+def _settle_status_worked_out_on_load(doc, persisted: dict, can_write: bool) -> None:
+	"""Keep form and list on one status when opening the form changed it.
+
+	The form is fetched with a GET, and Frappe rolls back a GET's writes - so a
+	status the load healed or reopened showed on the form while tabTask, and the
+	list, kept the old one (TASK-2026-01209). For someone who can edit the task the
+	request is committed, which keeps that status and the load's other writes with
+	it; a viewer's form shows the stored status instead.
+	"""
+	from frappe.auth import UNSAFE_HTTP_METHODS
+
+	request = getattr(frappe.local, "request", None)
+	if not persisted or not request or request.method in UNSAFE_HTTP_METHODS:
+		return
+	if frappe.db.get_value("Task", doc.name, "status") == persisted.get("status"):
+		return
+	if can_write:
+		frappe.local.flags.commit = True
+		return
+	for field in ("status", "progress", "completed_by", "completed_on"):
+		doc.set(field, persisted.get(field))
 
 
 def _reconcile_task_on_load(doc) -> None:
@@ -3362,18 +3408,14 @@ def _reconcile_task_on_load(doc) -> None:
 					changed = True
 		elif task_is_ucr_finance(doc) and doc.status not in ("Completed", "Cancelled"):
 			if doc.project:
-				from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-					copy_ucr_receipt_to_finance_task,
-				)
 				from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-					get_ucr_application_task,
 					try_auto_complete_ucr_finance_task,
 				)
 
-				app_name = get_ucr_application_task(doc.project)
-				if app_name:
-					copy_ucr_receipt_to_finance_task(frappe.get_doc("Task", app_name))
-					doc.reload()
+				# The receipt is copied from Create UCR when the declarant saves it
+				# (on_task_update -> handle_ucr_application_receipt_upload). Copying it
+				# again here - on every open, and on every save, since savedocs runs
+				# onload - put back a receipt Finance had just cleared.
 				if try_auto_complete_ucr_finance_task(doc):
 					changed = True
 		if changed:

@@ -57,6 +57,7 @@ frappe.ui.form.on("Task", {
 	refresh(frm) {
 		reset_cgm_task_sea_ui_state_if_needed(frm);
 		ensure_cgm_finance_department_loaded(frm);
+		schedule_cgm_task_toolbar_buttons(frm);
 		const ui = get_sea_task_ui(frm);
 		// Permit table depends_on is set from the task's behaviour on every refresh,
 		// so the table shows on every task that works with permits.
@@ -340,7 +341,6 @@ frappe.ui.form.on("Task", {
 			ensure_checkpoint_task_documents_on_form(frm);
 		}
 
-		schedule_cgm_task_toolbar_buttons(frm);
 		if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config && !frm._cgm_sea_seq_loading) {
 			load_cgm_sea_ui_sequences(frm);
 		}
@@ -2081,7 +2081,6 @@ function toggle_permit_invoice_fields_for_origin(grid) {
 	}
 	const payment_fields = [
 		"payment_invoice",
-		"invoice_amount",
 		"invoice_uploaded_on",
 		"invoice_uploaded_by",
 		"invoice_verified",
@@ -2104,7 +2103,6 @@ function configure_permit_grid(frm) {
 	}
 	const seq = sea_task_sequence(frm);
 	const hide_on_all = [
-		"purchase_invoice",
 		"payment_entry",
 		"clearance_phase",
 		"application_date",
@@ -2134,11 +2132,6 @@ function configure_permit_grid(frm) {
 			"read_only",
 			can_upload_proof ? 0 : 1
 		);
-		grid.update_docfield_property(
-			"invoice_amount",
-			"read_only",
-			can_upload_proof ? 0 : 1
-		);
 		// Declarant can see when Finance has verified; cannot tick it here.
 		grid.update_docfield_property("invoice_verified", "hidden", !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("invoice_verified", "read_only", 1);
@@ -2151,13 +2144,11 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property("receipt_verified", "read_only", 1);
 		toggle_permit_invoice_fields_for_origin(grid);
 	} else if (is_permit_finance_step(frm, seq)) {
-		["payment_invoice", "purchase_invoice", "payment_entry", "permit_document"].forEach((fn) => {
+		["payment_invoice", "payment_entry", "permit_document"].forEach((fn) => {
 			grid.update_docfield_property(fn, "read_only", 1);
 		});
 		grid.update_docfield_property("payment_invoice", "hidden", 0);
 		grid.update_docfield_property("payment_invoice", "in_list_view", 1);
-		grid.update_docfield_property("invoice_amount", "hidden", 0);
-		grid.update_docfield_property("invoice_amount", "in_list_view", 1);
 		toggle_permit_invoice_fields_for_origin(grid);
 		grid.update_docfield_property("invoice_verified", "hidden", 0);
 		grid.update_docfield_property("invoice_verified", "read_only", user_can_verify_invoice(frm) ? 0 : 1);
@@ -2167,9 +2158,12 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property("journal_entry", "in_list_view", 1);
 		grid.update_docfield_property("payment_receipt", "hidden", 0);
 		grid.update_docfield_property("payment_receipt", "read_only", user_can_upload_receipt(frm) ? 0 : 1);
-		// Auto-stamped when Finance uploads the receipt — no separate verify step.
-		grid.update_docfield_property("receipt_verified", "hidden", 1);
-		grid.update_docfield_property("receipt_verified", "read_only", 1);
+		// Ticked automatically when Finance uploads the receipt, and by hand for a
+		// receipt checked outside the system - the receipt_verified handler saves and
+		// completes the task. Same rule as Invoice Verified.
+		grid.update_docfield_property("receipt_verified", "hidden", 0);
+		grid.update_docfield_property("receipt_verified", "read_only", user_can_verify_invoice(frm) ? 0 : 1);
+		grid.update_docfield_property("receipt_verified", "in_list_view", 1);
 	}
 	cgm_configure_permit_attach_grid(grid);
 }
@@ -2537,7 +2531,6 @@ frappe.ui.form.on("Permit Register", {
 		const invoice_editable = can_upload && !row_locked;
 		grid_row.toggle_editable("origin", !row_locked);
 		grid_row.toggle_editable("payment_invoice", invoice_editable);
-		grid_row.toggle_editable("invoice_amount", invoice_editable);
 		grid_row.toggle_editable("permit_document", can_upload);
 	},
 
@@ -2574,7 +2567,6 @@ frappe.ui.form.on("Permit Register", {
 		if ((row.origin || "Local") === "Foreign") {
 			[
 				"payment_invoice",
-				"invoice_amount",
 				"invoice_verified",
 				"payment_receipt",
 				"receipt_verified",

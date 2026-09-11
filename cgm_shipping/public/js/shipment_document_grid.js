@@ -179,10 +179,15 @@ function cgm_apply_attach_view_formatters(grid, fieldnames) {
 	cgm_bind_attach_grid_clicks(grid);
 }
 
-const CGM_PERMIT_ATTACH_FIELDS = ["permit_document", "payment_invoice", "payment_receipt"];
+// A function, not a const: this file is loaded app-wide and again inside the Task
+// form script, and the status-grid setup could reach the const before its line ran
+// ("Cannot access 'CGM_PERMIT_ATTACH_FIELDS' before initialization").
+function cgm_permit_attach_fields() {
+	return ["permit_document", "payment_invoice", "payment_receipt"];
+}
 
 function cgm_configure_permit_attach_grid(grid) {
-	cgm_apply_attach_view_formatters(grid, CGM_PERMIT_ATTACH_FIELDS);
+	cgm_apply_attach_view_formatters(grid, cgm_permit_attach_fields());
 }
 
 function cgm_configure_shipment_document_grid(grid, { initial_read_only = false } = {}) {
@@ -434,7 +439,7 @@ frappe.ui.form.on("Permit Register", {
 		if (grid_row?.doc?.name !== cdn) {
 			return;
 		}
-		cgm_fix_attach_control_links(grid_row, CGM_PERMIT_ATTACH_FIELDS);
+		cgm_fix_attach_control_links(grid_row, cgm_permit_attach_fields());
 	},
 });
 
