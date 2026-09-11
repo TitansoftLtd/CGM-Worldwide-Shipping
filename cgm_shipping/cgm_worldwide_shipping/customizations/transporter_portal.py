@@ -876,7 +876,8 @@ def portal_context_base(context) -> str | None:
 	except frappe.PermissionError as exc:
 		context.is_transporter = False
 		context.error_title = _("Access denied")
-		context.error_message = exc.message or str(exc) or _(
+		# Frappe exceptions carry no .message; reading it crashed the page.
+		context.error_message = getattr(exc, "message", None) or str(exc) or _(
 			"You do not have access to the transporter portal."
 		)
 		return None

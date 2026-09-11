@@ -3328,9 +3328,39 @@ def on_task_onload(doc, _method=None):
 	"""
 	if doc.is_new():
 		return
-	if frappe.has_permission("Task", ptype="write", doc=doc.name):
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_status import (
+		get_persisted_task_completion_fields,
+	)
+
+	persisted = get_persisted_task_completion_fields(doc.name)
+	can_write = frappe.has_permission("Task", ptype="write", doc=doc.name)
+	if can_write:
 		_reconcile_task_on_load(doc)
 	_prepare_task_for_form(doc)
+	_settle_status_worked_out_on_load(doc, persisted, can_write)
+
+
+def _settle_status_worked_out_on_load(doc, persisted: dict, can_write: bool) -> None:
+	"""Keep form and list on one status when opening the form changed it.
+
+	The form is fetched with a GET, and Frappe rolls back a GET's writes - so a
+	status the load healed or reopened showed on the form while tabTask, and the
+	list, kept the old one (TASK-2026-01209). For someone who can edit the task the
+	request is committed, which keeps that status and the load's other writes with
+	it; a viewer's form shows the stored status instead.
+	"""
+	from frappe.auth import UNSAFE_HTTP_METHODS
+
+	request = getattr(frappe.local, "request", None)
+	if not persisted or not request or request.method in UNSAFE_HTTP_METHODS:
+		return
+	if frappe.db.get_value("Task", doc.name, "status") == persisted.get("status"):
+		return
+	if can_write:
+		frappe.local.flags.commit = True
+		return
+	for field in ("status", "progress", "completed_by", "completed_on"):
+		doc.set(field, persisted.get(field))
 
 
 def _reconcile_task_on_load(doc) -> None:
