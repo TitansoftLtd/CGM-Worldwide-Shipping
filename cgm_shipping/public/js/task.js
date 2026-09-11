@@ -1473,6 +1473,7 @@ function cgm_task_toolbar_fingerprint(frm) {
 		invoice_sig,
 		user_can_make_payment(frm) ? 1 : 0,
 		user_can_verify_invoice(frm) ? 1 : 0,
+		(frm.doc.__onload?.cgm_draft_journal_entries || []).map((je) => je.journal_entry).join(","),
 	].join("|");
 }
 
@@ -1728,6 +1729,8 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		}
 	}
 
+	add_submit_draft_journal_entry_buttons(frm);
+
 	const permit_finance_has_unpaid =
 		is_permit_payment_pattern(frm) &&
 		permit_finance_rows_on_form(frm).some(
@@ -1885,6 +1888,39 @@ function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
 		}
 	}
 	return btn;
+}
+
+function add_submit_draft_journal_entry_buttons(frm) {
+	// Make Payment creates the Journal Entry as a draft for Finance to check. The
+	// server lists the drafts this user may submit (Task onload).
+	(frm.doc.__onload?.cgm_draft_journal_entries || []).forEach((je) => {
+		const label = je.label
+			? __("Submit Journal Entry - {0}", [je.label])
+			: __("Submit Journal Entry");
+		add_cgm_toolbar_button(frm, label, () => submit_task_draft_journal_entry(frm, je));
+	});
+}
+
+function submit_task_draft_journal_entry(frm, je) {
+	frappe.confirm(
+		__("Submit Journal Entry {0} for {1}? This posts it to the ledger.", [
+			je.journal_entry,
+			format_currency(je.amount),
+		]),
+		() =>
+			frappe
+				.xcall(
+					"cgm_shipping.cgm_worldwide_shipping.customizations.task.submit_task_journal_entry",
+					{ task_name: frm.doc.name, journal_entry: je.journal_entry }
+				)
+				.then((r) => {
+					frappe.show_alert({
+						message: __("Journal Entry {0} submitted", [r.journal_entry]),
+						indicator: "green",
+					});
+					frm.reload_doc();
+				})
+	);
 }
 
 function hide_ucr_legacy_fields(frm) {
