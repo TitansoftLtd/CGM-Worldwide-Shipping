@@ -7,6 +7,8 @@ const LEGACY_INVOICE_DOCUMENT_TYPES = new Set([
 ]);
 
 const CGM_ACTION_GROUP = __("Actions");
+// Buttons that only open a record; Actions is for buttons that change data.
+const CGM_VIEW_GROUP = __("View");
 
 const UCR_LEGACY_FIELDNAMES = [
 	"custom_section_ucr_payment",
@@ -1505,13 +1507,12 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	frm._cgm_toolbar_fingerprint = fingerprint;
 	frm._cgm_toolbar_labels = [];
 
-	// Only Open Shipment Project stays top-level — everything else under Actions.
+	// Two menus: View opens a record, Actions changes data. The shipment project
+	// goes first under View - the Project field on the form links there too.
 	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
-		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
+		add_cgm_view_button(frm, __("Open Shipment Project"), () => {
 			frappe.set_route("Form", "Project", frm.doc.project);
 		});
-		openProjectBtn?.addClass?.("btn-primary");
-		frm._cgm_toolbar_labels.push(__("Open Shipment Project"));
 	}
 
 	if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
@@ -1710,7 +1711,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	} else {
 		get_invoice_finance_lines(frm).forEach((row) => {
 			if (row.journal_entry) {
-				add_cgm_toolbar_button(
+				add_cgm_view_button(
 					frm,
 					__("View Journal Entry - {0}", [finance_line_display_label(row)]),
 					() => frappe.set_route("Form", "Journal Entry", row.journal_entry)
@@ -1721,7 +1722,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 			frm.doc.custom_journal_entry &&
 			!get_invoice_finance_lines(frm).some((r) => r.journal_entry === frm.doc.custom_journal_entry)
 		) {
-			add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
+			add_cgm_view_button(frm, __("View Journal Entry"), () => {
 				frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
 			});
 		}
@@ -1862,6 +1863,17 @@ function cgm_task_form_still_on(frm, task_name) {
 	// The Task form object is reused when the user opens another task, so a response
 	// that arrives late must not reload or repaint whatever is on screen now.
 	return cur_frm === frm && !frm.is_new() && frm.doc?.name === task_name;
+}
+
+function add_cgm_view_button(frm, label, fn) {
+	const btn = frm.add_custom_button(label, fn, CGM_VIEW_GROUP);
+	if (btn) {
+		frm.page.set_inner_btn_group_as_primary(CGM_VIEW_GROUP);
+		if (Array.isArray(frm._cgm_toolbar_labels) && !frm._cgm_toolbar_labels.includes(label)) {
+			frm._cgm_toolbar_labels.push(label);
+		}
+	}
+	return btn;
 }
 
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
@@ -3777,7 +3789,7 @@ function show_permit_finance_journal_entry_view_buttons(frm) {
 		const label = cint(row.is_amendment)
 			? __("{0} (amendment)", [row.permit_type])
 			: row.permit_type;
-		add_cgm_toolbar_button(frm, __("View Journal Entry - {0}", [label]), () => {
+		add_cgm_view_button(frm, __("View Journal Entry - {0}", [label]), () => {
 			frappe.set_route("Form", "Journal Entry", row.journal_entry);
 		});
 	});
@@ -4102,12 +4114,12 @@ function setup_shipping_line_deposit_payment_buttons(frm) {
 				);
 			}
 			if (si) {
-				add_cgm_toolbar_button(frm, __("View Deposit Sales Invoice"), () => {
+				add_cgm_view_button(frm, __("View Deposit Sales Invoice"), () => {
 					frappe.set_route("Form", "Sales Invoice", si);
 				});
 			}
 			if (cn) {
-				add_cgm_toolbar_button(frm, __("View Deposit Credit Note"), () => {
+				add_cgm_view_button(frm, __("View Deposit Credit Note"), () => {
 					frappe.set_route("Form", "Sales Invoice", cn);
 				});
 			}
@@ -4122,7 +4134,7 @@ function setup_shipping_line_deposit_payment_buttons(frm) {
 				);
 			}
 			if (je) {
-				add_cgm_toolbar_button(frm, __("View Deposit JE"), () => {
+				add_cgm_view_button(frm, __("View Deposit JE"), () => {
 					frappe.set_route("Form", "Journal Entry", je);
 				});
 			}
