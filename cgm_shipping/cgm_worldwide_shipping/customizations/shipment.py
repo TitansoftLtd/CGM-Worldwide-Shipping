@@ -16,7 +16,6 @@ cgm_shipping...customizations.utils.
 import re
 
 import frappe
-from frappe.utils import getdate, today
 
 # ─── Shipment Type master lookups ─────────────────────────────────────────────
 # DB is the source of truth; read the Shipment Type master defensively so missing
@@ -169,54 +168,6 @@ def get_shipment_type_record(shipment_type: str | None, mode: str | None = None)
 	return None
 
 
-def cgm_ref_prefix_from_master(shipment_type: str | None, mode: str | None = None) -> str | None:
-	row = get_shipment_type_record(shipment_type, mode=mode)
-	if row and row.get("cgm_ref_prefix"):
-		return str(row.cgm_ref_prefix).strip().upper()
-	return None
-
-
-def _cargo_type_meta():
-	if not frappe.db.exists("DocType", "Cargo Type"):
-		return None
-	return frappe.get_meta("Cargo Type")
-
-
-def _cargo_type_field_queryable(fieldname: str) -> bool:
-	meta = _cargo_type_meta()
-	if not meta or not meta.has_field(fieldname):
-		return False
-	return frappe.db.has_column("Cargo Type", fieldname)
-
-
-def get_cargo_type_record(cargo_type: str | None) -> dict | None:
-	"""Load Cargo Type by Link name or cargo_type label."""
-	ct = (cargo_type or "").strip()
-	if not ct or not frappe.db.exists("DocType", "Cargo Type"):
-		return None
-
-	fields = ["name", "cargo_type"]
-	if _cargo_type_field_queryable("cgm_ref_prefix"):
-		fields.append("cgm_ref_prefix")
-
-	if frappe.db.exists("Cargo Type", ct):
-		return frappe.db.get_value("Cargo Type", ct, fields, as_dict=True)
-
-	return frappe.db.get_value(
-		"Cargo Type",
-		{"cargo_type": ct},
-		fields,
-		as_dict=True,
-	)
-
-
-def cgm_ref_prefix_from_cargo_type(cargo_type: str | None) -> str | None:
-	row = get_cargo_type_record(cargo_type)
-	if row and row.get("cgm_ref_prefix"):
-		return str(row.cgm_ref_prefix).strip().upper()
-	return None
-
-
 def container_tracking_mode_for_shipment_type(
 	shipment_type: str | None, mode: str | None = None
 ) -> str | None:
@@ -251,15 +202,6 @@ def get_task_flow_key_for_shipment_type(shipment_type: str | None) -> str | None
 		if value:
 			return value
 	return None
-
-
-def uses_container_tracking_for_shipment_type(shipment_type: str | None) -> bool:
-	row = get_shipment_type_record(shipment_type)
-	if not row:
-		return False
-	if _shipment_type_field_queryable("uses_container_tracking"):
-		return bool(row.get("uses_container_tracking"))
-	return False
 
 
 def mode_from_master(shipment_type: str | None) -> str | None:
@@ -689,64 +631,13 @@ def copy_tracking_fields_from_source(target, source) -> None:
 			target.set(dest_field, value)
 
 
-def is_sea_import_enabled(shipment_type: str | None) -> bool:
-	"""True when Shipment Type uses the sea import task template (or legacy flow key)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		SEA_IMPORT_TEMPLATE,
-		SEA_TRANSIT_IMPORT_TEMPLATE,
-		normalize_template_name,
-	)
-
-	template = get_task_template_for_shipment_type(shipment_type)
-	if template:
-		normalized = normalize_template_name(template)
-		return normalized in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE)
-
-	flow = get_task_flow_key_for_shipment_type(shipment_type)
-	normalized = normalize_template_name(flow)
-	return normalized in (SEA_IMPORT_TEMPLATE, SEA_TRANSIT_IMPORT_TEMPLATE)
-
-
-def sea_import_enabled_for_project(project) -> bool:
-	"""Project uses sea-import automation (UCR gates, workflow) from its Shipment Type."""
-	shipment_type = project.get("custom_shipment_type") if hasattr(project, "get") else None
-	if shipment_type:
-		return is_sea_import_enabled(shipment_type)
-	mode = project.get("custom_mode_of_transport") if hasattr(project, "get") else None
-	return get_transport_category(None, mode) == "sea"
-
 # ─── Legacy CGM reference (old project names) ────────────────────────────────
 # New Projects use Client Ref / Quantity[/ Batch] via project_naming.py.
 
 LEGACY_CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z]{2,5}\d{3}/\d{4}$", re.IGNORECASE)
 
 
-def is_cgm_ref(value: str | None) -> bool:
-	"""True for legacy CGM/FCL001/0626-style references."""
-	if not value:
-		return False
-	return bool(LEGACY_CGM_REF_PATTERN.match(str(value).strip().upper()))
-
-
 # ─── Project Field Helpers ────────────────────────────────────────────────────
-
-
-def apply_shipment_data(project, shipment_type=None, mode=None):
-	"""Set shipment classification; derive mode from Shipment Type master when known."""
-	if shipment_type:
-		link = canonical_shipment_type_link(
-			shipment_type,
-			mode or project.get("custom_mode_of_transport"),
-		)
-		project.custom_shipment_type = link or shipment_type
-	if mode and project.meta.has_field("custom_mode_of_transport"):
-		project.custom_mode_of_transport = mode
-
-	sync_mode_from_shipment_type(project)
-
-	project_fields = frappe.get_meta("Project")
-	if project_fields.has_field("custom_shipment_status"):
-		project.custom_shipment_status = "Draft"
 
 
 def normalize_shipment_classification(shipment_type=None, mode=None):
@@ -879,14 +770,6 @@ def normalize_container_row(row: dict) -> dict:
 		values[fieldname] = ""
 	return values
 
-def get_cargo_type_order() -> list[str]:
-	"""Pull cargo types from Cargo Type DocType ordered by idx."""
-	return frappe.get_all(
-		"Cargo Type",
-		fields=["cargo_type"],
-		order_by="idx asc",
-		pluck="cargo_type",
-	)
 
 def get_bl_quantity_summary(bl_doc) -> str:
 	"""Return container quantity summary for a Bill of Lading document."""
@@ -1310,13 +1193,6 @@ def get_dashboard_data(data):
 
 
 # ─── BL / AWB configuration (from former utils.py) ───────────────────────────
-
-
-def get_bl_container_child_field() -> str | None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
-		get_container_table_field_for_doctype,
-	)
-	return get_container_table_field_for_doctype("Bill of Lading")
 
 
 def get_awb_value_from_doc(doc) -> str | None:

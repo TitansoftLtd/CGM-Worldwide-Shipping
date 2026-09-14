@@ -233,26 +233,6 @@ def _tasks_are_paired(a_name: str, b_name: str, a_seq: int, b_seq: int) -> bool:
 	return abs(a_seq - b_seq) == 1
 
 
-def get_application_task_for_behaviour(task, profile=None) -> str | None:
-	behaviour = get_task_behaviour(task)
-	kind = (profile.payment_item if profile else None) or behaviour.payment_kind
-	if behaviour.is_finance_payment or behaviour.role == ROLE_FINANCE_PAYMENT:
-		return find_paired_task(task, want_role=ROLE_APPLICATION, payment_kind=kind)
-	if behaviour.is_application:
-		return task.name
-	return None
-
-
-def get_finance_task_for_behaviour(task, profile=None) -> str | None:
-	behaviour = get_task_behaviour(task)
-	kind = (profile.payment_item if profile else None) or behaviour.payment_kind
-	if behaviour.is_application:
-		return find_paired_task(task, want_role=ROLE_FINANCE_PAYMENT, payment_kind=kind)
-	if behaviour.is_finance_payment:
-		return task.name
-	return None
-
-
 def get_permit_application_for_behaviour(task) -> str | None:
 	behaviour = get_task_behaviour(task)
 	if behaviour.is_permit_application:

@@ -73,13 +73,6 @@ def default_notification_for_event(workflow_event: str) -> str | None:
 	return None
 
 
-def event_for_default_notification(notification_name: str) -> str | None:
-	for event, name, _notes in WORKFLOW_NOTIFICATION_DEFAULTS:
-		if name == notification_name:
-			return event
-	return None
-
-
 @frappe.request_cache
 def _settings_notification_overrides() -> dict[str, str]:
 	"""default Notification name → override Notification name from Settings."""

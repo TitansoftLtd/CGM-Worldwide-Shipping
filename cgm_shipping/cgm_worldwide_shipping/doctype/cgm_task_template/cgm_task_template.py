@@ -7,7 +7,6 @@ from frappe.model.document import Document
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 	ROLE_APPLICATION,
-	ROLE_AUTO_COMPLETE,
 	ROLE_FINANCE_PAYMENT,
 	ROLE_PERMIT_APPLICATION,
 	ROLE_PERMIT_FINANCE,

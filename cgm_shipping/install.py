@@ -237,11 +237,6 @@ def ensure_transporter_portal_setup() -> None:
 	sync_all_transporter_portal_users()
 
 
-def ensure_transporter_role() -> None:
-	"""Backward-compatible entry point for bench execute."""
-	ensure_transporter_portal_setup()
-
-
 def ensure_finance_cost_ledger_schema() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		ensure_project_finance_cost_fields,

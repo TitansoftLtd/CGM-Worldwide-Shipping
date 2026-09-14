@@ -103,11 +103,6 @@ def has_required_transport_documents(opportunity) -> bool:
 	return any(item.get("linked_name") for item in required)
 
 
-def has_primary_transport_document(opportunity) -> bool:
-	"""Backward-compatible alias — start-gate transport document(s) must be linked."""
-	return has_required_transport_documents(opportunity)
-
-
 def assign_opportunity_batch_on_insert(doc, _method=None) -> None:
 	"""Preserve manual batch on intake; Booking/BL may fill it on later saves."""
 	if not doc.meta.has_field("custom_batch_no"):
@@ -183,11 +178,6 @@ def get_shipment_type_flags_for_doc(shipment_type: str | None = None) -> dict:
 	return get_shipment_type_flags(shipment_type)
 
 
-def project_type_for_shipment_type(shipment_type: str | None) -> str | None:
-	"""Map Shipment Type → container tracker mode name."""
-	return container_tracking_mode_for_shipment_type(shipment_type)
-
-
 def apply_project_type_from_shipment_type(project, shipment_type: str | None = None) -> None:
 	"""Copy container tracker mode from Shipment Type onto Project."""
 	st = shipment_type or project.get("custom_shipment_type")
@@ -245,9 +235,6 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_batch_no", "custom_batch_no"),
 		("custom_weight_uom_", "custom_weight_uom"),
 	)
-
-
-PROJECT_ETD_FIELDS = ("custom_expected_time_of_depatureetd", "custom_etd")
 
 
 def align_project_etd_fields(project) -> bool:

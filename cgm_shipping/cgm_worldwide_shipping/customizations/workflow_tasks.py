@@ -64,24 +64,6 @@ def _workflow_flow_keys(project_name: str, shipment_type: str | None) -> tuple[s
 	return tuple(ordered)
 
 
-def project_has_workflow_tasks(project) -> bool:
-	project_name = project if isinstance(project, str) else project.name
-	flow_keys = get_project_workflow_flow_keys(project)
-	if flow_keys:
-		return bool(
-			frappe.db.exists(
-				"Task",
-				{"project": project_name, "custom_task_flow_key": ["in", list(flow_keys)]},
-			)
-		)
-	return bool(
-		frappe.db.exists(
-			"Task",
-			{"project": project_name, "custom_task_flow_key": ["!=", ""]},
-		)
-	)
-
-
 @frappe.whitelist()
 def get_project_workflow_flow_keys_api(project: str) -> list[str]:
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
@@ -211,24 +193,6 @@ def get_workflow_tasks_for_project(
 	)
 
 	return filter_sea_tasks_for_user(rows)
-
-
-def get_all_workflow_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		filter_sea_tasks_for_user,
-	)
-
-	rows = get_workflow_tasks_for_project(project, limit=100)
-	return filter_sea_tasks_for_user(rows, user=user)
-
-
-def get_open_workflow_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		filter_sea_tasks_for_user,
-	)
-
-	rows = get_workflow_tasks_for_project(project, open_only=True, limit=100)
-	return filter_sea_tasks_for_user(rows, user=user)
 
 
 def derive_generic_workflow_progress(tasks: list) -> tuple[str, int]:

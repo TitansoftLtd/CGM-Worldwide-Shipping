@@ -5,15 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from frappe.utils import getdate, today
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
-	compute_container_metrics,
-)
-
-
-def compute_container_metrics_legacy(data: dict[str, Any]) -> dict[str, Any]:
-	return compute_container_metrics(data)
 
 
 def derive_current_location(
@@ -50,16 +42,6 @@ def derive_current_location(
 	if data.get("eta"):
 		return "En route to port"
 	return "Pending arrival"
-
-
-def derive_container_status(**kwargs) -> str | None:
-	data = {
-		"discharging_date": kwargs.get("discharge"),
-		"gate_out_date_port": kwargs.get("gate_out"),
-		"offloading_date": kwargs.get("delivery_date"),
-		"actual_empty_return": kwargs.get("actual_return"),
-	}
-	return compute_container_metrics(data).get("status")
 
 
 def apply_metrics_to_doc(doc) -> None:

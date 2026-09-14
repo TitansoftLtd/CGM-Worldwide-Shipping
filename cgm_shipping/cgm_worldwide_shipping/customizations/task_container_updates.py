@@ -26,22 +26,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	task_flow_key_in_filter,
 )
 
-TRACKER_TO_TASK_FIELDS = (
-	"transporter",
-	"truck_number",
-	"driver_name",
-	"driver_contact",
-	"free_days_start_date",
-	"free_days_end_date",
-	"kpa_free_days_start_date",
-	"kpa_free_days_end_date",
-	"gate_out_date_port",
-	"gate_in_date_warehouse",
-	"delivery_location",
-	"offloading_date",
-	"actual_empty_return",
-	"interchange_date",
-)
 
 TRANSPORT_TRACKER_FIELDS = (
 	"transporter",

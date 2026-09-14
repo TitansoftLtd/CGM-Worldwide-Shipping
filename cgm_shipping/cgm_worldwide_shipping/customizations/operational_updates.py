@@ -94,17 +94,6 @@ STATUS_OPEN = "Open"
 STATUS_ANSWERED = "Answered"
 STATUS_CLOSED = "Closed"
 
-# Subjects offered to CGM staff when publishing an update to a portal party.
-PUBLISHED_SUBJECTS = (
-	"Shipment Update",
-	"Documents",
-	"Customs & Clearance",
-	"Container Update",
-	"Transport & Delivery",
-	"Finance",
-	"Reply",
-	"Other",
-)
 
 AUDIENCE_CUSTOMER = "customer"
 AUDIENCE_TRANSPORTER = "transporter"

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
-from frappe.utils import flt, fmt_money, getdate, nowdate, today
+from frappe.utils import flt, fmt_money, getdate, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates import (
 	calculate_tiered_charge,
@@ -15,13 +15,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.shipping_line_rates impo
 
 CHARGE_TYPE_DEMURRAGE = "Demurrage/Detention"
 CHARGE_TYPE_KPA_PORT = "KPA Port"
-
-COMPUTED_CHARGE_FIELDS = (
-	"demurrage_daily_rate",
-	"demurrage_amount",
-	"kpa_port_daily_rate",
-	"kpa_amount",
-)
 
 
 def get_default_demurrage_currency() -> str:
@@ -220,20 +213,6 @@ def compute_container_charge_amounts(
 		"kpa_rate_currency": data.get("kpa_rate_currency") or kpa_currency,
 		"kpa_amount": _calculate_kpa_port_amount(data, kpa_days, manual_kpa_rate),
 	}
-
-
-def apply_charge_amounts_to_doc(doc, metrics: dict[str, Any] | None = None) -> None:
-	if metrics is None:
-		from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
-			compute_container_metrics,
-		)
-
-		metrics = compute_container_metrics(doc.as_dict())
-
-	amounts = compute_container_charge_amounts(doc.as_dict(), metrics)
-	for field, value in amounts.items():
-		if doc.meta.has_field(field):
-			doc.set(field, value)
 
 
 def refresh_project_container_charge_amounts(project: str) -> None:
@@ -617,13 +596,3 @@ def post_all_container_charge_accruals() -> dict[str, Any]:
 		except Exception:
 			frappe.log_error(title=f"Container accrual failed: {project}")
 	return {"posted": posted, "skipped": skipped, "count": len(posted)}
-
-
-def run_daily_container_charge_refresh() -> None:
-	"""Refresh open tracker charge amounts then post delta accruals."""
-	from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
-		refresh_open_container_metrics,
-	)
-
-	refresh_open_container_metrics()
-	post_all_container_charge_accruals()

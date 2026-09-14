@@ -106,13 +106,3 @@ def redirect_transporter_portal_users_from_desk():
 	if _transporter_portal_path(frappe.session.user):
 		frappe.local.flags.redirect_location = "/transporter"
 		raise frappe.Redirect
-
-
-def route_customer_to_portal(login_manager=None, **kwargs):
-	"""Backward-compatible alias."""
-	route_cgm_portal_after_login(login_manager=login_manager, **kwargs)
-
-
-def route_transporter_to_portal(login_manager=None, **kwargs):
-	"""Backward-compatible alias."""
-	route_cgm_portal_after_login(login_manager=login_manager, **kwargs)

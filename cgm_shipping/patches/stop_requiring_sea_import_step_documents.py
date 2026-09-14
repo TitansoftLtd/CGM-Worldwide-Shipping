@@ -84,7 +84,7 @@ def execute():
 	if cleared:
 		print(f"Sea Import tasks no longer requiring step documents: {len(cleared)}")
 
-	if frappe.db.table_exists("Sea Clearance Task Requirement Item"):
+	if frappe.db.exists("DocType", "Sea Clearance Task Requirement Item"):
 		for seq, documents in STEPS.values():
 			for row in frappe.get_all(
 				"Sea Clearance Task Requirement Item",

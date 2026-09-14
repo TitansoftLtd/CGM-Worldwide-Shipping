@@ -178,13 +178,6 @@ def _company_currency_expense_total(project: str) -> float:
 	return total
 
 
-def _amount_for_journal_entry(je, project: str) -> float:
-	if int(je.docstatus or 0) == 2:
-		return 0.0
-	lines = _expense_lines_for_project(je, project)
-	return sum(flt(line["amount"]) for line in lines)
-
-
 def rebuild_project_finance_billed_total(project: str) -> None:
 	"""Recompute Total Billed Amount (via Journal Entry) on Project."""
 	if not project or not frappe.db.exists("Project", project):

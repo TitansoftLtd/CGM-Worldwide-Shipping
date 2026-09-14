@@ -223,19 +223,6 @@ def _def(
 	}
 
 
-# Receipt-upload handoffs — recipients must match Document responsibilities Upload Receipt
-# (Shipping Line also includes Upload POP for Finance).
-RECEIPT_UPLOAD_NOTIFICATION_NAMES: frozenset[str] = frozenset(
-	{
-		PERMIT_RECEIPTS_FOR_DECLARANT,
-		UCR_RECEIPT_FOR_DECLARANT,
-		ENTRY_RECEIPT_FOR_DECLARANT,
-		SHIPPING_LINE_RECEIPT_FOR_DECLARANT,
-		KPA_RECEIPT_FOR_SUPERVISOR,
-	}
-)
-
-
 def sea_task_notification_definitions() -> list[dict]:
 	finance = _roles(ROLE_GROUP_FINANCE)
 	declaration = _roles(ROLE_GROUP_DECLARATION)
@@ -637,15 +624,6 @@ def ensure_sea_task_notifications(*, sync_message: bool = False) -> int:
 		)
 
 	return created
-
-
-def sync_sea_task_notification_templates(
-	*,
-	names: frozenset[str] | set[str] | None = None,
-	sync_recipients: bool = False,
-) -> int:
-	"""Deprecated no-op: edit subject/message/recipients on the Notification in Desk."""
-	return 0
 
 
 def audience_label_for_receipt_upload(flow: str) -> str:

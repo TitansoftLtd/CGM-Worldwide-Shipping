@@ -14,14 +14,6 @@ def ensure_cargo_doctype_renames_before_migrate() -> None:
 	frappe.clear_cache()
 
 
-def ensure_cargo_field_renames_after_migrate() -> None:
-	"""Rename legacy fields after schema sync (requires new fieldnames in DocField meta)."""
-	_rename_standard_fields()
-	_rename_custom_fields()
-	frappe.db.commit()
-	frappe.clear_cache()
-
-
 def ensure_cargo_terminology_renames() -> None:
 	"""Full pass after migrate — doctypes (if missed) plus all field renames."""
 	_rename_doctypes()

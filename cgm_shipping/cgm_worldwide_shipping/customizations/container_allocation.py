@@ -992,57 +992,6 @@ def reassign_container_truck(
 	)
 
 
-def save_assignment_draft(
-	allocation_name: str,
-	item_name: str,
-	truck_number: str,
-	driver_name: str,
-	driver_contact: str = "",
-) -> dict:
-	"""Legacy path — transporters now offer trucks in batch; CGM assigns containers."""
-	frappe.throw(
-		_(
-			"Truck details are offered in the Offered Trucks list. "
-			"CGM assigns each container to an offered truck."
-		),
-		title=_("Use Offered Trucks"),
-	)
-
-
-def submit_truck_assignment(
-	allocation_name: str,
-	item_name: str,
-	truck_number: str,
-	driver_name: str,
-	driver_contact: str = "",
-) -> dict:
-	"""Legacy alias kept for older callers — prefer assign_container_to_offered_truck."""
-	frappe.throw(
-		_(
-			"Truck assignment is done by CGM from Offered Trucks. "
-			"Ask the transporter to offer trucks, then use Assign Containers to Trucks."
-		),
-		title=_("Use Offered Trucks"),
-	)
-
-
-def sync_truck_assignment_from_item(
-	allocation_name: str,
-	item_name: str,
-	truck_number: str,
-	driver_name: str,
-	driver_contact: str,
-) -> dict:
-	"""Backward-compatible alias — redirected to the offered-truck flow."""
-	return submit_truck_assignment(
-		allocation_name,
-		item_name,
-		truck_number,
-		driver_name,
-		driver_contact,
-	)
-
-
 def sync_interchange_from_item(
 	allocation_name: str,
 	item_name: str,

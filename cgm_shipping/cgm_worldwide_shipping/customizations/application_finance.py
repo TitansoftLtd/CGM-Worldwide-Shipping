@@ -157,26 +157,6 @@ def all_profiles() -> tuple[ApplicationFinanceProfile, ...]:
 	return tuple(APPLICATION_FINANCE_PROFILES.values())
 
 
-def profile_by_requirement_type(requirement_type: str) -> ApplicationFinanceProfile | None:
-	return APPLICATION_FINANCE_PROFILES.get(requirement_type)
-
-
-def profile_by_finance_kind(kind: str) -> ApplicationFinanceProfile | None:
-	normalized = (kind or "").strip()
-	for profile in all_profiles():
-		if profile.finance_payment_kind == normalized:
-			return profile
-	return None
-
-
-def profile_by_payment_item(payment_item: str) -> ApplicationFinanceProfile | None:
-	key = (payment_item or "").strip()
-	for profile in all_profiles():
-		if profile.payment_item == key:
-			return profile
-	return None
-
-
 def task_matches_application(task, profile: ApplicationFinanceProfile) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_application_for_profile,
@@ -1336,7 +1316,6 @@ def ensure_certificate_document_row(task, profile: ApplicationFinanceProfile) ->
 	"""Application task: certificate doc on Clearance Documents (optional until issued)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_document_type_code,
-		is_invoice_clearance_document_row,
 		remove_invoice_rows_from_task_documents,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
@@ -1725,11 +1704,6 @@ def invoice_submitted(task_name: str, profile: ApplicationFinanceProfile) -> boo
 	if task_has_finance_table(task):
 		return invoice_attached(task, profile)
 	return False
-
-
-def project_has_submitted_invoice(project: str, profile: ApplicationFinanceProfile) -> bool:
-	task_name = get_application_task(project, profile)
-	return bool(task_name and invoice_submitted(task_name, profile))
 
 
 def invoice_verified_for_application_task(

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 
-
 import frappe
 
 SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
@@ -68,7 +67,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
-	POST_CLEARANCE_STAGE,
 )
 
 # ------------------------------------------------------------------
@@ -173,10 +171,6 @@ def is_pre_clearance_permit_application_task(task) -> bool:
 	return behaviour.is_permit_application and behaviour.permit_stage == PRE_CLEARANCE_STAGE
 
 
-def is_pre_clearance_finance_permit_task(task) -> bool:
-	return is_permit_finance_task_doc(task)
-
-
 def is_permit_finance_task_doc(task) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_permit_finance,
@@ -197,14 +191,6 @@ def get_permit_application_task_for_finance(finance_task) -> str | None:
 
 def permit_stage_for_finance_task(finance_task) -> str:
 	return permit_stage_for_task(finance_task)
-
-
-def finance_permit_task_label(finance_task) -> str:
-	subject = (finance_task.get("subject") or "").strip()
-	if subject:
-		return subject
-	stage = permit_stage_for_finance_task(finance_task)
-	return f"Finance pays {stage} Permits"
 
 
 def is_permit_application_task_doc(task) -> bool:
@@ -444,10 +430,6 @@ def task_has_recorded_payment(task) -> bool:
 def permit_finance_rows(task) -> list:
 	"""Payable permit rows on a finance task (Foreign origin is excluded)."""
 	return payable_permit_rows(task)
-
-
-def task_uses_permit_payment_pattern(task) -> bool:
-	return is_permit_finance_task_doc(task) and bool(permit_finance_rows(task))
 
 
 def validate_permit_finance_task_completion(task) -> None:
