@@ -503,7 +503,7 @@ function meta_has_field(doctype, fieldname) {
 }
 
 function get_clients_documents_field(frm) {
-	if (frm.meta.has_field("custom_clients_documents")) {
+	if (frappe.meta.has_field(frm.doctype, "custom_clients_documents")) {
 		return "custom_clients_documents";
 	}
 	for (const df of frappe.meta.get_docfields(frm.doctype, frm.doc.name)) {

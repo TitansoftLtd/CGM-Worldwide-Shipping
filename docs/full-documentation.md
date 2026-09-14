@@ -283,7 +283,7 @@ Website users with role **Customer** land on `/portal` after login. They can vie
 | Shipment status gates | The task that reaches each status, per CGM Task Template (blocks manual changes on Sea Import) |
 | Intake documents | CI + PKL before **Documents Received** |
 | Permit rules | Post-clearance permit rules before **Entry Lodged** |
-| Project closure | All sea tasks complete before **Completed** |
+| Project closure | Before **Completed**: all tasks complete, the documents in Settings > Shipment status documents (Completed rows), permits Post-Cleared, a submitted Sales Invoice |
 | Finance cost ledger | Manual edits to cost summary blocked |
 
 ### Task

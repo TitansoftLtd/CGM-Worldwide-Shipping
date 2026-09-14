@@ -127,6 +127,9 @@ A Document Type counts when **Default Required** is ticked, its **Required Stage
 the row, and it applies to the shipment's mode of transport. Add rows for other statuses,
 change the stage, or tick Must Be Verified to also require verification.
 
+The same table decides the documents needed to mark a Project **Completed** (its *Completed* rows):
+by default CI, PKL, KRA_PIN, plus BL for Sea and AWB for Air, attached but not necessarily verified.
+
 ---
 
 ## Bill of Lading

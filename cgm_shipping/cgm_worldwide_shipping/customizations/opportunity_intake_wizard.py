@@ -201,6 +201,7 @@ def get_intake_wizard_context(
 	readiness: dict = {"blockers": [], "primary_transport_document": None}
 	if opportunity and frappe.db.exists("Opportunity", opportunity):
 		doc = frappe.get_doc("Opportunity", opportunity)
+		doc.check_permission("read")
 		sync_opportunity_intake_stage(doc)
 		stage = doc.get("custom_intake_stage") or STAGE_INTAKE
 		readiness = evaluate_start_shipment_readiness(opportunity)

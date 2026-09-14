@@ -275,8 +275,13 @@ _COMPUTED_METRIC_FIELDS = (
 )
 
 
-@frappe.whitelist()
 def refresh_open_container_metrics() -> int:
+	"""Daily: recompute charges on open trackers and push them to their Projects.
+
+	Commits after each tracker and each project. As one transaction it held locks on
+	every open tracker and project while the daily accrual job was writing the same
+	rows, and the two deadlocked (Scheduled Job Log, 8 and 9 September 2026).
+	"""
 	rows = frappe.get_all(
 		"Container Tracker",
 		filters={"status": ["not in", list(CLOSED_CONTAINER_STATUSES)]},
@@ -289,6 +294,7 @@ def refresh_open_container_metrics() -> int:
 		frappe.db.set_value(
 			"Container Tracker", row["name"], updates, update_modified=False
 		)
+		frappe.db.commit()
 		if row.get("project"):
 			projects.add(row["project"])
 
@@ -299,6 +305,7 @@ def refresh_open_container_metrics() -> int:
 		):
 			ct = frappe.get_doc("Container Tracker", name)
 			_sync_project_child_row(ct)
+		frappe.db.commit()
 
 	return len(rows)
 
