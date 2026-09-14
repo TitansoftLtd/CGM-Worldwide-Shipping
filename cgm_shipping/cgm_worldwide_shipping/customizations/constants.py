@@ -44,7 +44,6 @@ IDF_CERTIFICATE_CODES = frozenset({"IDF_CERT", "UCR_CERT", "IDF", "IDF Certifica
 # Sea task completion requirement labels (Settings-driven; defaults for throws).
 PRE_CLEARANCE_STAGE = "Pre-clearance"
 POST_CLEARANCE_STAGE = "Post-clearance"
-SUPPLIER_INVOICE_CODE = "SUP_INV"
 
 # CGM Sea Import Workflow on Project (fallback when Settings has no override).
 SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"

@@ -58,8 +58,6 @@ def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 	)
 
 
-SUPPLIER_INVOICE_CODE = "SUP_INV"
-
 
 def is_sea_finance_payment_task(task) -> bool:
 	"""Task is a finance payment step, by its Task Role stamp."""
@@ -1862,17 +1860,9 @@ def validate_permit_application_task(task) -> None:
 
 
 def validate_finance_task(task) -> None:
-	attached = attached_document_codes(task)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		task_is_permit_finance,
-	)
-
-	if not task_is_permit_finance(task) and SUPPLIER_INVOICE_CODE not in attached:
-		frappe.throw(
-			"Attach the <b>Supplier Invoice</b> on <b>Task Documents</b> for Accounts to verify "
-			"before completing this finance task."
-		)
-
+	# Documents a finance step needs come from the template's Required Document Types
+	# (validate_required_documents). The hardcoded SUP_INV rule matched no Document Type,
+	# so these tasks could never be completed.
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		task_client_paid_directly,
 		task_has_recorded_payment,

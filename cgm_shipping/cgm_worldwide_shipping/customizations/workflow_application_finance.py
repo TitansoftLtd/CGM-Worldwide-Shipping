@@ -10,6 +10,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	APPLICATION_FINANCE_PROFILES,
 	ApplicationFinanceProfile,
 	all_profiles,
+	application_certificate_label,
+	application_certificate_required,
 	can_complete_application_finance_task,
 	can_complete_application_task,
 	certificate_uploaded,
@@ -159,7 +161,13 @@ def _notify_finance_for_application_invoice(
 		finance_task,
 		audience=FINANCE_AUDIENCE,
 	)
-	cert_label = profile.certificate_document_code.replace("_", "/")
+	cert_label = application_certificate_label(task, profile)
+	declarant_hint = (
+		f" Declarant: upload the <b>{cert_label}</b> under <b>Clearance Documents</b> on the "
+		"application task when it is issued."
+		if cert_label
+		else ""
+	)
 	return {
 		"task": task.name,
 		"status": task.status,
@@ -167,8 +175,7 @@ def _notify_finance_for_application_invoice(
 		"finance_task_url": get_url(f"/app/task/{finance_task_name}"),
 		**notify_result,
 		"message": workflow_notify_message(
-			f"Finance notified. Declarant: upload the <b>{cert_label}</b> certificate "
-			f"under <b>Clearance Documents</b> on the application task when it is issued.",
+			f"Finance notified.{declarant_hint}",
 			notify_result,
 			audience=FINANCE_AUDIENCE,
 		),
@@ -400,21 +407,16 @@ def validate_application_not_manually_completed(
 		)
 
 		if task_client_paid_directly(finance_task):
-			if (
-				profile.certificate_document_code or profile.legacy_certificate_codes
-			) and not certificate_uploaded(task, profile):
+			if not certificate_uploaded(task, profile):
 				frappe.throw(
-					f"Attach the required <b>{profile.certificate_document_code}</b> "
-					"certificate before completing this task."
+					f"Attach the required <b>{application_certificate_label(task, profile)}</b> "
+					"before completing this task."
 				)
 			# Client-pays with no certificate: allow explicit Mark Completed after
 			# invoice handoff; Finance still owns verify + client receipt.
 			return
-	cert_hint = (
-		f" and the <b>{profile.certificate_document_code}</b> certificate"
-		if profile.certificate_document_code
-		else ""
-	)
+	cert_label = application_certificate_label(task, profile)
+	cert_hint = f" and the <b>{cert_label}</b>" if cert_label else ""
 	frappe.throw(
 		f"Complete this task by attaching a verified <b>{profile.invoice_label}</b>{cert_hint} "
 		f"on this form. Finance uploads the <b>{profile.receipt_label}</b> after payment. "
@@ -777,10 +779,8 @@ def get_application_declarant_workflow_status(
 		),
 		"finance_task_completed": bool(finance_task and finance_task.status == "Completed"),
 		"client_paid_directly": client_paid,
-		"certificate_required": bool(
-			(profile.certificate_document_code or profile.legacy_certificate_codes)
-			and not profile.certificate_document_optional
-		),
+		"certificate_required": application_certificate_required(task, profile)
+		and not profile.certificate_document_optional,
 		"certificate_attached": certificate_uploaded(task, profile),
 		"application_ready_to_complete": can_complete_application_task(
 			task, profile, finance_task

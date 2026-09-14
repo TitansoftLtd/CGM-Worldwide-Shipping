@@ -1378,6 +1378,41 @@ def prepare_application_task_tables(task, profile: ApplicationFinanceProfile) ->
 		copy_application_invoice_to_finance_task(task, profile)
 
 
+def application_certificate_required(task, profile: ApplicationFinanceProfile) -> bool:
+	"""Whether this application task must carry a certificate before it completes.
+
+	A task made from a CGM Task Template takes its documents from the template row's
+	Required Document Types only - blank means none, so the requirement is set in the
+	desk. Tasks made before templates keep the profile's certificate (IDF for UCR).
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_effective_required_document_types,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+	)
+
+	if get_effective_required_document_types(task):
+		return True
+	if get_task_behaviour(task).from_template:
+		return False
+	return bool(profile.certificate_document_code or profile.legacy_certificate_codes)
+
+
+def application_certificate_label(task, profile: ApplicationFinanceProfile) -> str:
+	"""The documents to ask for in messages, or "" when none are required."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_effective_required_document_types,
+	)
+
+	names = get_effective_required_document_types(task)
+	if names:
+		return ", ".join(names)
+	if not application_certificate_required(task, profile):
+		return ""
+	return f"{profile.certificate_document_code.replace('_', ' ')} certificate"
+
+
 def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		primary_attachment,
@@ -1390,7 +1425,7 @@ def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
 	# Template Required Document Types replace hardcoded profile certificate codes.
 	if get_effective_required_document_types(task):
 		return stamped_required_document_types_attached(task)
-	if not profile.certificate_document_code and not profile.legacy_certificate_codes:
+	if not application_certificate_required(task, profile):
 		return True
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_document_type_code
 

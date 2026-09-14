@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-SUPPLIER_INVOICE_CODE = "SUP_INV"
-
 DEFAULT_SEA_IMPORT_TASK_TEMPLATE: list[dict[str, str]] = [
 	{"task_subject": "Receive shipment documents from Client", "department": "Operations"},
 	{"task_subject": "Share documents with Declarants", "department": "Operations"},
