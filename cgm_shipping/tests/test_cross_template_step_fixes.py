@@ -116,16 +116,27 @@ class TestPermitInvoicesCountAsDone(unittest.TestCase):
 class TestStepSevenAndStepDocuments(unittest.TestCase):
 	"""Settings keyed two requirements on step numbers the template has moved past."""
 
-	def test_delivery_order_and_field_documents_are_on_the_template(self):
+	def test_delivery_order_is_on_the_template(self):
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
 			sea_import_tasks,
 		)
 
 		rows = {row["subject"]: row for row in sea_import_tasks()}
 		self.assertEqual(rows["Lodge Delivery Order"]["required_document_types"], "DO")
-		self.assertEqual(
-			rows["Field Officers conduct clearance"]["required_document_types"], "FIELD, Delivery Note"
+
+	def test_field_clearance_needs_no_upload(self):
+		"""Field officers clear on documents uploaded earlier (TASK-2026-00042)."""
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
+			DEFAULT_DOC_CODES,
 		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
+			sea_import_tasks,
+		)
+
+		row = next(r for r in sea_import_tasks() if r["subject"] == "Field Officers conduct clearance")
+		self.assertEqual(row["required_document_types"], "")
+		self.assertFalse(row["requires_document_upload"])
+		self.assertNotIn(row["sequence_no"], DEFAULT_DOC_CODES)
 
 	def test_client_inspection_task_fields_are_gone(self):
 		"""They showed only on step 7, which Sea Import no longer has."""

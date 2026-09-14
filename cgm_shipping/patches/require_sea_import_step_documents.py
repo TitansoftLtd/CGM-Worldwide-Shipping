@@ -1,15 +1,16 @@
-"""Require the Delivery Order on Sea Import's Lodge Delivery Order step, and the
-field report and delivery note on its field clearance step.
+"""Require the Delivery Order on Sea Import's Lodge Delivery Order step.
 
-Why: CGM Shipping Settings asked for them by step number (14 and 17), which only
-tasks created before the Task Role stamps still read, so tasks from the template
-no longer enforced them. They now sit in the template rows' Required Document
-Types, where they show and can be edited.
+Why: CGM Shipping Settings asked for it by step number (14), which only tasks
+created before the Task Role stamps still read, so tasks from the template no
+longer enforced it. It now sits in the template row's Required Document Types,
+where it shows and can be edited.
 
-What: sets Required Document Types on the Sea Import rows "Lodge Delivery Order"
-(DO) and "Field Officers conduct clearance" (FIELD, Delivery Note) when blank,
-then stamps the open tasks made from those rows and adds their Task Documents
-rows. Completed and cancelled tasks are left as they are.
+What: sets Required Document Types on the Sea Import row "Lodge Delivery Order"
+(DO) when blank, then stamps the open tasks made from that row and adds their
+Task Documents rows. Completed and cancelled tasks are left as they are.
+
+The field clearance step used to be listed here too; it needs no upload - see
+stop_requiring_field_clearance_documents.
 
 Idempotent: a row that already lists documents is left alone. One-time - retire
 per docs/guides/patches.md once staging and production Patch Log show it.
@@ -19,7 +20,6 @@ import frappe
 
 REQUIRED = {
 	"Lodge Delivery Order": ("DO",),
-	"Field Officers conduct clearance": ("FIELD", "Delivery Note"),
 }
 
 

@@ -189,7 +189,6 @@ def sea_import_tasks() -> list[dict]:
 			"Field Officers conduct clearance",
 			"Field Operations",
 			container_step="Field Clearance",
-			required_docs="FIELD, Delivery Note",
 		),
 		_row(
 			18,
