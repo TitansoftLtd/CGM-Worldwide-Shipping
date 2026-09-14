@@ -1442,6 +1442,9 @@ def get_containers_for_project_whitelisted(project: str | None = None, project_n
 
 @frappe.whitelist()
 def refresh_open_project_container_metrics() -> int:
+	# Rewrites every open tracker and its Project, so it needs write access to both.
+	frappe.has_permission("Container Tracker", "write", throw=True)
+	frappe.has_permission("Project", "write", throw=True)
 	from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
 		refresh_open_container_metrics,
 	)

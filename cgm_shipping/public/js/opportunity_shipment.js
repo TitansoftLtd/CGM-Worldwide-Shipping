@@ -98,13 +98,13 @@ cgm_shipping.opportunity_shipment._reset_new_opportunity_session = function (frm
 	localStorage.removeItem(CGM_PENDING_AWB_LINK_KEY);
 	localStorage.removeItem(CGM_PENDING_BOOKING_LINK_KEY);
 
-	if (frm.meta.has_field("custom_intake_stage")) {
+	if (frappe.meta.has_field(frm.doctype, "custom_intake_stage")) {
 		frm.doc.custom_intake_stage = STAGE_INTAKE;
 	}
-	if (frm.meta.has_field("custom_primary_doc_linked")) {
+	if (frappe.meta.has_field(frm.doctype, "custom_primary_doc_linked")) {
 		frm.doc.custom_primary_doc_linked = 0;
 	}
-	if (frm.meta.has_field("custom_uses_container_tracking")) {
+	if (frappe.meta.has_field(frm.doctype, "custom_uses_container_tracking")) {
 		frm.doc.custom_uses_container_tracking = 0;
 	}
 
@@ -187,7 +187,7 @@ cgm_shipping.opportunity_shipment._prepare_intake_defaults = function (frm) {
 	if (!frm.doc.opportunity_from) {
 		frm.set_value("opportunity_from", "Customer");
 	}
-	if (frm.is_new() && frm.meta.has_field("custom_intake_stage")) {
+	if (frm.is_new() && frappe.meta.has_field(frm.doctype, "custom_intake_stage")) {
 		frm.doc.custom_intake_stage = STAGE_INTAKE;
 	}
 	if (frm.is_new() && !frm.doc.transaction_date) {
@@ -202,7 +202,7 @@ cgm_shipping.opportunity_shipment._prepare_intake_defaults = function (frm) {
 	// Do not inherit site default Country (e.g. Kenya) — user must choose.
 	if (frm.is_new()) {
 		["custom_country_of_origin", "custom_delivery_destination"].forEach((fieldname) => {
-			if (frm.meta.has_field(fieldname) && frm.doc[fieldname]) {
+			if (frappe.meta.has_field(frm.doctype, fieldname) && frm.doc[fieldname]) {
 				frm.doc[fieldname] = null;
 			}
 		});
