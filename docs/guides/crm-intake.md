@@ -115,12 +115,17 @@ From an approved Opportunity:
 
 ## Intake document guard
 
-Before Project can move to **Documents Received**:
+Before Project can move to **Documents Received**, the documents set in
+**CGM Shipping Settings > Shipment status documents** must be attached on Project
+shipment documents. By default that is the row *Documents Received -> Client documents*
+with **Must Be Verified** off, which covers:
 
-- **CI** (Commercial Invoice) - verified on Project shipment documents
-- **PKL** (Packing List) - verified on Project shipment documents
+- **CI** (Commercial Invoice)
+- **PKL** (Packing List)
 
-These are mandatory intake codes (`INTAKE_DOCUMENT_CODES`).
+A Document Type counts when **Default Required** is ticked, its **Required Stage** matches
+the row, and it applies to the shipment's mode of transport. Add rows for other statuses,
+change the stage, or tick Must Be Verified to also require verification.
 
 ---
 

@@ -157,26 +157,6 @@ def all_profiles() -> tuple[ApplicationFinanceProfile, ...]:
 	return tuple(APPLICATION_FINANCE_PROFILES.values())
 
 
-def profile_by_requirement_type(requirement_type: str) -> ApplicationFinanceProfile | None:
-	return APPLICATION_FINANCE_PROFILES.get(requirement_type)
-
-
-def profile_by_finance_kind(kind: str) -> ApplicationFinanceProfile | None:
-	normalized = (kind or "").strip()
-	for profile in all_profiles():
-		if profile.finance_payment_kind == normalized:
-			return profile
-	return None
-
-
-def profile_by_payment_item(payment_item: str) -> ApplicationFinanceProfile | None:
-	key = (payment_item or "").strip()
-	for profile in all_profiles():
-		if profile.payment_item == key:
-			return profile
-	return None
-
-
 def task_matches_application(task, profile: ApplicationFinanceProfile) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_application_for_profile,
@@ -1336,7 +1316,6 @@ def ensure_certificate_document_row(task, profile: ApplicationFinanceProfile) ->
 	"""Application task: certificate doc on Clearance Documents (optional until issued)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 		get_document_type_code,
-		is_invoice_clearance_document_row,
 		remove_invoice_rows_from_task_documents,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
@@ -1378,6 +1357,41 @@ def prepare_application_task_tables(task, profile: ApplicationFinanceProfile) ->
 		copy_application_invoice_to_finance_task(task, profile)
 
 
+def application_certificate_required(task, profile: ApplicationFinanceProfile) -> bool:
+	"""Whether this application task must carry a certificate before it completes.
+
+	A task made from a CGM Task Template takes its documents from the template row's
+	Required Document Types only - blank means none, so the requirement is set in the
+	desk. Tasks made before templates keep the profile's certificate (IDF for UCR).
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_effective_required_document_types,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		get_task_behaviour,
+	)
+
+	if get_effective_required_document_types(task):
+		return True
+	if get_task_behaviour(task).from_template:
+		return False
+	return bool(profile.certificate_document_code or profile.legacy_certificate_codes)
+
+
+def application_certificate_label(task, profile: ApplicationFinanceProfile) -> str:
+	"""The documents to ask for in messages, or "" when none are required."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
+		get_effective_required_document_types,
+	)
+
+	names = get_effective_required_document_types(task)
+	if names:
+		return ", ".join(names)
+	if not application_certificate_required(task, profile):
+		return ""
+	return f"{profile.certificate_document_code.replace('_', ' ')} certificate"
+
+
 def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		primary_attachment,
@@ -1390,7 +1404,7 @@ def certificate_uploaded(task, profile: ApplicationFinanceProfile) -> bool:
 	# Template Required Document Types replace hardcoded profile certificate codes.
 	if get_effective_required_document_types(task):
 		return stamped_required_document_types_attached(task)
-	if not profile.certificate_document_code and not profile.legacy_certificate_codes:
+	if not application_certificate_required(task, profile):
 		return True
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task import get_document_type_code
 
@@ -1690,11 +1704,6 @@ def invoice_submitted(task_name: str, profile: ApplicationFinanceProfile) -> boo
 	if task_has_finance_table(task):
 		return invoice_attached(task, profile)
 	return False
-
-
-def project_has_submitted_invoice(project: str, profile: ApplicationFinanceProfile) -> bool:
-	task_name = get_application_task(project, profile)
-	return bool(task_name and invoice_submitted(task_name, profile))
 
 
 def invoice_verified_for_application_task(

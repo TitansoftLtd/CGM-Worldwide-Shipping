@@ -58,9 +58,6 @@ def get_task_name_by_sequence(project: str, sequence_no: int) -> str | None:
 	)
 
 
-SUPPLIER_INVOICE_CODE = "SUP_INV"
-
-
 def is_sea_finance_payment_task(task) -> bool:
 	"""Task is a finance payment step, by its Task Role stamp."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
@@ -223,12 +220,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import TASK_DO
 LINE_INVOICE = "Invoice"
 LINE_RECEIPT = "Receipt"
 PAYMENT_UCR = "UCR"
-PAYMENT_ENTRY_SLIP = "ENTRY_SLIP"
 
 UCR_INVOICE_LABEL = "UCR Invoice"
 UCR_RECEIPT_LABEL = "UCR Receipt"
-ENTRY_SLIP_INVOICE_LABEL = "Entry Slip Invoice"
-ENTRY_SLIP_RECEIPT_LABEL = "Entry Slip Receipt"
 
 # Document types that belong on Task Finance Lines, not Task Documents.
 INVOICE_DOCUMENT_TYPE_CODES = frozenset({"UCR_DOC", "UCR_INV", "UCR Invoice", "SUP_INV"})
@@ -249,10 +243,6 @@ def task_finance_line_has_item_code() -> bool:
 	if not meta.has_field("item_code"):
 		return False
 	return bool(frappe.db.has_column("Task Finance Line", "item_code"))
-
-
-def _task_seq(task) -> int:
-	return int(task.get("custom_sequence_no") or 0)
 
 
 def is_invoice_clearance_document_row(document_type: str | None) -> bool:
@@ -290,52 +280,6 @@ def purge_invoice_rows_from_task_documents_db(task_name: str) -> int:
 	return len(names)
 
 
-def purge_all_invoice_clearance_document_rows() -> int:
-	"""Remove all legacy invoice rows from Task Clearance Documents."""
-	legacy = tuple(LEGACY_INVOICE_DOCUMENT_TYPE_LINKS)
-	placeholders = ", ".join(["%s"] * len(legacy))
-	names = frappe.db.sql(
-		f"""
-		SELECT name
-		FROM `tabShipment Document`
-		WHERE parenttype = 'Task'
-		  AND parentfield = 'custom_task_documents'
-		  AND document_type IN ({placeholders})
-		""",
-		legacy,
-		pluck=True,
-	)
-	for name in names:
-		frappe.db.delete("Shipment Document", name)
-	return len(names)
-
-
-def migrate_invoice_attachments_to_finance_lines_sql() -> None:
-	"""Copy invoice attachments to Task Finance Lines without loading/saving Task."""
-	if not frappe.db.table_exists("Task Finance Line"):
-		return
-	legacy = tuple(LEGACY_INVOICE_DOCUMENT_TYPE_LINKS)
-	placeholders = ", ".join(["%s"] * len(legacy))
-	frappe.db.sql(
-		f"""
-		UPDATE `tabTask Finance Line` tfl
-		INNER JOIN `tabShipment Document` sd
-			ON sd.parent = tfl.parent
-			AND sd.parenttype = 'Task'
-			AND sd.parentfield = 'custom_task_documents'
-			AND sd.document_type IN ({placeholders})
-		SET tfl.attachment = sd.attachment
-		WHERE tfl.parenttype = 'Task'
-		  AND tfl.parentfield = %s
-		  AND tfl.line_type = %s
-		  AND (tfl.payment_item IS NULL OR tfl.payment_item = %s)
-		  AND IFNULL(tfl.attachment, '') = ''
-		  AND IFNULL(sd.attachment, '') != ''
-		""",
-		(*legacy, TASK_FINANCE_FIELD, LINE_INVOICE, PAYMENT_UCR),
-	)
-
-
 def remove_invoice_rows_from_task_documents(task) -> None:
 	"""Drop invoice/receipt rows from Clearance Documents - those use Task Finance Lines."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import TASK_DOCUMENTS_FIELD
@@ -345,27 +289,6 @@ def remove_invoice_rows_from_task_documents(task) -> None:
 	for row in list(task.get(TASK_DOCUMENTS_FIELD) or []):
 		if is_invoice_clearance_document_row(row.document_type):
 			task.remove(row)
-
-
-def ensure_idf_certificate_document_row(task) -> None:
-	"""Task 3: only IDF/UCR certificate on Clearance Documents (optional until issued)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import get_document_type_link_name
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		task_is_ucr_application,
-	)
-
-	if not task_is_ucr_application(task):
-		return
-	if not task.meta.has_field(TASK_DOCUMENTS_FIELD):
-		return
-	remove_invoice_rows_from_task_documents(task)
-	dt_name = get_document_type_link_name("IDF_CERT")
-	if not dt_name:
-		return
-	existing = {r.document_type for r in task.get(TASK_DOCUMENTS_FIELD) or [] if r.document_type}
-	if dt_name in existing:
-		return
-	task.append(TASK_DOCUMENTS_FIELD, {"document_type": dt_name, "status": "Missing"})
 
 
 def prepare_ucr_task_tables(task) -> None:
@@ -381,16 +304,6 @@ def prepare_ucr_task_tables(task) -> None:
 	if not task_is_ucr_workflow(task):
 		return
 	prepare_application_task_tables(task, APPLICATION_FINANCE_PROFILES["UCR Application"])
-
-
-def prepare_entry_task_tables(task) -> None:
-	"""Entry tasks: finance lines for Entry Slip invoice/receipt; ENTRY cert on clearance docs."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
-		prepare_application_task_tables,
-	)
-
-	prepare_application_task_tables(task, APPLICATION_FINANCE_PROFILES["Entry Application"])
 
 
 def prepare_application_finance_task_tables(task) -> None:
@@ -1101,73 +1014,6 @@ Project level: custom_permit_register synced from Task permits (see sync_task_pe
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import get_document_type_link_name
 from cgm_shipping.cgm_worldwide_shipping.customizations.project import derive_permit_clearance_phase
 
-TASK_DOCUMENT_TYPE_DEFAULTS: dict[str, dict] = {
-	"SUP_INV": {
-		"category": "Finance",
-		"required_stage": "IDF & UCR",
-		"default_required": 0,
-	},
-	"IDF_CERT": {
-		"category": "Customs",
-		"required_stage": "IDF & UCR",
-		"default_required": 0,
-	},
-	"INSPECT": {
-		"category": "Compliance",
-		"required_stage": "Client inspection",
-		"default_required": 0,
-	},
-	"MANIFEST": {
-		"category": "Customs",
-		"required_stage": "Arrival & manifest",
-		"default_required": 0,
-	},
-	"ENTRY": {
-		"category": "Customs",
-		"required_stage": "Customs entry & taxes",
-		"default_required": 0,
-	},
-	"DO": {
-		"category": "Customs",
-		"required_stage": "Port & line (DO / charges)",
-		"default_required": 0,
-	},
-	"FIELD": {
-		"category": "Compliance",
-		"required_stage": "Field clearance & release",
-		"default_required": 0,
-	},
-	"DELIVERY_NOTE": {
-		"category": "Transport",
-		"required_stage": "Field clearance & release",
-		"default_required": 0,
-	},
-	"BL": {
-		"category": "Transport",
-		"required_stage": "Arrival & manifest",
-		"default_required": 0,
-	},
-}
-
-
-def ensure_task_document_types() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		DOCUMENT_TYPE_DEFAULTS,
-		ensure_document_types,
-	)
-
-	ensure_document_types()
-	for code, defaults in TASK_DOCUMENT_TYPE_DEFAULTS.items():
-		if get_document_type_link_name(code):
-			continue
-		doc = frappe.new_doc("Document Type")
-		doc.code = code
-		for key, value in defaults.items():
-			setattr(doc, key, value)
-		doc.insert(ignore_permissions=True)
-		if doc.meta.is_submittable and doc.docstatus == 0:
-			doc.submit()
-
 
 def get_document_type_code(document_type_link: str | None) -> str | None:
 	if not document_type_link:
@@ -1239,11 +1085,6 @@ def required_document_code_is_attached(required_code: str, attached: set[str]) -
 	if not dt_name:
 		return False
 	return bool(document_type_match_tokens(dt_name) & attached)
-
-
-def strip_task_documents_for_checkpoint(task) -> bool:
-	"""Legacy no-op — checkpoint tasks now carry versioned document rows."""
-	return False
 
 
 def seed_checkpoint_task_documents(task) -> bool:
@@ -1862,17 +1703,9 @@ def validate_permit_application_task(task) -> None:
 
 
 def validate_finance_task(task) -> None:
-	attached = attached_document_codes(task)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		task_is_permit_finance,
-	)
-
-	if not task_is_permit_finance(task) and SUPPLIER_INVOICE_CODE not in attached:
-		frappe.throw(
-			"Attach the <b>Supplier Invoice</b> on <b>Task Documents</b> for Accounts to verify "
-			"before completing this finance task."
-		)
-
+	# Documents a finance step needs come from the template's Required Document Types
+	# (validate_required_documents). The hardcoded SUP_INV rule matched no Document Type,
+	# so these tasks could never be completed.
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		task_client_paid_directly,
 		task_has_recorded_payment,
@@ -2126,29 +1959,6 @@ def payment_entry_allocates_purchase_invoice(payment_entry_name, purchase_invoic
 		if row.reference_doctype == "Purchase Invoice" and row.reference_name == purchase_invoice_name:
 			return True
 	return False
-
-
-def ensure_finance_custom_fields() -> None:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
-		_create_cf,
-	)
-
-	for dt, insert_after in (
-		("Purchase Invoice", "project"),
-		("Payment Entry", "project"),
-	):
-		_create_cf(
-			dt,
-			{
-				"fieldname": "custom_cgm_source_task",
-				"label": "CGM Source Task",
-				"fieldtype": "Link",
-				"options": "Task",
-				"insert_after": insert_after,
-				"read_only": 1,
-				"no_copy": 1,
-			},
-		)
 
 
 def _task_context(task) -> dict:
@@ -2888,21 +2698,6 @@ def purchase_invoice_on_submit(doc, method=None) -> None:
 	_enqueue_finance_job("job_link_pi_to_task", task_name=task_name, purchase_invoice=doc.name)
 
 
-def payment_entry_on_submit(doc, method=None) -> None:
-	"""Link submitted PE to the finance task in a background job."""
-	task_name = doc.get("custom_cgm_source_task")
-	if not task_name:
-		task_name = _task_from_payment_references(doc)
-	if not task_name or not frappe.db.exists("Task", task_name):
-		return
-	task = frappe.get_doc("Task", task_name)
-	if not is_sea_payment_task(task):
-		return
-	if task.get("custom_payment_entry") == doc.name:
-		return
-	_enqueue_finance_job("job_link_pe_to_task", task_name=task_name, payment_entry=doc.name)
-
-
 def journal_entry_on_submit(doc, method=None):
 	"""Act on the finance task a submitted Journal Entry pays for.
 
@@ -3031,37 +2826,6 @@ def submit_task_journal_entry(task_name: str, journal_entry: str) -> dict:
 def journal_entry_on_cancel(doc, method=None):
 	"""Journal Entry cancel — finance cost ledger refresh handled in finance_cost_ledger hook."""
 	return
-
-
-def _task_from_payment_references(doc) -> str | None:
-	for row in doc.get("references") or []:
-		if row.reference_doctype != "Purchase Invoice" or not row.reference_name:
-			continue
-		task_name = frappe.db.get_value(
-			"Purchase Invoice", row.reference_name, "custom_cgm_source_task"
-		)
-		if task_name:
-			return task_name
-	return None
-
-
-def payment_entry_validate_from_task(doc, method=None):
-	"""Ensure PE project / source task match the finance task or its Purchase Invoice."""
-	if not doc.get("custom_cgm_source_task"):
-		for row in doc.get("references") or []:
-			if row.reference_doctype == "Purchase Invoice" and row.reference_name:
-				task_name = frappe.db.get_value(
-					"Purchase Invoice", row.reference_name, "custom_cgm_source_task"
-				)
-				if task_name and doc.meta.has_field("custom_cgm_source_task"):
-					doc.custom_cgm_source_task = task_name
-					break
-
-	task_name = doc.get("custom_cgm_source_task")
-	if task_name and frappe.db.exists("Task", task_name):
-		project = frappe.db.get_value("Task", task_name, "project")
-		if project and doc.meta.has_field("project") and not doc.project:
-			doc.project = project
 
 
 def link_purchase_invoice_to_task_enhanced(
@@ -3347,26 +3111,6 @@ def get_purchase_item_for_permit_type(permit_type: str, company: str | None = No
 	if item:
 		return item
 	return get_default_purchase_item_code(company)
-
-
-def seed_permit_type_purchase_items() -> list[str]:
-	"""Link Permit Type records to Items where a match exists."""
-	if not frappe.db.exists("DocType", "Permit Type"):
-		return []
-
-	if not _permit_type_purchase_item_field_ready():
-		return []
-
-	updated: list[str] = []
-	for name in frappe.get_all("Permit Type", pluck="name"):
-		if frappe.db.get_value("Permit Type", name, "purchase_item"):
-			continue
-		item = resolve_purchase_item_for_permit_type(name)
-		if not item:
-			continue
-		frappe.db.set_value("Permit Type", name, "purchase_item", item, update_modified=False)
-		updated.append(f"{name} → {item}")
-	return updated
 
 
 # ==================== Task hooks ====================

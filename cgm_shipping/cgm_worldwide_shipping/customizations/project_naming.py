@@ -45,14 +45,12 @@ PACKAGE_PROJECT_NAME_PATTERN = re.compile(
 	r"^.+\s/\s.+(?:\s/\s\d+)?$",
 )
 LEGACY_CGM_REF_PATTERN = re.compile(r"^CGM/[A-Z0-9]{2,5}\d{3}/\d{4}$", re.IGNORECASE)
-LEGACY_PROJ_PATTERN = re.compile(r"^PROJ-(\d+)$", re.IGNORECASE)
 QUANTITY_SUMMARY_PATTERN = re.compile(
 	r"(\d+)\s*x\s*([A-Za-z0-9]+)",
 	re.IGNORECASE,
 )
 
 PROJECT_REFERENCE_FIELD = "custom_project_reference"
-LEGACY_REFERENCE_FIELD = "custom_cgm_ref_no"
 PROJECT_NAME_LOCK = "cgm_project_reference_lock"
 CLIENT_REFERENCE_FIELD = "custom_client_refrence_no"
 PROJECT_REFERENCE_INPUT_FIELDS = (
@@ -255,48 +253,6 @@ def _uses_package_naming(project) -> bool:
 	return bool(package_quantity_segment(project))
 
 
-def _sequence_from_reference(value: str | None) -> int | None:
-	"""Legacy helper: extract /NNNN from old LP names or PROJ-####."""
-	if not value:
-		return None
-	text = str(value).strip()
-	match = LP_PROJECT_NAME_PATTERN.match(text)
-	if match:
-		return int(match.group(4))
-	match = LEGACY_PROJ_PATTERN.match(text)
-	if match:
-		return int(match.group(1))
-	return None
-
-
-def _project_reference_query_fields() -> list[str]:
-	fields = ["project_name"]
-	if frappe.db.has_column("Project", PROJECT_REFERENCE_FIELD):
-		fields.append(PROJECT_REFERENCE_FIELD)
-	return fields
-
-
-def _scan_max_project_sequence() -> int:
-	max_seq = 0
-	field_list = ", ".join(f"`{field}`" for field in _project_reference_query_fields())
-	rows = frappe.db.sql(f"SELECT {field_list} FROM `tabProject`", as_dict=True)
-	for row in rows:
-		for ref in row.values():
-			seq = _sequence_from_reference(ref)
-			if seq is not None:
-				max_seq = max(max_seq, seq)
-	return max_seq
-
-
-def next_global_project_sequence() -> int:
-	"""Highest legacy /NNNN suffix across LP references + 1 (kept for compatibility)."""
-	frappe.db.sql("SELECT GET_LOCK(%s, 10)", (PROJECT_NAME_LOCK,))
-	try:
-		return _scan_max_project_sequence() + 1
-	finally:
-		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (PROJECT_NAME_LOCK,))
-
-
 def build_lp_project_reference(project, sequence: int | None = None) -> str:
 	"""Build business reference.
 
@@ -413,9 +369,3 @@ def assign_lp_project_reference(project) -> str | None:
 	)
 	sync_project_reference_fields(project, reference)
 	return reference
-
-
-# Backward-compatible aliases used during refactor.
-is_lp_project_name = is_lp_project_reference
-build_lp_project_name = build_lp_project_reference
-assign_lp_project_name = assign_lp_project_reference

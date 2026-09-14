@@ -16,54 +16,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import get_field_from_meta
 
 
-
-def get_project_documents_fieldname():
-	"""Return the Project child-table fieldname for shipment documents, or None if absent."""
-	project_fields = frappe.get_meta("Project")
-	if project_fields.has_field(SHIPMENT_DOCUMENTS_FIELD):
-		return SHIPMENT_DOCUMENTS_FIELD
-	return None
-
-
-def ensure_project_documents_field():
-	"""Create the Shipment Documents table on Project when it is missing."""
-	# 1. Return early when the field already exists.
-	if get_project_documents_fieldname():
-		return SHIPMENT_DOCUMENTS_FIELD
-
-	fieldname = SHIPMENT_DOCUMENTS_FIELD
-	cf_name = f"Project-{fieldname}"
-
-	# 2. Reload cache and return when the Custom Field record already exists.
-	if frappe.db.exists("Custom Field", cf_name):
-		frappe.clear_cache(doctype="Project")
-		return fieldname
-
-	# 3. Choose the best anchor field for insert_after.
-	project_fields = frappe.get_meta("Project")
-	insert_after = "custom_shipment_status"
-	if not project_fields.has_field(insert_after):
-		insert_after = "custom_shipment_type"
-	if not project_fields.has_field(insert_after):
-		insert_after = "customer"
-
-	# 4. Create and insert the Custom Field.
-	doc = frappe.new_doc("Custom Field")
-	doc.update(
-		{
-			"dt": "Project",
-			"fieldname": fieldname,
-			"label": "Shipment Documents",
-			"fieldtype": "Table",
-			"options": "Shipment Document",
-			"insert_after": insert_after,
-		}
-	)
-	doc.insert(ignore_permissions=True)
-	frappe.clear_cache(doctype="Project")
-	return fieldname
-
-
 # ─── Pre-shipment Attachment Helpers ─────────────────────────────────────────
 
 
@@ -964,12 +916,12 @@ DOCUMENT_TYPE_DEFAULTS = {
 	"CI": {
 		"category": "Commercial",
 		"default_required": 1,
-		"required_stage": "Pre-IDF",
+		"required_stage": "Client documents",
 	},
 	"PKL": {
 		"category": "Commercial",
 		"default_required": 1,
-		"required_stage": "Pre-IDF",
+		"required_stage": "Client documents",
 	},
 	"KRA_PIN": {
 		"category": "Compliance",
@@ -1561,10 +1513,4 @@ def get_project_shipment_documents_field() -> str | None:
 	return get_field_from_meta("Project", "shipment_documents")
 
 
-# Backward-compatible alias
-get_project_documents_field = get_project_shipment_documents_field
-
-
-# Backward-compatible aliases
-refresh_project_shipment_documents = refresh_project_documents
 sync_documents = sync_linked_attachments_to_project

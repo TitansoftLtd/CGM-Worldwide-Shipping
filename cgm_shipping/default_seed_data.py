@@ -62,29 +62,13 @@ def seed_default_customs_tax_rates() -> None:
 
 
 def seed_cgm_shipping_settings() -> None:
-	"""Fill blank Settings tables that are safe to top-up on migrate.
+	"""Fill Settings defaults that are safe to top up on migrate.
 
-	Document responsibilities / CGM Role Groups are intentionally excluded —
+	Document responsibilities / CGM Role Groups are intentionally excluded -
 	those are one-time defaults (after_install + seed patch) so site edits stick.
 	"""
 	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
 		return
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-		top_up_sea_clearance_task_requirements,
-	)
-
-	settings = frappe.get_doc("CGM Shipping Settings")
-	meta = frappe.get_meta("CGM Shipping Settings")
-	changed = False
-
-	if meta.has_field("custom_sea_clearance_task_requirements"):
-		changed = top_up_sea_clearance_task_requirements(settings) or changed
-
-	if changed:
-		settings.flags.skip_package_visibility_apply = True
-		settings.save(ignore_permissions=True)
-		frappe.clear_cache()
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.package_field_visibility import (
 		seed_package_visibility_defaults,

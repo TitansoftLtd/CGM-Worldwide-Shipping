@@ -6,7 +6,7 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, today
+from frappe.utils import cint, getdate, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import (
 	compute_container_charge_amounts,
@@ -26,8 +26,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_STATUS_VESSEL_BERTHED,
 	CONTAINER_STEP_BY_SEQ_FIELD,
 	CONTAINER_TASK_SEQ_DEFAULTS,
-	DEPOSIT_PAYMENT_STATUSES,
-	DEPOSIT_REFUND_STATUSES,
 	TASK_CONTAINER_NUMBER_FIELD,
 	TASK_CONTAINER_TRACKER_FIELD,
 	TASK_CARGO_TYPE_FIELD,
@@ -161,14 +159,6 @@ def get_default_kpa_free_days() -> int:
 	return 5
 
 
-def _days_between(start, end) -> int | None:
-	start_date = getdate(start)
-	end_date = getdate(end)
-	if not start_date or not end_date:
-		return None
-	return max(0, (end_date - start_date).days)
-
-
 def _optional_date(value):
 	"""Return a date only when a value exists; avoid getdate(None)=>today side effects."""
 	if not value:
@@ -224,12 +214,6 @@ def _derived_kpa_free_days(data: dict[str, Any]) -> int:
 	if from_dates is not None:
 		return from_dates
 	return int(data.get("kpa_free_days") or 0)
-
-
-def _kpa_period_configured(data: dict[str, Any]) -> bool:
-	return bool(
-		data.get("kpa_free_days_start_date") and data.get("kpa_free_days_end_date")
-	)
 
 
 def sync_free_day_start_dates(doc) -> None:
@@ -1240,18 +1224,6 @@ def handle_sea_task_container_event(
 		_apply_book_trucks_task(project, task_doc)
 
 
-def on_gate_out(project_name: str, *, task_doc=None) -> None:
-	handle_sea_task_container_event(
-		project_name, get_gate_out_task_sequence(), task_doc=task_doc
-	)
-
-
-def on_empty_return(project_name: str, *, task_doc=None) -> None:
-	handle_sea_task_container_event(
-		project_name, get_empty_return_task_sequence(), task_doc=task_doc
-	)
-
-
 def _project_container_rows(project) -> list:
 	container_field = get_container_table_field_for_doctype("Project")
 	if not container_field:
@@ -1466,15 +1438,6 @@ def get_containers_for_project_whitelisted(project: str | None = None, project_n
 	if not target:
 		frappe.throw(_("Project is required."))
 	return get_containers_for_project(target)
-
-
-def get_overdue_containers(project_name: str) -> list[dict]:
-	return [
-		c
-		for c in get_containers_for_project(project_name)
-		if c.get("status") == CONTAINER_STATUS_RETURN_OVERDUE
-		or (c.get("alert_status") or "").startswith("🚨")
-	]
 
 
 @frappe.whitelist()

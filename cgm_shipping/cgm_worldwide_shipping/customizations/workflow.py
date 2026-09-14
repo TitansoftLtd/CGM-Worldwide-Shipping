@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 
-
 import frappe
 
 SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
@@ -68,7 +67,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
-	POST_CLEARANCE_STAGE,
 )
 
 # ------------------------------------------------------------------
@@ -173,10 +171,6 @@ def is_pre_clearance_permit_application_task(task) -> bool:
 	return behaviour.is_permit_application and behaviour.permit_stage == PRE_CLEARANCE_STAGE
 
 
-def is_pre_clearance_finance_permit_task(task) -> bool:
-	return is_permit_finance_task_doc(task)
-
-
 def is_permit_finance_task_doc(task) -> bool:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_permit_finance,
@@ -197,14 +191,6 @@ def get_permit_application_task_for_finance(finance_task) -> str | None:
 
 def permit_stage_for_finance_task(finance_task) -> str:
 	return permit_stage_for_task(finance_task)
-
-
-def finance_permit_task_label(finance_task) -> str:
-	subject = (finance_task.get("subject") or "").strip()
-	if subject:
-		return subject
-	stage = permit_stage_for_finance_task(finance_task)
-	return f"Finance pays {stage} Permits"
 
 
 def is_permit_application_task_doc(task) -> bool:
@@ -444,10 +430,6 @@ def task_has_recorded_payment(task) -> bool:
 def permit_finance_rows(task) -> list:
 	"""Payable permit rows on a finance task (Foreign origin is excluded)."""
 	return payable_permit_rows(task)
-
-
-def task_uses_permit_payment_pattern(task) -> bool:
-	return is_permit_finance_task_doc(task) and bool(permit_finance_rows(task))
 
 
 def validate_permit_finance_task_completion(task) -> None:
@@ -2405,28 +2387,22 @@ def project_has_submitted_ucr_invoice(project: str) -> bool:
 
 
 def idf_certificate_uploaded(task) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-		IDF_CERTIFICATE_CODES,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		primary_attachment,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		get_document_type_code,
-		get_stamped_required_document_types,
-		stamped_required_document_types_attached,
+	"""IDF certificate gate for Create UCR - the template's Required Document Types decide."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		certificate_uploaded,
 	)
 
-	# Prefer template stamp (handles "IDF CERT" vs "IDF_CERT" and draft/final slots).
-	if get_stamped_required_document_types(task):
-		return stamped_required_document_types_attached(task)
+	return certificate_uploaded(task, APPLICATION_FINANCE_PROFILES["UCR Application"])
 
-	for row in task.get("custom_task_documents") or []:
-		if get_document_type_code(row.document_type) in IDF_CERTIFICATE_CODES and primary_attachment(
-			row
-		):
-			return True
-	return False
+
+def _ucr_certificate_required(task) -> bool:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		application_certificate_required,
+	)
+
+	return application_certificate_required(task, APPLICATION_FINANCE_PROFILES["UCR Application"])
 
 
 def ucr_invoice_verified_for_create_task(task, finance_task=None) -> bool:
@@ -2488,13 +2464,6 @@ def can_complete_ucr_create_task(task, finance_task=None) -> bool:
 		return False
 	if not ucr_invoice_verified_for_create_task(task, finance_task):
 		return False
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		get_stamped_required_document_types,
-		stamped_required_document_types_attached,
-	)
-
-	if get_stamped_required_document_types(task):
-		return stamped_required_document_types_attached(task)
 	return idf_certificate_uploaded(task)
 
 
@@ -2868,11 +2837,17 @@ def validate_ucr_application_not_manually_completed(task) -> None:
 		return
 	if task.status == "Completed" and can_complete_ucr_create_task(task):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+		application_certificate_label,
+	)
+
+	label = application_certificate_label(task, APPLICATION_FINANCE_PROFILES["UCR Application"])
+	documents = f" and the <b>{label}</b>" if label else ""
 	frappe.throw(
-		"Complete this task by attaching a verified <b>UCR Invoice</b> and the "
-		"<b>IDF/UCR certificate</b> on this form. Finance uploads the <b>UCR Receipt</b> "
-		"after payment. The task will mark itself <b>Completed</b> automatically when "
-		"requirements are in place."
+		f"Complete this task by attaching a verified <b>UCR Invoice</b>{documents} on this form. "
+		"Finance uploads the <b>UCR Receipt</b> after payment. The task will mark itself "
+		"<b>Completed</b> automatically when requirements are in place."
 	)
 
 
@@ -3132,6 +3107,7 @@ def get_ucr_declarant_workflow_status(task_name: str) -> dict:
 		),
 		"finance_task_completed": bool(finance_task and finance_task.status == "Completed"),
 		"idf_certificate_attached": idf_certificate_uploaded(task),
+		"idf_certificate_required": _ucr_certificate_required(task),
 		"application_ready_to_complete": can_complete_ucr_create_task(task, finance_task),
 		"task_status": task.status,
 	}

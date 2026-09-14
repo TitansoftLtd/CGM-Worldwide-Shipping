@@ -118,8 +118,6 @@ All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Ch
 
 | DocType | Purpose |
 |---------|---------|
-| **Sea Import Task Template Item** | Subject + department per task seq (1–25) |
-| **Sea Clearance Task Requirement Item** | Completion rules per seq (documents, finance, permits, UCR, etc.) |
 | **CGM Task Template Gate** | Shipment Status Gates on each CGM Task Template: the task that reaches each `custom_shipment_status` |
 | **Workflow Stage Requirement Item** | Document verification stages per workflow state |
 | **Finance Cost Category Map** | Maps payment items to project cost buckets |

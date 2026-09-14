@@ -7,14 +7,6 @@ SEA_TRANSIT_EXPORT_TASK_FLOW_KEY = "SEA_TRANSIT_EXPORT_E2E"
 ROAD_TRANSIT_OUTBOUND_TASK_FLOW_KEY = "ROAD_TRANSIT_OUTBOUND_E2E"
 ROAD_TRANSIT_INBOUND_TASK_FLOW_KEY = "ROAD_TRANSIT_INBOUND_E2E"
 
-TRANSIT_TASK_FLOW_KEYS = frozenset(
-	{
-		SEA_TRANSIT_IMPORT_TASK_FLOW_KEY,
-		SEA_TRANSIT_EXPORT_TASK_FLOW_KEY,
-		ROAD_TRANSIT_OUTBOUND_TASK_FLOW_KEY,
-		ROAD_TRANSIT_INBOUND_TASK_FLOW_KEY,
-	}
-)
 
 # Project / Opportunity / Task document child-table fieldnames.
 SHIPMENT_DOCUMENTS_FIELD = "custom_shipment_documents"
@@ -33,9 +25,6 @@ CLIENT_PAID_FIELD = "custom_client_paid_directly"
 CLIENT_PAID_BY_FIELD = "custom_client_paid_confirmed_by"
 CLIENT_PAID_ON_FIELD = "custom_client_paid_confirmed_on"
 
-# Intake documents required before Documents Received workflow state.
-INTAKE_DOCUMENT_CODES = ("CI", "PKL")
-
 # IDF/UCR certificate document codes. The "IDF CERT" Document Type carries the
 # code "IDF Certificate" on live sites, so it must be accepted alongside the
 # short codes or Create UCR (IDF) never auto-completes.
@@ -43,8 +32,6 @@ IDF_CERTIFICATE_CODES = frozenset({"IDF_CERT", "UCR_CERT", "IDF", "IDF Certifica
 
 # Sea task completion requirement labels (Settings-driven; defaults for throws).
 PRE_CLEARANCE_STAGE = "Pre-clearance"
-POST_CLEARANCE_STAGE = "Post-clearance"
-SUPPLIER_INVOICE_CODE = "SUP_INV"
 
 # CGM Sea Import Workflow on Project (fallback when Settings has no override).
 SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
@@ -71,14 +58,6 @@ APPROVAL_WORKFLOW_ACTION_SEND = "Send for Review"
 APPROVAL_WORKFLOW_ACTION_APPROVE = "Approve"
 APPROVAL_WORKFLOW_ACTION_REJECT = "Reject"
 
-FINAL_DOCUMENT_STATUS_DRAFT = APPROVAL_STATUS_DRAFT
-FINAL_DOCUMENT_STATUS_PENDING_REVIEW = APPROVAL_STATUS_PENDING_REVIEW
-FINAL_DOCUMENT_STATUS_APPROVED = APPROVAL_STATUS_APPROVED
-FINAL_DOCUMENT_STATUS_REJECTED = APPROVAL_STATUS_REJECTED
-FINAL_DOCUMENT_WORKFLOW_ACTION_SEND = APPROVAL_WORKFLOW_ACTION_SEND
-FINAL_DOCUMENT_WORKFLOW_ACTION_APPROVE = APPROVAL_WORKFLOW_ACTION_APPROVE
-FINAL_DOCUMENT_WORKFLOW_ACTION_REJECT = APPROVAL_WORKFLOW_ACTION_REJECT
-FINAL_DOCUMENT_ATTACHMENT_FIELD = "final_attachment"
 FINAL_DOCUMENT_NOTIFICATION = "CGM Shipment Document - Final Document Review"
 
 # Sales Invoice approval workflow (Desk source of truth; distinct from Quotation).
@@ -148,13 +127,6 @@ CONTAINER_STATUS_EMPTY_RETURNED = "Empty Returned"
 CONTAINER_STATUS_INTERCHANGE = "Interchange Received"
 CONTAINER_STATUS_RETURN_OVERDUE = "Return Overdue"
 
-# Legacy aliases (reports / portal may still reference these strings).
-CONTAINER_STATUS_AT_PORT = CONTAINER_STATUS_DISCHARGED_AT_PORT
-CONTAINER_STATUS_AWAITING_DISCHARGE = CONTAINER_STATUS_VESSEL_BERTHED
-CONTAINER_STATUS_DISPATCHED = CONTAINER_STATUS_RELEASED_IN_TRANSIT
-CONTAINER_STATUS_DELIVERED = CONTAINER_STATUS_AT_WAREHOUSE
-CONTAINER_STATUS_EMPTY_PENDING = CONTAINER_STATUS_CARGO_OFFLOADED
-CONTAINER_STATUS_OVERDUE = CONTAINER_STATUS_RETURN_OVERDUE
 
 # Every container status, and what each view does with it. All status lists in
 # the app are generated from this table, so a status the derivers start
@@ -343,13 +315,6 @@ TASK_CARGO_TYPE_FIELD = "custom_cargo_type"
 # Task child table for per-container data entry (transport / field clearance / KPA).
 # The Vessel Arrival step is a Project→Task mirror only - not a completion gate.
 TASK_CONTAINER_UPDATES_FIELD = "custom_container_updates"
-# Settings fields for the steps that show the grid: every container step except
-# the ETA refresh. Base set only - the grid also shows on the shipping line
-# application / finance steps, so use
-# task_container_updates.container_update_task_sequences() for the full set.
-CONTAINER_UPDATE_TASK_SEQ_FIELDS = tuple(
-	fieldname for fieldname in CONTAINER_TASK_SEQ_DEFAULTS if fieldname != "custom_track_eta_task_seq"
-)
 
 # Settings fieldnames - bulk events update every tracker on the project.
 BULK_CONTAINER_TASK_SEQ_FIELDS = (
@@ -441,10 +406,6 @@ DEPOSIT_PAYMENT_STATUSES = (
 
 DEPOSIT_ARRANGEMENT_CONTAINER = "Container Deposit"
 DEPOSIT_ARRANGEMENT_REVOLVING = "Revolving Fund"
-DEPOSIT_ARRANGEMENTS = (
-	DEPOSIT_ARRANGEMENT_CONTAINER,
-	DEPOSIT_ARRANGEMENT_REVOLVING,
-)
 
 DEPOSIT_PAYERS = (
 	"Agent",
@@ -471,7 +432,6 @@ KPA_INVOICE_TO_FINANCE = "CGM Task - KPA Invoice to Finance"
 KPA_RECEIPT_FOR_SUPERVISOR = "CGM Task - KPA Receipt for Supervisor"
 KPA_RECEIPT_VERIFY_FINANCE = "CGM Task - KPA Receipt Verify Finance"
 DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
-TRANSPORTER_TRUCK_UPDATE = "CGM Operational Update"  # legacy alias
 OPERATIONAL_UPDATE_NOTIFICATION = "CGM Operational Update"
 CONTAINER_DEPOSIT_REFUND_REMINDER = "CGM Container - Deposit Refund Reminder"
 PORTAL_UPDATE_PUBLISHED_NOTIFICATION = "CGM Portal - Update Published"

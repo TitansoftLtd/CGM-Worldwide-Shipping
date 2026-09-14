@@ -165,10 +165,6 @@ def get_tax_type_config(tax_type: str) -> TaxTypeConfig:
 	)
 
 
-def allowed_modes_for_tax(tax_type: str) -> tuple[str, ...]:
-	return get_tax_type_config(tax_type).allowed_modes
-
-
 def resolve_calculation_mode(row, tax_type: str) -> str:
 	"""Return the row's mode if set, else the tax type default. Never silently remaps."""
 	config = get_tax_type_config(tax_type)
@@ -242,55 +238,6 @@ def rate_label_for_mode(
 	if mode == CALC_MODE_FIXED_AMOUNT:
 		return _("Fixed Amount ({0})").format(currency)
 	return _("Rate (%)")
-
-
-def format_rate_display(
-	mode: str,
-	rate: float,
-	*,
-	quotation_uom: str | None = None,
-	currency: str | None = None,
-) -> str:
-	"""Human-readable rate for grids and labels, e.g. '25%', 'KES 250', 'KES 10 / Litre'."""
-	currency = currency or resolve_company_currency()
-	rate_str = _format_rate_number(rate)
-
-	if mode == CALC_MODE_PERCENTAGE:
-		return f"{rate_str}%"
-
-	if mode == CALC_MODE_FIXED_AMOUNT:
-		if currency:
-			return f"{currency} {rate_str}"
-		return rate_str
-
-	if mode == CALC_MODE_PER_UNIT:
-		uom = (quotation_uom or _("Unit")).strip()
-		if currency:
-			return f"{currency} {rate_str} / {uom}"
-		return f"{rate_str} / {uom}"
-
-	return rate_str
-
-
-def _format_rate_number(rate: float) -> str:
-	"""Compact float formatting that drops trailing zeros (25 not 25.0)."""
-	rate = flt(rate)
-	if rate == int(rate):
-		return str(int(rate))
-	return f"{rate:g}"
-
-
-def rate_display_suffix(
-	mode: str,
-	quotation_uom: str | None = None,
-	currency: str | None = None,
-) -> str:
-	"""Short suffix/unit for grid Rate display."""
-	if mode == CALC_MODE_PERCENTAGE:
-		return "%"
-	if mode == CALC_MODE_PER_UNIT:
-		return (quotation_uom or _("Unit")).strip()
-	return currency or resolve_company_currency()
 
 
 # ── Row calculation (single-purpose helpers) ─────────────────────────────────

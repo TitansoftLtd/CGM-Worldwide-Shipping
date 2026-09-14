@@ -2078,6 +2078,8 @@ function apply_ucr_application_intro(frm, status) {
 		return;
 	}
 	status = status || {};
+	// The template's Required Document Types decide whether a certificate is needed.
+	const cert_required = status.idf_certificate_required !== false;
 	let intro;
 	// Form doc status wins — stale API task_status caused "Completed" banners while
 	// the form was still dirty / Open during document autosave loops.
@@ -2097,19 +2099,26 @@ function apply_ucr_application_intro(frm, status) {
 			"<b>Attach the IDF/UCR certificate</b> under <b>Clearance Documents</b> to finish this task."
 		);
 	} else if (status.receipt_attached) {
-		intro = __(
-			"<b>UCR receipt is attached.</b> Attach the IDF/UCR certificate under <b>Clearance Documents</b> to complete this task."
-		);
+		intro = cert_required
+			? __(
+					"<b>UCR receipt is attached.</b> Attach the IDF/UCR certificate under <b>Clearance Documents</b> to complete this task."
+				)
+			: __("<b>UCR receipt is attached.</b> Waiting for Finance to verify the invoice.");
 	} else if (status.payment_made) {
 		intro = __(
 			"<b>Finance has paid the UCR invoice.</b> Attach the supplier <b>UCR Receipt</b> on <b>Invoices & Receipts</b> " +
-				"(same department that attached the invoice). " +
-				"When the certificate is issued, attach it under <b>Clearance Documents</b>."
+				"(same department that attached the invoice)." +
+				(cert_required
+					? " " + __("When the certificate is issued, attach it under <b>Clearance Documents</b>.")
+					: "")
 		);
 	} else if (status.invoice_verified) {
 		intro = __(
 			"<b>UCR invoice verified by Finance.</b> Waiting for payment. After payment, attach the " +
-				"<b>UCR Receipt</b> here; attach the certificate under <b>Clearance Documents</b> when issued."
+				"<b>UCR Receipt</b> here." +
+				(cert_required
+					? " " + __("Attach the certificate under <b>Clearance Documents</b> when issued.")
+					: "")
 		);
 	} else if (status.invoice_submitted) {
 		intro = __(
@@ -2120,7 +2129,10 @@ function apply_ucr_application_intro(frm, status) {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>UCR Invoice</b> and save on " +
 				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, attach the " +
-				"supplier <b>UCR Receipt</b> on the same table; attach the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
+				"supplier <b>UCR Receipt</b> on the same table." +
+				(cert_required
+					? " " + __("Attach the IDF/UCR certificate under <b>Clearance Documents</b> when issued.")
+					: "")
 		);
 	}
 	set_task_intro(frm, intro);

@@ -22,7 +22,7 @@ def execute():
 		SEA_IMPORT_TEMPLATE,
 	)
 
-	if not frappe.db.table_exists("Sea Clearance Task Requirement Item"):
+	if not frappe.db.exists("DocType", "Sea Clearance Task Requirement Item"):
 		return
 	steps = {
 		int(seq or 0)

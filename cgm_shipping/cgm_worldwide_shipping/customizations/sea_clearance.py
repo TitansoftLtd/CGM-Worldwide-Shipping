@@ -8,17 +8,14 @@ Task gates: CGM Task Template → Sea Import Workflow → Shipment Status Gates
 from __future__ import annotations
 
 import frappe
-from frappe.utils import now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	PRE_CLEARANCE_STAGE,
-	POST_CLEARANCE_STAGE,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 	SEA_IMPORT_TEMPLATE,
 	sea_import_flow_keys,
 	sql_task_flow_key_in,
-	stored_task_flow_key,
 	task_flow_key_in_filter,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
@@ -463,52 +460,6 @@ def get_incomplete_finance_pair_blockers(finance_task) -> list[dict]:
 	return rows
 
 
-def get_all_sea_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
-	"""All sea clearance tasks on a project visible to the user (incl. Completed)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		filter_sea_tasks_for_user,
-	)
-
-	if not project:
-		return []
-	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
-	rows = frappe.db.sql(
-		f"""
-		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign,
-			custom_task_role, custom_payment_kind, custom_permit_stage
-		FROM `tabTask`
-		WHERE project = %s
-		  AND {flow_in}
-		ORDER BY custom_sequence_no ASC
-		""",
-		(project,),
-		as_dict=True,
-	)
-	return filter_sea_tasks_for_user(rows, user=user)
-
-
-def get_open_sea_tasks(project: str, user: str | None = None) -> list[dict]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		filter_sea_tasks_for_user,
-	)
-
-	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
-	rows = frappe.db.sql(
-		f"""
-		SELECT name, subject, custom_sequence_no AS seq, status, department, owner, _assign,
-			custom_task_role, custom_payment_kind, custom_permit_stage
-		FROM `tabTask`
-		WHERE project = %s
-		  AND {flow_in}
-		  AND status NOT IN ('Completed', 'Cancelled')
-		ORDER BY custom_sequence_no ASC
-		""",
-		(project,),
-		as_dict=True,
-	)
-	return filter_sea_tasks_for_user(rows, user=user)
-
-
 def enforce_sea_tasks_exist(project: str) -> None:
 	if not frappe.db.exists(
 		"Task",
@@ -671,7 +622,6 @@ def backfill_intake_documents_on_sea_tasks(project):
 	"""
 	frappe.has_permission("Project", ptype="write", throw=True)
 	return {"tasks_updated": auto_complete_initial_sea_tasks(project)}
-
 
 
 @frappe.whitelist()

@@ -187,9 +187,6 @@ def _create_single_task(
 	company_abbr: str,
 	created_map: dict,
 ) -> str:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		resolve_department_name,
-	)
 
 	dept_stem = (item.get("department_role") or "").strip()
 	department = f"{dept_stem} - {company_abbr}" if company_abbr else dept_stem

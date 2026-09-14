@@ -791,7 +791,7 @@ function paint_shipment_progress_chart(frm, field, payload) {
 	`);
 	// Task-derived progress lives in the chart only — do not write custom_shipment_status
 	// into frm.doc. A silent set_value (even no_dirty) still persists on the next save and
-	// triggers CI/PKL validation when intake docs are missing.
+	// triggers the Documents Received document check when those docs are missing.
 	if (d.uses_clearance_states && d.current_status) {
 		const indicator = project_clearance_indicator({
 			custom_shipment_status: d.current_status,

@@ -23,17 +23,6 @@ def get_cgm_shipping_settings():
 	)
 
 
-def get_cgm_shipping_settings_value(fieldname: str, default=None):
-	"""Read one Settings field without requiring user read rights."""
-	settings = get_cgm_shipping_settings()
-	if not settings:
-		return default
-	if not settings.meta.has_field(fieldname):
-		return default
-	value = settings.get(fieldname)
-	return default if value in (None, "") else value
-
-
 def coerce_numeric_fields(
 	doc,
 	fieldnames: list[str] | tuple[str, ...] | None = None,
@@ -215,24 +204,3 @@ def load_sea_task_template() -> list[dict]:
 	)
 
 	return load_cgm_task_template_items(SEA_IMPORT_TEMPLATE)
-
-
-def load_sea_transit_import_task_template() -> list[dict]:
-	"""Return sea transit import tasks from CGM Task Template."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		SEA_TRANSIT_IMPORT_TEMPLATE,
-	)
-
-	return load_cgm_task_template_items(SEA_TRANSIT_IMPORT_TEMPLATE)
-
-
-def load_sea_transit_export_task_template() -> list[dict]:
-	"""Return sea transit export tasks from CGM Task Template.
-
-	Keeps ``sequence_no`` for the same reason as ``load_sea_task_template``.
-	"""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		SEA_TRANSIT_EXPORT_TEMPLATE,
-	)
-
-	return load_cgm_task_template_items(SEA_TRANSIT_EXPORT_TEMPLATE)

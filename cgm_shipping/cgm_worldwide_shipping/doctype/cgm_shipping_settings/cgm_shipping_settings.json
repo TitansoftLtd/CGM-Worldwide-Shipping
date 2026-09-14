@@ -56,9 +56,6 @@
   "tab_quotation_customs",
   "section_default_customs_taxes",
   "custom_default_customs_taxes",
-  "tab_sea_task_requirements",
-  "section_sea_task_requirements",
-  "custom_sea_clearance_task_requirements",
   "tab_workflow_document_gates",
   "section_workflow_document_gates",
   "custom_workflow_stage_requirements",
@@ -95,28 +92,9 @@
    "options": "Default Customs Tax"
   },
   {
-   "fieldname": "tab_sea_task_requirements",
-   "fieldtype": "Tab Break",
-   "hidden": 1,
-   "label": "Sea task completion rules (legacy)"
-  },
-  {
-   "description": "What must be satisfied before each sea clearance task can be marked completed. Prefer this table over hard-coded Python rules.",
-   "fieldname": "section_sea_task_requirements",
-   "fieldtype": "Section Break",
-   "label": "Completion requirements"
-  },
-  {
-   "fieldname": "custom_sea_clearance_task_requirements",
-   "fieldtype": "Table",
-   "label": "Sea clearance task requirements",
-   "options": "Sea Clearance Task Requirement Item"
-  },
-  {
    "fieldname": "tab_workflow_document_gates",
    "fieldtype": "Tab Break",
-   "hidden": 1,
-   "label": "Shipment status and required document stages (legacy)"
+   "label": "Shipment status documents"
   },
   {
    "fieldname": "section_workflow_document_gates",
@@ -126,7 +104,8 @@
    "fieldname": "custom_workflow_stage_requirements",
    "fieldtype": "Table",
    "label": "Workflow stage requirements",
-   "options": "Workflow Stage Requirement Item"
+   "options": "Workflow Stage Requirement Item",
+   "description": "Before a shipment moves to a status, every Document Type with Default Required ticked and a matching Required Stage (for the shipment's mode of transport) must be attached - and verified when Must Be Verified is ticked."
   },
   {
    "fieldname": "roles_tab",
@@ -490,7 +469,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-10 19:00:00.000000",
+ "modified": "2026-09-14 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

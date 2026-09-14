@@ -118,9 +118,6 @@ class TestStepSevenAndStepDocuments(unittest.TestCase):
 
 	def test_delivery_order_and_field_clearance_need_no_upload(self):
 		"""Neither step blocks Complete on a document (TASK-2026-00042)."""
-		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-			DEFAULT_DOC_CODES,
-		)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
 			sea_import_tasks,
 		)
@@ -129,7 +126,6 @@ class TestStepSevenAndStepDocuments(unittest.TestCase):
 		for subject in ("Lodge Delivery Order", "Field Officers conduct clearance"):
 			with self.subTest(subject):
 				self.assertEqual(rows[subject]["required_document_types"], "")
-				self.assertFalse(DEFAULT_DOC_CODES.get(rows[subject]["sequence_no"]))
 
 	def test_client_inspection_task_fields_are_gone(self):
 		"""They showed only on step 7, which Sea Import no longer has."""

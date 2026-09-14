@@ -14,12 +14,11 @@ from unittest.mock import patch
 import frappe
 
 import cgm_shipping
-from cgm_shipping.cgm_worldwide_shipping.customizations import container_tracker, task_container_updates
+from cgm_shipping.cgm_worldwide_shipping.customizations import container_tracker
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	BULK_CONTAINER_TASK_SEQ_FIELDS,
 	CONTAINER_SPECIFIC_TASK_SEQ_FIELDS,
 	CONTAINER_TASK_SEQ_DEFAULTS,
-	CONTAINER_UPDATE_TASK_SEQ_FIELDS,
 )
 
 SETTINGS_JSON = os.path.join(
@@ -75,4 +74,3 @@ class TestSequenceLookup(unittest.TestCase):
 
 	def test_setting_overrides_the_code_default(self):
 		self.assertEqual(self._lookup("custom_track_eta_task_seq", _settings(custom_track_eta_task_seq=9)), 9)
-

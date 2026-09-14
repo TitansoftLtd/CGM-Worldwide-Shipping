@@ -23,11 +23,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
 	format_latest_update_summary,
 	get_latest_updates_for_trackers,
-	get_ops_updates,
-	get_unread_update_count,
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
-	_CONTAINER_TRACKER_FIELDS,
 	container_tracker_query_fields,
 	enrich_container_row,
 )

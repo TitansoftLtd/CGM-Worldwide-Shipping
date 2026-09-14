@@ -16,7 +16,6 @@ from frappe.utils import cint, flt, get_datetime, getdate, now_datetime, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	DEPOSIT_ARRANGEMENT_CONTAINER,
-	DEPOSIT_ARRANGEMENT_REVOLVING,
 	DEPOSIT_PAYERS,
 	DEPOSIT_PAYMENT_STATUSES,
 	DEPOSIT_REFUND_STATUSES,
@@ -944,10 +943,6 @@ def _bl_meta():
 	return frappe.get_meta("Bill of Lading")
 
 
-def _je_meta():
-	return frappe.get_meta("Journal Entry")
-
-
 def is_deposit_journal_entry(je) -> bool:
 	if not je:
 		return False
@@ -993,10 +988,6 @@ def bl_deposit_arrangement(bl) -> str:
 
 def is_container_deposit_bl(bl) -> bool:
 	return bl_deposit_arrangement(bl) == DEPOSIT_ARRANGEMENT_CONTAINER
-
-
-def is_revolving_fund_bl(bl) -> bool:
-	return bl_deposit_arrangement(bl) == DEPOSIT_ARRANGEMENT_REVOLVING
 
 
 def bl_deposit_payer(bl) -> str:
@@ -2548,11 +2539,6 @@ def create_deposit_credit_note_for_bl(bill_of_lading: str) -> str:
 def refresh_deposit_payment_status(doc) -> None:
 	"""Alias: refresh status on a Bill of Lading document."""
 	refresh_bl_deposit_payment_status(doc)
-
-
-def maybe_start_deposit_refund_tracking(doc) -> None:
-	"""Alias: start refund tracking on a Bill of Lading document."""
-	maybe_start_bl_deposit_refund_tracking(doc)
 
 
 @frappe.whitelist()

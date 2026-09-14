@@ -1,21 +1,15 @@
 """Migrate tops up config from code but never overwrites what an admin edited.
 
-Both of these used to be rebuilt from code on every migrate, silently undoing
-desk edits: the Sales Invoice workflow's states and transitions, and the sea
-clearance task requirements table in CGM Shipping Settings.
+The Sales Invoice workflow's states and transitions used to be rebuilt from code
+on every migrate, silently undoing desk edits.
 """
 
-import io
 import unittest
-from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations import sea_settings_seed_data as sea_seed
 from cgm_shipping.cgm_worldwide_shipping.customizations import sales_invoice_workflow as si_workflow
-
-REQUIREMENTS = "custom_sea_clearance_task_requirements"
 
 
 class _Workflow:
@@ -76,38 +70,3 @@ class TestSalesInvoiceWorkflowSync(unittest.TestCase):
 		self.assertEqual(len(workflow.states), len(si_workflow._workflow_states()))
 		self.assertEqual(len(workflow.transitions), len(si_workflow._workflow_transitions()))
 		self.assertEqual(workflow.override_status, 1)
-
-
-class TestSeaRequirementsTopUp(unittest.TestCase):
-	def setUp(self):
-		self.settings = frappe.new_doc("CGM Shipping Settings")
-		if not self.settings.meta.has_field(REQUIREMENTS):
-			self.skipTest("CGM Shipping Settings has no sea requirements table on this site")
-
-	def _top_up(self):
-		out = io.StringIO()
-		with redirect_stdout(out):
-			changed = sea_seed.top_up_sea_clearance_task_requirements(self.settings)
-		return changed, out.getvalue()
-
-	def test_empty_table_is_seeded(self):
-		changed, _ = self._top_up()
-		self.assertTrue(changed)
-		self.assertEqual(len(self.settings.get(REQUIREMENTS)), len(sea_seed.build_requirement_seed_rows()))
-
-	def test_defaults_are_left_quietly(self):
-		self._top_up()
-		changed, printed = self._top_up()
-		self.assertFalse(changed)
-		self.assertEqual(printed, "")
-
-	def test_edited_table_is_kept_and_reported(self):
-		self._top_up()
-		row = self.settings.get(REQUIREMENTS)[0]
-		row.sequence_no = 99
-
-		changed, printed = self._top_up()
-
-		self.assertFalse(changed)
-		self.assertEqual(self.settings.get(REQUIREMENTS)[0].sequence_no, 99)
-		self.assertIn("left as edited", printed)

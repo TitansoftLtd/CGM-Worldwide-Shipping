@@ -97,17 +97,6 @@ def is_sea_import_task(task) -> bool:
 	return task_matches_template(task, SEA_IMPORT_TEMPLATE)
 
 
-def is_sea_import_template_name(name: str | None) -> bool:
-	return normalize_template_name(name) == SEA_IMPORT_TEMPLATE
-
-
-def legacy_flow_key_for_template(template_name: str | None) -> str | None:
-	normalized = normalize_template_name(template_name)
-	if not normalized:
-		return None
-	return TEMPLATE_TO_LEGACY_FLOW_KEY.get(normalized)
-
-
 def workflow_flow_keys_for_template(template_name: str | None) -> list[str]:
 	"""Task.custom_task_flow_key values for a template (name + legacy key)."""
 	normalized = normalize_template_name(template_name)
@@ -127,21 +116,9 @@ def sea_import_flow_keys() -> list[str]:
 	return workflow_flow_keys_for_template(SEA_IMPORT_TEMPLATE)
 
 
-def stored_task_flow_key(template_name: str | None = None) -> str:
-	"""Canonical value to write on new Tasks — always the CGM Task Template name."""
-	normalized = normalize_template_name(template_name) if template_name else SEA_IMPORT_TEMPLATE
-	return normalized or SEA_IMPORT_TEMPLATE
-
-
 def task_flow_key_in_filter(template_name: str | None = None) -> list:
 	"""Frappe filter value: ``["in", [<template>, <legacy>, …]]``."""
 	return ["in", workflow_flow_keys_for_template(template_name or SEA_IMPORT_TEMPLATE)]
-
-
-def sea_import_flow_keys_js_expr(doc_var: str = "doc") -> str:
-	"""Client `depends_on` fragment matching template name or legacy key."""
-	keys = ", ".join(f"'{k}'" for k in sea_import_flow_keys())
-	return f"[{keys}].includes({doc_var}.custom_task_flow_key)"
 
 
 def sql_task_flow_key_in(
@@ -157,13 +134,3 @@ def sql_task_flow_key_in(
 		return "1=0"
 	escaped = ", ".join(frappe.db.escape(k) for k in keys)
 	return f"{column} IN ({escaped})"
-
-
-def is_transit_template_name(name: str | None) -> bool:
-	normalized = normalize_template_name(name)
-	return normalized in {
-		SEA_TRANSIT_IMPORT_TEMPLATE,
-		SEA_TRANSIT_EXPORT_TEMPLATE,
-		ROAD_TRANSIT_OUTBOUND_TEMPLATE,
-		ROAD_TRANSIT_INBOUND_TEMPLATE,
-	}
