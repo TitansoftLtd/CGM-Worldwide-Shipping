@@ -115,8 +115,7 @@
   {
    "fieldname": "tab_workflow_document_gates",
    "fieldtype": "Tab Break",
-   "hidden": 1,
-   "label": "Shipment status and required document stages (legacy)"
+   "label": "Shipment status documents"
   },
   {
    "fieldname": "section_workflow_document_gates",
@@ -126,7 +125,8 @@
    "fieldname": "custom_workflow_stage_requirements",
    "fieldtype": "Table",
    "label": "Workflow stage requirements",
-   "options": "Workflow Stage Requirement Item"
+   "options": "Workflow Stage Requirement Item",
+   "description": "Before a shipment moves to a status, every Document Type with Default Required ticked and a matching Required Stage (for the shipment's mode of transport) must be attached - and verified when Must Be Verified is ticked."
   },
   {
    "fieldname": "roles_tab",
@@ -490,7 +490,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-10 19:00:00.000000",
+ "modified": "2026-09-14 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

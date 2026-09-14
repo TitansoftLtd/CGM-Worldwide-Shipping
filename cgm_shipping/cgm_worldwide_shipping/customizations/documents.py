@@ -964,12 +964,12 @@ DOCUMENT_TYPE_DEFAULTS = {
 	"CI": {
 		"category": "Commercial",
 		"default_required": 1,
-		"required_stage": "Pre-IDF",
+		"required_stage": "Client documents",
 	},
 	"PKL": {
 		"category": "Commercial",
 		"default_required": 1,
-		"required_stage": "Pre-IDF",
+		"required_stage": "Client documents",
 	},
 	"KRA_PIN": {
 		"category": "Compliance",

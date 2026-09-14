@@ -33,9 +33,6 @@ CLIENT_PAID_FIELD = "custom_client_paid_directly"
 CLIENT_PAID_BY_FIELD = "custom_client_paid_confirmed_by"
 CLIENT_PAID_ON_FIELD = "custom_client_paid_confirmed_on"
 
-# Intake documents required before Documents Received workflow state.
-INTAKE_DOCUMENT_CODES = ("CI", "PKL")
-
 # IDF/UCR certificate document codes. The "IDF CERT" Document Type carries the
 # code "IDF Certificate" on live sites, so it must be accepted alongside the
 # short codes or Create UCR (IDF) never auto-completes.
