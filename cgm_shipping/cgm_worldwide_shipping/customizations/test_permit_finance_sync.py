@@ -81,6 +81,37 @@ class TestPayablePermitInvoiceKeys(UnitTestCase):
 		)
 
 
+class TestFinancePermitRowsOutOfSync(UnitTestCase):
+	def _out_of_sync(self, app_rows, fin_rows):
+		from unittest.mock import patch
+
+		from cgm_shipping.cgm_worldwide_shipping.customizations import workflow
+
+		app = frappe._dict(custom_task_permits=[frappe._dict(r) for r in app_rows])
+		fin = frappe._dict(project="PROJ-TEST", custom_task_permits=[frappe._dict(r) for r in fin_rows])
+		with (
+			patch.object(workflow, "is_permit_finance_task_doc", return_value=True),
+			patch.object(workflow, "get_permit_application_task_for_finance", return_value="TASK-APP"),
+			patch.object(frappe, "get_doc", return_value=app),
+		):
+			return finance_permit_rows_out_of_sync(fin)
+
+	def test_permit_waiting_for_its_invoice_is_not_out_of_sync(self):
+		# TASK-2026-00592: KEBS had no invoice yet, so it could never be copied and the
+		# form reloaded forever.
+		invoice = {"permit_type": "KRPB", "origin": "Local", "payment_invoice": "/files/krpb.pdf"}
+		self.assertFalse(
+			self._out_of_sync(
+				[invoice, {"permit_type": "KEBS", "origin": "Local", "payment_invoice": None}],
+				[invoice],
+			)
+		)
+
+	def test_invoice_missing_on_finance_is_out_of_sync(self):
+		invoice = {"permit_type": "KRPB", "origin": "Local", "payment_invoice": "/files/krpb.pdf"}
+		self.assertTrue(self._out_of_sync([invoice], []))
+
+
 class TestFinancePermitRowPayloads(UnitTestCase):
 	def test_payload_includes_invoice(self):
 		task = frappe._dict(

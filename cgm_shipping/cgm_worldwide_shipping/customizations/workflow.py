@@ -912,7 +912,14 @@ def finance_permit_rows_out_of_sync(finance_task) -> bool:
 	if not app_name:
 		return False
 	app = frappe.get_doc("Task", app_name)
-	return _payable_permit_invoice_keys(app) != _payable_permit_invoice_keys(finance_task)
+
+	# Only rows with an invoice are copied to Finance (sync_permit_invoices_to_finance_task),
+	# so a permit still waiting for its invoice must not count - it could never sync and
+	# kept the Finance form reloading (TASK-2026-00592, KEBS with no invoice yet).
+	def invoiced(task):
+		return [key for key in _payable_permit_invoice_keys(task) if key[2]]
+
+	return invoiced(app) != invoiced(finance_task)
 
 
 def finance_permit_row_payloads(task) -> list[dict]:
@@ -1559,6 +1566,7 @@ def ensure_finance_permit_rows(task_name: str) -> dict:
 		"rows": len(task.get(TASK_PERMITS_FIELD) or []),
 		"permits": finance_permit_row_payloads(task),
 		"task": task.name,
+		"modified": task.modified,
 	}
 
 
