@@ -44,7 +44,6 @@ DEFAULT_DOC_CODES: dict[int, list[str]] = {
 	8: [],
 	10: [],
 	11: [],
-	14: ["DO"],
 }
 
 DEFAULT_PERMIT_APPLICATION_SEQS: frozenset[int] = frozenset({5, 15})
