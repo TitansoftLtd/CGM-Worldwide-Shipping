@@ -1961,7 +1961,10 @@ function ensure_finance_permit_rows_on_form(frm) {
 			if (r.exc || !r.message) {
 				return;
 			}
-			if (r.message.reload) {
+			// Reload only when the server saved something this form hasn't got. A mismatch
+			// the sync can't fix (e.g. a Finance row whose invoice left the application
+			// task) otherwise reloads on every refresh and makes the buttons blink.
+			if (r.message.reload && (r.message.changed || r.message.modified !== frm.doc.modified)) {
 				frm.reload_doc();
 				return;
 			}

@@ -1749,7 +1749,7 @@ def validate_light_proof_task(task) -> None:
 	has_ref = bool((task.get("custom_external_ref_no") or "").strip())
 	if not (has_doc or has_text or has_ref):
 		frappe.throw(
-			"Add a task document, <b>Description</b>, or <b>External Ref No</b> before completing this step."
+			"Add a task document or a note in <b>Description</b> before completing this step."
 		)
 
 
