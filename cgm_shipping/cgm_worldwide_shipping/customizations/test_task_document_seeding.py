@@ -91,11 +91,11 @@ class TestTaskDocumentSeeding(UnitTestCase):
 			custom_task_role="Document",
 			custom_sequence_no=10,
 		)
-		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "exit", "status": "Missing"})
-		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "c2", "status": "Missing"})
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "Exit Note", "status": "Missing"})
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "C2", "status": "Missing"})
 		self.assertFalse(purge_unrequired_task_document_rows(task))
 		types = {row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or []}
-		self.assertEqual(types, {"exit", "c2"})
+		self.assertEqual(types, {"Exit Note", "C2"})
 
 	def test_purge_still_removes_invoice_rows_from_clearance_table(self):
 		task = _TaskStub(

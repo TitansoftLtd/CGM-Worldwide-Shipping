@@ -49,3 +49,36 @@ class TestDocumentsMissingForStatus(unittest.TestCase):
 	def test_other_statuses_are_not_affected(self):
 		with patch.object(p, "get_stage_requirements", return_value={"Pre-clearance": [("IDF & UCR", True)]}):
 			self.assertEqual(p.documents_missing_for_status(_project([]), "Documents Received"), ([], []))
+
+
+class TestProjectClosureDocuments(unittest.TestCase):
+	"""Closure uses the Completed rows in Settings, not every Default Required type."""
+
+	def _close(self, missing):
+		doc = frappe._dict(name="PROJ-TEST", custom_shipment_status="Completed", custom_permit_register=[])
+		doc.get_doc_before_save = lambda: frappe._dict(custom_shipment_status="Containers Returned")
+		doc.meta = frappe._dict(has_field=lambda field: False)
+		with (
+			patch.object(p, "runs_sea_import_workflow", return_value=False),
+			patch.object(frappe, "get_all", return_value=[]),
+			patch.object(p, "documents_missing_for_status", return_value=missing) as docs,
+			patch.object(frappe.db, "exists", return_value=True),
+		):
+			p.enforce_project_closure_on_workflow_change(doc)
+		docs.assert_called_once_with(doc, "Completed")
+
+	def test_closes_when_settings_documents_are_in(self):
+		self._close(([], []))
+
+	def test_lists_missing_documents_with_other_blockers(self):
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self._close((["BL"], ["CI"]))
+		self.assertIn("Attach documents: BL", str(caught.exception))
+		self.assertIn("Verify documents: CI", str(caught.exception))
+
+	def test_status_gate_leaves_completed_to_closure(self):
+		doc = frappe._dict(custom_shipment_status="Completed")
+		doc.get_doc_before_save = lambda: frappe._dict(custom_shipment_status="Containers Returned")
+		with patch.object(p, "documents_missing_for_status") as docs:
+			p.enforce_document_gate_on_workflow_change(doc)
+		docs.assert_not_called()

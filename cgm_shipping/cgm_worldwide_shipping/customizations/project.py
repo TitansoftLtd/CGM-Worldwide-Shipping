@@ -250,17 +250,17 @@ def _shipment_document_row_map(doc):
 			rows[row.document_type] = row
 	return rows
 
-def _required_document_types(mode, stages=None):
-	"""Document Type names required for a mode (and optional workflow stages).
+def _required_document_types(mode, stages):
+	"""Default Required Document Type names in ``stages`` that apply to ``mode``.
 
 	``mode_of_transport`` is a Table MultiSelect: a Document Type applies to
 	``mode`` when it lists that mode, or to every mode when it lists none.
 	"""
 	if not mode:
 		return []
-	filters = {"default_required": 1}
-	if stages:
-		filters["required_stage"] = ["in", stages]
+	if not stages:
+		return []
+	filters = {"default_required": 1, "required_stage": ["in", stages]}
 	candidates = frappe.get_all(
 		"Document Type",
 		filters=filters,
@@ -350,7 +350,8 @@ def enforce_document_gate_on_workflow_change(doc):
 		return
 	prev_status = prev.get("custom_shipment_status")
 	new_status = doc.get("custom_shipment_status")
-	if not new_status or new_status == prev_status:
+	# Completed lists its documents with the other closure blockers in one message.
+	if not new_status or new_status == prev_status or new_status == "Completed":
 		return
 
 	not_attached, not_verified = documents_missing_for_status(doc, new_status)
@@ -460,7 +461,11 @@ def enforce_permits_post_cleared_before_entry_lodged(doc):
 	)
 
 def enforce_project_closure_on_workflow_change(doc):
-	"""FINAL RULE: Completed only when tasks, documents, permits, payments, and customer invoice are done."""
+	"""FINAL RULE: Completed only when tasks, documents, permits and the customer invoice are done.
+
+	Documents come from Settings > Shipment status documents (the Completed rows), like
+	every other status. Payments are covered by the finance tasks having to be Completed.
+	"""
 	prev = doc.get_doc_before_save()
 	if not prev:
 		return
@@ -486,12 +491,11 @@ def enforce_project_closure_on_workflow_change(doc):
 				preview += f" (+{len(open_tasks) - 5} more)"
 			blockers.append(f"Open tasks: {preview}")
 
-	mode = doc.get("custom_mode_of_transport")
-	rows_by_type = _shipment_document_row_map(doc)
-	for dt_name in _required_document_types(mode):
-		row = rows_by_type.get(dt_name)
-		if not row or not row.attachment or row.status != "Verified":
-			blockers.append(f"Document not verified: {dt_name}")
+	not_attached, not_verified = documents_missing_for_status(doc, "Completed")
+	if not_attached:
+		blockers.append(f"Attach documents: {', '.join(not_attached)}")
+	if not_verified:
+		blockers.append(f"Verify documents: {', '.join(not_verified)}")
 
 	if doc.meta.has_field(PERMIT_REGISTER_FIELD):
 		not_cleared = [
@@ -501,26 +505,6 @@ def enforce_project_closure_on_workflow_change(doc):
 		]
 		if not_cleared:
 			blockers.append(f"Permits not Post-Cleared: {', '.join(not_cleared)}")
-
-	# Completed payable tasks must have a submitted Payment Entry:
-	payable_done_no_pe = frappe.db.sql(
-		"""
-		SELECT t.subject
-		FROM `tabTask` t
-		WHERE t.project = %s
-		  AND t.status = 'Completed'
-		  AND t.custom_purchase_invoice IS NOT NULL AND t.custom_purchase_invoice != ''
-		  AND (t.custom_payment_entry IS NULL OR t.custom_payment_entry = '')
-		LIMIT 5
-		""",
-		doc.name,
-		as_dict=True,
-	)
-	if payable_done_no_pe:
-		blockers.append(
-			"Completed tasks missing Payment Entry: "
-			+ ", ".join(r.subject for r in payable_done_no_pe)
-		)
 
 	if not frappe.db.exists(
 		"Sales Invoice", {"project": doc.name, "docstatus": 1}
