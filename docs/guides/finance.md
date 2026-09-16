@@ -67,6 +67,37 @@ There is also a generic **`CGM Task - Finance Payment Action`**, and a **Your Tu
 
 ---
 
+## When the client pays a clearance fee
+
+Some fees are settled by the client rather than disbursed by CGM. The flow is the same for UCR, Entry Slip, Shipping Line, KPA, CFS and permit fees.
+
+1. **Verify the invoice** first, as usual.
+2. **Tick Client will pay.** On UCR, Entry Slip, Shipping Line, KPA and CFS tasks each invoice row has its own **Client will pay** tick, and Finance can use the **Client will pay - <invoice>** button under **Actions**. Permit finance tasks use the task-level **Client will pay** checkbox. There is then no company Journal Entry for that fee.
+3. **Share it.** **Share Invoice with Client** puts every verified, attached, not-yet-shared invoice on the customer portal and emails the customer's contacts and portal users. If everything is already shared the button reads **Notify Client Again**, which re-sends the email.
+   - It needs **Client will pay** ticked first, and the invoice verified. Save the task before clicking.
+   - The message tells you what happened, including **Could not email - add a customer contact or portal user** when the customer has no email on file.
+4. **The client pays and reports it.** On the portal they download the invoice, press **I have paid**, and attach the proof - a bank **POP** for shipping line charges, a **receipt** for everything else. Their row then shows **Payment reported** and **Receipt sent** / **POP sent**. See [Customer & Transporter Portal](portals.md).
+5. **Finance checks it.** The uploaded file lands on the receipt (or POP) row of the finance task, and the invoice row shows **Client Reported Paid** with the date. Verify the receipt as normal and the task completes.
+
+**Worth knowing:** the client's actions do not email Finance. Watch the finance task, or the **Client Reported Paid** flag, rather than waiting for a notification.
+
+---
+
+## Sharing invoices with customers and transporters
+
+Two separate flags, both on submitted invoices:
+
+| Document | Flag / action | Who sees it |
+|----------|---------------|-------------|
+| **Sales Invoice** | **Share with Customer** button (or the checkbox of the same name) | The customer, at `/my-invoices`, with the status and outstanding amount. Credit notes cannot be shared. |
+| **Purchase Invoice** | **Share with Transporter** checkbox, shown only when the supplier is a transporter | The transporter, at `/transporter/invoices`, with what CGM still owes. Return invoices cannot be shared. |
+
+Both must be submitted first, and both record who shared them and when. Unticking the flag takes the document off the portal again.
+
+Quotations work differently: the portal lists every quotation raised to that customer, and **Shared with Client** is a workflow state that (with **Approved**) allows billing, not a portal switch.
+
+---
+
 ## Quotation approval
 
 **Workflow:** `CGM Quotation Approval`

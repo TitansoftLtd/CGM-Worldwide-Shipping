@@ -136,6 +136,8 @@ Submittable confirmation when empty container is returned to depot - links to ta
 
 ## Related guides
 
+- [Container Deposits & Charges](deposits-and-charges.md) - deposits, demurrage and KPA charges, and how they reach the ledger
+
 - [Operations](operations.md)
 - [Portals](portals.md)
 - [Finance](finance.md) (shipping line invoice tasks 12–13)

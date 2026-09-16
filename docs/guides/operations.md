@@ -208,6 +208,32 @@ Open the Project → **Shipment Documents** child table.
 
 Document types are masters in **Document Type** (codes like `CI`, `PKL`, `MANIFEST`, `DO`, etc.).
 
+### Final document review
+
+Final documents are reviewed before they count as done. It works the same on a Project and on a Task, from the parent form rather than row by row.
+
+**Sending:**
+
+1. Attach the **final** version on the document row. Its status goes to **Draft**.
+2. Click **Send Final Documents for Review** and pick the rows to send. They move to **Pending Review**.
+3. The shipment is assigned to the Operations approvers and they are notified.
+
+**Reviewing:** an approver clicks **Review Final Documents**, which lists what is waiting and lets them approve or reject each one. A rejection needs a reason, which is written back onto the row.
+
+| Status | Means |
+|--------|-------|
+| **Draft** | Attached, not sent yet |
+| **Pending Review** | With Operations, waiting on a decision |
+| **Approved** | Accepted, with who approved it and when |
+| **Rejected** | Sent back with a reason. Fix the file and send it again |
+
+Notes:
+
+- You cannot send a row with no file attached, and you cannot approve or reject a row that is not pending.
+- Only users in the **Operations roles** may approve or reject. If nobody is configured, sending is refused and tells you to set them in CGM Shipping Settings.
+- Do not edit the status field by hand: use the two buttons, which is what records who decided and when.
+- Replacing the file on an approved row sends it back to the start.
+
 ---
 
 ## Container Ops Board
