@@ -132,9 +132,9 @@ Open **CGM Task Template** → pencil on a task row:
 | **Task Role** | Drives Desk UI: Document, Application, Finance Payment, etc. |
 | **Document Upload Required** | Shows **Task Documents** on Standard rows too |
 | **Required Document Types** | Multi-select from **Document Type** master (exact names). Prefills **Task Documents** on matching live tasks and **blocks Complete** until each selected type is attached. |
-| **Payment Kind** | Pairs Application ↔ Finance Payment rows (UCR, Entry Slip, Shipping Line, KPA) |
+| **Payment Kind** | Pairs Application ↔ Finance Payment rows (UCR, Entry Slip, Shipping Line, KPA, CFS) |
 
-Users may still add extra rows on **Task Documents** during clearance — Required Document Types only enforce the minimum for completion, they do not delete user-added documents.
+Users may still add extra rows on **Task Documents** during clearance - Required Document Types only enforce the minimum for completion, they do not delete user-added documents.
 
 Saving a template runs **sync open tasks from template** so role, payment kind, and required-document stamps update on non-cancelled tasks for that workflow.
 
@@ -208,6 +208,32 @@ Open the Project → **Shipment Documents** child table.
 
 Document types are masters in **Document Type** (codes like `CI`, `PKL`, `MANIFEST`, `DO`, etc.).
 
+### Final document review
+
+Final documents are reviewed before they count as done. It works the same on a Project and on a Task, from the parent form rather than row by row.
+
+**Sending:**
+
+1. Attach the **final** version on the document row. Its status goes to **Draft**.
+2. Click **Send Final Documents for Review** and pick the rows to send. They move to **Pending Review**.
+3. The shipment is assigned to the Operations approvers and they are notified.
+
+**Reviewing:** an approver clicks **Review Final Documents**, which lists what is waiting and lets them approve or reject each one. A rejection needs a reason, which is written back onto the row.
+
+| Status | Means |
+|--------|-------|
+| **Draft** | Attached, not sent yet |
+| **Pending Review** | With Operations, waiting on a decision |
+| **Approved** | Accepted, with who approved it and when |
+| **Rejected** | Sent back with a reason. Fix the file and send it again |
+
+Notes:
+
+- You cannot send a row with no file attached, and you cannot approve or reject a row that is not pending.
+- Only users in the **Operations roles** may approve or reject. If nobody is configured, sending is refused and tells you to set them in CGM Shipping Settings.
+- Do not edit the status field by hand: use the two buttons, which is what records who decided and when.
+- Replacing the file on an approved row sends it back to the start.
+
 ---
 
 ## Container Ops Board
@@ -267,7 +293,7 @@ Tasks 17-19 in the plan. On the ground at the terminal it runs like this:
 
 Steps 3 to 9 are the part that takes unpredictable time: everything there waits on KRA, KPA or an agency.
 
-**Completing task 17 (Field Officers conduct clearance):** attach any clearance proof on **Task Documents** (for example **DO**, **FIELD**, or another **Document Type** from the master list) and mark the task **Completed**. Alternatively, set **Verification Status** to *Released by CRO* or attach the **Verification Report**. The task does not require a specific document code — any attached file on Task Documents is enough unless the template stamps **Required Document Types** for that row.
+**Completing task 17 (Field Officers conduct clearance):** attach any clearance proof on **Task Documents** (for example **DO**, **FIELD**, or another **Document Type** from the master list) and mark the task **Completed**. Alternatively, set **Verification Status** to *Released by CRO* or attach the **Verification Report**. The task does not require a specific document code - any attached file on Task Documents is enough unless the template stamps **Required Document Types** for that row.
 
 ---
 

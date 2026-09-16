@@ -64,7 +64,7 @@ All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Ch
 
 | DocType | Purpose |
 |---------|---------|
-| **CGM Shipping Settings** | Single doc: 25-step sea task template, task completion rules, workflow gates, role mappings, default customs taxes, finance cost category map |
+| **CGM Shipping Settings** | Single doc: role groups and document responsibilities, notification routing, shipment status documents, package visibility, default customs taxes, finance cost category map. The task plans and their status gates live on **CGM Task Template** |
 | **Shipment Type** | Mode, sea-import flag, B/L/AWB rules, CGM ref prefix |
 | **Mode of Transport** | Transport mode master |
 | **Container Type** / **Container Size** | Container classification |
@@ -182,7 +182,7 @@ Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded 
 | 14 | Lodge Delivery Order | Operations |
 | 15 | Prepare Post-Clearance Permits | Declaration |
 | 16 | Finance pays for Post-Clearance Permits | Finance |
-| 17 | Field Officers conduct clearance | Field Operations — attach any clearance document on **Task Documents**, or record CRO release / verification report |
+| 17 | Field Officers conduct clearance | Field Operations - attach any clearance document on **Task Documents**, or record CRO release / verification report |
 | 18 | Supervisor obtains KPA Invoice | Operations |
 | 19 | Finance pays KPA Invoice | Finance |
 | 20 | Book trucks and notify warehouse | Transport |
@@ -290,8 +290,7 @@ Website users with role **Customer** land on `/portal` after login. They can vie
 
 | Guard | Enforces |
 |-------|----------|
-| Completion requirements | Document codes, finance payments, permit rows per seq (from Settings) |
-| Settings configured | Throws if completion rules table is empty |
+| Completion requirements | Required Document Types from the template row, finance payments and permit rows (from the task's Task Role, Payment Kind and Container Step stamps) |
 | Department permissions | Users see tasks for their department only |
 | Payment Entry submit | Can auto-complete linked finance tasks |
 

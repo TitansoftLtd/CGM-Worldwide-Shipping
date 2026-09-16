@@ -1,12 +1,12 @@
 ---
 title: Funding Request
 metatags:
-  description: Raise Material Requests, batch them on Funding Request, approve amounts, and pay via Journal Entry or Purchase Order — separate from clearance task payments.
+  description: Raise Material Requests, batch them on Funding Request, approve amounts, and pay via Journal Entry or Purchase Order - separate from clearance task payments.
 ---
 
 # Funding Request
 
-**Batch Material Requests for approval and payment — operational expense by Journal Entry, purchase by Purchase Order after funding is approved.**
+**Batch Material Requests for approval and payment - operational expense by Journal Entry, purchase by Purchase Order after funding is approved.**
 
 Use this guide when you need cash or a purchase that is **not** a clearance task payment (UCR, shipping line, entry slip, KPA, permits on Tasks). Employee Advance is **not** used for this path.
 
@@ -35,10 +35,10 @@ Also use:
 - Optional: Project on the Material Request for cost tracking
 
 :::note
-Clearance invoices on shipment Tasks use [Finance](finance.md) task payments — not Funding Request.
+Clearance invoices on shipment Tasks use [Finance](finance.md) task payments - not Funding Request.
 :::
 
-## 2. How to — choose request type
+## 2. How to - choose request type
 
 | Material Request type | After funding approval | Payment / buy path |
 |----------------------|------------------------|--------------------|
@@ -49,7 +49,7 @@ Clearance invoices on shipment Tasks use [Finance](finance.md) task payments —
 ### Operational Expense rules
 
 - Set **Employee** (who receives the cash). Link your User on the Employee record if the field should fill automatically.
-- Warehouses are cleared — this is not a stock indent.
+- Warehouses are cleared - this is not a stock indent.
 - Project can sit on the header (`custom_project`) and copies to item Project dimensions.
 
 ### Purchase / Subcontracting rules
@@ -57,7 +57,7 @@ Clearance invoices on shipment Tasks use [Finance](finance.md) task payments —
 - You **cannot** create a Purchase Order (or related RFQ / supplier quotation helpers CGM overrides) until the linked Funding Request is **approved**.
 - Shipping Line suppliers cannot be used on these Purchase Orders.
 
-## 3. How to — create and approve funding
+## 3. How to - create and approve funding
 
 ```
 Material Request (Submit)
@@ -70,7 +70,7 @@ Material Request (Submit)
 1. Create and **Submit** each Material Request with the correct type, items, amounts, and Project where relevant.
 2. Open **Funding Request** (`FR-.YYYY.-…`) → add submitted Material Requests that are waiting for funding.
 3. Submit the Funding Request into the site’s approval workflow (Pending Approval → Approved / Rejected, etc.).
-4. Approvers set **approved** (or rejected) amounts per request line — not only a header yes/no.
+4. Approvers set **approved** (or rejected) amounts per request line - not only a header yes/no.
 5. After approval:
    - **Operational Expense:** create Journal Entries from the Funding Request (uses Default Operational Expense Account when configured).
    - **Purchase / Subcontracting:** create Purchase Orders for remaining funded rows.
@@ -79,7 +79,7 @@ Material Request (Submit)
 Use **Funding Request Report** and **Material Request Funding** reports to see what is unfunded, on a request, or disbursed.
 :::
 
-## 4. Features — guards and settings
+## 4. Features - guards and settings
 
 | Guard / setting | Effect |
 |-----------------|--------|
@@ -91,7 +91,7 @@ Use **Funding Request Report** and **Material Request Funding** reports to see w
 
 Workflow states on Material Request and Funding Request are site-configured ERPNext Workflows; CGM maps pending / approved / disbursed behaviour in code so Desk and reports stay consistent.
 
-## 5. Features — vs clearance task payments
+## 5. Features - vs clearance task payments
 
 | | Task payments | Funding Request |
 |--|---------------|-----------------|
@@ -102,7 +102,7 @@ Workflow states on Material Request and Funding Request are site-configured ERPN
 
 ## 6. Related Topics
 
-- [Finance](finance.md) — two finance paths overview
-- **CGM Shipping Settings** — Default Operational Expense Account
+- [Finance](finance.md) - two finance paths overview
+- **CGM Shipping Settings** - Default Operational Expense Account
 - [Operations](operations.md)
 - [Getting Started](process-overview.md)

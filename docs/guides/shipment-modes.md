@@ -6,9 +6,9 @@ metatags:
 
 # Shipment Modes
 
-**Every clearance plan starts from Shipment Type — eight modes, eight CGM Task Templates.**
+**Every clearance plan starts from Shipment Type - eight modes, eight CGM Task Templates.**
 
-Use this page when you need the exact task list for Sea Export, Air, Transit, or Road — or when CRM asks which type to pick on Opportunity. Sea Import deep-dives stay in Operations, Declaration, Finance, and Transport; this page is the inventory for **all** modes.
+Use this page when you need the exact task list for Sea Export, Air, Transit, or Road - or when CRM asks which type to pick on Opportunity. Sea Import deep-dives stay in Operations, Declaration, Finance, and Transport; this page is the inventory for **all** modes.
 
 A typical scenario: Sales selects **Air Import** on Opportunity. After approval, the Project gets the **Air Import Workflow** (16 tasks) and tracker mode **ICD Nairobi**. Declaration and Finance run UCR and entry payment pairs; Field clears at the ICD.
 
@@ -29,7 +29,7 @@ Also use:
 - For export or transit fields: **Export Shipment** DocType on the Project where used
 
 :::caution
-Do not invent task subjects. Plans below match the seeded templates in `task_template_seed_data.py`. Company admins may edit a **CGM Task Template** on the site — always check the live template if behaviour differs.
+Do not invent task subjects. Plans below match the seeded templates in `task_template_seed_data.py`. Company admins may edit a **CGM Task Template** on the site - always check the live template if behaviour differs.
 :::
 
 ## 2. How Shipment Type selects the plan
@@ -40,13 +40,13 @@ Do not invent task subjects. Plans below match the seeded templates in `task_tem
    - **Container Tracker Mode** (also used as Project Type for tracking)
 3. When the Opportunity is **Approved** and a **Project** is created, the task engine builds Tasks from that template.
    A Shipment Type can use a different template for a **Cargo Type**: its **Task Template by Cargo Type** table does this. **Sea Import** with Cargo Type **LCL** gets the **Sea Import LCL Workflow**.
-4. Application tasks (UCR, shipping line invoice, entry, permits, KPA) pair with **Finance Payment** tasks where `payment_kind` is set — Finance cannot pay until the application side is ready.
+4. Application tasks (UCR, shipping line invoice, entry, permits, KPA) pair with **Finance Payment** tasks where `payment_kind` is set - Finance cannot pay until the application side is ready.
 
 :::tip
 Pick the type **before** you build the document pack. Changing mode after Project creation does not rebuild the task plan.
 :::
 
-## 3. Features — Mode summary
+## 3. Features - Mode summary
 
 | Shipment Type | CGM Task Template | Tracker Mode | Tasks |
 |---------------|-------------------|--------------|------:|
@@ -62,7 +62,7 @@ Pick the type **before** you build the document pack. Changing mode after Projec
 
 **Tracker mode masters:** Mombasa Port · ICD Nairobi · Transit Import · Transit Export · Export
 
-## 4. Features — Transport documents by mode
+## 4. Features - Transport documents by mode
 
 | Mode family | Typical transport doc | Notes |
 |-------------|----------------------|--------|
@@ -73,7 +73,7 @@ Pick the type **before** you build the document pack. Changing mode after Projec
 
 Intake still expects client documents (CI, PKL, etc.) per Document Type rules. See [CRM & Intake](crm-intake.md).
 
-## 5. Features — Export Shipment DocType
+## 5. Features - Export Shipment DocType
 
 For export and transit legs, link an **Export Shipment** to the **Project** to hold:
 
@@ -86,7 +86,7 @@ For export and transit legs, link an **Export Shipment** to the **Project** to h
 
 Workspace: **Shipments → Export Shipment**.
 
-## 6. Features — Application ↔ Finance payment pairs
+## 6. Features - Application ↔ Finance payment pairs
 
 Where the template sets Application / Permit Application and Finance Payment / Permit Finance:
 
@@ -97,9 +97,9 @@ Where the template sets Application / Permit Application and Finance Payment / P
 | Permit apply → Permit finance | Pre-clearance permits (5) → Finance pays permits (6) |
 | Supervisor gets charges → Finance pays | Supervisor obtains KPA Invoice (18) → Finance pays KPA Invoice (19); on LCL, Supervisor gets CFS charges (16) → Finance Pays CFS charges (17) |
 
-Other modes use the same roles with different sequence numbers — see tables below. Clearance payments are **not** Funding Requests; see [Finance](finance.md) and [Funding Request](funding.md).
+Other modes use the same roles with different sequence numbers - see tables below. Clearance payments are **not** Funding Requests; see [Finance](finance.md) and [Funding Request](funding.md).
 
-## 7. How to use — Sea Import (25)
+## 7. How to use - Sea Import (25)
 
 **Template:** Sea Import Workflow · **Mode:** Mombasa Port
 
@@ -168,7 +168,7 @@ LCL cargo has no container of its own, so after field clearance the shipment pay
 - **Delivery note (20)** needs the **Delivery Note** document attached before it completes.
 - **Status chart:** Draft → Documents Received → UCR Applied → UCR Paid → Pre-clearance → Final Docs Received → Line Paid & DO Lodged → Entry Lodged → Entry Paid → Post-clearance → Field Clearance → **CFS Paid** → In Delivery → Completed.
 
-## 8. How to use — Sea Export (14)
+## 8. How to use - Sea Export (14)
 
 **Template:** Sea Export Workflow · **Mode:** Export
 
@@ -189,7 +189,7 @@ LCL cargo has no container of its own, so after field clearance the shipment pay
 | 13 | Container scheduled for vessel sailing | Operations |
 | 14 | Receive Certificate of Export (COE) | Operations |
 
-## 9. How to use — Air Import (16)
+## 9. How to use - Air Import (16)
 
 **Template:** Air Import Workflow · **Mode:** ICD Nairobi
 
@@ -212,7 +212,7 @@ LCL cargo has no container of its own, so after field clearance the shipment pay
 | 15 | Clearance - verification and permit removal | Field Operations |
 | 16 | Release and entry settlement | Operations |
 
-## 10. How to use — Air Export (11)
+## 10. How to use - Air Export (11)
 
 **Template:** Air Export Workflow · **Mode:** Export
 
@@ -230,7 +230,7 @@ LCL cargo has no container of its own, so after field clearance the shipment pay
 | 10 | Monitor flight departure | Operations |
 | 11 | Obtain manifest and apply for COE | Declaration |
 
-## 11. How to use — Sea Transit Import (15)
+## 11. How to use - Sea Transit Import (15)
 
 **Template:** Sea Transit Import Workflow · **Mode:** Transit Import
 
@@ -254,7 +254,7 @@ LCL cargo has no container of its own, so after field clearance the shipment pay
 
 Payment pairs: shipping line **3→4**, transit entry **7→8**.
 
-## 12. How to use — Sea Transit Export (10)
+## 12. How to use - Sea Transit Export (10)
 
 **Template:** Sea Transit Export Workflow · **Mode:** Transit Export
 
@@ -271,7 +271,7 @@ Payment pairs: shipping line **3→4**, transit entry **7→8**.
 | 9 | KPA pre-advice and vessel sailing | Finance |
 | 10 | Receive Certificate of Export | Operations |
 
-## 13. How to use — Road Transit Outbound (10)
+## 13. How to use - Road Transit Outbound (10)
 
 **Template:** Road Transit Outbound Workflow · **Mode:** Transit Export
 
@@ -288,7 +288,7 @@ Payment pairs: shipping line **3→4**, transit entry **7→8**.
 | 9 | Fit ECMD devices and load trucks | Transport |
 | 10 | Track Kenya to border to destination | Transport |
 
-## 14. How to use — Road Transit Inbound (13)
+## 14. How to use - Road Transit Inbound (13)
 
 **Template:** Road Transit Inbound Workflow · **Mode:** Transit Import
 
@@ -312,8 +312,8 @@ Payment pairs: shipping line **3→4**, transit entry **7→8**.
 
 - [Getting Started](process-overview.md)
 - [CRM & Intake](crm-intake.md)
-- [Operations](operations.md) — Sea Import status, documents, Ops Board
+- [Operations](operations.md) - Sea Import status, documents, Ops Board
 - [Declaration & Customs](declaration-customs.md)
 - [Finance](finance.md)
 - [Transport & Containers](transport-containers.md)
-- **CGM Task Template** / **Shipment Type** on Desk — live template if site edits differ
+- **CGM Task Template** / **Shipment Type** on Desk - live template if site edits differ
