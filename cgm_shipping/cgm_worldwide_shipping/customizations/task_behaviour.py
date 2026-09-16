@@ -32,6 +32,7 @@ PAYMENT_KIND_TO_PROFILE_KEY = {
 	"ENTRY_SLIP": "Entry Application",
 	"Shipping Line": "Shipping Line Application",
 	"KPA": "KPA Application",
+	"CFS": "CFS Application",
 }
 
 
@@ -333,7 +334,7 @@ def task_is_auto_complete(task) -> bool:
 
 
 def task_is_configured_application_workflow(task) -> bool:
-	"""UCR / Entry / Shipping Line / KPA application or finance (not Permit)."""
+	"""UCR / Entry / Shipping Line / KPA / CFS application or finance (not Permit)."""
 	behaviour = get_task_behaviour(task)
 	if behaviour.payment_kind == "Permit":
 		return False
@@ -379,6 +380,8 @@ def ui_payload_from_behaviour(behaviour: TaskBehaviour) -> dict:
 		"is_shipping_line_finance": behaviour.is_finance_payment and kind == "Shipping Line",
 		"is_kpa_application": behaviour.is_application and kind == "KPA",
 		"is_kpa_finance": behaviour.is_finance_payment and kind == "KPA",
+		"is_cfs_application": behaviour.is_application and kind == "CFS",
+		"is_cfs_finance": behaviour.is_finance_payment and kind == "CFS",
 		"is_permit_application": behaviour.is_permit_application,
 		"is_permit_finance": behaviour.is_permit_finance,
 		"is_pre_clearance_permit": behaviour.is_permit_application

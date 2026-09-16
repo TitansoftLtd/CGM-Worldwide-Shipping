@@ -34,6 +34,10 @@ DEFAULT_PAYMENT_KINDS: tuple[dict, ...] = (
 		"payment_kind": "Permit",
 		"description": "Pre-/post-clearance permit finance payment grouping.",
 	},
+	{
+		"payment_kind": "CFS",
+		"description": "CFS (container freight station) charges finance payment grouping - LCL imports.",
+	},
 )
 
 DEFAULT_LINE_TYPES: tuple[dict, ...] = (
@@ -161,6 +165,19 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 		"line_type": LINE_RECEIPT,
 		"payment_kind": "KPA",
 		"description": "KPA payment receipt.",
+	},
+	{
+		"charge_name": "CFS Invoice",
+		"line_type": LINE_INVOICE,
+		"payment_kind": "CFS",
+		"allows_amendment": 1,
+		"description": "CFS charges invoice (LCL imports).",
+	},
+	{
+		"charge_name": "CFS Receipt",
+		"line_type": LINE_RECEIPT,
+		"payment_kind": "CFS",
+		"description": "CFS charges payment receipt.",
 	},
 )
 

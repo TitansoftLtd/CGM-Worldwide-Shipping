@@ -8,6 +8,9 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CFS_INVOICE_TO_FINANCE,
+	CFS_RECEIPT_FOR_SUPERVISOR,
+	CFS_RECEIPT_VERIFY_FINANCE,
 	CONTAINER_DEPOSIT_REFUND_REMINDER,
 	DAILY_STATUS_RAG_ALERT,
 	ENTRY_INVOICE_TO_FINANCE,
@@ -55,6 +58,9 @@ WORKFLOW_NOTIFICATION_DEFAULTS: tuple[tuple[str, str, str], ...] = (
 	("KPA Invoice to Finance", KPA_INVOICE_TO_FINANCE, ""),
 	("KPA Receipt Attach", KPA_RECEIPT_FOR_SUPERVISOR, ""),
 	("KPA Receipt Verify", KPA_RECEIPT_VERIFY_FINANCE, ""),
+	("CFS Invoice to Finance", CFS_INVOICE_TO_FINANCE, "LCL imports"),
+	("CFS Receipt Attach", CFS_RECEIPT_FOR_SUPERVISOR, ""),
+	("CFS Receipt Verify", CFS_RECEIPT_VERIFY_FINANCE, ""),
 	("Your Turn Finance", _YOUR_TURN_FINANCE, ""),
 	("Your Turn Declaration", _YOUR_TURN_DECLARATION, ""),
 	("Your Turn Documentation", _YOUR_TURN_DOCUMENTATION, ""),

@@ -184,14 +184,38 @@ def container_tracking_mode_for_shipment_type(
 	return None
 
 
-def get_task_template_for_shipment_type(shipment_type: str | None) -> str | None:
-	"""CGM Task Template linked on Shipment Type."""
+def get_task_template_for_shipment_type(
+	shipment_type: str | None, cargo_type: str | None = None
+) -> str | None:
+	"""CGM Task Template linked on Shipment Type.
+
+	A row in Task Template by Cargo Type for *cargo_type* wins (e.g. LCL runs the
+	Sea Import LCL plan); otherwise the Shipment Type's Task Template.
+	"""
 	row = get_shipment_type_record(shipment_type)
 	if not row:
 		return None
+	if cargo_type and frappe.db.table_exists("Shipment Type Cargo Template"):
+		variant = frappe.db.get_value(
+			"Shipment Type Cargo Template",
+			{"parent": row.get("name"), "parenttype": "Shipment Type", "cargo_type": cargo_type},
+			"task_template",
+		)
+		if variant:
+			return str(variant).strip()
 	if _shipment_type_field_queryable("task_template") and row.get("task_template"):
 		return str(row.task_template).strip()
 	return None
+
+
+def get_project_cargo_type(project) -> str | None:
+	"""The project's Cargo Type (FCL, LCL, ...), whichever cargo field the site has."""
+	if not project:
+		return None
+	field = get_cargo_type_field(project.meta)
+	if not field:
+		return None
+	return (project.get(field) or "").strip() or None
 
 
 def get_task_flow_key_for_shipment_type(shipment_type: str | None) -> str | None:

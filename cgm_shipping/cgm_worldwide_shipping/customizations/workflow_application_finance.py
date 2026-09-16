@@ -188,10 +188,7 @@ def notify_finance_upload_application_receipt(
 	if not is_application_payment_task_doc(task, profile):
 		return {"notified": 0}
 	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
-		FLOW_ENTRY,
-		FLOW_KPA,
-		FLOW_SHIPPING_LINE,
-		FLOW_UCR,
+		flow_for_profile,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications import (
 		audience_label_for_receipt_upload,
@@ -211,13 +208,7 @@ def notify_finance_upload_application_receipt(
 			message=f"Could not seed finance lines on {task.name}: {frappe.get_traceback()}",
 		)
 
-	flow_by_key = {
-		"ucr": FLOW_UCR,
-		"entry": FLOW_ENTRY,
-		"shipping_line": FLOW_SHIPPING_LINE,
-		"kpa": FLOW_KPA,
-	}
-	flow = flow_by_key.get(profile.key, FLOW_UCR)
+	flow = flow_for_profile(profile)
 	audience = audience_label_for_receipt_upload(flow)
 	if profile.requires_pop:
 		audience = "Finance / Documentation"
@@ -1723,19 +1714,19 @@ def enforce_entry_finance_gate(project: str) -> None:
 		)
 
 
-def enforce_kpa_finance_gate(project: str) -> None:
-	profile = APPLICATION_FINANCE_PROFILES["KPA Application"]
+def enforce_application_finance_gate(project: str, profile: ApplicationFinanceProfile, status: str) -> None:
+	"""A status gated on a charge being paid (KPA Paid, CFS Paid): its finance task must be done."""
 	finance_task_name = get_application_finance_task(project, profile)
 	if not finance_task_name:
 		frappe.throw(
-			"Generate the sea task plan and complete <b>Finance pays KPA Invoice</b> first."
+			f"Generate the sea task plan and complete the <b>{profile.invoice_label}</b> payment task first."
 		)
 	finance_task = frappe.get_doc("Task", finance_task_name)
 	if finance_task.status != "Completed" or not can_complete_application_finance_task(
 		finance_task, profile
 	):
 		frappe.throw(
-			"Cannot move to <b>KPA Paid</b> until <b>Finance pays KPA Invoice</b> is completed: "
-			"Finance verifies the invoice, then either records payment (Journal Entry) "
-			"or ticks <b>Client will pay</b>. Receipt attachment is optional."
+			f"Cannot move to <b>{status}</b> until <b>{finance_task.subject}</b> is completed: "
+			f"Finance verifies the {profile.invoice_label}, then either records payment (Journal Entry) "
+			"or ticks <b>Client will pay</b>."
 		)

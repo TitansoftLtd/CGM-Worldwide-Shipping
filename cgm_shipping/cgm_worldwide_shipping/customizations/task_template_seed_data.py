@@ -11,6 +11,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	ROAD_TRANSIT_INBOUND_TEMPLATE,
 	ROAD_TRANSIT_OUTBOUND_TEMPLATE,
 	SEA_EXPORT_TEMPLATE,
+	SEA_IMPORT_LCL_TEMPLATE,
 	SEA_IMPORT_TEMPLATE,
 	SEA_TRANSIT_EXPORT_TEMPLATE,
 	SEA_TRANSIT_IMPORT_TEMPLATE,
@@ -213,6 +214,116 @@ def sea_import_tasks() -> list[dict]:
 		_row(23, "Offload cargo", "Transport", container_step="Offload"),
 		_row(24, "Return empty container to depot", "Transport", container_step="Empty Return"),
 		_row(25, "Receive interchange confirmation", "Transport", container_step="Interchange"),
+	]
+
+
+def sea_import_lcl_tasks() -> list[dict]:
+	"""Sea import of LCL (less-than-container-load) cargo.
+
+	The same clearance as Sea Import up to field clearance, then CFS charges in place
+	of KPA and cargo delivery in place of container transport: no containers, so no
+	truck booking, gate out, empty return or interchange. The shared steps carry the
+	same stamps as Sea Import so they behave the same.
+	"""
+	return [
+		_row(1, "Receive shipment documents from Client", "Operations", auto=1, role="Auto Complete", intake=1),
+		_row(2, "Share documents with Declarants", "Operations", auto=1, role="Auto Complete", intake=1),
+		_row(
+			3,
+			"Create UCR (IDF)",
+			"Declaration",
+			role="Application",
+			payment_kind="UCR",
+			required_docs="IDF_CERT",
+		),
+		_row(4, "Finance pays UCR", "Finance", depends=3, finance=1, role="Finance Payment", payment_kind="UCR"),
+		_row(
+			5,
+			"Apply for Pre-Clearance Permits (DVS, NBA, VMD, ACA)",
+			"Declaration",
+			permit=1,
+			role="Permit Application",
+			permit_stage="Pre-clearance",
+		),
+		_row(
+			6,
+			"Finance pays Pre-Clearance Permits",
+			"Finance",
+			depends=5,
+			finance=1,
+			permit=1,
+			role="Permit Finance",
+			permit_stage="Pre-clearance",
+			payment_kind="Permit",
+		),
+		_row(
+			7,
+			"Receive Final Clearance Documents",
+			"Documentation",
+			doc=1,
+			role="Document Checkpoint",
+			container_step="ETA Refresh",
+		),
+		_row(8, "Attach Shipping Line Invoice", "Documentation", doc=1, role="Application", payment_kind="Shipping Line"),
+		_row(
+			9,
+			"Finance pays Shipping Line Charges",
+			"Finance",
+			depends=8,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="Shipping Line",
+		),
+		_row(
+			10,
+			"Create Entry",
+			"Declaration",
+			doc=1,
+			role="Application",
+			payment_kind="ENTRY_SLIP",
+			container_step="Vessel Arrival",
+		),
+		_row(
+			11,
+			"Finance Pays Entry Slip",
+			"Finance",
+			depends=10,
+			finance=1,
+			role="Finance Payment",
+			payment_kind="ENTRY_SLIP",
+		),
+		_row(12, "Lodge Delivery Order", "Operations", doc=1, role="Document"),
+		_row(
+			13,
+			"Prepare Post-Clearance Permits",
+			"Declaration",
+			permit=1,
+			role="Permit Application",
+			permit_stage="Post-clearance",
+		),
+		_row(
+			14,
+			"Finance pays for Post-Clearance Permits",
+			"Finance",
+			depends=13,
+			finance=1,
+			permit=1,
+			role="Permit Finance",
+			permit_stage="Post-clearance",
+			payment_kind="Permit",
+		),
+		_row(15, "Field Officers conduct clearance", "Field Operations", container_step="Field Clearance"),
+		_row(16, "Supervisor gets CFS charges", "Operations", role="Application", payment_kind="CFS"),
+		_row(17, "Finance Pays CFS charges", "Finance", depends=16, finance=1, role="Finance Payment", payment_kind="CFS"),
+		_row(18, "Load to the transport means relevant/available", "Transport"),
+		_row(19, "Offload cargo to the client's destination", "Transport"),
+		_row(
+			20,
+			"Delivery note from the transporter after delivery",
+			"Transport",
+			role="Document",
+			required_docs="Delivery Note",
+		),
 	]
 
 
@@ -611,6 +722,24 @@ SEA_TRANSIT_IMPORT_GATES: list[dict] = [
 	_gate("Completed", 15),
 ]
 
+# Sea Import LCL: Sea Import's statuses less the container ones (KPA Paid,
+# Containers Returned, In Transit, Client Inspection), plus CFS Paid.
+SEA_IMPORT_LCL_GATES: list[dict] = [
+	_gate("Documents Received", 1),
+	_gate("UCR Applied", 3),
+	_gate("UCR Paid", 4, "UCR Finance Complete"),
+	_gate("Pre-clearance", 5, "Permit Invoices Submitted"),
+	_gate("Final Docs Received", 7),
+	_gate("Line Paid & DO Lodged", 12),
+	_gate("Entry Lodged", 10),
+	_gate("Entry Paid", 11, "Entry Finance Complete"),
+	_gate("Post-clearance", 13, "Permit Invoices Submitted"),
+	_gate("Field Clearance", 15),
+	_gate("CFS Paid", 17, "CFS Finance Complete"),
+	_gate("In Delivery", 18),
+	_gate("Completed", 20, "All Sea Tasks Complete"),
+]
+
 ROAD_TRANSIT_INBOUND_GATES: list[dict] = [
 	_gate("Documents Received", 1),
 	_gate("UCR Applied", 2),
@@ -632,6 +761,17 @@ TEMPLATE_DEFINITIONS: list[dict] = [
 		"extends_template": None,
 		"tasks": sea_import_tasks(),
 		"gates": DEFAULT_SEA_WORKFLOW_TASK_GATES,
+	},
+	{
+		"template_name": SEA_IMPORT_LCL_TEMPLATE,
+		"description": (
+			"Sea import of LCL cargo: Sea Import clearance, then CFS charges and delivery "
+			"to the client with the transporter's delivery note. Chosen by Cargo Type LCL "
+			"on the Shipment Type's Task Template by Cargo Type."
+		),
+		"extends_template": None,
+		"tasks": sea_import_lcl_tasks(),
+		"gates": SEA_IMPORT_LCL_GATES,
 	},
 	{
 		"template_name": SEA_EXPORT_TEMPLATE,

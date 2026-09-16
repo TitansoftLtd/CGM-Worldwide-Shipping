@@ -22,6 +22,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	AIR_IMPORT_TEMPLATE,
 	ROAD_TRANSIT_INBOUND_TEMPLATE,
 	SEA_EXPORT_TEMPLATE,
+	SEA_IMPORT_LCL_TEMPLATE,
 	SEA_IMPORT_TEMPLATE,
 	SEA_TRANSIT_IMPORT_TEMPLATE,
 )
@@ -85,11 +86,12 @@ class TestSeededGates(unittest.TestCase):
 				self.assertEqual(len(states), len(set(states)))
 
 	def test_the_clearance_workflows_have_gates(self):
-		"""The five workflows that had gate tables before the move still do."""
+		"""The five workflows that had gate tables before the move still do, plus Sea Import LCL."""
 		self.assertEqual(
 			{d["template_name"] for d in TEMPLATE_DEFINITIONS if d.get("gates")},
 			{
 				SEA_IMPORT_TEMPLATE,
+				SEA_IMPORT_LCL_TEMPLATE,
 				SEA_TRANSIT_IMPORT_TEMPLATE,
 				ROAD_TRANSIT_INBOUND_TEMPLATE,
 				AIR_IMPORT_TEMPLATE,

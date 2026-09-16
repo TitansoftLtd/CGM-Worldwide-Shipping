@@ -21,6 +21,7 @@ GATE_RULES = (
 	"UCR Finance Complete",
 	"Entry Finance Complete",
 	"KPA Finance Complete",
+	"CFS Finance Complete",
 	"All Sea Tasks Complete",
 )
 

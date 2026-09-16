@@ -37,6 +37,7 @@ DEFAULT_SEA_IMPORT_WORKFLOW_STATES: list[str] = [
 	"Post-clearance",
 	"Field Clearance",
 	"KPA Paid",
+	"CFS Paid",
 	"In Delivery",
 	"Containers Returned",
 	"Completed",

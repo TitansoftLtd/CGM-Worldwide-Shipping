@@ -375,13 +375,14 @@ def runs_sea_import_workflow(doc) -> bool:
 	shipments are Sea too, and have none of those tasks to find.
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		SEA_IMPORT_TEMPLATE,
+		is_sea_import_template,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
 		get_workflow_template_name,
 	)
 
-	return get_workflow_template_name(doc) == SEA_IMPORT_TEMPLATE
+	# FCL and LCL plans both run the Sea Import rules.
+	return is_sea_import_template(get_workflow_template_name(doc))
 
 def enforce_sea_workflow_task_gates(doc):
 	"""Sea Import: each shipment status needs the task its Shipment Status Gate names."""
