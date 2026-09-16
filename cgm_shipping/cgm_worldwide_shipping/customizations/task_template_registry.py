@@ -12,6 +12,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 
 # Canonical template record names (CGM Task Template.template_name / .name).
 SEA_IMPORT_TEMPLATE = "Sea Import Workflow"
+SEA_IMPORT_LCL_TEMPLATE = "Sea Import LCL Workflow"
 SEA_EXPORT_TEMPLATE = "Sea Export Workflow"
 AIR_IMPORT_TEMPLATE = "Air Import Workflow"
 AIR_EXPORT_TEMPLATE = "Air Export Workflow"
@@ -23,6 +24,7 @@ ROAD_TRANSIT_INBOUND_TEMPLATE = "Road Transit Inbound Workflow"
 ALL_TEMPLATE_NAMES: frozenset[str] = frozenset(
 	{
 		SEA_IMPORT_TEMPLATE,
+		SEA_IMPORT_LCL_TEMPLATE,
 		SEA_EXPORT_TEMPLATE,
 		AIR_IMPORT_TEMPLATE,
 		AIR_EXPORT_TEMPLATE,
@@ -32,6 +34,11 @@ ALL_TEMPLATE_NAMES: frozenset[str] = frozenset(
 		ROAD_TRANSIT_INBOUND_TEMPLATE,
 	}
 )
+
+# Sea import plans that run the Sea Import clearance rules: status gates and closure,
+# finance pairing, cross-department access. LCL differs only in its steps (CFS
+# charges instead of KPA, cargo delivery instead of containers).
+SEA_IMPORT_TEMPLATES: tuple[str, ...] = (SEA_IMPORT_TEMPLATE, SEA_IMPORT_LCL_TEMPLATE)
 
 LEGACY_FLOW_KEY_TO_TEMPLATE: dict[str, str] = {
 	SEA_TASK_FLOW_KEY: SEA_IMPORT_TEMPLATE,
@@ -93,8 +100,12 @@ def task_matches_template(task, template_name: str) -> bool:
 	return normalize_template_name(flow) == template_name
 
 
+def is_sea_import_template(template_name: str | None) -> bool:
+	return normalize_template_name(template_name) in SEA_IMPORT_TEMPLATES
+
+
 def is_sea_import_task(task) -> bool:
-	return task_matches_template(task, SEA_IMPORT_TEMPLATE)
+	return any(task_matches_template(task, template) for template in SEA_IMPORT_TEMPLATES)
 
 
 def workflow_flow_keys_for_template(template_name: str | None) -> list[str]:
@@ -112,13 +123,16 @@ def workflow_flow_keys_for_template(template_name: str | None) -> list[str]:
 
 
 def sea_import_flow_keys() -> list[str]:
-	"""Keys stored on sea-import Tasks (CGM Task Template name + legacy SEA_IMPORT_E2E)."""
-	return workflow_flow_keys_for_template(SEA_IMPORT_TEMPLATE)
+	"""Keys stored on sea-import Tasks, FCL and LCL (template names + legacy SEA_IMPORT_E2E)."""
+	keys: list[str] = []
+	for template in SEA_IMPORT_TEMPLATES:
+		keys.extend(k for k in workflow_flow_keys_for_template(template) if k not in keys)
+	return keys
 
 
 def task_flow_key_in_filter(template_name: str | None = None) -> list:
-	"""Frappe filter value: ``["in", [<template>, <legacy>, …]]``."""
-	return ["in", workflow_flow_keys_for_template(template_name or SEA_IMPORT_TEMPLATE)]
+	"""Frappe filter value: ``["in", [<template>, <legacy>, …]]`` - every sea import plan by default."""
+	return ["in", workflow_flow_keys_for_template(template_name) if template_name else sea_import_flow_keys()]
 
 
 def sql_task_flow_key_in(
@@ -129,7 +143,7 @@ def sql_task_flow_key_in(
 	"""SQL ``column IN (…)`` for template name + legacy key (already escaped)."""
 	import frappe
 
-	keys = workflow_flow_keys_for_template(template_name or SEA_IMPORT_TEMPLATE)
+	keys = workflow_flow_keys_for_template(template_name) if template_name else sea_import_flow_keys()
 	if not keys:
 		return "1=0"
 	escaped = ", ".join(frappe.db.escape(k) for k in keys)

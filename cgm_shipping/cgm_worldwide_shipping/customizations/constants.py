@@ -255,6 +255,7 @@ SHIPMENT_STATUS_TABLE = (
 	("Post-clearance", "Clearance", "primary", "active"),
 	("Field Clearance", "Clearance", "primary", "active"),
 	("KPA Paid", "Clearance", "warning", "active"),
+	("CFS Paid", "Clearance", "warning", "active"),
 	("In Delivery", "Delivery", "info", "info"),
 	("Containers Returned", "Delivery", "primary", "primary"),
 	("Completed", "Delivery", "success", "success"),
@@ -431,6 +432,9 @@ SHIPPING_LINE_RECEIPT_VERIFY_FINANCE = "CGM Task - Shipping Line Receipt Verify 
 KPA_INVOICE_TO_FINANCE = "CGM Task - KPA Invoice to Finance"
 KPA_RECEIPT_FOR_SUPERVISOR = "CGM Task - KPA Receipt for Supervisor"
 KPA_RECEIPT_VERIFY_FINANCE = "CGM Task - KPA Receipt Verify Finance"
+CFS_INVOICE_TO_FINANCE = "CGM Task - CFS Invoice to Finance"
+CFS_RECEIPT_FOR_SUPERVISOR = "CGM Task - CFS Receipt for Supervisor"
+CFS_RECEIPT_VERIFY_FINANCE = "CGM Task - CFS Receipt Verify Finance"
 DAILY_STATUS_RAG_ALERT = "CGM Daily Status - RAG Alert"
 OPERATIONAL_UPDATE_NOTIFICATION = "CGM Operational Update"
 CONTAINER_DEPOSIT_REFUND_REMINDER = "CGM Container - Deposit Refund Reminder"

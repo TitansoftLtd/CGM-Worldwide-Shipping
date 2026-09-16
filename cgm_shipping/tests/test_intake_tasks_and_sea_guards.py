@@ -20,6 +20,7 @@ from cgm_shipping.cgm_worldwide_shipping import task_engine
 from cgm_shipping.cgm_worldwide_shipping.customizations import project as project_module
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 	ROAD_TRANSIT_INBOUND_TEMPLATE,
+	SEA_IMPORT_LCL_TEMPLATE,
 	SEA_IMPORT_TEMPLATE,
 	SEA_TRANSIT_IMPORT_TEMPLATE,
 )
@@ -42,6 +43,7 @@ class TestIntakeTasksFromTemplate(unittest.TestCase):
 			{name: seqs for name, seqs in marked.items() if seqs},
 			{
 				SEA_IMPORT_TEMPLATE: [1, 2],
+				SEA_IMPORT_LCL_TEMPLATE: [1, 2],
 				ROAD_TRANSIT_INBOUND_TEMPLATE: [1],
 				SEA_TRANSIT_IMPORT_TEMPLATE: [1],
 			},

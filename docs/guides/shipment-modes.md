@@ -39,6 +39,7 @@ Do not invent task subjects. Plans below match the seeded templates in `task_tem
    - **CGM Task Template** (task subjects, departments, roles, payment kinds)
    - **Container Tracker Mode** (also used as Project Type for tracking)
 3. When the Opportunity is **Approved** and a **Project** is created, the task engine builds Tasks from that template.
+   A Shipment Type can use a different template for a **Cargo Type**: its **Task Template by Cargo Type** table does this. **Sea Import** with Cargo Type **LCL** gets the **Sea Import LCL Workflow**.
 4. Application tasks (UCR, shipping line invoice, entry, permits, KPA) pair with **Finance Payment** tasks where `payment_kind` is set — Finance cannot pay until the application side is ready.
 
 :::tip
@@ -50,6 +51,7 @@ Pick the type **before** you build the document pack. Changing mode after Projec
 | Shipment Type | CGM Task Template | Tracker Mode | Tasks |
 |---------------|-------------------|--------------|------:|
 | Sea Import | Sea Import Workflow | Mombasa Port | 25 |
+| Sea Import, Cargo Type LCL | Sea Import LCL Workflow | - | 20 |
 | Sea Export | Sea Export Workflow | Export | 14 |
 | Air Import | Air Import Workflow | ICD Nairobi | 16 |
 | Air Export | Air Export Workflow | Export | 11 |
@@ -93,6 +95,7 @@ Where the template sets Application / Permit Application and Finance Payment / P
 | Declaration applies → Finance pays | Create UCR (3) → Finance pays UCR (4) |
 | Documentation attaches invoice → Finance pays | Attach Shipping Line Invoice (10) → Finance pays Shipping Line (11) |
 | Permit apply → Permit finance | Pre-clearance permits (5) → Finance pays permits (6) |
+| Supervisor gets charges → Finance pays | Supervisor obtains KPA Invoice (18) → Finance pays KPA Invoice (19); on LCL, Supervisor gets CFS charges (16) → Finance Pays CFS charges (17) |
 
 Other modes use the same roles with different sequence numbers — see tables below. Clearance payments are **not** Funding Requests; see [Finance](finance.md) and [Funding Request](funding.md).
 
@@ -131,6 +134,39 @@ Deep process guides: [Operations](operations.md), [Declaration & Customs](declar
 | 25 | Receive interchange confirmation | Transport |
 
 Tasks **1–2** are Auto Complete when intake documents are in place. Finance depends only on application pairs (3→4, 5→6, 10→11, 12→13, 15→16, 18→19) so other ops steps can progress in parallel where gates allow.
+
+### Sea Import LCL (20)
+
+**Template:** Sea Import LCL Workflow · chosen when a **Sea Import** shipment's **Cargo Type** is **LCL**.
+
+LCL cargo has no container of its own, so after field clearance the shipment pays the **CFS** (container freight station) instead of KPA and goes straight to the client. It follows the same rules as Sea Import: status gates, closure, finance pairs and task access.
+
+| Seq | Subject | Department |
+|----:|---------|------------|
+| 1 | Receive shipment documents from Client | Operations |
+| 2 | Share documents with Declarants | Operations |
+| 3 | Create UCR (IDF) | Declaration |
+| 4 | Finance pays UCR | Finance |
+| 5 | Apply for Pre-Clearance Permits (DVS, NBA, VMD, ACA) | Declaration |
+| 6 | Finance pays Pre-Clearance Permits | Finance |
+| 7 | Receive Final Clearance Documents | Documentation |
+| 8 | Attach Shipping Line Invoice | Documentation |
+| 9 | Finance pays Shipping Line Charges | Finance |
+| 10 | Create Entry | Declaration |
+| 11 | Finance Pays Entry Slip | Finance |
+| 12 | Lodge Delivery Order | Operations |
+| 13 | Prepare Post-Clearance Permits | Declaration |
+| 14 | Finance pays for Post-Clearance Permits | Finance |
+| 15 | Field Officers conduct clearance | Field Operations |
+| 16 | Supervisor gets CFS charges | Operations |
+| 17 | Finance Pays CFS charges | Finance |
+| 18 | Load to the transport means relevant/available | Transport |
+| 19 | Offload cargo to the client's destination | Transport |
+| 20 | Delivery note from the transporter after delivery | Transport |
+
+- **CFS charges (16 → 17)** work like KPA: the supervisor attaches the **CFS Invoice** and saves, Finance is notified, verifies it and pays with **Make Payment** (or ticks **Client will pay**), then attaches and verifies the **CFS Receipt**. Both tasks complete on their own.
+- **Delivery note (20)** needs the **Delivery Note** document attached before it completes.
+- **Status chart:** Draft → Documents Received → UCR Applied → UCR Paid → Pre-clearance → Final Docs Received → Line Paid & DO Lodged → Entry Lodged → Entry Paid → Post-clearance → Field Clearance → **CFS Paid** → In Delivery → Completed.
 
 ## 8. How to use — Sea Export (14)
 

@@ -1371,8 +1371,8 @@ def validate_sea_task_can_complete(task) -> None:
 		task_is_document_checkpoint,
 		task_is_entry_application,
 		task_is_entry_finance,
-		task_is_kpa_application,
-		task_is_kpa_finance,
+		get_task_behaviour,
+		profile_for_behaviour_task,
 		task_is_permit_application,
 		task_is_permit_finance,
 		task_is_shipping_line_application,
@@ -1447,17 +1447,13 @@ def validate_sea_task_can_complete(task) -> None:
 		validate_application_not_manually_completed(
 			task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
 		)
-	elif task_is_kpa_application(task):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			APPLICATION_FINANCE_PROFILES,
-		)
+	elif get_task_behaviour(task).is_application and profile_for_behaviour_task(task):
+		# KPA, CFS and any other pair with no rules of its own beyond the profile.
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
 			validate_application_not_manually_completed,
 		)
 
-		validate_application_not_manually_completed(
-			task, APPLICATION_FINANCE_PROFILES["KPA Application"]
-		)
+		validate_application_not_manually_completed(task, profile_for_behaviour_task(task))
 	elif task_is_document_checkpoint(task):
 		validate_document_checkpoint_task(task)
 	elif sea_import and container_step_for_task(task) in TRANSPORT_CONTAINER_STEPS:
@@ -1471,7 +1467,7 @@ def validate_sea_task_can_complete(task) -> None:
 			task_is_ucr_finance(task),
 			task_is_entry_finance(task),
 			task_is_shipping_line_finance(task),
-			task_is_kpa_finance(task),
+			get_task_behaviour(task).is_finance_payment and profile_for_behaviour_task(task),
 			task_is_permit_finance(task),
 		)
 	):
@@ -1507,17 +1503,13 @@ def validate_sea_task_can_complete(task) -> None:
 				task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
 			)
 			validate_shipping_line_deposit_payments(task)
-		elif task_is_kpa_finance(task):
-			from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-				APPLICATION_FINANCE_PROFILES,
-			)
+		elif get_task_behaviour(task).is_finance_payment and profile_for_behaviour_task(task):
+			# KPA, CFS and any other pair with no rules of its own beyond the profile.
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
 				validate_finance_application_payment_task,
 			)
 
-			validate_finance_application_payment_task(
-				task, APPLICATION_FINANCE_PROFILES["KPA Application"]
-			)
+			validate_finance_application_payment_task(task, profile_for_behaviour_task(task))
 		elif task_is_permit_finance(task):
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 				validate_finance_permit_payment_task,
@@ -2239,6 +2231,7 @@ PAYMENT_ITEM_ITEM_CANDIDATES: dict[str, tuple[str, ...]] = {
 	"Shipping Line": ("Shipping Line Charge", "Shipping Line", "Line Charges"),
 	"Customs Entry": ("Customs Entry", "Entry", "Entry Payment", "Customs Entry Charge"),
 	"KPA": ("KPA Invoice", "KPA", "KPA Charge"),
+	"CFS": ("CFS Charges", "CFS Invoice", "CFS"),
 }
 
 
@@ -2411,42 +2404,6 @@ def build_ucr_purchase_invoice_lines(task) -> list[dict]:
 	]
 
 
-def build_entry_purchase_invoice_lines(task) -> list[dict]:
-	"""Purchase Invoice Item rows from the Entry Slip invoice finance line."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
-		build_application_purchase_invoice_lines,
-	)
-
-	return build_application_purchase_invoice_lines(
-		task, APPLICATION_FINANCE_PROFILES["Entry Application"]
-	)
-
-
-def build_shipping_line_purchase_invoice_lines(task) -> list[dict]:
-	"""Purchase Invoice Item rows from the Shipping Line invoice finance line."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
-		build_application_purchase_invoice_lines,
-	)
-
-	return build_application_purchase_invoice_lines(
-		task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
-	)
-
-
-def build_kpa_purchase_invoice_lines(task) -> list[dict]:
-	"""Purchase Invoice Item rows from the KPA invoice finance line."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		APPLICATION_FINANCE_PROFILES,
-		build_application_purchase_invoice_lines,
-	)
-
-	return build_application_purchase_invoice_lines(
-		task, APPLICATION_FINANCE_PROFILES["KPA Application"]
-	)
-
-
 @frappe.whitelist()
 def get_task_defaults(task_name: str) -> dict:
 	"""Defaults for Purchase Invoice / Payment Entry opened from a finance Task."""
@@ -2456,11 +2413,15 @@ def get_task_defaults(task_name: str) -> dict:
 	task = frappe.get_doc("Task", task_name)
 	ctx = _task_context(task)
 	seq = int(task.get("custom_sequence_no") or 0)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		all_profiles,
+		build_application_purchase_invoice_lines,
+		ensure_application_finance_lines_saved,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
-		task_is_entry_finance,
-		task_is_kpa_finance,
+		get_task_behaviour,
+		profile_for_behaviour_task,
 		task_is_permit_finance,
-		task_is_shipping_line_finance,
 		task_is_ucr_finance,
 	)
 
@@ -2474,43 +2435,21 @@ def get_task_defaults(task_name: str) -> dict:
 	if task_is_ucr_finance(task):
 		ensure_ucr_finance_lines_saved(task)
 		task.reload()
-	if task_is_entry_finance(task):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			APPLICATION_FINANCE_PROFILES,
-			ensure_application_finance_lines_saved,
-		)
-
-		ensure_application_finance_lines_saved(
-			task, APPLICATION_FINANCE_PROFILES["Entry Application"]
-		)
-		task.reload()
-	if task_is_shipping_line_finance(task):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			APPLICATION_FINANCE_PROFILES,
-			ensure_application_finance_lines_saved,
-		)
-
-		ensure_application_finance_lines_saved(
-			task, APPLICATION_FINANCE_PROFILES["Shipping Line Application"]
-		)
-		task.reload()
-	if task_is_kpa_finance(task):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-			APPLICATION_FINANCE_PROFILES,
-			ensure_application_finance_lines_saved,
-		)
-
-		ensure_application_finance_lines_saved(
-			task, APPLICATION_FINANCE_PROFILES["KPA Application"]
-		)
+	finance_profile = profile_for_behaviour_task(task) if get_task_behaviour(task).is_finance_payment else None
+	if finance_profile and finance_profile.key != "ucr":
+		ensure_application_finance_lines_saved(task, finance_profile)
 		task.reload()
 	permit_rows = get_permit_rows_for_purchase_invoice(task)
 	permit_lines = build_permit_purchase_invoice_lines(task)
 	ucr_lines = build_ucr_purchase_invoice_lines(task)
-	entry_lines = build_entry_purchase_invoice_lines(task)
-	shipping_line_lines = build_shipping_line_purchase_invoice_lines(task)
-	kpa_lines = build_kpa_purchase_invoice_lines(task)
-	finance_line_items = permit_lines + ucr_lines + entry_lines + shipping_line_lines + kpa_lines
+	# Entry Slip, Shipping Line, KPA, CFS: each builder returns lines only for its own task.
+	application_lines = [
+		line
+		for profile in all_profiles()
+		if profile.key != "ucr"
+		for line in build_application_purchase_invoice_lines(task, profile)
+	]
+	finance_line_items = permit_lines + ucr_lines + application_lines
 	remarks = f"{task.subject} ({task.name}) - {ctx['project']}"
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_ucr_finance,

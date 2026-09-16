@@ -7,20 +7,26 @@ import frappe
 SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
 
 
-def get_workflow_task_gates() -> dict[str, dict]:
-	"""Sea Import's shipment status gates (its CGM Task Template → Shipment Status Gates)."""
+def get_workflow_task_gates(project=None) -> dict[str, dict]:
+	"""Shipment status gates of the project's plan (CGM Task Template → Shipment Status Gates).
+
+	Sea Import's when no project is given.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		SEA_IMPORT_TEMPLATE,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
 		get_template_gates,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		gate_template_for_project,
+	)
 
-	return get_template_gates(SEA_IMPORT_TEMPLATE)
+	return get_template_gates(gate_template_for_project(project) if project else SEA_IMPORT_TEMPLATE)
 
 
-def get_gate_for_state(workflow_state: str) -> dict | None:
-	return get_workflow_task_gates().get((workflow_state or "").strip())
+def get_gate_for_state(workflow_state: str, project=None) -> dict | None:
+	return get_workflow_task_gates(project).get((workflow_state or "").strip())
 
 
 @frappe.request_cache

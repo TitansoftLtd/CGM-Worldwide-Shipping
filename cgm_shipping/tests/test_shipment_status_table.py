@@ -44,6 +44,8 @@ DESK_TONES_BEFORE = {
 	"Post-clearance": "primary",
 	"Field Clearance": "primary",
 	"KPA Paid": "warning",
+	# Added with the Sea Import LCL plan: CFS charges paid, same tone as KPA Paid.
+	"CFS Paid": "warning",
 	"In Delivery": "info",
 	"Containers Returned": "primary",
 	"Completed": "success",
@@ -63,7 +65,7 @@ MILESTONES_BEFORE = [
 	("Pre-Clearance", ("Pre-clearance", "Client Inspection")),
 	("In Transit", ("In Transit",)),
 	("Arrival & Customs Entry", ("Final Docs Received", "Entry Lodged", "Line Paid & DO Lodged", "Entry Paid")),
-	("Clearance", ("Post-clearance", "Field Clearance", "KPA Paid")),
+	("Clearance", ("Post-clearance", "Field Clearance", "KPA Paid", "CFS Paid")),
 	("Delivery", ("In Delivery", "Containers Returned", "Completed")),
 ]
 

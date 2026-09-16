@@ -9,7 +9,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	DEPARTMENT_NAME_ALIASES,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-	SEA_IMPORT_TEMPLATE,
 	is_sea_import_task,
 	sql_task_flow_key_in,
 )
@@ -17,7 +16,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 # Payment kinds (Task Role stamps from CGM Task Template Item) the access rules use.
 PAYMENT_KIND_UCR = "UCR"
 PAYMENT_KIND_SHIPPING_LINE = "Shipping Line"
-PAYMENT_KIND_KPA = "KPA"
+# Supervisor charges: KPA port charges (FCL), CFS charges (LCL).
+SUPERVISOR_CHARGE_PAYMENT_KINDS = ("KPA", "CFS")
 # Application and Finance Payment steps of these kinds may read each other.
 LINKED_PAYMENT_KINDS = (PAYMENT_KIND_UCR, PAYMENT_KIND_SHIPPING_LINE)
 
@@ -49,10 +49,17 @@ def normalize_department_stem(raw) -> str:
 
 @frappe.request_cache
 def _sea_template_rows() -> tuple[dict, ...]:
-	"""Sea Import template rows: department plus the Task Role stamps of each step."""
+	"""Sea import template rows (FCL and LCL): department plus the Task Role stamps of each step."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		SEA_IMPORT_TEMPLATES,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import load_sea_task_template
 
-	return tuple(load_sea_task_template())
+	rows: list[dict] = []
+	for template in SEA_IMPORT_TEMPLATES:
+		if frappe.db.exists("CGM Task Template", template):
+			rows.extend(load_sea_task_template(template))
+	return tuple(rows)
 
 
 def _template_departments(matches) -> frozenset[str]:
@@ -188,12 +195,12 @@ def user_has_field_operations_department_access(user: str | None = None) -> bool
 
 @frappe.request_cache
 def operations_department_stems() -> frozenset[str]:
-	"""Department stems for KPA / supervisor application steps (from sea task template)."""
+	"""Department stems for KPA / CFS supervisor application steps (from sea task templates)."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import ROLE_APPLICATION
 
 	return _template_departments(
 		lambda row: row.get("task_role") == ROLE_APPLICATION
-		and row.get("payment_kind") == PAYMENT_KIND_KPA
+		and row.get("payment_kind") in SUPERVISOR_CHARGE_PAYMENT_KINDS
 	)
 
 
@@ -635,7 +642,7 @@ def _build_linked_sea_task_sql(stems: set[str]) -> str | None:
 	A department that owns one side of a link rule also sees the other side, when
 	the project has both steps. Matched on Task Role stamps, not step numbers.
 	"""
-	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="lk.custom_task_flow_key")
+	flow_in = sql_task_flow_key_in(column="lk.custom_task_flow_key")
 	# (show the finance side?, show the application side?)
 	sees_finance = bool(stems & _linked_application_department_stems())
 	sees_application = bool(stems & _linked_finance_department_stems())
@@ -752,7 +759,7 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	stems = visibility_department_stems_for_user(user)
 
 	assign_token = frappe.db.escape(f'"{user}"')
-	sea_flow = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE)
+	sea_flow = sql_task_flow_key_in()
 	# Also restrict by clearance department stem so a wrong/blank flow key cannot leak tasks.
 	clearance_dept = _build_department_sql_conditions(
 		set(get_sea_task_template_department_stems())

@@ -106,9 +106,12 @@ Nobody creates these by hand. The moment a Project is created, the task engine r
 | Shipment Type | Template | Tasks created |
 |---------------|----------|---------------|
 | Sea Import | Sea Import Workflow | 23 |
+| Sea Import, Cargo Type LCL | Sea Import LCL Workflow | 20 |
 | Air Import | Air Import Workflow | 16 |
 | Sea Transit | Sea Transit Import Workflow | 15 |
 | Road Transit Import | Road Transit Inbound Workflow | 11 |
+
+**Sea Import LCL** clears the same way, then pays **CFS charges** instead of KPA and delivers to the client (no containers) - see [Shipment Modes](shipment-modes.md). It is chosen by the shipment's **Cargo Type**, so set Cargo Type to **LCL** before the Project is created.
 
 **Sea Transit** uses a shorter clearance chart (no UCR, permits, client inspection, or Manifest Requested): Draft → Documents Received → Line Paid & DO Lodged → Entry Lodged → Entry Paid → Field Clearance → Post-clearance → KPA Paid → In Delivery → Completed.
 

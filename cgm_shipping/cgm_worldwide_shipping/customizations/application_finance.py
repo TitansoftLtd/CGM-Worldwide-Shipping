@@ -12,6 +12,9 @@ import frappe
 from frappe.utils import cint, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CFS_INVOICE_TO_FINANCE,
+	CFS_RECEIPT_FOR_SUPERVISOR,
+	CFS_RECEIPT_VERIFY_FINANCE,
 	ENTRY_INVOICE_TO_FINANCE,
 	ENTRY_RECEIPT_FOR_DECLARANT,
 	ENTRY_RECEIPT_VERIFY_FINANCE,
@@ -145,6 +148,25 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		notification_receipt_declarant=KPA_RECEIPT_FOR_SUPERVISOR,
 		notification_receipt_verify=KPA_RECEIPT_VERIFY_FINANCE,
 		application_submitted_field="custom_kpa_invoice_submitted",
+		application_invoice_verified_field=None,
+		application_receipt_verified_field=None,
+		sync_to_idf_record=False,
+		legacy_certificate_codes=frozenset(),
+	),
+	# LCL imports pay the container freight station instead of KPA; same shape as KPA.
+	"CFS Application": ApplicationFinanceProfile(
+		key="cfs",
+		application_requirement_type="CFS Application",
+		finance_payment_kind="CFS",
+		payment_item="CFS",
+		invoice_label="CFS Invoice",
+		receipt_label="CFS Receipt",
+		certificate_document_code="",
+		gate_rule="CFS Finance Complete",
+		notification_invoice=CFS_INVOICE_TO_FINANCE,
+		notification_receipt_declarant=CFS_RECEIPT_FOR_SUPERVISOR,
+		notification_receipt_verify=CFS_RECEIPT_VERIFY_FINANCE,
+		application_submitted_field="custom_cfs_invoice_submitted",
 		application_invoice_verified_field=None,
 		application_receipt_verified_field=None,
 		sync_to_idf_record=False,

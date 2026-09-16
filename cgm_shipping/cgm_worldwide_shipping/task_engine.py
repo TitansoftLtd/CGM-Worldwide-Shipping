@@ -26,7 +26,9 @@ def create_project_tasks(project_name: str) -> list[str]:
 		)
 		return []
 
-	template_name = _resolve_template(shipment_type_name)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import get_project_cargo_type
+
+	template_name = _resolve_template(shipment_type_name, get_project_cargo_type(project))
 
 	if not template_name:
 		# A log line alone made this invisible: the project simply had no tasks and
@@ -57,13 +59,14 @@ def create_project_tasks(project_name: str) -> list[str]:
 	return created
 
 
-def _resolve_template(shipment_type_name: str) -> str | None:
+def _resolve_template(shipment_type_name: str, cargo_type: str | None = None) -> str | None:
 	"""
 	Find the CGM Task Template for a shipment type.
 	Priority:
-	1. task_template Link field on Shipment Type (preferred)
-	2. Legacy task_flow_key mapping
-	3. None — no tasks created, no error
+	1. Task Template by Cargo Type row matching the project's cargo type
+	2. task_template Link field on Shipment Type
+	3. Legacy task_flow_key mapping
+	4. None — no tasks created, no error
 
 	Uses shipment.py helpers so missing optional columns never break Start Shipment.
 	"""
@@ -75,7 +78,7 @@ def _resolve_template(shipment_type_name: str) -> str | None:
 		LEGACY_FLOW_KEY_TO_TEMPLATE,
 	)
 
-	template = get_task_template_for_shipment_type(shipment_type_name)
+	template = get_task_template_for_shipment_type(shipment_type_name, cargo_type)
 	if template:
 		return template
 

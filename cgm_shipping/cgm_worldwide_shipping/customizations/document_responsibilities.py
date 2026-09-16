@@ -26,6 +26,7 @@ FLOW_UCR = "UCR"
 FLOW_ENTRY = "Entry Slip"
 FLOW_SHIPPING_LINE = "Shipping Line"
 FLOW_KPA = "KPA"
+FLOW_CFS = "CFS"
 FLOW_CLEARANCE_DOCUMENT = "Clearance Document"
 
 ROLE_GROUP_FINANCE = "Finance"
@@ -128,6 +129,16 @@ DEFAULT_DOCUMENT_RESPONSIBILITIES: tuple[tuple[str, str, str, str], ...] = (
 	(FLOW_KPA, ACTION_UPLOAD_RECEIPT, ROLE_GROUP_FINANCE, ""),
 	(FLOW_KPA, ACTION_MAKE_PAYMENT, ROLE_GROUP_FINANCE, ""),
 	(FLOW_KPA, ACTION_CONFIRM_CLIENT_PAID, ROLE_GROUP_FINANCE, ""),
+	(
+		FLOW_CFS,
+		ACTION_UPLOAD_INVOICE,
+		ROLE_GROUP_OPERATIONS,
+		"Operations supervisor attaches CFS charges invoice",
+	),
+	(FLOW_CFS, ACTION_VERIFY_INVOICE, ROLE_GROUP_FINANCE, ""),
+	(FLOW_CFS, ACTION_UPLOAD_RECEIPT, ROLE_GROUP_FINANCE, ""),
+	(FLOW_CFS, ACTION_MAKE_PAYMENT, ROLE_GROUP_FINANCE, ""),
+	(FLOW_CFS, ACTION_CONFIRM_CLIENT_PAID, ROLE_GROUP_FINANCE, ""),
 	(FLOW_CLEARANCE_DOCUMENT, ACTION_UPLOAD_DOCUMENT, ROLE_GROUP_DECLARATION, "Default owner for clearance docs"),
 	(
 		FLOW_CLEARANCE_DOCUMENT,
@@ -600,6 +611,7 @@ def flow_for_task(task) -> str | None:
 			"ENTRY_SLIP": FLOW_ENTRY,
 			"Shipping Line": FLOW_SHIPPING_LINE,
 			"KPA": FLOW_KPA,
+			"CFS": FLOW_CFS,
 		}.get(behaviour.payment_kind)
 		if flow:
 			return flow
@@ -619,6 +631,8 @@ def flow_for_profile(profile) -> str:
 		"shipping_line": FLOW_SHIPPING_LINE,
 		"KPA": FLOW_KPA,
 		"kpa": FLOW_KPA,
+		"CFS": FLOW_CFS,
+		"cfs": FLOW_CFS,
 		"Permit": FLOW_PERMIT,
 	}
 	return mapping.get(kind, FLOW_CLEARANCE_DOCUMENT)
@@ -638,7 +652,7 @@ def throw_unless_responsibility(flow: str, action: str, *, label: str | None = N
 def responsibility_flags_for_user(user: str | None = None) -> dict[str, bool]:
 	"""Flat flags for Task form JS (derived from Settings matrix)."""
 	user = user or frappe.session.user
-	money_flows = (FLOW_PERMIT, FLOW_UCR, FLOW_ENTRY, FLOW_SHIPPING_LINE, FLOW_KPA)
+	money_flows = (FLOW_PERMIT, FLOW_UCR, FLOW_ENTRY, FLOW_SHIPPING_LINE, FLOW_KPA, FLOW_CFS)
 	return {
 		"can_make_payment": any(
 			user_has_responsibility(f, ACTION_MAKE_PAYMENT, user) for f in money_flows

@@ -192,8 +192,8 @@ def load_cgm_task_template_items(template_name: str) -> list[dict]:
 	return out
 
 
-def load_sea_task_template() -> list[dict]:
-	"""Return sea import tasks from CGM Task Template master.
+def load_sea_task_template(template_name: str | None = None) -> list[dict]:
+	"""Return a sea import plan's tasks (Sea Import unless *template_name* names the LCL plan).
 
 	Keeps ``sequence_no``: template rows are not contiguous (steps get removed in
 	the browser), so callers must key on the stored number rather than the row's
@@ -203,4 +203,4 @@ def load_sea_task_template() -> list[dict]:
 		SEA_IMPORT_TEMPLATE,
 	)
 
-	return load_cgm_task_template_items(SEA_IMPORT_TEMPLATE)
+	return load_cgm_task_template_items(template_name or SEA_IMPORT_TEMPLATE)

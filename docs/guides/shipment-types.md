@@ -9,6 +9,7 @@ For the full task-plan tables across all eight modes, see [Shipment Modes](shipm
 | Type | Task template | Covered here |
 |------|---------------|--------------|
 | Sea Import | Sea Import Workflow | The rest of the documentation |
+| Sea Import, Cargo Type LCL | Sea Import LCL Workflow | [Shipment Modes](shipment-modes.md) |
 | Air Import | Air Import Workflow | [Air freight declaration](declaration-customs.md#air-freight-declaration) |
 | Air Export | Air Export Workflow | Below |
 | Sea Transit | Sea Transit Import Workflow | Below |

@@ -14,6 +14,9 @@ from __future__ import annotations
 import frappe
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CFS_INVOICE_TO_FINANCE,
+	CFS_RECEIPT_FOR_SUPERVISOR,
+	CFS_RECEIPT_VERIFY_FINANCE,
 	CONTAINER_DEPOSIT_REFUND_REMINDER,
 	DAILY_STATUS_RAG_ALERT,
 	ENTRY_INVOICE_TO_FINANCE,
@@ -37,6 +40,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilitie
 	ACTION_UPLOAD_POP,
 	ACTION_UPLOAD_RECEIPT,
 	DEFAULT_ROLE_GROUPS,
+	FLOW_CFS,
 	FLOW_ENTRY,
 	FLOW_KPA,
 	FLOW_PERMIT,
@@ -242,6 +246,7 @@ def sea_task_notification_definitions() -> list[dict]:
 		or _roles(ROLE_GROUP_FINANCE, ROLE_GROUP_DOCUMENTATION)
 	)
 	kpa_receipt_roles = _roles_for_actions((FLOW_KPA, ACTION_UPLOAD_RECEIPT)) or finance
+	cfs_receipt_roles = _roles_for_actions((FLOW_CFS, ACTION_UPLOAD_RECEIPT)) or finance
 
 	permit_list = (
 		"{% if doc.get('custom_task_permits') %}"
@@ -425,6 +430,37 @@ def sea_task_notification_definitions() -> list[dict]:
 			roles=finance,
 		),
 		_def(
+			CFS_INVOICE_TO_FINANCE,
+			subject=f"CFS charges invoice ready - please verify and pay - {_SHIPMENT}",
+			message=_task_message(
+				"A <b>CFS Invoice</b> is ready for Finance to verify and pay.",
+				"Verify the invoice attachment on the invoice row.",
+				"Use <b>Make Payment</b> (Journal Entry), or tick <b>Client will pay</b> "
+				"on the invoice row.",
+			),
+			roles=finance,
+		),
+		_def(
+			CFS_RECEIPT_FOR_SUPERVISOR,
+			subject=f"Attach CFS payment receipt - {_SHIPMENT}",
+			message=_task_message(
+				"Finance has recorded the CFS charges payment (Journal Entry).",
+				"Attach the <b>CFS Receipt</b> on the receipt row when it is issued.",
+				note="Finance verifies the receipt after you attach it.",
+			),
+			roles=cfs_receipt_roles,
+		),
+		_def(
+			CFS_RECEIPT_VERIFY_FINANCE,
+			subject=f"Verify CFS payment receipt - {_SHIPMENT}",
+			message=_task_message(
+				"A <b>CFS Receipt</b> was attached and needs Finance verification.",
+				"Check the receipt against the Journal Entry.",
+				"Tick <b>Verified by Finance</b> on the receipt row.",
+			),
+			roles=finance,
+		),
+		_def(
 			SEA_TASK_YOUR_TURN_FINANCE,
 			subject=f"Your turn: {{{{ doc.subject }}}} - {_SHIPMENT}",
 			message=_task_message(
@@ -575,10 +611,12 @@ def _resolved_roles(spec: dict) -> list[str]:
 	return []
 
 
-def ensure_sea_task_notifications(*, sync_message: bool = False) -> int:
+def ensure_sea_task_notifications(*, sync_message: bool = False, only: tuple[str, ...] | None = None) -> int:
 	"""Seed missing sea Task Notifications only. Never overwrites Desk edits.
 
-	``sync_message`` is ignored (kept for call-site compatibility). Returns count created.
+	``only`` limits the seed to those Notification names - a patch adding one flow
+	must not bring back notifications a site deleted. ``sync_message`` is ignored
+	(kept for call-site compatibility). Returns count created.
 	"""
 	if not frappe.db.exists("DocType", "Notification"):
 		return 0
@@ -586,6 +624,8 @@ def ensure_sea_task_notifications(*, sync_message: bool = False) -> int:
 	created = 0
 	for spec in sea_task_notification_definitions():
 		name = spec["name"]
+		if only is not None and name not in only:
+			continue
 		# Skip Daily Status if DocType missing on site.
 		if spec["document_type"] != "Task" and not frappe.db.exists("DocType", spec["document_type"]):
 			continue
@@ -611,6 +651,8 @@ def ensure_sea_task_notifications(*, sync_message: bool = False) -> int:
 		created += 1
 
 	# Keep Settings event → Notification map filled for Desk routing.
+	if only is not None:
+		return created
 	try:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_notifications import (
 			ensure_workflow_notification_settings,

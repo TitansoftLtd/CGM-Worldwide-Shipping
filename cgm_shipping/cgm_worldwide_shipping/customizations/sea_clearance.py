@@ -35,9 +35,22 @@ def get_tracking_workflow_states() -> list[str]:
 	return get_sea_import_workflow_states()
 
 
-def sea_task_count() -> int:
-	"""Number of steps in the configured sea import task template."""
-	return len(load_sea_task_template())
+def sea_task_count(template_name: str | None = None) -> int:
+	"""Number of steps in a sea import task template (Sea Import by default)."""
+	return len(load_sea_task_template(template_name))
+
+
+def sea_import_template_for_project(project) -> str:
+	"""The project's sea import plan - FCL or LCL - or Sea Import when it has none yet."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_template,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_workflow_template_name,
+	)
+
+	template = get_workflow_template_name(project)
+	return template if is_sea_import_template(template) else SEA_IMPORT_TEMPLATE
 
 
 def is_sea_payment_task(task) -> bool:
@@ -315,7 +328,7 @@ def get_incomplete_sea_tasks(
 		ucr_invoice_ready,
 	)
 
-	flow_in = sql_task_flow_key_in(SEA_IMPORT_TEMPLATE, column="custom_task_flow_key")
+	flow_in = sql_task_flow_key_in(column="custom_task_flow_key")
 	rows = frappe.db.sql(
 		f"""
 		SELECT name, subject, custom_sequence_no AS seq, status,
@@ -465,7 +478,7 @@ def enforce_sea_tasks_exist(project: str) -> None:
 		"Task",
 		{"project": project, "custom_task_flow_key": task_flow_key_in_filter()},
 	):
-		total = sea_task_count()
+		total = sea_task_count(sea_import_template_for_project(project))
 		frappe.throw(
 			"Generate the <b>Sea Task Plan</b> on this Project first "
 			f"({total} ordered steps)."
@@ -476,7 +489,7 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 	"""Block workflow advance until prior sea tasks in the chart are Completed."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import get_gate_for_state
 
-	gate_row = get_gate_for_state(new_status)
+	gate_row = get_gate_for_state(new_status, project)
 	if not gate_row:
 		return
 
@@ -541,12 +554,18 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 		enforce_entry_finance_gate(project)
 		return
 
-	if gate_rule == "KPA Finance Complete":
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import all_profiles
+
+	# KPA Finance Complete, CFS Finance Complete: the charge's finance task is done.
+	paid_profile = next(
+		(p for p in all_profiles() if gate_rule != "Standard" and p.gate_rule == gate_rule), None
+	)
+	if paid_profile:
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_application_finance import (
-			enforce_kpa_finance_gate,
+			enforce_application_finance_gate,
 		)
 
-		enforce_kpa_finance_gate(project)
+		enforce_application_finance_gate(project, paid_profile, new_status)
 		return
 
 	if gate_rule == "All Sea Tasks Complete":
@@ -568,12 +587,13 @@ def enforce_workflow_task_gate(project: str, new_status: str) -> None:
 def get_sea_closure_blockers(project: str) -> list[str]:
 	"""Return human-readable blockers when the sea chart is not fully complete."""
 	blockers: list[str] = []
-	flow_filter = task_flow_key_in_filter()
+	template = sea_import_template_for_project(project)
+	flow_filter = task_flow_key_in_filter(template)
 	if not frappe.db.exists(
 		"Task", {"project": project, "custom_task_flow_key": flow_filter}
 	):
 		return ["Sea Task Plan not generated on this Project"]
-	total = sea_task_count()
+	total = sea_task_count(template)
 	created = frappe.db.count(
 		"Task", {"project": project, "custom_task_flow_key": flow_filter}
 	)
@@ -585,7 +605,7 @@ def get_sea_closure_blockers(project: str) -> list[str]:
 	# Every task up to the last step, transport included. The row count is not the
 	# last step: removed steps leave gaps (Sea Import ends at 25 with 23 rows).
 	last_step = max(
-		(int(row.get("sequence_no") or 0) for row in load_sea_task_template()), default=total
+		(int(row.get("sequence_no") or 0) for row in load_sea_task_template(template)), default=total
 	)
 	incomplete = get_incomplete_sea_tasks(project, last_step + 1, parallel_transport=False)
 	if incomplete:

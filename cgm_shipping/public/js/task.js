@@ -176,9 +176,10 @@ frappe.ui.form.on("Task", {
 					apply_app_finance_application_intro(frm, frm._cgm_shipping_line_declarant_status, "shipping_line");
 					intro_set = true;
 				}
-			} else if (ui.is_kpa_application) {
-				if (frm._cgm_kpa_declarant_status_loaded && frm._cgm_kpa_declarant_status) {
-					apply_app_finance_application_intro(frm, frm._cgm_kpa_declarant_status, "kpa");
+			} else if (ui.charge_application) {
+				const key = ui.charge_application;
+				if (frm[`_cgm_${key}_declarant_status_loaded`] && frm[`_cgm_${key}_declarant_status`]) {
+					apply_app_finance_application_intro(frm, frm[`_cgm_${key}_declarant_status`], key);
 					intro_set = true;
 				}
 			} else if (ui.is_ucr_finance) {
@@ -238,19 +239,22 @@ frappe.ui.form.on("Task", {
 								"<b>5</b> Finance verifies the receipt - then this task completes."
 						);
 				intro_set = true;
-			} else if (ui.is_kpa_finance) {
+			} else if (ui.charge_finance) {
+				const charge = CGM_APP_FINANCE_PROFILES[ui.charge_finance].label;
 				intro = form_has_client_paid_invoice_line(frm)
 					? __(
 							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
 								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional) · " +
-								"<b>3</b> Attach <b>KPA Receipt</b> · <b>4</b> Verify the receipt. " +
-								"Task completes only after the receipt is verified."
+								"<b>3</b> Attach <b>{0} Receipt</b> · <b>4</b> Verify the receipt. " +
+								"Task completes only after the receipt is verified.",
+							[charge]
 						)
 					: __(
-							"<b>1 Finance:</b> Verify <b>KPA Invoice</b> · " +
+							"<b>1 Finance:</b> Verify <b>{0} Invoice</b> · " +
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row) · " +
-								"<b>3</b> Attach <b>KPA Receipt</b> · <b>4</b> Verify the receipt. " +
-								"Task completes only after the receipt is verified."
+								"<b>3</b> Attach <b>{0} Receipt</b> · <b>4</b> Verify the receipt. " +
+								"Task completes only after the receipt is verified.",
+							[charge]
 						);
 				intro_set = true;
 			} else if (ui.is_document_checkpoint) {
@@ -293,10 +297,10 @@ frappe.ui.form.on("Task", {
 			}
 		}
 
-		if (ui.is_kpa_application && frm.doc.project) {
-			ensure_app_finance_lines_on_form(frm, "kpa");
-			if (!frm._cgm_kpa_declarant_status_loaded) {
-				load_app_finance_declarant_status(frm, "kpa");
+		if (ui.charge_application && frm.doc.project) {
+			ensure_app_finance_lines_on_form(frm, ui.charge_application);
+			if (!frm[`_cgm_${ui.charge_application}_declarant_status_loaded`]) {
+				load_app_finance_declarant_status(frm, ui.charge_application);
 			}
 		}
 
@@ -317,9 +321,9 @@ frappe.ui.form.on("Task", {
 			ensure_app_finance_task_completed_on_form(frm, "shipping_line");
 		}
 
-		if (ui.is_kpa_finance && frm.doc.status !== "Completed") {
-			sync_app_finance_receipt_on_form(frm, "kpa");
-			ensure_app_finance_task_completed_on_form(frm, "kpa");
+		if (ui.charge_finance && frm.doc.status !== "Completed") {
+			sync_app_finance_receipt_on_form(frm, ui.charge_finance);
+			ensure_app_finance_task_completed_on_form(frm, ui.charge_finance);
 		}
 
 	if (ui.show_permits && is_permit_finance_step(frm) && frm.doc.project) {
@@ -503,8 +507,17 @@ function is_shipping_line_finance_step(frm) {
 
 const CGM_APP_FINANCE_PROFILES = {
 	shipping_line: { payment_kind: "Shipping Line", upload_role: __("Documentation") },
-	kpa: { payment_kind: "KPA", upload_role: __("Supervisor") },
+	kpa: { payment_kind: "KPA", upload_role: __("Supervisor"), label: "KPA" },
+	cfs: { payment_kind: "CFS", upload_role: __("Supervisor"), label: "CFS" },
 };
+
+// Charges a supervisor obtains and Finance pays: KPA port charges (FCL), CFS charges (LCL).
+// Same flow - invoice on the application task, receipt on the finance task.
+const CGM_CHARGE_PROFILE_KEYS = ["kpa", "cfs"];
+
+function charge_profile_for_kind(kind) {
+	return CGM_CHARGE_PROFILE_KEYS.find((key) => CGM_APP_FINANCE_PROFILES[key].payment_kind === kind) || null;
+}
 
 function is_app_finance_application_step(frm, seq, profileKey) {
 	const profile = CGM_APP_FINANCE_PROFILES[profileKey];
@@ -516,12 +529,12 @@ function is_app_finance_finance_step(frm, seq, profileKey) {
 	return Boolean(profile) && role_payment_match(frm, "Finance Payment", profile.payment_kind);
 }
 
-function is_kpa_application_step(frm) {
-	return is_app_finance_application_step(frm, null, "kpa");
+function charge_application_profile(frm) {
+	return CGM_CHARGE_PROFILE_KEYS.find((key) => is_app_finance_application_step(frm, null, key)) || null;
 }
 
-function is_kpa_finance_step(frm) {
-	return is_app_finance_finance_step(frm, null, "kpa");
+function charge_finance_profile(frm) {
+	return CGM_CHARGE_PROFILE_KEYS.find((key) => is_app_finance_finance_step(frm, null, key)) || null;
 }
 
 function is_permit_application_step(frm) {
@@ -656,8 +669,9 @@ function ui_from_task_role(frm) {
 		is_entry_finance: is_fin && kind === "ENTRY_SLIP",
 		is_shipping_line_application: is_app && kind === "Shipping Line",
 		is_shipping_line_finance: is_fin && kind === "Shipping Line",
-		is_kpa_application: is_app && kind === "KPA",
-		is_kpa_finance: is_fin && kind === "KPA",
+		// Profile key ("kpa" / "cfs") of a supervisor charge step, else null.
+		charge_application: is_app ? charge_profile_for_kind(kind) : null,
+		charge_finance: is_fin ? charge_profile_for_kind(kind) : null,
 		is_permit_application: is_permit_app,
 		is_permit_finance: is_permit_fin,
 		is_pre_clearance_permit: is_permit_app && stage === "Pre-clearance",
@@ -1126,7 +1140,7 @@ function is_app_finance_payment_step(frm, ui) {
 		ui.is_ucr_finance ||
 			ui.is_entry_finance ||
 			ui.is_shipping_line_finance ||
-			ui.is_kpa_finance
+			ui.charge_finance
 	);
 }
 
@@ -1264,12 +1278,12 @@ function configure_finance_line_grid(frm, ui) {
 		is_ucr_application_step(frm, seq) ||
 		is_entry_application_step(frm, seq) ||
 		is_shipping_line_application_step(frm, seq) ||
-		is_kpa_application_step(frm, seq);
+		Boolean(charge_application_profile(frm));
 	const is_fin_step =
 		is_ucr_finance_step(frm, seq) ||
 		is_entry_finance_step(frm, seq) ||
 		is_shipping_line_finance_step(frm, seq) ||
-		is_kpa_finance_step(frm, seq);
+		Boolean(charge_finance_profile(frm));
 
 	// Set docfield properties directly - avoid toggle_enable() which re-renders the grid
 	// and can collapse the toolbar while the user clicks action buttons.
@@ -1363,11 +1377,13 @@ function reset_cgm_task_sea_ui_state_if_needed(frm) {
 	frm._cgm_shipping_line_finance_container_grid_ready = false;
 	frm._cgm_toolbar_fingerprint = null;
 	frm._cgm_shipping_line_finance_lines_ensured = false;
-	frm._cgm_kpa_finance_lines_ensured = false;
+	CGM_CHARGE_PROFILE_KEYS.forEach((key) => {
+		frm[`_cgm_${key}_finance_lines_ensured`] = false;
+		frm[`_cgm_${key}_finance_ensure_done`] = false;
+	});
 	frm._cgm_ucr_finance_ensure_done = false;
 	frm._cgm_entry_finance_ensure_done = false;
 	frm._cgm_shipping_line_finance_ensure_done = false;
-	frm._cgm_kpa_finance_ensure_done = false;
 	frm._cgm_finance_department = CGM_SEA_UI_SEQUENCES_CACHE?.finance_department;
 	if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config) {
 		load_cgm_sea_ui_sequences(frm);
@@ -1465,7 +1481,7 @@ function cgm_task_toolbar_fingerprint(frm) {
 		ui.is_shipping_line_application ? 1 : 0,
 		ui.is_ucr_finance ? 1 : 0,
 		ui.is_entry_finance ? 1 : 0,
-		ui.is_kpa_finance ? 1 : 0,
+		ui.charge_finance || 0,
 		inv?.verified ? 1 : 0,
 		inv?.attachment ? 1 : 0,
 		rec?.verified ? 1 : 0,
@@ -1500,7 +1516,9 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		frm._cgm_ucr_finance_ensure_done = false;
 		frm._cgm_entry_finance_ensure_done = false;
 		frm._cgm_shipping_line_finance_ensure_done = false;
-		frm._cgm_kpa_finance_ensure_done = false;
+		CGM_CHARGE_PROFILE_KEYS.forEach((key) => {
+			frm[`_cgm_${key}_finance_ensure_done`] = false;
+		});
 	}
 
 	const ui = get_sea_task_ui(frm);
@@ -1570,20 +1588,25 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		}
 	}
 
-	if (ui.is_kpa_finance && frm.doc.status !== "Completed") {
+	if (ui.charge_finance && frm.doc.status !== "Completed") {
+		const charge_key = ui.charge_finance;
 		if (user_can_make_payment(frm) || user_can_verify_invoice(frm)) {
 			unverified_invoice_lines_on_form(frm).forEach((inv) => {
 				add_cgm_toolbar_button(
 					frm,
 					__("Verify {0}", [finance_line_display_label(inv)]),
-					() => verify_app_finance_line(frm, "kpa", "Invoice", inv.name)
+					() => verify_app_finance_line(frm, charge_key, "Invoice", inv.name)
 				);
 			});
 			const rec = unverified_receipt_line_on_form(frm);
 			if (rec) {
-				add_cgm_toolbar_button(frm, __("Verify KPA Receipt"), () => {
-					verify_app_finance_line(frm, "kpa", "Receipt", rec.name);
-				});
+				add_cgm_toolbar_button(
+					frm,
+					__("Verify {0} Receipt", [CGM_APP_FINANCE_PROFILES[charge_key].label]),
+					() => {
+						verify_app_finance_line(frm, charge_key, "Receipt", rec.name);
+					}
+				);
 			}
 		}
 	}
@@ -1676,7 +1699,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		ui.is_ucr_application ||
 		ui.is_entry_application ||
 		ui.is_shipping_line_application ||
-		ui.is_kpa_application;
+		ui.charge_application;
 	if (is_app_finance_application && frm.doc.status !== "Cancelled") {
 		const has_primary_invoice = get_invoice_finance_lines(frm).some(
 			(r) => r.attachment && !cint(r.is_amendment)
@@ -1746,7 +1769,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		(ui.is_ucr_finance ||
 			ui.is_entry_finance ||
 			ui.is_shipping_line_finance ||
-			ui.is_kpa_finance) &&
+			ui.charge_finance) &&
 		app_finance_unpaid_lines.length > 0;
 
 	if (
@@ -1828,7 +1851,7 @@ function reset_cgm_task_async_state(frm) {
 		"_cgm_declarant_status",
 		"_cgm_entry_declarant_status",
 		"_cgm_shipping_line_declarant_status",
-		"_cgm_kpa_declarant_status",
+		...CGM_CHARGE_PROFILE_KEYS.map((key) => `_cgm_${key}_declarant_status`),
 	].forEach((key) => {
 		frm[key] = null;
 		frm[`${key}_loading`] = false;
@@ -1842,7 +1865,7 @@ function reset_cgm_task_async_state(frm) {
 		"_cgm_finance_complete_checking",
 		"_cgm_finance_lines_ensuring",
 		"_cgm_finance_permit_rows_ensuring",
-		"_cgm_kpa_finance_ensure_done",
+		...CGM_CHARGE_PROFILE_KEYS.map((key) => `_cgm_${key}_finance_ensure_done`),
 		"_cgm_permit_finance_complete_checking",
 		"_cgm_permit_finance_reopen_checking",
 		"_cgm_shipping_line_finance_ensure_done",
@@ -1852,7 +1875,7 @@ function reset_cgm_task_async_state(frm) {
 		frm[key] = false;
 	});
 	// Application↔finance profiles build their flag names at runtime.
-	["entry", "shipping_line", "kpa"].forEach((profile) => {
+	["entry", "shipping_line", ...CGM_CHARGE_PROFILE_KEYS].forEach((profile) => {
 		frm[`_cgm_${profile}_finance_lines_ensuring`] = false;
 		frm[`_cgm_${profile}_finance_lines_ensured`] = false;
 		frm[`_cgm_${profile}_finance_complete_checking`] = false;
@@ -1936,7 +1959,7 @@ function configure_ucr_finance_fields(frm, ui) {
 		ui.is_ucr_finance ||
 		ui.is_entry_finance ||
 		ui.is_shipping_line_finance ||
-		ui.is_kpa_finance ||
+		ui.charge_finance ||
 		ui.show_finance_lines
 	) {
 		hide_ucr_legacy_fields(frm);
@@ -2275,12 +2298,12 @@ frappe.ui.form.on("Task Finance Line", {
 			is_ucr_application_step(frm, seq) ||
 			is_entry_application_step(frm, seq) ||
 			is_shipping_line_application_step(frm, seq) ||
-			is_kpa_application_step(frm, seq);
+			Boolean(charge_application_profile(frm));
 		const is_fin =
 			is_ucr_finance_step(frm, seq) ||
 			is_entry_finance_step(frm, seq) ||
 			is_shipping_line_finance_step(frm, seq) ||
-			is_kpa_finance_step(frm, seq);
+			Boolean(charge_finance_profile(frm));
 		let attachment_editable = null;
 		let verified_editable = null;
 		if (is_app && (row.line_type === "Receipt" || row.line_type === "POP")) {
@@ -2288,10 +2311,10 @@ frappe.ui.form.on("Task Finance Line", {
 				attachment_editable = user_can_upload_receipt(frm);
 				verified_editable = false;
 			} else if (
-				(is_entry_application_step(frm, seq) || is_kpa_application_step(frm, seq)) &&
+				(is_entry_application_step(frm, seq) || charge_application_profile(frm)) &&
 				row.line_type === "Receipt"
 			) {
-				// Entry / KPA receipts are uploaded on the Finance payment task.
+				// Entry / KPA / CFS receipts are uploaded on the Finance payment task.
 				attachment_editable = false;
 				verified_editable = false;
 			} else if (user_may_attach_receipt_on_application(frm, row)) {
@@ -2337,7 +2360,7 @@ frappe.ui.form.on("Task Finance Line", {
 			is_ucr_application_step(frm) ||
 			is_entry_application_step(frm) ||
 			is_shipping_line_application_step(frm) ||
-			is_kpa_application_step(frm)
+			charge_application_profile(frm)
 		)) {
 			if (is_shipping_line_application_step(frm) && row.line_type === "Receipt") {
 				// Documentation attaches receipt here after POP is mirrored from Finance.
@@ -2353,11 +2376,12 @@ frappe.ui.form.on("Task Finance Line", {
 					frappe.model.set_value(cdt, cdn, "attachment", "");
 				}
 				return;
-			} else if (is_kpa_application_step(frm) && row.line_type === "Receipt") {
+			} else if (charge_application_profile(frm) && row.line_type === "Receipt") {
 				frappe.show_alert({
 					message: __(
-						"Attach and verify the <b>KPA Receipt</b> on the paired Finance payment task " +
-							"(Finance role)."
+						"Attach and verify the <b>{0} Receipt</b> on the paired Finance payment task " +
+							"(Finance role).",
+						[CGM_APP_FINANCE_PROFILES[charge_application_profile(frm)].label]
 					),
 					indicator: "orange",
 				});
@@ -2392,7 +2416,7 @@ frappe.ui.form.on("Task Finance Line", {
 			is_ucr_finance_step(frm) ||
 			is_entry_finance_step(frm) ||
 			is_shipping_line_finance_step(frm) ||
-			is_kpa_finance_step(frm);
+			Boolean(charge_finance_profile(frm));
 		if (is_ucr_application_step(frm) && row.attachment) {
 			if (row.line_type === "Invoice") {
 				frappe.show_alert({
@@ -2422,10 +2446,12 @@ frappe.ui.form.on("Task Finance Line", {
 				});
 			}
 		}
-		if (is_kpa_application_step(frm) && row.attachment) {
+		if (charge_application_profile(frm) && row.attachment) {
 			if (row.line_type === "Invoice") {
 				frappe.show_alert({
-					message: __("KPA invoice saved - Finance will be notified when you save."),
+					message: __("{0} invoice saved - Finance will be notified when you save.", [
+						CGM_APP_FINANCE_PROFILES[charge_application_profile(frm)].label,
+					]),
 					indicator: "green",
 				});
 			}
@@ -2536,11 +2562,11 @@ frappe.ui.form.on("Task Finance Line", {
 			}
 			return;
 		}
-		if (is_kpa_application_step(frm)) {
+		if (charge_application_profile(frm)) {
 			frappe.show_alert({
-				message: __(
-					"Finance verifies the KPA invoice on the Finance pays KPA Invoice task."
-				),
+				message: __("Finance verifies the {0} invoice on the paired Finance payment task.", [
+					CGM_APP_FINANCE_PROFILES[charge_application_profile(frm)].label,
+				]),
 				indicator: "orange",
 			});
 			const inv = get_finance_line(frm, "Invoice");
@@ -2563,8 +2589,8 @@ frappe.ui.form.on("Task Finance Line", {
 			if (is_shipping_line_finance_step(frm)) {
 				ensure_app_finance_task_completed_on_form(frm, "shipping_line");
 			}
-			if (is_kpa_finance_step(frm)) {
-				ensure_app_finance_task_completed_on_form(frm, "kpa");
+			if (charge_finance_profile(frm)) {
+				ensure_app_finance_task_completed_on_form(frm, charge_finance_profile(frm));
 			}
 		});
 	},
@@ -3256,7 +3282,7 @@ function is_client_paid_application_step(frm) {
 		is_ucr_application_step(frm, seq) ||
 		is_entry_application_step(frm, seq) ||
 		is_app_finance_application_step(frm, seq, "shipping_line") ||
-		is_app_finance_application_step(frm, seq, "kpa") ||
+		Boolean(charge_application_profile(frm)) ||
 		is_permit_application_step(frm, seq)
 	);
 }
@@ -3276,7 +3302,7 @@ function set_client_paid_fields_hidden(frm, hidden) {
 }
 
 function configure_client_paid_field(frm, ui) {
-	// App-finance (UCR / Entry / SL / KPA): Client will pay lives on each Invoice row.
+	// App-finance (UCR / Entry / SL / KPA / CFS): Client will pay lives on each Invoice row.
 	// Permit finance still uses the task-level checkbox (plus per-permit row flags).
 	ui = ui || get_sea_task_ui(frm);
 	if (is_app_finance_payment_step(frm, ui)) {
@@ -3288,7 +3314,7 @@ function configure_client_paid_field(frm, ui) {
 		ui.is_ucr_application ||
 		ui.is_entry_application ||
 		ui.is_shipping_line_application ||
-		ui.is_kpa_application
+		ui.charge_application
 	) {
 		set_client_paid_fields_hidden(frm, 1);
 		return;
@@ -3323,9 +3349,7 @@ function configure_client_paid_field(frm, ui) {
 		const editable =
 			finance_step && user_can_confirm_client_paid(frm) && frm.doc.status !== "Completed";
 		frm.set_df_property("custom_client_paid_directly", "read_only", editable ? 0 : 1);
-		const receiptOptional = Boolean(
-			ui.is_kpa_finance || ui.is_kpa_application
-		);
+		const receiptOptional = Boolean(ui.charge_finance || ui.charge_application);
 		frm.set_df_property(
 			"custom_client_paid_directly",
 			"description",
@@ -3437,8 +3461,8 @@ function configure_entry_arrival_mirror_grid(frm) {
 }
 
 function application_status_for_client_paid(frm, ui) {
-	if (ui.is_kpa_application) {
-		return frm._cgm_kpa_declarant_status;
+	if (ui.charge_application) {
+		return frm[`_cgm_${ui.charge_application}_declarant_status`];
 	}
 	if (ui.is_shipping_line_application) {
 		return frm._cgm_shipping_line_declarant_status;
@@ -3453,13 +3477,13 @@ function application_status_for_client_paid(frm, ui) {
 }
 
 function client_paid_application_needs_mark_complete(frm, ui) {
-	/** KPA (no certificate) needs an explicit Mark Completed after client-paid.
+	/** KPA / CFS (no certificate) need an explicit Mark Completed after client-paid.
 	 * Shipping Line waits for Finance receipt verify — no early Mark Completed.
 	 */
 	if (frm.doc.status === "Completed" || frm.doc.status === "Cancelled") {
 		return false;
 	}
-	if (!ui.is_kpa_application) {
+	if (!ui.charge_application) {
 		return false;
 	}
 	const status = application_status_for_client_paid(frm, ui) || {};
@@ -3635,7 +3659,7 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 				return;
 			}
 		} else if (rec?.attachment && !cint(rec.verified)) {
-			// KPA: receipt required when present on the row; settlement is per invoice line.
+			// KPA / CFS: receipt required when present on the row; settlement is per invoice line.
 			return;
 		}
 	}

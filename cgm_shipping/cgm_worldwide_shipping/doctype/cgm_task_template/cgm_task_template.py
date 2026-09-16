@@ -267,7 +267,7 @@ class CGMTaskTemplate(Document):
 		edit should not be held up by it.
 		"""
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-			SEA_IMPORT_TEMPLATE,
+			is_sea_import_template,
 		)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
 			task_subjects_by_sequence,
@@ -299,7 +299,7 @@ class CGMTaskTemplate(Document):
 				indicator="orange",
 			)
 
-		if self.template_name == SEA_IMPORT_TEMPLATE and states:
+		if is_sea_import_template(self.template_name) and states:
 			from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 				get_sea_import_workflow_states,
 			)
