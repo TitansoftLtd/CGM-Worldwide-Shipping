@@ -89,7 +89,7 @@ Grouped by what they are for. Row counts are from this site, and show what is ge
 
 | DocType | Notes |
 |---------|-------|
-| **CGM Shipping Settings** | Single. Package visibility, notification routing, clearance charge defaults |
+| **CGM Shipping Settings** | Single. Role groups and document responsibilities, notification routing, shipment status documents, package visibility, clearance charge defaults |
 | **CGM Task Template** (9) | The task plans - one per shipment type (Sea Import has an LCL plan too), each with its Shipment Status Gates. See [Operations](operations.md#where-the-tasks-come-from) |
 | **Portal Feedback** (8) | Ratings from both portals |
 | **Additional Salary Tool** | Single. Payroll helper |

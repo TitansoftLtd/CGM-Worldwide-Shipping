@@ -22,10 +22,12 @@ For the **Finance** team: task payments, quotation approval, sales invoice appro
 |-----|------|--------------|
 | 4 | Finance pays UCR | UCR |
 | 6 | Finance pays Pre-Clearance Permits | Permit |
-| 11 | Finance Pays Entry Slip | Entry |
-| 13 | Finance pays Shipping Line Charges | Shipping Line |
+| 11 | Finance pays Shipping Line Charges | Shipping Line |
+| 13 | Finance Pays Entry Slip | Entry Slip |
 | 16 | Finance pays for Post-Clearance Permits | Permit |
 | 19 | Finance pays KPA Invoice | KPA |
+
+**LCL shipments** (Sea Import with Cargo Type LCL) run the same pairs at their own step numbers and pay **CFS charges** instead of KPA: Finance Pays CFS charges (17). See [Shipment Modes](shipment-modes.md).
 
 ### Standard payment subflow
 
@@ -55,8 +57,9 @@ Each payment kind has its own round trip, and all of them are seeded as ERPNext 
 | | `CGM Task - Shipping Line Invoice to Finance` | Finance |
 | | `CGM Task - Permit Invoices to Finance` | Finance |
 | | `CGM Task - KPA Invoice to Finance` | Finance |
-| Paid, receipt needed | `CGM Task - UCR Receipt for Declarant`, and the Entry, Shipping Line, Permit and KPA equivalents | Whoever attaches the receipt |
-| Receipt attached, needs checking | `CGM Task - UCR Receipt Verify Finance`, and the same four equivalents | Finance |
+| | `CGM Task - CFS Invoice to Finance` (LCL) | Finance |
+| Paid, receipt needed | `CGM Task - UCR Receipt for Declarant`, and the Entry, Shipping Line, Permit, KPA and CFS equivalents | Whoever attaches the receipt |
+| Receipt attached, needs checking | `CGM Task - UCR Receipt Verify Finance`, and the same five equivalents | Finance |
 
 There is also a generic **`CGM Task - Finance Payment Action`**, and a **Your Turn** notification per department - see the [Operations Guide](operations.md).
 
@@ -163,7 +166,11 @@ Cost categories are mapped in **CGM Shipping Settings → Finance Cost Category 
 
 ## Journal Entry from tasks
 
-Tasks may expose **Create Journal Entry** actions when finance lines are ready. The JE inherits the source task for ledger sync.
+**Make Payment** on a finance task creates the Journal Entry as a **draft**, so Finance can check it before it reaches the ledger. The JE carries its source task for ledger sync.
+
+**Submitting it:** an unsubmitted JE shows on the task under **Actions → Submit Journal Entry - <permit or charge>**, one entry per row, for users who may submit Journal Entries. Confirm, and the entry posts. The task completes on its own once its last payment is posted; a permit finance task stays Open while any of its entries is still a draft.
+
+Drafts left unsubmitted mean the payment is not in the ledger, and they hold their task open, so clear them as they arise.
 
 ---
 
