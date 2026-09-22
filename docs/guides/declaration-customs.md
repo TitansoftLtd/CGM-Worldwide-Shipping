@@ -29,6 +29,10 @@ Finance pays on tasks **4, 6, 11, 16**. You upload invoices (and certificates); 
 
 ---
 
+Entries lodged against shipments, each with its customs entry number:
+
+![The Customs Entry list, showing entry numbers against their projects](../images/customs-entry-list.png)
+
 ## UCR workflow (tasks 3–4)
 
 ```
@@ -75,6 +79,10 @@ Port arrival / ATA is confirmed separately on the **Project** (Actions → Confi
 **Customs Entry** doctype: submittable, unique `entry_number`, tax child table.
 
 ---
+
+The entry record itself, linked to the shipment it clears:
+
+![A Customs Entry form, showing the entry number and the project it belongs to](../images/customs-entry-form.png)
 
 ## The declaration run, start to finish
 

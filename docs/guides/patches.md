@@ -17,6 +17,11 @@ Reference this document **before** creating any new patch.
 
 ---
 
+Frappe records every patch it has run, per site. This list is what "has it already run here?"
+means in the checks below:
+
+![The Patch Log list, showing executed patches with their timestamps](../images/patch-log-list.png)
+
 ## When to create a patch
 
 | Situation | Use a patch? | Prefer instead |

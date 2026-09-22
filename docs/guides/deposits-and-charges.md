@@ -26,6 +26,10 @@ On the **Bill of Lading**, in the **FCL / Containers** section:
 
 Everything else on the deposit follows from those.
 
+The deposit arrangement lives on the Bill of Lading:
+
+![A Bill of Lading, showing the container deposit fields and the containers on the B/L](../images/bill-of-lading-form.png)
+
 ### Who pays it
 
 On the **Finance pays Shipping Line Charges** task, Finance picks one of three buttons under **Actions**, and only while the payer is still blank:

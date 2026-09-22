@@ -18,6 +18,10 @@ For the full task-plan tables across all eight modes, see [Shipment Modes](shipm
 
 ---
 
+The eight shipment types, each linked to the task template and tracker mode it uses:
+
+![The Shipment Type list, showing the eight configured modes](../images/shipment-type-list.png)
+
 ## Air Export
 
 The shipment is going out, so the airline is chosen before anything else can be numbered - the air waybill only exists once the booking does.

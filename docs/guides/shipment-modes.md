@@ -46,6 +46,14 @@ Do not invent task subjects. Plans below match the seeded templates in `task_tem
 Pick the type **before** you build the document pack. Changing mode after Project creation does not rebuild the task plan.
 :::
 
+A template is the plan: the ordered task list a Project is built from.
+
+![A CGM Task Template, showing the ordered task rows with their departments and roles](../images/task-template-form.png)
+
+**1** The task rows are the plan, in order, each with the department and role that owns it.
+Editing a template changes future shipments and syncs open tasks on existing ones. It does not
+reopen work that is already complete.
+
 ## 3. Features - Mode summary
 
 | Shipment Type | CGM Task Template | Tracker Mode | Tasks |

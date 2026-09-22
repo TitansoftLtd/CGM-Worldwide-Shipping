@@ -30,6 +30,14 @@ The **CGM Shipping** workspace is the whole custom surface in one place - the sh
 
 ---
 
+Most of what the app decides - workflow gates, department roles, required documents, accrual
+accounts - is configuration rather than code, and it lives in one place:
+
+![CGM Shipping Settings, showing the configuration tabs](../images/cgm-shipping-settings.png)
+
+Change behaviour here before reaching for a code change. The tabs across the top group the
+settings by area, and each table is read at runtime rather than baked into the app.
+
 ## Custom DocTypes
 
 Grouped by what they are for. Row counts are from this site, and show what is genuinely in use versus built but not yet adopted.

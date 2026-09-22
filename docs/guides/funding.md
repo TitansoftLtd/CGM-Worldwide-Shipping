@@ -79,6 +79,15 @@ Material Request (Submit)
 Use **Funding Request Report** and **Material Request Funding** reports to see what is unfunded, on a request, or disbursed.
 :::
 
+A funding request gathers the Material Requests it is paying for:
+
+![A Funding Request, showing the Material Request rows with requested amounts and decisions](../images/funding-request-form.png)
+
+**1** Each row carries its own **decision** and **approved amount**, so a request can be
+part-approved without rejecting the whole batch. The Material Requests it draws from:
+
+![The Material Request list, showing requests by type and status](../images/material-request-list.png)
+
 ## 4. Features - guards and settings
 
 | Guard / setting | Effect |
