@@ -2047,7 +2047,9 @@ def create_journal_payment_from_task(
 				break
 		if not permit_row:
 			frappe.throw("Permit row not found on this task.")
-		if permit_row.get("journal_entry"):
+		if permit_row.get("journal_entry") and not journal_entry_is_cancelled(
+			permit_row.get("journal_entry")
+		):
 			frappe.throw(
 				f"A Journal Entry is already linked for <b>{permit_row.permit_type}</b>."
 			)
@@ -2069,7 +2071,9 @@ def create_journal_payment_from_task(
 				break
 		if not finance_line:
 			frappe.throw("Finance invoice line not found on this task.")
-		if finance_line.get("journal_entry"):
+		if finance_line.get("journal_entry") and not journal_entry_is_cancelled(
+			finance_line.get("journal_entry")
+		):
 			frappe.throw(
 				f"A Journal Entry is already linked for <b>{finance_line.line_label or 'invoice'}</b>."
 			)
@@ -2637,6 +2641,101 @@ def purchase_invoice_on_submit(doc, method=None) -> None:
 	_enqueue_finance_job("job_link_pi_to_task", task_name=task_name, purchase_invoice=doc.name)
 
 
+def cancelled_journal_entries_for_task(task) -> list[str]:
+	"""Entries this task links that were cancelled, so the form stops reading them as paid."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		PERMIT_JOURNAL_ENTRY_FIELD,
+		TASK_FINANCE_FIELD,
+		TASK_PERMITS_FIELD,
+	)
+
+	names = {
+		row.get(PERMIT_JOURNAL_ENTRY_FIELD)
+		for field in (TASK_PERMITS_FIELD, TASK_FINANCE_FIELD)
+		for row in task.get(field) or []
+		if row.get(PERMIT_JOURNAL_ENTRY_FIELD)
+	}
+	if task.get("custom_journal_entry"):
+		names.add(task.get("custom_journal_entry"))
+	if not names:
+		return []
+	return frappe.get_all(
+		"Journal Entry",
+		filters={"name": ["in", list(names)], "docstatus": 2},
+		pluck="name",
+	)
+
+
+def journal_entry_is_cancelled(journal_entry: str | None) -> bool:
+	"""True when the entry exists and was cancelled - a cancelled entry is not a payment."""
+	if not journal_entry:
+		return False
+	return cint(frappe.db.get_value("Journal Entry", journal_entry, "docstatus")) == 2
+
+
+def journal_entry_rows_linked_to(journal_entry: str) -> list[tuple[str, str, str, str]]:
+	"""(child doctype, row name, parent doctype, parent) of every row linking this entry."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		PERMIT_JOURNAL_ENTRY_FIELD,
+	)
+
+	rows: list[tuple[str, str, str, str]] = []
+	for doctype in ("Permit Register", "Task Finance Line"):
+		if not frappe.db.has_column(doctype, PERMIT_JOURNAL_ENTRY_FIELD):
+			continue
+		for row in frappe.get_all(
+			doctype,
+			filters={PERMIT_JOURNAL_ENTRY_FIELD: journal_entry},
+			fields=["name", "parent", "parenttype"],
+		):
+			rows.append((doctype, row.name, row.parenttype, row.parent))
+	return rows
+
+
+def relink_amended_journal_entry(doc) -> list[str]:
+	"""Move rows off a cancelled entry onto the amendment that replaced it.
+
+	Cancel + Amend gives a new Journal Entry, so the permit row or finance line
+	kept pointing at the cancelled one: the payment read as unpaid and the row
+	offered no way forward (TASK-2026-00441, DVS). The amendment knows the entry
+	it replaces, so it repoints those rows to itself when it is submitted.
+	"""
+	original = doc.get("amended_from")
+	if not original:
+		return []
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+		PERMIT_JOURNAL_ENTRY_FIELD,
+	)
+
+	moved: list[str] = []
+	tasks: set[str] = set()
+	for doctype, row_name, parenttype, parent in journal_entry_rows_linked_to(original):
+		frappe.db.set_value(doctype, row_name, PERMIT_JOURNAL_ENTRY_FIELD, doc.name, update_modified=False)
+		frappe.clear_document_cache(parenttype, parent)
+		moved.append(f"{doctype} {row_name}")
+		if parenttype == "Task":
+			tasks.add(parent)
+	for task_name in frappe.get_all("Task", filters={"custom_journal_entry": original}, pluck="name"):
+		frappe.db.set_value("Task", task_name, "custom_journal_entry", doc.name, update_modified=False)
+		frappe.clear_document_cache("Task", task_name)
+		moved.append(f"Task {task_name}")
+		tasks.add(task_name)
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_permit_finance,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		auto_complete_finance_permit_task,
+	)
+
+	for task_name in tasks:
+		task = frappe.get_doc("Task", task_name)
+		if task_is_permit_finance(task):
+			auto_complete_finance_permit_task(task)
+	return moved
+
+
 def journal_entry_on_submit(doc, method=None):
 	"""Act on the finance task a submitted Journal Entry pays for.
 
@@ -2646,6 +2745,8 @@ def journal_entry_on_submit(doc, method=None):
 	request and is never committed - so the task stayed Open in the list while the
 	form showed Completed.
 	"""
+	relink_amended_journal_entry(doc)
+
 	task_name = doc.get("custom_cgm_source_task")
 	if not task_name or not frappe.db.exists("Task", task_name):
 		return
@@ -2763,8 +2864,36 @@ def submit_task_journal_entry(task_name: str, journal_entry: str) -> dict:
 
 
 def journal_entry_on_cancel(doc, method=None):
-	"""Journal Entry cancel — finance cost ledger refresh handled in finance_cost_ledger hook."""
-	return
+	"""A cancelled entry is no longer a payment, so its task goes back to work.
+
+	The row keeps the link: it is the audit trail, it is how the amendment finds
+	the row again (relink_amended_journal_entry), and Make Payment offers itself
+	again while the linked entry is cancelled. Finance cost ledger refresh is
+	handled by its own hook.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_permit_finance,
+	)
+
+	tasks = {
+		parent
+		for _doctype, _row, parenttype, parent in journal_entry_rows_linked_to(doc.name)
+		if parenttype == "Task"
+	}
+	source_task = doc.get("custom_cgm_source_task")
+	if source_task:
+		tasks.add(source_task)
+	for task_name in tasks:
+		if not frappe.db.exists("Task", task_name):
+			continue
+		task = frappe.get_doc("Task", task_name)
+		if not task_is_permit_finance(task):
+			continue
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			reopen_permit_finance_if_pending_work,
+		)
+
+		reopen_permit_finance_if_pending_work(task)
 
 
 def link_purchase_invoice_to_task_enhanced(
@@ -3253,6 +3382,7 @@ def _prepare_task_for_form(doc) -> None:
 
 	finalize_task_status_for_form(doc)
 	doc.set_onload("cgm_draft_journal_entries", draft_journal_entries_for_task(doc))
+	doc.set_onload("cgm_cancelled_journal_entries", cancelled_journal_entries_for_task(doc))
 
 
 def preserve_completed_status_against_stale_save(doc) -> None:

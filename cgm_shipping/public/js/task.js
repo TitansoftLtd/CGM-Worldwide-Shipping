@@ -558,13 +558,28 @@ function permit_finance_rows_on_form(frm) {
 	);
 }
 
+// A cancelled Journal Entry is not a payment: the row is payable again, and the
+// amendment repoints the row to itself when it is submitted (task.py).
+function journal_entry_cancelled(frm, journal_entry) {
+	if (!journal_entry) {
+		return false;
+	}
+	return (frm.doc.__onload?.cgm_cancelled_journal_entries || []).includes(journal_entry);
+}
+
+function row_journal_entry_paid(frm, row) {
+	return Boolean(row?.journal_entry) && !journal_entry_cancelled(frm, row.journal_entry);
+}
+
 function permit_rows_all_have_journal_entry(frm) {
 	const rows = permit_finance_rows_on_form(frm);
 	return (
 		rows.length > 0 &&
 		rows.every(
 			(r) =>
-				r.journal_entry || cint(r.client_reported_paid) || cint(r.client_paid_directly)
+				row_journal_entry_paid(frm, r) ||
+				cint(r.client_reported_paid) ||
+				cint(r.client_paid_directly)
 		)
 	);
 }
@@ -1157,7 +1172,7 @@ function invoice_line_settled_on_form(row, frm) {
 	if (!row || !row.attachment) {
 		return false;
 	}
-	if (row.journal_entry) {
+	if (row_journal_entry_paid(frm, row)) {
 		return true;
 	}
 	if (cint(row.client_paid_directly) || cint(row.client_reported_paid)) {
@@ -1490,6 +1505,7 @@ function cgm_task_toolbar_fingerprint(frm) {
 		user_can_make_payment(frm) ? 1 : 0,
 		user_can_verify_invoice(frm) ? 1 : 0,
 		(frm.doc.__onload?.cgm_draft_journal_entries || []).map((je) => je.journal_entry).join(","),
+		(frm.doc.__onload?.cgm_cancelled_journal_entries || []).join(","),
 	].join("|");
 }
 
@@ -3861,9 +3877,9 @@ function show_permit_finance_journal_entry_view_buttons(frm) {
 		if (!row.journal_entry) {
 			return;
 		}
-		const label = cint(row.is_amendment)
-			? __("{0} (amendment)", [row.permit_type])
-			: row.permit_type;
+		const label = `${cint(row.is_amendment) ? __("{0} (amendment)", [row.permit_type]) : row.permit_type}${
+			journal_entry_cancelled(frm, row.journal_entry) ? __(" (cancelled)") : ""
+		}`;
 		add_cgm_view_button(frm, __("View Journal Entry - {0}", [label]), () => {
 			frappe.set_route("Form", "Journal Entry", row.journal_entry);
 		});
@@ -3872,7 +3888,11 @@ function show_permit_finance_journal_entry_view_buttons(frm) {
 
 function setup_permit_finance_make_payment_buttons(frm) {
 	permit_finance_rows_on_form(frm).forEach((row) => {
-		if (row.journal_entry || cint(row.client_reported_paid) || cint(row.client_paid_directly)) {
+		if (
+			row_journal_entry_paid(frm, row) ||
+			cint(row.client_reported_paid) ||
+			cint(row.client_paid_directly)
+		) {
 			return;
 		}
 		if (row.payment_invoice && !cint(row.invoice_verified)) {
