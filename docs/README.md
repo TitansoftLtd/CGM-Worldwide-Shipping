@@ -2,6 +2,8 @@
 
 Welcome to the CGM Worldwide Shipping documentation. This wiki covers freight forwarding and customs clearance on ERPNext (Frappe 16).
 
+![The CGM Shipping workspace in Desk](images/cgm-workspace.png)
+
 ## Who should read what?
 
 | Guide | Audience | Topics |

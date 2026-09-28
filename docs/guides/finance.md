@@ -98,6 +98,14 @@ Quotations work differently: the portal lists every quotation raised to that cus
 
 ---
 
+Invoices raised against shipments:
+
+![The Sales Invoice list, showing customer, amount and status for each invoice](../images/sales-invoice-list.png)
+
+Each one carries the Project it bills (**1**), so clearance costs stay attached to the shipment:
+
+![A Sales Invoice linked to a shipment Project](../images/sales-invoice-form.png)
+
 ## Quotation approval
 
 **Workflow:** `CGM Quotation Approval`

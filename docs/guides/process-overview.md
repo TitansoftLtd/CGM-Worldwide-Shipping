@@ -16,6 +16,10 @@ To open the workspace, go to:
 
 > Home > CGM Shipping
 
+The workspace is the way in - every list, report and board the app adds, grouped by area:
+
+![The CGM Shipping workspace, showing shortcuts to shipments, containers, finance and masters](../images/cgm-workspace.png)
+
 ## 1. Prerequisites
 
 Before running a live shipment:

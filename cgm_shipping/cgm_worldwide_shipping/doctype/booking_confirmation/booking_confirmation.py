@@ -70,12 +70,16 @@ class BookingConfirmation(Document):
 		sanitize_booking_linked_opportunity(self)
 		apply_booking_quantity_and_batch(self)
 
+	def on_cancel(self):
+		release_cancelled_booking_links(self)
+
 	def on_update(self):
 		# Keep linked Opportunity in sync while the booking is being filled (before submit).
 		if self.get(OPPORTUNITY_SOURCE_FIELD):
 			sync_opportunity_from_booking(self, allow_draft=True)
 
 	def on_submit(self):
+		take_over_links_from_amended_booking(self)
 		opportunity = sync_opportunity_from_booking(self, allow_draft=False)
 		if opportunity:
 			from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
@@ -83,6 +87,72 @@ class BookingConfirmation(Document):
 			)
 
 			sync_linked_project_from_booking(self, opportunity)
+
+
+BOOKING_LINK_FIELDS = (("Opportunity", "custom_booking_confirmation"), ("Project", "custom_booking_confirmation"))
+
+
+def _booking_link_holders(booking: str) -> list[tuple[str, str, str]]:
+	"""(doctype, name, fieldname) of every Opportunity / Project pointing at this booking."""
+	holders: list[tuple[str, str, str]] = []
+	for doctype, fieldname in BOOKING_LINK_FIELDS:
+		if not frappe.db.has_column(doctype, fieldname):
+			continue
+		for name in frappe.get_all(doctype, filters={fieldname: booking}, pluck="name"):
+			holders.append((doctype, name, fieldname))
+	return holders
+
+
+def newest_submitted_amendment(booking: str) -> str | None:
+	"""The live booking that replaced this one, following the amend chain."""
+	seen: set[str] = set()
+	current = booking
+	while current and current not in seen:
+		seen.add(current)
+		nxt = frappe.get_all(
+			"Booking Confirmation",
+			filters={"amended_from": current},
+			fields=["name", "docstatus"],
+			order_by="creation desc",
+			limit=1,
+		)
+		if not nxt:
+			return None
+		current = nxt[0].name
+		if nxt[0].docstatus == 1:
+			return current
+	return None
+
+
+def release_cancelled_booking_links(doc) -> list[str]:
+	"""Take a cancelled booking off the Opportunity and Project that still hold it.
+
+	Frappe refuses to link a cancelled document, so a stale link left the shipment
+	unable to create a Bill of Lading at all: "Cannot link cancelled document"
+	(booking 2X40-7 on CRM-OPP-2026-00031 / PROJ-0028). The amendment takes the
+	link over when there is one; otherwise the field is cleared and the desk offers
+	Add Booking Confirmation again.
+	"""
+	replacement = newest_submitted_amendment(doc.name)
+	changed: list[str] = []
+	for doctype, name, fieldname in _booking_link_holders(doc.name):
+		frappe.db.set_value(doctype, name, fieldname, replacement, update_modified=False)
+		frappe.clear_document_cache(doctype, name)
+		changed.append(f"{doctype} {name}")
+	return changed
+
+
+def take_over_links_from_amended_booking(doc) -> list[str]:
+	"""An amendment inherits the Opportunity / Project links of the booking it replaces."""
+	original = doc.get("amended_from")
+	if not original:
+		return []
+	changed: list[str] = []
+	for doctype, name, fieldname in _booking_link_holders(original):
+		frappe.db.set_value(doctype, name, fieldname, doc.name, update_modified=False)
+		frappe.clear_document_cache(doctype, name)
+		changed.append(f"{doctype} {name}")
+	return changed
 
 
 def is_valid_opportunity_link(opportunity: str | None) -> bool:

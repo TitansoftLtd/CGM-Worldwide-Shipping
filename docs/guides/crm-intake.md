@@ -13,6 +13,14 @@ For **sales** and **customer onboarding**: Lead → Opportunity → Project.
 | Live shipment | **Project** |
 | Transport docs | **Bill of Lading**, **Air Waybill** |
 
+Every deal in the pipeline, with the intake stage each one has reached:
+
+![The Opportunity list, showing each deal's customer, status and opportunity type](../images/opportunity-list.png)
+
+**Status** is the intake stage, not the sales stage. **Ops Intake** means documents are still
+being gathered; **Approved** means the Opportunity has cleared the gate and a Project can be
+started from it.
+
 ---
 
 ## The intake flow
@@ -92,6 +100,23 @@ Qualify the Lead in the normal way, then use **Create > Opportunity** to carry t
 - **Client documents** (`custom_clients_documents`) - Shipment Document child table
 - Transport references: B/L, AWB, container type/qty, vessel, clearance station
 - Consignee, batch, CGM ref fields
+
+The Opportunity form carries all of it. The four-step wizard across the top is the intake
+stage, and the banner under it names the next action:
+
+![An approved Opportunity, with the four intake steps across the top and the shipment intake fields below](../images/opportunity-form.png)
+
+**1** The stage pill and the four steps across the top are the intake state. All four complete
+means the banner reads *Approved. Click **Start Shipment** to create the project.* Before
+approval the same banner names whatever is still missing, so you do not have to know the gate
+rules to see what is blocking you.
+
+**2** **Shipment Type** chooses the task plan the Project is built from - change it here, not
+after the Project exists.
+
+The **Transport Documents** panel on the left shows which documents are attached - here a
+Bill of Lading, with Booking Confirmation still available to add. Fields greyed out on the
+right (vessel, voyage, ports) are synced from that transport document, not typed here.
 
 ### On approval
 

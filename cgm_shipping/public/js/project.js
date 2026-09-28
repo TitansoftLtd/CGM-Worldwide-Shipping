@@ -575,20 +575,22 @@ function open_bill_of_lading_from_project(frm) {
 		localStorage.setItem("cgm_bl_seed_opportunity", opportunity);
 	}
 
-	const seed = {
-		linked_opportunity: opportunity || undefined,
-		booking_confirmation: frm.doc.custom_booking_confirmation || undefined,
-		customer: frm.doc.customer || undefined,
-		shipment_type: frm.doc.custom_shipment_type || undefined,
-		client_refrence_no: frm.doc.custom_client_refrence_no || undefined,
-		cargo_type: frm.doc.custom_cargo_type || undefined,
-		batch_no: frm.doc.custom_batch_no || undefined,
-	};
-
-	frappe.route_options = seed;
-	frappe.model.with_doctype("Bill of Lading", () => {
-		frappe.new_doc("Bill of Lading");
-	});
+	cgm_shipping.transport_reference
+		.usable_booking(frm.doc.custom_booking_confirmation)
+		.then((booking) => {
+			frappe.route_options = {
+				linked_opportunity: opportunity || undefined,
+				booking_confirmation: booking || undefined,
+				customer: frm.doc.customer || undefined,
+				shipment_type: frm.doc.custom_shipment_type || undefined,
+				client_refrence_no: frm.doc.custom_client_refrence_no || undefined,
+				cargo_type: frm.doc.custom_cargo_type || undefined,
+				batch_no: frm.doc.custom_batch_no || undefined,
+			};
+			frappe.model.with_doctype("Bill of Lading", () => {
+				frappe.new_doc("Bill of Lading");
+			});
+		});
 }
 
 function open_booking_confirmation_from_project(frm) {

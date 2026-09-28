@@ -714,11 +714,18 @@ cgm_shipping.opportunity_shipment._open_transport_document = function (frm, doc)
 	}
 
 	const seed = cgm_shipping.opportunity_shipment._build_transport_document_seed(frm, doc);
-	frappe.route_options = seed;
 
-	frappe.model.with_doctype(doc.doctype, () => {
-		frappe.new_doc(doc.doctype);
-	});
+	cgm_shipping.transport_reference
+		.usable_booking(seed.booking_confirmation)
+		.then((booking) => {
+			if (seed.booking_confirmation && !booking) {
+				delete seed.booking_confirmation;
+			}
+			frappe.route_options = seed;
+			frappe.model.with_doctype(doc.doctype, () => {
+				frappe.new_doc(doc.doctype);
+			});
+		});
 };
 
 cgm_shipping.opportunity_shipment._build_awb_route_options = function (frm) {

@@ -1,5 +1,27 @@
 frappe.provide("cgm_shipping.transport_reference");
 
+// Frappe refuses to link a cancelled document, and it checks links before any
+// validate hook runs - so a cancelled booking has to be kept out of the new form
+// rather than cleaned up on save ("Cannot link cancelled document").
+cgm_shipping.transport_reference.usable_booking = function (booking) {
+	if (!booking) {
+		return Promise.resolve(null);
+	}
+	return frappe.db
+		.get_value("Booking Confirmation", booking, "docstatus")
+		.then((r) => {
+			if (parseInt(r?.message?.docstatus, 10) !== 2) {
+				return booking;
+			}
+			frappe.show_alert({
+				message: __("Booking Confirmation {0} was cancelled - not linked.", [booking]),
+				indicator: "orange",
+			});
+			return null;
+		})
+		.catch(() => booking);
+};
+
 cgm_shipping.transport_reference._profiles = null;
 cgm_shipping.transport_reference._load_promise = null;
 

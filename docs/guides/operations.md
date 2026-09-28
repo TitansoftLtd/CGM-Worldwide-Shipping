@@ -16,6 +16,13 @@ For **Operations**, **Documentation**, and **Field Operations** teams managing s
 
 ---
 
+Every live shipment, with the clearance status each one has reached:
+
+![The Project list, showing each shipment's status, CGM reference and arrival dates](../images/project-list.png)
+
+**Status** is the clearance stage - Documents Received, Pre-clearance, Line Paid & DO Lodged,
+Post-clearance, Containers Returned. The green bar is task progress against the plan.
+
 ## How a shipment moves
 
 A shipment lives as one **Project** from the moment sales hand it over until the containers are back. Four things happen, in this order:
@@ -98,6 +105,17 @@ Tasks **1–2** auto-complete when intake documents are verified on the Project.
 
 !!! note "Transport-owned steps"
     Steps 20–25 are Transport. See [Transport & Containers Guide](transport-containers.md).
+
+A single task, opened from the Project:
+
+![A clearance task, showing its department, task role and the Task Documents table with verified rows](../images/task-form.png)
+
+**1** **Department** (and the Task Role under it) is stamped from the CGM Task Template. It
+decides which finance, permit and document controls appear on the form, so it is the field to
+check first when a control you expect is missing.
+
+**2** **Task Documents** is the completion gate: every required row must be attached and
+verified before the task can close.
 
 ### Where the tasks come from
 
