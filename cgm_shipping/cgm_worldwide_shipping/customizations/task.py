@@ -3367,6 +3367,23 @@ def _reconcile_task_on_load(doc) -> None:
 				doc.reload()
 
 
+def task_receipt_required(doc) -> int:
+	"""Does this task still wait for its receipt? (CGM Shipping Settings > Finance receipts)
+
+	The form mirrors the server gate to decide when to ask for auto-completion, so it
+	needs the same answer the server would give.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		profile_for_task,
+		receipt_required,
+	)
+
+	profile = profile_for_task(doc)
+	if not profile:
+		return 1
+	return 1 if receipt_required(doc, profile) else 0
+
+
 def _prepare_task_for_form(doc) -> None:
 	"""Read-only form presentation. Safe for viewers without write access."""
 	if doc.meta.has_field(TASK_DOCUMENTS_FIELD):
@@ -3383,6 +3400,7 @@ def _prepare_task_for_form(doc) -> None:
 	finalize_task_status_for_form(doc)
 	doc.set_onload("cgm_draft_journal_entries", draft_journal_entries_for_task(doc))
 	doc.set_onload("cgm_cancelled_journal_entries", cancelled_journal_entries_for_task(doc))
+	doc.set_onload("cgm_receipt_required", task_receipt_required(doc))
 
 
 def preserve_completed_status_against_stale_save(doc) -> None:

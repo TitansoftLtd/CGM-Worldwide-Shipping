@@ -59,6 +59,9 @@
   "tab_workflow_document_gates",
   "section_workflow_document_gates",
   "custom_workflow_stage_requirements",
+  "tab_finance_receipts",
+  "section_finance_receipts",
+  "custom_finance_receipt_rules",
   "tab_container_tracking",
   "section_container_task_sequences",
   "custom_track_eta_task_seq",
@@ -106,6 +109,22 @@
    "label": "Workflow stage requirements",
    "options": "Workflow Stage Requirement Item",
    "description": "Before a shipment moves to a status, every Document Type with Default Required ticked and a matching Required Stage (for the shipment's mode of transport) must be attached - and verified when Must Be Verified is ticked."
+  },
+  {
+   "fieldname": "tab_finance_receipts",
+   "fieldtype": "Tab Break",
+   "label": "Finance receipts"
+  },
+  {
+   "fieldname": "section_finance_receipts",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "custom_finance_receipt_rules",
+   "fieldtype": "Table",
+   "label": "Finance receipts",
+   "options": "Finance Receipt Rule",
+   "description": "Whether a payment task waits for the receipt. The invoice, the payment and any POP are unaffected - only the receipt, which CGM cannot produce itself. A payment kind with no row here keeps the built-in rule (receipt required)."
   },
   {
    "fieldname": "roles_tab",

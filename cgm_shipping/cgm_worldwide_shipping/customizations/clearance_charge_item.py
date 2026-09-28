@@ -129,10 +129,10 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 		"description": "Customs entry / e-slip invoice.",
 	},
 	{
-		"charge_name": "Entry Slip Receipt",
+		"charge_name": "Entry Slip POP",
 		"line_type": LINE_RECEIPT,
 		"payment_kind": "ENTRY_SLIP",
-		"description": "Receipt after entry taxes are paid.",
+		"description": "Proof of payment for the entry taxes (duty POP).",
 	},
 	{
 		"charge_name": "Shipping Line Invoice",
@@ -182,6 +182,20 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 )
 
 
+def _pair_already_covered(spec: dict) -> bool:
+	"""An active charge already serves this payment kind + line type."""
+	return bool(
+		frappe.db.exists(
+			"Clearance Charge Item",
+			{
+				"payment_kind": spec.get("payment_kind"),
+				"line_type": spec.get("line_type"),
+				"is_active": 1,
+			},
+		)
+	)
+
+
 def ensure_clearance_charge_items(*, sync_descriptions: bool = False) -> int:
 	"""Create missing Clearance Charge Item defaults. Returns count created."""
 	if not frappe.db.exists("DocType", "Clearance Charge Item"):
@@ -199,6 +213,12 @@ def ensure_clearance_charge_items(*, sync_descriptions: bool = False) -> int:
 	for spec in DEFAULT_CLEARANCE_CHARGE_ITEMS:
 		name = (spec.get("charge_name") or "").strip()
 		if not name:
+			continue
+		if not frappe.db.exists("Clearance Charge Item", name) and _pair_already_covered(spec):
+			# Ops renamed this charge in Desk (UCR Receipt -> UCR POP, because that is
+			# what they file). Seeding by name alone put the old name back as a second
+			# active row for the same payment kind, and new lines then carried a label
+			# no one uses. The pair is covered, so leave it alone.
 			continue
 		if frappe.db.exists("Clearance Charge Item", name):
 			updates: dict = {}
@@ -256,11 +276,13 @@ def get_clearance_charge_item(
 	kind = (payment_kind or "").strip()
 	ltype = (line_type or "").strip()
 	if kind and ltype:
+		# Oldest by creation, so a later duplicate cannot take over the pair and an
+		# edit to the one in use cannot flip new rows onto the other one.
 		name = frappe.db.get_value(
 			"Clearance Charge Item",
 			{"payment_kind": kind, "line_type": ltype, "is_active": 1},
 			"name",
-			order_by="modified asc",
+			order_by="creation asc",
 		)
 		if name:
 			return name
