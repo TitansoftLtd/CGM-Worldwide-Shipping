@@ -40,7 +40,21 @@ Each finance task follows the same pattern:
 4. Application and finance Tasks auto-complete when their rules are satisfied → Project status may advance
 ```
 
-**Entry Slip:** Create Entry / Create transit entry (Application) completes only after Finance has verified **and paid** the invoice. Finance Pays Entry Slip completes after payment **and receipt verification**.
+**Entry Slip:** Create Entry / Create transit entry (Application) completes only after Finance has verified **and paid** the invoice. Finance Pays Entry Slip completes after payment, and after the **Entry Slip POP** when Settings still ask for it (below).
+
+**Step 3 is optional per payment kind.** The receipt is the one document CGM cannot produce itself - a client who pays his own entry slip often never sends the proof back, and the shipping line does not always issue a receipt for a payment CGM has already evidenced with its bank POP. **CGM Shipping Settings → Finance receipts** decides, per payment kind, whether a task waits for it:
+
+| Column | Meaning |
+|--------|---------|
+| **Payment Kind** | UCR, ENTRY_SLIP, Shipping Line, KPA or CFS. A kind with no row here waits for the receipt. |
+| **Receipt required when the company pays** | CGM paid, so CGM holds the receipt. On by default, except Shipping Line. |
+| **Receipt required when the client pays** | Off by default everywhere: the proof has to come from the client, and not all of them send one. |
+
+What this never changes: the **invoice** must still be attached and verified, the **payment** must still be recorded, and the **Shipping Line POP** (CGM's own bank advice) is still required. A receipt that *is* attached is still verified before the task closes over it.
+
+**The two documents no longer queue behind each other.** Documentation can attach the Shipping Line Receipt before the POP appears, and the other way round - each arrives when it arrives.
+
+**Naming the row.** Each row is named by its **Clearance Charge Item**, so renaming one in Desk is enough - migrate no longer puts the old name back beside it, and the messages on the task quote whatever the row is actually called. UCR's row reads **UCR POP** and Entry Slip's **Entry Slip POP**, because a proof of payment is what gets filed there.
 
 **Task Finance Line** child table holds line items (UCR, permits, entry slip, shipping line, KPA).
 
@@ -78,6 +92,8 @@ Some fees are settled by the client rather than disbursed by CGM. The flow is th
    - The message tells you what happened, including **Could not email - add a customer contact or portal user** when the customer has no email on file.
 4. **The client pays and reports it.** On the portal they download the invoice, press **I have paid**, and attach the proof - a bank **POP** for shipping line charges, a **receipt** for everything else. Their row then shows **Payment reported** and **Receipt sent** / **POP sent**. See [Customer & Transporter Portal](portals.md).
 5. **Finance checks it.** The uploaded file lands on the receipt (or POP) row of the finance task, and the invoice row shows **Client Reported Paid** with the date. Verify the receipt as normal and the task completes.
+
+**If the client never sends the proof,** the task still completes: on the client-pays path the receipt is not required by default (**CGM Shipping Settings → Finance receipts**). Verifying the invoice and ticking **Client will pay** is enough - nobody has to chase the client to close a paid fee.
 
 **Worth knowing:** the client's actions do not email Finance. Watch the finance task, or the **Client Reported Paid** flag, rather than waiting for a notification.
 

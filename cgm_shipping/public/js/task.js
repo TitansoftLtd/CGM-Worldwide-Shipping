@@ -472,6 +472,10 @@ function get_cgm_permissions(frm) {
 	return get_cgm_sea_seq_config(frm).permissions || {};
 }
 
+function cgm_permissions_loaded(frm) {
+	return Boolean(frm && get_cgm_sea_seq_config(frm).permissions);
+}
+
 // Every check below reads the task's Task Role stamps. The step number means
 // something different on every template, so it decides nothing here.
 function role_payment_match(frm, role, kind) {
@@ -1288,6 +1292,7 @@ function configure_finance_line_grid(frm, ui) {
 	const is_finance = user_can_make_payment(frm);
 	const can_receipt = user_can_upload_receipt(frm);
 	const can_pop = user_can_upload_pop(frm);
+	const can_confirm_client_paid = user_can_confirm_client_paid(frm);
 	const seq = sea_task_sequence(frm);
 	const is_app_step =
 		is_ucr_application_step(frm, seq) ||
@@ -1333,8 +1338,15 @@ function configure_finance_line_grid(frm, ui) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
+		// Read-only here on purpose - the server only accepts the tick on the finance
+		// payment task - so say where it belongs instead of just greying it out.
 		if (grid.get_docfield("client_paid_directly")) {
 			grid.update_docfield_property("client_paid_directly", "read_only", 1);
+			grid.update_docfield_property(
+				"client_paid_directly",
+				"description",
+				__("Finance ticks this on the paired <b>Finance pays</b> task.")
+			);
 		}
 		if (grid.get_docfield("journal_entry")) {
 			grid.update_docfield_property("journal_entry", "read_only", 1);
@@ -1349,11 +1361,13 @@ function configure_finance_line_grid(frm, ui) {
 		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 		// Per-invoice Client will pay (e.g. amendment after company paid the first).
+		// Gated by Confirm Client Paid - the same responsibility the server checks.
+		// Reading Make Payment here locked the tick for people allowed to make it.
 		if (grid.get_docfield("client_paid_directly")) {
 			grid.update_docfield_property(
 				"client_paid_directly",
 				"read_only",
-				is_finance ? 0 : 1
+				can_confirm_client_paid ? 0 : 1
 			);
 		}
 		if (grid.get_docfield("journal_entry")) {
@@ -1361,7 +1375,10 @@ function configure_finance_line_grid(frm, ui) {
 		}
 	}
 
-	frm._cgm_finance_grid_ready = true;
+	// Latch only once the server's permissions are in. They arrive after the first
+	// refresh, and latching early froze the grid on "nobody may touch anything" -
+	// the later refresh found the flag set and left the columns read-only.
+	frm._cgm_finance_grid_ready = cgm_permissions_loaded(frm);
 	if (cgm_shipping.status_field?.attach_grid_formatters) {
 		cgm_shipping.status_field.attach_grid_formatters(
 			grid,
@@ -3037,7 +3054,7 @@ function apply_entry_application_intro(frm, status) {
 	}
 	status = status || {};
 	const invoiceLabel = status.invoice_label || __("Entry Slip Invoice");
-	const receiptLabel = status.receipt_label || __("Entry Slip Receipt");
+	const receiptLabel = status.receipt_label || __("Entry Slip POP");
 	let intro;
 	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
@@ -3643,7 +3660,23 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 				);
 		}
 	}
+	if (status.receipt_required === false && !status.receipt_attached) {
+		intro +=
+			"<br><br>" +
+			__(
+				"<b>{0}:</b> attach it if one is issued. This task does not wait for it " +
+					"(CGM Shipping Settings → Finance receipts).",
+				[receiptLabel]
+			);
+	}
 	set_task_intro(frm, intro);
+}
+
+// CGM Shipping Settings > Finance receipts decides whether a payment task waits for
+// its receipt; the server sends its answer with the form so both agree.
+function receipt_required_on_form(frm) {
+	const flag = frm.doc.__onload?.cgm_receipt_required;
+	return flag === undefined ? true : Boolean(cint(flag));
 }
 
 function ensure_app_finance_task_completed_on_form(frm, profileKey) {
@@ -3662,22 +3695,17 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 	) {
 		return;
 	}
-	if (profileKey === "shipping_line") {
-		const pop = get_finance_line(frm, "POP");
-		const rec = get_finance_line(frm, "Receipt");
-		if (!pop?.attachment || !rec?.attachment || !rec?.verified) {
+	const rec = get_finance_line(frm, "Receipt");
+	if (profileKey === "shipping_line" && !get_finance_line(frm, "POP")?.attachment) {
+		return;
+	}
+	if (receipt_required_on_form(frm)) {
+		if (!rec?.attachment || !cint(rec.verified)) {
 			return;
 		}
-	} else {
-		const rec = get_finance_line(frm, "Receipt");
-		if (profileKey === "entry") {
-			if (!rec?.attachment || !cint(rec.verified)) {
-				return;
-			}
-		} else if (rec?.attachment && !cint(rec.verified)) {
-			// KPA / CFS: receipt required when present on the row; settlement is per invoice line.
-			return;
-		}
+	} else if (rec?.attachment && !cint(rec.verified)) {
+		// An attached receipt is still verified before the task closes over it.
+		return;
 	}
 	frm[checkingKey] = true;
 	const cgm_call_task = frm.doc.name;

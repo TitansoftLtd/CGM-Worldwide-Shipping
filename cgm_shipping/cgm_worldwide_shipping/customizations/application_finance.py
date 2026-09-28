@@ -71,8 +71,9 @@ class ApplicationFinanceProfile:
 	complete_when_finance_settled: bool = False
 	# ENTRY / IDF certificate rows on Clearance Documents are optional for this profile.
 	certificate_document_optional: bool = False
-	# After company payment, Finance must attach + verify the receipt before complete.
-	# Entry Slip follows the same receipt verify gate as UCR / Shipping Line / KPA.
+	# Fallback only: CGM Shipping Settings > Finance receipts decides whether the
+	# receipt gates completion (see receipt_required). This value applies on a site
+	# whose Settings hold no rule for the payment kind yet.
 	requires_receipt_verification: bool = True
 
 
@@ -101,7 +102,8 @@ APPLICATION_FINANCE_PROFILES: dict[str, ApplicationFinanceProfile] = {
 		finance_payment_kind="Entry Slip",
 		payment_item="ENTRY_SLIP",
 		invoice_label="Entry Slip Invoice",
-		receipt_label="Entry Slip Receipt",
+		# What Finance actually files here is the duty proof of payment, not a receipt.
+		receipt_label="Entry Slip POP",
 		certificate_document_code="ENTRY",
 		gate_rule="Entry Finance Complete",
 		notification_invoice=ENTRY_INVOICE_TO_FINANCE,
@@ -633,6 +635,88 @@ def invoice_verified(task, profile: ApplicationFinanceProfile) -> bool:
 def receipt_verified(task, profile: ApplicationFinanceProfile) -> bool:
 	line = get_receipt_line(task, profile)
 	return bool(line and line.attachment and line.verified)
+
+
+FINANCE_RECEIPT_RULES_FIELD = "custom_finance_receipt_rules"
+
+
+def receipt_label_for(task, profile: ApplicationFinanceProfile) -> str:
+	"""What this receipt row is actually called.
+
+	Ops renames these in Desk - every UCR row reads "UCR POP", because a POP is what
+	Finance files - so a message that quoted the built-in name sent people looking
+	for a row that is not on the form.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.clearance_charge_item import (
+		get_charge_item_label,
+		get_clearance_charge_item,
+	)
+
+	row = get_receipt_line(task, profile)
+	label = (row.get("line_label") or "").strip() if row else ""
+	if label:
+		return label
+	charge = get_clearance_charge_item(
+		profile.payment_item, LINE_RECEIPT, fallback_label=profile.receipt_label
+	)
+	return get_charge_item_label(charge, profile.receipt_label) or profile.receipt_label
+
+
+
+def finance_receipt_rules() -> dict[str, dict]:
+	"""Payment kind -> rule row from CGM Shipping Settings > Finance receipts."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
+		get_cgm_shipping_settings,
+	)
+
+	settings = get_cgm_shipping_settings()
+	if not settings:
+		return {}
+	rules: dict[str, dict] = {}
+	for row in settings.get(FINANCE_RECEIPT_RULES_FIELD) or []:
+		kind = (row.get("payment_kind") or "").strip()
+		if kind:
+			rules[kind] = row
+	return rules
+
+
+def task_is_client_paid(task, profile: ApplicationFinanceProfile, finance_task=None) -> bool:
+	"""Client settles this payment: task flag or any invoice row marked Client will pay."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		task_client_paid_directly,
+	)
+
+	for candidate in (task, finance_task):
+		if candidate is None:
+			continue
+		if task_client_paid_directly(candidate) or finance_has_client_paid_invoice_line(
+			candidate, profile
+		):
+			return True
+	return False
+
+
+def receipt_required(task, profile: ApplicationFinanceProfile, finance_task=None) -> bool:
+	"""Must the receipt be attached and verified before these tasks may complete?
+
+	The receipt is the one document CGM cannot produce itself, so it is the one that
+	strands a finished payment: a client who pays his own entry slip often never
+	sends the proof, and the shipping line does not always issue a receipt for a
+	payment CGM has already evidenced with its bank POP. Finance therefore sets this
+	per payment kind, and separately for client-paid and company-paid work, in
+	CGM Shipping Settings > Finance receipts. The POP is not covered here - it is
+	CGM's own bank advice and stays required wherever the profile asks for one.
+	"""
+	rule = finance_receipt_rules().get(profile.payment_item)
+	if rule is None:
+		# Settings not seeded yet (fresh site, patch not run): keep the old behaviour.
+		return profile.requires_receipt_verification
+	field = (
+		"required_when_client_pays"
+		if task_is_client_paid(task, profile, finance_task)
+		else "required_when_company_pays"
+	)
+	return bool(cint(rule.get(field)))
 
 
 def _ensure_line(task, line_type: str, profile: ApplicationFinanceProfile):
@@ -1816,8 +1900,9 @@ def can_complete_application_task(
 	if not invoice_verified_for_application_task(task, profile, finance_task):
 		return False
 
-	# Shipping Line: both tasks complete only after Finance verifies the receipt
-	# (POP visible on Documentation; Documentation attaches receipt; Finance verifies).
+	# Shipping Line: the POP always gates (it is CGM's own bank advice). The receipt
+	# gates only while Settings > Finance receipts asks for it - the line does not
+	# always issue one.
 	if profile.requires_pop:
 		pop_ok = pop_attached(task, profile) or (
 			finance_task is not None and pop_attached(finance_task, profile)
@@ -1827,6 +1912,11 @@ def can_complete_application_task(
 		rec_ok = receipt_verified(task, profile) or (
 			finance_task is not None and receipt_verified(finance_task, profile)
 		)
+		if not receipt_required(task, profile, finance_task):
+			rec_here = receipt_attached(task, profile) or (
+				finance_task is not None and receipt_attached(finance_task, profile)
+			)
+			return not rec_here or rec_ok
 		return bool(rec_ok)
 
 	# Entry Slip: application completes when Finance has verified and settled payment.
@@ -1874,23 +1964,16 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 		else:
 			return False
 
-	# Shipping Line: POP + Documentation receipt + Finance receipt verify.
-	if profile.requires_pop:
-		if not pop_attached(task, profile):
-			return False
-		if not receipt_attached_for_payment_workflow(task, profile):
-			return False
-		if not receipt_verified(task, profile):
-			return False
-		return True
+	# Shipping Line: the POP always gates; the receipt only when Settings ask for it.
+	if profile.requires_pop and not pop_attached(task, profile):
+		return False
 
-	# Receipt required after settlement (all application finance profiles).
-	if profile.requires_receipt_verification:
+	if receipt_required(task, profile):
 		if not receipt_attached_for_payment_workflow(task, profile):
 			return False
-		if not receipt_verified(task, profile):
-			return False
-	return True
+		return receipt_verified(task, profile)
+	# Not required, but one arrived: Finance still checks it before closing over it.
+	return not receipt_attached(task, profile) or receipt_verified(task, profile)
 
 
 def build_application_purchase_invoice_lines(
@@ -2076,37 +2159,15 @@ def enforce_application_finance_line_permissions(
 		if row.line_type != LINE_RECEIPT:
 			continue
 		if profile.requires_pop:
-			# Shipping Line: Documentation attaches receipt (application or finance) after POP.
-			pop_ready = pop_attached(task, profile)
-			if not pop_ready and task.project:
-				fin_name = get_application_finance_task(task.project, profile)
-				if fin_name:
-					pop_ready = pop_attached(frappe.get_doc("Task", fin_name), profile)
-			if task_matches_application(task, profile):
-				if not can_receipt:
-					frappe.throw(
-						f"Only the configured <b>Upload Receipt</b> role group can attach the "
-						f"<b>{profile.receipt_label}</b> "
-						"(CGM Shipping Settings → Document responsibilities)."
-					)
-				if not pop_ready:
-					frappe.throw(
-						f"Wait for Finance/client to attach the <b>{profile.pop_label or 'POP'}</b> "
-						f"before uploading the <b>{profile.receipt_label}</b>."
-					)
-				continue
-			if task_matches_application_finance(task, profile):
-				if not can_receipt:
-					frappe.throw(
-						f"Only the configured <b>Upload Receipt</b> role group can attach the "
-						f"<b>{profile.receipt_label}</b> "
-						"(CGM Shipping Settings → Document responsibilities)."
-					)
-				if not pop_ready:
-					frappe.throw(
-						f"Attach the <b>{profile.pop_label or 'POP'}</b> before uploading the "
-						f"<b>{profile.receipt_label}</b>."
-					)
+			# Shipping Line: Documentation attaches the receipt on either task. It does
+			# not wait for the POP - the line's receipt and CGM's bank advice arrive
+			# independently, and holding one for the other stalled the pair.
+			if not can_receipt and task_matches_application_workflow(task, profile):
+				frappe.throw(
+					f"Only the configured <b>Upload Receipt</b> role group can attach the "
+					f"<b>{profile.receipt_label}</b> "
+					"(CGM Shipping Settings → Document responsibilities)."
+				)
 			continue
 
 		# Non-POP flows: Upload Receipt role (UCR → Declarant) attaches after payment
