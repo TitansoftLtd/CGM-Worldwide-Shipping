@@ -483,8 +483,14 @@ def validate_permit_finance_task_completion(task) -> None:
 def build_permit_row_payload(row) -> dict:
 	"""Fields Declarant owns on the application task (safe to copy → Finance).
 
-	Do not include Finance-owned fields (invoice_verified, journal_entry, receipts).
-	Those must be set only on the finance task, or Verify Invoices never appears.
+	Do not include the Finance-owned *ticks* (invoice_verified, receipt_verified)
+	or journal_entry. Those must be set only on the finance task, or Verify
+	Invoices never appears.
+
+	`payment_receipt` is carried, but the tick is not: declarants collect permit
+	receipts from the issuing body's portal, so the document travels Declarant →
+	Finance, and Finance verifies it there. A receipt Finance uploaded itself is
+	still auto-stamped by stamp_finance_permit_receipts_on_upload.
 	"""
 	return {
 		"permit_type": row.get("permit_type"),
@@ -493,6 +499,7 @@ def build_permit_row_payload(row) -> dict:
 		"stage": row.get("stage") or PRE_CLEARANCE_STAGE,
 		"payment_invoice": row.get("payment_invoice"),
 		"invoice_amount": row.get("invoice_amount"),
+		"payment_receipt": row.get("payment_receipt"),
 		"permit_document": row.get("permit_document"),
 		"status": row.get("status") or "Invoice Submitted",
 		"clearance_phase": row.get("clearance_phase") or "Not Started",
@@ -828,6 +835,11 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 			invoice_changed = (fin_row.get("payment_invoice") or "") != (
 				data.get("payment_invoice") or ""
 			)
+			# A receipt arriving (or being replaced) from the application task is a
+			# different document from whatever Finance last ticked, so the tick goes.
+			receipt_changed = bool(data.get("payment_receipt")) and (
+				fin_row.get("payment_receipt") or ""
+			) != (data.get("payment_receipt") or "")
 			for key, value in data.items():
 				if key == "invoice_verified":
 					continue
@@ -849,6 +861,11 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 					fin_row.receipt_verified = 0
 					changed = True
 				fin_row.status = "Invoice Submitted"
+				changed = True
+			elif receipt_changed and cint(fin_row.get("receipt_verified")):
+				# Receipt swapped without the invoice changing: Finance re-verifies
+				# the new document, but the paid/verified invoice state stands.
+				fin_row.receipt_verified = 0
 				changed = True
 		else:
 			finance_task.append(TASK_PERMITS_FIELD, data)

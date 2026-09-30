@@ -2256,7 +2256,14 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property("invoice_verified", "read_only", 1);
 		grid.update_docfield_property("invoice_verified", "in_list_view", 1);
 		grid.update_docfield_property("payment_receipt", "hidden", !invoices_ready ? 1 : 0);
-		grid.update_docfield_property("payment_receipt", "read_only", 1);
+		// Declarants collect permit receipts from the issuing body's portal, so they
+		// upload them here. Finance still owns the tick: receipt_verified stays
+		// read-only below, and the sync to the finance task never carries it across.
+		grid.update_docfield_property(
+			"payment_receipt",
+			"read_only",
+			user_can_upload_receipt(frm) ? 0 : 1
+		);
 		grid.update_docfield_property("permit_document", "hidden", 0);
 		grid.update_docfield_property("permit_document", "read_only", can_upload_proof ? 0 : 1);
 		grid.update_docfield_property("receipt_verified", "hidden", !invoices_ready ? 1 : 0);
@@ -3669,6 +3676,22 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 				[receiptLabel]
 			);
 	}
+	// Name what is actually holding the task up. Attached-but-unticked rows are the
+	// ones people cannot diagnose from the grid: an optional receipt and a blocking
+	// POP looked the same, so the wait got blamed on the document nobody can obtain.
+	const awaiting = (frm.doc.custom_task_finance_lines || [])
+		.filter(
+			(row) => row.attachment && !cint(row.verified) && !finance_row_is_optional(frm, row)
+		)
+		.map((row) => row.line_label || row.line_type)
+		.filter(Boolean);
+	if (awaiting.length) {
+		intro +=
+			"<br><br>" +
+			__("<b>Waiting on Finance to verify:</b> {0}. The task completes once this is ticked.", [
+				awaiting.join(", "),
+			]);
+	}
 	set_task_intro(frm, intro);
 }
 
@@ -3677,6 +3700,27 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 function receipt_required_on_form(frm) {
 	const flag = frm.doc.__onload?.cgm_receipt_required;
 	return flag === undefined ? true : Boolean(cint(flag));
+}
+
+/* Is this finance row's missing tick harmless - i.e. not holding the task up?
+
+   Only the receipt is ever optional, and only on both counts: CGM Shipping
+   Settings > Finance receipts says this payment kind does not wait for one,
+   AND nobody has attached one. An attached receipt always gates, required or
+   not - "not required" means you need not produce one, not that a document
+   already on the record may go unchecked. That is the same rule
+   ensure_app_finance_task_completed_on_form applies before it completes a task.
+
+   The invoice and the POP always gate; the POP is CGM's own bank advice, so it
+   only exists on flows that require it. */
+function finance_row_is_optional(frm, row) {
+	if ((row?.line_type || "") !== "Receipt") {
+		return false;
+	}
+	if (row.attachment) {
+		return false;
+	}
+	return !receipt_required_on_form(frm);
 }
 
 function ensure_app_finance_task_completed_on_form(frm, profileKey) {
