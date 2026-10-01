@@ -3,7 +3,10 @@
 Rules pinned here:
 
 * The declarant cannot complete a permit application (pre- or post-clearance)
-  until every invoice and every receipt on the paired Finance task is verified.
+  until every invoice on the paired Finance task is verified and every receipt
+  is attached. The receipt is not ticked as a condition: declarants pull it off
+  a third-party portal and cannot force one to exist, so requiring a tick
+  deadlocked the task.
 * Once they have, Finance closes on payment alone - verification is not
   re-checked, and the reopen rule stops reopening for it. A new unpaid
   amendment row still reopens.
@@ -121,7 +124,7 @@ class TestReopenAfterDeclarantCompleted(unittest.TestCase):
 
 
 class TestVerificationGate(unittest.TestCase):
-	"""The declarant cannot complete until every invoice and receipt is verified."""
+	"""The declarant cannot complete until invoices are verified and receipts attached."""
 
 	def _check(self, rows, *, finance="FIN"):
 		app = frappe._dict(name="APP", project="PROJ", custom_sequence_no=5)
@@ -139,14 +142,36 @@ class TestVerificationGate(unittest.TestCase):
 			self._check(rows)
 		self.assertIn("DVS", str(ctx.exception))
 
-	def test_unverified_receipt_blocks(self):
-		rows = [_row(permit_type="NBA", invoice_verified=1, receipt_verified=0)]
+	def test_missing_receipt_blocks(self):
+		rows = [_row(permit_type="NBA", invoice_verified=1)]
 		with self.assertRaises(frappe.ValidationError) as ctx:
 			self._check(rows)
 		self.assertIn("NBA", str(ctx.exception))
 
 	def test_everything_verified_passes(self):
-		self._check([_row(permit_type="DVS", invoice_verified=1, receipt_verified=1)])
+		self._check(
+			[
+				_row(
+					permit_type="DVS",
+					invoice_verified=1,
+					receipt_verified=1,
+					payment_receipt="/r.pdf",
+				)
+			]
+		)
+
+	def test_attached_but_unverified_receipt_passes(self):
+		"""Rule B: an attached receipt is enough, the tick is Finance's own record."""
+		self._check(
+			[
+				_row(
+					permit_type="DVS",
+					invoice_verified=1,
+					receipt_verified=0,
+					payment_receipt="/r.pdf",
+				)
+			]
+		)
 
 	def test_nothing_to_pay_passes(self):
 		self._check([])
@@ -271,3 +296,32 @@ class TestFinanceFindsItsApplication(unittest.TestCase):
 				self.assertEqual(role, "Permit Application")
 				self.assertEqual(project, fin.project)
 				self.assertEqual(stage, fin.custom_permit_stage)
+
+
+class TestHealRunsFullPermitCompletion(unittest.TestCase):
+	"""Opening a ready permit finance task completed it with a bare status write, so
+	receipts stayed unticked and the declarant's task stayed Open (TASK-2026-00951)."""
+
+	def _heal(self, *, permit_finance):
+		from cgm_shipping.cgm_worldwide_shipping.customizations import task as task_mod
+
+		doc = MagicMock(status="Open")
+		doc.is_new.return_value = False
+		with patch.object(task_mod, "_is_sea_task", return_value=True), patch.object(
+			task_mod, "finance_payment_task_ready_to_complete", return_value=True
+		), patch(f"{BEHAVIOUR}.task_is_permit_finance", return_value=permit_finance), patch.object(
+			wf, "complete_finance_permit_workflow", return_value=True
+		) as full, patch.object(wf, "mark_task_completed") as bare:
+			self.assertTrue(task_mod.heal_ready_finance_task_status(doc))
+		self.assertFalse(frappe.flags.get("cgm_healing_finance_status"))
+		return full, bare
+
+	def test_permit_finance_runs_the_completion_hooks(self):
+		full, bare = self._heal(permit_finance=True)
+		full.assert_called_once()
+		bare.assert_not_called()
+
+	def test_other_finance_tasks_keep_the_status_write(self):
+		full, bare = self._heal(permit_finance=False)
+		full.assert_not_called()
+		bare.assert_called_once()

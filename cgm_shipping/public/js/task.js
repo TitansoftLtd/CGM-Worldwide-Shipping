@@ -144,13 +144,29 @@ frappe.ui.form.on("Task", {
 							"Attach <b>Permit Certificate</b> on each row; this task completes when receipts and certificates are in."
 					);
 				} else if (frm.doc.custom_permit_invoices_submitted) {
-					const finLabel = permit_finance_task_label(frm);
+					// The receipt is attached here, on the permit row, not on the finance
+					// task: declarants collect permit receipts from the issuing body's
+					// portal. This used to send them to the finance task for it.
+					const finName = frm.doc.__onload?.cgm_permit_finance_task;
+					const finLink = finName
+						? frappe.utils.get_form_link("Task", finName, true, permit_finance_task_label(frm))
+						: `<b>${permit_finance_task_label(frm)}</b>`;
 					intro = __(
-						"<b>After invoices go to Finance:</b> Finance verifies invoices and pays on <b>{0}</b>. " +
-							"Then upload payment receipts on that finance task (same department that attached the invoices). " +
-							"Attach <b>Permit Certificate</b> on each row; this task completes when receipts and certificates are in. " +
-							"You can still add more permits later - Finance will reopen to verify and pay.",
-						[finLabel]
+						"<b>Invoices are with Finance.</b> They verify and pay on {0}. " +
+							"Attach each <b>Payment Receipt</b> and <b>Permit Certificate</b> on its permit row here - " +
+							"this task completes once they are all in. " +
+							"Adding more permits later reopens Finance to verify and pay them.",
+						[finLink]
+					);
+				} else if (!(frm.doc.custom_task_permits || []).length) {
+					// Empty table and no toolbar button: the completion button only
+					// appears once invoices are submitted, so without this the form
+					// offers no action and no explanation, and the declarant has no
+					// way to know the next move is theirs.
+					intro = __(
+						"<b>No permits added yet.</b> Add them in the <b>Permits (this task)</b> table below " +
+							"and attach each <b>Permit Invoice (for Finance)</b>. Finance is notified " +
+							"automatically, and a <b>Complete</b> button appears once they are all on."
 					);
 				} else {
 					intro = __(
@@ -304,26 +320,28 @@ frappe.ui.form.on("Task", {
 			}
 		}
 
-		if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
-			ensure_ucr_finance_task_completed_on_form(frm);
-		}
-
-		if (ui.is_entry_finance && frm.doc.status !== "Completed") {
-			ensure_entry_finance_task_completed_on_form(frm);
-		}
-
+		// Deliberately NOT calling ensure_*_task_completed_on_form here.
+		//
+		// refresh() runs on every render, so completing from it meant merely opening
+		// a task finished it - the server-side onload guard cannot stop that, because
+		// the browser asks for the completion in a separate request after the form
+		// has already loaded. Users saw tasks they had only looked at turn Completed,
+		// and stopped trusting the status.
+		//
+		// Completion still happens on every real action: the verify/upload handlers
+		// below call it inside frm.save().then(...), and the server completes on any
+		// save that satisfies the gates. Seeding and syncing stay here - they prepare
+		// the form, they do not finish the work.
 		if (ui.is_shipping_line_finance && frm.doc.project) {
 			configure_shipping_line_finance_container_grid(frm);
 		}
 
 		if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
 			ensure_app_finance_lines_on_form(frm, "shipping_line");
-			ensure_app_finance_task_completed_on_form(frm, "shipping_line");
 		}
 
 		if (ui.charge_finance && frm.doc.status !== "Completed") {
 			sync_app_finance_receipt_on_form(frm, ui.charge_finance);
-			ensure_app_finance_task_completed_on_form(frm, ui.charge_finance);
 		}
 
 	if (ui.show_permits && is_permit_finance_step(frm) && frm.doc.project) {
