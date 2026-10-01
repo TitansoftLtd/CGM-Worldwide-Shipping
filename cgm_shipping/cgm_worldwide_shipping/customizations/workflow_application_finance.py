@@ -571,6 +571,10 @@ def auto_complete_task_if_ready(
 ) -> bool:
 	if task.status in ("Completed", "Cancelled"):
 		return False
+	if frappe.flags.get("cgm_task_form_loading"):
+		# Opening a form is a read. Completion waits for a real event: a save
+		# that satisfies the gates, or another task completing into this one.
+		return False
 	if not ready_check(task, profile):
 		return False
 	frappe.flags.cgm_auto_completing_sea_task = True

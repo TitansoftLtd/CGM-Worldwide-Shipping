@@ -768,6 +768,40 @@ def stamp_finance_permit_receipts_on_upload(task) -> bool:
 	return changed
 
 
+def stamp_permit_receipts_on_finance_completion(finance_task) -> int:
+	"""Completing the permit payment task verifies the receipts already attached to it.
+
+	Finance's own gate (permit_finance_row_settled) is invoice verified + payment
+	recorded; the receipt is not part of it. The declarant's gate
+	(validate_permit_rows_verified) demands every receipt verified, and reads the
+	tick off *this* task. So Finance could close legitimately without ever ticking
+	a receipt, and the declarant was then stuck asking for a tick on a finished
+	task that nothing reopens - the deadlock behind "why won't this task complete".
+
+	Finance completing the task is the confirmation: they attached the receipt,
+	raised the payment and signed the task off. That is the same reading as
+	stamp_finance_permit_receipts_on_upload, applied at the other end of the job.
+	Rows with no receipt are untouched - this verifies what is there, it does not
+	invent evidence.
+
+	Returns the number of rows stamped.
+	"""
+	if not is_permit_finance_task_doc(finance_task):
+		return 0
+
+	stamped = 0
+	for row in finance_task.get(TASK_PERMITS_FIELD) or []:
+		if not row.get("payment_receipt") or cint(row.get("receipt_verified")):
+			continue
+		row.receipt_verified = 1
+		if row.name:
+			frappe.db.set_value(
+				"Permit Register", row.name, {"receipt_verified": 1}, update_modified=False
+			)
+		stamped += 1
+	return stamped
+
+
 def handle_finance_permit_receipt_upload(finance_task) -> None:
 	"""After Finance attaches permit receipts: stamp verified + show on application task."""
 	if not is_permit_finance_task_doc(finance_task):
@@ -951,9 +985,33 @@ def finance_permit_row_payloads(task) -> list[dict]:
 
 
 def ensure_finance_permit_rows_saved(finance_task) -> bool:
+	"""Sync the application's permit invoices onto the finance task.
+
+	Retries once on a stale-document conflict. This runs from a whitelisted
+	endpoint the form calls on render, and it saves a Task fetched moments
+	earlier - so two overlapping requests on the same task (opening the finance
+	task from a link on the application task does exactly that) race, and MySQL
+	1020 surfaces to the user as "Deadlock Occurred".
+
+	The work is idempotent, so losing the race is not an error: the other request
+	is applying the same rows. Roll back to the savepoint, re-read, try once more,
+	and if it still conflicts report "nothing changed here" rather than failing the
+	request - the winner has already done it.
+	"""
 	if not is_permit_finance_task_doc(finance_task):
 		return False
-	return sync_permit_invoices_to_finance_task(finance_task, save=True)
+
+	save_point = "cgm_finance_permit_rows"
+	for final_attempt in (False, True):
+		try:
+			frappe.db.savepoint(save_point)
+			return sync_permit_invoices_to_finance_task(finance_task, save=True)
+		except (frappe.QueryDeadlockError, frappe.TimestampMismatchError):
+			frappe.db.rollback(save_point=save_point)
+			if final_attempt:
+				return False
+			finance_task.reload()
+	return False
 
 
 def seed_finance_task_permits_from_project(task) -> None:
@@ -1612,44 +1670,91 @@ def permit_application_client_paid(task) -> bool:
 	return task_client_paid_directly(frappe.get_doc("Task", fin_name))
 
 
-def permit_rows_pending_verification(app_task) -> tuple[list[str], list[str], str | None]:
-	"""Permits on the paired Finance task whose invoice / receipt is not verified.
+def blocked_dialog(title: str, lead: str, items: list[tuple[str, str]]) -> None:
+	"""Raise a consistent "here is what is outstanding" dialog.
 
-	Returns (unverified invoices, unverified receipts, finance task name).
-	Finance's copy of the rows is the source of truth - that is where the ticks
-	are made - so it is read even though this is asked about the application.
+	Frappe sanitises msgprint HTML - `style` and `class` are both stripped - so the
+	brand palette cannot be applied inside the body. What survives is structure
+	(<b>, <ul>, <li>, <a>) plus the title and the indicator colour, and those are
+	what the dialog is built from.
+
+	Indicator is orange, not red: nothing has gone wrong. The task is waiting on a
+	step somebody still has to take, and a red dot on a normal part of the process
+	trains people to ignore red dots.
+	"""
+	body = [f"<p>{lead}</p>", "<ul>"]
+	for label, detail in items:
+		body.append(f"<li><b>{label}</b><br>{detail}</li>")
+	body.append("</ul>")
+	frappe.msgprint(
+		"".join(body),
+		title=title,
+		indicator="orange",
+		raise_exception=frappe.ValidationError,
+	)
+
+
+def permit_rows_pending_verification(app_task) -> tuple[list[str], list[str], str | None]:
+	"""Permits on the paired Finance task still missing an invoice tick or a receipt.
+
+	Returns (unverified invoices, receipts not attached, finance task name).
+	Finance's copy of the rows is the source of truth - that is where the invoice
+	is ticked and where the receipt has to arrive - so it is read even though this
+	is asked about the application.
+
+	The invoice needs Finance's tick. The receipt only needs to exist: Finance has
+	already verified the invoice and made the payment, so a second tick on the
+	receipt confirmed nothing and simply stranded the declarant behind a finished
+	Finance task. `receipt_verified` still exists and Finance may still use it -
+	it just does not gate.
 	"""
 	fin_name = finance_permit_task_for_application(app_task)
 	if not fin_name:
 		return [], [], None
 	rows = permit_finance_rows(frappe.get_doc("Task", fin_name))
-	label = lambda r: r.get("permit_type") or f"row {r.get('idx')}"
+
+	def label(row):
+		return row.get("permit_type") or f"row {row.get('idx')}"
+
 	invoices = [label(r) for r in rows if not cint(r.get("invoice_verified"))]
-	receipts = [label(r) for r in rows if not cint(r.get("receipt_verified"))]
+	receipts = [label(r) for r in rows if not (r.get("payment_receipt") or "").strip()]
 	return invoices, receipts, fin_name
 
 
 def validate_permit_rows_verified(app_task) -> None:
-	"""The declarant cannot complete until every invoice and receipt is verified.
+	"""The declarant cannot complete until Finance has the invoices and receipts.
 
-	Verification is enforced here, at the application, and nowhere after it:
-	once the declarant has completed, Finance closes on payment alone and the
-	reopen rule no longer re-checks verification (permit_finance_rows_needing_work).
+	Two different conditions, deliberately. The invoice needs Finance's tick, so the
+	amount was checked before it was paid. The receipt only needs to be on the
+	finance task: Finance has already verified that invoice and made the payment,
+	so a second tick added no check and left the declarant waiting on a Finance
+	task that had already closed.
 	"""
 	invoices, receipts, fin_name = permit_rows_pending_verification(app_task)
 	if not invoices and not receipts:
 		return
+
 	fin_label = frappe.db.get_value("Task", fin_name, "subject") or fin_name
-	pending = []
+	fin_link = frappe.utils.get_link_to_form("Task", fin_name, fin_label)
+
+	items = []
 	if invoices:
-		pending.append(f"invoice not verified: <b>{', '.join(invoices)}</b>")
+		items.append(
+			(
+				f"Invoice not verified: {', '.join(invoices)}",
+				f"Finance opens {fin_link} and ticks <b>Invoice Verified</b> on those rows.",
+			)
+		)
 	if receipts:
-		pending.append(f"receipt not verified: <b>{', '.join(receipts)}</b>")
-	frappe.throw(
-		f"Every permit invoice and receipt must be verified on <b>{fin_label}</b> "
-		f"before this task can be completed - {'; '.join(pending)}.",
-		title="Verification pending",
-	)
+		items.append(
+			(
+				f"Receipt not attached: {', '.join(receipts)}",
+				f"Attach it on the permit row here. It reaches {fin_link} with that "
+				f"permit's invoice, and this task then completes on its own.",
+			)
+		)
+
+	blocked_dialog("Waiting on Finance", "Still outstanding before this task can complete:", items)
 
 
 def validate_permit_application_can_complete(task) -> None:
@@ -1663,9 +1768,16 @@ def validate_permit_application_can_complete(task) -> None:
 	if permit_application_client_paid(task):
 		payable = payable_permit_rows(task)
 		if payable and not task.get("custom_permit_invoices_submitted"):
-			frappe.throw(
-				"Attach all <b>Local</b> permit invoices and save - Finance is notified "
-				"automatically - before completing this task."
+			blocked_dialog(
+				"Invoices not yet with Finance",
+				"Finance cannot pay what it has not received:",
+				[
+					(
+						"Local permit invoices not submitted",
+						"Attach every Local permit invoice on this task. Finance is "
+						"notified automatically once they are all on.",
+					)
+				],
 			)
 		if payable and not permit_finance_paid_for_application(task):
 			fin_name = finance_permit_task_for_application(task)
@@ -1674,26 +1786,42 @@ def validate_permit_application_can_complete(task) -> None:
 				if fin_name
 				else "Finance permit payment"
 			)
+			fin_link = (
+				frappe.utils.get_link_to_form("Task", fin_name, fin_label) if fin_name else fin_label
+			)
 			frappe.throw(
 				f"Finance must verify invoices, tick <b>Client will pay</b>, and upload the "
-				f"client's receipt on <b>{fin_label}</b> before this task can be completed."
+				f"client's receipt on {fin_link} before this task can be completed."
 			)
 		validate_permit_rows_verified(task)
 		rows = [r for r in (task.get(TASK_PERMITS_FIELD) or []) if r.get("permit_type")]
 		missing_certs = [r.permit_type for r in rows if not r.get("permit_document")]
 		if missing_certs:
-			frappe.throw(
-				"Upload <b>Permit Certificate</b> for each permit. Missing: "
-				f"<b>{', '.join(missing_certs)}</b>."
+			blocked_dialog(
+				"Permit certificates needed",
+				"Every permit needs its issued certificate attached before this task can complete:",
+				[
+					(
+						"Certificate missing: " + ", ".join(missing_certs),
+						"Attach each one on the <b>Permits (this task)</b> table.",
+					)
+				],
 			)
 		return
 
 	payable = payable_permit_rows(task)
 	if payable:
 		if not task.get("custom_permit_invoices_submitted"):
-			frappe.throw(
-				"Attach all <b>Local</b> permit invoices and save - Finance is notified "
-				"automatically - before completing this task."
+			blocked_dialog(
+				"Invoices not yet with Finance",
+				"Finance cannot pay what it has not received:",
+				[
+					(
+						"Local permit invoices not submitted",
+						"Attach every Local permit invoice on this task. Finance is "
+						"notified automatically once they are all on.",
+					)
+				],
 			)
 
 		if not permit_finance_paid_for_application(task):
@@ -1703,13 +1831,25 @@ def validate_permit_application_can_complete(task) -> None:
 				if fin_name
 				else "Finance permit payment"
 			)
-			frappe.throw(
-				f"Finance must record payment on <b>{fin_label}</b> before this task can be completed."
+			fin_link = (
+				frappe.utils.get_link_to_form("Task", fin_name, fin_label) if fin_name else fin_label
+			)
+			blocked_dialog(
+				"Waiting on Finance",
+				"Still outstanding before this task can complete:",
+				[("Payment not recorded", f"Finance records the permit payment on {fin_link}.")],
 			)
 		validate_permit_rows_verified(task)
 	elif not has_all_permit_invoices(task):
-		frappe.throw(
-			"Attach <b>Permit Certificate</b> on every <b>Foreign</b> permit row before completing."
+		blocked_dialog(
+			"Permit certificates needed",
+			"Foreign permits carry no invoice, so the certificate is what closes them:",
+			[
+				(
+					"Certificate missing on one or more Foreign rows",
+					"Attach each certificate on the <b>Permits (this task)</b> table.",
+				)
+			],
 		)
 	elif not task.get("custom_permit_invoices_submitted"):
 		_mark_foreign_only_permits_ready(task)
@@ -1717,7 +1857,16 @@ def validate_permit_application_can_complete(task) -> None:
 	merge_project_permits_into_application_task(task)
 	rows = task.get(TASK_PERMITS_FIELD) or []
 	if not rows:
-		frappe.throw("Add permit rows on <b>Task Permits</b> first.")
+		blocked_dialog(
+			"No permits on this task",
+			"This task clears permits, so it needs at least one:",
+			[
+				(
+					"No permit rows",
+					"Add them on the <b>Permits (this task)</b> table, then save the task.",
+				)
+			],
+		)
 
 	missing_certs = [r.permit_type for r in rows if r.permit_type and not r.get("permit_document")]
 	if missing_certs:
@@ -1848,6 +1997,11 @@ def run_finance_permit_completion_hooks(task) -> None:
 		apply_finance_payment_to_project_permits(task)
 	finally:
 		frappe.flags.cgm_skip_task_project_sync = False
+
+	# Before the application's gate is tested below: Finance signing this task off
+	# verifies the receipts attached to it, so the declarant is not left asking for
+	# a tick on a task that has already closed.
+	stamp_permit_receipts_on_finance_completion(task)
 
 	mark_permit_task_completed(task)
 	task.reload()
@@ -3010,6 +3164,10 @@ def auto_complete_task_if_ready(
 	completion_hooks: Callable,
 ) -> bool:
 	if task.status in ("Completed", "Cancelled"):
+		return False
+	if frappe.flags.get("cgm_task_form_loading"):
+		# Opening a form is a read. Completion waits for a real event: a save
+		# that satisfies the gates, or another task completing into this one.
 		return False
 	if not ready_check(task):
 		return False

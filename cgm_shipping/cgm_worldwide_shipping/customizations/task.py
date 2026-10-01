@@ -1653,24 +1653,27 @@ def validate_permit_application_task(task) -> None:
 				continue
 			if permit_requires_payment(row):
 				if not row.get("payment_invoice"):
-					missing.append(f"{label} - supplier/permit invoice (Local)")
+					missing.append(f"<b>{label}</b> needs its <b>Permit Invoice (for Finance)</b>")
 				if not row.get("permit_document"):
-					missing.append(f"{label} - permit certificate")
+					missing.append(f"<b>{label}</b> needs its <b>Permit Certificate</b>")
 			elif not row.get("permit_document"):
-				missing.append(f"{label} - permit certificate (Foreign)")
+				missing.append(f"<b>{label}</b> (Foreign) needs its <b>Permit Certificate</b>")
 		if missing:
-			frappe.throw(
-				"Complete <b>Task Permits</b> before finishing this task:<ul>"
-				+ "".join(f"<li>{m}</li>" for m in missing)
-				+ "</ul>",
-				title="Permit documents required",
+			frappe.msgprint(
+				"Attach these in the <b>Permits (this task)</b> table."
+				"<ul>" + "".join(f"<li>{m}</li>" for m in missing) + "</ul>",
+				title="Attach these on this task",
+				indicator="orange",
+				raise_exception=frappe.ValidationError,
 			)
 		return
 
 	if not rows:
-		frappe.throw(
-			f"Add at least one permit on <b>Task Permits</b>{eg} "
-			"and attach the required documents before completing this task."
+		frappe.msgprint(
+			f"Add the permits in the <b>Permits (this task)</b> table below{eg}, then attach each invoice.",
+			title="Add the permits on this task",
+			indicator="orange",
+			raise_exception=frappe.ValidationError,
 		)
 
 	missing = []
@@ -1681,16 +1684,17 @@ def validate_permit_application_task(task) -> None:
 			continue
 		if permit_requires_payment(row):
 			if not row.get("payment_invoice"):
-				missing.append(f"{label} - supplier/permit invoice (Local)")
+				missing.append(f"<b>{label}</b> needs its <b>Permit Invoice (for Finance)</b>")
 		elif not row.get("permit_document"):
-			missing.append(f"{label} - permit certificate (Foreign)")
+			missing.append(f"<b>{label}</b> (Foreign) needs its <b>Permit Certificate</b>")
 
 	if missing:
-		frappe.throw(
-			"Complete <b>Task Permits</b> before finishing this task:<ul>"
-			+ "".join(f"<li>{m}</li>" for m in missing)
-			+ "</ul>",
-			title="Permit documents required",
+		frappe.msgprint(
+			"Attach these in the <b>Permits (this task)</b> table."
+			"<ul>" + "".join(f"<li>{m}</li>" for m in missing) + "</ul>",
+			title="Attach these on this task",
+			indicator="orange",
+			raise_exception=frappe.ValidationError,
 		)
 
 
@@ -3221,8 +3225,27 @@ def on_task_onload(doc, _method=None):
 	persisted = get_persisted_task_completion_fields(doc.name)
 	can_write = frappe.has_permission("Task", ptype="write", doc=doc.name)
 	if can_write:
-		_reconcile_task_on_load(doc)
-	_prepare_task_for_form(doc)
+		# Reconciliation still seeds rows, syncs receipts and reopens a task whose
+		# gates no longer hold - all of which the form needs to be correct. What it
+		# must not do is *complete* a task: opening a record is a read, and a user
+		# who only looked at a task should never find they appear to have finished
+		# it. Completion still happens on every real event - a save that satisfies
+		# the gates, or another task completing and cascading into this one.
+		frappe.flags.cgm_task_form_loading = True
+		try:
+			_reconcile_task_on_load(doc)
+		finally:
+			frappe.flags.cgm_task_form_loading = False
+	# Inside the flag too: _prepare_task_for_form reads as presentation-only, but
+	# finalize_task_status_for_form calls heal_ready_finance_task_status, which
+	# completes a ready task. Opening a form is a read from the first line to the
+	# last - every completion path it can reach has to be held off, not just the
+	# ones in reconciliation.
+	frappe.flags.cgm_task_form_loading = True
+	try:
+		_prepare_task_for_form(doc)
+	finally:
+		frappe.flags.cgm_task_form_loading = False
 	_settle_status_worked_out_on_load(doc, persisted, can_write)
 
 
@@ -3402,6 +3425,21 @@ def _prepare_task_for_form(doc) -> None:
 	doc.set_onload("cgm_cancelled_journal_entries", cancelled_journal_entries_for_task(doc))
 	doc.set_onload("cgm_receipt_required", task_receipt_required(doc))
 
+	# The paired permit finance task, so the form can link it rather than describe
+	# it. Every blocking message names the task holding the work up and makes it
+	# clickable; the permit intro used to name it in prose only, which left the
+	# reader to go and find it.
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_permit_application,
+	)
+
+	if task_is_permit_application(doc):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+			finance_permit_task_for_application,
+		)
+
+		doc.set_onload("cgm_permit_finance_task", finance_permit_task_for_application(doc) or "")
+
 
 def preserve_completed_status_against_stale_save(doc) -> None:
 	"""Keep Completed when an incidental save still carries status=Open in memory.
@@ -3459,6 +3497,12 @@ def preserve_completed_status_against_stale_save(doc) -> None:
 	db_status = frappe.db.get_value("Task", doc.name, "status")
 	ready = finance_payment_task_ready_to_complete(doc)
 	if db_status != "Completed" and not ready:
+		return
+	if db_status != "Completed" and frappe.flags.get("cgm_task_form_loading"):
+		# Preserving a Completed status against a stale save is this function's job
+		# and still runs below. Promoting an Open task to Completed is not: that is
+		# a completion, and reaching it from a form open means a user who only
+		# looked at a task finds it finished. It still happens on save.
 		return
 	doc.status = "Completed"
 	if not doc.progress or float(doc.progress or 0) < 100:
@@ -3582,8 +3626,14 @@ def promote_ready_finance_task_before_save(doc) -> None:
 	"""Write Completed on the same save that finishes payment verification.
 
 	Avoids the set_value-then-stale-save race that desyncs form vs list status.
+
+	"The save that finishes verification" is the point: a save the user made.
+	Reconciliation also saves while a form is opening, and promoting there turned
+	opening a task into finishing it.
 	"""
 	if doc.status in ("Completed", "Cancelled") or not _is_sea_task(doc):
+		return
+	if frappe.flags.get("cgm_task_form_loading"):
 		return
 	if not finance_payment_task_ready_to_complete(doc):
 		return
@@ -3603,16 +3653,34 @@ def heal_ready_finance_task_status(doc) -> bool:
 	"""
 	if frappe.flags.get("cgm_reopening_task") or frappe.flags.get("cgm_healing_finance_status"):
 		return False
+	if frappe.flags.get("cgm_task_form_loading"):
+		# Reached via the save that reconciliation performs on form open. Healing a
+		# status is one thing; completing the task - and, for permits, cascading into
+		# the declarant's task - must not happen because somebody looked at it.
+		return False
 	if doc.is_new() or doc.status in ("Completed", "Cancelled") or not _is_sea_task(doc):
 		return False
 	if not finance_payment_task_ready_to_complete(doc):
 		return False
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_permit_finance,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
+		complete_finance_permit_workflow,
 		mark_task_completed,
 	)
 
 	frappe.flags.cgm_healing_finance_status = True
+	if task_is_permit_finance(doc):
+		# The full permit completion, not just the status: a bare mark_task_completed
+		# skipped the receipt stamp and never closed the declarant's task, which then
+		# sat Open waiting on ticks from a Finance task already Completed
+		# (TASK-2026-00951 / TASK-2026-00950).
+		try:
+			return complete_finance_permit_workflow(doc)
+		finally:
+			frappe.flags.cgm_healing_finance_status = False
 	frappe.flags.cgm_auto_completing_sea_task = True
 	try:
 		mark_task_completed(doc)
