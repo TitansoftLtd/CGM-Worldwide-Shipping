@@ -32,11 +32,11 @@
   "column_break_dates",
   "gate_out_date_port",
   "section_icd",
+  "icd_gate_in_date",
+  "column_break_btiy",
+  "icd_gate_out_date",
   "get_in_mombasa",
   "get_out_mombasa",
-  "column_break_btiy",
-  "icd_gate_in_date",
-  "icd_gate_out_date",
   "section_transit",
   "transit_gate_in_date",
   "release_order_number",
@@ -608,6 +608,7 @@
    "description": "Optional transfer/arrival date at Mombasa when distinct from Gate In Mombasa.",
    "fieldname": "get_in_mombasa",
    "fieldtype": "Date",
+   "hidden": 1,
    "label": "Get In Mombasa"
   },
   {
@@ -624,6 +625,7 @@
   {
    "fieldname": "get_out_mombasa",
    "fieldtype": "Date",
+   "hidden": 1,
    "label": "Get Out Mombasa"
   }
  ],
@@ -635,7 +637,7 @@
    "link_fieldname": "container_tracker"
   }
  ],
- "modified": "2026-09-09 18:54:46.930813",
+ "modified": "2026-10-03 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",
