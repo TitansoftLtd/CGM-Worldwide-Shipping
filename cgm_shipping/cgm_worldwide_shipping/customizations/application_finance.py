@@ -302,6 +302,13 @@ def get_invoice_lines(task, profile: ApplicationFinanceProfile) -> list:
 	]
 
 
+def _submitted_journal_entry(je_name) -> bool:
+	"""True only when the entry exists and is submitted (docstatus 1)."""
+	if not je_name:
+		return False
+	return cint(frappe.db.get_value("Journal Entry", je_name, "docstatus") or 0) == 1
+
+
 def invoice_line_is_settled(row, task=None) -> bool:
 	"""True when this Invoice line has company JE or client-pays settlement."""
 	if not row or not row.get("attachment"):
@@ -309,7 +316,9 @@ def invoice_line_is_settled(row, task=None) -> bool:
 	if not cint(row.get("verified")):
 		# Task-level verified flag may still cover the primary line.
 		return False
-	if row.get("journal_entry") and frappe.db.exists("Journal Entry", row.journal_entry):
+	# Submitted only. A drafted entry posts nothing, and a cancelled one is not a
+	# payment at all - both used to settle the line.
+	if _submitted_journal_entry(row.get("journal_entry")):
 		return True
 	if cint(row.get("client_paid_directly")) or cint(row.get("client_reported_paid")):
 		return True
@@ -320,7 +329,7 @@ def invoice_line_is_settled(row, task=None) -> bool:
 		)
 
 		task_je = task.get("custom_journal_entry")
-		if task_je and frappe.db.exists("Journal Entry", task_je):
+		if _submitted_journal_entry(task_je):
 			# Do not treat an amendment's JE (also stored on the task) as primary settlement.
 			on_other_line = any(
 				(r.get("journal_entry") or "") == task_je

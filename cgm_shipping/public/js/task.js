@@ -1558,7 +1558,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	// painted, and the task buttons were then never rebuilt.
 	const still_painted =
 		Array.isArray(frm._cgm_toolbar_labels) &&
-		frm._cgm_toolbar_labels.every((label) => frm.custom_buttons?.[label]);
+		frm._cgm_toolbar_labels.every((btn) => frm.custom_buttons?.[btn.label]);
 	if (frm._cgm_toolbar_fingerprint === fingerprint && still_painted) {
 		return;
 	}
@@ -1573,7 +1573,14 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	}
 
 	const ui = get_sea_task_ui(frm);
-	frm.clear_custom_buttons();
+	// Remove only the buttons this file added. frm.clear_custom_buttons() empties the
+	// whole inner toolbar, so every remount also deleted buttons other scripts had
+	// put there - and because the remount is debounced, they vanished a moment after
+	// each refresh rather than never appearing, which is what made the toolbar look
+	// unstable.
+	(frm._cgm_toolbar_labels || []).forEach((btn) => {
+		frm.remove_custom_button(btn.label, btn.group);
+	});
 	frm._cgm_toolbar_fingerprint = fingerprint;
 	frm._cgm_toolbar_labels = [];
 
@@ -1946,8 +1953,11 @@ function add_cgm_view_button(frm, label, fn) {
 	const btn = frm.add_custom_button(label, fn, CGM_VIEW_GROUP);
 	if (btn) {
 		frm.page.set_inner_btn_group_as_primary(CGM_VIEW_GROUP);
-		if (Array.isArray(frm._cgm_toolbar_labels) && !frm._cgm_toolbar_labels.includes(label)) {
-			frm._cgm_toolbar_labels.push(label);
+		if (
+			Array.isArray(frm._cgm_toolbar_labels) &&
+			!frm._cgm_toolbar_labels.some((b) => b.label === label)
+		) {
+			frm._cgm_toolbar_labels.push({ label, group: CGM_VIEW_GROUP });
 		}
 	}
 	return btn;
@@ -1957,8 +1967,11 @@ function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
 	const btn = frm.add_custom_button(label, fn, CGM_ACTION_GROUP);
 	if (btn) {
 		frm.page.set_inner_btn_group_as_primary(CGM_ACTION_GROUP);
-		if (Array.isArray(frm._cgm_toolbar_labels) && !frm._cgm_toolbar_labels.includes(label)) {
-			frm._cgm_toolbar_labels.push(label);
+		if (
+			Array.isArray(frm._cgm_toolbar_labels) &&
+			!frm._cgm_toolbar_labels.some((b) => b.label === label)
+		) {
+			frm._cgm_toolbar_labels.push({ label, group: CGM_ACTION_GROUP });
 		}
 	}
 	return btn;
@@ -2083,12 +2096,30 @@ function ensure_ucr_finance_lines_on_form(frm) {
 }
 
 function set_task_intro(frm, message, color = "blue") {
-	// set_intro() appends a message block on every call, so clear first then set
-	// once. Routing all intro updates through here keeps exactly one banner across
-	// repeated refreshes and async callbacks.
-	frm.set_intro("");
+	// Repaint only when the banner actually changes. Every refresh and every async
+	// callback used to run set_intro("") followed by set_intro(message), which tore
+	// the block out of the DOM and rebuilt it even when the text was identical - on
+	// a form that paints the intro from several callbacks that reads as a banner
+	// flickering and disappearing.
+	const key = `${frm.doc?.name || ""}|${color}|${message || ""}`;
+	// Detached (dashboard reset, or someone removed it) counts as not painted, so a
+	// banner that really did go missing is still restored.
+	const painted = !!frm.$intro_message && frm.$intro_message.closest("html").length > 0;
+	if (frm._cgm_intro_key === key && painted === !!message) {
+		return;
+	}
+	frm._cgm_intro_key = key;
+
+	if (frm.$intro_message) {
+		frm.$intro_message.remove();
+		frm.$intro_message = null;
+	}
 	if (message) {
-		frm.set_intro(message, color);
+		// permanent = true. frm.set_intro() renders a dismissable block, and the X it
+		// adds removes the node without recording that it was dismissed, so the next
+		// refresh put the banner straight back. This is standing guidance for the
+		// step rather than a transient alert, so it stays put and carries no X.
+		frm.$intro_message = frm.dashboard.set_headline_alert(message, color, true);
 	}
 }
 
