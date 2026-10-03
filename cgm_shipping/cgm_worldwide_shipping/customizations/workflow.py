@@ -4,6 +4,13 @@ from __future__ import annotations
 
 import frappe
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.dialogs import (
+	blocked_dialog,
+)
+
+# One lead across every gate, so the dialogs read as one voice.
+WAITING_LEAD = "Still outstanding before this task can complete:"
+
 SEA_IMPORT_WORKFLOW_NAME = "CGM Sea Import Workflow"
 
 
@@ -244,10 +251,15 @@ def has_all_payable_permit_invoices(task) -> bool:
 
 
 def submitted_journal_entry(je_name: str | None) -> bool:
-	"""True when the Journal Entry exists and is submitted (docstatus = 1)."""
-	if not je_name or not frappe.db.exists("Journal Entry", je_name):
+	"""True when the Journal Entry exists and is submitted (docstatus = 1).
+
+	One lookup, not two: get_value returns None for an entry that is not there, so
+	the exists() call it used to make ahead of this was a second query for an answer
+	it already had.
+	"""
+	if not je_name:
 		return False
-	return cint(frappe.db.get_value("Journal Entry", je_name, "docstatus")) == 1
+	return cint(frappe.db.get_value("Journal Entry", je_name, "docstatus") or 0) == 1
 
 
 def permit_application_invoices_ready_for_finance(task_name: str) -> bool:
@@ -356,10 +368,12 @@ def permit_finance_row_paid(row, *, client_paid: bool = False) -> bool:
 
 	One definition for the application gate, the reopen rule and the
 	declarant's closing hook. They used to disagree row by row, which is what
-	made a Finance task show Completed on the form and Open in the list. A draft
-	Journal Entry counts - Make Payment raises drafts - but a cancelled one does
-	not. Finance completing on its own separately waits for the entry to post
-	(can_complete_finance_permit_task).
+	made a Finance task show Completed on the form and Open in the list.
+
+	The entry has to be *submitted*. A draft used to count, on the reading that
+	Make Payment raises drafts and the money was on its way - but a draft posts
+	nothing to the ledger, so tasks closed against entries that were never made.
+	Only a submitted Journal Entry is a payment.
 	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		PERMIT_JOURNAL_ENTRY_FIELD,
@@ -367,11 +381,8 @@ def permit_finance_row_paid(row, *, client_paid: bool = False) -> bool:
 
 	if client_paid:
 		return True
-	je = row.get(PERMIT_JOURNAL_ENTRY_FIELD)
-	if je:
-		docstatus = frappe.db.get_value("Journal Entry", je, "docstatus")
-		if docstatus is not None and cint(docstatus) != 2:
-			return True
+	if submitted_journal_entry(row.get(PERMIT_JOURNAL_ENTRY_FIELD)):
+		return True
 	pe = row.get("payment_entry")
 	if pe and cint(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1:
 		return True
@@ -424,9 +435,9 @@ def task_has_recorded_payment(task) -> bool:
 
 	if task_client_paid_directly(task):
 		return client_paid_settlement_ready(task)
-	if task.get("custom_journal_entry"):
-		if frappe.db.exists("Journal Entry", task.custom_journal_entry):
-			return True
+	# Submitted, not merely present: this accepted a cancelled entry too.
+	if submitted_journal_entry(task.get("custom_journal_entry")):
+		return True
 	pe = task.get("custom_payment_entry")
 	if pe and frappe.db.exists("Payment Entry", pe):
 		return int(frappe.db.get_value("Payment Entry", pe, "docstatus") or 0) == 1
@@ -452,9 +463,15 @@ def validate_permit_finance_task_completion(task) -> None:
 		r.permit_type for r in rows if r.permit_type and not cint(r.get("invoice_verified"))
 	]
 	if missing_verify:
-		frappe.throw(
-			"Verify each permit invoice before completing. Missing: "
-			f"<b>{', '.join(missing_verify)}</b>."
+		blocked_dialog(
+			"Permit invoices not verified",
+			WAITING_LEAD,
+			[
+				(
+					f"Not verified: {', '.join(missing_verify)}",
+					"Tick <b>Invoice Verified</b> on those permit rows.",
+				)
+			],
 		)
 
 	if task_client_paid_directly(task):
@@ -468,10 +485,16 @@ def validate_permit_finance_task_completion(task) -> None:
 		and not cint(r.get("client_paid_directly"))
 	]
 	if missing_je:
-		frappe.throw(
-			"Record a <b>Journal Entry</b> for each permit before completing. Missing: "
-			f"<b>{', '.join(missing_je)}</b>. "
-			"Or tick <b>Client will pay</b> if the client settles this fee."
+		blocked_dialog(
+			"Payment not recorded",
+			WAITING_LEAD,
+			[
+				(
+					f"No Journal Entry for: {', '.join(missing_je)}",
+					"Raise one from <b>Make Payment</b>, or tick <b>Client will pay</b> if the "
+					"client settles this fee.",
+				)
+			],
 		)
 
 
@@ -1645,16 +1668,28 @@ def validate_finance_permit_payment_task(task) -> None:
 	app_name = get_permit_application_task_for_finance(task)
 	if app_name and not permit_invoices_submitted(app_name):
 		stage = permit_stage_for_finance_task(task)
-		frappe.throw(
-			f"Permit invoices must be submitted to Finance from the "
-			f"<b>{stage}</b> permit application task first."
+		blocked_dialog(
+			"Invoices not with Finance yet",
+			WAITING_LEAD,
+			[
+				(
+					"Permit invoices not submitted",
+					f"The declarant submits them from the <b>{stage}</b> permit application task.",
+				)
+			],
 		)
 
 	rows = task.get(TASK_PERMITS_FIELD) or []
 	if not rows:
-		frappe.throw(
-			"Open this task after permit invoices are on the Project, or refresh the page "
-			"to load <b>Task Permits</b>."
+		blocked_dialog(
+			"Permit rows not loaded",
+			WAITING_LEAD,
+			[
+				(
+					"Task Permits is empty",
+					"Open this task once the permit invoices are on the Project, or refresh the page.",
+				)
+			],
 		)
 
 
@@ -1668,30 +1703,6 @@ def permit_application_client_paid(task) -> bool:
 	if not fin_name:
 		return False
 	return task_client_paid_directly(frappe.get_doc("Task", fin_name))
-
-
-def blocked_dialog(title: str, lead: str, items: list[tuple[str, str]]) -> None:
-	"""Raise a consistent "here is what is outstanding" dialog.
-
-	Frappe sanitises msgprint HTML - `style` and `class` are both stripped - so the
-	brand palette cannot be applied inside the body. What survives is structure
-	(<b>, <ul>, <li>, <a>) plus the title and the indicator colour, and those are
-	what the dialog is built from.
-
-	Indicator is orange, not red: nothing has gone wrong. The task is waiting on a
-	step somebody still has to take, and a red dot on a normal part of the process
-	trains people to ignore red dots.
-	"""
-	body = [f"<p>{lead}</p>", "<ul>"]
-	for label, detail in items:
-		body.append(f"<li><b>{label}</b><br>{detail}</li>")
-	body.append("</ul>")
-	frappe.msgprint(
-		"".join(body),
-		title=title,
-		indicator="orange",
-		raise_exception=frappe.ValidationError,
-	)
 
 
 def permit_rows_pending_verification(app_task) -> tuple[list[str], list[str], str | None]:
@@ -1789,9 +1800,16 @@ def validate_permit_application_can_complete(task) -> None:
 			fin_link = (
 				frappe.utils.get_link_to_form("Task", fin_name, fin_label) if fin_name else fin_label
 			)
-			frappe.throw(
-				f"Finance must verify invoices, tick <b>Client will pay</b>, and upload the "
-				f"client's receipt on {fin_link} before this task can be completed."
+			blocked_dialog(
+				"Waiting on Finance",
+				WAITING_LEAD,
+				[
+					(
+						"Client-pays settlement not finished",
+						f"On {fin_link}, Finance verifies the invoices, ticks <b>Client will pay</b> "
+						"and uploads the client's receipt.",
+					)
+				],
 			)
 		validate_permit_rows_verified(task)
 		rows = [r for r in (task.get(TASK_PERMITS_FIELD) or []) if r.get("permit_type")]
@@ -1870,9 +1888,15 @@ def validate_permit_application_can_complete(task) -> None:
 
 	missing_certs = [r.permit_type for r in rows if r.permit_type and not r.get("permit_document")]
 	if missing_certs:
-		frappe.throw(
-			"Upload <b>Permit Certificate</b> for each permit. Missing: "
-			f"<b>{', '.join(missing_certs)}</b>."
+		blocked_dialog(
+			"Permit certificates needed",
+			WAITING_LEAD,
+			[
+				(
+					f"Certificate missing: {', '.join(missing_certs)}",
+					"Attach each one on the <b>Permits (this task)</b> table.",
+				)
+			],
 		)
 	# Receipts are required and must be verified - see validate_permit_rows_verified.
 
@@ -3020,11 +3044,55 @@ def validate_ucr_application_not_manually_completed(task) -> None:
 	)
 
 	label = application_certificate_label(task, APPLICATION_FINANCE_PROFILES["UCR Application"])
-	documents = f" and the <b>{label}</b>" if label else ""
-	frappe.throw(
-		f"Complete this task by attaching a verified <b>UCR Invoice</b>{documents} on this form. "
-		"Finance uploads the <b>UCR Receipt</b> after payment. The task will mark itself "
-		"<b>Completed</b> automatically when requirements are in place."
+
+	# Report only what is actually outstanding. The old wording asked for a verified
+	# UCR Invoice every time, including on tasks whose invoice was attached and
+	# verified long ago and whose only gap was the certificate - so the reader was
+	# sent looking for something already there.
+	finance_name = get_ucr_finance_task(task.project) if task.project else None
+	finance_task = frappe.get_doc("Task", finance_name) if finance_name else None
+
+	items = []
+	if not ucr_invoice_attached(task) and not task.get("custom_ucr_invoice_submitted"):
+		items.append(
+			(
+				"UCR Invoice not attached",
+				"Attach it on this task. Finance is notified once it is on.",
+			)
+		)
+	elif not ucr_invoice_verified_for_create_task(task, finance_task):
+		fin_link = (
+			frappe.utils.get_link_to_form("Task", finance_name, finance_task.subject)
+			if finance_task
+			else "the UCR payment task"
+		)
+		items.append(
+			("UCR Invoice not verified", f"Finance verifies it on {fin_link}.")
+		)
+	if not idf_certificate_uploaded(task):
+		items.append(
+			(
+				f"{label or 'Certificate'} not attached",
+				f"Attach the issued <b>{label or 'certificate'}</b> on the "
+				"<b>Task Documents</b> table.",
+			)
+		)
+
+	if not items:
+		# The gate failed for a reason not listed above - only reachable if
+		# can_complete_ucr_create_task grows a condition this message does not mirror.
+		items = [
+			(
+				"Not ready to complete",
+				"Attach the <b>UCR Invoice</b> and the issued "
+				f"<b>{label or 'certificate'}</b> on this task.",
+			)
+		]
+
+	blocked_dialog(
+		"Still outstanding on this task",
+		"This task completes on its own once these are in place:",
+		items,
 	)
 
 
@@ -3036,59 +3104,93 @@ def validate_finance_ucr_payment_task(task) -> None:
 	if task_client_paid_directly(task):
 		app_task = get_ucr_create_task(task.project) if task.project else None
 		if app_task and not ucr_invoice_submitted(app_task):
-			frappe.throw(
-				"The declarant must submit the UCR invoice from <b>Create UCR (IDF)</b> first."
+			blocked_dialog(
+				"Invoice not with Finance yet",
+				WAITING_LEAD,
+				[
+					(
+						"UCR Invoice not submitted",
+						"The declarant submits it from <b>Create UCR (IDF)</b> first.",
+					)
+				],
 			)
 		seed_ucr_finance_lines(task)
 		if not (ucr_invoice_verified(task) or task.get("custom_ucr_invoice_verified")):
-			frappe.throw(
-				"Finance must tick <b>Verified by Finance</b> on the <b>UCR Invoice</b> row."
+			blocked_dialog(
+				"Invoice not verified",
+				WAITING_LEAD,
+				[("UCR Invoice not verified", "Tick <b>Verified by Finance</b> on that row.")],
 			)
 		if not client_paid_settlement_ready(task):
-			frappe.throw(
-				"Client-pays path is not complete: verify the invoice first."
+			blocked_dialog(
+				"Invoice not verified",
+				WAITING_LEAD,
+				[("UCR Invoice not verified", "The client pays this one, but Finance still verifies it.")],
 			)
 		if not ucr_receipt_attached_for_payment_workflow(task):
-			frappe.throw(
-				"Attach the <b>UCR Receipt</b> before completing this task."
+			blocked_dialog(
+				"Receipt needed",
+				WAITING_LEAD,
+				[("UCR Receipt not attached", "Attach it on this task.")],
 			)
 		if not (ucr_receipt_verified(task) or task.get("custom_ucr_receipt_verified")):
-			frappe.throw(
-				"Finance must tick <b>Verified by Finance</b> on the <b>UCR Receipt</b> row "
-				"before completing this task."
+			blocked_dialog(
+				"Receipt not verified",
+				WAITING_LEAD,
+				[("UCR Receipt not verified", "Tick <b>Verified by Finance</b> on that row.")],
 			)
 		return
 
 	app_task = get_ucr_create_task(task.project) if task.project else None
 	if app_task and not ucr_invoice_submitted(app_task):
-		frappe.throw(
-			"The declarant must submit the UCR invoice from <b>Create UCR (IDF)</b> first."
+		blocked_dialog(
+			"Invoice not with Finance yet",
+			WAITING_LEAD,
+			[
+				(
+					"UCR Invoice not submitted",
+					"The declarant submits it from <b>Create UCR (IDF)</b> first.",
+				)
+			],
 		)
 
 	seed_ucr_finance_lines(task)
 
 	if not (ucr_invoice_verified(task) or task.get("custom_ucr_invoice_verified")):
-		frappe.throw(
-			"Finance must tick <b>Verified by Finance</b> on the <b>UCR Invoice</b> row."
+		blocked_dialog(
+			"Invoice not verified",
+			WAITING_LEAD,
+			[("UCR Invoice not verified", "Tick <b>Verified by Finance</b> on that row.")],
 		)
 
 	if not task_has_recorded_payment(task):
-		frappe.throw(
-			"Record payment via <b>Make Payment</b> (Journal Entry) before completion, "
-			"or tick <b>Client will pay</b> if the client settles it."
+		blocked_dialog(
+			"Payment not recorded",
+			WAITING_LEAD,
+			[
+				("Make Payment", "Raise the Journal Entry from the <b>Make Payment</b> action."),
+				("Or the client pays", "Tick <b>Client will pay</b> if the client settles it."),
+			],
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
 		if int(pe_status or 0) != 1:
-			frappe.throw("Payment Entry must be <b>submitted</b> before completing this task.")
+			blocked_dialog(
+				"Payment Entry still a draft",
+				WAITING_LEAD,
+				[("Payment Entry not submitted", "Submit it, then complete this task.")],
+			)
 	if not ucr_receipt_attached_for_payment_workflow(task):
-		frappe.throw(
-			"Attach the <b>UCR Receipt</b> after payment before completing this task."
+		blocked_dialog(
+			"Receipt needed",
+			WAITING_LEAD,
+			[("UCR Receipt not attached", "Attach it now the payment is recorded.")],
 		)
 	if not (ucr_receipt_verified(task) or task.get("custom_ucr_receipt_verified")):
-		frappe.throw(
-			"Finance must tick <b>Verified by Finance</b> on the <b>UCR Receipt</b> row "
-			"before completing this task."
+		blocked_dialog(
+			"Receipt not verified",
+			WAITING_LEAD,
+			[("UCR Receipt not verified", "Tick <b>Verified by Finance</b> on that row.")],
 		)
 
 

@@ -39,9 +39,14 @@ class TestRowPaid(unittest.TestCase):
 	def test_task_level_client_paid_counts(self):
 		self.assertTrue(wf.permit_finance_row_paid(_row(), client_paid=True))
 
-	def test_draft_journal_entry_counts(self):
-		with _je_docstatus(0):
+	def test_submitted_journal_entry_counts(self):
+		with _je_docstatus(1):
 			self.assertTrue(wf.permit_finance_row_paid(_row(journal_entry="ACC-JV-1")))
+
+	def test_draft_journal_entry_does_not_count(self):
+		"""A draft posts nothing to the ledger, so it is not a payment."""
+		with _je_docstatus(0):
+			self.assertFalse(wf.permit_finance_row_paid(_row(journal_entry="ACC-JV-1")))
 
 	def test_cancelled_journal_entry_does_not(self):
 		with _je_docstatus(2):
@@ -58,7 +63,7 @@ class TestRowPaid(unittest.TestCase):
 		self.assertFalse(wf.permit_finance_row_paid(_row()))
 
 	def test_settled_needs_verification(self):
-		with _je_docstatus(0):
+		with _je_docstatus(1):
 			self.assertFalse(
 				wf.permit_finance_row_settled(_row(journal_entry="ACC-JV-1", invoice_verified=0))
 			)
@@ -109,7 +114,7 @@ class TestReopenAfterDeclarantCompleted(unittest.TestCase):
 			patch.object(wf, "permit_finance_rows", return_value=rows),
 			patch.object(wf, "task_client_paid_directly", return_value=False),
 			patch.object(wf, "_permit_application_completed", return_value=application_completed),
-			_je_docstatus(0),
+			_je_docstatus(1),
 		):
 			return wf.permit_finance_rows_needing_work(frappe._dict())
 
@@ -228,7 +233,7 @@ class TestApplicationClosesFinance(unittest.TestCase):
 			patch.object(wf, "permit_finance_rows", return_value=rows),
 			patch.object(wf, "task_client_paid_directly", return_value=False),
 			patch.object(wf, "run_finance_permit_completion_hooks", self.hooks),
-			_je_docstatus(0),
+			_je_docstatus(1),
 		):
 			return wf.complete_permit_finance_when_application_done(self.app)
 

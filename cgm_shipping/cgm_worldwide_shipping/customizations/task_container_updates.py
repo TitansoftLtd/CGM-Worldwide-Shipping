@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+
+from cgm_shipping.cgm_worldwide_shipping.customizations.dialogs import (
+	blocked_dialog,
+)
 from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
@@ -108,6 +112,46 @@ def _completion_field_by_seq() -> dict[int, str]:
 		get_container_task_sequence("custom_empty_return_task_seq"): "actual_empty_return",
 		get_container_task_sequence("custom_interchange_task_seq"): "interchange_date",
 	}
+
+
+# The tracker field that closes each step, by the label the tracker form shows.
+# frappe.unscrub() on the fieldname is close but not right: gate_out_date_port
+# reads "Gate Out Mombasa" on the form, and a dialog that invents its own name for
+# a field sends people looking for something that is not there.
+CONTAINER_STEP_FIELD_LABELS = {
+	"truck_number": "Truck Number",
+	"gate_out_date_port": "Gate Out Mombasa",
+	"gate_in_date_warehouse": "Gate In Date (Clearance Station / Warehouse)",
+	"offloading_date": "Offloading Date",
+	"actual_empty_return": "Actual Empty Return",
+	"interchange_date": "Interchange Date",
+}
+
+
+def container_step_requirement_label(seq: int) -> str:
+	"""What the Container Tracker still needs for this step, in the form's own words."""
+	if seq == get_container_task_sequence("custom_interchange_task_seq"):
+		# Interchange needs the date and the document, not a date alone.
+		return "Interchange Date and Interchange Document"
+	field = _completion_field_by_seq().get(seq) or ""
+	return CONTAINER_STEP_FIELD_LABELS.get(field, frappe.unscrub(field.replace("_", " ")))
+
+
+def transport_step_tracker_blockers(task) -> tuple[str, list[str]]:
+	"""(what the tracker needs, containers missing it) for a transport step task.
+
+	Transport steps are not completed by hand: the tracker drives them, and the task
+	marks itself Completed once every container has the step's field. Callers use
+	this to name the containers actually holding a task up, so the gate functions are
+	reused rather than restated and the message cannot drift from the rule.
+	"""
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not seq or not task.get("project"):
+		return "", []
+	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
+	if not _completion_field_by_seq().get(seq) and seq != interchange_seq:
+		return "", []
+	return container_step_requirement_label(seq), _containers_missing_step(task.project, seq)
 
 
 def _trackers_missing_field(project: str, field: str) -> list[str]:
@@ -435,11 +479,17 @@ def validate_shipping_line_deposit_declarations(doc) -> None:
 		if flt(row.get("deposit_amount")) <= 0:
 			amount_missing.append(row.container_number or row.name)
 	if amount_missing and flt(bl.get("deposit_amount")) <= 0:
-		frappe.throw(
-			_(
-				"Bill of Lading <b>{0}</b> has Container Deposit - enter deposit amounts "
-				"on each container row: {1}"
-			).format(bl.bl_number or bl.name, ", ".join(amount_missing))
+		blocked_dialog(
+			_("Container deposit amounts missing"),
+			_("This Bill of Lading carries a container deposit, so each row needs its amount:"),
+			[
+				(
+					_("Deposit amount missing on: {0}").format(", ".join(amount_missing)),
+					_("Enter it on each container row of <b>{0}</b>.").format(
+						bl.bl_number or bl.name
+					),
+				)
+			],
 		)
 
 
@@ -693,22 +743,32 @@ def validate_container_step_task_completion(doc) -> None:
 		return
 
 	if not frappe.db.exists("Container Tracker", {"project": doc.project}):
-		frappe.throw(
-			_("Add container trackers on this project before completing transport step tasks.")
+		blocked_dialog(
+			_("No containers on this shipment"),
+			_("Transport steps are tracked per container, and this project has none:"),
+			[
+				(
+					_("Container Tracker is empty"),
+					_("Add the containers on this project, then this step can complete."),
+				)
+			],
 		)
 
 	missing = _containers_missing_step(doc.project, seq)
 	if missing:
-		if seq == get_container_task_sequence("custom_interchange_task_seq"):
-			label = _("interchange date and receipt")
-		else:
-			check_field = _completion_field_by_seq().get(seq) or ""
-			label = frappe.unscrub(check_field.replace("_", " "))
-		frappe.throw(
-			_(
-				"Every container must have <b>{0}</b> before completing this task. "
-				"Still open: {1}"
-			).format(label, ", ".join(missing))
+		label = container_step_requirement_label(seq)
+		blocked_dialog(
+			_("Waiting on the Container Tracker"),
+			_("This step completes on its own once every container has its details:"),
+			[
+				(
+					_("{0} missing on: {1}").format(label, ", ".join(missing)),
+					_(
+						"Fill it on the <b>Container Tracker</b> for this shipment and the "
+						"task completes itself."
+					),
+				)
+			],
 		)
 
 
@@ -733,11 +793,22 @@ def validate_book_trucks_container_updates(doc) -> None:
 	has_reason = bool((doc.get("custom_not_emptied_reason") or "").strip())
 
 	if not has_truck and not has_reason:
-		frappe.throw(
-			_(
-				"Fill truck details for at least one container, or provide a reason "
-				"why containers are not exiting port."
-			)
+		blocked_dialog(
+			_("Trucks not booked yet"),
+			_("Either of these closes this step:"),
+			[
+				(
+					_("Truck details"),
+					_("Enter the truck number on at least one container row."),
+				),
+				(
+					_("Reason instead"),
+					_(
+						"If the containers are not exiting port, say why in "
+						"<b>Not Emptied Reason</b>."
+					),
+				),
+			],
 		)
 
 

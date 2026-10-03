@@ -12,6 +12,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	TASK_PERMITS_FIELD,
 	TRANSPORT_CONTAINER_STEPS,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.dialogs import (
+	blocked_dialog,
+	task_link,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.documents import refresh_project_documents
 
 
@@ -1540,9 +1544,15 @@ def validate_required_documents(task, seq: int) -> None:
 		missing.append(dt_name or token)
 
 	if missing:
-		frappe.throw(
-			"Attach required documents on <b>Task Documents</b> before completing this task: "
-			f"<b>{', '.join(missing)}</b>."
+		blocked_dialog(
+			"Documents still needed",
+			"This step cannot complete until these are attached:",
+			[
+				(
+					f"Missing: {', '.join(missing)}",
+					"Attach each one on the <b>Task Documents</b> table.",
+				)
+			],
 		)
 
 	# Only enforce empty-row cleanup for required rows.
@@ -1555,9 +1565,15 @@ def validate_required_documents(task, seq: int) -> None:
 		and not primary_attachment(row)
 	]
 	if empty_rows:
-		frappe.throw(
-			"Remove empty document rows or upload attachments for: "
-			f"<b>{', '.join(empty_rows)}</b>."
+		blocked_dialog(
+			"Empty document rows",
+			"These rows were added but never filled, so the step cannot close:",
+			[
+				(
+					f"Nothing attached on: {', '.join(empty_rows)}",
+					"Upload the document on each row, or delete the row if it is not needed.",
+				)
+			],
 		)
 
 
@@ -1568,11 +1584,17 @@ def validate_document_checkpoint_task(task) -> None:
 	has_note = bool((task.description or "").strip())
 	if has_final or has_note:
 		return
-	frappe.throw(
-		_(
-			"Upload at least one <b>Final Document</b> on Task Documents, or add a brief "
-			"confirmation note in <b>Description</b> (e.g. <i>Final BL and COC confirmed received</i>)."
-		)
+	blocked_dialog(
+		"Confirm the final documents",
+		"Either of these closes this step:",
+		[
+			("Final Document", "Upload at least one on the <b>Task Documents</b> table."),
+			(
+				"Or a note instead",
+				"Write a short confirmation in <b>Description</b>, for example "
+				"<i>Final BL and COC confirmed received</i>.",
+			),
+		],
 	)
 
 
@@ -1580,10 +1602,48 @@ def validate_light_proof_task(task) -> None:
 	has_doc = bool(attached_document_codes(task))
 	has_text = bool((task.description or "").strip())
 	has_ref = bool((task.get("custom_external_ref_no") or "").strip())
-	if not (has_doc or has_text or has_ref):
-		frappe.throw(
-			"Add a task document or a note in <b>Description</b> before completing this step."
+	if has_doc or has_text or has_ref:
+		return
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.dialogs import blocked_dialog
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+		transport_step_tracker_blockers,
+	)
+
+	# Point at the Container Tracker first. These steps complete themselves once the
+	# tracker is filled, which is how every completed one of them was closed - so a
+	# message telling the reader to attach something here described an override
+	# nobody uses and left the real blocker (one container missing a date) unnamed.
+	what, pending = transport_step_tracker_blockers(task)
+	if pending:
+		blocked_dialog(
+			"Waiting on the Container Tracker",
+			"This step completes on its own once every container has its details:",
+			[
+				(
+					f"{what} missing on: {', '.join(pending)}",
+					"Fill it on the <b>Container Tracker</b> for this shipment and the task "
+					"completes itself.",
+				),
+				(
+					"Closing it from here instead",
+					"Attach the proof on <b>Task Documents</b>, enter a number in "
+					"<b>Reference No</b>, or write a note in <b>Description</b>.",
+				),
+			],
 		)
+
+	# No tracker on the project, so there is nothing to wait for: name the three
+	# fields that close the step by hand.
+	blocked_dialog(
+		"Record the proof for this step",
+		"Any one of these closes it:",
+		[
+			("Task Documents", "Attach the proof on the table."),
+			("Reference No", "Enter the document number."),
+			("Description", "Write a short note."),
+		],
+	)
 
 
 def validate_field_clearance_task(task) -> None:
@@ -1611,12 +1671,14 @@ def validate_field_clearance_task(task) -> None:
 	if released or report_attached or has_clearance_doc:
 		return
 
-	frappe.throw(
-		_(
-			"Attach a clearance document on <b>Task Documents</b> (any document type), "
-			"or mark <b>Verification Status</b> as <i>Released by CRO</i>, "
-			"or attach the <b>Verification Report</b>."
-		)
+	blocked_dialog(
+		"Record the clearance",
+		"Any one of these closes this step:",
+		[
+			("Clearance document", "Attach it on <b>Task Documents</b> (any document type)."),
+			("Verification Status", "Set it to <i>Released by CRO</i>."),
+			("Verification Report", "Attach the report."),
+		],
 	)
 
 
@@ -1630,7 +1692,11 @@ def _permit_type_examples(limit: int = 5) -> str:
 
 def validate_permit_application_task(task) -> None:
 	if not task.meta.has_field(TASK_PERMITS_FIELD):
-		frappe.throw("Task Permits table is not available on this site. Run <b>bench migrate</b>.")
+		blocked_dialog(
+			"Permit table missing on this site",
+			"This looks like a setup problem rather than missing work:",
+			[("Task Permits field not installed", "Run <b>bench migrate</b> on this site.")],
+		)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 		permit_application_client_paid,
@@ -1709,14 +1775,22 @@ def validate_finance_task(task) -> None:
 
 	# Sea finance payments use Make Payment → Journal Entry (not Purchase Invoice).
 	if not task_client_paid_directly(task) and not task_has_recorded_payment(task):
-		frappe.throw(
-			"Record payment via <b>Make Payment</b> (Journal Entry) before completion, "
-			"or tick <b>Client will pay</b> if the client settles it."
+		blocked_dialog(
+			"Payment not recorded",
+			"Finance closes this step once the payment is accounted for:",
+			[
+				("Make Payment", "Raise the Journal Entry from the <b>Make Payment</b> action."),
+				("Or the client pays", "Tick <b>Client will pay</b> if the client settles it."),
+			],
 		)
 	if task.get("custom_payment_entry"):
 		pe_status = frappe.db.get_value("Payment Entry", task.custom_payment_entry, "docstatus")
 		if int(pe_status or 0) != 1:
-			frappe.throw("Payment Entry must be <b>submitted</b> before completing this finance task.")
+			blocked_dialog(
+				"Payment Entry still a draft",
+				"The payment exists but has not been submitted:",
+				[("Payment Entry not submitted", "Submit it, then complete this task.")],
+			)
 
 
 def sync_task_permits_to_project(task) -> None:
@@ -4063,9 +4137,15 @@ def validate_task_completion_requirements(doc, _method=None):
 		incomplete = get_incomplete_finance_pair_blockers(doc)
 		if incomplete:
 			prev_task = incomplete[0]
-			frappe.throw(
-				f"Complete the linked application task first. Waiting on: "
-				f"<b>Task {prev_task.seq}: {prev_task.subject}</b> ({prev_task.status or 'Open'})."
+			blocked_dialog(
+				"Earlier step not finished",
+				"This task is paired with one that has to go first:",
+				[
+					(
+						f"Task {prev_task.seq}: {prev_task.subject} ({prev_task.status or 'Open'})",
+						f"Complete {task_link(prev_task.name)} first, then this one can close.",
+					)
+				],
 			)
 		validate_sea_task_can_complete(doc)
 
@@ -4092,7 +4172,6 @@ class CGMTask(Task):
 		Allow completion in that case for every CGM clearance flow (sea, road,
 		air, transit); other depends_on rules stay strict.
 		"""
-		from frappe import _
 		from frappe.desk.form.assign_to import close_all_assignments
 
 		if self.is_template and self.status != "Template":
@@ -4110,10 +4189,15 @@ class CGMTask(Task):
 					continue
 				if _is_sea_task(self) and application_ready_for_finance(d.task):
 					continue
-				frappe.throw(
-					_(
-						"Cannot complete task {0} as its dependant task {1} are not completed / cancelled."
-					).format(frappe.bold(self.name), frappe.bold(d.task))
+				blocked_dialog(
+					"Earlier step not finished",
+					"This task depends on one that has to go first:",
+					[
+						(
+							frappe.db.get_value("Task", d.task, "subject") or d.task,
+							f"Complete {task_link(d.task)} first, then this one can close.",
+						)
+					],
 				)
 
 			close_all_assignments(self.doctype, self.name)

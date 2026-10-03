@@ -37,6 +37,17 @@ class _TaskStub(frappe._dict):
 		self.setdefault(fieldname, []).append(frappe._dict(row))
 
 
+def _je_submitted():
+	"""Treat the fixture's Journal Entry as posted.
+
+	These tests are about when a receipt is required, not about entry docstatus.
+	They used to read whatever Journal Entries happened to exist on the site, which
+	passed only while a draft counted as payment - now that only a submitted entry
+	does, the fixture has to say so itself.
+	"""
+	return patch.object(af, "_submitted_journal_entry", return_value=True)
+
+
 def _rules(**kwargs):
 	"""Patch Settings > Finance receipts with the given payment-kind rows."""
 	return patch.object(af, "finance_receipt_rules", return_value=kwargs)
@@ -155,7 +166,7 @@ class TestShippingLineKeepsItsPop(unittest.TestCase):
 	def test_invoice_and_pop_are_enough(self):
 		with _rules(
 			**{"Shipping Line": {"required_when_company_pays": 0, "required_when_client_pays": 0}}
-		):
+		), _je_submitted():
 			task = self._shipping_line_task(pop="/files/sl-pop.pdf")
 			self.assertTrue(can_complete_application_finance_task(task, SHIPPING_LINE))
 

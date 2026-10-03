@@ -19,6 +19,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	TASK_FINANCE_FIELD,
 	TASK_PERMITS_FIELD,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.dialogs import (
+	blocked_dialog,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.portal import (
 	get_customer_notification_emails,
 )
@@ -77,11 +80,38 @@ def _mark_rows_shared(doctype: str, names: list[str], user: str, when) -> int:
 	return len(names)
 
 
+def _row_client_pays(row) -> bool:
+	"""This row is the client's to settle, whatever the task-level flag says."""
+	return bool(cint(row.get("client_paid_directly")) or cint(row.get("client_reported_paid")))
+
+
+def task_has_client_paid_work(task) -> bool:
+	"""Task-level flag, or any single invoice / permit row marked client-paid.
+
+	The Share button offers itself on either (form_has_client_paid_invoice_line in
+	task.js), so the guard has to accept both. Checking only the task-level flag
+	refused an action the form had already promised, on every task where the tick
+	was made per line - which is where the grid invites it.
+	"""
+	if cint(task.get(CLIENT_PAID_FIELD)):
+		return True
+	for field in (TASK_FINANCE_FIELD, TASK_PERMITS_FIELD):
+		if not task.meta.has_field(field):
+			continue
+		if any(_row_client_pays(row) for row in (task.get(field) or [])):
+			return True
+	return False
+
+
 def _shareable_finance_line_names(task) -> list[str]:
 	if not task.meta.has_field(TASK_FINANCE_FIELD):
 		return []
 	if not frappe.get_meta("Task Finance Line").has_field("shared_with_client"):
 		return []
+	# Whole task on the client-pays path: every verified invoice is theirs. Otherwise
+	# only the rows actually marked client-paid - a mixed task also carries invoices
+	# the company has already paid, and those are not the client's to receive.
+	whole_task = cint(task.get(CLIENT_PAID_FIELD))
 	return [
 		row.name
 		for row in (task.get(TASK_FINANCE_FIELD) or [])
@@ -90,6 +120,7 @@ def _shareable_finance_line_names(task) -> list[str]:
 		and row.get("attachment")
 		and cint(row.get("verified"))
 		and not cint(row.get("shared_with_client"))
+		and (whole_task or _row_client_pays(row))
 	]
 
 
@@ -98,6 +129,7 @@ def _shareable_permit_row_names(task) -> list[str]:
 		return []
 	if not frappe.get_meta("Permit Register").has_field("shared_with_client"):
 		return []
+	whole_task = cint(task.get(CLIENT_PAID_FIELD))
 	return [
 		row.name
 		for row in (task.get(TASK_PERMITS_FIELD) or [])
@@ -107,6 +139,7 @@ def _shareable_permit_row_names(task) -> list[str]:
 		and row.get("payment_invoice")
 		and cint(row.get("invoice_verified"))
 		and not cint(row.get("shared_with_client"))
+		and (whole_task or _row_client_pays(row))
 	]
 
 
@@ -200,12 +233,19 @@ def share_invoices_with_client(task_name: str, notify: int = 1) -> dict:
 	task = frappe.get_doc("Task", task_name)
 	_assert_finance_can_share(task)
 
-	if not cint(task.get(CLIENT_PAID_FIELD)):
-		frappe.throw(
-			_(
-				"Tick <b>Client will pay</b> first, then share the invoice. "
-				"Sharing is for the client-pays path (no company Journal Entry)."
-			)
+	if not task_has_client_paid_work(task):
+		blocked_dialog(
+			_("Nothing here is the client's to pay"),
+			_("Sharing sends an invoice to the client to settle, so one has to be marked as theirs:"),
+			[
+				(
+					_("No invoice marked client-paid"),
+					_(
+						"Tick <b>Client will pay</b> on the invoice row the client is "
+						"settling, or on the task itself if they settle all of it."
+					),
+				)
+			],
 		)
 
 	user = frappe.session.user
