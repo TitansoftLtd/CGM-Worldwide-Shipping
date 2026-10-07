@@ -309,6 +309,40 @@ def _submitted_journal_entry(je_name) -> bool:
 	return cint(frappe.db.get_value("Journal Entry", je_name, "docstatus") or 0) == 1
 
 
+AMENDMENT_SUFFIX = " (Amendment)"
+
+
+def finance_line_display_label(row) -> str:
+	"""What this row should read as in the Invoices & Receipts grid.
+
+	An amended invoice carried the same label as the original - both read "UCR
+	Invoice" - so the only thing telling them apart was a narrow Amendment tick that
+	the grid truncates to "Ame...". Finance had to open the row to find out which
+	invoice they were paying.
+	"""
+	base = (row.get("line_label") or "").strip()
+	base = base[: -len(AMENDMENT_SUFFIX)] if base.endswith(AMENDMENT_SUFFIX) else base
+	if not base:
+		return ""
+	if (row.get("line_type") or LINE_INVOICE) == LINE_INVOICE and cint(row.get("is_amendment")):
+		return f"{base}{AMENDMENT_SUFFIX}"
+	return base
+
+
+def sync_finance_line_labels(task) -> None:
+	"""Keep every finance line's label in step with its Amendment tick.
+
+	Runs on save rather than only at seeding, so ticking or clearing Amendment on an
+	existing row re-reads immediately instead of waiting for the row to be rebuilt.
+	"""
+	if not task_has_finance_table(task):
+		return
+	for row in task.get(TASK_FINANCE_FIELD) or []:
+		label = finance_line_display_label(row)
+		if label and label != (row.get("line_label") or ""):
+			row.line_label = label
+
+
 def invoice_line_is_settled(row, task=None) -> bool:
 	"""True when this Invoice line has company JE or client-pays settlement."""
 	if not row or not row.get("attachment"):
