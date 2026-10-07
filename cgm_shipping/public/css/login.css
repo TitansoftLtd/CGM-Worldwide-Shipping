@@ -39,8 +39,8 @@ body[data-path="login"] .for-signup .page-card,
 body[data-path="login"] .for-email-login .page-card,
 body[data-path="login"] .for-login-with-email-link .page-card,
 body[data-path="login"] .for-reset-password .page-card {
-	max-width: 390px;
-	padding: 28px 30px 26px;
+	max-width: 448px;
+	padding: 30px 36px 28px;
 	border: none;
 	border-radius: 18px;
 	background-color: #fff;
@@ -90,13 +90,39 @@ body[data-path="login"] .password-field {
 	width: 100%;
 }
 
+/* Mail and lock marks, so the fields read at a glance. */
+body[data-path="login"] .email-field::before,
+body[data-path="login"] .password-field::before {
+	content: "";
+	position: absolute;
+	left: 14px;
+	top: 50%;
+	width: 17px;
+	height: 17px;
+	transform: translateY(-50%);
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 17px 17px;
+	opacity: 0.5;
+	pointer-events: none;
+	z-index: 2;
+}
+
+body[data-path="login"] .email-field::before {
+	background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='4.5' width='19' height='15' rx='2.5'/%3E%3Cpath d='m3 7 9 6 9-6'/%3E%3C/svg%3E");
+}
+
+body[data-path="login"] .password-field::before {
+	background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='10.5' width='17' height='10' rx='2.5'/%3E%3Cpath d='M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5'/%3E%3C/svg%3E");
+}
+
 body[data-path="login"] .page-card .page-card-body input[type="text"],
 body[data-path="login"] .page-card .page-card-body input[type="email"],
 body[data-path="login"] .page-card .page-card-body input[type="password"] {
-	height: 42px;
+	height: 38px;
 	/* !important: login.bundle.css loads after the app stylesheets and sets its own
-	   padding, which leaves the text cramped against the border. */
-	padding: 9px 14px !important;
+	   padding. Without this the text runs under the mail and lock marks. */
+	padding: 7px 14px 7px 42px !important;
 	border: 1px solid var(--cgm-border);
 	border-radius: 9px;
 	background-color: var(--cgm-field);
@@ -128,6 +154,10 @@ body[data-path="login"] .page-card .page-card-body input[type="password"]:focus 
 /* The eye sits opposite the lock. */
 body[data-path="login"] .page-card .page-card-body .password-field input[type="password"] {
 	padding-right: 40px !important;
+}
+
+body[data-path="login"] .page-card-body .form-control {
+	font-size: 13.5px;
 }
 
 body[data-path="login"] .password-field .toggle-password {
