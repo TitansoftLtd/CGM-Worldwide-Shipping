@@ -66,7 +66,11 @@ def _parse_filters(filters) -> frappe._dict:
 	return frappe._dict(filters)
 
 
-COMPLETED_SHIPMENT_STATUS = "Completed"
+#: A shipment counts as finished on either status. Hiding used to test only
+#: "Completed" while the KPIs and the tile filter tested both, so a Settled
+#: shipment sat in the active grid while being counted as completed. Defined once
+#: here and reused everywhere; the set below is the same object.
+COMPLETED_SHIPMENT_STATUSES = frozenset({"Completed", "Settled"})
 
 
 def _hide_completed(filters) -> bool:
@@ -80,6 +84,11 @@ def _hide_completed(filters) -> bool:
 		return False
 	if (filters.get("status") or "").strip():
 		return False
+	# Clicking the Completed (or All) KPI tile is a third way to ask. Without this
+	# the tile filtered a list the completed shipments had already been dropped
+	# from, so it always came back empty.
+	if (filters.get("kpi_filter") or "") in ("completed_shipments", "total_shipments"):
+		return False
 	return True
 
 
@@ -89,7 +98,7 @@ def _drop_completed_projects(projects: list[dict], filters) -> list[dict]:
 	return [
 		project
 		for project in projects
-		if (project.get("custom_shipment_status") or "") != COMPLETED_SHIPMENT_STATUS
+		if (project.get("custom_shipment_status") or "") not in COMPLETED_SHIPMENT_STATUSES
 	]
 
 
@@ -100,7 +109,7 @@ def _drop_completed_containers(rows: list[dict], filters, projects: dict) -> lis
 	kept = []
 	for row in rows:
 		project = projects.get(row.get("project")) or {}
-		if (project.get("custom_shipment_status") or "") != COMPLETED_SHIPMENT_STATUS:
+		if (project.get("custom_shipment_status") or "") not in COMPLETED_SHIPMENT_STATUSES:
 			kept.append(row)
 	return kept
 
@@ -493,8 +502,6 @@ def _container_location_summary(rows: list[dict]) -> str:
 	return _("{0} locations").format(len(unique))
 
 
-COMPLETED_SHIPMENT_STATUSES = frozenset({"Completed", "Settled"})
-
 
 def _is_in_demurrage(row: dict) -> bool:
 	"""Active demurrage only — closed/returned containers are excluded from the KPI."""
@@ -698,6 +705,12 @@ def get_shipment_tracker(filters=None) -> dict:
 	filters = _parse_filters(filters)
 	# Status on the Shipments tab is shipment status — never pass it to tracker rows.
 	projects = _fetch_shipment_rows(filters)
+	# Count before hiding. The tiles summarise everything matching the user's
+	# filters; the grid below is the working list and may hide completed. Counting
+	# after the drop meant "Completed shipments" reported the completed ones left in
+	# a list they had just been removed from - always 0, on a board where six
+	# shipments were finished.
+	kpi_projects = projects
 	projects = _drop_completed_projects(projects, filters)
 	project_map = {project["name"]: project for project in projects}
 	tracker_rows = []
@@ -713,7 +726,7 @@ def get_shipment_tracker(filters=None) -> dict:
 		[_build_row(row, project_map) for row in tracker_rows]
 	)
 	all_tracker_rows = _enrich_ops_rows_with_bl_deposits(all_tracker_rows, project_map)
-	kpis = _shipment_kpis(projects, all_tracker_rows)
+	kpis = _shipment_kpis(kpi_projects, all_tracker_rows)
 	rows: list[dict] = []
 	for project in projects:
 		rows.append(_build_shipment_row(project, project_map, all_tracker_rows))
@@ -1232,12 +1245,15 @@ def get_container_ops_board(filters=None) -> dict:
 	projects = _project_cache()
 	raw = _fetch_tracker_rows(filters)
 	raw = _apply_container_post_filters(raw, filters, projects)
-	raw = _drop_completed_containers(raw, filters, projects)
 	all_rows = _enrich_rows_with_transporter_updates([_build_row(row, projects) for row in raw])
 	all_rows = _enrich_ops_rows_with_bl_deposits(all_rows, projects)
+	# Count before hiding. Dropping completed shipments first made
+	# "Returned this month" undercount by exactly the containers most likely to
+	# qualify - a shipment completes *because* its containers came back - and left
+	# a pending deposit refund invisible once its shipment closed.
 	kpis = _kpis(all_rows, projects)
 
-	rows = list(all_rows)
+	rows = _drop_completed_containers(list(all_rows), filters, projects)
 	if filters.get("traffic_light"):
 		rows = [r for r in rows if r.get("traffic_light") == filters.traffic_light]
 	rows = _apply_kpi_filter(rows, filters.get("kpi_filter"), getdate(today()))
