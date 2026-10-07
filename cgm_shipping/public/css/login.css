@@ -1,0 +1,299 @@
+/* CGM sign-in page.
+ *
+ * Scoped to body[data-path="login"] so it cannot reach the customer portal, and
+ * written to sit on top of Frappe's login.bundle.css, which loads after the app
+ * stylesheets - hence the attribute-prefixed selectors.
+ */
+
+body[data-path="login"] {
+	--cgm-red: #d81f10;
+	--cgm-red-dark: #a9150a;
+	--cgm-ink: #14171f;
+	--cgm-muted: #6b7280;
+	--cgm-border: #dfe3e8;
+	--cgm-field: #fff;
+
+	background: radial-gradient(900px 540px at 50% -8%, rgba(232, 57, 43, 0.85) 0%, rgba(232, 57, 43, 0) 60%),
+		linear-gradient(165deg, #a81609 0%, #7c1006 55%, #4d0a03 100%);
+	background-attachment: fixed;
+	min-height: 100vh;
+}
+
+/* Centre the card in the viewport instead of hanging it from a fixed offset. */
+body[data-path="login"] .page-content-wrapper {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 100vh;
+	padding: 48px 16px;
+}
+
+body[data-path="login"] .navbar,
+body[data-path="login"] .web-footer {
+	display: none;
+}
+
+body[data-path="login"] .for-login .page-card,
+body[data-path="login"] .for-forgot .page-card,
+body[data-path="login"] .for-signup .page-card,
+body[data-path="login"] .for-email-login .page-card,
+body[data-path="login"] .for-login-with-email-link .page-card,
+body[data-path="login"] .for-reset-password .page-card {
+	max-width: 390px;
+	padding: 28px 30px 26px;
+	border: none;
+	border-radius: 18px;
+	background-color: #fff;
+	box-shadow: 0 28px 70px rgba(27, 6, 3, 0.34), 0 2px 6px rgba(27, 6, 3, 0.12);
+}
+
+/* ─── Head: logo, title, subtitle ──────────────────────────────────────────── */
+
+body[data-path="login"] .page-card-head {
+	align-items: center;
+	text-align: center;
+	gap: 14px;
+}
+
+body[data-path="login"] .page-card-head img.app-logo {
+	max-height: 44px;
+	max-width: 190px;
+	width: auto;
+	margin: 2px auto 6px;
+}
+
+body[data-path="login"] .page-card-head h4 {
+	color: var(--cgm-ink);
+	font-size: 23px;
+	line-height: 1.25;
+	letter-spacing: -0.015em;
+	text-align: center;
+}
+
+body[data-path="login"] .page-card-subtitle {
+	color: var(--cgm-muted);
+	font-size: 14px;
+	text-align: center;
+}
+
+/* ─── Fields ───────────────────────────────────────────────────────────────── */
+
+body[data-path="login"] .page-card-body label {
+	color: #3b4252;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+body[data-path="login"] .email-field,
+body[data-path="login"] .password-field {
+	position: relative;
+	width: 100%;
+}
+
+body[data-path="login"] .page-card .page-card-body input[type="text"],
+body[data-path="login"] .page-card .page-card-body input[type="email"],
+body[data-path="login"] .page-card .page-card-body input[type="password"] {
+	height: 42px;
+	/* !important: login.bundle.css loads after the app stylesheets and sets its own
+	   padding, which leaves the text cramped against the border. */
+	padding: 9px 14px !important;
+	border: 1px solid var(--cgm-border);
+	border-radius: 9px;
+	background-color: var(--cgm-field);
+	color: var(--cgm-ink);
+	font-size: 14px;
+	box-shadow: none;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+body[data-path="login"] .page-card .page-card-body input::placeholder {
+	color: #aab1bd;
+}
+
+body[data-path="login"] .page-card .page-card-body input[type="text"]:hover,
+body[data-path="login"] .page-card .page-card-body input[type="email"]:hover,
+body[data-path="login"] .page-card .page-card-body input[type="password"]:hover {
+	border-color: #c8ced6;
+}
+
+body[data-path="login"] .page-card .page-card-body input[type="text"]:focus,
+body[data-path="login"] .page-card .page-card-body input[type="email"]:focus,
+body[data-path="login"] .page-card .page-card-body input[type="password"]:focus {
+	background-color: #fff;
+	border-color: var(--cgm-red);
+	box-shadow: 0 0 0 3px rgba(216, 31, 16, 0.14);
+	outline: none;
+}
+
+/* The eye sits opposite the lock. */
+body[data-path="login"] .page-card .page-card-body .password-field input[type="password"] {
+	padding-right: 40px !important;
+}
+
+body[data-path="login"] .password-field .toggle-password {
+	position: absolute;
+	right: 14px;
+	top: 50%;
+	transform: translateY(-50%);
+	color: var(--cgm-muted);
+	cursor: pointer;
+	z-index: 2;
+}
+
+body[data-path="login"] .password-field .toggle-password:hover {
+	color: var(--cgm-ink);
+}
+
+body[data-path="login"] a[href="#forgot"] {
+	color: var(--cgm-muted);
+	font-size: 13.5px;
+	font-weight: 500;
+	text-decoration: none;
+}
+
+body[data-path="login"] a[href="#forgot"]:hover {
+	color: var(--cgm-red);
+	text-decoration: underline;
+}
+
+body[data-path="login"] .field-error {
+	color: #c0170a;
+	font-size: 13px;
+}
+
+/* ─── Buttons ──────────────────────────────────────────────────────────────── */
+
+body[data-path="login"] .page-card-actions .es-button[data-variant="solid"],
+body[data-path="login"] .page-card-actions button[type="submit"] {
+	height: 40px;
+	border: none;
+	border-radius: 9px;
+	background-color: var(--cgm-red);
+	color: #fff;
+	font-size: 14.5px;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+	box-shadow: 0 1px 2px rgba(169, 21, 10, 0.3);
+	transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+
+body[data-path="login"] .page-card-actions .es-button[data-variant="solid"]:hover,
+body[data-path="login"] .page-card-actions button[type="submit"]:hover {
+	background-color: var(--cgm-red-dark);
+	box-shadow: 0 4px 14px rgba(169, 21, 10, 0.32);
+}
+
+body[data-path="login"] .page-card-actions button[type="submit"]:active {
+	transform: translateY(1px);
+}
+
+body[data-path="login"] .page-card-actions button[type="submit"]:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 3px rgba(216, 31, 16, 0.3);
+}
+
+/* Email link / LDAP / social providers: quiet next to the primary action. */
+body[data-path="login"] .page-card-actions .btn-login-option,
+body[data-path="login"] .social-login-buttons .es-button {
+	height: 40px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	border: 1px solid var(--cgm-border);
+	border-radius: 9px;
+	background-color: #fff;
+	color: var(--cgm-ink);
+	font-size: 14px;
+	font-weight: 500;
+	box-shadow: none;
+}
+
+body[data-path="login"] .page-card-actions .btn-login-option:hover,
+body[data-path="login"] .social-login-buttons .es-button:hover {
+	background-color: #f5f6f8;
+	border-color: #c8ced6;
+	color: var(--cgm-ink);
+}
+
+body[data-path="login"] .social-logins {
+	margin-top: 2px;
+}
+
+body[data-path="login"] .social-login-buttons .login-button-wrapper {
+	min-width: 100%;
+	margin-top: 10px;
+}
+
+/* ─── Footer line ──────────────────────────────────────────────────────────── */
+
+body[data-path="login"] .sign-up-message {
+	color: var(--cgm-muted);
+	font-size: 13px;
+}
+
+body[data-path="login"] .sign-up-message a {
+	color: var(--cgm-red);
+	font-weight: 600;
+}
+
+/* ─── Phone ────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 575.98px) {
+	body[data-path="login"] .page-content-wrapper {
+		padding: 0;
+	}
+
+	/* The card goes edge to edge on a phone, so the page container cannot keep
+	   its gutters - they left a red stripe down each side. */
+	body[data-path="login"] .page-content-wrapper .container {
+		max-width: 100%;
+		padding-left: 0;
+		padding-right: 0;
+	}
+
+	body[data-path="login"] .for-login .page-card,
+	body[data-path="login"] .for-forgot .page-card,
+	body[data-path="login"] .for-signup .page-card,
+	body[data-path="login"] .for-email-login .page-card,
+	body[data-path="login"] .for-login-with-email-link .page-card,
+	body[data-path="login"] .for-reset-password .page-card {
+		max-width: 100%;
+		min-height: 100svh;
+		border-radius: 0;
+		box-shadow: none;
+		padding: 56px 24px 32px;
+		justify-content: center;
+	}
+}
+
+
+/* Vertical rhythm: Frappe's gap utilities are generous for a form this short. */
+body[data-path="login"] .login-content.page-card {
+	gap: 12px;
+}
+
+body[data-path="login"] .form-login {
+	gap: 16px;
+}
+
+body[data-path="login"] .page-card-body {
+	gap: 10px;
+}
+
+body[data-path="login"] .page-card-actions {
+	gap: 10px;
+}
+
+body[data-path="login"] .page-card-body .form-group {
+	gap: 6px;
+}
+
+body[data-path="login"] .page-card-body .form-group > div {
+	gap: 6px;
+}
+
+/* The reference sets the action apart from the fields. */
+body[data-path="login"] .page-card-actions {
+	margin-top: 6px;
+}
