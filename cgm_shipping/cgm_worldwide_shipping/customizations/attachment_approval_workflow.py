@@ -367,13 +367,17 @@ def _route_parent_for_review(
 	profile: AttachmentApprovalProfile,
 	rows: list,
 ) -> None:
-	from frappe.desk.form.assign_to import add as assign_to
-
+	# Notify, do not assign. This used to hand the parent to every user holding an
+	# Operations role - 25 people from one click - and nothing ever closed those
+	# ToDos, so ten documents had already left 168 of them open. Reviewers never
+	# needed the assignment to act: the Review dialog is gated on
+	# user_has_operations_department_access(), not on being assigned, so the
+	# notification below is what tells them there is something waiting.
 	users = _resolve_approver_users(profile)
 	if not users:
 		frappe.throw(
 			_(
-				"Configure <b>Operations roles</b> on {0} before sending documents for review."
+				"No one can review this yet. Configure <b>Operations roles</b> on {0} first."
 			).format(frappe.utils.get_link_to_form("CGM Shipping Settings", "CGM Shipping Settings"))
 		)
 
@@ -385,15 +389,6 @@ def _route_parent_for_review(
 			profile.label,
 			", ".join(labels[:5]) + ("…" if len(labels) > 5 else ""),
 		)
-
-	assign_to(
-		{
-			"doctype": parent_doc.doctype,
-			"name": parent_doc.name,
-			"assign_to": users,
-			"description": description,
-		}
-	)
 
 	if profile.notification and frappe.db.exists("Notification", profile.notification):
 		parent_doc.cgm_attachment_review_label = description
