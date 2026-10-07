@@ -1331,8 +1331,12 @@ function configure_finance_line_grid(frm, ui) {
 	}
 	// Item links to Clearance Charge Item master (UCR Invoice, UCR Receipt, …).
 	grid.update_docfield_property("charge_item", "read_only", 0);
+	// line_label is the visible Item column: it is the one that can say
+	// "UCR Invoice (Amendment)". charge_item is a Link to a shared master record, so
+	// it reads identically on an amendment and on the original.
 	if (grid.get_docfield("line_label")) {
-		grid.update_docfield_property("line_label", "hidden", 1);
+		grid.update_docfield_property("line_label", "hidden", 0);
+		grid.update_docfield_property("line_label", "read_only", 1);
 	}
 	const charge_field = grid.get_field("charge_item");
 	if (charge_field && !charge_field._cgm_charge_query) {

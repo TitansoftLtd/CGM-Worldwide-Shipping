@@ -3775,6 +3775,13 @@ def before_task_save(doc, _method=None):
 
 	stamp_permit_register_upload_metadata(doc, TASK_PERMITS_FIELD)
 	stamp_shipment_document_upload_metadata(doc, TASK_DOCUMENTS_FIELD)
+
+	# An amended invoice has to read as one in the grid, not just carry a tick.
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		sync_finance_line_labels,
+	)
+
+	sync_finance_line_labels(doc)
 	if not _is_sea_task(doc):
 		return
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
