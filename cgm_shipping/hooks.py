@@ -54,6 +54,7 @@ app_include_js = [
 web_include_css = [
 	"/assets/cgm_shipping/css/customer_portal.css",
 	"/assets/cgm_shipping/css/operational_updates.css",
+	"/assets/cgm_shipping/css/login.css",
 ]
 web_include_js = [
 	"/assets/cgm_shipping/js/portal_localize_time.js",
