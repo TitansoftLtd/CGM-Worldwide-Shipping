@@ -653,6 +653,7 @@ def _auto_complete_container_task(task_name: str, project: str) -> bool:
 	)
 
 	sync_project_shipment_status_from_tasks(project)
+	_refresh_erpnext_project_rollup(project)
 	frappe.publish_realtime(
 		"cgm_project_tracking_refresh",
 		{"project": project},
@@ -660,6 +661,28 @@ def _auto_complete_container_task(task_name: str, project: str) -> bool:
 		docname=project,
 	)
 	return True
+
+
+def _refresh_erpnext_project_rollup(project: str) -> None:
+	"""Recompute ERPNext's own % Complete after a status written with db.set_value.
+
+	set_value skips document hooks, which is what keeps this fast, but it also means
+	Task.update_project() never fires and the Project keeps the percentage it had
+	before. A shipment whose last transport steps auto-completed then sat at 91%
+	with every task done, because those two steps are exactly the ones completed
+	this way (PROJ-0003, PROJ-0039). CGM's own custom_shipment_status was right the
+	whole time - only ERPNext's rollup was stale, which is why the two disagreed.
+	"""
+	if not project or not frappe.db.exists("Project", project):
+		return
+	try:
+		frappe.get_cached_doc("Project", project).update_project()
+	except Exception:
+		# A stale percentage is cosmetic; never fail a task completion over it.
+		frappe.log_error(
+			title="cgm container task project rollup",
+			message=f"{project}: {frappe.get_traceback()}",
+		)
 
 
 def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
