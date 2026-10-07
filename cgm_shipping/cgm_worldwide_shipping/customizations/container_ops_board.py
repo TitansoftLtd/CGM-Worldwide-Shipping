@@ -290,13 +290,22 @@ def _enrich_rows_with_transporter_updates(rows: list[dict]) -> list[dict]:
 	return rows
 
 
-def _normalize_date_field(date_field: str | None) -> str | None:
-	"""Map UI labels (ETA/ATA) and keys (eta/ata) to a canonical key."""
-	if not date_field:
-		return None
-	key = str(date_field).strip().lower()
+def _normalize_date_field(date_field: str | None, filters=None) -> str | None:
+	"""Map UI labels (ETA/ATA) and keys (eta/ata) to a canonical key.
+
+	Falls back to ETA when a date range was given without picking a field. The two
+	controls are separate, so choosing dates and leaving Date Field blank used to
+	filter nothing at all - the board simply returned every row and gave no hint
+	that a second control had to be set first. ETA is the board's primary date and
+	the first option in the list, so it is what "filter by date" means here.
+	"""
+	key = str(date_field or "").strip().lower()
 	if key in ("eta", "ata"):
 		return key
+	if key:
+		return None
+	if filters and (filters.get("date_from") or filters.get("date_to")):
+		return "eta"
 	return None
 
 
@@ -345,8 +354,15 @@ def _project_filters(filters) -> dict:
 		project_filters["custom_bill_of_lading"] = filters.bill_of_lading
 	batch_no = (filters.get("batch_no") or "").strip()
 	if batch_no:
-		project_filters["custom_batch_no"] = ["like", f"%{batch_no}%"]
-	date_key = _normalize_date_field(filters.get("date_field"))
+		# Batch numbers are plain integers on 27 of the 30 values here, so a
+		# substring match turned "1" into 1, 10, 12, 13, 14, 15 and 17 - nine
+		# batches for a filter the user meant to pin one. Digits match exactly;
+		# anything else (10X20-35) keeps the partial search that makes sense there.
+		if batch_no.isdigit():
+			project_filters["custom_batch_no"] = batch_no
+		else:
+			project_filters["custom_batch_no"] = ["like", f"%{batch_no}%"]
+	date_key = _normalize_date_field(filters.get("date_field"), filters)
 	if date_key:
 		field = (
 			"custom_eta" if date_key == "eta" else "custom_actual_time_of_arrival_ata"
@@ -379,7 +395,7 @@ def _filter_by_shipping_line(
 
 def _filter_by_date_range(rows: list[dict], filters, projects: dict) -> list[dict]:
 	"""Filter container rows by project ETA/ATA (same date field as Shipments tab)."""
-	date_key = _normalize_date_field(filters.get("date_field"))
+	date_key = _normalize_date_field(filters.get("date_field"), filters)
 	if not date_key:
 		return rows
 	date_from = getdate(filters.date_from) if filters.get("date_from") else None

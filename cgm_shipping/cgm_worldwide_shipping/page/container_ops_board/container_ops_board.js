@@ -483,6 +483,10 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 
 		// A control's value does not always map to a single filter. The date
 		// range is one widget feeding two server-side params, so every read
+		// Same two statuses the server treats as finished.
+		const COMPLETED_STATUS_VALUES = new Set(["Completed", "Settled"]);
+		let lastStatusWasCompleted = false;
+
 		// goes through here rather than assuming filters[fieldname] = value.
 		function applyFilterValue(fieldname) {
 			const control = filter_controls[fieldname];
@@ -500,6 +504,24 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			}
 
 			filters[fieldname] = value || null;
+
+			// Choosing Completed in Status is asking for completed shipments, so tick
+			// the box that says so; clearing it again unticks. Only these two
+			// transitions touch the box, so someone who ticked it deliberately and
+			// then filters by another status keeps their choice.
+			if (fieldname === "status") {
+				const wantsCompleted = COMPLETED_STATUS_VALUES.has(String(value || ""));
+				if (wantsCompleted || lastStatusWasCompleted) {
+					filters.include_completed = wantsCompleted ? 1 : 0;
+					page.main
+						.find(".cgm-ops-completed-checkbox")
+						.prop("checked", wantsCompleted);
+					page.main
+						.find(".cgm-ops-completed-check")
+						.toggleClass("is-on", wantsCompleted);
+				}
+				lastStatusWasCompleted = wantsCompleted;
+			}
 		}
 
 		// Set while the clear button empties the controls: each set_value fires
@@ -1020,6 +1042,17 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			</td>`;
 		}
 
+		// Counted across the whole result, not restarted per page: "row 3" has to
+		// mean the same thing to two people looking at a 72-row list, and page 2
+		// starting at 1 again makes the number useless for talking about.
+		function rowNumberCell(index) {
+			return `<td class="cgm-ops-num-col">${cint(listStart) + cint(index) + 1}</td>`;
+		}
+
+		function rowNumberHeader() {
+			return `<th class="cgm-ops-num-col" title="${__("Row number across all pages")}">#</th>`;
+		}
+
 		function selectAllHeader() {
 			return `<th class="cgm-ops-check-col">
 				<input type="checkbox" class="cgm-ops-select-all" title="${__("Select all")}">
@@ -1105,7 +1138,10 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 					.first()
 					.children("th")
 					.each(function (index) {
-						const width = widths[columnKey($(this))];
+						const $th = $(this);
+						if ($th.hasClass("cgm-ops-check-col")) return;
+						if ($th.hasClass("cgm-ops-num-col")) return;
+						const width = widths[columnKey($th)];
 						if (!width) return;
 						// nth-child rather than a class per column: the header and
 						// body cells share a position but nothing else.
@@ -1136,8 +1172,9 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 				.children("th")
 				.each(function () {
 					const $th = $(this);
-					// The checkbox column is a fixed 32px gutter, not data.
+					// The checkbox and row number are fixed gutters, not data.
 					if ($th.hasClass("cgm-ops-check-col")) return;
+					if ($th.hasClass("cgm-ops-num-col")) return;
 					if ($th.children(".cgm-ops-col-resizer").length) return;
 					$(`<span class="cgm-ops-col-resizer" aria-hidden="true"></span>`)
 						.attr("title", __("Drag to resize, double-click to reset"))
@@ -1206,6 +1243,22 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			}
 		});
 
+		// The number column is sized by the widest number it has to hold, not by a
+		// fixed guess. A page of 500, or page 12 of a long list, reaches four digits
+		// and a fixed 2.1rem clipped them; a page of 25 would waste the space.
+		function syncRowNumberWidth(rowCount) {
+			const board = page.main.get(0);
+			if (!board) return;
+			const highest = cint(listStart) + cint(rowCount);
+			const digits = Math.max(2, String(Math.max(highest, 1)).length);
+			// ch, not rem: one ch is the advance of a digit in the table's own font,
+			// and the cells are tabular-nums so every digit is that same width. A rem
+			// figure had to guess at the font size and at whether padding counted
+			// inside the width, and guessed too generously - 25 sat in a column wide
+			// enough for four digits.
+			board.style.setProperty("--cgm-ops-num-width", `calc(${digits}ch + 0.6rem)`);
+		}
+
 		function renderListTable(headersHtml, bodyHtml, extraHeaderRow = "") {
 			$tableWrap.html(`
 				<div class="cgm-ops-table-scroll">
@@ -1214,6 +1267,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 						<tbody>${bodyHtml}</tbody>
 					</table>
 				</div>`);
+			syncRowNumberWidth($tableWrap.find("tbody > tr").length);
 			setupResizableColumns($tableWrap.find("table.cgm-ops-table"), activeTab);
 		}
 
@@ -1273,6 +1327,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		function transportTableHeaders() {
 			return `
 				${selectAllHeader()}
+				${rowNumberHeader()}
 				<th class="cgm-ops-sticky-col">${__("Client")}</th>
 				<th>${__("Client Reference No")}</th>
 				<th>${__("CGM Ref No")}</th>
@@ -1342,7 +1397,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			)}</span>`;
 		}
 
-		function transportTableRow(row, extraCol = "") {
+		function transportTableRow(row, extraCol = "", index = null) {
 			const ret = row.effective_return_date || row.actual_empty_return || row.interchange_date;
 			const alert = row.alert_status
 				? `<div class="cgm-ops-alert">${frappe.utils.escape_html(row.alert_status)}</div>`
@@ -1351,6 +1406,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			const selectedCls = selectedKeys.has(row.name) ? " is-selected" : "";
 			return `<tr class="${frappe.utils.escape_html(row.traffic_css || "")}${selectedCls}" data-name="${frappe.utils.escape_html(row.name || "")}">
 				${checkboxCell(row)}
+				${index === null ? "" : rowNumberCell(index)}
 				<td class="cgm-ops-sticky-col">${clientCell(row)}</td>
 				<td>${clientReferenceCell(row)}</td>
 				<td>${cgmReferenceCell(row)}</td>
@@ -1411,7 +1467,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		function renderShipmentListTable() {
 			renderListTable(
 				shipmentTableHeaders(),
-				shipmentRows.map((row) => shipmentTableRow(row)).join("")
+				shipmentRows.map((row, index) => shipmentTableRow(row, index)).join("")
 			);
 			renderListChrome(shipmentRows);
 		}
@@ -1540,6 +1596,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		function shipmentTableHeaders() {
 			return `
 				${selectAllHeader()}
+				${rowNumberHeader()}
 				${sortableHeader(__("Client"), "client_name", "cgm-ops-sticky-col")}
 				${sortableHeader(__("Client Reference No"), "client_reference_no")}
 				${sortableHeader(__("CGM Ref No"), "cgm_ref_no")}
@@ -1570,10 +1627,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			return `<a href="/app/project/${encodeURIComponent(row.name)}">${frappe.utils.escape_html(ref)}</a>`;
 		}
 
-		function shipmentTableRow(row) {
+		function shipmentTableRow(row, index = 0) {
 			const selectedCls = selectedKeys.has(row.name) ? " is-selected" : "";
 			return `<tr class="cgm-ops-clickable${selectedCls}" data-project="${frappe.utils.escape_html(row.name)}" data-name="${frappe.utils.escape_html(row.name || "")}">
 				${checkboxCell(row)}
+				${rowNumberCell(index)}
 				<td class="cgm-ops-sticky-col">${frappe.utils.escape_html(row.customer || "—")}</td>
 				<td>${frappe.utils.escape_html(row.client_reference_no || "—")}</td>
 				<td>${cgmReferenceCell(row)}</td>
@@ -1698,7 +1756,9 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 						<div class="cgm-ops-table-scroll">
 							<table class="cgm-ops-table">
 								<thead><tr>${transportTableHeaders()}</tr></thead>
-								<tbody>${containerRows.map((row) => transportTableRow(row)).join("")}</tbody>
+								<tbody>${containerRows
+									.map((row, index) => transportTableRow(row, "", index))
+									.join("")}</tbody>
 							</table>
 						</div>`);
 					setupResizableColumns($body.find("table.cgm-ops-table"), "detail");
@@ -1718,7 +1778,7 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			}
 			renderListTable(
 				transportTableHeaders(),
-				rows.map((row) => transportTableRow(row)).join("")
+				rows.map((row, index) => transportTableRow(row, "", index)).join("")
 			);
 			renderListChrome(rows);
 		}
@@ -1738,7 +1798,11 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			}
 			renderListTable(
 				`${transportTableHeaders()}<th>${__("Days Out")}</th>`,
-				rows.map((row) => transportTableRow(row, `<td>${row.days_outstanding || 0}</td>`)).join("")
+				rows
+					.map((row, index) =>
+						transportTableRow(row, `<td>${row.days_outstanding || 0}</td>`, index)
+					)
+					.join("")
 			);
 			renderListChrome(rows);
 		}
@@ -1792,6 +1856,15 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 		page.main.find(".cgm-ops-kpis").on("click", ".cgm-ops-kpi", function () {
 			const key = $(this).data("kpi");
 			kpiFilter = kpiFilter === key ? null : key;
+			// Asking for completed through the tile is the same request as ticking
+			// the box, so show it ticked. Leaving it unticked while completed
+			// shipments filled the grid made the control look broken.
+			if (key === "completed_shipments" || key === "total_shipments") {
+				const on = Boolean(kpiFilter);
+				filters.include_completed = on ? 1 : 0;
+				page.main.find(".cgm-ops-completed-checkbox").prop("checked", on);
+				page.main.find(".cgm-ops-completed-check").toggleClass("is-on", on);
+			}
 			listStart = 0;
 			selectedKeys.clear();
 			refresh();
@@ -1809,6 +1882,31 @@ frappe.pages["container-ops-board"].on_page_load = function (wrapper) {
 			// Unticked on every load by design: the board is a work list, and
 			// finished shipments are not work.
 			filters.include_completed = this.checked ? 1 : 0;
+
+			// Unticking means "stop showing me completed", so anything else asking
+			// for them is released at the same time. Otherwise the board contradicts
+			// itself: the box says no while a tile or a status filter still says yes.
+			if (!this.checked) {
+				if (kpiFilter === "completed_shipments" || kpiFilter === "total_shipments") {
+					kpiFilter = null;
+				}
+				if (COMPLETED_STATUS_VALUES.has(String(filters.status || ""))) {
+					filters.status = null;
+					lastStatusWasCompleted = false;
+					const statusControl = filter_controls.status;
+					if (statusControl) {
+						// Clear the control without re-entering this handler through
+						// its own onchange.
+						suppressFilterRefresh = true;
+						try {
+							statusControl.set_value("");
+						} finally {
+							suppressFilterRefresh = false;
+						}
+					}
+				}
+			}
+
 			listStart = 0;
 			selectedKeys.clear();
 			refresh();
