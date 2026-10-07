@@ -193,6 +193,18 @@ SHOTS: list[Shot] = [
 	# --- Deposits & charges -------------------------------------------------
 	Shot("bill-of-lading-form", "bill-of-lading/{bill_of_lading}", "deposits-and-charges"),
 	# --- Finance ------------------------------------------------------------
+	Shot(
+		"finance-task-invoices",
+		"task/{finance_task}",
+		"finance",
+		[
+			Annotation(
+				"[data-fieldname='custom_task_finance_lines']",
+				"Amended invoices read as (Amendment)",
+				"above",
+			),
+		],
+	),
 	Shot("sales-invoice-list", "sales-invoice", "finance"),
 	Shot(
 		"sales-invoice-form",
@@ -246,7 +258,38 @@ def _sample_records() -> dict[str, str]:
 		"cgm_task_template": pick("CGM Task Template"),
 		"task": pick("Task", {"project": ["is", "set"]}),
 		"project": pick("Project"),
+		# A finance payment task, so the Invoices & Receipts grid has rows to show.
+		# Prefers one carrying an amendment, since that is what the guide describes.
+		"finance_task": _pick_finance_task(),
 	}
+
+
+def _pick_finance_task() -> str:
+	"""A finance payment task whose invoice grid is worth photographing.
+
+	Prefers a task with an amended invoice row - that is the case the finance guide
+	explains - and falls back to any finance task with invoice lines so the shot is
+	never of an empty grid.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import TASK_FINANCE_FIELD
+
+	amended = frappe.get_all(
+		"Task Finance Line",
+		filters={"parenttype": "Task", "is_amendment": 1, "line_type": "Invoice"},
+		pluck="parent",
+		limit=1,
+	)
+	if amended:
+		return amended[0]
+	with_lines = frappe.get_all(
+		"Task Finance Line",
+		filters={"parenttype": "Task", "line_type": "Invoice", "attachment": ["is", "set"]},
+		pluck="parent",
+		limit=1,
+	)
+	if with_lines:
+		return with_lines[0]
+	return frappe.db.get_value("Task", {"custom_task_role": "Finance Payment"}, "name") or ""
 
 
 def build_alias_map() -> dict[str, str]:
@@ -291,8 +334,49 @@ def build_alias_map() -> dict[str, str]:
 # browser-side helpers
 # --------------------------------------------------------------------------
 
+#: Token auth renders every record correctly, but the desk SPA also makes calls
+#: that need a session CSRF token and throws a "Session Expired" modal when they
+#: fail. The record underneath is right, so the dialog is an artifact of running
+#: headless, not a state a user would see. Clearing it is the difference between a
+#: usable shot and 21 greyed-out ones - and the blank-frame guard never caught it,
+#: because an overlaid frame is not a blank frame.
+#: A fixed sleep after navigation is a race: a task form with several child grids
+#: renders slower than a list, so the same shot captured one run and came back a
+#: blank frame the next. Poll for real content instead of guessing at a duration.
+_READY_JS = """
+(() => {
+	const body = document.querySelector('.layout-main-section, .page-content');
+	if (!body) return 0;
+	const painted = document.querySelectorAll(
+		'.frappe-control, .list-row, .grid-row, .form-section'
+	).length;
+	return (body.innerText || '').trim().length > 400 && painted > 5 ? painted : 0;
+})()
+"""
+
+_DISMISS_DIALOGS_JS = """
+(() => {
+	let removed = 0;
+	document.querySelectorAll('.modal, .modal-backdrop').forEach((el) => {
+		el.remove();
+		removed += 1;
+	});
+	document.body.classList.remove('modal-open');
+	document.body.style.removeProperty('overflow');
+	document.body.style.removeProperty('padding-right');
+	return removed;
+})()
+"""
+
+#: Frappe renamed this key: v16 reads `desk-sidebar-collapsed` ("1"), while older
+#: builds read `sidebar-expanded` ("false"). Setting only the old one meant the
+#: collapse silently stopped working and the sidebar took 220px of every shot.
+#: Both are set so the harness keeps working across versions.
 _COLLAPSE_SIDEBAR_JS = """
-try { localStorage.setItem('sidebar-expanded', 'false'); } catch (e) {}
+try {
+	localStorage.setItem('desk-sidebar-collapsed', '1');
+	localStorage.setItem('sidebar-expanded', 'false');
+} catch (e) {}
 """
 
 # Frappe persists list filters per user, so whoever the token belongs to can have a
@@ -535,6 +619,24 @@ def _is_blank(png_bytes: bytes, image) -> bool:
 	return len(image.convert("RGB").getcolors(maxcolors=64) or []) <= 2
 
 
+def _wait_until_rendered(page, floor_seconds: float, cap_seconds: float = 25.0) -> bool:
+	"""Give the page the time it actually needs, not a fixed guess.
+
+	Waits the configured minimum so animations settle, then polls for rendered
+	content up to a cap. Returns whether content was seen, so a caller can tell a
+	slow page from an empty one.
+	"""
+	time.sleep(floor_seconds)
+	deadline = time.monotonic() + cap_seconds
+	while time.monotonic() < deadline:
+		if _value(page.evaluate(_READY_JS)):
+			# One more beat so late grids finish painting.
+			time.sleep(1.5)
+			return True
+		time.sleep(1)
+	return False
+
+
 def _base_url() -> str:
 	override = os.environ.get("CGM_DOCS_BASE_URL")
 	if override:
@@ -616,7 +718,7 @@ def capture_all(
 				page.evaluate(_COLLAPSE_SIDEBAR_JS)
 
 				page.navigate(url)
-				time.sleep(wait / 1000)
+				_wait_until_rendered(page, wait / 1000)
 
 				# List routes only: drop any saved filter that would hide the rows.
 				if "/" not in resolved:
@@ -639,6 +741,7 @@ def capture_all(
 					)
 					rects = json.loads(raw) if raw else []
 
+				dismissed = _value(page.evaluate(_DISMISS_DIALOGS_JS)) or 0
 				png = page.capture_screenshot(image_format="png")
 			finally:
 				# Dispose the context explicitly. disposeOnDetach only fires when the

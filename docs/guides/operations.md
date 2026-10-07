@@ -234,7 +234,7 @@ Final documents are reviewed before they count as done. It works the same on a P
 
 1. Attach the **final** version on the document row. Its status goes to **Draft**.
 2. Click **Send Final Documents for Review** and pick the rows to send. They move to **Pending Review**.
-3. The shipment is assigned to the Operations approvers and they are notified.
+3. The Operations approvers are notified by email. Nobody is assigned the shipment: the review dialog is open to anyone with Operations access, so an assignment added nothing and left a ToDo behind on every reviewer.
 
 **Reviewing:** an approver clicks **Review Final Documents**, which lists what is waiting and lets them approve or reject each one. A rejection needs a reason, which is written back onto the row.
 

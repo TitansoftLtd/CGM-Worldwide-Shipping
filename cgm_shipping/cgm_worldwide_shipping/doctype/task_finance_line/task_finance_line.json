@@ -69,7 +69,8 @@
    "fieldname": "is_amendment",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Amendment"
+   "label": "Amendment",
+   "columns": 1
   },
   {
    "description": "ERPNext Item used when Finance creates a Purchase Invoice from this task line. Defaults from Clearance Charge Item.",
@@ -77,7 +78,7 @@
    "fetch_if_empty": 1,
    "fieldname": "item_code",
    "fieldtype": "Link",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "label": "Purchase Item",
    "options": "Item",
    "read_only": 0
@@ -86,14 +87,16 @@
    "fieldname": "attachment",
    "fieldtype": "Attach",
    "in_list_view": 1,
-   "label": "Attachment"
+   "label": "Attachment",
+   "columns": 2
   },
   {
    "default": "0",
    "fieldname": "verified",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Verified by Finance"
+   "label": "Verified by Finance",
+   "columns": 1
   },
   {
    "fieldname": "verified_by",
@@ -116,7 +119,8 @@
    "in_list_view": 1,
    "label": "Journal Entry",
    "options": "Journal Entry",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 2
   },
   {
    "default": "0",
@@ -125,7 +129,8 @@
    "fieldname": "client_paid_directly",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Client will pay"
+   "label": "Client will pay",
+   "columns": 1
   },
   {
    "default": "0",
@@ -157,7 +162,7 @@
    "description": "Client confirmed payment on the portal (receipt/POP may follow).",
    "fieldname": "client_reported_paid",
    "fieldtype": "Check",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "label": "Client Reported Paid",
    "read_only": 1
   },
@@ -173,7 +178,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-10-07 10:00:00.000000",
+ "modified": "2026-10-07 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Task Finance Line",
