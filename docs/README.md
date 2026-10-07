@@ -10,6 +10,7 @@ Welcome to the CGM Worldwide Shipping documentation. This wiki covers freight fo
 |-------|----------|--------|
 | [Getting Started](guides/process-overview.md) | Everyone | End-to-end process map |
 | [Operations Guide](guides/operations.md) | Ops, Documentation, Field teams | Projects, tasks, workflow, documents |
+| [The Tables on a Task](guides/task-tables.md) | Everyone working a shipment | Column-by-column reference for all four task grids |
 | [Shipment Modes](guides/shipment-modes.md) | Ops, Declaration, Transport | All eight modes and task plans |
 | [Other Shipment Types](guides/shipment-types.md) | Ops, Declaration, Transport | Air export, road/sea transit deep-dive |
 | [Declaration & Customs Guide](guides/declaration-customs.md) | Declarants | UCR, permits, entry, customs records |
@@ -24,6 +25,9 @@ Welcome to the CGM Worldwide Shipping documentation. This wiki covers freight fo
 | [Job Groups & Per Diems](guides/per-diems.md) | HR, all employees | Job groups, rates, claiming per diem |
 | [Applying for Leave](guides/leave.md) | All employees | Balances, leave types, approvals |
 | [Payroll & HR](guides/payroll-hr.md) | HR, Payroll | Payroll and HR process notes |
+| [CGM Shipping Settings](guides/settings.md) | System Manager | Every setting, tab by tab, and the child tables behind them |
+| [What CGM Adds to ERPNext](guides/customizations.md) | Technical | DocType and custom field inventory |
+| [Patches](guides/patches.md) | Technical | Data migrations that have run |
 
 ## Full reference
 

@@ -312,6 +312,23 @@ def _submitted_journal_entry(je_name) -> bool:
 AMENDMENT_SUFFIX = " (Amendment)"
 
 
+def amended_label(base: str, row) -> str:
+	"""Add the amendment suffix to a base label when the row is an amended invoice.
+
+	Kept separate from finance_line_display_label so every writer of line_label can
+	reach it, including the charge-item sync, which derives the label from the master
+	record and would otherwise reset the suffix each time it ran.
+	"""
+	base = (base or "").strip()
+	if base.endswith(AMENDMENT_SUFFIX):
+		base = base[: -len(AMENDMENT_SUFFIX)]
+	if not base:
+		return ""
+	if (row.get("line_type") or LINE_INVOICE) == LINE_INVOICE and cint(row.get("is_amendment")):
+		return f"{base}{AMENDMENT_SUFFIX}"
+	return base
+
+
 def finance_line_display_label(row) -> str:
 	"""What this row should read as in the Invoices & Receipts grid.
 
@@ -320,13 +337,7 @@ def finance_line_display_label(row) -> str:
 	the grid truncates to "Ame...". Finance had to open the row to find out which
 	invoice they were paying.
 	"""
-	base = (row.get("line_label") or "").strip()
-	base = base[: -len(AMENDMENT_SUFFIX)] if base.endswith(AMENDMENT_SUFFIX) else base
-	if not base:
-		return ""
-	if (row.get("line_type") or LINE_INVOICE) == LINE_INVOICE and cint(row.get("is_amendment")):
-		return f"{base}{AMENDMENT_SUFFIX}"
-	return base
+	return amended_label(row.get("line_label") or "", row)
 
 
 def sync_finance_line_labels(task) -> None:

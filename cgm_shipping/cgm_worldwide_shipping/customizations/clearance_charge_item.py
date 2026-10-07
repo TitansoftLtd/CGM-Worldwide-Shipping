@@ -443,6 +443,9 @@ def sync_task_finance_lines_from_charge_items() -> int:
 			"line_label",
 			"charge_item",
 			"item_code",
+			# Needed to keep an amended invoice reading as one; without it every row
+			# looked unamended here and the suffix was stripped on every sync.
+			"is_amendment",
 		],
 	):
 		charge_item = row.charge_item or get_clearance_charge_item(
@@ -457,7 +460,14 @@ def sync_task_finance_lines_from_charge_items() -> int:
 		if charge_item != (row.charge_item or ""):
 			updates["charge_item"] = charge_item
 
-		label = get_charge_item_label(charge_item, row.line_label or "")
+		# The master label is the base name ("UCR Invoice"); an amended row has to keep
+		# reading as one. Without this the sync quietly reset every amendment label
+		# back to the plain name the next time it ran.
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			amended_label,
+		)
+
+		label = amended_label(get_charge_item_label(charge_item, row.line_label or ""), row)
 		if label and label != (row.line_label or ""):
 			updates["line_label"] = label
 

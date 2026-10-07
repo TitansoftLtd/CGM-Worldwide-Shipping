@@ -88,7 +88,7 @@ Some fees are settled by the client rather than disbursed by CGM. The flow is th
 1. **Verify the invoice** first, as usual.
 2. **Tick Client will pay.** On UCR, Entry Slip, Shipping Line, KPA and CFS tasks each invoice row has its own **Client will pay** tick, and Finance can use the **Client will pay - <invoice>** button under **Actions**. Permit finance tasks use the task-level **Client will pay** checkbox. There is then no company Journal Entry for that fee.
 3. **Share it.** **Share Invoice with Client** puts every verified, attached, not-yet-shared invoice on the customer portal and emails the customer's contacts and portal users. If everything is already shared the button reads **Notify Client Again**, which re-sends the email.
-   - It needs **Client will pay** ticked first, and the invoice verified. Save the task before clicking.
+   - It needs the invoice verified, and **Client will pay** ticked either on the task or on the individual invoice row. On a mixed task only the rows marked client-paid are shared, so an invoice the company has already paid is never sent to the client.
    - The message tells you what happened, including **Could not email - add a customer contact or portal user** when the customer has no email on file.
 4. **The client pays and reports it.** On the portal they download the invoice, press **I have paid**, and attach the proof - a bank **POP** for shipping line charges, a **receipt** for everything else. Their row then shows **Payment reported** and **Receipt sent** / **POP sent**. See [Customer & Transporter Portal](portals.md).
 5. **Finance checks it.** The uploaded file lands on the receipt (or POP) row of the finance task, and the invoice row shows **Client Reported Paid** with the date. Verify the receipt as normal and the task completes.
@@ -219,11 +219,27 @@ Cost categories are mapped in **CGM Shipping Settings → Finance Cost Category 
 
 ---
 
+## Amended invoices
+
+When a supplier reissues an invoice, tick **Amendment** on the new row rather than replacing the
+original. The **Item** column then reads **<invoice> (Amendment)** - for example *UCR Invoice
+(Amendment)* - so Finance can tell at a glance which invoice they are paying without opening the row.
+The original stays on the task as the audit trail.
+
+Each invoice row carries its own **Verified by Finance** tick, its own Journal Entry and its own
+**Client will pay**, so an amendment can be settled differently from the invoice it replaces.
+
+![A finance task's Invoices & Receipts table, with the amended invoice reading "UCR Invoice (Amendment)"](../images/finance-task-invoices.png)
+
+---
+
 ## Journal Entry from tasks
 
 **Make Payment** on a finance task creates the Journal Entry as a **draft**, so Finance can check it before it reaches the ledger. The JE carries its source task for ledger sync.
 
-**Submitting it:** an unsubmitted JE shows on the task under **Actions → Submit Journal Entry - <permit or charge>**, one entry per row, for users who may submit Journal Entries. Confirm, and the entry posts. The task completes on its own once its last payment is posted; a permit finance task stays Open while any of its entries is still a draft.
+**Submitting it:** an unsubmitted JE shows on the task under **Actions → Submit Journal Entry - <permit or charge>**, one entry per row, for users who may submit Journal Entries. Confirm, and the entry posts.
+
+**Only a submitted Journal Entry counts as payment.** A draft posts nothing to the ledger, so it does not settle the invoice and does not let the task complete. This applies to every finance task, not only permits. A task already marked Completed against a draft entry reopens the next time it is touched, which is the system telling you the money was never actually posted.
 
 Drafts left unsubmitted mean the payment is not in the ledger, and they hold their task open, so clear them as they arise.
 
