@@ -1705,13 +1705,64 @@ def permit_application_client_paid(task) -> bool:
 	return task_client_paid_directly(frappe.get_doc("Task", fin_name))
 
 
+def carry_application_receipts_to_finance(app_task, finance_task) -> int:
+	"""Fill empty receipts on the Finance rows from the declarant's matching rows.
+
+	The receipt normally travels with sync_permit_invoices_to_finance_task, but
+	that only runs when the declarant's rows change on a save or Finance opens
+	its form. A pair nobody touched after the receipt went on never synced, and
+	the declarant's gate then asked for a receipt that was already attached in
+	front of them (TASK-2026-01055: three receipts on since 31 Aug, none on
+	TASK-2026-01056).
+
+	Narrow on purpose. Only an empty Finance receipt is filled, and only from the
+	row with the same permit, amendment flag and invoice - a different invoice
+	means Finance has to verify again, which is the full sync's job. No tick,
+	status or timestamp is touched, so this is safe from inside a validate and
+	cannot invalidate an open Finance form.
+
+	Returns the number of rows filled.
+	"""
+
+	def key(row):
+		return (
+			row.get("permit_type"),
+			cint(row.get("is_amendment")),
+			(row.get("payment_invoice") or "").strip(),
+		)
+
+	receipts = {}
+	for row in app_task.get(TASK_PERMITS_FIELD) or []:
+		receipt = (row.get("payment_receipt") or "").strip()
+		if row.get("permit_type") and receipt and key(row)[2]:
+			receipts.setdefault(key(row), receipt)
+	if not receipts:
+		return 0
+
+	carried = 0
+	for row in permit_finance_rows(finance_task):
+		if (row.get("payment_receipt") or "").strip():
+			continue
+		receipt = receipts.get(key(row))
+		if not receipt:
+			continue
+		row.payment_receipt = receipt
+		if row.get("name"):
+			_apply_permit_row_updates_without_touching_task(row.name, {"payment_receipt": receipt})
+		carried += 1
+	if carried:
+		frappe.clear_document_cache("Task", finance_task.name)
+	return carried
+
+
 def permit_rows_pending_verification(app_task) -> tuple[list[str], list[str], str | None]:
 	"""Permits on the paired Finance task still missing an invoice tick or a receipt.
 
 	Returns (unverified invoices, receipts not attached, finance task name).
 	Finance's copy of the rows is the source of truth - that is where the invoice
 	is ticked and where the receipt has to arrive - so it is read even though this
-	is asked about the application.
+	is asked about the application. A receipt the declarant already attached is
+	carried across first, so a pair that never synced is not reported as missing.
 
 	The invoice needs Finance's tick. The receipt only needs to exist: Finance has
 	already verified the invoice and made the payment, so a second tick on the
@@ -1722,7 +1773,9 @@ def permit_rows_pending_verification(app_task) -> tuple[list[str], list[str], st
 	fin_name = finance_permit_task_for_application(app_task)
 	if not fin_name:
 		return [], [], None
-	rows = permit_finance_rows(frappe.get_doc("Task", fin_name))
+	finance_task = frappe.get_doc("Task", fin_name)
+	carry_application_receipts_to_finance(app_task, finance_task)
+	rows = permit_finance_rows(finance_task)
 
 	def label(row):
 		return row.get("permit_type") or f"row {row.get('idx')}"
