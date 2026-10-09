@@ -181,6 +181,46 @@ class TestVerificationGate(unittest.TestCase):
 	def test_nothing_to_pay_passes(self):
 		self._check([])
 
+	def _check_with_declarant_rows(self, app_rows, fin_rows):
+		app = frappe._dict(name="APP", project="PROJ", custom_task_permits=app_rows)
+		with (
+			patch(f"{BEHAVIOUR}.get_permit_finance_for_behaviour", return_value="FIN"),
+			patch.object(frappe, "get_doc", return_value=frappe._dict(name="FIN")),
+			patch.object(wf, "permit_finance_rows", return_value=fin_rows),
+			patch.object(frappe.db, "get_value", return_value="Finance pays Pre-Clearance Permits"),
+			patch.object(frappe, "clear_document_cache"),
+		):
+			wf.validate_permit_rows_verified(app)
+
+	def test_receipt_on_declarant_row_is_carried_to_finance(self):
+		"""A pair that never synced must not report an attached receipt as missing."""
+		fin = _row(permit_type="DVS", payment_invoice="/dvs.pdf", invoice_verified=1)
+		self._check_with_declarant_rows(
+			[_row(permit_type="DVS", payment_invoice="/dvs.pdf", payment_receipt="/dvs-rec.pdf")],
+			[fin],
+		)
+		self.assertEqual(fin.payment_receipt, "/dvs-rec.pdf")
+
+	def test_receipt_for_a_different_invoice_is_not_carried(self):
+		"""A replaced invoice needs Finance to verify again, so nothing is copied."""
+		fin = _row(permit_type="DVS", payment_invoice="/old.pdf", invoice_verified=1)
+		with self.assertRaises(frappe.ValidationError):
+			self._check_with_declarant_rows(
+				[_row(permit_type="DVS", payment_invoice="/new.pdf", payment_receipt="/rec.pdf")],
+				[fin],
+			)
+		self.assertFalse(fin.get("payment_receipt"))
+
+	def test_existing_finance_receipt_is_not_overwritten(self):
+		fin = _row(
+			permit_type="DVS", payment_invoice="/dvs.pdf", invoice_verified=1, payment_receipt="/fin.pdf"
+		)
+		self._check_with_declarant_rows(
+			[_row(permit_type="DVS", payment_invoice="/dvs.pdf", payment_receipt="/dec.pdf")],
+			[fin],
+		)
+		self.assertEqual(fin.payment_receipt, "/fin.pdf")
+
 	def test_no_finance_task_passes(self):
 		self._check([_row(permit_type="DVS")], finance=None)
 
