@@ -35,6 +35,11 @@ frappe.ui.form.on("Funding Request", {
 				}
 			});
 			const recorded = funding_totals_are_recorded(frm);
+			// permanent = true. set_headline renders a dismissable block otherwise,
+			// and the X it adds removes the node without recording that it was
+			// dismissed - so the totals vanished on a click and came back on the
+			// next refresh. These are the figures the approval decision is made
+			// against, so they stay put and carry no close button.
 			frm.dashboard.set_headline(
 				__(
 					"Total Requests: {0} | Requested: {1} | Approved: {2} | Paid: {3} | Outstanding: {4}",
@@ -45,7 +50,9 @@ frappe.ui.form.on("Funding Request", {
 						format_currency(total_funded),
 						format_currency(recorded ? total_approved - total_funded : 0),
 					]
-				)
+				),
+				"blue",
+				true
 			);
 		}
 
