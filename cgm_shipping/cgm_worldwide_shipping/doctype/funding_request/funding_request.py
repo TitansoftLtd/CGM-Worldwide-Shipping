@@ -14,6 +14,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	FR_ROW_DECISION_REJECTED,
 	MR_WORKFLOW_STATE_FIELD,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.dialogs import blocked_dialog
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
 	FUNDING_MATERIAL_REQUEST_TYPES,
 	_material_requests_on_active_funding_requests,
@@ -60,6 +61,7 @@ class FundingRequest(Document):
 		self.calculate_totals()
 		self._validate_row_approvals()
 		self._validate_funding_complete()
+		self._block_self_approval()
 		self._stamp_approval()
 
 	def on_update(self):
@@ -73,6 +75,19 @@ class FundingRequest(Document):
 		self._apply_partial_approval_state()
 		self.calculate_totals()
 		self.sync_material_request_links()
+
+	def on_trash(self):
+		"""Hand the Material Requests back before this record disappears.
+
+		on_update claims them on every save, including in draft: it stamps
+		custom_funding_request and moves the Material Request's workflow state out
+		of Unfunded/Submitted. Only on_cancel and a terminal state ever released
+		them, so deleting a draft left the stamps behind - and because
+		get_unfunded_material_requests filters on that workflow state, a stranded
+		request never appeared in "Get Material Requests" again. There was no way
+		to fund it short of editing the record by hand.
+		"""
+		self.sync_material_request_links(release=True)
 
 	def on_cancel(self):
 		cancel_state = get_funding_workflow_map().cancel_state
@@ -312,6 +327,44 @@ class FundingRequest(Document):
 			frappe.throw(
 				_("Cannot mark disbursement complete when no payment has been recorded.")
 			)
+
+	def _block_self_approval(self) -> None:
+		"""Whoever raised the request cannot be the one who approves it.
+
+		This ends in money leaving a bank account, so the person asking and the
+		person agreeing have to be two people. Nothing enforced that: submitted_by
+		and approved_by were both stamped with frappe.session.user, so one person
+		holding both roles could raise and approve in a single sitting.
+
+		Checked only as the request *enters* an approval state. A record approved
+		before this rule existed keeps saving normally rather than becoming
+		uneditable, and a later save by the submitter of an already-approved
+		request is not a second approval.
+		"""
+		workflow = get_funding_workflow_map()
+		if not workflow.is_approval_stamp_state(self.workflow_state):
+			return
+		previous = self.get_doc_before_save() if not self.is_new() else None
+		if previous and workflow.is_approval_stamp_state(previous.workflow_state):
+			return
+
+		approver = self.approved_by or frappe.session.user
+		if not self.submitted_by or approver != self.submitted_by:
+			return
+
+		blocked_dialog(
+			_("Someone else has to approve this"),
+			_("A funding request cannot be approved by the person who raised it:"),
+			[
+				(
+					_("Raised and approved by {0}").format(self.submitted_by),
+					_(
+						"Ask another approver to review it. Segregation of duties is the "
+						"control that stops one person moving money on their own."
+					),
+				)
+			],
+		)
 
 	def _stamp_approval(self) -> None:
 		if not get_funding_workflow_map().is_approval_stamp_state(self.workflow_state):
