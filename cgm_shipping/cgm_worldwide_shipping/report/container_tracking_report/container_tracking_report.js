@@ -29,8 +29,8 @@ frappe.query_reports["Container Tracking Report"] = {
 			fieldname: "status",
 			label: __("Status"),
 			fieldtype: "Select",
-			options:
-				"\nPending Arrival\nVessel Berthed\nDischarged / At Port\nReleased / In Transit\nAt Warehouse\nCargo Offloaded\nEmpty Returned\nReturn Overdue\nInterchange Received",
+			// From the shared status table, so transit statuses can be filtered too.
+			options: window.cgm_shipping?.container_tracking?.status_select_options?.() || "",
 		},
 		{
 			fieldname: "from_date",
@@ -74,23 +74,6 @@ frappe.query_reports["Container Tracking Report"] = {
 };
 
 function cgm_container_status_color(status) {
-	if (!status) {
-		return "gray";
-	}
-	if (status.includes("Overdue") || status.includes("Overdue")) {
-		return "red";
-	}
-	if (status === "Interchange Received" || status === "Empty Returned") {
-		return "green";
-	}
-	if (["At Warehouse", "Cargo Offloaded"].includes(status)) {
-		return "blue";
-	}
-	if (status === "Released / In Transit") {
-		return "orange";
-	}
-	if (["Vessel Berthed", "Discharged / At Port"].includes(status)) {
-		return "yellow";
-	}
-	return "gray";
+	const status_color = window.cgm_shipping?.container_tracking?.status_color;
+	return status_color ? status_color(status) : "gray";
 }

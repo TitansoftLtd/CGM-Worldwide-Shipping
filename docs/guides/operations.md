@@ -16,6 +16,13 @@ For **Operations**, **Documentation**, and **Field Operations** teams managing s
 
 ---
 
+Every live shipment, with the clearance status each one has reached:
+
+![The Project list, showing each shipment's status, CGM reference and arrival dates](../images/project-list.png)
+
+**Status** is the clearance stage - Documents Received, Pre-clearance, Line Paid & DO Lodged,
+Post-clearance, Containers Returned. The green bar is task progress against the plan.
+
 ## How a shipment moves
 
 A shipment lives as one **Project** from the moment sales hand it over until the containers are back. Four things happen, in this order:
@@ -99,6 +106,17 @@ Tasks **1–2** auto-complete when intake documents are verified on the Project.
 !!! note "Transport-owned steps"
     Steps 20–25 are Transport. See [Transport & Containers Guide](transport-containers.md).
 
+A single task, opened from the Project:
+
+![A clearance task, showing its department, task role and the Task Documents table with verified rows](../images/task-form.png)
+
+**1** **Department** (and the Task Role under it) is stamped from the CGM Task Template. It
+decides which finance, permit and document controls appear on the form, so it is the field to
+check first when a control you expect is missing.
+
+**2** **Task Documents** is the completion gate: every required row must be attached and
+verified before the task can close.
+
 ### Where the tasks come from
 
 Nobody creates these by hand. The moment a Project is created, the task engine reads the **Shipment Type**, follows it to that type's **CGM Task Template**, and writes the whole plan onto the shipment at once - so a new shipment arrives with its tasks already in place and assigned to the right departments.
@@ -106,9 +124,12 @@ Nobody creates these by hand. The moment a Project is created, the task engine r
 | Shipment Type | Template | Tasks created |
 |---------------|----------|---------------|
 | Sea Import | Sea Import Workflow | 23 |
+| Sea Import, Cargo Type LCL | Sea Import LCL Workflow | 20 |
 | Air Import | Air Import Workflow | 16 |
 | Sea Transit | Sea Transit Import Workflow | 15 |
 | Road Transit Import | Road Transit Inbound Workflow | 11 |
+
+**Sea Import LCL** clears the same way, then pays **CFS charges** instead of KPA and delivers to the client (no containers) - see [Shipment Modes](shipment-modes.md). It is chosen by the shipment's **Cargo Type**, so set Cargo Type to **LCL** before the Project is created.
 
 **Sea Transit** uses a shorter clearance chart (no UCR, permits, client inspection, or Manifest Requested): Draft → Documents Received → Line Paid & DO Lodged → Entry Lodged → Entry Paid → Field Clearance → Post-clearance → KPA Paid → In Delivery → Completed.
 
@@ -129,9 +150,9 @@ Open **CGM Task Template** → pencil on a task row:
 | **Task Role** | Drives Desk UI: Document, Application, Finance Payment, etc. |
 | **Document Upload Required** | Shows **Task Documents** on Standard rows too |
 | **Required Document Types** | Multi-select from **Document Type** master (exact names). Prefills **Task Documents** on matching live tasks and **blocks Complete** until each selected type is attached. |
-| **Payment Kind** | Pairs Application ↔ Finance Payment rows (UCR, Entry Slip, Shipping Line, KPA) |
+| **Payment Kind** | Pairs Application ↔ Finance Payment rows (UCR, Entry Slip, Shipping Line, KPA, CFS) |
 
-Users may still add extra rows on **Task Documents** during clearance — Required Document Types only enforce the minimum for completion, they do not delete user-added documents.
+Users may still add extra rows on **Task Documents** during clearance - Required Document Types only enforce the minimum for completion, they do not delete user-added documents.
 
 Saving a template runs **sync open tasks from template** so role, payment kind, and required-document stamps update on non-cancelled tasks for that workflow.
 
@@ -168,7 +189,7 @@ Note the order around the entry: **Line Paid & DO Lodged sits between Entry Lodg
 
 | Rule | Meaning |
 |------|---------|
-| **Task gates** | You cannot skip ahead of incomplete tasks (configured in CGM Shipping Settings) |
+| **Task gates** | You cannot skip ahead of incomplete tasks (set per workflow in the CGM Task Template's **Shipment Status Gates** table) |
 | **Document gates** | Required documents must be **Verified** before some state changes |
 | **Intake documents** | **CI** and **PKL** required before **Documents Received** |
 | **Closure** | All 25 sea tasks must be complete before **Completed** |
@@ -204,6 +225,32 @@ Open the Project → **Shipment Documents** child table.
 | Verify / Reject | Supervisor confirms document is acceptable |
 
 Document types are masters in **Document Type** (codes like `CI`, `PKL`, `MANIFEST`, `DO`, etc.).
+
+### Final document review
+
+Final documents are reviewed before they count as done. It works the same on a Project and on a Task, from the parent form rather than row by row.
+
+**Sending:**
+
+1. Attach the **final** version on the document row. Its status goes to **Draft**.
+2. Click **Send Final Documents for Review** and pick the rows to send. They move to **Pending Review**.
+3. The Operations approvers are notified by email. Nobody is assigned the shipment: the review dialog is open to anyone with Operations access, so an assignment added nothing and left a ToDo behind on every reviewer.
+
+**Reviewing:** an approver clicks **Review Final Documents**, which lists what is waiting and lets them approve or reject each one. A rejection needs a reason, which is written back onto the row.
+
+| Status | Means |
+|--------|-------|
+| **Draft** | Attached, not sent yet |
+| **Pending Review** | With Operations, waiting on a decision |
+| **Approved** | Accepted, with who approved it and when |
+| **Rejected** | Sent back with a reason. Fix the file and send it again |
+
+Notes:
+
+- You cannot send a row with no file attached, and you cannot approve or reject a row that is not pending.
+- Only users in the **Operations roles** may approve or reject. If nobody is configured, sending is refused and tells you to set them in CGM Shipping Settings.
+- Do not edit the status field by hand: use the two buttons, which is what records who decided and when.
+- Replacing the file on an approved row sends it back to the start.
 
 ---
 
@@ -264,7 +311,7 @@ Tasks 17-19 in the plan. On the ground at the terminal it runs like this:
 
 Steps 3 to 9 are the part that takes unpredictable time: everything there waits on KRA, KPA or an agency.
 
-**Completing task 17 (Field Officers conduct clearance):** attach any clearance proof on **Task Documents** (for example **DO**, **FIELD**, or another **Document Type** from the master list) and mark the task **Completed**. Alternatively, set **Verification Status** to *Released by CRO* or attach the **Verification Report**. The task does not require a specific document code — any attached file on Task Documents is enough unless the template stamps **Required Document Types** for that row.
+**Completing task 17 (Field Officers conduct clearance):** attach any clearance proof on **Task Documents** (for example **DO**, **FIELD**, or another **Document Type** from the master list) and mark the task **Completed**. Alternatively, set **Verification Status** to *Released by CRO* or attach the **Verification Report**. The task does not require a specific document code - any attached file on Task Documents is enough unless the template stamps **Required Document Types** for that row.
 
 ---
 

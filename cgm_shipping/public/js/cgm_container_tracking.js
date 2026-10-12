@@ -1,12 +1,26 @@
 frappe.provide("cgm_shipping.container_tracking");
 frappe.provide("cgm_shipping.grid_attach");
 
-// ---------------------------------------------------------------------------
-// Child-table Attach fields: render controls on idle rows.
-// Frappe's grid_row.js only idle-renders Button fields via
-// should_show_button_in_idle_grid_cell(). GridRow is an ES module and is NOT
-// on frappe.ui.form — patch the live prototype from grid instances instead.
-// ---------------------------------------------------------------------------
+// Container status table - served from CONTAINER_STATUS_TABLE in
+// customizations/constants.py via boot, so the Desk and the server read the
+// same rows instead of each keeping a copy.
+cgm_shipping.container_tracking.status_info = function (status) {
+	return frappe.boot?.cgm_container_statuses?.statuses?.[status] || null;
+};
+
+cgm_shipping.container_tracking.status_color = function (status) {
+	return cgm_shipping.container_tracking.status_info(status)?.colour || "gray";
+};
+
+cgm_shipping.container_tracking.is_return_open = function (status) {
+	return Boolean(cgm_shipping.container_tracking.status_info(status)?.return_open);
+};
+
+// "\nStatus A\nStatus B..." for Select filters, in lifecycle order.
+cgm_shipping.container_tracking.status_select_options = function () {
+	const order = frappe.boot?.cgm_container_statuses?.order || [];
+	return ["", ...order].join("\n");
+};
 
 cgm_shipping.grid_attach.should_show_attach_in_idle_cell = function (row, column) {
 	const df = column.df || {};

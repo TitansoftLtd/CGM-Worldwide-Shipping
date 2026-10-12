@@ -29,6 +29,10 @@ Finance pays on tasks **4, 6, 11, 16**. You upload invoices (and certificates); 
 
 ---
 
+Entries lodged against shipments, each with its customs entry number:
+
+![The Customs Entry list, showing entry numbers against their projects](../images/customs-entry-list.png)
+
 ## UCR workflow (tasks 3–4)
 
 ```
@@ -66,7 +70,7 @@ Same pattern after Delivery Order is lodged (task 14).
 
 1. Attach **Entry Slip invoice** on Task 12 (Create Entry).
 2. Finance verifies the invoice on Task 13, records payment (Journal Entry or **Client will pay**), then attaches and verifies the **Entry Slip receipt**.
-3. **Create Entry** stays open until Finance has **verified and paid** the invoice — it does not complete on invoice verify alone.
+3. **Create Entry** stays open until Finance has **verified and paid** the invoice - it does not complete on invoice verify alone.
 4. **Finance Pays Entry Slip** completes after payment and receipt verification.
 5. **ENTRY** customs document on Create Entry → **Task Documents** remains optional when issued.
 
@@ -75,6 +79,10 @@ Port arrival / ATA is confirmed separately on the **Project** (Actions → Confi
 **Customs Entry** doctype: submittable, unique `entry_number`, tax child table.
 
 ---
+
+The entry record itself, linked to the shipment it clears:
+
+![A Customs Entry form, showing the entry number and the project it belongs to](../images/customs-entry-form.png)
 
 ## The declaration run, start to finish
 
@@ -142,14 +150,14 @@ Upload via **Shipment Document** rows on Project or Task. Documents must reach *
 | Entry Paid | Task 11 complete |
 | Post-clearance | Task 15 complete |
 
-Task sequence minimums are configured in **CGM Shipping Settings → Sea Workflow Task Gates**.
+The task behind each status is set in **CGM Task Template → Sea Import Workflow → Shipment Status Gates**.
 
 ---
 
 ## Guards
 
 - Task cannot complete until **Required Document Types** from the template (if any) are attached on **Task Documents**; extra document rows added during clearance are allowed.
-- **Field Officers conduct clearance** (task 17): complete when any file is attached on Task Documents, or when **Verification Status** is *Released by CRO*, or when the **Verification Report** is attached — no fixed document code (e.g. FIELD only).
+- **Field Officers conduct clearance** (task 17): complete when any file is attached on Task Documents, or when **Verification Status** is *Released by CRO*, or when the **Verification Report** is attached - no fixed document code (e.g. FIELD only).
 - Permit rows must have invoices/receipts verified before finance tasks complete.
 - Post-clearance permit rules are enforced before **Entry Lodged** in some configurations.
 

@@ -1,9 +1,9 @@
 """Guard the Task permission matrix.
 
-Task carries Custom DocPerm rows (custom/task.json). Frappe ignores the standard
-DocPerms entirely once those exist, and ``sync_customizations`` deletes and
-reinserts them on every migrate - so the fixture is the whole access matrix for
-Task, and anything changed in Role Permission Manager is reverted on deploy.
+Task carries Custom DocPerm rows, owned by Role Permission Manager on each site
+(custom/task.json ships an empty custom_perms, so migrate leaves them alone). Frappe
+ignores the standard DocPerms entirely once those exist, so they are the whole
+access matrix for Task.
 
 These are structural invariants, not site policy: they hold on any site the app
 is installed on, and they fail loudly where the matrix has drifted from the role

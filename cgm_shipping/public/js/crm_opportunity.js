@@ -1,6 +1,9 @@
 frappe.ui.form.on("Opportunity", {
 	onload(frm) {
-		cgm_shipping.opportunity_shipment.init_intake_wizard(frm);
+		// Pending Approval is a review state: render only, never write on load.
+		cgm_shipping.opportunity_shipment.init_intake_wizard(frm, {
+			skip_writes: opportunity_awaiting_workflow_review(frm),
+		});
 		if (!opportunity_awaiting_workflow_review(frm)) {
 			run_opportunity_form_syncs(frm, { apply_pending_bl: true });
 		}
@@ -500,7 +503,7 @@ function meta_has_field(doctype, fieldname) {
 }
 
 function get_clients_documents_field(frm) {
-	if (frm.meta.has_field("custom_clients_documents")) {
+	if (frappe.meta.has_field(frm.doctype, "custom_clients_documents")) {
 		return "custom_clients_documents";
 	}
 	for (const df of frappe.meta.get_docfields(frm.doctype, frm.doc.name)) {

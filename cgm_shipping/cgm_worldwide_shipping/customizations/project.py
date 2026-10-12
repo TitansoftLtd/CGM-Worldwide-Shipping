@@ -3,7 +3,6 @@ from frappe.utils import getdate, now_datetime, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	APPROVED_WORKFLOW_STATE,
-	INTAKE_DOCUMENT_CODES,
 	PERMIT_REGISTER_FIELD,
 	SHIPMENT_DOCUMENTS_FIELD,
 )
@@ -21,7 +20,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment import (
 	copy_opportunity_scalars_to_project,
-	resolve_fcl_batch_for_opportunity,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 	assign_lp_project_reference,
@@ -107,42 +105,9 @@ def get_documents(doc):
 	return doc.get(SHIPMENT_DOCUMENTS_FIELD) or []
 
 
-def find_shipment_row_for_intake_code(doc, intake_code: str):
-	"""Resolve a Client Documents row for CI/PKL intake codes (name or master code)."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		document_type_match_tokens,
-		required_document_code_is_attached,
-	)
-
-	for row in get_documents(doc):
-		if not row.document_type:
-			continue
-		attached = document_type_match_tokens(row.document_type)
-		if required_document_code_is_attached(intake_code, attached):
-			return row
-	return None
-
-
-def intake_shipment_row_is_present(row) -> bool:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import primary_attachment
-
-	if not row:
-		return False
-	if not primary_attachment(row):
-		return False
-	return (row.status or "").strip() != "Missing"
-
-
-def intake_document_label(intake_code: str) -> str:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
-		get_document_type_link_name,
-	)
-
-	return get_document_type_link_name(intake_code) or intake_code
-
 # ─── Workflow Stage Requirements ─────────────────────────────────────────────
-def get_stage_requirements():
-	"""Map Project shipment status to required Document Type stages (from CGM Shipping Settings)."""
+def get_stage_requirements() -> dict[str, list[tuple[str, bool]]]:
+	"""Shipment status -> [(Document Type stage, must be verified)] from CGM Shipping Settings."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.utils import (
 		get_cgm_shipping_settings,
 	)
@@ -160,8 +125,34 @@ def get_stage_requirements():
 		stage = (row.required_stage or "").strip()
 		if not state or not stage:
 			continue
-		out.setdefault(state, []).append(stage)
+		verified = row.get("verified_required")
+		out.setdefault(state, []).append((stage, verified is None or bool(int(verified))))
 	return out
+
+
+def documents_missing_for_status(doc, status: str) -> tuple[list[str], list[str]]:
+	"""Required documents a shipment still lacks before it may move to ``status``.
+
+	Settings > Shipment status documents maps a status to Document Type stages; every
+	Default Required Document Type in those stages (for the shipment's mode) applies.
+	Returns (not attached, attached but not verified where the row asks for it).
+	"""
+	requirements = get_stage_requirements().get(status)
+	if not requirements:
+		return [], []
+	mode = doc.get("custom_mode_of_transport")
+	rows_by_type = _shipment_document_row_map(doc)
+	not_attached: list[str] = []
+	not_verified: list[str] = []
+	for stage, verified_required in requirements:
+		for dt_name in _required_document_types(mode, [stage]):
+			row = rows_by_type.get(dt_name)
+			if not row or not primary_attachment(row) or (row.status or "").strip() == "Missing":
+				if dt_name not in not_attached:
+					not_attached.append(dt_name)
+			elif verified_required and row.status != "Verified" and dt_name not in not_verified:
+				not_verified.append(dt_name)
+	return not_attached, [name for name in not_verified if name not in not_attached]
 
 
 # ─── Project Save Hooks ───────────────────────────────────────────────────────
@@ -242,15 +233,14 @@ def apply_shipment_document_automation(doc, _method=None):
 	# 2. Normalise row status and uploader/verifier metadata.
 	normalize_document_rows(doc)
 	normalize_permit_register_rows(doc)
-	# 3. Block workflow changes when required documents are missing.
+	# 3. Block status changes until the documents Settings require are in place
+	#    (e.g. CI and PKL before Documents Received).
 	enforce_document_gate_on_workflow_change(doc)
-	# 4. Require CI/PKL before Documents Received.
-	enforce_intake_documents_before_documents_received(doc)
-	# 5. Sea only: workflow states require prior sea tasks completed in chart order.
+	# 4. Sea only: workflow states require prior sea tasks completed in chart order.
 	enforce_sea_workflow_task_gates(doc)
-	# 6. IDF / entry: all permits must be Post-Cleared before Entry Lodged.
+	# 5. IDF / entry: all permits must be Post-Cleared before Entry Lodged.
 	enforce_permits_post_cleared_before_entry_lodged(doc)
-	# 7. Project Completed only when tasks, docs, permits, payments, and billing are done.
+	# 6. Project Completed only when tasks, docs, permits, payments, and billing are done.
 	enforce_project_closure_on_workflow_change(doc)
 
 def _shipment_document_row_map(doc):
@@ -260,17 +250,17 @@ def _shipment_document_row_map(doc):
 			rows[row.document_type] = row
 	return rows
 
-def _required_document_types(mode, stages=None):
-	"""Document Type names required for a mode (and optional workflow stages).
+def _required_document_types(mode, stages):
+	"""Default Required Document Type names in ``stages`` that apply to ``mode``.
 
 	``mode_of_transport`` is a Table MultiSelect: a Document Type applies to
 	``mode`` when it lists that mode, or to every mode when it lists none.
 	"""
 	if not mode:
 		return []
-	filters = {"default_required": 1}
-	if stages:
-		filters["required_stage"] = ["in", stages]
+	if not stages:
+		return []
+	filters = {"default_required": 1, "required_stage": ["in", stages]}
 	candidates = frappe.get_all(
 		"Document Type",
 		filters=filters,
@@ -354,37 +344,48 @@ def normalize_document_rows(doc):
 			row.verified_on = None
 
 def enforce_document_gate_on_workflow_change(doc):
-	# 1. Detect a shipment status change.
+	"""Block a shipment status change until the documents Settings require are in place."""
 	prev = doc.get_doc_before_save()
 	if not prev:
 		return
 	prev_status = prev.get("custom_shipment_status")
 	new_status = doc.get("custom_shipment_status")
-	if not new_status or new_status == prev_status:
+	# Completed lists its documents with the other closure blockers in one message.
+	if not new_status or new_status == prev_status or new_status == "Completed":
 		return
 
-	# 2. Load required document stages for the target status.
-	stage_requirements = get_stage_requirements()
-	required_stages = stage_requirements.get(new_status)
-	if not required_stages:
+	not_attached, not_verified = documents_missing_for_status(doc, new_status)
+	if not (not_attached or not_verified):
 		return
+	parts = []
+	if not_attached:
+		parts.append(f"attach {', '.join(not_attached)}")
+	if not_verified:
+		parts.append(f"verify {', '.join(not_verified)}")
+	frappe.throw(
+		f"Cannot move shipment to <b>{new_status}</b>. First {' and '.join(parts)} "
+		"in <b>Client Documents</b>."
+	)
 
-	# 3. Find required documents that are not yet verified.
-	mode = doc.get("custom_mode_of_transport")
-	rows_by_type = _shipment_document_row_map(doc)
-	missing = []
-	for dt_name in _required_document_types(mode, required_stages):
-		row = rows_by_type.get(dt_name)
-		if not row or not row.attachment or row.status != "Verified":
-			missing.append(dt_name)
+def runs_sea_import_workflow(doc) -> bool:
+	"""True when the project is on the Sea Import task plan.
 
-	# 4. Stop the workflow move when evidence is incomplete.
-	if missing:
-		labels = ", ".join(sorted(set(missing)))
-		frappe.throw(f"Cannot move shipment to <b>{new_status}</b>. Verify required documents first: {labels}")
+	Sea Import's status gates and closure checks look for Sea Import tasks, so they
+	key on the plan rather than the transport mode: Sea Transit and Sea Export
+	shipments are Sea too, and have none of those tasks to find.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+		is_sea_import_template,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_tasks import (
+		get_workflow_template_name,
+	)
+
+	# FCL and LCL plans both run the Sea Import rules.
+	return is_sea_import_template(get_workflow_template_name(doc))
 
 def enforce_sea_workflow_task_gates(doc):
-	"""Sea import: each workflow state requires prior tasks in the 24-step clearance chart."""
+	"""Sea Import: each shipment status needs the task its Shipment Status Gate names."""
 	prev = doc.get_doc_before_save()
 	if not prev:
 		return
@@ -392,26 +393,9 @@ def enforce_sea_workflow_task_gates(doc):
 	new_status = doc.get("custom_shipment_status")
 	if not new_status or new_status == prev_status:
 		return
-	if doc.get("custom_mode_of_transport") != "Sea":
+	if not runs_sea_import_workflow(doc):
 		return
 	enforce_workflow_task_gate(doc.name, new_status)
-
-def enforce_intake_documents_before_documents_received(doc):
-	prev = doc.get_doc_before_save()
-	if not prev or prev.get("custom_shipment_status") == doc.get("custom_shipment_status"):
-		return
-	if doc.get("custom_shipment_status") != "Documents Received":
-		return
-	missing = []
-	for code in INTAKE_DOCUMENT_CODES:
-		row = find_shipment_row_for_intake_code(doc, code)
-		if not intake_shipment_row_is_present(row):
-			missing.append(intake_document_label(code))
-	if missing:
-		frappe.throw(
-			f"Upload client documents in <b>Client Documents</b> first: {', '.join(missing)}. "
-			"Use <b>custom_shipment_documents</b> - not Permit Register."
-		)
 
 def normalize_permit_register_rows(doc):
 	"""Derive clearance phase and stamp permit attachment upload metadata."""
@@ -478,7 +462,11 @@ def enforce_permits_post_cleared_before_entry_lodged(doc):
 	)
 
 def enforce_project_closure_on_workflow_change(doc):
-	"""FINAL RULE: Completed only when tasks, documents, permits, payments, and customer invoice are done."""
+	"""FINAL RULE: Completed only when tasks, documents, permits and the customer invoice are done.
+
+	Documents come from Settings > Shipment status documents (the Completed rows), like
+	every other status. Payments are covered by the finance tasks having to be Completed.
+	"""
 	prev = doc.get_doc_before_save()
 	if not prev:
 		return
@@ -489,7 +477,7 @@ def enforce_project_closure_on_workflow_change(doc):
 
 	blockers = []
 
-	if doc.get("custom_mode_of_transport") == "Sea":
+	if runs_sea_import_workflow(doc):
 		blockers.extend(get_sea_closure_blockers(doc.name))
 	else:
 		open_tasks = frappe.get_all(
@@ -504,12 +492,11 @@ def enforce_project_closure_on_workflow_change(doc):
 				preview += f" (+{len(open_tasks) - 5} more)"
 			blockers.append(f"Open tasks: {preview}")
 
-	mode = doc.get("custom_mode_of_transport")
-	rows_by_type = _shipment_document_row_map(doc)
-	for dt_name in _required_document_types(mode):
-		row = rows_by_type.get(dt_name)
-		if not row or not row.attachment or row.status != "Verified":
-			blockers.append(f"Document not verified: {dt_name}")
+	not_attached, not_verified = documents_missing_for_status(doc, "Completed")
+	if not_attached:
+		blockers.append(f"Attach documents: {', '.join(not_attached)}")
+	if not_verified:
+		blockers.append(f"Verify documents: {', '.join(not_verified)}")
 
 	if doc.meta.has_field(PERMIT_REGISTER_FIELD):
 		not_cleared = [
@@ -519,26 +506,6 @@ def enforce_project_closure_on_workflow_change(doc):
 		]
 		if not_cleared:
 			blockers.append(f"Permits not Post-Cleared: {', '.join(not_cleared)}")
-
-	# Completed payable tasks must have a submitted Payment Entry:
-	payable_done_no_pe = frappe.db.sql(
-		"""
-		SELECT t.subject
-		FROM `tabTask` t
-		WHERE t.project = %s
-		  AND t.status = 'Completed'
-		  AND t.custom_purchase_invoice IS NOT NULL AND t.custom_purchase_invoice != ''
-		  AND (t.custom_payment_entry IS NULL OR t.custom_payment_entry = '')
-		LIMIT 5
-		""",
-		doc.name,
-		as_dict=True,
-	)
-	if payable_done_no_pe:
-		blockers.append(
-			"Completed tasks missing Payment Entry: "
-			+ ", ".join(r.subject for r in payable_done_no_pe)
-		)
 
 	if not frappe.db.exists(
 		"Sales Invoice", {"project": doc.name, "docstatus": 1}
@@ -554,15 +521,12 @@ def enforce_project_closure_on_workflow_change(doc):
 
 # ─── Project creation from Lead / Opportunity (moved from utils.py) ───────────
 def project_has_intake_documents(project_doc) -> bool:
-	"""True when CI and PKL are present on the project shipment document table."""
+	"""True when the project has the documents Settings require for Documents Received."""
 	shipment_field = get_project_shipment_documents_field()
 	if not shipment_field or not project_doc.meta.has_field(shipment_field):
 		return False
-	for code in INTAKE_DOCUMENT_CODES:
-		row = find_shipment_row_for_intake_code(project_doc, code)
-		if not intake_shipment_row_is_present(row):
-			return False
-	return True
+	not_attached, not_verified = documents_missing_for_status(project_doc, "Documents Received")
+	return not (not_attached or not_verified)
 
 
 def project_has_verified_client_documents(project_doc) -> bool:
@@ -625,7 +589,7 @@ def project_ready_for_documents_received(project_doc) -> bool:
 
 
 def cap_workflow_status_for_intake(project_doc, progress_status: str, states: list[str]) -> str:
-	"""Do not advance to Documents Received (or beyond) until CI/PKL intake is satisfied."""
+	"""Do not advance to Documents Received (or beyond) until its required documents are in."""
 	if not progress_status or progress_status not in states:
 		return progress_status
 	if project_ready_for_documents_received(project_doc):
@@ -867,30 +831,6 @@ def sync_predocuments_from_source(project, source_doc) -> None:
 	"""Copy Opportunity Clients Documents and Customer KRA PIN onto Project shipment documents."""
 	sync_project_documents_from_opportunity(project, source_doc)
 
-
-def sync_linked_project_documents_from_opportunity(opportunity: str) -> str | None:
-	"""Push Opportunity client documents + Customer KRA PIN onto the linked Project."""
-	if not opportunity or not frappe.get_meta("Project").has_field("custom_source_opportunity"):
-		return None
-
-	project_name = frappe.db.get_value(
-		"Project", {"custom_source_opportunity": opportunity}, "name"
-	)
-	if not project_name:
-		return None
-
-	frappe.has_permission("Project", ptype="write", doc=project_name, throw=True)
-	project = frappe.get_doc("Project", project_name)
-	opp = frappe.get_doc("Opportunity", opportunity)
-	sync_project_documents_from_opportunity(project, opp)
-
-	frappe.flags.cgm_syncing_shipment_documents = True
-	try:
-		project.flags.ignore_validate = True
-		project.save(ignore_permissions=True)
-	finally:
-		frappe.flags.cgm_syncing_shipment_documents = False
-	return project_name
 
 @frappe.whitelist()
 def get_shipment_project_for_opportunity(opportunity: str) -> str | None:

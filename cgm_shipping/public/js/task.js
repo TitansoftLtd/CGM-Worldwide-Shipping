@@ -7,6 +7,8 @@ const LEGACY_INVOICE_DOCUMENT_TYPES = new Set([
 ]);
 
 const CGM_ACTION_GROUP = __("Actions");
+// Buttons that only open a record; Actions is for buttons that change data.
+const CGM_VIEW_GROUP = __("View");
 
 const UCR_LEGACY_FIELDNAMES = [
 	"custom_section_ucr_payment",
@@ -57,10 +59,10 @@ frappe.ui.form.on("Task", {
 	refresh(frm) {
 		reset_cgm_task_sea_ui_state_if_needed(frm);
 		ensure_cgm_finance_department_loaded(frm);
+		schedule_cgm_task_toolbar_buttons(frm);
 		const ui = get_sea_task_ui(frm);
-		// Permit table depends_on must be corrected on every refresh — the Desk
-		// Custom Field default omits post-clearance Finance (seq 16) and would
-		// hide invoices even when child rows exist in the database.
+		// Permit table depends_on is set from the task's behaviour on every refresh,
+		// so the table shows on every task that works with permits.
 		apply_permit_field_visibility(frm, ui);
 
 		// Layout + grid config once per form load (re-running on every refresh closes Action menus).
@@ -125,10 +127,7 @@ frappe.ui.form.on("Task", {
 								"(and certificates are attached on the application task)."
 						);
 					} else {
-						const appLabel = permit_application_task_label(
-							frm,
-							get_paired_permit_application_seq(frm, seq)
-						);
+						const appLabel = permit_application_task_label(frm);
 						intro = __(
 							"<b>1 Finance:</b> Verify permit invoices (tick <b>Invoice Verified</b> or <b>Verify Invoices</b>) · " +
 								"<b>2</b> Use <b>Make Payment</b> on each permit row (or tick <b>Client will pay</b>) · " +
@@ -145,16 +144,29 @@ frappe.ui.form.on("Task", {
 							"Attach <b>Permit Certificate</b> on each row; this task completes when receipts and certificates are in."
 					);
 				} else if (frm.doc.custom_permit_invoices_submitted) {
-					const finLabel = permit_finance_task_label(
-						frm,
-						get_paired_permit_finance_seq(frm, seq)
-					);
+					// The receipt is attached here, on the permit row, not on the finance
+					// task: declarants collect permit receipts from the issuing body's
+					// portal. This used to send them to the finance task for it.
+					const finName = frm.doc.__onload?.cgm_permit_finance_task;
+					const finLink = finName
+						? frappe.utils.get_form_link("Task", finName, true, permit_finance_task_label(frm))
+						: `<b>${permit_finance_task_label(frm)}</b>`;
 					intro = __(
-						"<b>After invoices go to Finance:</b> Finance verifies invoices and pays on <b>{0}</b>. " +
-							"Then upload payment receipts on that finance task (same department that attached the invoices). " +
-							"Attach <b>Permit Certificate</b> on each row; this task completes when receipts and certificates are in. " +
-							"You can still add more permits later - Finance will reopen to verify and pay.",
-						[finLabel]
+						"<b>Invoices are with Finance.</b> They verify and pay on {0}. " +
+							"Attach each <b>Payment Receipt</b> and <b>Permit Certificate</b> on its permit row here - " +
+							"this task completes once they are all in. " +
+							"Adding more permits later reopens Finance to verify and pay them.",
+						[finLink]
+					);
+				} else if (!(frm.doc.custom_task_permits || []).length) {
+					// Empty table and no toolbar button: the completion button only
+					// appears once invoices are submitted, so without this the form
+					// offers no action and no explanation, and the declarant has no
+					// way to know the next move is theirs.
+					intro = __(
+						"<b>No permits added yet.</b> Add them in the <b>Permits (this task)</b> table below " +
+							"and attach each <b>Permit Invoice (for Finance)</b>. Finance is notified " +
+							"automatically, and a <b>Complete</b> button appears once they are all on."
 					);
 				} else {
 					intro = __(
@@ -180,9 +192,10 @@ frappe.ui.form.on("Task", {
 					apply_app_finance_application_intro(frm, frm._cgm_shipping_line_declarant_status, "shipping_line");
 					intro_set = true;
 				}
-			} else if (ui.is_kpa_application) {
-				if (frm._cgm_kpa_declarant_status_loaded && frm._cgm_kpa_declarant_status) {
-					apply_app_finance_application_intro(frm, frm._cgm_kpa_declarant_status, "kpa");
+			} else if (ui.charge_application) {
+				const key = ui.charge_application;
+				if (frm[`_cgm_${key}_declarant_status_loaded`] && frm[`_cgm_${key}_declarant_status`]) {
+					apply_app_finance_application_intro(frm, frm[`_cgm_${key}_declarant_status`], key);
 					intro_set = true;
 				}
 			} else if (ui.is_ucr_finance) {
@@ -242,19 +255,22 @@ frappe.ui.form.on("Task", {
 								"<b>5</b> Finance verifies the receipt - then this task completes."
 						);
 				intro_set = true;
-			} else if (ui.is_kpa_finance) {
+			} else if (ui.charge_finance) {
+				const charge = CGM_APP_FINANCE_PROFILES[ui.charge_finance].label;
 				intro = form_has_client_paid_invoice_line(frm)
 					? __(
 							"<b>Client will pay</b> on one or more invoice rows - no company Journal Entry for those. " +
 								"<b>1</b> Verify invoices · <b>2</b> <b>Share Invoice with Client</b> (optional) · " +
-								"<b>3</b> Attach <b>KPA Receipt</b> · <b>4</b> Verify the receipt. " +
-								"Task completes only after the receipt is verified."
+								"<b>3</b> Attach <b>{0} Receipt</b> · <b>4</b> Verify the receipt. " +
+								"Task completes only after the receipt is verified.",
+							[charge]
 						)
 					: __(
-							"<b>1 Finance:</b> Verify <b>KPA Invoice</b> · " +
+							"<b>1 Finance:</b> Verify <b>{0} Invoice</b> · " +
 								"<b>2</b> Use <b>Actions → Make Payment</b> (or tick <b>Client will pay</b> on the invoice row) · " +
-								"<b>3</b> Attach <b>KPA Receipt</b> · <b>4</b> Verify the receipt. " +
-								"Task completes only after the receipt is verified."
+								"<b>3</b> Attach <b>{0} Receipt</b> · <b>4</b> Verify the receipt. " +
+								"Task completes only after the receipt is verified.",
+							[charge]
 						);
 				intro_set = true;
 			} else if (ui.is_document_checkpoint) {
@@ -297,33 +313,35 @@ frappe.ui.form.on("Task", {
 			}
 		}
 
-		if (ui.is_kpa_application && frm.doc.project) {
-			ensure_app_finance_lines_on_form(frm, "kpa");
-			if (!frm._cgm_kpa_declarant_status_loaded) {
-				load_app_finance_declarant_status(frm, "kpa");
+		if (ui.charge_application && frm.doc.project) {
+			ensure_app_finance_lines_on_form(frm, ui.charge_application);
+			if (!frm[`_cgm_${ui.charge_application}_declarant_status_loaded`]) {
+				load_app_finance_declarant_status(frm, ui.charge_application);
 			}
 		}
 
-		if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
-			ensure_ucr_finance_task_completed_on_form(frm);
-		}
-
-		if (ui.is_entry_finance && frm.doc.status !== "Completed") {
-			ensure_entry_finance_task_completed_on_form(frm);
-		}
-
+		// Deliberately NOT calling ensure_*_task_completed_on_form here.
+		//
+		// refresh() runs on every render, so completing from it meant merely opening
+		// a task finished it - the server-side onload guard cannot stop that, because
+		// the browser asks for the completion in a separate request after the form
+		// has already loaded. Users saw tasks they had only looked at turn Completed,
+		// and stopped trusting the status.
+		//
+		// Completion still happens on every real action: the verify/upload handlers
+		// below call it inside frm.save().then(...), and the server completes on any
+		// save that satisfies the gates. Seeding and syncing stay here - they prepare
+		// the form, they do not finish the work.
 		if (ui.is_shipping_line_finance && frm.doc.project) {
 			configure_shipping_line_finance_container_grid(frm);
 		}
 
 		if (ui.is_shipping_line_finance && frm.doc.status !== "Completed") {
 			ensure_app_finance_lines_on_form(frm, "shipping_line");
-			ensure_app_finance_task_completed_on_form(frm, "shipping_line");
 		}
 
-		if (ui.is_kpa_finance && frm.doc.status !== "Completed") {
-			sync_app_finance_receipt_on_form(frm, "kpa");
-			ensure_app_finance_task_completed_on_form(frm, "kpa");
+		if (ui.charge_finance && frm.doc.status !== "Completed") {
+			sync_app_finance_receipt_on_form(frm, ui.charge_finance);
 		}
 
 	if (ui.show_permits && is_permit_finance_step(frm) && frm.doc.project) {
@@ -347,7 +365,6 @@ frappe.ui.form.on("Task", {
 			ensure_checkpoint_task_documents_on_form(frm);
 		}
 
-		schedule_cgm_task_toolbar_buttons(frm);
 		if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config && !frm._cgm_sea_seq_loading) {
 			load_cgm_sea_ui_sequences(frm);
 		}
@@ -382,7 +399,6 @@ frappe.ui.form.on("Task", {
 
 const SEA_FLOW_KEY = "SEA_IMPORT_E2E";
 const SEA_IMPORT_TEMPLATE = "Sea Import Workflow";
-const SEA_FLOW_KEYS_EXPR = "['SEA_IMPORT_E2E','Sea Import Workflow'].includes(doc.custom_task_flow_key)";
 
 function isSeaImportFlowKey(flowKey) {
 	const key = (flowKey || "").trim();
@@ -393,134 +409,25 @@ function get_task_flow_key(frm) {
 	return (frm.doc.custom_task_flow_key || "").trim();
 }
 
-/** Empty shell until get_sea_task_ui_sequences returns (no hardcoded business rules). */
+/** Empty shell until get_sea_task_ui_sequences returns the user's permissions. */
 const CGM_SEA_UI_SEQUENCES_EMPTY = {
-	payment_seqs: [],
-	auto_complete_seqs: [],
-	permit_application_seqs: [],
-	light_proof_seqs: [],
-	ucr_application_seqs: [],
-	entry_application_seqs: [],
-	shipping_line_application_seqs: [],
-	kpa_application_seqs: [],
-	finance_document_seqs: [],
-	permit_finance_seqs: [],
-	ucr_finance_seqs: [],
-	entry_finance_seqs: [],
-	shipping_line_finance_seqs: [],
-	kpa_finance_seqs: [],
-	permit_stage_by_seq: {},
-	container_task_seqs: {},
-	container_update_seqs: [],
 	permissions: {},
 };
 
-// Mirrors CONTAINER_TASK_SEQ_DEFAULTS in customizations/constants.py. Only used
-// before get_sea_task_ui_sequences answers, or when that call fails.
-const CONTAINER_TASK_SEQ_FALLBACK = {
-	custom_eta_refresh_task_seq: 8,
-	custom_vessel_arrival_task_seq: 12,
-	custom_field_clearance_task_seq: 17,
-	custom_kpa_paid_task_seq: 19,
-	custom_book_trucks_task_seq: 20,
-	custom_gate_out_task_seq: 21,
-	custom_monitor_delivery_task_seq: 22,
-	custom_offload_task_seq: 23,
-	custom_empty_return_task_seq: 24,
-	custom_interchange_task_seq: 25,
-};
-
-/** Settings-driven sequence for a container/field-clearance step. */
-function container_task_seq(frm, fieldname) {
-	const configured = get_cgm_sea_seq_config(frm).container_task_seqs || {};
-	return Number(configured[fieldname] || CONTAINER_TASK_SEQ_FALLBACK[fieldname] || 0);
-}
-
-function sea_task_permits_depends_on(frm) {
-	const cfg = get_cgm_sea_seq_config(frm);
-	const seqs = [
-		...new Set([
-			...(cfg.permit_application_seqs || []),
-			...(cfg.permit_finance_seqs || []),
-		]),
-	].sort((a, b) => a - b);
-	if (!seqs.length) {
-		return `eval:${SEA_FLOW_KEYS_EXPR} && (['Permit Application','Permit Finance'].includes(doc.custom_task_role) || doc.custom_requires_permit_action)`;
-	}
-	return `eval:${SEA_FLOW_KEYS_EXPR} && (['Permit Application','Permit Finance'].includes(doc.custom_task_role) || doc.custom_requires_permit_action || [${seqs.join(",")}].includes(doc.custom_sequence_no))`;
-}
 
 function apply_permit_field_visibility(frm, ui) {
 	if (!ui?.show_permits) {
 		return;
 	}
+	// The task's behaviour already decided the table shows; drop the field rule.
 	["custom_section_task_permits", "custom_task_permits"].forEach((fieldname) => {
 		if (!frm.fields_dict[fieldname]) {
 			return;
 		}
-		frm.set_df_property(
-			fieldname,
-			"depends_on",
-			ui.from_template ? "" : sea_task_permits_depends_on(frm)
-		);
+		frm.set_df_property(fieldname, "depends_on", "");
 		frm.set_df_property(fieldname, "hidden", 0);
 	});
 }
-
-const CGM_TASK_PERMISSIONS_FALLBACK = {
-	can_make_payment: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_receipt: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"System Manager",
-		"CGM Documentation",
-		"Documentation",
-		"Declarant",
-		"Declaration User",
-	],
-	can_upload_pop: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"System Manager",
-	],
-	can_verify_invoice: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_invoice: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-		"CGM Documentation",
-		"Documentation",
-	],
-	can_upload_certificate: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-	],
-	can_confirm_client_paid: ["Finance Manager", "Finance User", "Accounts User", "Accounts Manager"],
-	can_upload_document: [
-		"Declaration User",
-		"Declarant",
-		"Operations Manager",
-		"Operations User",
-		"System Manager",
-	],
-	can_record_purchase_invoice: [
-		"Finance Manager",
-		"Finance User",
-		"Accounts User",
-		"Accounts Manager",
-		"Purchase Manager",
-		"Purchase User",
-	],
-};
 
 // Desk-session cache: sequence lists are settings, not per-task. Avoid re-hitting
 // get_sea_task_ui_sequences on every Task open (that endpoint walks CGM Settings).
@@ -577,163 +484,87 @@ function get_cgm_sea_seq_config(frm) {
 }
 
 function get_cgm_permissions(frm) {
-	const perms = get_cgm_sea_seq_config(frm).permissions;
-	if (perms && Object.keys(perms).length) {
-		return perms;
-	}
-	const roles = frappe.user_roles || [];
-	const from_fallback = (key) =>
-		(CGM_TASK_PERMISSIONS_FALLBACK[key] || []).some((r) => roles.includes(r));
-	return {
-		can_make_payment: from_fallback("can_make_payment"),
-		can_upload_receipt: from_fallback("can_upload_receipt"),
-		can_upload_pop: from_fallback("can_upload_pop"),
-		can_verify_invoice: from_fallback("can_verify_invoice"),
-		can_upload_invoice: from_fallback("can_upload_invoice"),
-		can_upload_certificate: from_fallback("can_upload_certificate"),
-		can_confirm_client_paid: from_fallback("can_confirm_client_paid"),
-		can_upload_document: from_fallback("can_upload_document"),
-		can_record_purchase_invoice: from_fallback("can_record_purchase_invoice"),
-	};
+	// The user's permissions come from the server with the sea task config
+	// (CGM Shipping Settings → Document responsibilities). Until they arrive,
+	// nothing is permitted; the form refreshes when they do.
+	return get_cgm_sea_seq_config(frm).permissions || {};
 }
 
-function seq_in_list(seq, list) {
-	return (list || []).includes(seq);
+function cgm_permissions_loaded(frm) {
+	return Boolean(frm && get_cgm_sea_seq_config(frm).permissions);
 }
 
+// Every check below reads the task's Task Role stamps. The step number means
+// something different on every template, so it decides nothing here.
 function role_payment_match(frm, role, kind) {
-	const r = (frm.doc.custom_task_role || "").trim();
-	if (!r) {
-		return null;
-	}
-	return r === role && (frm.doc.custom_payment_kind || "").trim() === kind;
+	return (
+		(frm.doc.custom_task_role || "").trim() === role &&
+		(frm.doc.custom_payment_kind || "").trim() === kind
+	);
 }
 
-function is_ucr_application_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Application", "UCR");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).ucr_application_seqs);
+function is_ucr_application_step(frm) {
+	return role_payment_match(frm, "Application", "UCR");
 }
 
-function is_ucr_finance_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Finance Payment", "UCR");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).ucr_finance_seqs);
+function is_ucr_finance_step(frm) {
+	return role_payment_match(frm, "Finance Payment", "UCR");
 }
 
-function is_entry_application_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Application", "ENTRY_SLIP");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).entry_application_seqs);
+function is_entry_application_step(frm) {
+	return role_payment_match(frm, "Application", "ENTRY_SLIP");
 }
 
-function is_entry_finance_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Finance Payment", "ENTRY_SLIP");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).entry_finance_seqs);
+function is_entry_finance_step(frm) {
+	return role_payment_match(frm, "Finance Payment", "ENTRY_SLIP");
 }
 
-function is_shipping_line_application_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Application", "Shipping Line");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).shipping_line_application_seqs);
+function is_shipping_line_application_step(frm) {
+	return role_payment_match(frm, "Application", "Shipping Line");
 }
 
-function is_shipping_line_finance_step(frm, seq) {
-	const stamped = role_payment_match(frm, "Finance Payment", "Shipping Line");
-	if (stamped !== null) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).shipping_line_finance_seqs);
+function is_shipping_line_finance_step(frm) {
+	return role_payment_match(frm, "Finance Payment", "Shipping Line");
 }
 
 const CGM_APP_FINANCE_PROFILES = {
-	shipping_line: {
-		application_seqs_key: "shipping_line_application_seqs",
-		finance_seqs_key: "shipping_line_finance_seqs",
-		upload_role: __("Documentation"),
-	},
-	kpa: {
-		application_seqs_key: "kpa_application_seqs",
-		finance_seqs_key: "kpa_finance_seqs",
-		upload_role: __("Supervisor"),
-	},
+	shipping_line: { payment_kind: "Shipping Line", upload_role: __("Documentation") },
+	kpa: { payment_kind: "KPA", upload_role: __("Supervisor"), label: "KPA" },
+	cfs: { payment_kind: "CFS", upload_role: __("Supervisor"), label: "CFS" },
 };
 
+// Charges a supervisor obtains and Finance pays: KPA port charges (FCL), CFS charges (LCL).
+// Same flow - invoice on the application task, receipt on the finance task.
+const CGM_CHARGE_PROFILE_KEYS = ["kpa", "cfs"];
+
+function charge_profile_for_kind(kind) {
+	return CGM_CHARGE_PROFILE_KEYS.find((key) => CGM_APP_FINANCE_PROFILES[key].payment_kind === kind) || null;
+}
+
 function is_app_finance_application_step(frm, seq, profileKey) {
-	const kindByProfile = { shipping_line: "Shipping Line", kpa: "KPA" };
-	const kind = kindByProfile[profileKey];
-	if (kind) {
-		const stamped = role_payment_match(frm, "Application", kind);
-		if (stamped !== null) {
-			return stamped;
-		}
-	}
 	const profile = CGM_APP_FINANCE_PROFILES[profileKey];
-	if (!profile) {
-		return false;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm)[profile.application_seqs_key] || []);
+	return Boolean(profile) && role_payment_match(frm, "Application", profile.payment_kind);
 }
 
 function is_app_finance_finance_step(frm, seq, profileKey) {
-	const kindByProfile = { shipping_line: "Shipping Line", kpa: "KPA" };
-	const kind = kindByProfile[profileKey];
-	if (kind) {
-		const stamped = role_payment_match(frm, "Finance Payment", kind);
-		if (stamped !== null) {
-			return stamped;
-		}
-	}
 	const profile = CGM_APP_FINANCE_PROFILES[profileKey];
-	if (!profile) {
-		return false;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm)[profile.finance_seqs_key] || []);
+	return Boolean(profile) && role_payment_match(frm, "Finance Payment", profile.payment_kind);
 }
 
-function is_kpa_application_step(frm, seq) {
-	return is_app_finance_application_step(frm, seq, "kpa");
+function charge_application_profile(frm) {
+	return CGM_CHARGE_PROFILE_KEYS.find((key) => is_app_finance_application_step(frm, null, key)) || null;
 }
 
-function is_kpa_finance_step(frm, seq) {
-	return is_app_finance_finance_step(frm, seq, "kpa");
+function charge_finance_profile(frm) {
+	return CGM_CHARGE_PROFILE_KEYS.find((key) => is_app_finance_finance_step(frm, null, key)) || null;
 }
 
-function is_permit_application_step(frm, seq) {
-	const role = (frm.doc.custom_task_role || "").trim();
-	if (role) {
-		return role === "Permit Application";
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).permit_application_seqs);
+function is_permit_application_step(frm) {
+	return (frm.doc.custom_task_role || "").trim() === "Permit Application";
 }
 
-function is_permit_finance_step(frm, seq) {
-	const role = (frm.doc.custom_task_role || "").trim();
-	if (role) {
-		return role === "Permit Finance";
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return seq_in_list(s, get_cgm_sea_seq_config(frm).permit_finance_seqs);
+function is_permit_finance_step(frm) {
+	return (frm.doc.custom_task_role || "").trim() === "Permit Finance";
 }
 
 function is_permit_payment_pattern(frm) {
@@ -749,86 +580,60 @@ function permit_finance_rows_on_form(frm) {
 	);
 }
 
+// A cancelled Journal Entry is not a payment: the row is payable again, and the
+// amendment repoints the row to itself when it is submitted (task.py).
+function journal_entry_cancelled(frm, journal_entry) {
+	if (!journal_entry) {
+		return false;
+	}
+	return (frm.doc.__onload?.cgm_cancelled_journal_entries || []).includes(journal_entry);
+}
+
+function row_journal_entry_paid(frm, row) {
+	return Boolean(row?.journal_entry) && !journal_entry_cancelled(frm, row.journal_entry);
+}
+
 function permit_rows_all_have_journal_entry(frm) {
 	const rows = permit_finance_rows_on_form(frm);
 	return (
 		rows.length > 0 &&
 		rows.every(
 			(r) =>
-				r.journal_entry || cint(r.client_reported_paid) || cint(r.client_paid_directly)
+				row_journal_entry_paid(frm, r) ||
+				cint(r.client_reported_paid) ||
+				cint(r.client_paid_directly)
 		)
 	);
 }
 
-function get_permit_stage_for_seq(frm, seq) {
-	const stamped = (frm.doc.custom_permit_stage || "").trim();
-	if (stamped && (frm.doc.custom_task_role || "").trim()) {
-		return stamped;
-	}
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	const map = get_cgm_sea_seq_config(frm).permit_stage_by_seq || {};
-	return map[String(s)] || map[s] || null;
+function get_permit_stage_for_seq(frm) {
+	// The task's own Permit Stage stamp.
+	return (frm.doc.custom_permit_stage || "").trim() || null;
 }
 
-function is_pre_clearance_permit_application_step(frm, seq) {
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
+function is_pre_clearance_permit_application_step(frm) {
+	return is_permit_application_step(frm) && get_permit_stage_for_seq(frm) === "Pre-clearance";
+}
+
+function is_post_clearance_permit_application_step(frm) {
+	return is_permit_application_step(frm) && get_permit_stage_for_seq(frm) === "Post-clearance";
+}
+
+function is_permit_application_step_for_stage(frm) {
 	return (
-		is_permit_application_step(frm, s) &&
-		get_permit_stage_for_seq(frm, s) === "Pre-clearance"
+		is_pre_clearance_permit_application_step(frm) ||
+		is_post_clearance_permit_application_step(frm)
 	);
 }
 
-function is_post_clearance_permit_application_step(frm, seq) {
-	const s = seq !== undefined ? seq : sea_task_sequence(frm);
-	return (
-		is_permit_application_step(frm, s) &&
-		get_permit_stage_for_seq(frm, s) === "Post-clearance"
-	);
+// The paired permit step shares this task's Permit Stage, so it is named by that
+// stage - templates word the task subjects differently.
+function permit_application_task_label(frm) {
+	return __("the {0} permit application task", [get_permit_stage_for_seq(frm) || "Pre-clearance"]);
 }
 
-function is_permit_application_step_for_stage(frm, seq) {
-	return (
-		is_pre_clearance_permit_application_step(frm, seq) ||
-		is_post_clearance_permit_application_step(frm, seq)
-	);
-}
-
-function get_paired_permit_application_seq(frm, financeSeq) {
-	const stage = get_permit_stage_for_seq(frm, financeSeq);
-	if (!stage) {
-		return null;
-	}
-	const cfg = get_cgm_sea_seq_config(frm);
-	return (cfg.permit_application_seqs || []).find(
-		(seq) => get_permit_stage_for_seq(frm, seq) === stage
-	);
-}
-
-function get_paired_permit_finance_seq(frm, applicationSeq) {
-	const stage = get_permit_stage_for_seq(frm, applicationSeq);
-	if (!stage) {
-		return null;
-	}
-	const cfg = get_cgm_sea_seq_config(frm);
-	return (cfg.permit_finance_seqs || []).find(
-		(seq) => get_permit_stage_for_seq(frm, seq) === stage
-	);
-}
-
-function permit_application_task_label(frm, seq) {
-	const stage = get_permit_stage_for_seq(frm, seq);
-	if (stage === "Post-clearance") {
-		return __("Prepare Post-Clearance Permits");
-	}
-	return __("Apply for Pre-Clearance Permits");
-}
-
-function permit_finance_task_label(frm, financeSeq) {
-	const stage = get_permit_stage_for_seq(frm, financeSeq);
-	if (stage === "Post-clearance") {
-		return __("Finance pays for Post-Clearance Permits");
-	}
-	return __("Finance pays Pre-Clearance Permits");
+function permit_finance_task_label(frm) {
+	return __("the {0} permit finance task", [get_permit_stage_for_seq(frm) || "Pre-clearance"]);
 }
 
 const SEA_TASK_HIDDEN_FIELDS = [
@@ -901,8 +706,9 @@ function ui_from_task_role(frm) {
 		is_entry_finance: is_fin && kind === "ENTRY_SLIP",
 		is_shipping_line_application: is_app && kind === "Shipping Line",
 		is_shipping_line_finance: is_fin && kind === "Shipping Line",
-		is_kpa_application: is_app && kind === "KPA",
-		is_kpa_finance: is_fin && kind === "KPA",
+		// Profile key ("kpa" / "cfs") of a supervisor charge step, else null.
+		charge_application: is_app ? charge_profile_for_kind(kind) : null,
+		charge_finance: is_fin ? charge_profile_for_kind(kind) : null,
 		is_permit_application: is_permit_app,
 		is_permit_finance: is_permit_fin,
 		is_pre_clearance_permit: is_permit_app && stage === "Pre-clearance",
@@ -916,195 +722,14 @@ function get_sea_task_ui(frm) {
 	if ((frm.doc.custom_task_role || "").trim()) {
 		return ui_from_task_role(frm);
 	}
-	const seq = sea_task_sequence(frm);
-	const cfg = get_cgm_sea_seq_config(frm);
-	if (!is_sea_clearance_task(frm)) {
-		return {
-			is_sea_task: false,
-			show_documents: true,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: false,
-		};
-	}
-	if (seq_in_list(seq, cfg.auto_complete_seqs)) {
-		const completed = frm.doc.status === "Completed";
-		return {
-			is_sea_task: true,
-			show_documents: true,
-			// Allow correcting intake docs after an explicit Re-open.
-			documents_read_only: completed,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: false,
-			show_description: true,
-			auto_intake_intro: completed,
-			hide_mark_complete: completed,
-		};
-	}
-	if (seq_in_list(seq, cfg.ucr_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: true,
-			is_ucr_finance: false,
-			is_entry_application: false,
-			is_entry_finance: false,
-			show_finance_lines: true,
-			show_documents: true,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.entry_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: false,
-			is_entry_application: true,
-			is_entry_finance: false,
-			is_shipping_line_application: false,
-			is_shipping_line_finance: false,
-			show_finance_lines: true,
-			show_documents: true,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.shipping_line_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: false,
-			is_entry_application: false,
-			is_entry_finance: false,
-			is_shipping_line_application: true,
-			is_shipping_line_finance: false,
-			is_kpa_application: false,
-			is_kpa_finance: false,
-			show_finance_lines: true,
-			show_documents: false,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.kpa_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: false,
-			is_entry_application: false,
-			is_entry_finance: false,
-			is_shipping_line_application: false,
-			is_shipping_line_finance: false,
-			is_kpa_application: true,
-			is_kpa_finance: false,
-			show_finance_lines: true,
-			show_documents: false,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.permit_application_seqs)) {
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: false,
-			show_documents: false,
-			documents_read_only: false,
-			show_permits: true,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.payment_seqs)) {
-		const ucr_finance = seq_in_list(seq, cfg.ucr_finance_seqs);
-		const entry_finance = seq_in_list(seq, cfg.entry_finance_seqs);
-		const shipping_line_finance = seq_in_list(seq, cfg.shipping_line_finance_seqs);
-		const kpa_finance = seq_in_list(seq, cfg.kpa_finance_seqs);
-		return {
-			is_sea_task: true,
-			is_ucr_application: false,
-			is_ucr_finance: ucr_finance,
-			is_entry_application: false,
-			is_entry_finance: entry_finance,
-			is_shipping_line_application: false,
-			is_shipping_line_finance: shipping_line_finance,
-			is_kpa_application: false,
-			is_kpa_finance: kpa_finance,
-			show_finance_lines: ucr_finance || entry_finance || shipping_line_finance || kpa_finance,
-			show_documents: seq_in_list(seq, cfg.finance_document_seqs),
-			documents_read_only: false,
-			show_permits: seq_in_list(seq, cfg.permit_finance_seqs),
-			show_payments: true,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: true,
-		};
-	}
-	if (seq_in_list(seq, cfg.light_proof_seqs)) {
-		return {
-			is_sea_task: true,
-			show_documents: false,
-			documents_read_only: false,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: false,
-		};
-	}
-	if (seq_in_list(seq, cfg.document_checkpoint_seqs)) {
-		return {
-			is_sea_task: true,
-			is_document_checkpoint: true,
-			show_documents: true,
-			documents_read_only: false,
-			documents_versioned: true,
-			documents_initial_read_only: true,
-			show_permits: false,
-			show_payments: false,
-			show_external_ref: true,
-			show_description: true,
-			auto_intake_intro: false,
-			hide_mark_complete: false,
-		};
-	}
+	// No Task Role: not a workflow step, so the plain Task form.
 	return {
-		is_sea_task: true,
+		is_sea_task: false,
 		show_documents: true,
 		documents_read_only: false,
 		show_permits: false,
 		show_payments: false,
-		show_external_ref: seq >= 3,
+		show_external_ref: true,
 		show_description: true,
 		auto_intake_intro: false,
 		hide_mark_complete: false,
@@ -1163,68 +788,11 @@ function apply_sea_task_form_layout(frm, ui) {
 	configure_ucr_finance_fields(frm, ui);
 	toggle("custom_external_ref_no", ui.show_external_ref);
 	toggle("description", ui.show_description);
-	apply_field_officer_task_fields(frm);
-	apply_container_update_field_visibility(frm);
 	toggle("sb_timeline", false);
 	toggle("sb_costing", false);
 	toggle("depends_on_tab", false);
 }
 
-const FIELD_CLEARANCE_FIELDS = [
-	"custom_section_field_clearance",
-	"custom_verification_type",
-	"custom_verification_status",
-	"custom_customs_issue",
-	"custom_delivery_note_status",
-	"custom_coc_status",
-	"custom_verification_report_attached",
-];
-
-function apply_field_officer_task_fields(frm) {
-	// Sequence comes from CGM Shipping Settings — validate_field_clearance_task
-	// throws against the same number, so a hardcoded one hides the very fields
-	// the server then demands.
-	const field_seq = container_task_seq(frm, "custom_field_clearance_task_seq");
-	const show = is_sea_clearance_task(frm) && sea_task_sequence(frm) === field_seq;
-	const depends_on = field_seq
-		? `eval:${SEA_FLOW_KEYS_EXPR} && doc.custom_sequence_no == ${field_seq}`
-		: "";
-	FIELD_CLEARANCE_FIELDS.forEach((fieldname) => {
-		if (!frm.fields_dict[fieldname]) {
-			return;
-		}
-		// The stored depends_on still carries the old number; override it or the
-		// dependency keeps the field hidden even with hidden = 0.
-		frm.set_df_property(fieldname, "depends_on", depends_on);
-		frm.set_df_property(fieldname, "hidden", show ? 0 : 1);
-	});
-}
-
-function apply_container_update_field_visibility(frm) {
-	// container_update_seqs mirrors is_container_update_task() on the server, which
-	// covers the shipping-line application AND finance steps as well as the
-	// transport steps. The stored depends_on lists only some of them.
-	const seqs = get_cgm_sea_seq_config(frm).container_update_seqs || [];
-	if (seqs.length) {
-		const expr = `eval:${SEA_FLOW_KEYS_EXPR} && [${seqs.join(",")}].includes(doc.custom_sequence_no)`;
-		["custom_section_container_updates", "custom_container_updates"].forEach((fieldname) => {
-			if (frm.fields_dict[fieldname]) {
-				frm.set_df_property(fieldname, "depends_on", expr);
-			}
-		});
-	}
-
-	// "Reason containers are not exiting port" is demanded by
-	// validate_task_19_container_updates on the book-trucks step, not gate-out.
-	const book_seq = container_task_seq(frm, "custom_book_trucks_task_seq");
-	if (book_seq && frm.fields_dict.custom_not_emptied_reason) {
-		frm.set_df_property(
-			"custom_not_emptied_reason",
-			"depends_on",
-			`eval:${SEA_FLOW_KEYS_EXPR} && doc.custom_sequence_no == ${book_seq}`
-		);
-	}
-}
 
 function finance_task_has_shareable_invoice(frm) {
 	return (
@@ -1609,7 +1177,7 @@ function is_app_finance_payment_step(frm, ui) {
 		ui.is_ucr_finance ||
 			ui.is_entry_finance ||
 			ui.is_shipping_line_finance ||
-			ui.is_kpa_finance
+			ui.charge_finance
 	);
 }
 
@@ -1626,7 +1194,7 @@ function invoice_line_settled_on_form(row, frm) {
 	if (!row || !row.attachment) {
 		return false;
 	}
-	if (row.journal_entry) {
+	if (row_journal_entry_paid(frm, row)) {
 		return true;
 	}
 	if (cint(row.client_paid_directly) || cint(row.client_reported_paid)) {
@@ -1742,17 +1310,18 @@ function configure_finance_line_grid(frm, ui) {
 	const is_finance = user_can_make_payment(frm);
 	const can_receipt = user_can_upload_receipt(frm);
 	const can_pop = user_can_upload_pop(frm);
+	const can_confirm_client_paid = user_can_confirm_client_paid(frm);
 	const seq = sea_task_sequence(frm);
 	const is_app_step =
 		is_ucr_application_step(frm, seq) ||
 		is_entry_application_step(frm, seq) ||
 		is_shipping_line_application_step(frm, seq) ||
-		is_kpa_application_step(frm, seq);
+		Boolean(charge_application_profile(frm));
 	const is_fin_step =
 		is_ucr_finance_step(frm, seq) ||
 		is_entry_finance_step(frm, seq) ||
 		is_shipping_line_finance_step(frm, seq) ||
-		is_kpa_finance_step(frm, seq);
+		Boolean(charge_finance_profile(frm));
 
 	// Set docfield properties directly - avoid toggle_enable() which re-renders the grid
 	// and can collapse the toolbar while the user clicks action buttons.
@@ -1762,8 +1331,12 @@ function configure_finance_line_grid(frm, ui) {
 	}
 	// Item links to Clearance Charge Item master (UCR Invoice, UCR Receipt, …).
 	grid.update_docfield_property("charge_item", "read_only", 0);
+	// line_label is the visible Item column: it is the one that can say
+	// "UCR Invoice (Amendment)". charge_item is a Link to a shared master record, so
+	// it reads identically on an amendment and on the original.
 	if (grid.get_docfield("line_label")) {
-		grid.update_docfield_property("line_label", "hidden", 1);
+		grid.update_docfield_property("line_label", "hidden", 0);
+		grid.update_docfield_property("line_label", "read_only", 1);
 	}
 	const charge_field = grid.get_field("charge_item");
 	if (charge_field && !charge_field._cgm_charge_query) {
@@ -1787,8 +1360,15 @@ function configure_finance_line_grid(frm, ui) {
 		grid.update_docfield_property("attachment", "read_only", 0);
 		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
+		// Read-only here on purpose - the server only accepts the tick on the finance
+		// payment task - so say where it belongs instead of just greying it out.
 		if (grid.get_docfield("client_paid_directly")) {
 			grid.update_docfield_property("client_paid_directly", "read_only", 1);
+			grid.update_docfield_property(
+				"client_paid_directly",
+				"description",
+				__("Finance ticks this on the paired <b>Finance pays</b> task.")
+			);
 		}
 		if (grid.get_docfield("journal_entry")) {
 			grid.update_docfield_property("journal_entry", "read_only", 1);
@@ -1803,11 +1383,13 @@ function configure_finance_line_grid(frm, ui) {
 		grid.update_docfield_property("item_code", "read_only", 0);
 		grid.update_docfield_property("item_code", "hidden", 0);
 		// Per-invoice Client will pay (e.g. amendment after company paid the first).
+		// Gated by Confirm Client Paid - the same responsibility the server checks.
+		// Reading Make Payment here locked the tick for people allowed to make it.
 		if (grid.get_docfield("client_paid_directly")) {
 			grid.update_docfield_property(
 				"client_paid_directly",
 				"read_only",
-				is_finance ? 0 : 1
+				can_confirm_client_paid ? 0 : 1
 			);
 		}
 		if (grid.get_docfield("journal_entry")) {
@@ -1815,7 +1397,10 @@ function configure_finance_line_grid(frm, ui) {
 		}
 	}
 
-	frm._cgm_finance_grid_ready = true;
+	// Latch only once the server's permissions are in. They arrive after the first
+	// refresh, and latching early froze the grid on "nobody may touch anything" -
+	// the later refresh found the flag set and left the columns read-only.
+	frm._cgm_finance_grid_ready = cgm_permissions_loaded(frm);
 	if (cgm_shipping.status_field?.attach_grid_formatters) {
 		cgm_shipping.status_field.attach_grid_formatters(
 			grid,
@@ -1846,11 +1431,13 @@ function reset_cgm_task_sea_ui_state_if_needed(frm) {
 	frm._cgm_shipping_line_finance_container_grid_ready = false;
 	frm._cgm_toolbar_fingerprint = null;
 	frm._cgm_shipping_line_finance_lines_ensured = false;
-	frm._cgm_kpa_finance_lines_ensured = false;
+	CGM_CHARGE_PROFILE_KEYS.forEach((key) => {
+		frm[`_cgm_${key}_finance_lines_ensured`] = false;
+		frm[`_cgm_${key}_finance_ensure_done`] = false;
+	});
 	frm._cgm_ucr_finance_ensure_done = false;
 	frm._cgm_entry_finance_ensure_done = false;
 	frm._cgm_shipping_line_finance_ensure_done = false;
-	frm._cgm_kpa_finance_ensure_done = false;
 	frm._cgm_finance_department = CGM_SEA_UI_SEQUENCES_CACHE?.finance_department;
 	if (is_sea_clearance_task(frm) && !frm._cgm_sea_seq_config) {
 		load_cgm_sea_ui_sequences(frm);
@@ -1948,7 +1535,7 @@ function cgm_task_toolbar_fingerprint(frm) {
 		ui.is_shipping_line_application ? 1 : 0,
 		ui.is_ucr_finance ? 1 : 0,
 		ui.is_entry_finance ? 1 : 0,
-		ui.is_kpa_finance ? 1 : 0,
+		ui.charge_finance || 0,
 		inv?.verified ? 1 : 0,
 		inv?.attachment ? 1 : 0,
 		rec?.verified ? 1 : 0,
@@ -1956,6 +1543,8 @@ function cgm_task_toolbar_fingerprint(frm) {
 		invoice_sig,
 		user_can_make_payment(frm) ? 1 : 0,
 		user_can_verify_invoice(frm) ? 1 : 0,
+		(frm.doc.__onload?.cgm_draft_journal_entries || []).map((je) => je.journal_entry).join(","),
+		(frm.doc.__onload?.cgm_cancelled_journal_entries || []).join(","),
 	].join("|");
 }
 
@@ -1973,7 +1562,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	// painted, and the task buttons were then never rebuilt.
 	const still_painted =
 		Array.isArray(frm._cgm_toolbar_labels) &&
-		frm._cgm_toolbar_labels.every((label) => frm.custom_buttons?.[label]);
+		frm._cgm_toolbar_labels.every((btn) => frm.custom_buttons?.[btn.label]);
 	if (frm._cgm_toolbar_fingerprint === fingerprint && still_painted) {
 		return;
 	}
@@ -1982,21 +1571,29 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		frm._cgm_ucr_finance_ensure_done = false;
 		frm._cgm_entry_finance_ensure_done = false;
 		frm._cgm_shipping_line_finance_ensure_done = false;
-		frm._cgm_kpa_finance_ensure_done = false;
+		CGM_CHARGE_PROFILE_KEYS.forEach((key) => {
+			frm[`_cgm_${key}_finance_ensure_done`] = false;
+		});
 	}
 
 	const ui = get_sea_task_ui(frm);
-	frm.clear_custom_buttons();
+	// Remove only the buttons this file added. frm.clear_custom_buttons() empties the
+	// whole inner toolbar, so every remount also deleted buttons other scripts had
+	// put there - and because the remount is debounced, they vanished a moment after
+	// each refresh rather than never appearing, which is what made the toolbar look
+	// unstable.
+	(frm._cgm_toolbar_labels || []).forEach((btn) => {
+		frm.remove_custom_button(btn.label, btn.group);
+	});
 	frm._cgm_toolbar_fingerprint = fingerprint;
 	frm._cgm_toolbar_labels = [];
 
-	// Only Open Shipment Project stays top-level — everything else under Actions.
+	// Two menus: View opens a record, Actions changes data. The shipment project
+	// goes first under View - the Project field on the form links there too.
 	if ((ui.is_sea_task || is_entry_application_step(frm)) && frm.doc.project) {
-		const openProjectBtn = frm.add_custom_button(__("Open Shipment Project"), () => {
+		add_cgm_view_button(frm, __("Open Shipment Project"), () => {
 			frappe.set_route("Form", "Project", frm.doc.project);
 		});
-		openProjectBtn?.addClass?.("btn-primary");
-		frm._cgm_toolbar_labels.push(__("Open Shipment Project"));
 	}
 
 	if (ui.is_ucr_finance && frm.doc.status !== "Completed") {
@@ -2053,20 +1650,25 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		}
 	}
 
-	if (ui.is_kpa_finance && frm.doc.status !== "Completed") {
+	if (ui.charge_finance && frm.doc.status !== "Completed") {
+		const charge_key = ui.charge_finance;
 		if (user_can_make_payment(frm) || user_can_verify_invoice(frm)) {
 			unverified_invoice_lines_on_form(frm).forEach((inv) => {
 				add_cgm_toolbar_button(
 					frm,
 					__("Verify {0}", [finance_line_display_label(inv)]),
-					() => verify_app_finance_line(frm, "kpa", "Invoice", inv.name)
+					() => verify_app_finance_line(frm, charge_key, "Invoice", inv.name)
 				);
 			});
 			const rec = unverified_receipt_line_on_form(frm);
 			if (rec) {
-				add_cgm_toolbar_button(frm, __("Verify KPA Receipt"), () => {
-					verify_app_finance_line(frm, "kpa", "Receipt", rec.name);
-				});
+				add_cgm_toolbar_button(
+					frm,
+					__("Verify {0} Receipt", [CGM_APP_FINANCE_PROFILES[charge_key].label]),
+					() => {
+						verify_app_finance_line(frm, charge_key, "Receipt", rec.name);
+					}
+				);
 			}
 		}
 	}
@@ -2159,7 +1761,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		ui.is_ucr_application ||
 		ui.is_entry_application ||
 		ui.is_shipping_line_application ||
-		ui.is_kpa_application;
+		ui.charge_application;
 	if (is_app_finance_application && frm.doc.status !== "Cancelled") {
 		const has_primary_invoice = get_invoice_finance_lines(frm).some(
 			(r) => r.attachment && !cint(r.is_amendment)
@@ -2195,7 +1797,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 	} else {
 		get_invoice_finance_lines(frm).forEach((row) => {
 			if (row.journal_entry) {
-				add_cgm_toolbar_button(
+				add_cgm_view_button(
 					frm,
 					__("View Journal Entry - {0}", [finance_line_display_label(row)]),
 					() => frappe.set_route("Form", "Journal Entry", row.journal_entry)
@@ -2206,11 +1808,13 @@ function mount_cgm_task_toolbar_buttons(frm) {
 			frm.doc.custom_journal_entry &&
 			!get_invoice_finance_lines(frm).some((r) => r.journal_entry === frm.doc.custom_journal_entry)
 		) {
-			add_cgm_toolbar_button(frm, __("View Journal Entry"), () => {
+			add_cgm_view_button(frm, __("View Journal Entry"), () => {
 				frappe.set_route("Form", "Journal Entry", frm.doc.custom_journal_entry);
 			});
 		}
 	}
+
+	add_submit_draft_journal_entry_buttons(frm);
 
 	const permit_finance_has_unpaid =
 		is_permit_payment_pattern(frm) &&
@@ -2227,7 +1831,7 @@ function mount_cgm_task_toolbar_buttons(frm) {
 		(ui.is_ucr_finance ||
 			ui.is_entry_finance ||
 			ui.is_shipping_line_finance ||
-			ui.is_kpa_finance) &&
+			ui.charge_finance) &&
 		app_finance_unpaid_lines.length > 0;
 
 	if (
@@ -2309,7 +1913,7 @@ function reset_cgm_task_async_state(frm) {
 		"_cgm_declarant_status",
 		"_cgm_entry_declarant_status",
 		"_cgm_shipping_line_declarant_status",
-		"_cgm_kpa_declarant_status",
+		...CGM_CHARGE_PROFILE_KEYS.map((key) => `_cgm_${key}_declarant_status`),
 	].forEach((key) => {
 		frm[key] = null;
 		frm[`${key}_loading`] = false;
@@ -2323,7 +1927,7 @@ function reset_cgm_task_async_state(frm) {
 		"_cgm_finance_complete_checking",
 		"_cgm_finance_lines_ensuring",
 		"_cgm_finance_permit_rows_ensuring",
-		"_cgm_kpa_finance_ensure_done",
+		...CGM_CHARGE_PROFILE_KEYS.map((key) => `_cgm_${key}_finance_ensure_done`),
 		"_cgm_permit_finance_complete_checking",
 		"_cgm_permit_finance_reopen_checking",
 		"_cgm_shipping_line_finance_ensure_done",
@@ -2333,7 +1937,7 @@ function reset_cgm_task_async_state(frm) {
 		frm[key] = false;
 	});
 	// Application↔finance profiles build their flag names at runtime.
-	["entry", "shipping_line", "kpa"].forEach((profile) => {
+	["entry", "shipping_line", ...CGM_CHARGE_PROFILE_KEYS].forEach((profile) => {
 		frm[`_cgm_${profile}_finance_lines_ensuring`] = false;
 		frm[`_cgm_${profile}_finance_lines_ensured`] = false;
 		frm[`_cgm_${profile}_finance_complete_checking`] = false;
@@ -2349,15 +1953,65 @@ function cgm_task_form_still_on(frm, task_name) {
 	return cur_frm === frm && !frm.is_new() && frm.doc?.name === task_name;
 }
 
+function add_cgm_view_button(frm, label, fn) {
+	const btn = frm.add_custom_button(label, fn, CGM_VIEW_GROUP);
+	if (btn) {
+		frm.page.set_inner_btn_group_as_primary(CGM_VIEW_GROUP);
+		if (
+			Array.isArray(frm._cgm_toolbar_labels) &&
+			!frm._cgm_toolbar_labels.some((b) => b.label === label)
+		) {
+			frm._cgm_toolbar_labels.push({ label, group: CGM_VIEW_GROUP });
+		}
+	}
+	return btn;
+}
+
 function add_cgm_toolbar_button(frm, label, fn, opts = {}) {
 	const btn = frm.add_custom_button(label, fn, CGM_ACTION_GROUP);
 	if (btn) {
 		frm.page.set_inner_btn_group_as_primary(CGM_ACTION_GROUP);
-		if (Array.isArray(frm._cgm_toolbar_labels) && !frm._cgm_toolbar_labels.includes(label)) {
-			frm._cgm_toolbar_labels.push(label);
+		if (
+			Array.isArray(frm._cgm_toolbar_labels) &&
+			!frm._cgm_toolbar_labels.some((b) => b.label === label)
+		) {
+			frm._cgm_toolbar_labels.push({ label, group: CGM_ACTION_GROUP });
 		}
 	}
 	return btn;
+}
+
+function add_submit_draft_journal_entry_buttons(frm) {
+	// Make Payment creates the Journal Entry as a draft for Finance to check. The
+	// server lists the drafts this user may submit (Task onload).
+	(frm.doc.__onload?.cgm_draft_journal_entries || []).forEach((je) => {
+		const label = je.label
+			? __("Submit Journal Entry - {0}", [je.label])
+			: __("Submit Journal Entry");
+		add_cgm_toolbar_button(frm, label, () => submit_task_draft_journal_entry(frm, je));
+	});
+}
+
+function submit_task_draft_journal_entry(frm, je) {
+	frappe.confirm(
+		__("Submit Journal Entry {0} for {1}? This posts it to the ledger.", [
+			je.journal_entry,
+			format_currency(je.amount),
+		]),
+		() =>
+			frappe
+				.xcall(
+					"cgm_shipping.cgm_worldwide_shipping.customizations.task.submit_task_journal_entry",
+					{ task_name: frm.doc.name, journal_entry: je.journal_entry }
+				)
+				.then((r) => {
+					frappe.show_alert({
+						message: __("Journal Entry {0} submitted", [r.journal_entry]),
+						indicator: "green",
+					});
+					frm.reload_doc();
+				})
+	);
 }
 
 function hide_ucr_legacy_fields(frm) {
@@ -2373,7 +2027,7 @@ function configure_ucr_finance_fields(frm, ui) {
 		ui.is_ucr_finance ||
 		ui.is_entry_finance ||
 		ui.is_shipping_line_finance ||
-		ui.is_kpa_finance ||
+		ui.charge_finance ||
 		ui.show_finance_lines
 	) {
 		hide_ucr_legacy_fields(frm);
@@ -2398,7 +2052,10 @@ function ensure_finance_permit_rows_on_form(frm) {
 			if (r.exc || !r.message) {
 				return;
 			}
-			if (r.message.reload) {
+			// Reload only when the server saved something this form hasn't got. A mismatch
+			// the sync can't fix (e.g. a Finance row whose invoice left the application
+			// task) otherwise reloads on every refresh and makes the buttons blink.
+			if (r.message.reload && (r.message.changed || r.message.modified !== frm.doc.modified)) {
 				frm.reload_doc();
 				return;
 			}
@@ -2443,12 +2100,30 @@ function ensure_ucr_finance_lines_on_form(frm) {
 }
 
 function set_task_intro(frm, message, color = "blue") {
-	// set_intro() appends a message block on every call, so clear first then set
-	// once. Routing all intro updates through here keeps exactly one banner across
-	// repeated refreshes and async callbacks.
-	frm.set_intro("");
+	// Repaint only when the banner actually changes. Every refresh and every async
+	// callback used to run set_intro("") followed by set_intro(message), which tore
+	// the block out of the DOM and rebuilt it even when the text was identical - on
+	// a form that paints the intro from several callbacks that reads as a banner
+	// flickering and disappearing.
+	const key = `${frm.doc?.name || ""}|${color}|${message || ""}`;
+	// Detached (dashboard reset, or someone removed it) counts as not painted, so a
+	// banner that really did go missing is still restored.
+	const painted = !!frm.$intro_message && frm.$intro_message.closest("html").length > 0;
+	if (frm._cgm_intro_key === key && painted === !!message) {
+		return;
+	}
+	frm._cgm_intro_key = key;
+
+	if (frm.$intro_message) {
+		frm.$intro_message.remove();
+		frm.$intro_message = null;
+	}
 	if (message) {
-		frm.set_intro(message, color);
+		// permanent = true. frm.set_intro() renders a dismissable block, and the X it
+		// adds removes the node without recording that it was dismissed, so the next
+		// refresh put the banner straight back. This is standing guidance for the
+		// step rather than a transient alert, so it stays put and carries no X.
+		frm.$intro_message = frm.dashboard.set_headline_alert(message, color, true);
 	}
 }
 
@@ -2512,6 +2187,8 @@ function apply_ucr_application_intro(frm, status) {
 		return;
 	}
 	status = status || {};
+	// The template's Required Document Types decide whether a certificate is needed.
+	const cert_required = status.idf_certificate_required !== false;
 	let intro;
 	// Form doc status wins — stale API task_status caused "Completed" banners while
 	// the form was still dirty / Open during document autosave loops.
@@ -2531,19 +2208,26 @@ function apply_ucr_application_intro(frm, status) {
 			"<b>Attach the IDF/UCR certificate</b> under <b>Clearance Documents</b> to finish this task."
 		);
 	} else if (status.receipt_attached) {
-		intro = __(
-			"<b>UCR receipt is attached.</b> Attach the IDF/UCR certificate under <b>Clearance Documents</b> to complete this task."
-		);
+		intro = cert_required
+			? __(
+					"<b>UCR receipt is attached.</b> Attach the IDF/UCR certificate under <b>Clearance Documents</b> to complete this task."
+				)
+			: __("<b>UCR receipt is attached.</b> Waiting for Finance to verify the invoice.");
 	} else if (status.payment_made) {
 		intro = __(
 			"<b>Finance has paid the UCR invoice.</b> Attach the supplier <b>UCR Receipt</b> on <b>Invoices & Receipts</b> " +
-				"(same department that attached the invoice). " +
-				"When the certificate is issued, attach it under <b>Clearance Documents</b>."
+				"(same department that attached the invoice)." +
+				(cert_required
+					? " " + __("When the certificate is issued, attach it under <b>Clearance Documents</b>.")
+					: "")
 		);
 	} else if (status.invoice_verified) {
 		intro = __(
 			"<b>UCR invoice verified by Finance.</b> Waiting for payment. After payment, attach the " +
-				"<b>UCR Receipt</b> here; attach the certificate under <b>Clearance Documents</b> when issued."
+				"<b>UCR Receipt</b> here." +
+				(cert_required
+					? " " + __("Attach the certificate under <b>Clearance Documents</b> when issued.")
+					: "")
 		);
 	} else if (status.invoice_submitted) {
 		intro = __(
@@ -2554,7 +2238,10 @@ function apply_ucr_application_intro(frm, status) {
 		intro = __(
 			"<b>Declarant:</b> Attach <b>UCR Invoice</b> and save on " +
 				"<b>Invoices & Receipts</b> - Finance is notified automatically. After payment, attach the " +
-				"supplier <b>UCR Receipt</b> on the same table; attach the IDF/UCR certificate under <b>Clearance Documents</b> when issued."
+				"supplier <b>UCR Receipt</b> on the same table." +
+				(cert_required
+					? " " + __("Attach the IDF/UCR certificate under <b>Clearance Documents</b> when issued.")
+					: "")
 		);
 	}
 	set_task_intro(frm, intro);
@@ -2566,7 +2253,6 @@ function toggle_permit_invoice_fields_for_origin(grid) {
 	}
 	const payment_fields = [
 		"payment_invoice",
-		"invoice_amount",
 		"invoice_uploaded_on",
 		"invoice_uploaded_by",
 		"invoice_verified",
@@ -2589,7 +2275,6 @@ function configure_permit_grid(frm) {
 	}
 	const seq = sea_task_sequence(frm);
 	const hide_on_all = [
-		"purchase_invoice",
 		"payment_entry",
 		"clearance_phase",
 		"application_date",
@@ -2619,30 +2304,30 @@ function configure_permit_grid(frm) {
 			"read_only",
 			can_upload_proof ? 0 : 1
 		);
-		grid.update_docfield_property(
-			"invoice_amount",
-			"read_only",
-			can_upload_proof ? 0 : 1
-		);
 		// Declarant can see when Finance has verified; cannot tick it here.
 		grid.update_docfield_property("invoice_verified", "hidden", !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("invoice_verified", "read_only", 1);
 		grid.update_docfield_property("invoice_verified", "in_list_view", 1);
 		grid.update_docfield_property("payment_receipt", "hidden", !invoices_ready ? 1 : 0);
-		grid.update_docfield_property("payment_receipt", "read_only", 1);
+		// Declarants collect permit receipts from the issuing body's portal, so they
+		// upload them here. Finance still owns the tick: receipt_verified stays
+		// read-only below, and the sync to the finance task never carries it across.
+		grid.update_docfield_property(
+			"payment_receipt",
+			"read_only",
+			user_can_upload_receipt(frm) ? 0 : 1
+		);
 		grid.update_docfield_property("permit_document", "hidden", 0);
 		grid.update_docfield_property("permit_document", "read_only", can_upload_proof ? 0 : 1);
 		grid.update_docfield_property("receipt_verified", "hidden", !invoices_ready ? 1 : 0);
 		grid.update_docfield_property("receipt_verified", "read_only", 1);
 		toggle_permit_invoice_fields_for_origin(grid);
 	} else if (is_permit_finance_step(frm, seq)) {
-		["payment_invoice", "purchase_invoice", "payment_entry", "permit_document"].forEach((fn) => {
+		["payment_invoice", "payment_entry", "permit_document"].forEach((fn) => {
 			grid.update_docfield_property(fn, "read_only", 1);
 		});
 		grid.update_docfield_property("payment_invoice", "hidden", 0);
 		grid.update_docfield_property("payment_invoice", "in_list_view", 1);
-		grid.update_docfield_property("invoice_amount", "hidden", 0);
-		grid.update_docfield_property("invoice_amount", "in_list_view", 1);
 		toggle_permit_invoice_fields_for_origin(grid);
 		grid.update_docfield_property("invoice_verified", "hidden", 0);
 		grid.update_docfield_property("invoice_verified", "read_only", user_can_verify_invoice(frm) ? 0 : 1);
@@ -2652,9 +2337,12 @@ function configure_permit_grid(frm) {
 		grid.update_docfield_property("journal_entry", "in_list_view", 1);
 		grid.update_docfield_property("payment_receipt", "hidden", 0);
 		grid.update_docfield_property("payment_receipt", "read_only", user_can_upload_receipt(frm) ? 0 : 1);
-		// Auto-stamped when Finance uploads the receipt — no separate verify step.
-		grid.update_docfield_property("receipt_verified", "hidden", 1);
-		grid.update_docfield_property("receipt_verified", "read_only", 1);
+		// Ticked automatically when Finance uploads the receipt, and by hand for a
+		// receipt checked outside the system - the receipt_verified handler saves and
+		// completes the task. Same rule as Invoice Verified.
+		grid.update_docfield_property("receipt_verified", "hidden", 0);
+		grid.update_docfield_property("receipt_verified", "read_only", user_can_verify_invoice(frm) ? 0 : 1);
+		grid.update_docfield_property("receipt_verified", "in_list_view", 1);
 	}
 	cgm_configure_permit_attach_grid(grid);
 }
@@ -2703,12 +2391,12 @@ frappe.ui.form.on("Task Finance Line", {
 			is_ucr_application_step(frm, seq) ||
 			is_entry_application_step(frm, seq) ||
 			is_shipping_line_application_step(frm, seq) ||
-			is_kpa_application_step(frm, seq);
+			Boolean(charge_application_profile(frm));
 		const is_fin =
 			is_ucr_finance_step(frm, seq) ||
 			is_entry_finance_step(frm, seq) ||
 			is_shipping_line_finance_step(frm, seq) ||
-			is_kpa_finance_step(frm, seq);
+			Boolean(charge_finance_profile(frm));
 		let attachment_editable = null;
 		let verified_editable = null;
 		if (is_app && (row.line_type === "Receipt" || row.line_type === "POP")) {
@@ -2716,10 +2404,10 @@ frappe.ui.form.on("Task Finance Line", {
 				attachment_editable = user_can_upload_receipt(frm);
 				verified_editable = false;
 			} else if (
-				(is_entry_application_step(frm, seq) || is_kpa_application_step(frm, seq)) &&
+				(is_entry_application_step(frm, seq) || charge_application_profile(frm)) &&
 				row.line_type === "Receipt"
 			) {
-				// Entry / KPA receipts are uploaded on the Finance payment task.
+				// Entry / KPA / CFS receipts are uploaded on the Finance payment task.
 				attachment_editable = false;
 				verified_editable = false;
 			} else if (user_may_attach_receipt_on_application(frm, row)) {
@@ -2765,7 +2453,7 @@ frappe.ui.form.on("Task Finance Line", {
 			is_ucr_application_step(frm) ||
 			is_entry_application_step(frm) ||
 			is_shipping_line_application_step(frm) ||
-			is_kpa_application_step(frm)
+			charge_application_profile(frm)
 		)) {
 			if (is_shipping_line_application_step(frm) && row.line_type === "Receipt") {
 				// Documentation attaches receipt here after POP is mirrored from Finance.
@@ -2781,11 +2469,12 @@ frappe.ui.form.on("Task Finance Line", {
 					frappe.model.set_value(cdt, cdn, "attachment", "");
 				}
 				return;
-			} else if (is_kpa_application_step(frm) && row.line_type === "Receipt") {
+			} else if (charge_application_profile(frm) && row.line_type === "Receipt") {
 				frappe.show_alert({
 					message: __(
-						"Attach and verify the <b>KPA Receipt</b> on the paired Finance payment task " +
-							"(Finance role)."
+						"Attach and verify the <b>{0} Receipt</b> on the paired Finance payment task " +
+							"(Finance role).",
+						[CGM_APP_FINANCE_PROFILES[charge_application_profile(frm)].label]
 					),
 					indicator: "orange",
 				});
@@ -2820,7 +2509,7 @@ frappe.ui.form.on("Task Finance Line", {
 			is_ucr_finance_step(frm) ||
 			is_entry_finance_step(frm) ||
 			is_shipping_line_finance_step(frm) ||
-			is_kpa_finance_step(frm);
+			Boolean(charge_finance_profile(frm));
 		if (is_ucr_application_step(frm) && row.attachment) {
 			if (row.line_type === "Invoice") {
 				frappe.show_alert({
@@ -2850,10 +2539,12 @@ frappe.ui.form.on("Task Finance Line", {
 				});
 			}
 		}
-		if (is_kpa_application_step(frm) && row.attachment) {
+		if (charge_application_profile(frm) && row.attachment) {
 			if (row.line_type === "Invoice") {
 				frappe.show_alert({
-					message: __("KPA invoice saved - Finance will be notified when you save."),
+					message: __("{0} invoice saved - Finance will be notified when you save.", [
+						CGM_APP_FINANCE_PROFILES[charge_application_profile(frm)].label,
+					]),
 					indicator: "green",
 				});
 			}
@@ -2964,11 +2655,11 @@ frappe.ui.form.on("Task Finance Line", {
 			}
 			return;
 		}
-		if (is_kpa_application_step(frm)) {
+		if (charge_application_profile(frm)) {
 			frappe.show_alert({
-				message: __(
-					"Finance verifies the KPA invoice on the Finance pays KPA Invoice task."
-				),
+				message: __("Finance verifies the {0} invoice on the paired Finance payment task.", [
+					CGM_APP_FINANCE_PROFILES[charge_application_profile(frm)].label,
+				]),
 				indicator: "orange",
 			});
 			const inv = get_finance_line(frm, "Invoice");
@@ -2991,8 +2682,8 @@ frappe.ui.form.on("Task Finance Line", {
 			if (is_shipping_line_finance_step(frm)) {
 				ensure_app_finance_task_completed_on_form(frm, "shipping_line");
 			}
-			if (is_kpa_finance_step(frm)) {
-				ensure_app_finance_task_completed_on_form(frm, "kpa");
+			if (charge_finance_profile(frm)) {
+				ensure_app_finance_task_completed_on_form(frm, charge_finance_profile(frm));
 			}
 		});
 	},
@@ -3022,7 +2713,6 @@ frappe.ui.form.on("Permit Register", {
 		const invoice_editable = can_upload && !row_locked;
 		grid_row.toggle_editable("origin", !row_locked);
 		grid_row.toggle_editable("payment_invoice", invoice_editable);
-		grid_row.toggle_editable("invoice_amount", invoice_editable);
 		grid_row.toggle_editable("permit_document", can_upload);
 	},
 
@@ -3059,7 +2749,6 @@ frappe.ui.form.on("Permit Register", {
 		if ((row.origin || "Local") === "Foreign") {
 			[
 				"payment_invoice",
-				"invoice_amount",
 				"invoice_verified",
 				"payment_receipt",
 				"receipt_verified",
@@ -3425,7 +3114,7 @@ function apply_entry_application_intro(frm, status) {
 	}
 	status = status || {};
 	const invoiceLabel = status.invoice_label || __("Entry Slip Invoice");
-	const receiptLabel = status.receipt_label || __("Entry Slip Receipt");
+	const receiptLabel = status.receipt_label || __("Entry Slip POP");
 	let intro;
 	if (status.task_status === "Completed" || frm.doc.status === "Completed") {
 		intro = __("<b>All declarant documents are in place.</b> This task is <b>Completed</b>.");
@@ -3686,7 +3375,7 @@ function is_client_paid_application_step(frm) {
 		is_ucr_application_step(frm, seq) ||
 		is_entry_application_step(frm, seq) ||
 		is_app_finance_application_step(frm, seq, "shipping_line") ||
-		is_app_finance_application_step(frm, seq, "kpa") ||
+		Boolean(charge_application_profile(frm)) ||
 		is_permit_application_step(frm, seq)
 	);
 }
@@ -3706,7 +3395,7 @@ function set_client_paid_fields_hidden(frm, hidden) {
 }
 
 function configure_client_paid_field(frm, ui) {
-	// App-finance (UCR / Entry / SL / KPA): Client will pay lives on each Invoice row.
+	// App-finance (UCR / Entry / SL / KPA / CFS): Client will pay lives on each Invoice row.
 	// Permit finance still uses the task-level checkbox (plus per-permit row flags).
 	ui = ui || get_sea_task_ui(frm);
 	if (is_app_finance_payment_step(frm, ui)) {
@@ -3718,7 +3407,7 @@ function configure_client_paid_field(frm, ui) {
 		ui.is_ucr_application ||
 		ui.is_entry_application ||
 		ui.is_shipping_line_application ||
-		ui.is_kpa_application
+		ui.charge_application
 	) {
 		set_client_paid_fields_hidden(frm, 1);
 		return;
@@ -3753,9 +3442,7 @@ function configure_client_paid_field(frm, ui) {
 		const editable =
 			finance_step && user_can_confirm_client_paid(frm) && frm.doc.status !== "Completed";
 		frm.set_df_property("custom_client_paid_directly", "read_only", editable ? 0 : 1);
-		const receiptOptional = Boolean(
-			ui.is_kpa_finance || ui.is_kpa_application
-		);
+		const receiptOptional = Boolean(ui.charge_finance || ui.charge_application);
 		frm.set_df_property(
 			"custom_client_paid_directly",
 			"description",
@@ -3867,8 +3554,8 @@ function configure_entry_arrival_mirror_grid(frm) {
 }
 
 function application_status_for_client_paid(frm, ui) {
-	if (ui.is_kpa_application) {
-		return frm._cgm_kpa_declarant_status;
+	if (ui.charge_application) {
+		return frm[`_cgm_${ui.charge_application}_declarant_status`];
 	}
 	if (ui.is_shipping_line_application) {
 		return frm._cgm_shipping_line_declarant_status;
@@ -3883,13 +3570,13 @@ function application_status_for_client_paid(frm, ui) {
 }
 
 function client_paid_application_needs_mark_complete(frm, ui) {
-	/** KPA (no certificate) needs an explicit Mark Completed after client-paid.
+	/** KPA / CFS (no certificate) need an explicit Mark Completed after client-paid.
 	 * Shipping Line waits for Finance receipt verify — no early Mark Completed.
 	 */
 	if (frm.doc.status === "Completed" || frm.doc.status === "Cancelled") {
 		return false;
 	}
-	if (!ui.is_kpa_application) {
+	if (!ui.charge_application) {
 		return false;
 	}
 	const status = application_status_for_client_paid(frm, ui) || {};
@@ -4033,7 +3720,60 @@ function apply_app_finance_application_intro(frm, status, profileKey) {
 				);
 		}
 	}
+	if (status.receipt_required === false && !status.receipt_attached) {
+		intro +=
+			"<br><br>" +
+			__(
+				"<b>{0}:</b> attach it if one is issued. This task does not wait for it " +
+					"(CGM Shipping Settings → Finance receipts).",
+				[receiptLabel]
+			);
+	}
+	// Name what is actually holding the task up. Attached-but-unticked rows are the
+	// ones people cannot diagnose from the grid: an optional receipt and a blocking
+	// POP looked the same, so the wait got blamed on the document nobody can obtain.
+	const awaiting = (frm.doc.custom_task_finance_lines || [])
+		.filter(
+			(row) => row.attachment && !cint(row.verified) && !finance_row_is_optional(frm, row)
+		)
+		.map((row) => row.line_label || row.line_type)
+		.filter(Boolean);
+	if (awaiting.length) {
+		intro +=
+			"<br><br>" +
+			__("<b>Waiting on Finance to verify:</b> {0}. The task completes once this is ticked.", [
+				awaiting.join(", "),
+			]);
+	}
 	set_task_intro(frm, intro);
+}
+
+// CGM Shipping Settings > Finance receipts decides whether a payment task waits for
+// its receipt; the server sends its answer with the form so both agree.
+function receipt_required_on_form(frm) {
+	const flag = frm.doc.__onload?.cgm_receipt_required;
+	return flag === undefined ? true : Boolean(cint(flag));
+}
+
+/* Is this finance row's missing tick harmless - i.e. not holding the task up?
+
+   Only the receipt is ever optional, and only on both counts: CGM Shipping
+   Settings > Finance receipts says this payment kind does not wait for one,
+   AND nobody has attached one. An attached receipt always gates, required or
+   not - "not required" means you need not produce one, not that a document
+   already on the record may go unchecked. That is the same rule
+   ensure_app_finance_task_completed_on_form applies before it completes a task.
+
+   The invoice and the POP always gate; the POP is CGM's own bank advice, so it
+   only exists on flows that require it. */
+function finance_row_is_optional(frm, row) {
+	if ((row?.line_type || "") !== "Receipt") {
+		return false;
+	}
+	if (row.attachment) {
+		return false;
+	}
+	return !receipt_required_on_form(frm);
 }
 
 function ensure_app_finance_task_completed_on_form(frm, profileKey) {
@@ -4052,22 +3792,17 @@ function ensure_app_finance_task_completed_on_form(frm, profileKey) {
 	) {
 		return;
 	}
-	if (profileKey === "shipping_line") {
-		const pop = get_finance_line(frm, "POP");
-		const rec = get_finance_line(frm, "Receipt");
-		if (!pop?.attachment || !rec?.attachment || !rec?.verified) {
+	const rec = get_finance_line(frm, "Receipt");
+	if (profileKey === "shipping_line" && !get_finance_line(frm, "POP")?.attachment) {
+		return;
+	}
+	if (receipt_required_on_form(frm)) {
+		if (!rec?.attachment || !cint(rec.verified)) {
 			return;
 		}
-	} else {
-		const rec = get_finance_line(frm, "Receipt");
-		if (profileKey === "entry") {
-			if (!rec?.attachment || !cint(rec.verified)) {
-				return;
-			}
-		} else if (rec?.attachment && !cint(rec.verified)) {
-			// KPA: receipt required when present on the row; settlement is per invoice line.
-			return;
-		}
+	} else if (rec?.attachment && !cint(rec.verified)) {
+		// An attached receipt is still verified before the task closes over it.
+		return;
 	}
 	frm[checkingKey] = true;
 	const cgm_call_task = frm.doc.name;
@@ -4167,9 +3902,7 @@ function user_can_make_payment(frm) {
 	if (perms) {
 		return !!perms.can_make_payment;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_make_payment.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_can_upload_receipt(frm) {
@@ -4177,9 +3910,7 @@ function user_can_upload_receipt(frm) {
 	if (perms) {
 		return !!perms.can_upload_receipt;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_receipt.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_may_attach_receipt_on_application(frm, row) {
@@ -4213,9 +3944,7 @@ function user_can_upload_pop(frm) {
 	if (perms && perms.can_upload_pop !== undefined) {
 		return !!perms.can_upload_pop;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_pop.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function user_can_verify_invoice(frm) {
@@ -4231,9 +3960,7 @@ function user_can_upload_invoice(frm) {
 	if (perms && perms.can_upload_invoice !== undefined) {
 		return !!perms.can_upload_invoice;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_upload_invoice.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	) || frm?.doc?.owner === frappe.session.user;
+	return frm?.doc?.owner === frappe.session.user;
 }
 
 function user_can_upload_certificate(frm) {
@@ -4275,10 +4002,10 @@ function show_permit_finance_journal_entry_view_buttons(frm) {
 		if (!row.journal_entry) {
 			return;
 		}
-		const label = cint(row.is_amendment)
-			? __("{0} (amendment)", [row.permit_type])
-			: row.permit_type;
-		add_cgm_toolbar_button(frm, __("View Journal Entry - {0}", [label]), () => {
+		const label = `${cint(row.is_amendment) ? __("{0} (amendment)", [row.permit_type]) : row.permit_type}${
+			journal_entry_cancelled(frm, row.journal_entry) ? __(" (cancelled)") : ""
+		}`;
+		add_cgm_view_button(frm, __("View Journal Entry - {0}", [label]), () => {
 			frappe.set_route("Form", "Journal Entry", row.journal_entry);
 		});
 	});
@@ -4286,7 +4013,11 @@ function show_permit_finance_journal_entry_view_buttons(frm) {
 
 function setup_permit_finance_make_payment_buttons(frm) {
 	permit_finance_rows_on_form(frm).forEach((row) => {
-		if (row.journal_entry || cint(row.client_reported_paid) || cint(row.client_paid_directly)) {
+		if (
+			row_journal_entry_paid(frm, row) ||
+			cint(row.client_reported_paid) ||
+			cint(row.client_paid_directly)
+		) {
 			return;
 		}
 		if (row.payment_invoice && !cint(row.invoice_verified)) {
@@ -4603,12 +4334,12 @@ function setup_shipping_line_deposit_payment_buttons(frm) {
 				);
 			}
 			if (si) {
-				add_cgm_toolbar_button(frm, __("View Deposit Sales Invoice"), () => {
+				add_cgm_view_button(frm, __("View Deposit Sales Invoice"), () => {
 					frappe.set_route("Form", "Sales Invoice", si);
 				});
 			}
 			if (cn) {
-				add_cgm_toolbar_button(frm, __("View Deposit Credit Note"), () => {
+				add_cgm_view_button(frm, __("View Deposit Credit Note"), () => {
 					frappe.set_route("Form", "Sales Invoice", cn);
 				});
 			}
@@ -4623,7 +4354,7 @@ function setup_shipping_line_deposit_payment_buttons(frm) {
 				);
 			}
 			if (je) {
-				add_cgm_toolbar_button(frm, __("View Deposit JE"), () => {
+				add_cgm_view_button(frm, __("View Deposit JE"), () => {
 					frappe.set_route("Form", "Journal Entry", je);
 				});
 			}
@@ -4791,9 +4522,7 @@ function user_can_record_purchase_invoice(frm) {
 	if (perms) {
 		return !!perms.can_record_purchase_invoice;
 	}
-	return CGM_TASK_PERMISSIONS_FALLBACK.can_record_purchase_invoice.some((role) =>
-		(frappe.user_roles || []).includes(role)
-	);
+	return false;
 }
 
 function open_next_task_prompt(frm) {

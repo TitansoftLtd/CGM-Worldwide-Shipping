@@ -777,10 +777,40 @@ body > .datepicker {
 	background: var(--cgm-thead-bg);
 }
 
+/* Row number. Sticky beside the checkbox so the number stays readable while the
+   table scrolls sideways - a number that scrolls away cannot be used to point at
+   a row. Narrow and muted: it is a landmark, not data. */
+.cgm-ops-table th.cgm-ops-num-col,
+.cgm-ops-table td.cgm-ops-num-col {
+	position: sticky;
+	left: var(--cgm-check-col-width);
+	z-index: 2;
+	/* Set per render from the highest number the page shows. */
+	width: var(--cgm-ops-num-width, 2.1rem);
+	min-width: var(--cgm-ops-num-width, 2.1rem);
+	max-width: var(--cgm-ops-num-width, 2.1rem);
+	text-align: right;
+	/* Tight: the number is a landmark beside the checkbox, not a column of data,
+	   and every pixel here is one the shipment reference does not get. */
+	padding-right: 0.3rem !important;
+	padding-left: 0.15rem !important;
+	color: var(--text-muted, #8d99a6);
+	font-variant-numeric: tabular-nums;
+	background: var(--cgm-surface);
+}
+
+.cgm-ops-table thead th.cgm-ops-num-col {
+	box-shadow: 0 2px 0 var(--cgm-thead-rule);
+	z-index: 5;
+	top: 0;
+	background: var(--cgm-thead-bg);
+}
+
+/* The frozen client column starts after the checkbox *and* the number. */
 .cgm-ops-table th.cgm-ops-sticky-col,
 .cgm-ops-table td.cgm-ops-sticky-col {
 	position: sticky;
-	left: var(--cgm-check-col-width);
+	left: calc(var(--cgm-check-col-width) + var(--cgm-ops-num-width, 2.1rem));
 	z-index: 1;
 	/* This is the one column with a width cap, because it is frozen and a wide
 	   client name would eat the viewport. At the smaller type the same pixel
@@ -1661,6 +1691,65 @@ body.cgm-ops-col-resizing * {
 .cgm-ops-filter-field select,
 .cgm-ops-filter-field .placeholder {
 	letter-spacing: 0.004em;
+}
+
+/* Filters have to look like controls you can type in.
+ *
+ * They inherited the desk's pale form-control: no border against a near-white
+ * row, and a placeholder at 0.75 opacity of an already-muted grey. The row read
+ * as a strip of disabled boxes, so people did not know the board could be
+ * filtered at all.
+ *
+ * Three things fix that: an edge, readable placeholder text, and a focus ring
+ * that says which control has the keyboard. */
+.cgm-ops-filter-field input,
+.cgm-ops-filter-field select,
+.cgm-ops-filter-field .form-control,
+.cgm-ops-filters .awesomplete input {
+	border: 1px solid var(--cgm-border, #d1d8dd);
+	background: var(--cgm-surface, #fff);
+	box-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.03);
+	transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.cgm-ops-filter-field input::placeholder,
+.cgm-ops-filter-field .form-control::placeholder,
+.cgm-ops-filter-field .placeholder,
+.cgm-ops-filter-field .placeholder span {
+	/* Was 0.75 of a muted grey, which is why these read as disabled. */
+	opacity: 1;
+	color: #6b7280;
+}
+
+.cgm-ops-filter-field input:hover,
+.cgm-ops-filter-field select:hover,
+.cgm-ops-filters .awesomplete input:hover {
+	border-color: #9aa5b1;
+}
+
+.cgm-ops-filter-field input:focus,
+.cgm-ops-filter-field select:focus,
+.cgm-ops-filter-field .form-control:focus,
+.cgm-ops-filters .awesomplete input:focus {
+	border-color: var(--cgm-red-dark, #b8122c);
+	box-shadow: 0 0 0 3px rgba(227, 24, 55, 0.12);
+	outline: none;
+}
+
+/* An applied filter should not look like an empty one. :placeholder-shown is
+   false the moment a value is present, so this needs no JS to stay in step. */
+.cgm-ops-filter-field input:not(:placeholder-shown) {
+	border-color: var(--cgm-red-dark, #b8122c);
+	background: var(--cgm-red-soft, #fff5f7);
+	font-weight: 500;
+	color: var(--cgm-text, #1f272e);
+}
+
+/* Selects carry no placeholder attribute, so frappe's overlay div is the tell:
+   when it is gone, something is chosen. */
+.cgm-ops-filter-field.cgm-ops-filter-status select:valid,
+.cgm-ops-filter-field.cgm-ops-filter-date_field select:valid {
+	font-weight: 500;
 }
 
 .cgm-ops-subtitle {

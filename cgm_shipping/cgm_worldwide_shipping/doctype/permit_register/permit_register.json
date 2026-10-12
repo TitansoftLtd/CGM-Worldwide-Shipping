@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "permit_type",
+  "custom_source_task",
   "origin",
   "is_amendment",
   "payment_invoice",
@@ -41,6 +42,13 @@
    "in_list_view": 1,
    "label": "Permit Type",
    "options": "Permit Type"
+  },
+  {
+   "fieldname": "custom_source_task",
+   "fieldtype": "Link",
+   "label": "Source Task",
+   "options": "Task",
+   "read_only": 1
   },
   {
    "default": "Local",
@@ -238,7 +246,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-09 16:41:31.460248",
+ "modified": "2026-09-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Permit Register",

@@ -21,16 +21,6 @@ CALCULATION_PERCENTAGE = "Percentage"
 CALCULATION_FIXED = "Fixed"
 RULE_TYPE_FIXED = "Fixed Rate"
 
-PRICING_ROW_FIELDS = (
-	"item",
-	"rule_type",
-	"percentage_rate",
-	"fixed_rate",
-	"rule_currency",
-	"exchange_rate_used",
-	"calculated_amount",
-	"final_applied_rate",
-)
 
 RULE_FIELDS = (
 	"name",
@@ -100,11 +90,6 @@ def get_item_pricing_rules_for_items(item_codes: list[str]) -> dict[str, list[di
 		result.setdefault(row.parent, []).append(_normalize_rule_row(row))
 
 	return result
-
-
-def get_active_item_pricing_rules(item_codes: list[str]) -> dict[str, list[dict[str, Any]]]:
-	"""Backward-compatible alias for callers that batch-fetch item pricing rules."""
-	return get_item_pricing_rules_for_items(item_codes)
 
 
 def _normalize_rule_row(row) -> dict[str, Any]:

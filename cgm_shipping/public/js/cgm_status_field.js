@@ -46,36 +46,12 @@ cgm_shipping.status_field = {
 	},
 
 	tone_for_shipment(status) {
-		if (!status || status === "Draft") {
+		// Desk column of the shipment status table (constants.py), sent via boot.
+		// A stale boot degrades to "in progress" rather than failing.
+		if (!status) {
 			return "muted";
 		}
-		if (status === "Completed") {
-			return "success";
-		}
-		if (status === "Containers Returned") {
-			return "primary";
-		}
-		if (["In Transit", "In Delivery", "Client Inspection"].includes(status)) {
-			return "info";
-		}
-		if (
-			[
-				"Documents Received",
-				"UCR Applied",
-				"UCR Paid",
-				"Pre-clearance",
-				"Final Docs Received",
-				"Entry Lodged",
-				"Post-clearance",
-				"Field Clearance",
-			].includes(status)
-		) {
-			return "primary";
-		}
-		if (["Line Paid & DO Lodged", "Entry Paid", "KPA Paid"].includes(status)) {
-			return "warning";
-		}
-		return "active";
+		return frappe.boot?.cgm_shipment_statuses?.statuses?.[status]?.tone || "active";
 	},
 
 	tone_for_inspection(status) {
@@ -156,8 +132,13 @@ cgm_shipping.status_field = {
 	badge_style(tone) {
 		const palette = CGM_STATUS_TONE_STYLES[tone] || CGM_STATUS_TONE_STYLES.muted;
 		return [
-			"display:inline-flex",
-			"align-items:center",
+			// inline-block, not inline-flex: a flex container will not honour
+			// text-overflow, and without clipping a long label like "Invoice
+			// Submitted" renders straight over the next grid column.
+			"display:inline-block",
+			"max-width:100%",
+			"overflow:hidden",
+			"text-overflow:ellipsis",
 			"padding:1px 8px",
 			"border-radius:999px",
 			"font-size:11px",
@@ -489,31 +470,36 @@ cgm_shipping.status_field = {
 			);
 		};
 
-		if (!grid._cgm_status_hooks) {
-			grid._cgm_status_hooks = {};
-		}
+		// Rebind every time rather than once per grid. The handlers hang off
+		// frm.wrapper and grid.wrapper, and a form refresh can replace those while
+		// keeping the same grid object - a once-only guard then skipped the rebind,
+		// grid-row-render stopped firing, and the painted badges vanished on the
+		// next render with nothing left to put them back.
+		//
+		// off().on() with a namespace is idempotent, so rebinding costs nothing and
+		// cannot stack duplicate handlers.
+		const frm = grid.frm;
+		const table_field = grid.df?.fieldname;
+		const event_ns = `.cgm_status_${table_field || doctype}_${fieldname}`;
+		const status_select = `.grid-static-col[data-fieldname="${fieldname}"] select`;
 
-		if (!grid._cgm_status_hooks[fieldname]) {
-			grid._cgm_status_hooks[fieldname] = true;
-			const frm = grid.frm;
-			const table_field = grid.df?.fieldname;
-			const event_ns = `.cgm_status_${table_field || doctype}_${fieldname}`;
-			const status_select = `.grid-static-col[data-fieldname="${fieldname}"] select`;
-
-			if (frm?.wrapper) {
-				$(frm.wrapper).on(`grid-row-render${event_ns}`, (e, grid_row) => {
+		if (frm?.wrapper) {
+			$(frm.wrapper)
+				.off(`grid-row-render${event_ns}`)
+				.on(`grid-row-render${event_ns}`, (e, grid_row) => {
 					if (grid_row?.grid !== grid) {
 						return;
 					}
 					sf.patch_grid_row_refresh_field(grid_row, fieldname, tone_fn);
 					sf.paint_grid_row(grid_row, fieldname, tone_fn);
 				});
-			}
-
-			$(grid.wrapper)
-				.on(`change${event_ns}`, status_select, schedule_paint)
-				.on(`focusout${event_ns}`, status_select, schedule_paint);
 		}
+
+		$(grid.wrapper)
+			.off(`change${event_ns}`)
+			.off(`focusout${event_ns}`)
+			.on(`change${event_ns}`, status_select, schedule_paint)
+			.on(`focusout${event_ns}`, status_select, schedule_paint);
 
 		schedule_paint();
 	},

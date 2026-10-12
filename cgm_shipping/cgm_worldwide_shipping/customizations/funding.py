@@ -356,11 +356,6 @@ def get_material_request_total(material_request) -> float:
 	return 0.0
 
 
-def get_material_request_requested_amount(material_request) -> float:
-	"""Alias kept for Funding Request callers. Always the Items total."""
-	return get_material_request_total(material_request)
-
-
 def _legacy_header_requested_amount(material_request: str) -> float:
 	if not frappe.db.has_column("Material Request", "custom_requested_amount"):
 		return 0.0
@@ -1183,4 +1178,3 @@ def get_material_request_dashboard_data(data):
 	internal = data.setdefault("internal_links", {})
 	internal["Funding Request"] = "custom_funding_request"
 	return data
-

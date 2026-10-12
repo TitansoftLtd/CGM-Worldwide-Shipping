@@ -575,20 +575,22 @@ function open_bill_of_lading_from_project(frm) {
 		localStorage.setItem("cgm_bl_seed_opportunity", opportunity);
 	}
 
-	const seed = {
-		linked_opportunity: opportunity || undefined,
-		booking_confirmation: frm.doc.custom_booking_confirmation || undefined,
-		customer: frm.doc.customer || undefined,
-		shipment_type: frm.doc.custom_shipment_type || undefined,
-		client_refrence_no: frm.doc.custom_client_refrence_no || undefined,
-		cargo_type: frm.doc.custom_cargo_type || undefined,
-		batch_no: frm.doc.custom_batch_no || undefined,
-	};
-
-	frappe.route_options = seed;
-	frappe.model.with_doctype("Bill of Lading", () => {
-		frappe.new_doc("Bill of Lading");
-	});
+	cgm_shipping.transport_reference
+		.usable_booking(frm.doc.custom_booking_confirmation)
+		.then((booking) => {
+			frappe.route_options = {
+				linked_opportunity: opportunity || undefined,
+				booking_confirmation: booking || undefined,
+				customer: frm.doc.customer || undefined,
+				shipment_type: frm.doc.custom_shipment_type || undefined,
+				client_refrence_no: frm.doc.custom_client_refrence_no || undefined,
+				cargo_type: frm.doc.custom_cargo_type || undefined,
+				batch_no: frm.doc.custom_batch_no || undefined,
+			};
+			frappe.model.with_doctype("Bill of Lading", () => {
+				frappe.new_doc("Bill of Lading");
+			});
+		});
 }
 
 function open_booking_confirmation_from_project(frm) {
@@ -791,7 +793,7 @@ function paint_shipment_progress_chart(frm, field, payload) {
 	`);
 	// Task-derived progress lives in the chart only — do not write custom_shipment_status
 	// into frm.doc. A silent set_value (even no_dirty) still persists on the next save and
-	// triggers CI/PKL validation when intake docs are missing.
+	// triggers the Documents Received document check when those docs are missing.
 	if (d.uses_clearance_states && d.current_status) {
 		const indicator = project_clearance_indicator({
 			custom_shipment_status: d.current_status,
@@ -856,18 +858,13 @@ function container_status_dot(status, alert_status) {
 	if (alert.includes("⚠️")) {
 		return "🟡";
 	}
-	if (status === "Interchange Received" || alert.includes("✅")) {
-		return "🟢";
-	}
-	if (["At Warehouse", "Cargo Offloaded", "Empty Returned"].includes(status)) {
-		return "🟢";
-	}
-	if (["Discharged / At Port", "Vessel Berthed"].includes(status)) {
-		return "🟡";
-	}
-	if (status === "Released / In Transit") {
-		return "🟠";
-	}
+	return {
+		green: "🟢",
+		orange: "🟠",
+		yellow: "🟡",
+		blue: "🔵",
+		red: "🔴",
+	}[container_status_badge_class(status)];
 	return "⚪";
 }
 
@@ -939,9 +936,9 @@ function render_container_card_body(c) {
 	}
 	if (
 		c.expected_empty_return &&
-		["Released / In Transit", "At Warehouse", "Cargo Offloaded", "Empty Returned", "Return Overdue"].includes(
-			status
-		)
+		// Return cycle still open - from the shared status table, so transit
+		// containers show their expected return too.
+		window.cgm_shipping?.container_tracking?.is_return_open?.(status)
 	) {
 		movementRows.push(
 			container_card_row(
@@ -1160,25 +1157,13 @@ function container_allocation_detail(c) {
 }
 
 function container_status_badge_class(status) {
-	if (!status) {
-		return "gray";
-	}
-	if (status.includes("Overdue")) {
-		return "red";
-	}
-	if (status === "Interchange Received" || status === "Empty Returned") {
-		return "green";
-	}
-	if (["At Warehouse", "Cargo Offloaded"].includes(status)) {
-		return "blue";
-	}
-	if (status === "Released / In Transit") {
-		return "orange";
-	}
-	if (["Vessel Berthed", "Discharged / At Port"].includes(status)) {
-		return "yellow";
-	}
-	return "gray";
+	// Shared rule, defined once in public/js/cgm_container_tracking.js
+	// (app_include_js). Guarded: that file is cached separately from this one,
+	// and when the browser still holds an older copy an unguarded call throws
+	// inside the card loop - blanking the whole Container Tracker tab instead of
+	// just losing a colour.
+	const status_color = window.cgm_shipping?.container_tracking?.status_color;
+	return status_color ? status_color(status) : "gray";
 }
 
 function render_container_tracking_table(frm, dashboard) {
@@ -1587,18 +1572,6 @@ function user_can_record_project_sales_invoice(frm) {
 	return frappe.model.can_create("Sales Invoice");
 }
 
-const CGM_DEPOSIT_REFUND_ROLES = new Set([
-	"Finance Manager",
-	"Finance User",
-	"Accounts User",
-	"Accounts Manager",
-	"System Manager",
-]);
-
-function user_can_manage_deposit_refund() {
-	return [...CGM_DEPOSIT_REFUND_ROLES].some((role) => frappe.user.has_role(role));
-}
-
 function refresh_project_deposit_refund_mirror(frm) {
 	if (!frm.doc.name || frm.is_new() || !frm.doc.custom_bill_of_lading) {
 		return;
@@ -1631,9 +1604,8 @@ function setup_project_deposit_refund_buttons(frm) {
 	if (!frm.doc.name || frm.is_new() || !frm.doc.custom_bill_of_lading) {
 		return;
 	}
-	if (!user_can_manage_deposit_refund()) {
-		return;
-	}
+	// Who may act is decided on the server from the configured finance roles; the
+	// context's can_* flags stay false for everyone else, so no buttons appear.
 	frappe.call({
 		method:
 			"cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.get_project_deposit_refund_context",

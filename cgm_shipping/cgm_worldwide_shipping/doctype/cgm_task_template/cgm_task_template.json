@@ -12,7 +12,9 @@
   "is_active",
   "extends_template",
   "section_tasks",
-  "tasks"
+  "tasks",
+  "section_gates",
+  "gates"
  ],
  "fields": [
   {
@@ -56,12 +58,24 @@
    "fieldtype": "Table",
    "label": "Tasks",
    "options": "CGM Task Template Item"
+  },
+  {
+   "description": "Which task reaches each shipment status on the Project status chart. The row order is the chart order after Draft - Sea Import's order follows the CGM Sea Import Workflow. A template with no rows uses Sea Import's gates.",
+   "fieldname": "section_gates",
+   "fieldtype": "Section Break",
+   "label": "Shipment Status Gates"
+  },
+  {
+   "fieldname": "gates",
+   "fieldtype": "Table",
+   "label": "Shipment Status Gates",
+   "options": "CGM Task Template Gate"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-17 12:00:00.000000",
+ "modified": "2026-09-10 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Task Template",

@@ -30,6 +30,33 @@ The dashboard customers land on after login, with shipment counts and the quick 
 - Commercial documents when quotation is **Shared with Client**
 - Timestamps localized to browser timezone (`portal_localize_time.js`)
 
+### Fees to pay
+
+When Finance shares a clearance fee for the client to settle, it appears on `/my-invoices` under **Clearance fees to pay**, and on the shipment page under **Fees to pay**. Each row shows what the fee is, its amount, and where it stands.
+
+What the client does:
+
+1. **Download** the invoice.
+2. Pay it, then press **I have paid**. The row changes to **Payment reported**.
+3. Attach the proof: **Attach POP** for shipping line charges, **Attach Receipt** for everything else. PDF, JPG or PNG, up to 15 MB.
+
+The row then reads **POP sent** or **Receipt sent**, and the file lands on the finance task for Finance to verify. Until the client attaches something, the row nudges them to do so.
+
+Only invoices Finance has verified and shared appear here, and only for that customer's own shipments. See [Finance](finance.md).
+
+### Feedback and ratings
+
+Both portals have a **Feedback** tab - customers on the shipment page, transporters on the allocation page.
+
+- A **rating** out of 5 stars, in half stars, is required.
+- **What is this about?** picks a category: Overall Service, Communication, Timeliness, Documentation, Container Handling, Transport & Delivery or Other.
+- **Containers this is about** lets them point at specific boxes. Leaving them unticked means the whole shipment.
+- There is a comments box and an **I would recommend CGM Worldwide Shipping** tick.
+
+One entry per party per shipment: submitting again updates their earlier rating, and they are told when they last rated it.
+
+Each submission creates a **Portal Feedback** record and notifies Operations. Staff open it in the desk to read the rating, category, containers and comments, set **Status** to Acknowledged or Resolved, and write a **Response**. The party sees that reply on the same tab, under **CGM replied**.
+
 ### Desk vs portal
 
 | Action | Where |
@@ -53,6 +80,18 @@ Both portals carry a two-way conversation with operations. The thread is the rec
 ![The customer Messages page, listing general queries and their reply status](../images/portal-messages.png)
 
 **For the transporter**, the **Messages** card on the dashboard: questions about a job, or anything else.
+
+### Posting an update to a portal
+
+Operations publish updates from three places, all opening the same **Post update to portal** dialog:
+
+- the **Container Tracker** form, under **Portal**;
+- the **Container Ops Board**, on the **Updates** tab;
+- the **Project**, on the **Shipment Updates** tab.
+
+The dialog asks for the shipment, an optional container, a subject and the message, and lets you tick who should see it - the customer, the transporter, or both. Nothing is published to a party until one of those ticks is set.
+
+Portal accounts cannot post updates from the desk, whatever roles they hold.
 
 ### How operations sees them
 

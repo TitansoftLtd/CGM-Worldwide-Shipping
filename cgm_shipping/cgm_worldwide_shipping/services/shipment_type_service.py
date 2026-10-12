@@ -174,11 +174,6 @@ def get_allowed_transport_documents(shipment_type: str | None) -> list[dict]:
 	return derive_transport_documents_from_flags(row)
 
 
-def _merge_transport_documents(configured: list[dict], row: dict) -> list[dict]:
-	"""Legacy merge helper — explicit Shipment Type rows are no longer augmented."""
-	return list(configured)
-
-
 def ensure_shipment_type_transport_document_defaults() -> None:
 	"""Persist transport_documents child rows when empty, derived from Shipment Type flags."""
 	if not frappe.db.exists("DocType", "Shipment Type"):

@@ -14,6 +14,10 @@ For **sales** and **pricing** teams: quotations, local charges, customs estimate
 | Sales invoices | **Sales Invoice** |
 | Print | Quotation / SI → **Print** → CGM formats |
 
+Every quotation with its customer, validity and current stage:
+
+![The Quotation list, showing customer, amount, validity date and status for each quotation](../images/quotation-list.png)
+
 ---
 
 ## Quotation structure
@@ -26,6 +30,15 @@ A CGM quotation has four cost layers:
 | **Customs taxes (estimate)** | Customs Tax Component | Company currency |
 | **Item pricing** | Quotation Item Pricing | Per rules |
 | **Local charges** | Items (standard ERPNext lines) | Quotation currency |
+
+A quotation with those layers filled in - FOB, freight and insurance in USD converted to KES,
+then the customs estimate built on the resulting CIF value:
+
+![A Quotation showing the Import Cost Component table and the customs value in KES](../images/quotation-form.png)
+
+**1** **Import Cost Component** rows carry each charge in its transaction currency with the
+exchange rate beside it, so the KES column is derived rather than typed. Customs taxes below it
+are an **estimate** for the customer's benefit - the binding figures come from the entry.
 
 ### Shipment reference fields
 

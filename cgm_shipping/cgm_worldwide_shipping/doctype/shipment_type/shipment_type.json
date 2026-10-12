@@ -16,6 +16,7 @@
   "amended_from",
   "section_break_integration",
   "task_template",
+  "cargo_type_templates",
   "task_flow_key",
   "container_tracker_mode",
   "cgm_ref_prefix",
@@ -102,6 +103,13 @@
    "in_list_view": 1,
    "label": "Task Template",
    "options": "CGM Task Template"
+  },
+  {
+   "description": "Use a different Task Template when the shipment's Cargo Type matches, e.g. LCL -> Sea Import LCL Workflow. Other cargo types use the Task Template above.",
+   "fieldname": "cargo_type_templates",
+   "fieldtype": "Table",
+   "label": "Task Template by Cargo Type",
+   "options": "Shipment Type Cargo Template"
   },
   {
    "description": "Legacy fallback when Task Template is empty. Matches a seeded template via flow key (e.g. SEA_IMPORT_E2E).",
@@ -219,7 +227,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-05 07:15:00.000000",
+ "modified": "2026-09-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Shipment Type",

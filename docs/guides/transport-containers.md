@@ -27,6 +27,10 @@ Bill of Lading containers
         → Container Ops Board
 ```
 
+Every container in the system, with where each one has reached:
+
+![The Container Tracker list, showing containers with their status and current location](../images/container-tracker-list.png)
+
 ### Status progression
 
 | Status | Typical trigger |
@@ -104,6 +108,20 @@ Transporter suppliers sync portal users on save (`transporter_supplier.py`).
 
 ---
 
+Jobs handed to transporters, each with its containers:
+
+![The Container Allocation list, showing allocations by transporter and date](../images/container-allocation-list.png)
+
+Opening one shows the containers on that job and the trucks offered against them:
+
+![A Container Allocation, showing the transporter and the container rows on the job](../images/container-allocation-form.png)
+
+**1** The **transporter** is the supplier doing the haulage; only suppliers flagged as
+transporters can be picked, and only they see the job on the portal.
+
+**2** Container rows start at **Pending**. The transporter offers trucks from their portal;
+CGM assigns an offered truck to each container, which is what moves the row on.
+
 ## Shipping line charges (Supplier master)
 
 On **Supplier** (shipping line), configure:
@@ -135,6 +153,8 @@ Submittable confirmation when empty container is returned to depot - links to ta
 ---
 
 ## Related guides
+
+- [Container Deposits & Charges](deposits-and-charges.md) - deposits, demurrage and KPA charges, and how they reach the ledger
 
 - [Operations](operations.md)
 - [Portals](portals.md)

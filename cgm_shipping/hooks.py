@@ -54,6 +54,7 @@ app_include_js = [
 web_include_css = [
 	"/assets/cgm_shipping/css/customer_portal.css",
 	"/assets/cgm_shipping/css/operational_updates.css",
+	"/assets/cgm_shipping/css/login.css",
 ]
 web_include_js = [
 	"/assets/cgm_shipping/js/portal_localize_time.js",
@@ -410,11 +411,12 @@ scheduler_events = {
     "daily": [
         "cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker.refresh_open_container_metrics",
         "cgm_shipping.cgm_worldwide_shipping.customizations.container_charges.post_all_container_charge_accruals",
-        "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.send_deposit_refund_reminders",
         # Licence & permit expiry reminders. Periods and recipients live in License Settings.
         "cgm_shipping.cgm_worldwide_shipping.customizations.license_reminders.send_license_expiry_reminders",
     ],
     "hourly": [
+        # Hourly only: the repeat interval can be in hours, and each BL is throttled by
+        # deposit_refund_last_reminded_on. A daily entry as well ran it twice at midnight.
         "cgm_shipping.cgm_worldwide_shipping.doctype.bill_of_lading.bill_of_lading.send_deposit_refund_reminders",
     ],
 }

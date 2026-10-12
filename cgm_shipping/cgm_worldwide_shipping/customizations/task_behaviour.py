@@ -32,6 +32,7 @@ PAYMENT_KIND_TO_PROFILE_KEY = {
 	"ENTRY_SLIP": "Entry Application",
 	"Shipping Line": "Shipping Line Application",
 	"KPA": "KPA Application",
+	"CFS": "CFS Application",
 }
 
 
@@ -43,7 +44,6 @@ class TaskBehaviour:
 	requires_finance_action: bool
 	requires_document_upload: bool
 	requires_permit_action: bool
-	requires_container_update: bool
 	is_auto_completable: bool
 	from_template: bool
 	# Document Type names stamped from the template. The task cannot be
@@ -118,7 +118,6 @@ def get_task_behaviour(task) -> TaskBehaviour:
 			requires_finance_action=False,
 			requires_document_upload=True,
 			requires_permit_action=False,
-			requires_container_update=False,
 			is_auto_completable=False,
 			from_template=False,
 		)
@@ -132,105 +131,15 @@ def get_task_behaviour(task) -> TaskBehaviour:
 			requires_finance_action=bool(cint(task.get("custom_requires_finance_action"))),
 			requires_document_upload=bool(cint(task.get("custom_requires_document_upload"))),
 			requires_permit_action=bool(cint(task.get("custom_requires_permit_action"))),
-			requires_container_update=bool(cint(task.get("custom_requires_container_update"))),
 			is_auto_completable=role == ROLE_AUTO_COMPLETE
 			or bool(cint(task.get("custom_is_auto_completable"))),
 			from_template=True,
 			required_document_types=(task.get("custom_required_document_types") or "").strip(),
 		)
 
-	return _behaviour_from_sea_settings(task)
-
-
-def _behaviour_from_sea_settings(task) -> TaskBehaviour:
-	"""Legacy path: Sea Import Settings sequence → coarse behaviour."""
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		all_profiles,
-		is_application_finance_task,
-		is_application_task,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_auto_complete_task,
-		is_document_checkpoint_task,
-		is_permit_application_task,
-		is_permit_finance_payment_task,
-	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		is_sea_import_task,
-	)
-
-	seq = int(task.get("custom_sequence_no") or 0)
-	if not is_sea_import_task(task):
-		return TaskBehaviour(
-			role=ROLE_STANDARD,
-			payment_kind="",
-			permit_stage="",
-			requires_finance_action=False,
-			requires_document_upload=True,
-			requires_permit_action=False,
-			requires_container_update=False,
-			is_auto_completable=False,
-			from_template=False,
-		)
-
-	if is_auto_complete_task(seq):
-		return TaskBehaviour(
-			ROLE_AUTO_COMPLETE, "", "", False, True, False, False, True, False
-		)
-	if is_permit_application_task(seq):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-			get_permit_stage_for_sequence,
-		)
-
-		return TaskBehaviour(
-			ROLE_PERMIT_APPLICATION,
-			"Permit",
-			get_permit_stage_for_sequence(seq) or "",
-			False,
-			True,
-			True,
-			False,
-			False,
-			False,
-		)
-	if is_permit_finance_payment_task(seq):
-		return TaskBehaviour(
-			ROLE_PERMIT_FINANCE, "Permit", "", True, True, True, False, False, False
-		)
-	if is_document_checkpoint_task(seq):
-		return TaskBehaviour(
-			ROLE_DOCUMENT_CHECKPOINT, "", "", False, True, False, False, False, False
-		)
-
-	for profile in all_profiles():
-		if is_application_task(seq, profile):
-			return TaskBehaviour(
-				ROLE_APPLICATION,
-				profile.payment_item,
-				"",
-				False,
-				True,
-				False,
-				False,
-				False,
-				False,
-			)
-		if is_application_finance_task(seq, profile):
-			return TaskBehaviour(
-				ROLE_FINANCE_PAYMENT,
-				profile.payment_item,
-				"",
-				True,
-				False,
-				False,
-				False,
-				False,
-				False,
-			)
-
-	return TaskBehaviour(
-		ROLE_STANDARD, "", "", False, True, False, False, False, False
-	)
+	# No Task Role: not a workflow step (every workflow task is stamped when it is
+	# created, and patches/stamp_unstamped_workflow_tasks covers older ones).
+	return get_task_behaviour(None)
 
 
 def profile_for_payment_kind(payment_kind: str | None):
@@ -246,46 +155,29 @@ def profile_for_payment_kind(payment_kind: str | None):
 
 
 def profile_for_behaviour_task(task):
-	"""Profile from stamped payment kind, else legacy Settings seq mapping."""
+	"""Finance profile of an application / finance step, from its stamped payment kind."""
 	behaviour = get_task_behaviour(task)
-	if behaviour.from_template and behaviour.payment_kind:
-		profile = profile_for_payment_kind(behaviour.payment_kind)
-		if profile and (
-			behaviour.is_application
-			or behaviour.is_finance_payment
-			or behaviour.show_finance_lines
-		):
-			return profile
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		all_profiles,
-		is_application_workflow_task,
-	)
-
-	seq = int(task.get("custom_sequence_no") or 0)
-	for profile in all_profiles():
-		if is_application_workflow_task(seq, profile):
-			return profile
+	if not behaviour.payment_kind:
+		return None
+	profile = profile_for_payment_kind(behaviour.payment_kind)
+	if profile and (
+		behaviour.is_application or behaviour.is_finance_payment or behaviour.show_finance_lines
+	):
+		return profile
 	return None
 
 
 def uses_clearance_behaviour(task) -> bool:
 	"""True when finance/permit application hooks should run for this task."""
 	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return (
-			behaviour.is_application
-			or behaviour.is_finance_payment
-			or behaviour.is_permit_application
-			or behaviour.is_permit_finance
-			or behaviour.show_finance_lines
-			or behaviour.show_permits
-		)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		is_sea_import_task,
+	return (
+		behaviour.is_application
+		or behaviour.is_finance_payment
+		or behaviour.is_permit_application
+		or behaviour.is_permit_finance
+		or behaviour.show_finance_lines
+		or behaviour.show_permits
 	)
-
-	return is_sea_import_task(task)
 
 
 def find_paired_task(
@@ -342,35 +234,19 @@ def _tasks_are_paired(a_name: str, b_name: str, a_seq: int, b_seq: int) -> bool:
 	return abs(a_seq - b_seq) == 1
 
 
-def get_application_task_for_behaviour(task, profile=None) -> str | None:
-	behaviour = get_task_behaviour(task)
-	kind = (profile.payment_item if profile else None) or behaviour.payment_kind
-	if behaviour.is_finance_payment or behaviour.role == ROLE_FINANCE_PAYMENT:
-		return find_paired_task(task, want_role=ROLE_APPLICATION, payment_kind=kind)
-	if behaviour.is_application:
-		return task.name
-	return None
-
-
-def get_finance_task_for_behaviour(task, profile=None) -> str | None:
-	behaviour = get_task_behaviour(task)
-	kind = (profile.payment_item if profile else None) or behaviour.payment_kind
-	if behaviour.is_application:
-		return find_paired_task(task, want_role=ROLE_FINANCE_PAYMENT, payment_kind=kind)
-	if behaviour.is_finance_payment:
-		return task.name
-	return None
-
-
 def get_permit_application_for_behaviour(task) -> str | None:
 	behaviour = get_task_behaviour(task)
 	if behaviour.is_permit_application:
 		return task.name
 	if behaviour.is_permit_finance:
+		# No Payment Kind filter: only the Finance row of a permit pair carries it
+		# (the template stamps "Permit" there and nothing on the application), so
+		# filtering on it made this lookup fail for every Finance task. Project,
+		# flow, role and permit stage already identify the application.
 		return find_paired_task(
 			task,
 			want_role=ROLE_PERMIT_APPLICATION,
-			payment_kind=behaviour.payment_kind or "Permit",
+			payment_kind=None,
 			permit_stage=behaviour.permit_stage or None,
 		)
 	return None
@@ -390,22 +266,22 @@ def get_permit_finance_for_behaviour(task) -> str | None:
 	return None
 
 
-def task_is_ucr_application(task) -> bool:
+def _is_application_of(task, kind: str) -> bool:
 	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_application and behaviour.payment_kind == "UCR"
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_ucr_application_task
+	return behaviour.is_application and behaviour.payment_kind == kind
 
-	return is_ucr_application_task(int(task.get("custom_sequence_no") or 0))
+
+def _is_finance_of(task, kind: str) -> bool:
+	behaviour = get_task_behaviour(task)
+	return behaviour.is_finance_payment and behaviour.payment_kind == kind
+
+
+def task_is_ucr_application(task) -> bool:
+	return _is_application_of(task, "UCR")
 
 
 def task_is_ucr_finance(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_finance_payment and behaviour.payment_kind == "UCR"
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_ucr_finance_payment_task
-
-	return is_ucr_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+	return _is_finance_of(task, "UCR")
 
 
 def task_is_ucr_workflow(task) -> bool:
@@ -413,119 +289,66 @@ def task_is_ucr_workflow(task) -> bool:
 
 
 def task_is_entry_application(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_application and behaviour.payment_kind == "ENTRY_SLIP"
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_entry_application_task
-
-	return is_entry_application_task(int(task.get("custom_sequence_no") or 0))
+	return _is_application_of(task, "ENTRY_SLIP")
 
 
 def task_is_entry_finance(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_finance_payment and behaviour.payment_kind == "ENTRY_SLIP"
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_entry_finance_payment_task
-
-	return is_entry_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+	return _is_finance_of(task, "ENTRY_SLIP")
 
 
 def task_is_shipping_line_finance(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_finance_payment and behaviour.payment_kind == "Shipping Line"
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_shipping_line_finance_payment_task,
-	)
-
-	return is_shipping_line_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+	return _is_finance_of(task, "Shipping Line")
 
 
 def task_is_kpa_finance(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_finance_payment and behaviour.payment_kind == "KPA"
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_kpa_finance_payment_task
+	return _is_finance_of(task, "KPA")
 
-	return is_kpa_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+
+def task_is_shipping_line_application(task) -> bool:
+	return _is_application_of(task, "Shipping Line")
+
+
+def task_is_kpa_application(task) -> bool:
+	return _is_application_of(task, "KPA")
+
+
+def task_permit_stage(task, default: str | None = None) -> str | None:
+	"""Permit stage of a permit step from its stamp, else *default*."""
+	return get_task_behaviour(task).permit_stage or default
 
 
 def task_is_permit_application(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_permit_application
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_permit_application_task
-
-	return is_permit_application_task(int(task.get("custom_sequence_no") or 0))
+	return get_task_behaviour(task).is_permit_application
 
 
 def task_is_permit_finance(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_permit_finance
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_permit_finance_payment_task
-
-	return is_permit_finance_payment_task(int(task.get("custom_sequence_no") or 0))
+	return get_task_behaviour(task).is_permit_finance
 
 
 def task_is_document_checkpoint(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.role == ROLE_DOCUMENT_CHECKPOINT
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_document_checkpoint_task
-
-	return is_document_checkpoint_task(int(task.get("custom_sequence_no") or 0))
+	return get_task_behaviour(task).role == ROLE_DOCUMENT_CHECKPOINT
 
 
 def task_is_auto_complete(task) -> bool:
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_auto_completable
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import is_auto_complete_task
-
-	return is_auto_complete_task(int(task.get("custom_sequence_no") or 0))
+	return get_task_behaviour(task).is_auto_completable
 
 
 def task_is_configured_application_workflow(task) -> bool:
-	"""UCR / Entry / Shipping Line / KPA application or finance (not Permit)."""
+	"""UCR / Entry / Shipping Line / KPA / CFS application or finance (not Permit)."""
 	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		if behaviour.payment_kind == "Permit":
-			return False
-		return (behaviour.is_application or behaviour.is_finance_payment) and bool(
-			profile_for_payment_kind(behaviour.payment_kind)
-		)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		is_configured_application_workflow_task,
+	if behaviour.payment_kind == "Permit":
+		return False
+	return (behaviour.is_application or behaviour.is_finance_payment) and bool(
+		profile_for_payment_kind(behaviour.payment_kind)
 	)
-
-	return is_configured_application_workflow_task(int(task.get("custom_sequence_no") or 0))
 
 
 def task_is_application_for_profile(task, profile) -> bool:
-	if not profile:
-		return False
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_application and behaviour.payment_kind == profile.payment_item
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		is_application_task,
-	)
-
-	return is_application_task(int(task.get("custom_sequence_no") or 0), profile)
+	return bool(profile) and _is_application_of(task, profile.payment_item)
 
 
 def task_is_application_finance_for_profile(task, profile) -> bool:
-	if not profile:
-		return False
-	behaviour = get_task_behaviour(task)
-	if behaviour.from_template:
-		return behaviour.is_finance_payment and behaviour.payment_kind == profile.payment_item
-	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
-		is_application_finance_task,
-	)
-
-	return is_application_finance_task(int(task.get("custom_sequence_no") or 0), profile)
+	return bool(profile) and _is_finance_of(task, profile.payment_item)
 
 
 def ui_payload_from_behaviour(behaviour: TaskBehaviour) -> dict:
@@ -557,6 +380,8 @@ def ui_payload_from_behaviour(behaviour: TaskBehaviour) -> dict:
 		"is_shipping_line_finance": behaviour.is_finance_payment and kind == "Shipping Line",
 		"is_kpa_application": behaviour.is_application and kind == "KPA",
 		"is_kpa_finance": behaviour.is_finance_payment and kind == "KPA",
+		"is_cfs_application": behaviour.is_application and kind == "CFS",
+		"is_cfs_finance": behaviour.is_finance_payment and kind == "CFS",
 		"is_permit_application": behaviour.is_permit_application,
 		"is_permit_finance": behaviour.is_permit_finance,
 		"is_pre_clearance_permit": behaviour.is_permit_application
@@ -663,6 +488,21 @@ def ensure_task_behaviour_fields() -> None:
 			"read_only": 1,
 			"allow_on_submit": 0,
 			"description": "Stamped from CGM Task Template Item. Task cannot Complete until these Document Types are attached on Task Documents.",
+		},
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import CONTAINER_STEPS
+
+	_ensure_cf(
+		"Task",
+		{
+			"fieldname": "custom_container_step",
+			"label": "Container Step",
+			"fieldtype": "Select",
+			"options": "\n" + "\n".join(CONTAINER_STEPS),
+			"insert_after": "custom_permit_stage",
+			"read_only": 1,
+			"allow_on_submit": 0,
+			"description": "Stamped from CGM Task Template Item. Which container lifecycle event this task records.",
 		},
 	)
 	frappe.clear_cache(doctype="Task")

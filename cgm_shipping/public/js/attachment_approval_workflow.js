@@ -249,11 +249,11 @@ cgm_shipping.attachment_approval = {
 					<td>${frappe.utils.escape_html(row.profile_label || "")}</td>
 					<td>${attachment}</td>
 					<td>
-						<div class="btn-group" role="group">
-							<button type="button" class="btn btn-xs btn-success cgm-review-approve">${__(
+						<div class="cgm-review-decision" style="display:flex;gap:8px;">
+							<button type="button" class="btn btn-xs cgm-review-approve">${__(
 								"Approve"
 							)}</button>
-							<button type="button" class="btn btn-xs btn-danger cgm-review-reject">${__(
+							<button type="button" class="btn btn-xs cgm-review-reject">${__(
 								"Reject"
 							)}</button>
 						</div>
@@ -265,6 +265,38 @@ cgm_shipping.attachment_approval = {
 		wrapper.append(table).append($reasons_panel);
 
 		const decisions = rows.map(() => ({ action: null, rejection_reason: "" }));
+
+		// Both buttons start neutral and only the chosen one fills in. They used to be
+		// a btn-group of two already-solid buttons toggled with .active, which on a
+		// filled button is almost no change at all - so clicking looked like nothing
+		// had happened and there was no way to see which rows had been decided.
+		const DECIDED = {
+			Approve: { bg: "#1f7a3d", text: "\u2713 " + __("Approved") },
+			Reject: { bg: "#c0392b", text: "\u2717 " + __("Rejected") },
+		};
+
+		const paint_decision = (index) => {
+			const $row = $tbody.find(`tr[data-index="${index}"]`);
+			const action = decisions[index].action;
+			[
+				["Approve", $row.find(".cgm-review-approve")],
+				["Reject", $row.find(".cgm-review-reject")],
+			].forEach(([name, $btn]) => {
+				const chosen = action === name;
+				const style = DECIDED[name];
+				$btn.text(chosen ? style.text : __(name)).css({
+					"background-color": chosen ? style.bg : "transparent",
+					color: chosen ? "#fff" : "var(--text-muted, #8d99a6)",
+					border: chosen ? `1px solid ${style.bg}` : "1px solid var(--border-color, #d1d8dd)",
+					"font-weight": chosen ? "600" : "400",
+					"border-radius": "4px",
+					padding: "2px 10px",
+				});
+			});
+			// The row itself reads as settled, so a long list shows at a glance what is
+			// left to decide.
+			$row.css("background-color", action ? "var(--bg-light-gray, #f7f7f7)" : "");
+		};
 
 		const refresh_rejection_reasons = () => {
 			const $fields = $reasons_panel.find(".cgm-review-reason-field");
@@ -356,6 +388,7 @@ cgm_shipping.attachment_approval = {
 		dialog.show();
 		const $content = dialog.fields_dict.review_html.$wrapper;
 		$content.empty().append(wrapper);
+		rows.forEach((_row, index) => paint_decision(index));
 
 		$content.on("click.cgm_review", ".cgm-grid-attach-link", function (e) {
 			e.preventDefault();
@@ -381,15 +414,13 @@ cgm_shipping.attachment_approval = {
 			const index = $(this).closest("tr").data("index");
 			decisions[index].action = "Approve";
 			decisions[index].rejection_reason = "";
-			$(this).closest("tr").find(".btn-group button").removeClass("active");
-			$(this).addClass("active");
+			paint_decision(index);
 			refresh_rejection_reasons();
 		});
 		$content.on("click.cgm_review", ".cgm-review-reject", function () {
 			const index = $(this).closest("tr").data("index");
 			decisions[index].action = "Reject";
-			$(this).closest("tr").find(".btn-group button").removeClass("active");
-			$(this).addClass("active");
+			paint_decision(index);
 			refresh_rejection_reasons();
 			const $textarea = $reasons_panel.find(`.cgm-review-reason-field[data-index="${index}"] textarea`);
 			if ($textarea.length) {

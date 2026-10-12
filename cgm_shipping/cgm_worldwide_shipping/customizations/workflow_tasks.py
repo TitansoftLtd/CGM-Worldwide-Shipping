@@ -14,7 +14,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	ALL_TEMPLATE_NAMES,
 	ROAD_TRANSIT_INBOUND_TEMPLATE,
 	SEA_IMPORT_TEMPLATE,
-	SEA_TRANSIT_IMPORT_TEMPLATE,
+	SEA_IMPORT_TEMPLATES,
 	normalize_template_name,
 	workflow_flow_keys_for_template,
 )
@@ -25,22 +25,25 @@ GENERIC_WORKFLOW_STATES = ("Draft", "In Progress", "Completed")
 
 def get_project_workflow_flow_keys(project) -> tuple[str, ...]:
 	"""All custom_task_flow_key values that belong to this project's workflow."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import get_project_cargo_type
+
 	project_name = project if isinstance(project, str) else project.name
 	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
-	return _workflow_flow_keys(project_name, shipment_type)
+	cargo_type = None if isinstance(project, str) else get_project_cargo_type(project)
+	return _workflow_flow_keys(project_name, shipment_type, cargo_type)
 
 
 @frappe.request_cache
-def _workflow_flow_keys(project_name: str, shipment_type: str | None) -> tuple[str, ...]:
-	"""Cached per request — a single dashboard load asks for these half a dozen times."""
-	keys: list[str] = []
+def _workflow_flow_keys(
+	project_name: str, shipment_type: str | None, cargo_type: str | None = None
+) -> tuple[str, ...]:
+	"""Cached per request — a single dashboard load asks for these half a dozen times.
 
-	if shipment_type:
-		template = get_task_template_for_shipment_type(shipment_type)
-		keys.extend(workflow_flow_keys_for_template(template))
-		flow = get_task_flow_key_for_shipment_type(shipment_type)
-		if flow:
-			keys.extend(workflow_flow_keys_for_template(normalize_template_name(flow) or flow))
+	The tasks' own keys come first: they are the plan the project actually has, which
+	the Shipment Type only predicts (a Sea Import shipment with Cargo Type LCL runs
+	the LCL plan, and the cargo type can change after the plan is made).
+	"""
+	keys: list[str] = []
 
 	for flow_key in frappe.get_all(
 		"Task",
@@ -56,6 +59,13 @@ def _workflow_flow_keys(project_name: str, shipment_type: str | None) -> tuple[s
 		if normalized:
 			keys.extend(workflow_flow_keys_for_template(normalized))
 
+	if shipment_type:
+		template = get_task_template_for_shipment_type(shipment_type, cargo_type)
+		keys.extend(workflow_flow_keys_for_template(template))
+		flow = get_task_flow_key_for_shipment_type(shipment_type)
+		if flow:
+			keys.extend(workflow_flow_keys_for_template(normalize_template_name(flow) or flow))
+
 	seen: set[str] = set()
 	ordered: list[str] = []
 	for key in keys:
@@ -65,24 +75,6 @@ def _workflow_flow_keys(project_name: str, shipment_type: str | None) -> tuple[s
 	return tuple(ordered)
 
 
-def project_has_workflow_tasks(project) -> bool:
-	project_name = project if isinstance(project, str) else project.name
-	flow_keys = get_project_workflow_flow_keys(project)
-	if flow_keys:
-		return bool(
-			frappe.db.exists(
-				"Task",
-				{"project": project_name, "custom_task_flow_key": ["in", list(flow_keys)]},
-			)
-		)
-	return bool(
-		frappe.db.exists(
-			"Task",
-			{"project": project_name, "custom_task_flow_key": ["!=", ""]},
-		)
-	)
-
-
 @frappe.whitelist()
 def get_project_workflow_flow_keys_api(project: str) -> list[str]:
 	frappe.has_permission("Project", ptype="read", doc=project, throw=True)
@@ -90,21 +82,20 @@ def get_project_workflow_flow_keys_api(project: str) -> list[str]:
 
 
 def project_uses_clearance_workflow_states(project) -> bool:
-	"""Import / transit / air flows use clearance status pills (not Draft/In Progress/Completed)."""
+	"""Templates with Shipment Status Gates use clearance status pills (not Draft/In Progress/Completed)."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
+		template_has_gates,
+	)
+
 	for key in get_project_workflow_flow_keys(project):
-		normalized = normalize_template_name(key)
-		if normalized in (
-			SEA_IMPORT_TEMPLATE,
-			SEA_TRANSIT_IMPORT_TEMPLATE,
-			ROAD_TRANSIT_INBOUND_TEMPLATE,
-			AIR_IMPORT_TEMPLATE,
-			AIR_EXPORT_TEMPLATE,
-		):
+		if template_has_gates(normalize_template_name(key)):
 			return True
 	# Shipment type alone (tasks not yet created / flow key missing).
 	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
 	if shipment_type:
-		template = get_task_template_for_shipment_type(shipment_type)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import get_project_cargo_type
+
+		template = get_task_template_for_shipment_type(shipment_type, get_project_cargo_type(project))
 		if template in (
 			ROAD_TRANSIT_INBOUND_TEMPLATE,
 			AIR_IMPORT_TEMPLATE,
@@ -114,110 +105,58 @@ def project_uses_clearance_workflow_states(project) -> bool:
 	return False
 
 
-def project_is_sea_transit_import(project) -> bool:
-	for key in get_project_workflow_flow_keys(project):
-		if normalize_template_name(key) == SEA_TRANSIT_IMPORT_TEMPLATE:
-			return True
-	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
-	if shipment_type and get_task_template_for_shipment_type(shipment_type) == SEA_TRANSIT_IMPORT_TEMPLATE:
-		return True
-	return False
+def gate_template_for_project(project) -> str:
+	"""The template whose Shipment Status Gates drive this project's status chart.
 
+	The project's own template when it has gates, otherwise Sea Import's - the
+	export and outbound plans have none, and used Sea Import's before the gates
+	moved onto templates.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
+		template_has_gates,
+	)
 
-def project_is_road_transit_inbound(project) -> bool:
-	for key in get_project_workflow_flow_keys(project):
-		if normalize_template_name(key) == ROAD_TRANSIT_INBOUND_TEMPLATE:
-			return True
-	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
-	if shipment_type and get_task_template_for_shipment_type(shipment_type) == ROAD_TRANSIT_INBOUND_TEMPLATE:
-		return True
-	return False
-
-
-def project_is_air_import(project) -> bool:
-	for key in get_project_workflow_flow_keys(project):
-		if normalize_template_name(key) == AIR_IMPORT_TEMPLATE:
-			return True
-	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
-	if shipment_type and get_task_template_for_shipment_type(shipment_type) == AIR_IMPORT_TEMPLATE:
-		return True
-	return False
-
-
-def project_is_air_export(project) -> bool:
-	for key in get_project_workflow_flow_keys(project):
-		if normalize_template_name(key) == AIR_EXPORT_TEMPLATE:
-			return True
-	shipment_type = None if isinstance(project, str) else project.get("custom_shipment_type")
-	if shipment_type and get_task_template_for_shipment_type(shipment_type) == AIR_EXPORT_TEMPLATE:
-		return True
-	return False
+	template = get_workflow_template_name(project)
+	if template and template_has_gates(template):
+		return template
+	return SEA_IMPORT_TEMPLATE
 
 
 def get_clearance_workflow_states_for_project(project) -> list[str]:
 	"""Ordered status pills for the Project clearance chart."""
-	if project_is_sea_transit_import(project):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_transit_import_workflow import (
-			get_sea_transit_import_workflow_states,
-		)
-
-		return get_sea_transit_import_workflow_states()
-	if project_is_road_transit_inbound(project):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.road_transit_inbound_workflow import (
-			get_road_transit_inbound_workflow_states,
-		)
-
-		return get_road_transit_inbound_workflow_states()
-	if project_is_air_import(project):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
-			get_air_import_workflow_states,
-		)
-
-		return get_air_import_workflow_states()
-	if project_is_air_export(project):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
-			get_air_export_workflow_states,
-		)
-
-		return get_air_export_workflow_states()
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
-		get_tracking_workflow_states,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
+		get_template_gate_states,
+		get_template_gates,
 	)
 
-	return get_tracking_workflow_states()
+	template = gate_template_for_project(project)
+	if template == SEA_IMPORT_TEMPLATE:
+		# Sea Import projects run CGM Sea Import Workflow - its states are the chart,
+		# less the statuses only the LCL plan reaches (CFS Paid).
+		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
+			get_tracking_workflow_states,
+		)
+
+		own = get_template_gates(template)
+		lcl_only = {
+			state
+			for other in SEA_IMPORT_TEMPLATES
+			if other != template
+			for state in get_template_gates(other)
+			if state not in own
+		}
+		return [state for state in get_tracking_workflow_states() if state not in lcl_only]
+
+	return get_template_gate_states(template)
 
 
 def get_clearance_workflow_gates_for_project(project) -> dict[str, dict]:
 	"""State → gate metadata used to derive progress from completed task sequences."""
-	if project_is_sea_transit_import(project):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.sea_transit_import_workflow import (
-			get_sea_transit_import_workflow_gates,
-		)
-
-		return get_sea_transit_import_workflow_gates()
-	if project_is_road_transit_inbound(project):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.road_transit_inbound_workflow import (
-			get_road_transit_inbound_workflow_gates,
-		)
-
-		return get_road_transit_inbound_workflow_gates()
-	if project_is_air_import(project):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
-			get_air_import_workflow_gates,
-		)
-
-		return get_air_import_workflow_gates()
-	if project_is_air_export(project):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.air_clearance import (
-			get_air_export_workflow_gates,
-		)
-
-		return get_air_export_workflow_gates()
-	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-		get_workflow_task_gates,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
+		get_template_gates,
 	)
 
-	return get_workflow_task_gates()
+	return get_template_gates(gate_template_for_project(project))
 
 
 def get_workflow_template_name(project) -> str | None:
@@ -250,6 +189,10 @@ def get_workflow_tasks_for_project(
 		"owner",
 		"_assign",
 		"custom_permit_invoices_submitted",
+		# Task Role stamps: the visibility filter reads these (permissions._task_stamps).
+		"custom_task_role",
+		"custom_payment_kind",
+		"custom_permit_stage",
 	]
 	query_fields = fields or default_fields
 	filters: dict = {
@@ -274,24 +217,6 @@ def get_workflow_tasks_for_project(
 	)
 
 	return filter_sea_tasks_for_user(rows)
-
-
-def get_all_workflow_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		filter_sea_tasks_for_user,
-	)
-
-	rows = get_workflow_tasks_for_project(project, limit=100)
-	return filter_sea_tasks_for_user(rows, user=user)
-
-
-def get_open_workflow_tasks_for_project(project: str, user: str | None = None) -> list[dict]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
-		filter_sea_tasks_for_user,
-	)
-
-	rows = get_workflow_tasks_for_project(project, open_only=True, limit=100)
-	return filter_sea_tasks_for_user(rows, user=user)
 
 
 def derive_generic_workflow_progress(tasks: list) -> tuple[str, int]:

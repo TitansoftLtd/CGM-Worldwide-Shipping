@@ -6,13 +6,14 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, today
+from frappe.utils import cint, getdate, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_charges import (
 	compute_container_charge_amounts,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	BULK_CONTAINER_TASK_SEQ_FIELDS,
+	CONTAINER_CLOSED_STATUSES,
 	CONTAINER_SPECIFIC_TASK_SEQ_FIELDS,
 	CONTAINER_STATUS_AT_WAREHOUSE,
 	CONTAINER_STATUS_CARGO_OFFLOADED,
@@ -23,9 +24,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_STATUS_RELEASED_IN_TRANSIT,
 	CONTAINER_STATUS_RETURN_OVERDUE,
 	CONTAINER_STATUS_VESSEL_BERTHED,
+	CONTAINER_STEP_BY_SEQ_FIELD,
 	CONTAINER_TASK_SEQ_DEFAULTS,
-	DEPOSIT_PAYMENT_STATUSES,
-	DEPOSIT_REFUND_STATUSES,
 	TASK_CONTAINER_NUMBER_FIELD,
 	TASK_CONTAINER_TRACKER_FIELD,
 	TASK_CARGO_TYPE_FIELD,
@@ -71,32 +71,41 @@ def get_container_task_sequence(fieldname: str) -> int:
 	return default
 
 
-def project_shipping_line_finance_paid(project: str | None) -> bool:
-	"""True when the project's Shipping Line finance task is completed."""
-	if not project:
-		return False
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		shipping_line_finance_payment_sequences,
-	)
+def container_step_sequence(step: str | None) -> int:
+	"""Settings key number of a Container Step (0 when *step* is not one)."""
+	fieldname = next((f for f, s in CONTAINER_STEP_BY_SEQ_FIELD.items() if s == step), None)
+	return get_container_task_sequence(fieldname) if fieldname else 0
 
-	finance_seqs = shipping_line_finance_payment_sequences()
-	if not finance_seqs:
-		return False
+
+def container_step_for_task(task) -> str:
+	"""Container Step a task records.
+
+	The task's Container Step stamp (from its CGM Task Template row) decides; its
+	own step number does not, so moving template rows cannot misroute container
+	events. Sea Import tasks created before the stamp fall back to matching their
+	step number against CGM Shipping Settings.
+	"""
+	step = (task.get("custom_container_step") or "").strip()
+	if step:
+		return step
+	if task.get("custom_task_role") and frappe.get_meta("Task").has_field("custom_container_step"):
+		return ""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
-		task_flow_key_in_filter,
+		is_sea_import_task,
 	)
 
-	return bool(
-		frappe.db.exists(
-			"Task",
-			{
-				"project": project,
-				"custom_task_flow_key": task_flow_key_in_filter(),
-				"custom_sequence_no": ("in", list(finance_seqs)),
-				"status": "Completed",
-			},
-		)
-	)
+	if not is_sea_import_task(task):
+		return ""
+	seq = int(task.get("custom_sequence_no") or 0)
+	for fieldname, name in CONTAINER_STEP_BY_SEQ_FIELD.items():
+		if seq and get_container_task_sequence(fieldname) == seq:
+			return name
+	return ""
+
+
+def container_seq_for_task(task) -> int:
+	"""Settings key number of the task's Container Step - what container code keys on."""
+	return container_step_sequence(container_step_for_task(task))
 
 
 def refresh_deposit_payment_status(ct) -> None:
@@ -148,14 +157,6 @@ def get_default_kpa_free_days() -> int:
 			if val is not None:
 				return int(val)
 	return 5
-
-
-def _days_between(start, end) -> int | None:
-	start_date = getdate(start)
-	end_date = getdate(end)
-	if not start_date or not end_date:
-		return None
-	return max(0, (end_date - start_date).days)
 
 
 def _optional_date(value):
@@ -213,12 +214,6 @@ def _derived_kpa_free_days(data: dict[str, Any]) -> int:
 	if from_dates is not None:
 		return from_dates
 	return int(data.get("kpa_free_days") or 0)
-
-
-def _kpa_period_configured(data: dict[str, Any]) -> bool:
-	return bool(
-		data.get("kpa_free_days_start_date") and data.get("kpa_free_days_end_date")
-	)
 
 
 def sync_free_day_start_dates(doc) -> None:
@@ -390,6 +385,10 @@ def _derive_transit_status(data: dict[str, Any]) -> str:
 	mode = data.get("container_mode") or ""
 	is_outbound = "Export" in mode
 
+	if data.get("interchange_date"):
+		return CONTAINER_STATUS_INTERCHANGE
+	if data.get("actual_empty_return"):
+		return CONTAINER_STATUS_EMPTY_RETURNED
 	if data.get("offloading_date"):
 		return "Offloaded at Destination"
 	if data.get("gate_in_date_warehouse"):
@@ -1213,7 +1212,7 @@ def handle_sea_task_container_event(
 	today_date = getdate(today())
 	trackers = _trackers_for_project(project_name)
 
-	if seq == get_container_task_sequence("custom_eta_refresh_task_seq"):
+	if seq == get_container_task_sequence("custom_track_eta_task_seq"):
 		_apply_bulk_eta(project, trackers)
 	elif seq == get_container_task_sequence("custom_vessel_arrival_task_seq"):
 		_apply_bulk_vessel_arrival(project, trackers, today_date, task_doc=task_doc)
@@ -1223,18 +1222,6 @@ def handle_sea_task_container_event(
 		_apply_bulk_kpa_paid(project, trackers, today_date)
 	elif seq == get_container_task_sequence("custom_book_trucks_task_seq"):
 		_apply_book_trucks_task(project, task_doc)
-
-
-def on_gate_out(project_name: str, *, task_doc=None) -> None:
-	handle_sea_task_container_event(
-		project_name, get_gate_out_task_sequence(), task_doc=task_doc
-	)
-
-
-def on_empty_return(project_name: str, *, task_doc=None) -> None:
-	handle_sea_task_container_event(
-		project_name, get_empty_return_task_sequence(), task_doc=task_doc
-	)
 
 
 def _project_container_rows(project) -> list:
@@ -1326,10 +1313,8 @@ def ensure_container_trackers_at_port_arrival(
 	}
 
 
-CLOSED_CONTAINER_STATUSES = (
-	CONTAINER_STATUS_EMPTY_RETURNED,
-	CONTAINER_STATUS_INTERCHANGE,
-)
+# Kept under this name for existing importers; defined by the status table.
+CLOSED_CONTAINER_STATUSES = CONTAINER_CLOSED_STATUSES
 
 
 def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
@@ -1342,8 +1327,12 @@ def traffic_light_for_row(row: dict[str, Any]) -> dict[str, str]:
 	free_end = _optional_date(metrics.get("free_days_end_date"))
 	expected = _optional_date(metrics.get("expected_empty_return"))
 
-	if status in CLOSED_CONTAINER_STATUSES:
+	if status == CONTAINER_STATUS_INTERCHANGE:
 		return {"level": "green", "label": _("CLEARED"), "css": "cgm-tl-green"}
+	if status in CLOSED_CONTAINER_STATUSES:
+		# Empty is back but the interchange is not confirmed. Charges have
+		# stopped, so this is no alarm - but it is not cleared either.
+		return {"level": "amber", "label": _("AWAITING INTERCHANGE"), "css": "cgm-tl-amber"}
 
 	if dem > 0 or overdue > 0:
 		return {
@@ -1451,17 +1440,11 @@ def get_containers_for_project_whitelisted(project: str | None = None, project_n
 	return get_containers_for_project(target)
 
 
-def get_overdue_containers(project_name: str) -> list[dict]:
-	return [
-		c
-		for c in get_containers_for_project(project_name)
-		if c.get("status") == CONTAINER_STATUS_RETURN_OVERDUE
-		or (c.get("alert_status") or "").startswith("🚨")
-	]
-
-
 @frappe.whitelist()
 def refresh_open_project_container_metrics() -> int:
+	# Rewrites every open tracker and its Project, so it needs write access to both.
+	frappe.has_permission("Container Tracker", "write", throw=True)
+	frappe.has_permission("Project", "write", throw=True)
 	from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
 		refresh_open_container_metrics,
 	)

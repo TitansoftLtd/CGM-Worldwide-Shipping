@@ -64,7 +64,7 @@ All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Ch
 
 | DocType | Purpose |
 |---------|---------|
-| **CGM Shipping Settings** | Single doc: 25-step sea task template, task completion rules, workflow gates, role mappings, default customs taxes, finance cost category map |
+| **CGM Shipping Settings** | Single doc: role groups and document responsibilities, notification routing, shipment status documents, package visibility, default customs taxes, finance cost category map. The task plans and their status gates live on **CGM Task Template** |
 | **Shipment Type** | Mode, sea-import flag, B/L/AWB rules, CGM ref prefix |
 | **Mode of Transport** | Transport mode master |
 | **Container Type** / **Container Size** | Container classification |
@@ -118,9 +118,7 @@ All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Ch
 
 | DocType | Purpose |
 |---------|---------|
-| **Sea Import Task Template Item** | Subject + department per task seq (1–25) |
-| **Sea Clearance Task Requirement Item** | Completion rules per seq (documents, finance, permits, UCR, etc.) |
-| **Sea Workflow Task Gate Item** | Maps `custom_shipment_status` → minimum completed task seq |
+| **CGM Task Template Gate** | Shipment Status Gates on each CGM Task Template: the task that reaches each `custom_shipment_status` |
 | **Workflow Stage Requirement Item** | Document verification stages per workflow state |
 | **Finance Cost Category Map** | Maps payment items to project cost buckets |
 | **Default Customs Tax** | Default tax rates on Settings |
@@ -184,7 +182,7 @@ Applies when Shipment Type has sea-import workflow enabled. Task plan is seeded 
 | 14 | Lodge Delivery Order | Operations |
 | 15 | Prepare Post-Clearance Permits | Declaration |
 | 16 | Finance pays for Post-Clearance Permits | Finance |
-| 17 | Field Officers conduct clearance | Field Operations — attach any clearance document on **Task Documents**, or record CRO release / verification report |
+| 17 | Field Officers conduct clearance | Field Operations - attach any clearance document on **Task Documents**, or record CRO release / verification report |
 | 18 | Supervisor obtains KPA Invoice | Operations |
 | 19 | Finance pays KPA Invoice | Finance |
 | 20 | Book trucks and notify warehouse | Transport |
@@ -282,18 +280,17 @@ Website users with role **Customer** land on `/portal` after login. They can vie
 | Guard | Enforces |
 |-------|----------|
 | Document gate on workflow change | Verified documents before advancing `custom_shipment_status` |
-| Sea workflow task gates | Min completed task seq per workflow state |
+| Shipment status gates | The task that reaches each status, per CGM Task Template (blocks manual changes on Sea Import) |
 | Intake documents | CI + PKL before **Documents Received** |
 | Permit rules | Post-clearance permit rules before **Entry Lodged** |
-| Project closure | All sea tasks complete before **Completed** |
+| Project closure | Before **Completed**: all tasks complete, the documents in Settings > Shipment status documents (Completed rows), permits Post-Cleared, a submitted Sales Invoice |
 | Finance cost ledger | Manual edits to cost summary blocked |
 
 ### Task
 
 | Guard | Enforces |
 |-------|----------|
-| Completion requirements | Document codes, finance payments, permit rows per seq (from Settings) |
-| Settings configured | Throws if completion rules table is empty |
+| Completion requirements | Required Document Types from the template row, finance payments and permit rows (from the task's Task Role, Payment Kind and Container Step stamps) |
 | Department permissions | Users see tasks for their department only |
 | Payment Entry submit | Can auto-complete linked finance tasks |
 
@@ -352,16 +349,15 @@ Dispatcher: `customizations/notifications.py`
 
 ## 7. Installation & patches
 
-On `bench migrate`, patches in `patches.txt` run idempotently:
+Patches in `patches.txt` are one-time data fixes. Frappe runs each one once per site, and a fresh install marks them all done without running them, so nothing a site needs comes from a patch:
 
-| Category | Examples |
-|----------|----------|
-| **Seed data** | Sea task template, task requirements, workflow gates, clearance stations, CFS locations, customs tax types |
-| **Workflows** | Quotation approval, Sales Invoice approval, entry/shipping-line/post-clearance/KPA finance subflows |
-| **Schema** | Supplier shipping-line tables, task container updates, quotation pricing fields, print formats |
-| **Workspace** | Container Ops Board link |
+| Where | What |
+|-------|------|
+| **DocType JSON, `custom/*.json`** | Schema, Custom Fields, Property Setters (synced on every migrate) |
+| **`install.after_install`** | Default masters and settings, CGM branding (logo, favicon, app name) |
+| **`install.after_migrate`** | Task templates and shipment status gates, CGM Shipping Settings defaults, the Sales Invoice and Sea Import workflows, the notifications and custom fields the code sends or writes to, transporter portal, wiki docs |
 
-`install.after_migrate` re-applies critical schema and transporter portal setup.
+Workflows, notifications and fields are only created when missing, so an edit made in the desk survives every migrate. Branding is set once at install; the desk owns it after that.
 
 ---
 

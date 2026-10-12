@@ -11,11 +11,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 	can_complete_finance_permit_task,
 	finance_permit_row_payloads,
 	finance_permit_rows_out_of_sync,
-	permit_application_invoices_ready_for_finance,
 	submitted_journal_entry,
 	sync_permit_invoices_to_finance_task,
 )
-from cgm_shipping.patches.ensure_task_permits_field_visibility import (
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	TASK_PERMITS_DEPENDS_ON,
 )
 
@@ -82,6 +81,37 @@ class TestPayablePermitInvoiceKeys(UnitTestCase):
 		)
 
 
+class TestFinancePermitRowsOutOfSync(UnitTestCase):
+	def _out_of_sync(self, app_rows, fin_rows):
+		from unittest.mock import patch
+
+		from cgm_shipping.cgm_worldwide_shipping.customizations import workflow
+
+		app = frappe._dict(custom_task_permits=[frappe._dict(r) for r in app_rows])
+		fin = frappe._dict(project="PROJ-TEST", custom_task_permits=[frappe._dict(r) for r in fin_rows])
+		with (
+			patch.object(workflow, "is_permit_finance_task_doc", return_value=True),
+			patch.object(workflow, "get_permit_application_task_for_finance", return_value="TASK-APP"),
+			patch.object(frappe, "get_doc", return_value=app),
+		):
+			return finance_permit_rows_out_of_sync(fin)
+
+	def test_permit_waiting_for_its_invoice_is_not_out_of_sync(self):
+		# TASK-2026-00592: KEBS had no invoice yet, so it could never be copied and the
+		# form reloaded forever.
+		invoice = {"permit_type": "KRPB", "origin": "Local", "payment_invoice": "/files/krpb.pdf"}
+		self.assertFalse(
+			self._out_of_sync(
+				[invoice, {"permit_type": "KEBS", "origin": "Local", "payment_invoice": None}],
+				[invoice],
+			)
+		)
+
+	def test_invoice_missing_on_finance_is_out_of_sync(self):
+		invoice = {"permit_type": "KRPB", "origin": "Local", "payment_invoice": "/files/krpb.pdf"}
+		self.assertTrue(self._out_of_sync([invoice], []))
+
+
 class TestFinancePermitRowPayloads(UnitTestCase):
 	def test_payload_includes_invoice(self):
 		task = frappe._dict(
@@ -102,9 +132,25 @@ class TestFinancePermitRowPayloads(UnitTestCase):
 
 
 class TestTaskPermitsFieldVisibilityPatch(UnitTestCase):
-	def test_depends_on_includes_post_clearance_finance(self):
-		self.assertIn("16", TASK_PERMITS_DEPENDS_ON)
+	def test_depends_on_follows_the_task_role(self):
+		"""Permit finance steps show the table by their role, not step number 16."""
+		self.assertIn("Permit Application", TASK_PERMITS_DEPENDS_ON)
 		self.assertIn("Permit Finance", TASK_PERMITS_DEPENDS_ON)
+		self.assertNotIn("custom_sequence_no", TASK_PERMITS_DEPENDS_ON)
+
+	def test_patch_writes_what_task_json_carries(self):
+		import json
+		import os
+
+		import cgm_shipping
+
+		path = os.path.join(
+			os.path.dirname(cgm_shipping.__file__), "cgm_worldwide_shipping", "custom", "task.json"
+		)
+		with open(path) as f:
+			fields = {f["fieldname"]: f for f in json.load(f)["custom_fields"]}
+		for fieldname in ("custom_section_task_permits", "custom_task_permits"):
+			self.assertEqual(fields[fieldname]["depends_on"], TASK_PERMITS_DEPENDS_ON)
 
 
 class TestSubmittedJournalEntry(UnitTestCase):

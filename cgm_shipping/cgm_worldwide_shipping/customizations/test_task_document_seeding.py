@@ -15,12 +15,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
 	seed_stamped_required_document_rows,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
-	coerce_legacy_document_type_tokens,
 	document_type_names_from_template_row,
 	normalize_required_document_type_stamp,
 	resolve_legacy_document_type_name,
 	resolve_required_document_type_name,
-	valid_document_type_names,
 )
 
 
@@ -93,11 +91,11 @@ class TestTaskDocumentSeeding(UnitTestCase):
 			custom_task_role="Document",
 			custom_sequence_no=10,
 		)
-		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "exit", "status": "Missing"})
-		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "c2", "status": "Missing"})
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "Exit Note", "status": "Missing"})
+		task.append(TASK_DOCUMENTS_FIELD, {"document_type": "C2", "status": "Missing"})
 		self.assertFalse(purge_unrequired_task_document_rows(task))
 		types = {row.document_type for row in task.get(TASK_DOCUMENTS_FIELD) or []}
-		self.assertEqual(types, {"exit", "c2"})
+		self.assertEqual(types, {"Exit Note", "C2"})
 
 	def test_purge_still_removes_invoice_rows_from_clearance_table(self):
 		task = _TaskStub(
@@ -201,13 +199,6 @@ class TestTaskDocumentSeeding(UnitTestCase):
 				"Entry",
 			)
 
-	def test_valid_document_type_names_filters_missing_master_rows(self):
-		with patch(
-			"cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents.frappe.db.exists",
-			side_effect=lambda _dt, name: name == "Entry",
-		):
-			self.assertEqual(valid_document_type_names(["Entry", "Entry Slip"]), ["Entry"])
-
 
 class TestFieldClearanceValidation(UnitTestCase):
 	def test_accepts_any_attached_task_document(self):
@@ -215,7 +206,7 @@ class TestFieldClearanceValidation(UnitTestCase):
 			validate_field_clearance_task,
 		)
 
-		task = _TaskStub(custom_sequence_no=17)
+		task = _TaskStub(custom_sequence_no=17, custom_container_step="Field Clearance")
 		task.append(
 			TASK_DOCUMENTS_FIELD,
 			{"document_type": "DO", "attachment": "/files/delivery-order.pdf"},
@@ -227,6 +218,6 @@ class TestFieldClearanceValidation(UnitTestCase):
 			validate_field_clearance_task,
 		)
 
-		task = _TaskStub(custom_sequence_no=17)
+		task = _TaskStub(custom_sequence_no=17, custom_container_step="Field Clearance")
 		with self.assertRaises(frappe.ValidationError):
 			validate_field_clearance_task(task)

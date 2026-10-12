@@ -34,6 +34,10 @@ DEFAULT_PAYMENT_KINDS: tuple[dict, ...] = (
 		"payment_kind": "Permit",
 		"description": "Pre-/post-clearance permit finance payment grouping.",
 	},
+	{
+		"payment_kind": "CFS",
+		"description": "CFS (container freight station) charges finance payment grouping - LCL imports.",
+	},
 )
 
 DEFAULT_LINE_TYPES: tuple[dict, ...] = (
@@ -125,10 +129,10 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 		"description": "Customs entry / e-slip invoice.",
 	},
 	{
-		"charge_name": "Entry Slip Receipt",
+		"charge_name": "Entry Slip POP",
 		"line_type": LINE_RECEIPT,
 		"payment_kind": "ENTRY_SLIP",
-		"description": "Receipt after entry taxes are paid.",
+		"description": "Proof of payment for the entry taxes (duty POP).",
 	},
 	{
 		"charge_name": "Shipping Line Invoice",
@@ -162,7 +166,34 @@ DEFAULT_CLEARANCE_CHARGE_ITEMS: tuple[dict, ...] = (
 		"payment_kind": "KPA",
 		"description": "KPA payment receipt.",
 	},
+	{
+		"charge_name": "CFS Invoice",
+		"line_type": LINE_INVOICE,
+		"payment_kind": "CFS",
+		"allows_amendment": 1,
+		"description": "CFS charges invoice (LCL imports).",
+	},
+	{
+		"charge_name": "CFS Receipt",
+		"line_type": LINE_RECEIPT,
+		"payment_kind": "CFS",
+		"description": "CFS charges payment receipt.",
+	},
 )
+
+
+def _pair_already_covered(spec: dict) -> bool:
+	"""An active charge already serves this payment kind + line type."""
+	return bool(
+		frappe.db.exists(
+			"Clearance Charge Item",
+			{
+				"payment_kind": spec.get("payment_kind"),
+				"line_type": spec.get("line_type"),
+				"is_active": 1,
+			},
+		)
+	)
 
 
 def ensure_clearance_charge_items(*, sync_descriptions: bool = False) -> int:
@@ -182,6 +213,12 @@ def ensure_clearance_charge_items(*, sync_descriptions: bool = False) -> int:
 	for spec in DEFAULT_CLEARANCE_CHARGE_ITEMS:
 		name = (spec.get("charge_name") or "").strip()
 		if not name:
+			continue
+		if not frappe.db.exists("Clearance Charge Item", name) and _pair_already_covered(spec):
+			# Ops renamed this charge in Desk (UCR Receipt -> UCR POP, because that is
+			# what they file). Seeding by name alone put the old name back as a second
+			# active row for the same payment kind, and new lines then carried a label
+			# no one uses. The pair is covered, so leave it alone.
 			continue
 		if frappe.db.exists("Clearance Charge Item", name):
 			updates: dict = {}
@@ -239,11 +276,13 @@ def get_clearance_charge_item(
 	kind = (payment_kind or "").strip()
 	ltype = (line_type or "").strip()
 	if kind and ltype:
+		# Oldest by creation, so a later duplicate cannot take over the pair and an
+		# edit to the one in use cannot flip new rows onto the other one.
 		name = frappe.db.get_value(
 			"Clearance Charge Item",
 			{"payment_kind": kind, "line_type": ltype, "is_active": 1},
 			"name",
-			order_by="modified asc",
+			order_by="creation asc",
 		)
 		if name:
 			return name
@@ -404,6 +443,9 @@ def sync_task_finance_lines_from_charge_items() -> int:
 			"line_label",
 			"charge_item",
 			"item_code",
+			# Needed to keep an amended invoice reading as one; without it every row
+			# looked unamended here and the suffix was stripped on every sync.
+			"is_amendment",
 		],
 	):
 		charge_item = row.charge_item or get_clearance_charge_item(
@@ -418,7 +460,14 @@ def sync_task_finance_lines_from_charge_items() -> int:
 		if charge_item != (row.charge_item or ""):
 			updates["charge_item"] = charge_item
 
-		label = get_charge_item_label(charge_item, row.line_label or "")
+		# The master label is the base name ("UCR Invoice"); an amended row has to keep
+		# reading as one. Without this the sync quietly reset every amendment label
+		# back to the plain name the next time it ran.
+		from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+			amended_label,
+		)
+
+		label = amended_label(get_charge_item_label(charge_item, row.line_label or ""), row)
 		if label and label != (row.line_label or ""):
 			updates["line_label"] = label
 

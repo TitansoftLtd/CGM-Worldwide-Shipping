@@ -25,8 +25,6 @@ Seeding is deliberately non-destructive - a grade that already exists only has i
 
 from __future__ import annotations
 
-import re
-import unicodedata
 
 import frappe
 from frappe import _
@@ -308,125 +306,6 @@ def _designation_rows(posts: tuple[dict, ...]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Backfill - grading the people named in the document
 # ---------------------------------------------------------------------------
-
-
-def assign_job_groups_from_structure() -> dict:
-	"""Set ``Employee.grade`` from the signed structure.
-
-	Two passes, most specific first, and only ever onto employees with no grade yet -
-	a grade set by HR is never overwritten:
-
-	1. **Office holder** - the person named against a post in the document.
-	2. **Designation** - anyone else holding a post that the structure grades.
-
-	Returns a summary so the caller (patch or bench execute) can report what it did
-	and, more usefully, what it could not place.
-	"""
-	employees = frappe.get_all(
-		"Employee",
-		filters={"status": "Active"},
-		fields=["name", "employee_name", "designation", "grade"],
-	)
-	ungraded = [e for e in employees if not e.grade]
-
-	assigned: list[dict] = []
-	unmatched_holders: list[str] = []
-	by_name: dict[str, str] = {}
-
-	for group in JOB_GROUP_STRUCTURE:
-		for post in group["posts"]:
-			for holder in post.get("holders", ()):
-				match = _match_employee(holder, employees)
-				if not match:
-					unmatched_holders.append(f"{holder} ({group['job_group']})")
-					continue
-				by_name[match] = group["job_group"]
-
-	designation_groups = _designation_to_job_group()
-
-	for employee in ungraded:
-		job_group = by_name.get(employee.name)
-		reason = "office holder"
-		if not job_group and employee.designation:
-			job_group = designation_groups.get(employee.designation)
-			reason = "designation"
-		if not job_group:
-			continue
-		frappe.db.set_value("Employee", employee.name, "grade", job_group)
-		assigned.append(
-			{
-				"employee": employee.name,
-				"employee_name": employee.employee_name,
-				"job_group": job_group,
-				"matched_by": reason,
-			}
-		)
-
-	assigned_ids = {row["employee"] for row in assigned}
-	return {
-		"assigned": assigned,
-		"ungraded": [
-			{"employee": e.name, "employee_name": e.employee_name, "designation": e.designation}
-			for e in ungraded
-			if e.name not in assigned_ids
-		],
-		"unmatched_office_holders": unmatched_holders,
-	}
-
-
-def _designation_to_job_group() -> dict[str, str]:
-	"""Map each designation to the job group that holds it.
-
-	Read from the live Employee Grade tables rather than the seed constant, so posts
-	HR has since added or moved are honoured. :func:`validate_job_group_designations`
-	guarantees a designation sits in at most one grade, so the map is unambiguous by
-	construction. Falls back to the document for a site where nothing is seeded yet.
-	"""
-	rows = frappe.get_all(
-		"CGM Job Group Designation",
-		filters={"parenttype": "Employee Grade"},
-		fields=["designation", "parent"],
-	)
-	if rows:
-		return {row.designation: row.parent for row in rows if row.designation}
-
-	mapping: dict[str, str] = {}
-	for group in JOB_GROUP_STRUCTURE:
-		for post in group["posts"]:
-			title = post["title"]
-			mapping.setdefault(DESIGNATION_ALIASES.get(title, title), group["job_group"])
-	return mapping
-
-
-def _normalise_name(value: str) -> frozenset[str]:
-	"""Name tokens, folded so ``Ndung'u`` and ``Ndungu`` compare equal."""
-	folded = unicodedata.normalize("NFKD", value or "")
-	folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
-	folded = re.sub(r"[^a-z0-9 ]+", "", folded.lower())
-	return frozenset(token for token in folded.split() if token)
-
-
-def _match_employee(holder: str, employees: list) -> str | None:
-	"""Resolve an office holder from the document to exactly one Employee.
-
-	The document uses short names ("Philip Obiero") against fuller records
-	("Phillip Odiwour Obiero"), so full-token containment is tried first and a
-	surname-only match second. Anything ambiguous is left for HR rather than guessed.
-	"""
-	wanted = _normalise_name(holder)
-	if not wanted:
-		return None
-
-	candidates = [e for e in employees if wanted <= _normalise_name(e.employee_name)]
-	if len(candidates) == 1:
-		return candidates[0].name
-	if candidates:
-		return None
-
-	surname = holder.split()[-1]
-	surname_token = _normalise_name(surname)
-	candidates = [e for e in employees if surname_token <= _normalise_name(e.employee_name)]
-	return candidates[0].name if len(candidates) == 1 else None
 
 
 # ---------------------------------------------------------------------------

@@ -103,11 +103,6 @@ def has_required_transport_documents(opportunity) -> bool:
 	return any(item.get("linked_name") for item in required)
 
 
-def has_primary_transport_document(opportunity) -> bool:
-	"""Backward-compatible alias — start-gate transport document(s) must be linked."""
-	return has_required_transport_documents(opportunity)
-
-
 def assign_opportunity_batch_on_insert(doc, _method=None) -> None:
 	"""Preserve manual batch on intake; Booking/BL may fill it on later saves."""
 	if not doc.meta.has_field("custom_batch_no"):
@@ -183,11 +178,6 @@ def get_shipment_type_flags_for_doc(shipment_type: str | None = None) -> dict:
 	return get_shipment_type_flags(shipment_type)
 
 
-def project_type_for_shipment_type(shipment_type: str | None) -> str | None:
-	"""Map Shipment Type → container tracker mode name."""
-	return container_tracking_mode_for_shipment_type(shipment_type)
-
-
 def apply_project_type_from_shipment_type(project, shipment_type: str | None = None) -> None:
 	"""Copy container tracker mode from Shipment Type onto Project."""
 	st = shipment_type or project.get("custom_shipment_type")
@@ -225,7 +215,6 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_port_of_discharge", "custom_port_of_discharge"),
 		("custom_voyage_number", "custom_voyage_number"),
 		("custom_cargo_cutoff", "custom_cargo_cutoff"),
-		("custom_cargo_cut_off", "custom_cargo_cutoff"),
 		("custom_booking_confirmation", "custom_booking_confirmation"),
 		("custom_bill_of_lading", "custom_bill_of_lading"),
 		("custom_air_waybill", "custom_air_waybill"),
@@ -246,9 +235,6 @@ def opportunity_to_project_field_pairs() -> tuple[tuple[str, str], ...]:
 		("custom_batch_no", "custom_batch_no"),
 		("custom_weight_uom_", "custom_weight_uom"),
 	)
-
-
-PROJECT_ETD_FIELDS = ("custom_expected_time_of_depatureetd", "custom_etd")
 
 
 def align_project_etd_fields(project) -> bool:
@@ -327,8 +313,12 @@ def get_required_intake_documents(shipment_type: str | None) -> list[dict]:
 	return out
 
 
-def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
-	"""Check primary transport doc + required documents uploaded & verified."""
+def evaluate_start_shipment_readiness(opportunity_name: str, doc=None) -> dict:
+	"""Check primary transport doc + required documents uploaded & verified.
+
+	Save hooks pass ``doc``: the database still holds the previous version there,
+	so re-reading it would judge readiness on the documents before this save.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 		document_types_match,
 		get_opportunity_documents_field,
@@ -337,7 +327,7 @@ def evaluate_start_shipment_readiness(opportunity_name: str) -> dict:
 	)
 
 	frappe.has_permission("Opportunity", ptype="read", doc=opportunity_name, throw=True)
-	opp = frappe.get_doc("Opportunity", opportunity_name)
+	opp = doc or frappe.get_doc("Opportunity", opportunity_name)
 	shipment_type = opp.get("custom_shipment_type")
 	flags = get_shipment_type_flags(shipment_type)
 

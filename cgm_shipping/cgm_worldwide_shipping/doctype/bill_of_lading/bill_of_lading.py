@@ -16,7 +16,6 @@ from frappe.utils import cint, flt, get_datetime, getdate, now_datetime, today
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	DEPOSIT_ARRANGEMENT_CONTAINER,
-	DEPOSIT_ARRANGEMENT_REVOLVING,
 	DEPOSIT_PAYERS,
 	DEPOSIT_PAYMENT_STATUSES,
 	DEPOSIT_REFUND_STATUSES,
@@ -469,12 +468,8 @@ def ensure_bl_cargo_type(doc) -> None:
 			doc.cargo_type = requested
 			return
 
-	for opp_field in ("linked_opportunity", "custom_linked_opportunity"):
-		if not doc.meta.has_field(opp_field):
-			continue
-		opp_name = doc.get(opp_field)
-		if not is_valid_opportunity_link(opp_name):
-			continue
+	opp_name = doc.get("linked_opportunity")
+	if is_valid_opportunity_link(opp_name):
 		opp = frappe.get_doc("Opportunity", opp_name)
 		cargo_field = get_cargo_type_field(opp.meta)
 		if cargo_field and opp.get(cargo_field):
@@ -948,10 +943,6 @@ def _bl_meta():
 	return frappe.get_meta("Bill of Lading")
 
 
-def _je_meta():
-	return frappe.get_meta("Journal Entry")
-
-
 def is_deposit_journal_entry(je) -> bool:
 	if not je:
 		return False
@@ -997,10 +988,6 @@ def bl_deposit_arrangement(bl) -> str:
 
 def is_container_deposit_bl(bl) -> bool:
 	return bl_deposit_arrangement(bl) == DEPOSIT_ARRANGEMENT_CONTAINER
-
-
-def is_revolving_fund_bl(bl) -> bool:
-	return bl_deposit_arrangement(bl) == DEPOSIT_ARRANGEMENT_REVOLVING
 
 
 def bl_deposit_payer(bl) -> str:
@@ -1187,9 +1174,9 @@ def sync_bl_deposit_to_shipping_line_tasks(bl) -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 		TASK_CONTAINER_UPDATES_FIELD,
 	)
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		shipping_line_application_sequences,
-		shipping_line_finance_payment_sequences,
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		ROLE_APPLICATION,
+		ROLE_FINANCE_PAYMENT,
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
 		task_flow_key_in_filter,
@@ -1201,12 +1188,6 @@ def sync_bl_deposit_to_shipping_line_tasks(bl) -> None:
 		"Project", filters={"custom_bill_of_lading": bl.name}, pluck="name"
 	)
 	if not projects:
-		return
-
-	seqs = sorted(
-		set(shipping_line_application_sequences()) | set(shipping_line_finance_payment_sequences())
-	)
-	if not seqs:
 		return
 
 	arrangement = bl_deposit_arrangement(bl)
@@ -1224,7 +1205,9 @@ def sync_bl_deposit_to_shipping_line_tasks(bl) -> None:
 				filters={
 					"project": project,
 					"custom_task_flow_key": task_flow_key_in_filter(),
-					"custom_sequence_no": ["in", seqs],
+					# The Shipping Line application and Finance steps, by Task Role stamp.
+					"custom_task_role": ["in", [ROLE_APPLICATION, ROLE_FINANCE_PAYMENT]],
+					"custom_payment_kind": "Shipping Line",
 					"status": ["!=", "Cancelled"],
 				},
 				pluck="name",
@@ -1341,10 +1324,12 @@ def get_project_company_deposit_invoice_context(project: str) -> dict | None:
 
 
 def _user_can_manage_deposit_refund() -> bool:
-	return bool(
-		{"Finance Manager", "Finance User", "Accounts User", "Accounts Manager", "System Manager"}
-		& set(frappe.get_roles())
+	"""Finance roles from CGM Shipping Settings / the Finance role group, plus System Manager."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permissions import (
+		configured_finance_roles,
 	)
+
+	return bool((configured_finance_roles() | {"System Manager"}) & set(frappe.get_roles()))
 
 
 def _project_for_bl(bill_of_lading: str) -> str | None:
@@ -2554,11 +2539,6 @@ def create_deposit_credit_note_for_bl(bill_of_lading: str) -> str:
 def refresh_deposit_payment_status(doc) -> None:
 	"""Alias: refresh status on a Bill of Lading document."""
 	refresh_bl_deposit_payment_status(doc)
-
-
-def maybe_start_deposit_refund_tracking(doc) -> None:
-	"""Alias: start refund tracking on a Bill of Lading document."""
-	maybe_start_bl_deposit_refund_tracking(doc)
 
 
 @frappe.whitelist()

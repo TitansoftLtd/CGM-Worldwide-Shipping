@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import frappe
 
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-	DEFAULT_SEA_WORKFLOW_TASK_GATES,
-)
 from cgm_shipping.cgm_worldwide_shipping.customizations.customs_tax_type_seed_data import (
 	CUSTOMS_CALCULATION_MODES,
 	CUSTOMS_TAX_TYPES,
@@ -65,41 +62,13 @@ def seed_default_customs_tax_rates() -> None:
 
 
 def seed_cgm_shipping_settings() -> None:
-	"""Fill blank Settings tables that are safe to top-up on migrate.
+	"""Fill Settings defaults that are safe to top up on migrate.
 
-	Document responsibilities / CGM Role Groups are intentionally excluded —
+	Document responsibilities / CGM Role Groups are intentionally excluded -
 	those are one-time defaults (after_install + seed patch) so site edits stick.
 	"""
 	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
 		return
-
-	from cgm_shipping.cgm_worldwide_shipping.customizations.sea_settings_seed_data import (
-		reseed_sea_clearance_task_requirements,
-	)
-
-	settings = frappe.get_doc("CGM Shipping Settings")
-	meta = frappe.get_meta("CGM Shipping Settings")
-	changed = False
-
-	if meta.has_field("custom_sea_clearance_task_requirements"):
-		changed = reseed_sea_clearance_task_requirements(settings) or changed
-
-	if meta.has_field("custom_sea_workflow_task_gates") and not settings.get(
-		"custom_sea_workflow_task_gates"
-	):
-		for row in DEFAULT_SEA_WORKFLOW_TASK_GATES:
-			settings.append("custom_sea_workflow_task_gates", row)
-		changed = True
-
-	if meta.has_field("sea_import_template") and not settings.get("sea_import_template"):
-		if frappe.db.exists("CGM Task Template", "Sea Import Workflow"):
-			settings.sea_import_template = "Sea Import Workflow"
-			changed = True
-
-	if changed:
-		settings.flags.skip_package_visibility_apply = True
-		settings.save(ignore_permissions=True)
-		frappe.clear_cache()
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.package_field_visibility import (
 		seed_package_visibility_defaults,

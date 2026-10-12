@@ -76,9 +76,11 @@ cgm_shipping.opportunity_shipment.init_intake_wizard = function (frm, opts = {})
 	cgm_shipping.opportunity_shipment._ensure_intake_fields_visible(frm);
 	cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
 	if (!opts.defer_refresh) {
-		cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm).then(() => {
-			cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
-		});
+		cgm_shipping.opportunity_shipment
+			.refresh_wizard_ui(frm, { skip_writes: Boolean(opts.skip_writes) })
+			.then(() => {
+				cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
+			});
 	}
 };
 
@@ -96,13 +98,13 @@ cgm_shipping.opportunity_shipment._reset_new_opportunity_session = function (frm
 	localStorage.removeItem(CGM_PENDING_AWB_LINK_KEY);
 	localStorage.removeItem(CGM_PENDING_BOOKING_LINK_KEY);
 
-	if (frm.meta.has_field("custom_intake_stage")) {
+	if (frappe.meta.has_field(frm.doctype, "custom_intake_stage")) {
 		frm.doc.custom_intake_stage = STAGE_INTAKE;
 	}
-	if (frm.meta.has_field("custom_primary_doc_linked")) {
+	if (frappe.meta.has_field(frm.doctype, "custom_primary_doc_linked")) {
 		frm.doc.custom_primary_doc_linked = 0;
 	}
-	if (frm.meta.has_field("custom_uses_container_tracking")) {
+	if (frappe.meta.has_field(frm.doctype, "custom_uses_container_tracking")) {
 		frm.doc.custom_uses_container_tracking = 0;
 	}
 
@@ -185,7 +187,7 @@ cgm_shipping.opportunity_shipment._prepare_intake_defaults = function (frm) {
 	if (!frm.doc.opportunity_from) {
 		frm.set_value("opportunity_from", "Customer");
 	}
-	if (frm.is_new() && frm.meta.has_field("custom_intake_stage")) {
+	if (frm.is_new() && frappe.meta.has_field(frm.doctype, "custom_intake_stage")) {
 		frm.doc.custom_intake_stage = STAGE_INTAKE;
 	}
 	if (frm.is_new() && !frm.doc.transaction_date) {
@@ -200,7 +202,7 @@ cgm_shipping.opportunity_shipment._prepare_intake_defaults = function (frm) {
 	// Do not inherit site default Country (e.g. Kenya) — user must choose.
 	if (frm.is_new()) {
 		["custom_country_of_origin", "custom_delivery_destination"].forEach((fieldname) => {
-			if (frm.meta.has_field(fieldname) && frm.doc[fieldname]) {
+			if (frappe.meta.has_field(frm.doctype, fieldname) && frm.doc[fieldname]) {
 				frm.doc[fieldname] = null;
 			}
 		});
@@ -342,16 +344,19 @@ cgm_shipping.opportunity_shipment.refresh_wizard_ui = function (frm, opts = {}) 
 				frm.get_field("custom_shipment_intake_wizard_html").html(ctx.html || "");
 			}
 
+			// The server has already saved this stage (get_intake_wizard_context), so only
+			// patch the local copy - set_value would mark a just-saved form Not Saved.
+			if (ctx.stage && frm.doc.custom_intake_stage !== ctx.stage && !frm.is_new()) {
+				frm.doc.custom_intake_stage = ctx.stage;
+				frm.layout?.refresh_dependency?.();
+			}
+
 			const stage = cgm_shipping.opportunity_shipment._current_stage(frm);
 			cgm_shipping.opportunity_shipment._render_readiness_html(
 				frm,
 				stage,
 				ctx.readiness || {}
 			);
-
-			if (!skip_writes && ctx.stage && frm.doc.custom_intake_stage !== ctx.stage && !frm.is_new()) {
-				frm.set_value("custom_intake_stage", ctx.stage);
-			}
 
 			const flags = ctx.readiness || {};
 			frm._cgm_shipment_type_flags = flags;
@@ -363,7 +368,7 @@ cgm_shipping.opportunity_shipment.refresh_wizard_ui = function (frm, opts = {}) 
 			cgm_shipping.opportunity_shipment._ensure_clearance_station_fields_visible(frm);
 			cgm_shipping.opportunity_shipment.render_transport_documents_dashboard(frm, flags);
 			cgm_shipping.opportunity_shipment.toggle_package_fields(frm);
-			if (!frm.is_new() && frm.doc.custom_air_waybill) {
+			if (!skip_writes && !frm.is_new() && frm.doc.custom_air_waybill) {
 				cgm_shipping.opportunity_shipment.sync_from_linked_awb(frm);
 			}
 			if (
@@ -513,7 +518,9 @@ cgm_shipping.opportunity_shipment.toggle_package_fields = function (frm) {
 };
 
 cgm_shipping.opportunity_shipment.on_after_save = function (frm) {
-	return cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm);
+	// before_save has just run every server sync; a write here could only repeat or
+	// undo it, and any write marks the saved form Not Saved again.
+	return cgm_shipping.opportunity_shipment.refresh_wizard_ui(frm, { skip_writes: true });
 };
 
 cgm_shipping.opportunity_shipment._reveal_transport_documents_html = function (frm) {
@@ -707,11 +714,18 @@ cgm_shipping.opportunity_shipment._open_transport_document = function (frm, doc)
 	}
 
 	const seed = cgm_shipping.opportunity_shipment._build_transport_document_seed(frm, doc);
-	frappe.route_options = seed;
 
-	frappe.model.with_doctype(doc.doctype, () => {
-		frappe.new_doc(doc.doctype);
-	});
+	cgm_shipping.transport_reference
+		.usable_booking(seed.booking_confirmation)
+		.then((booking) => {
+			if (seed.booking_confirmation && !booking) {
+				delete seed.booking_confirmation;
+			}
+			frappe.route_options = seed;
+			frappe.model.with_doctype(doc.doctype, () => {
+				frappe.new_doc(doc.doctype);
+			});
+		});
 };
 
 cgm_shipping.opportunity_shipment._build_awb_route_options = function (frm) {
@@ -870,7 +884,9 @@ cgm_shipping.opportunity_shipment.apply_awb_payload = function (frm, pending) {
 		if (value == null || value === "" || !frm.fields_dict[fieldname]) {
 			return;
 		}
-		if (String(frm.doc[fieldname] ?? "") === String(value ?? "")) {
+		// Compare trimmed - the server strips text on save, so a stray space in the
+		// linked document would mark the form Not Saved after every save.
+		if (String(frm.doc[fieldname] ?? "").trim() === String(value ?? "").trim()) {
 			return;
 		}
 		frm.set_value(fieldname, value);
@@ -970,7 +986,9 @@ cgm_shipping.opportunity_shipment.apply_booking_payload = function (frm, pending
 		if (value == null || value === "" || !frm.fields_dict[fieldname]) {
 			return;
 		}
-		if (String(frm.doc[fieldname] ?? "") === String(value ?? "")) {
+		// Compare trimmed - the server strips text on save, so a stray space in the
+		// linked document would mark the form Not Saved after every save.
+		if (String(frm.doc[fieldname] ?? "").trim() === String(value ?? "").trim()) {
 			return;
 		}
 		frm.set_value(fieldname, value);

@@ -151,9 +151,12 @@
 
 /* Desk status fields — compact pill badges in static cells only */
 .cgm-status-badge {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
+	/* inline-block so text-overflow applies - a flex container ignores it and the
+	   label spills into the next grid column. */
+	display: inline-block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	text-align: center;
 	padding: 1px 8px;
 	border-radius: 999px;
 	font-size: 11px;

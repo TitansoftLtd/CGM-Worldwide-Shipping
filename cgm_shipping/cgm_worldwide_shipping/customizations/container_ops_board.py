@@ -7,6 +7,10 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, today
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CONTAINER_RETURN_OPEN_STATUSES,
+	CONTAINER_STATUS_PILL,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
 	CLOSED_CONTAINER_STATUSES,
 	compute_container_metrics,
@@ -19,24 +23,15 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.project_naming import (
 from cgm_shipping.cgm_worldwide_shipping.customizations.operational_updates import (
 	format_latest_update_summary,
 	get_latest_updates_for_trackers,
-	get_ops_updates,
-	get_unread_update_count,
 )
 from cgm_shipping.cgm_worldwide_shipping.doctype.container_tracker.container_tracker import (
-	_CONTAINER_TRACKER_FIELDS,
 	container_tracker_query_fields,
 	enrich_container_row,
 )
 
-OPEN_RETURN_STATUSES = frozenset(
-	{
-		"Released / In Transit",
-		"At Warehouse",
-		"Cargo Offloaded",
-		"Return Overdue",
-		"Empty Returned",
-	}
-)
+# From the shared status table: includes the transit statuses, so gated-out
+# transit containers appear on the return tracker.
+OPEN_RETURN_STATUSES = CONTAINER_RETURN_OPEN_STATUSES
 
 _TRAFFIC_SORT = {"red": 0, "amber": 1, "grey": 2, "green": 3}
 
@@ -56,17 +51,8 @@ def _eta_sort_key(row: dict) -> tuple:
 		ordinal = _MISSING_ETA_ORDINAL
 	return (ordinal, row.get("sort_key", 9))
 
-_STATUS_PILL = {
-	"Pending Arrival": "muted",
-	"Vessel Berthed": "info",
-	"Discharged / At Port": "warning",
-	"Released / In Transit": "primary",
-	"At Warehouse": "primary",
-	"Cargo Offloaded": "active",
-	"Empty Returned": "success",
-	"Return Overdue": "danger",
-	"Interchange Received": "success",
-}
+# From the shared status table ("active" is orange, "success" green).
+_STATUS_PILL = CONTAINER_STATUS_PILL
 
 
 def _parse_filters(filters) -> frappe._dict:
@@ -80,7 +66,11 @@ def _parse_filters(filters) -> frappe._dict:
 	return frappe._dict(filters)
 
 
-COMPLETED_SHIPMENT_STATUS = "Completed"
+#: A shipment counts as finished on either status. Hiding used to test only
+#: "Completed" while the KPIs and the tile filter tested both, so a Settled
+#: shipment sat in the active grid while being counted as completed. Defined once
+#: here and reused everywhere; the set below is the same object.
+COMPLETED_SHIPMENT_STATUSES = frozenset({"Completed", "Settled"})
 
 
 def _hide_completed(filters) -> bool:
@@ -94,6 +84,11 @@ def _hide_completed(filters) -> bool:
 		return False
 	if (filters.get("status") or "").strip():
 		return False
+	# Clicking the Completed (or All) KPI tile is a third way to ask. Without this
+	# the tile filtered a list the completed shipments had already been dropped
+	# from, so it always came back empty.
+	if (filters.get("kpi_filter") or "") in ("completed_shipments", "total_shipments"):
+		return False
 	return True
 
 
@@ -103,7 +98,7 @@ def _drop_completed_projects(projects: list[dict], filters) -> list[dict]:
 	return [
 		project
 		for project in projects
-		if (project.get("custom_shipment_status") or "") != COMPLETED_SHIPMENT_STATUS
+		if (project.get("custom_shipment_status") or "") not in COMPLETED_SHIPMENT_STATUSES
 	]
 
 
@@ -114,7 +109,7 @@ def _drop_completed_containers(rows: list[dict], filters, projects: dict) -> lis
 	kept = []
 	for row in rows:
 		project = projects.get(row.get("project")) or {}
-		if (project.get("custom_shipment_status") or "") != COMPLETED_SHIPMENT_STATUS:
+		if (project.get("custom_shipment_status") or "") not in COMPLETED_SHIPMENT_STATUSES:
 			kept.append(row)
 	return kept
 
@@ -295,13 +290,22 @@ def _enrich_rows_with_transporter_updates(rows: list[dict]) -> list[dict]:
 	return rows
 
 
-def _normalize_date_field(date_field: str | None) -> str | None:
-	"""Map UI labels (ETA/ATA) and keys (eta/ata) to a canonical key."""
-	if not date_field:
-		return None
-	key = str(date_field).strip().lower()
+def _normalize_date_field(date_field: str | None, filters=None) -> str | None:
+	"""Map UI labels (ETA/ATA) and keys (eta/ata) to a canonical key.
+
+	Falls back to ETA when a date range was given without picking a field. The two
+	controls are separate, so choosing dates and leaving Date Field blank used to
+	filter nothing at all - the board simply returned every row and gave no hint
+	that a second control had to be set first. ETA is the board's primary date and
+	the first option in the list, so it is what "filter by date" means here.
+	"""
+	key = str(date_field or "").strip().lower()
 	if key in ("eta", "ata"):
 		return key
+	if key:
+		return None
+	if filters and (filters.get("date_from") or filters.get("date_to")):
+		return "eta"
 	return None
 
 
@@ -350,8 +354,15 @@ def _project_filters(filters) -> dict:
 		project_filters["custom_bill_of_lading"] = filters.bill_of_lading
 	batch_no = (filters.get("batch_no") or "").strip()
 	if batch_no:
-		project_filters["custom_batch_no"] = ["like", f"%{batch_no}%"]
-	date_key = _normalize_date_field(filters.get("date_field"))
+		# Batch numbers are plain integers on 27 of the 30 values here, so a
+		# substring match turned "1" into 1, 10, 12, 13, 14, 15 and 17 - nine
+		# batches for a filter the user meant to pin one. Digits match exactly;
+		# anything else (10X20-35) keeps the partial search that makes sense there.
+		if batch_no.isdigit():
+			project_filters["custom_batch_no"] = batch_no
+		else:
+			project_filters["custom_batch_no"] = ["like", f"%{batch_no}%"]
+	date_key = _normalize_date_field(filters.get("date_field"), filters)
 	if date_key:
 		field = (
 			"custom_eta" if date_key == "eta" else "custom_actual_time_of_arrival_ata"
@@ -384,7 +395,7 @@ def _filter_by_shipping_line(
 
 def _filter_by_date_range(rows: list[dict], filters, projects: dict) -> list[dict]:
 	"""Filter container rows by project ETA/ATA (same date field as Shipments tab)."""
-	date_key = _normalize_date_field(filters.get("date_field"))
+	date_key = _normalize_date_field(filters.get("date_field"), filters)
 	if not date_key:
 		return rows
 	date_from = getdate(filters.date_from) if filters.get("date_from") else None
@@ -506,8 +517,6 @@ def _container_location_summary(rows: list[dict]) -> str:
 		return ", ".join(unique)
 	return _("{0} locations").format(len(unique))
 
-
-COMPLETED_SHIPMENT_STATUSES = frozenset({"Completed", "Settled"})
 
 
 def _is_in_demurrage(row: dict) -> bool:
@@ -712,6 +721,12 @@ def get_shipment_tracker(filters=None) -> dict:
 	filters = _parse_filters(filters)
 	# Status on the Shipments tab is shipment status — never pass it to tracker rows.
 	projects = _fetch_shipment_rows(filters)
+	# Count before hiding. The tiles summarise everything matching the user's
+	# filters; the grid below is the working list and may hide completed. Counting
+	# after the drop meant "Completed shipments" reported the completed ones left in
+	# a list they had just been removed from - always 0, on a board where six
+	# shipments were finished.
+	kpi_projects = projects
 	projects = _drop_completed_projects(projects, filters)
 	project_map = {project["name"]: project for project in projects}
 	tracker_rows = []
@@ -727,7 +742,7 @@ def get_shipment_tracker(filters=None) -> dict:
 		[_build_row(row, project_map) for row in tracker_rows]
 	)
 	all_tracker_rows = _enrich_ops_rows_with_bl_deposits(all_tracker_rows, project_map)
-	kpis = _shipment_kpis(projects, all_tracker_rows)
+	kpis = _shipment_kpis(kpi_projects, all_tracker_rows)
 	rows: list[dict] = []
 	for project in projects:
 		rows.append(_build_shipment_row(project, project_map, all_tracker_rows))
@@ -1246,12 +1261,15 @@ def get_container_ops_board(filters=None) -> dict:
 	projects = _project_cache()
 	raw = _fetch_tracker_rows(filters)
 	raw = _apply_container_post_filters(raw, filters, projects)
-	raw = _drop_completed_containers(raw, filters, projects)
 	all_rows = _enrich_rows_with_transporter_updates([_build_row(row, projects) for row in raw])
 	all_rows = _enrich_ops_rows_with_bl_deposits(all_rows, projects)
+	# Count before hiding. Dropping completed shipments first made
+	# "Returned this month" undercount by exactly the containers most likely to
+	# qualify - a shipment completes *because* its containers came back - and left
+	# a pending deposit refund invisible once its shipment closed.
 	kpis = _kpis(all_rows, projects)
 
-	rows = list(all_rows)
+	rows = _drop_completed_containers(list(all_rows), filters, projects)
 	if filters.get("traffic_light"):
 		rows = [r for r in rows if r.get("traffic_light") == filters.traffic_light]
 	rows = _apply_kpi_filter(rows, filters.get("kpi_filter"), getdate(today()))

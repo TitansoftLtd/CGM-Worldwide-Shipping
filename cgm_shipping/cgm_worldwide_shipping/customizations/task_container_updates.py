@@ -5,14 +5,20 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+
+from cgm_shipping.cgm_worldwide_shipping.customizations.dialogs import (
+	blocked_dialog,
+)
 from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
-	CONTAINER_UPDATE_TASK_SEQS,
+	CONTAINER_UPDATE_STEPS,
 	TASK_CONTAINER_UPDATES_FIELD,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+	container_seq_for_task,
+	container_step_for_task,
 	get_container_task_sequence,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
@@ -24,22 +30,6 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry i
 	task_flow_key_in_filter,
 )
 
-TRACKER_TO_TASK_FIELDS = (
-	"transporter",
-	"truck_number",
-	"driver_name",
-	"driver_contact",
-	"free_days_start_date",
-	"free_days_end_date",
-	"kpa_free_days_start_date",
-	"kpa_free_days_end_date",
-	"gate_out_date_port",
-	"gate_in_date_warehouse",
-	"delivery_location",
-	"offloading_date",
-	"actual_empty_return",
-	"interchange_date",
-)
 
 TRANSPORT_TRACKER_FIELDS = (
 	"transporter",
@@ -93,35 +83,24 @@ def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 	return mapping
 
 
-def _shipping_line_application_seqs() -> frozenset[int]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		shipping_line_application_sequences,
-	)
-
-	return shipping_line_application_sequences()
-
-
-def _shipping_line_finance_seqs() -> frozenset[int]:
-	from cgm_shipping.cgm_worldwide_shipping.customizations.task import (
-		shipping_line_finance_payment_sequences,
-	)
-
-	return shipping_line_finance_payment_sequences()
-
-
 def is_shipping_line_deposit_task(doc) -> bool:
-	return (
-		is_sea_import_task(doc)
-		and _sea_task_seq(doc) in _shipping_line_application_seqs()
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_shipping_line_application,
 	)
+
+	return is_sea_import_task(doc) and task_is_shipping_line_application(doc)
 
 
 def is_shipping_line_deposit_mirror_task(doc) -> bool:
 	"""Shipping Line Application or Finance payment tasks that mirror BL deposit fields."""
-	if not is_sea_import_task(doc):
-		return False
-	seq = _sea_task_seq(doc)
-	return seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs()
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
+		task_is_shipping_line_application,
+		task_is_shipping_line_finance,
+	)
+
+	return is_sea_import_task(doc) and (
+		task_is_shipping_line_application(doc) or task_is_shipping_line_finance(doc)
+	)
 
 
 def _completion_field_by_seq() -> dict[int, str]:
@@ -133,6 +112,46 @@ def _completion_field_by_seq() -> dict[int, str]:
 		get_container_task_sequence("custom_empty_return_task_seq"): "actual_empty_return",
 		get_container_task_sequence("custom_interchange_task_seq"): "interchange_date",
 	}
+
+
+# The tracker field that closes each step, by the label the tracker form shows.
+# frappe.unscrub() on the fieldname is close but not right: gate_out_date_port
+# reads "Gate Out Mombasa" on the form, and a dialog that invents its own name for
+# a field sends people looking for something that is not there.
+CONTAINER_STEP_FIELD_LABELS = {
+	"truck_number": "Truck Number",
+	"gate_out_date_port": "Gate Out Mombasa",
+	"gate_in_date_warehouse": "Gate In Date (Clearance Station / Warehouse)",
+	"offloading_date": "Offloading Date",
+	"actual_empty_return": "Actual Empty Return",
+	"interchange_date": "Interchange Date",
+}
+
+
+def container_step_requirement_label(seq: int) -> str:
+	"""What the Container Tracker still needs for this step, in the form's own words."""
+	if seq == get_container_task_sequence("custom_interchange_task_seq"):
+		# Interchange needs the date and the document, not a date alone.
+		return "Interchange Date and Interchange Document"
+	field = _completion_field_by_seq().get(seq) or ""
+	return CONTAINER_STEP_FIELD_LABELS.get(field, frappe.unscrub(field.replace("_", " ")))
+
+
+def transport_step_tracker_blockers(task) -> tuple[str, list[str]]:
+	"""(what the tracker needs, containers missing it) for a transport step task.
+
+	Transport steps are not completed by hand: the tracker drives them, and the task
+	marks itself Completed once every container has the step's field. Callers use
+	this to name the containers actually holding a task up, so the gate functions are
+	reused rather than restated and the message cannot drift from the rule.
+	"""
+	seq = int(task.get("custom_sequence_no") or 0)
+	if not seq or not task.get("project"):
+		return "", []
+	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
+	if not _completion_field_by_seq().get(seq) and seq != interchange_seq:
+		return "", []
+	return container_step_requirement_label(seq), _containers_missing_step(task.project, seq)
 
 
 def _trackers_missing_field(project: str, field: str) -> list[str]:
@@ -197,31 +216,55 @@ TRACKER_SEED_FIELDS = [
 ]
 
 
-def _sea_task_seq(doc) -> int:
-	return int(doc.get("custom_sequence_no") or 0)
+def _container_seq(doc) -> int:
+	"""Settings key number of the task's Container Step (see container_step_for_task).
 
-
-def container_update_task_sequences() -> frozenset[int]:
-	"""Every sequence that shows the Task Container Updates grid.
-
-	Single source of truth for the server gate and the Task form ``depends_on``
-	(see ``get_sea_task_ui_sequences``) so the grid can never render on a task the
-	server refuses to seed, or hide on one it validates.
+	Container code keys on this, never on the task's own position in the plan.
 	"""
-	return frozenset(
-		CONTAINER_UPDATE_TASK_SEQS
-		| _shipping_line_application_seqs()
-		| _shipping_line_finance_seqs()
+	return container_seq_for_task(doc)
+
+
+def _container_step_task_rows(
+	project: str, seqs, *, exclude_statuses=("Completed", "Cancelled")
+) -> list:
+	"""The project's tasks recording one of the container steps keyed by *seqs*.
+
+	Matched on each task's Container Step stamp, so its own step number never
+	decides it. Rows carry ``container_seq``; newest first.
+	"""
+	if not project or not seqs:
+		return []
+	fields = ["name", "creation", "custom_sequence_no", "custom_task_flow_key", "custom_task_role"]
+	if frappe.get_meta("Task").has_field("custom_container_step"):
+		fields.append("custom_container_step")
+	rows = frappe.get_all(
+		"Task",
+		filters={
+			"project": project,
+			"custom_task_flow_key": task_flow_key_in_filter(),
+			"status": ["not in", list(exclude_statuses)],
+		},
+		fields=fields,
+		order_by="creation desc",
 	)
+	out = []
+	for row in rows:
+		row.container_seq = container_seq_for_task(row)
+		if row.container_seq in seqs:
+			out.append(row)
+	return out
 
 
 def is_container_update_task(doc) -> bool:
+	"""Container step tasks and the Shipping Line deposit steps show the grid."""
 	if not is_sea_import_task(doc):
 		return False
-	return _sea_task_seq(doc) in container_update_task_sequences()
+	return container_step_for_task(doc) in CONTAINER_UPDATE_STEPS or is_shipping_line_deposit_mirror_task(doc)
 
 
-def _prefill_row_from_tracker(row, tracker: dict, seq: int, project: str | None = None) -> bool:
+def _prefill_row_from_tracker(
+	row, tracker: dict, seq: int, project: str | None = None, *, shipping_line: bool = False
+) -> bool:
 	changed = False
 	if row.current_status != tracker.get("status"):
 		row.current_status = tracker.get("status")
@@ -241,7 +284,7 @@ def _prefill_row_from_tracker(row, tracker: dict, seq: int, project: str | None 
 		if discharge and row.get("discharging_date") != discharge:
 			row.discharging_date = discharge
 			changed = True
-	elif seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs():
+	elif shipping_line:
 		bl_map = _bl_deposit_by_container_number(project or tracker.get("project") or "")
 		src = bl_map.get((tracker.get("container_number") or "").strip().upper()) or {}
 		new_amt = flt(src.get("deposit_amount"))
@@ -297,7 +340,8 @@ def seed_container_update_rows(doc) -> bool:
 	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
 		return False
 
-	seq = _sea_task_seq(doc)
+	seq = _container_seq(doc)
+	shipping_line = is_shipping_line_deposit_mirror_task(doc)
 	existing = {
 		row.container_tracker: row
 		for row in doc.get(TASK_CONTAINER_UPDATES_FIELD) or []
@@ -317,7 +361,9 @@ def seed_container_update_rows(doc) -> bool:
 	vessel_arrival_seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 	for tracker in trackers:
 		if tracker.name in existing:
-			if _prefill_row_from_tracker(existing[tracker.name], tracker, seq, doc.project):
+			if _prefill_row_from_tracker(
+				existing[tracker.name], tracker, seq, doc.project, shipping_line=shipping_line
+			):
 				changed = True
 			continue
 
@@ -331,7 +377,7 @@ def seed_container_update_rows(doc) -> bool:
 			row_data["discharging_date"] = (
 				tracker.get("discharging_date") or tracker.get("ata") or None
 			)
-		elif seq in _shipping_line_application_seqs() or seq in _shipping_line_finance_seqs():
+		elif shipping_line:
 			bl_map = _bl_deposit_by_container_number(doc.project)
 			src = bl_map.get((tracker.container_number or "").strip().upper()) or {}
 			row_data["deposit_amount"] = flt(src.get("deposit_amount"))
@@ -367,7 +413,7 @@ def apply_container_updates_from_task(doc) -> None:
 	if not doc.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
 		return
 
-	seq = _sea_task_seq(doc)
+	seq = _container_seq(doc)
 	if seq == get_container_task_sequence("custom_vessel_arrival_task_seq"):
 		return
 
@@ -433,11 +479,17 @@ def validate_shipping_line_deposit_declarations(doc) -> None:
 		if flt(row.get("deposit_amount")) <= 0:
 			amount_missing.append(row.container_number or row.name)
 	if amount_missing and flt(bl.get("deposit_amount")) <= 0:
-		frappe.throw(
-			_(
-				"Bill of Lading <b>{0}</b> has Container Deposit - enter deposit amounts "
-				"on each container row: {1}"
-			).format(bl.bl_number or bl.name, ", ".join(amount_missing))
+		blocked_dialog(
+			_("Container deposit amounts missing"),
+			_("This Bill of Lading carries a container deposit, so each row needs its amount:"),
+			[
+				(
+					_("Deposit amount missing on: {0}").format(", ".join(amount_missing)),
+					_("Enter it on each container row of <b>{0}</b>.").format(
+						bl.bl_number or bl.name
+					),
+				)
+			],
 		)
 
 
@@ -497,21 +549,10 @@ def sync_vessel_arrival_task_rows_from_project(project_name: str) -> None:
 		return
 
 	seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
-	rows = frappe.get_all(
-		"Task",
-		filters={
-			"project": project_name,
-			"custom_task_flow_key": task_flow_key_in_filter(),
-			"custom_sequence_no": seq,
-			"status": ["!=", "Cancelled"],
-		},
-		pluck="name",
-		order_by="creation desc",
-		limit=1,
-	)
+	rows = _container_step_task_rows(project_name, {seq}, exclude_statuses=("Cancelled",))
 	if not rows:
 		return
-	task_name = rows[0]
+	task_name = rows[0].name
 
 	frappe.flags.cgm_syncing_tracker_to_task = True
 	try:
@@ -554,23 +595,14 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 		),
 	}
 
-	tasks = frappe.get_all(
-		"Task",
-		filters={
-			"project": tracker.project,
-			"custom_task_flow_key": task_flow_key_in_filter(),
-			"status": ["not in", ["Completed", "Cancelled"]],
-			"custom_sequence_no": ["in", list(sync_seqs.keys())],
-		},
-		fields=["name", "custom_sequence_no"],
-	)
+	tasks = _container_step_task_rows(tracker.project, set(sync_seqs))
 	if not tasks:
 		return
 
 	frappe.flags.cgm_syncing_tracker_to_task = True
 	try:
 		for task_row in tasks:
-			fields = sync_seqs.get(int(task_row.custom_sequence_no or 0))
+			fields = sync_seqs.get(task_row.container_seq)
 			if not fields:
 				continue
 			task = frappe.get_doc("Task", task_row.name)
@@ -621,6 +653,7 @@ def _auto_complete_container_task(task_name: str, project: str) -> bool:
 	)
 
 	sync_project_shipment_status_from_tasks(project)
+	_refresh_erpnext_project_rollup(project)
 	frappe.publish_realtime(
 		"cgm_project_tracking_refresh",
 		{"project": project},
@@ -628,6 +661,28 @@ def _auto_complete_container_task(task_name: str, project: str) -> bool:
 		docname=project,
 	)
 	return True
+
+
+def _refresh_erpnext_project_rollup(project: str) -> None:
+	"""Recompute ERPNext's own % Complete after a status written with db.set_value.
+
+	set_value skips document hooks, which is what keeps this fast, but it also means
+	Task.update_project() never fires and the Project keeps the percentage it had
+	before. A shipment whose last transport steps auto-completed then sat at 91%
+	with every task done, because those two steps are exactly the ones completed
+	this way (PROJ-0003, PROJ-0039). CGM's own custom_shipment_status was right the
+	whole time - only ERPNext's rollup was stale, which is why the two disagreed.
+	"""
+	if not project or not frappe.db.exists("Project", project):
+		return
+	try:
+		frappe.get_cached_doc("Project", project).update_project()
+	except Exception:
+		# A stale percentage is cosmetic; never fail a task completion over it.
+		frappe.log_error(
+			title="cgm container task project rollup",
+			message=f"{project}: {frappe.get_traceback()}",
+		)
 
 
 def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
@@ -644,20 +699,11 @@ def try_auto_complete_container_task_for_seq(project: str, seq: int) -> bool:
 	if _containers_missing_step(project, seq):
 		return False
 
-	task_name = frappe.db.get_value(
-		"Task",
-		{
-			"project": project,
-			"custom_task_flow_key": task_flow_key_in_filter(),
-			"custom_sequence_no": seq,
-			"status": ["not in", ["Completed", "Cancelled"]],
-		},
-		"name",
-	)
-	if not task_name:
+	rows = _container_step_task_rows(project, {seq})
+	if not rows:
 		return False
 
-	return _auto_complete_container_task(task_name, project)
+	return _auto_complete_container_task(rows[0].name, project)
 
 
 def check_all_container_tasks_for_project(project: str) -> None:
@@ -693,7 +739,7 @@ def check_task_container_completion(doc) -> None:
 	if not doc.get("project"):
 		return
 
-	seq = _sea_task_seq(doc)
+	seq = _container_seq(doc)
 	if not _completion_field_by_seq().get(seq):
 		return
 
@@ -711,7 +757,7 @@ def validate_container_step_task_completion(doc) -> None:
 	if prev and prev.status == "Completed":
 		return
 
-	seq = _sea_task_seq(doc)
+	seq = _container_seq(doc)
 	if not doc.get("project"):
 		return
 	if not _completion_field_by_seq().get(seq) and seq != get_container_task_sequence(
@@ -720,22 +766,32 @@ def validate_container_step_task_completion(doc) -> None:
 		return
 
 	if not frappe.db.exists("Container Tracker", {"project": doc.project}):
-		frappe.throw(
-			_("Add container trackers on this project before completing transport step tasks.")
+		blocked_dialog(
+			_("No containers on this shipment"),
+			_("Transport steps are tracked per container, and this project has none:"),
+			[
+				(
+					_("Container Tracker is empty"),
+					_("Add the containers on this project, then this step can complete."),
+				)
+			],
 		)
 
 	missing = _containers_missing_step(doc.project, seq)
 	if missing:
-		if seq == get_container_task_sequence("custom_interchange_task_seq"):
-			label = _("interchange date and receipt")
-		else:
-			check_field = _completion_field_by_seq().get(seq) or ""
-			label = frappe.unscrub(check_field.replace("_", " "))
-		frappe.throw(
-			_(
-				"Every container must have <b>{0}</b> before completing this task. "
-				"Still open: {1}"
-			).format(label, ", ".join(missing))
+		label = container_step_requirement_label(seq)
+		blocked_dialog(
+			_("Waiting on the Container Tracker"),
+			_("This step completes on its own once every container has its details:"),
+			[
+				(
+					_("{0} missing on: {1}").format(label, ", ".join(missing)),
+					_(
+						"Fill it on the <b>Container Tracker</b> for this shipment and the "
+						"task completes itself."
+					),
+				)
+			],
 		)
 
 
@@ -743,7 +799,7 @@ def validate_book_trucks_container_updates(doc) -> None:
 	"""Book-trucks task: truck details for at least one container OR task-level reason."""
 	if not is_sea_import_task(doc):
 		return
-	if _sea_task_seq(doc) != get_container_task_sequence("custom_book_trucks_task_seq"):
+	if _container_seq(doc) != get_container_task_sequence("custom_book_trucks_task_seq"):
 		return
 	if doc.status != "Completed":
 		return
@@ -760,11 +816,22 @@ def validate_book_trucks_container_updates(doc) -> None:
 	has_reason = bool((doc.get("custom_not_emptied_reason") or "").strip())
 
 	if not has_truck and not has_reason:
-		frappe.throw(
-			_(
-				"Fill truck details for at least one container, or provide a reason "
-				"why containers are not exiting port."
-			)
+		blocked_dialog(
+			_("Trucks not booked yet"),
+			_("Either of these closes this step:"),
+			[
+				(
+					_("Truck details"),
+					_("Enter the truck number on at least one container row."),
+				),
+				(
+					_("Reason instead"),
+					_(
+						"If the containers are not exiting port, say why in "
+						"<b>Not Emptied Reason</b>."
+					),
+				),
+			],
 		)
 
 

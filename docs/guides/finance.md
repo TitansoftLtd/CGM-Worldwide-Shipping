@@ -22,10 +22,12 @@ For the **Finance** team: task payments, quotation approval, sales invoice appro
 |-----|------|--------------|
 | 4 | Finance pays UCR | UCR |
 | 6 | Finance pays Pre-Clearance Permits | Permit |
-| 11 | Finance Pays Entry Slip | Entry |
-| 13 | Finance pays Shipping Line Charges | Shipping Line |
+| 11 | Finance pays Shipping Line Charges | Shipping Line |
+| 13 | Finance Pays Entry Slip | Entry Slip |
 | 16 | Finance pays for Post-Clearance Permits | Permit |
 | 19 | Finance pays KPA Invoice | KPA |
+
+**LCL shipments** (Sea Import with Cargo Type LCL) run the same pairs at their own step numbers and pay **CFS charges** instead of KPA: Finance Pays CFS charges (17). See [Shipment Modes](shipment-modes.md).
 
 ### Standard payment subflow
 
@@ -38,7 +40,21 @@ Each finance task follows the same pattern:
 4. Application and finance Tasks auto-complete when their rules are satisfied → Project status may advance
 ```
 
-**Entry Slip:** Create Entry / Create transit entry (Application) completes only after Finance has verified **and paid** the invoice. Finance Pays Entry Slip completes after payment **and receipt verification**.
+**Entry Slip:** Create Entry / Create transit entry (Application) completes only after Finance has verified **and paid** the invoice. Finance Pays Entry Slip completes after payment, and after the **Entry Slip POP** when Settings still ask for it (below).
+
+**Step 3 is optional per payment kind.** The receipt is the one document CGM cannot produce itself - a client who pays his own entry slip often never sends the proof back, and the shipping line does not always issue a receipt for a payment CGM has already evidenced with its bank POP. **CGM Shipping Settings → Finance receipts** decides, per payment kind, whether a task waits for it:
+
+| Column | Meaning |
+|--------|---------|
+| **Payment Kind** | UCR, ENTRY_SLIP, Shipping Line, KPA or CFS. A kind with no row here waits for the receipt. |
+| **Receipt required when the company pays** | CGM paid, so CGM holds the receipt. On by default, except Shipping Line. |
+| **Receipt required when the client pays** | Off by default everywhere: the proof has to come from the client, and not all of them send one. |
+
+What this never changes: the **invoice** must still be attached and verified, the **payment** must still be recorded, and the **Shipping Line POP** (CGM's own bank advice) is still required. A receipt that *is* attached is still verified before the task closes over it.
+
+**The two documents no longer queue behind each other.** Documentation can attach the Shipping Line Receipt before the POP appears, and the other way round - each arrives when it arrives.
+
+**Naming the row.** Each row is named by its **Clearance Charge Item**, so renaming one in Desk is enough - migrate no longer puts the old name back beside it, and the messages on the task quote whatever the row is actually called. UCR's row reads **UCR POP** and Entry Slip's **Entry Slip POP**, because a proof of payment is what gets filed there.
 
 **Task Finance Line** child table holds line items (UCR, permits, entry slip, shipping line, KPA).
 
@@ -55,14 +71,56 @@ Each payment kind has its own round trip, and all of them are seeded as ERPNext 
 | | `CGM Task - Shipping Line Invoice to Finance` | Finance |
 | | `CGM Task - Permit Invoices to Finance` | Finance |
 | | `CGM Task - KPA Invoice to Finance` | Finance |
-| Paid, receipt needed | `CGM Task - UCR Receipt for Declarant`, and the Entry, Shipping Line, Permit and KPA equivalents | Whoever attaches the receipt |
-| Receipt attached, needs checking | `CGM Task - UCR Receipt Verify Finance`, and the same four equivalents | Finance |
+| | `CGM Task - CFS Invoice to Finance` (LCL) | Finance |
+| Paid, receipt needed | `CGM Task - UCR Receipt for Declarant`, and the Entry, Shipping Line, Permit, KPA and CFS equivalents | Whoever attaches the receipt |
+| Receipt attached, needs checking | `CGM Task - UCR Receipt Verify Finance`, and the same five equivalents | Finance |
 
 There is also a generic **`CGM Task - Finance Payment Action`**, and a **Your Turn** notification per department - see the [Operations Guide](operations.md).
 
 **Changing them:** the code fires a stable *event* (for example "UCR Invoice to Finance") and **CGM Shipping Settings** maps that event to whichever Notification you point it at. So you can rewrite the wording, change recipients, or swap in your own Notification without touching code - migrate only ever seeds the defaults that are missing, it does not overwrite what you have edited.
 
 ---
+
+## When the client pays a clearance fee
+
+Some fees are settled by the client rather than disbursed by CGM. The flow is the same for UCR, Entry Slip, Shipping Line, KPA, CFS and permit fees.
+
+1. **Verify the invoice** first, as usual.
+2. **Tick Client will pay.** On UCR, Entry Slip, Shipping Line, KPA and CFS tasks each invoice row has its own **Client will pay** tick, and Finance can use the **Client will pay - <invoice>** button under **Actions**. Permit finance tasks use the task-level **Client will pay** checkbox. There is then no company Journal Entry for that fee.
+3. **Share it.** **Share Invoice with Client** puts every verified, attached, not-yet-shared invoice on the customer portal and emails the customer's contacts and portal users. If everything is already shared the button reads **Notify Client Again**, which re-sends the email.
+   - It needs the invoice verified, and **Client will pay** ticked either on the task or on the individual invoice row. On a mixed task only the rows marked client-paid are shared, so an invoice the company has already paid is never sent to the client.
+   - The message tells you what happened, including **Could not email - add a customer contact or portal user** when the customer has no email on file.
+4. **The client pays and reports it.** On the portal they download the invoice, press **I have paid**, and attach the proof - a bank **POP** for shipping line charges, a **receipt** for everything else. Their row then shows **Payment reported** and **Receipt sent** / **POP sent**. See [Customer & Transporter Portal](portals.md).
+5. **Finance checks it.** The uploaded file lands on the receipt (or POP) row of the finance task, and the invoice row shows **Client Reported Paid** with the date. Verify the receipt as normal and the task completes.
+
+**If the client never sends the proof,** the task still completes: on the client-pays path the receipt is not required by default (**CGM Shipping Settings → Finance receipts**). Verifying the invoice and ticking **Client will pay** is enough - nobody has to chase the client to close a paid fee.
+
+**Worth knowing:** the client's actions do not email Finance. Watch the finance task, or the **Client Reported Paid** flag, rather than waiting for a notification.
+
+---
+
+## Sharing invoices with customers and transporters
+
+Two separate flags, both on submitted invoices:
+
+| Document | Flag / action | Who sees it |
+|----------|---------------|-------------|
+| **Sales Invoice** | **Share with Customer** button (or the checkbox of the same name) | The customer, at `/my-invoices`, with the status and outstanding amount. Credit notes cannot be shared. |
+| **Purchase Invoice** | **Share with Transporter** checkbox, shown only when the supplier is a transporter | The transporter, at `/transporter/invoices`, with what CGM still owes. Return invoices cannot be shared. |
+
+Both must be submitted first, and both record who shared them and when. Unticking the flag takes the document off the portal again.
+
+Quotations work differently: the portal lists every quotation raised to that customer, and **Shared with Client** is a workflow state that (with **Approved**) allows billing, not a portal switch.
+
+---
+
+Invoices raised against shipments:
+
+![The Sales Invoice list, showing customer, amount and status for each invoice](../images/sales-invoice-list.png)
+
+Each one carries the Project it bills (**1**), so clearance costs stay attached to the shipment:
+
+![A Sales Invoice linked to a shipment Project](../images/sales-invoice-form.png)
 
 ## Quotation approval
 
@@ -161,9 +219,29 @@ Cost categories are mapped in **CGM Shipping Settings → Finance Cost Category 
 
 ---
 
+## Amended invoices
+
+When a supplier reissues an invoice, tick **Amendment** on the new row rather than replacing the
+original. The **Item** column then reads **<invoice> (Amendment)** - for example *UCR Invoice
+(Amendment)* - so Finance can tell at a glance which invoice they are paying without opening the row.
+The original stays on the task as the audit trail.
+
+Each invoice row carries its own **Verified by Finance** tick, its own Journal Entry and its own
+**Client will pay**, so an amendment can be settled differently from the invoice it replaces.
+
+![A finance task's Invoices & Receipts table, with the amended invoice reading "UCR Invoice (Amendment)"](../images/finance-task-invoices.png)
+
+---
+
 ## Journal Entry from tasks
 
-Tasks may expose **Create Journal Entry** actions when finance lines are ready. The JE inherits the source task for ledger sync.
+**Make Payment** on a finance task creates the Journal Entry as a **draft**, so Finance can check it before it reaches the ledger. The JE carries its source task for ledger sync.
+
+**Submitting it:** an unsubmitted JE shows on the task under **Actions → Submit Journal Entry - <permit or charge>**, one entry per row, for users who may submit Journal Entries. Confirm, and the entry posts.
+
+**Only a submitted Journal Entry counts as payment.** A draft posts nothing to the ledger, so it does not settle the invoice and does not let the task complete. This applies to every finance task, not only permits. A task already marked Completed against a draft entry reopens the next time it is touched, which is the system telling you the money was never actually posted.
+
+Drafts left unsubmitted mean the payment is not in the ledger, and they hold their task open, so clear them as they arise.
 
 ---
 

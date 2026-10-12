@@ -6,22 +6,19 @@ from frappe.tests import UnitTestCase
 from cgm_shipping.cgm_worldwide_shipping.customizations.sea_clearance import (
 	derive_workflow_progress_from_tasks,
 )
-from cgm_shipping.cgm_worldwide_shipping.customizations.sea_transit_import_workflow import (
-	DEFAULT_SEA_TRANSIT_IMPORT_WORKFLOW_GATES,
-	DEFAULT_SEA_TRANSIT_IMPORT_WORKFLOW_STATES,
-	get_sea_transit_import_workflow_gates,
-	get_sea_transit_import_workflow_states,
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
+	SEA_TRANSIT_IMPORT_GATES,
 )
-
-
-def _gates() -> dict[str, dict]:
-	return get_sea_transit_import_workflow_gates()
+from cgm_shipping.cgm_worldwide_shipping.customizations.template_gates import (
+	gate_map,
+	gate_states,
+)
 
 
 class TestSeaTransitImportWorkflowProgress(UnitTestCase):
 	def setUp(self):
-		self.states = get_sea_transit_import_workflow_states()
-		self.gates = _gates()
+		self.states = gate_states(SEA_TRANSIT_IMPORT_GATES)
+		self.gates = gate_map(SEA_TRANSIT_IMPORT_GATES)
 
 	def test_chart_excludes_manifest_requested(self):
 		self.assertNotIn("Manifest Requested", self.states)
@@ -30,8 +27,8 @@ class TestSeaTransitImportWorkflowProgress(UnitTestCase):
 		self.assertNotIn("Final Docs Received", self.states)
 
 	def test_expected_state_count(self):
-		self.assertEqual(len(self.states), len(DEFAULT_SEA_TRANSIT_IMPORT_WORKFLOW_STATES))
-		self.assertEqual(len(self.gates), len(DEFAULT_SEA_TRANSIT_IMPORT_WORKFLOW_GATES))
+		self.assertEqual(len(self.states), len(SEA_TRANSIT_IMPORT_GATES) + 1)
+		self.assertEqual(len(self.gates), len(SEA_TRANSIT_IMPORT_GATES))
 
 	def test_line_paid_after_delivery_order(self):
 		tasks = [
