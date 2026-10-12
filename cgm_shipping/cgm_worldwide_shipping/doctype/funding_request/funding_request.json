@@ -316,5 +316,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 1
+ "track_changes": 1,
+ "default_print_format": "CGM Funding Request"
 }
