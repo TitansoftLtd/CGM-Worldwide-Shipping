@@ -220,12 +220,17 @@ extend_bootinfo = "cgm_shipping.boot.extend_bootinfo"
 permission_query_conditions = {
     "Task": ("cgm_shipping.cgm_worldwide_shipping.customizations.permissions"
             ".get_permission_query_conditions"),
+    "Material Request": ("cgm_shipping.cgm_worldwide_shipping.customizations.request_visibility"
+            ".material_request_query_conditions"),
 }
 
 has_permission = {
     "Task":
     ("cgm_shipping.cgm_worldwide_shipping.customizations.permissions.has_permission"
     ),
+    "Material Request":
+    ("cgm_shipping.cgm_worldwide_shipping.customizations.request_visibility"
+     ".material_request_has_permission"),
 }
 
 # Document class overrides
@@ -299,6 +304,7 @@ doc_events = {
 		],
 	},
 	"Journal Entry": {
+		"after_delete": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_after_delete",
 		"after_insert": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.finance_cost_ledger.sync_journal_entry_finance_cost",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_journal_entry_after_insert",
@@ -361,6 +367,9 @@ doc_events = {
 		"after_insert": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_order_after_insert"
 		],
+		"on_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_order_change",
+		"on_cancel": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_order_change",
+		"after_delete": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_order_change",
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.funding.on_purchase_document_validate",
 	},
 	"Request for Quotation": {
@@ -509,6 +518,9 @@ before_request = [
 	"cgm_shipping.cgm_worldwide_shipping.customizations.login_code_sms.ensure_login_code_sms",
 ]
 # after_request = ["cgm_shipping.utils.after_request"]
+after_request = [
+	"cgm_shipping.cgm_worldwide_shipping.customizations.wiki_docs.add_table_style_to_wiki_app",
+]
 
 # Job Events
 # ----------

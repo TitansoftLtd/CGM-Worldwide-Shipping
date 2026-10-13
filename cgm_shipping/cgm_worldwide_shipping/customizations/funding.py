@@ -27,6 +27,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	MR_WORKFLOW_STATE_UNFUNDED,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+	STEP_CREATE_PURCHASE_ORDER,
+	STEP_DISBURSE,
+	STEP_RECORD_PURCHASE_PAYMENT,
+	STEP_SUBMIT_JOURNAL_ENTRY,
+	STEP_SUBMIT_PURCHASE_ORDER,
 	get_funding_workflow_map,
 	get_material_request_state_names,
 	pick_workflow_state,
@@ -80,22 +85,50 @@ def mr_workflow_state_from_funding_request(
 
 
 def mr_row_workflow_state(
-	fr_workflow_state: str | None, approved_amount, funded_amount, workflow=None, mr_workflow=None
+	fr_workflow_state: str | None,
+	approved_amount,
+	funded_amount,
+	workflow=None,
+	mr_workflow=None,
+	*,
+	payment_started: bool = False,
 ) -> str:
-	"""Operational Expense completes per request when that request is paid, not via PO."""
+	"""The Material Request state for one row of a Funding Request.
+
+	The request's own state is the starting point, then the row decides: a batch
+	is "in progress" as soon as any row is, but a requester looking at their own
+	Material Request needs to know about *their* row.
+
+	* Paid in full: Disbursed, whatever the rest of the batch is doing.
+	* Its entry or order raised but not yet paid (`payment_started`):
+	  Disbursement in Progress, where the Material Request workflow has that state.
+	* Nothing raised for it yet: Approved, even if other rows have moved on.
+	"""
 	mr_states = get_material_request_state_names(mr_workflow)
 	state = mr_workflow_state_from_funding_request(
 		fr_workflow_state, workflow=workflow, mr_workflow=mr_workflow
 	)
 	approved = pick_workflow_state(mr_states, "Approved", default=MR_WORKFLOW_STATE_APPROVED)
 	disbursed = pick_workflow_state(mr_states, "Disbursed", default=MR_WORKFLOW_STATE_DISBURSED)
-	if (
-		state == approved
-		and flt(approved_amount) > 0
-		and flt(funded_amount) + 0.005 >= flt(approved_amount)
-	):
+	in_progress = get_funding_workflow_map(workflow).disbursement_state
+	in_progress = in_progress if in_progress and in_progress in mr_states else None
+	if state not in (approved, in_progress):
+		return state
+	if flt(approved_amount) > 0 and flt(funded_amount) + 0.005 >= flt(approved_amount):
 		return disbursed
-	return state
+	if in_progress and payment_started:
+		return in_progress
+	return approved
+
+
+def material_request_payment_started(funding_request: str, material_request: str) -> bool:
+	"""Is an entry or an order already raised for this request, paid or not?"""
+	mr_type = frappe.db.get_value("Material Request", material_request, "material_request_type")
+	if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
+		return _open_journal_entry_exists(funding_request, material_request)
+	if mr_type in PURCHASE_REQUEST_TYPES:
+		return _open_purchase_order_exists(material_request)
+	return False
 
 
 def released_mr_workflow_state(material_request: str, mr_workflow=None) -> str:
@@ -173,6 +206,7 @@ def funding_progress_state(
 	*,
 	disbursement_started: bool = False,
 	rows_fully_paid: bool = False,
+	approved_state: str | None = None,
 ) -> str | None:
 	"""Payment-driven Funding Request state.
 
@@ -196,9 +230,20 @@ def funding_progress_state(
 		return disbursed or current
 	if funded > 0 or disbursement_started:
 		return wf.disbursement_state or current
-	if wf.is_disbursed(current):
-		return wf.disbursement_state or current
+	# Nothing paid and nothing raised. A request that had moved on - its entry
+	# cancelled, its draft deleted - goes back to where approval left it, not to
+	# "in progress" with no document behind the words.
+	if wf.is_disbursed(current) or current == wf.disbursement_state:
+		return approved_state or wf.disbursement_state or current
 	return current
+
+
+def _approval_state(fr) -> str | None:
+	"""The state approval left this request in: partially approved, or approved."""
+	wf = get_funding_workflow_map()
+	if wf.partial_state and funding_batch_is_partially_approved(fr.material_requests):
+		return wf.partial_state
+	return next(iter(sorted(wf.approve_next_states)), None)
 
 
 def funding_request_disbursement_started(funding_request: str) -> bool:
@@ -484,7 +529,23 @@ def on_material_request_validate(doc, method=None) -> None:
 	_clear_warehouse_for_operational_expense(doc)
 	_set_default_funding_workflow_state(doc)
 	_validate_operational_expense_request(doc)
+	_keep_multicurrency_on(doc)
 	normalize_material_request_currencies(doc)
+
+
+def _keep_multicurrency_on(doc) -> None:
+	"""Operational Expense requests are always multicurrency.
+
+	The box used to be something a requester could untick. Doing so forced every
+	line back to the company currency, and a USD shipping line or KPA charge then
+	had to be converted by hand before it was typed - the thing multicurrency was
+	added to stop. The field is read-only on the form; this holds it for requests
+	saved any other way, and before the currencies are normalised below.
+	"""
+	if doc.get("material_request_type") != MATERIAL_REQUEST_TYPE_OPERATIONAL:
+		return
+	if doc.meta.has_field("custom_multicurrency"):
+		doc.custom_multicurrency = 1
 
 
 def on_material_request_on_submit(doc, method=None) -> None:
@@ -609,6 +670,16 @@ def on_journal_entry_on_cancel(doc, method=None) -> None:
 	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
 
 
+def on_journal_entry_after_delete(doc, method=None) -> None:
+	"""A deleted draft leaves its row with no entry again, which changes what is pending."""
+	sync_funding_request_paid_amounts(doc.get("custom_funding_request"))
+
+
+def on_purchase_order_change(doc, method=None) -> None:
+	"""Submitting, cancelling or deleting an order changes what the request waits on."""
+	sync_funding_request_from_purchase_order(doc)
+
+
 def on_purchase_order_after_insert(doc, method=None) -> None:
 	sync_funding_request_from_purchase_order(doc)
 
@@ -628,12 +699,15 @@ def sync_funding_request_from_purchase_order(doc) -> None:
 
 
 def sync_funding_requests_touched_by_payment_entry(doc) -> None:
-	"""Purchase Invoice payments only — Operational Expense is paid via Journal Entry."""
+	"""Payments against a Purchase Invoice or, as an advance, against the Purchase
+	Order itself. Operational Expense is paid via Journal Entry, not from here."""
 	seen = set()
 	for ref in doc.get("references") or []:
 		fr_name = None
 		if ref.reference_doctype == "Purchase Invoice" and ref.reference_name:
 			fr_name = _funding_request_from_purchase_invoice(ref.reference_name)
+		elif ref.reference_doctype == "Purchase Order" and ref.reference_name:
+			fr_name = _funding_request_from_purchase_order(ref.reference_name)
 		if fr_name and fr_name not in seen:
 			seen.add(fr_name)
 			sync_funding_request_paid_amounts(fr_name)
@@ -642,6 +716,11 @@ def sync_funding_requests_touched_by_payment_entry(doc) -> None:
 def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 	"""Funded Amount is cash actually paid, not draft Journal Entries or POs."""
 	if not funding_request or not frappe.db.exists("Funding Request", funding_request):
+		return
+	# Cancelling a request cancels its own entries and orders. Each of those calls
+	# back here, and re-saving the request from a fresh copy mid-cancel would fight
+	# the cancel that is already writing it.
+	if frappe.flags.get("cgm_funding_cancelling") == funding_request:
 		return
 	fr = frappe.get_doc("Funding Request", funding_request)
 	changed = False
@@ -672,10 +751,9 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 		disbursement_started=funding_request_disbursement_started(funding_request),
 		rows_fully_paid=bool(approved_rows)
 		and all(flt(row.approved_amount) - flt(row.funded_amount) <= 0.005 for row in approved_rows),
+		approved_state=_approval_state(fr),
 	)
 	state_changed = next_state != fr.workflow_state
-	if not changed and not state_changed:
-		return
 	if changed:
 		fr.flags.ignore_validate_update_after_submit = True
 		fr.save(ignore_permissions=True)
@@ -690,7 +768,237 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 			update_modified=False,
 		)
 		fr.workflow_state = next_state
+	# Every time, not only when an amount moved: a draft entry or an order being
+	# raised, submitted or deleted changes what is pending without paying anything.
+	store_pending_step(fr)
+	# Likewise every time: a Material Request now reads "in progress" from the
+	# moment its entry or order is raised, which moves no amount and no state.
 	fr.sync_material_request_links()
+
+
+def funding_payment_documents(funding_request: str) -> list[dict]:
+	"""The entries and orders tied to this request that are still live.
+
+	Only documents carrying this request's own link. A Purchase Order raised
+	straight from the Material Request and never adopted by this request belongs
+	to procurement, not to this request, and is left out.
+	"""
+	documents = []
+	if frappe.db.has_column("Journal Entry", "custom_funding_request"):
+		for je in frappe.get_all(
+			"Journal Entry",
+			filters={"custom_funding_request": funding_request, "docstatus": ["<", 2]},
+			fields=["name", "docstatus", "total_debit", "custom_material_request"],
+			order_by="creation asc",
+		):
+			documents.append(
+				{
+					"doctype": "Journal Entry",
+					"name": je.name,
+					"docstatus": cint(je.docstatus),
+					"material_request": je.get("custom_material_request"),
+					"amount": flt(je.total_debit),
+				}
+			)
+	if frappe.get_meta("Purchase Order").has_field("custom_funding_request"):
+		for po in frappe.get_all(
+			"Purchase Order",
+			filters={"custom_funding_request": funding_request, "docstatus": ["<", 2]},
+			fields=["name", "docstatus", "base_grand_total"],
+			order_by="creation asc",
+		):
+			requests = frappe.get_all(
+				"Purchase Order Item",
+				filters={"parent": po.name, "material_request": ["is", "set"]},
+				pluck="material_request",
+				distinct=True,
+			)
+			documents.append(
+				{
+					"doctype": "Purchase Order",
+					"name": po.name,
+					"docstatus": cint(po.docstatus),
+					"material_request": ", ".join(requests),
+					"amount": flt(po.base_grand_total),
+				}
+			)
+	return documents
+
+
+@frappe.whitelist()
+def get_funding_cancel_impact(funding_request: str) -> dict:
+	"""What cancelling this request will delete and cancel, for the confirmation."""
+	frappe.has_permission("Funding Request", "read", doc=funding_request, throw=True)
+	fr = frappe.get_doc("Funding Request", funding_request)
+	documents = funding_payment_documents(fr.name)
+	return {
+		"delete": [doc for doc in documents if doc["docstatus"] == 0],
+		"cancel": [doc for doc in documents if doc["docstatus"] == 1],
+		"material_requests": list(
+			dict.fromkeys(row.material_request for row in fr.material_requests if row.material_request)
+		),
+		"currency": company_currency(fr.company),
+	}
+
+
+def cancel_funding_payment_documents(fr) -> dict:
+	"""Take a request's entries and orders with it when the request is cancelled.
+
+	A cancelled Funding Request used to be impossible once anything was posted -
+	Frappe refuses to cancel a document that submitted ones point at - and when it
+	was possible it left its drafts behind, still claiming the Material Request.
+
+	* A **draft** entry or order is deleted. It never took effect.
+	* A **submitted** one is cancelled, which reverses its ledger postings and, for
+	  an order, hands the ordered quantity back to the Material Request.
+	* Either way the Material Request is let go: a cancelled document keeps its
+	  link to this request, as the record of what was undone, but no longer points
+	  at the Material Request, which is then free to be funded again.
+
+	All or nothing. An entry in a closed period, or an order that already has a
+	receipt or an invoice, cannot be cancelled; the error stops the whole cancel
+	and nothing is changed. The person cancelling needs permission to cancel the
+	submitted documents themselves.
+	"""
+	documents = funding_payment_documents(fr.name)
+	deleted, cancelled = [], []
+	for doc in documents:
+		if doc["docstatus"] != 1:
+			continue
+		frappe.has_permission(doc["doctype"], "cancel", doc=doc["name"], throw=True)
+		# ERPNext will cancel an order that has been paid, and leaves the payment
+		# standing as an unallocated advance. A Journal Entry is reversed by its own
+		# cancellation; a Payment Entry is not, so the money would be out of the
+		# bank with no request and no order to show for it. That has to be dealt
+		# with deliberately, on the payment, before the request can go.
+		if doc["doctype"] == "Purchase Order":
+			payments = _payments_against_purchase_order(doc["name"])
+			if payments:
+				frappe.throw(
+					_(
+						"{0} cannot be cancelled: Purchase Order {1} has been paid ({2}). "
+						"Cancel that payment first, then cancel the request."
+					).format(frappe.bold(fr.name), frappe.bold(doc["name"]), ", ".join(payments)),
+					title=_("Payment already made"),
+				)
+
+	frappe.flags.cgm_funding_cancelling = fr.name
+	try:
+		for doc in documents:
+			if doc["docstatus"] == 0:
+				frappe.delete_doc(doc["doctype"], doc["name"], ignore_permissions=True, force=True)
+				deleted.append(doc["name"])
+				continue
+			document = frappe.get_doc(doc["doctype"], doc["name"])
+			document.cancel()
+			_unlink_from_material_request(document)
+			cancelled.append(doc["name"])
+	finally:
+		frappe.flags.cgm_funding_cancelling = None
+	return {"deleted": deleted, "cancelled": cancelled}
+
+
+def _payments_against_purchase_order(purchase_order: str) -> list[str]:
+	"""Submitted Payment Entries against this order or against invoices raised from it."""
+	rows = frappe.db.sql(
+		"""
+		select distinct pe.name
+		from `tabPayment Entry Reference` per
+		inner join `tabPayment Entry` pe on pe.name = per.parent
+		where pe.docstatus = 1 and per.allocated_amount > 0
+			and (
+				(per.reference_doctype = 'Purchase Order' and per.reference_name = %(po)s)
+				or (
+					per.reference_doctype = 'Purchase Invoice'
+					and per.reference_name in (
+						select pii.parent from `tabPurchase Invoice Item` pii
+						where pii.purchase_order = %(po)s and pii.docstatus = 1
+					)
+				)
+			)
+		order by pe.name
+		""",
+		{"po": purchase_order},
+	)
+	return [row[0] for row in rows]
+
+
+def _unlink_from_material_request(document) -> None:
+	"""Stop a cancelled entry or order pointing at its Material Request."""
+	if document.doctype == "Journal Entry":
+		if document.meta.has_field("custom_material_request") and document.get("custom_material_request"):
+			frappe.db.set_value(
+				"Journal Entry", document.name, "custom_material_request", None, update_modified=False
+			)
+		return
+	if document.doctype == "Purchase Order":
+		for item in document.get("items") or []:
+			if item.get("material_request"):
+				frappe.db.set_value(
+					"Purchase Order Item",
+					item.name,
+					{"material_request": None, "material_request_item": None},
+					update_modified=False,
+				)
+
+
+def funding_pending_step(fr) -> str:
+	"""What this request is waiting on, as the name of the action that does it.
+
+	Read off the rows by what each one is for. An Operational Expense row is paid
+	by Journal Entry and a Purchase row through its Purchase Order, so the same
+	"unpaid" means a different next step depending on the row.
+
+	The earliest unfinished step across the rows wins: a document still to be
+	raised comes before one waiting to be submitted, which comes before one
+	waiting to be paid. Empty when nothing is pending.
+	"""
+	if cint_docstatus(fr.docstatus) != 1 or not funding_is_approved(fr.workflow_state, fr.docstatus):
+		return ""
+	if get_funding_workflow_map().is_fully_complete(fr.workflow_state):
+		return ""
+	needs_entry = needs_order = draft_entry = draft_order = unpaid_order = False
+	for row in fr.material_requests:
+		if not row.material_request or getattr(row, "decision", None) != FR_ROW_DECISION_APPROVED:
+			continue
+		if flt(row.approved_amount) - flt(row.funded_amount) <= 0.005:
+			continue
+		mr_type = frappe.db.get_value("Material Request", row.material_request, "material_request_type")
+		if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
+			if _draft_journal_entry(fr.name, row.material_request, row.get("currency")):
+				draft_entry = True
+			else:
+				needs_entry = True
+		elif mr_type in PURCHASE_REQUEST_TYPES:
+			order = _open_purchase_order_name(row.material_request)
+			if not order:
+				needs_order = True
+			elif cint(frappe.db.get_value("Purchase Order", order, "docstatus")) == 0:
+				draft_order = True
+			else:
+				unpaid_order = True
+	if needs_entry:
+		return STEP_DISBURSE
+	if needs_order:
+		return STEP_CREATE_PURCHASE_ORDER
+	if draft_entry:
+		return STEP_SUBMIT_JOURNAL_ENTRY
+	if draft_order:
+		return STEP_SUBMIT_PURCHASE_ORDER
+	if unpaid_order:
+		return STEP_RECORD_PURCHASE_PAYMENT
+	return ""
+
+
+def store_pending_step(fr) -> str:
+	"""Write the pending step on the request when it has changed. Returns it."""
+	if not fr.meta.has_field("pending_step"):
+		return ""
+	step = funding_pending_step(fr)
+	if (frappe.db.get_value("Funding Request", fr.name, "pending_step") or "") != step:
+		frappe.db.set_value("Funding Request", fr.name, "pending_step", step, update_modified=False)
+	fr.pending_step = step
+	return step
 
 
 def paid_amount_for_material_request(
@@ -776,7 +1084,8 @@ def _paid_against_purchase_orders(material_request: str) -> float:
 	)
 	if not purchase_orders:
 		return 0.0
-	paid = frappe.db.sql(
+	orders = list(set(purchase_orders))
+	against_invoices = frappe.db.sql(
 		"""
 		select coalesce(sum(allocated_amount), 0)
 		from (
@@ -790,9 +1099,44 @@ def _paid_against_purchase_orders(material_request: str) -> float:
 				and pii.purchase_order in %(purchase_orders)s
 		) paid_rows
 		""",
-		{"purchase_orders": list(set(purchase_orders))},
+		{"purchase_orders": orders},
 	)
-	return flt(paid[0][0] if paid else 0)
+	# A supplier is often paid up front, against the order, before any invoice
+	# exists. That payment was not counted, so a request whose order had been
+	# paid in full still read as unpaid. When the invoice arrives ERPNext moves
+	# the allocation from the order's row to the invoice's, so adding the two
+	# never counts the same money twice.
+	against_orders = frappe.db.sql(
+		"""
+		select coalesce(sum(per.allocated_amount), 0)
+		from `tabPayment Entry Reference` per
+		inner join `tabPayment Entry` pe on pe.name = per.parent
+		where pe.docstatus = 1
+			and per.reference_doctype = 'Purchase Order'
+			and per.reference_name in %(purchase_orders)s
+		""",
+		{"purchase_orders": orders},
+	)
+	return flt(against_invoices[0][0] if against_invoices else 0) + flt(
+		against_orders[0][0] if against_orders else 0
+	)
+
+
+def _funding_request_from_purchase_order(purchase_order: str) -> str | None:
+	if frappe.get_meta("Purchase Order").has_field("custom_funding_request"):
+		linked = frappe.db.get_value("Purchase Order", purchase_order, "custom_funding_request")
+		if linked:
+			return linked
+	for mr_name in frappe.get_all(
+		"Purchase Order Item",
+		filters={"parent": purchase_order, "material_request": ["is", "set"]},
+		pluck="material_request",
+		distinct=True,
+	):
+		fr_name = frappe.db.get_value("Material Request", mr_name, "custom_funding_request")
+		if fr_name:
+			return fr_name
+	return None
 
 
 def _funding_request_from_purchase_invoice(purchase_invoice: str) -> str | None:
@@ -1063,50 +1407,68 @@ def set_disbursement_accounts(funding_request: str, bank_accounts=None) -> None:
 
 
 @frappe.whitelist()
-def get_last_disbursement(funding_request: str) -> list[str]:
-	"""The Journal Entries this user's last Disburse posted, read once."""
+def get_last_disbursement(funding_request: str) -> dict:
+	"""What this user's last Disburse created, read once."""
 	frappe.has_permission("Funding Request", "read", doc=funding_request, throw=True)
 	key = _disbursement_cache_key("posted", funding_request)
-	entries = frappe.cache.get_value(key) or []
+	created = frappe.cache.get_value(key) or {}
 	frappe.cache.delete_value(key)
-	return entries
+	return {
+		"journal_entries": created.get("journal_entries") or [],
+		"purchase_orders": created.get("purchase_orders") or [],
+		"existing_purchase_orders": created.get("existing_purchase_orders") or [],
+	}
 
 
-def disburse_on_workflow_action(funding_request: str) -> list[str]:
+def disburse_on_workflow_action(funding_request: str) -> dict:
 	"""Run the payment for a request that has just been moved to Disbursed."""
 	key = _disbursement_cache_key("accounts", funding_request)
 	chosen = frappe.cache.get_value(key) or {}
 	frappe.cache.delete_value(key)
 	result = disburse_funding_request(funding_request, chosen)
 	frappe.cache.set_value(
-		_disbursement_cache_key("posted", funding_request), result["journal_entries"], expires_in_sec=600
+		_disbursement_cache_key("posted", funding_request),
+		{
+			"journal_entries": result["journal_entries"],
+			"purchase_orders": result["purchase_orders"],
+			"existing_purchase_orders": result.get("existing_purchase_orders") or [],
+		},
+		expires_in_sec=600,
 	)
-	return result["journal_entries"]
+	return result
 
 
 def disburse_funding_request(funding_request: str, bank_accounts=None) -> dict:
-	"""Pay every approved operational-expense row still outstanding.
+	"""Move every approved row still outstanding to its payment document.
 
 	Called by the Disburse workflow action, never directly from the browser: the
 	workflow decides who may disburse and from which state.
 
-	Disbursing is the payment: one Journal Entry per row is created and
-	submitted here, so the request moves to Disbursed without a second visit to
-	each entry. A draft raised earlier for a row is submitted as it stands, not
-	duplicated.
+	The two kinds of row are paid differently, and Disburse does the right thing
+	for each rather than asking Finance to know which button goes with which row:
 
-	All or nothing. If any entry cannot be posted the error is raised and the
-	request is left exactly as it was, with no half-paid batch to untangle.
+	* **Operational Expense** is paid here. One Journal Entry per row is created
+	  and submitted. A draft raised earlier for a row is submitted as it stands,
+	  not duplicated.
+	* **Purchase / Subcontracting** gets a draft Purchase Order. The money goes
+	  out later, against the supplier's invoice, so the request stays in
+	  Disbursement in Progress until that payment is recorded.
+
+	All or nothing. If any document cannot be created or posted the error is
+	raised and the request is left exactly as it was.
 	"""
-	frappe.has_permission("Journal Entry", "create", throw=True)
-	frappe.has_permission("Journal Entry", "submit", throw=True)
 	fr = frappe.get_doc("Funding Request", funding_request)
 	_assert_funding_request_approved(fr)
 	chosen = frappe.parse_json(bank_accounts) if bank_accounts else {}
 	if not isinstance(chosen, dict):
 		chosen = {}
+
+	operational = _outstanding_rows(fr, MATERIAL_REQUEST_TYPE_OPERATIONAL)
 	posted = []
-	for row in _outstanding_rows(fr, MATERIAL_REQUEST_TYPE_OPERATIONAL):
+	if operational:
+		frappe.has_permission("Journal Entry", "create", throw=True)
+		frappe.has_permission("Journal Entry", "submit", throw=True)
+	for row in operational:
 		draft = _draft_journal_entry(fr.name, row.material_request, row.get("currency"))
 		if draft:
 			je = frappe.get_doc("Journal Entry", draft)
@@ -1115,33 +1477,71 @@ def disburse_funding_request(funding_request: str, bank_accounts=None) -> dict:
 			je.insert(ignore_permissions=True)
 		je.submit()
 		posted.append(je.name)
-	if not posted:
-		frappe.throw(
-			_(
-				"Nothing to disburse on {0}: no approved Operational Expense row is unpaid. "
-				"Purchase rows are paid through their Purchase Order."
-			).format(frappe.bold(fr.name))
-		)
+
+	orders, open_orders = [], []
+	if _outstanding_rows(fr, None, purchase=True):
+		frappe.has_permission("Purchase Order", "create", throw=True)
+		orders, open_orders = _raise_purchase_orders(fr)
+
+	# An order that already exists is still progress: it is tied to this request
+	# and the request moves on, so Finance is taken to the order rather than told
+	# there is nothing to do. Only a request with no unpaid row at all is refused.
+	if not posted and not orders and not open_orders:
+		frappe.throw(_("Nothing left to disburse on {0}: every approved row is paid.").format(frappe.bold(fr.name)))
 	sync_funding_request_paid_amounts(fr.name)
 	return {
 		"journal_entries": posted,
+		"purchase_orders": orders,
+		"existing_purchase_orders": open_orders,
 		"workflow_state": frappe.db.get_value("Funding Request", fr.name, "workflow_state"),
 	}
 
 
-@frappe.whitelist()
-def make_purchase_orders(funding_request: str) -> list[str]:
-	"""Create one draft Purchase Order per remaining purchase row."""
-	frappe.has_permission("Purchase Order", "create", throw=True)
-	fr = frappe.get_doc("Funding Request", funding_request)
-	_assert_funding_request_approved(fr)
+def _adopt_purchase_order(purchase_order: str, funding_request: str) -> None:
+	"""Tie an order raised before the Funding Request existed to that request.
+
+	A Purchase Order made straight from the Material Request carries no link to
+	the Funding Request that later funds it. Without the link the request's
+	Connections show no order, and Finance has no way to get from the request to
+	the document the payment now depends on.
+	"""
+	if not frappe.get_meta("Purchase Order").has_field("custom_funding_request"):
+		return
+	if frappe.db.get_value("Purchase Order", purchase_order, "custom_funding_request"):
+		return
+	frappe.db.set_value(
+		"Purchase Order", purchase_order, "custom_funding_request", funding_request, update_modified=False
+	)
+
+
+def adopt_open_purchase_orders(fr) -> list[str]:
+	"""Tie orders that already exist for this request's approved Purchase rows to it.
+
+	Purchase does not wait on funding, so an order is often raised from the
+	Material Request before the Funding Request exists. Once the request is
+	approved that order is the request's payment document, and the request has to
+	know about it: otherwise it sits in Approved offering to create an order that
+	is already there, and cancelling the request leaves the order behind.
+	"""
+	adopted = []
+	for row in _outstanding_rows(fr, None, purchase=True):
+		order = _open_purchase_order_name(row.material_request)
+		if order and order not in adopted:
+			_adopt_purchase_order(order, fr.name)
+			adopted.append(order)
+	return adopted
+
+
+def _raise_purchase_orders(fr) -> tuple[list[str], list[str]]:
+	"""Draft Purchase Orders for purchase rows that have none. Returns (created, already open)."""
 	created = []
-	skipped = []
+	existing = []
 	for row in _outstanding_rows(fr, None, purchase=True):
 		if _open_purchase_order_exists(row.material_request):
 			po_name = _open_purchase_order_name(row.material_request)
-			if po_name:
-				skipped.append(po_name)
+			if po_name and po_name not in existing:
+				existing.append(po_name)
+				_adopt_purchase_order(po_name, fr.name)
 			continue
 		po = make_purchase_order(row.material_request)
 		if isinstance(po, dict):
@@ -1151,6 +1551,16 @@ def make_purchase_orders(funding_request: str) -> list[str]:
 			po.custom_funding_request = fr.name
 		po.insert(ignore_permissions=True, ignore_mandatory=True)
 		created.append(po.name)
+	return created, existing
+
+
+@frappe.whitelist()
+def make_purchase_orders(funding_request: str) -> list[str]:
+	"""Create one draft Purchase Order per remaining purchase row."""
+	frappe.has_permission("Purchase Order", "create", throw=True)
+	fr = frappe.get_doc("Funding Request", funding_request)
+	_assert_funding_request_approved(fr)
+	created, skipped = _raise_purchase_orders(fr)
 	if not created:
 		if skipped:
 			frappe.throw(
@@ -1558,8 +1968,10 @@ def get_funding_pay_options(funding_request: str) -> dict:
 			payload["draft_entry"] = _draft_journal_entry(fr.name, row.material_request, row.get("currency"))
 			operational.append(payload)
 		elif mr_type in PURCHASE_REQUEST_TYPES:
-			if not _open_purchase_order_exists(row.material_request):
-				purchase.append(payload)
+			# Offered even when its order already exists: Disburse then ties that
+			# order to this request and moves the request on.
+			payload["existing_order"] = _open_purchase_order_name(row.material_request)
+			purchase.append(payload)
 	# Finance picks one bank account per currency about to be paid, so the dialog
 	# needs to know which currencies are actually on the request.
 	currencies = []

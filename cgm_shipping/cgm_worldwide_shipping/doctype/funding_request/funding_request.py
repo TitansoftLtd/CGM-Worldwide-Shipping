@@ -69,6 +69,15 @@ class FundingRequest(Document):
 		self._validate_funding_complete()
 		self._block_self_approval()
 		self._stamp_approval()
+		self._set_pending_step()
+
+	def _set_pending_step(self) -> None:
+		"""Keep the pending step in step with the rows on every save."""
+		if not self.meta.has_field("pending_step"):
+			return
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import funding_pending_step
+
+		self.pending_step = funding_pending_step(self)
 
 	def on_update(self):
 		self._apply_partial_approval_state()
@@ -76,6 +85,24 @@ class FundingRequest(Document):
 
 	def on_submit(self):
 		self.sync_material_request_links()
+		self._take_up_existing_orders()
+
+	def _take_up_existing_orders(self) -> None:
+		"""On approval, adopt Purchase Orders raised before this request existed."""
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+			adopt_open_purchase_orders,
+			funding_is_approved,
+			sync_funding_request_paid_amounts,
+		)
+
+		if not funding_is_approved(self.workflow_state, self.docstatus):
+			return
+		if not adopt_open_purchase_orders(self):
+			return
+		# An order under way moves the request on; pick the new state up here so
+		# the form does not show Approved over a request that is already in progress.
+		sync_funding_request_paid_amounts(self.name)
+		self.reload()
 
 	def on_update_after_submit(self):
 		self._apply_partial_approval_state()
@@ -120,6 +147,29 @@ class FundingRequest(Document):
 		to fund it short of editing the record by hand.
 		"""
 		self.sync_material_request_links(release=True)
+
+	def before_cancel(self):
+		"""Take the payment documents with it. Before Frappe's link check, which
+		would otherwise refuse the cancel because of the very entries this removes."""
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+			cancel_funding_payment_documents,
+			paid_amount_for_material_request,
+		)
+
+		cancel_funding_payment_documents(self)
+		# Nothing is paid any more; the cancelled request should say so.
+		for row in self.material_requests:
+			if not row.material_request:
+				continue
+			paid, paid_base = paid_amount_for_material_request(
+				self.name, row.material_request, row.get("currency")
+			)
+			row.funded_amount = paid
+			if row.meta.has_field("base_funded_amount"):
+				row.base_funded_amount = paid_base
+		self.calculate_totals()
+		if self.meta.has_field("pending_step"):
+			self.pending_step = ""
 
 	def on_cancel(self):
 		cancel_state = get_funding_workflow_map().cancel_state
@@ -595,7 +645,16 @@ class FundingRequest(Document):
 		if row.decision == FR_ROW_DECISION_REJECTED:
 			rejected = next(iter(get_funding_workflow_map().reject_next_states), "Rejected")
 			return mr_workflow_state_from_funding_request(rejected)
-		return mr_row_workflow_state(self.workflow_state, row.approved_amount, row.funded_amount)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+			material_request_payment_started,
+		)
+
+		return mr_row_workflow_state(
+			self.workflow_state,
+			row.approved_amount,
+			row.funded_amount,
+			payment_started=material_request_payment_started(self.name, row.material_request),
+		)
 
 	def _release_material_requests(self) -> None:
 		for row in self.material_requests:

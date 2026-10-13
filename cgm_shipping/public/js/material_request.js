@@ -416,10 +416,12 @@ function open_funding_request(frm) {
 			if (!r.message) {
 				return;
 			}
-			const values = r.message;
-			delete values.name;
-			delete values.naming_series;
-			frappe.new_doc("Funding Request", values);
+			// Sync the unsaved document, rows included, then open it - the way every
+			// "make from" action in ERPNext does. Passing it to frappe.new_doc copied
+			// the rows in as raw data the grid does not know, and the table opened
+			// with an empty first row beside the real one.
+			const doc = frappe.model.sync(r.message)[0];
+			frappe.set_route("Form", doc.doctype, doc.name);
 		},
 	});
 }

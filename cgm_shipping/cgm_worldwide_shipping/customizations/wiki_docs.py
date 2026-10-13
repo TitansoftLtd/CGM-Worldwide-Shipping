@@ -71,6 +71,39 @@ WIKI_STYLE = """<style>
 </style>"""
 
 
+# The wiki has a second view: the editor app at /wiki-app, where the same pages
+# are opened to be read or edited. It ships its own stylesheet with the same
+# fixed table layout, and it has no setting to add styles to, so the style is
+# added to the page as it is served.
+WIKI_APP_STYLE_MARK = "cgm-shipping:wiki-app"
+WIKI_APP_STYLE = (
+	f"<style data-source=\"{WIKI_APP_STYLE_MARK}\">"
+	".tiptap table, .wiki-rendered table, .prose table { table-layout: auto !important; width: 100%; }"
+	".tiptap th, .tiptap td, .wiki-rendered th, .wiki-rendered td { vertical-align: top; }"
+	".tiptap th, .wiki-rendered th { white-space: nowrap; }"
+	"</style>"
+)
+
+
+def add_table_style_to_wiki_app(response=None, request=None) -> None:
+	"""`after_request` hook: size table columns to their content in the wiki editor app.
+
+	Only the wiki app's own HTML page is touched. Anything else returns at the
+	first check, and a failure here must never cost a user their page.
+	"""
+	try:
+		if not request or not response or not (request.path or "").startswith("/wiki-app"):
+			return
+		if "text/html" not in (response.mimetype or ""):
+			return
+		html = response.get_data(as_text=True)
+		if WIKI_APP_STYLE_MARK in html or "</head>" not in html:
+			return
+		response.set_data(html.replace("</head>", WIKI_APP_STYLE + "</head>", 1))
+	except Exception:
+		frappe.log_error(title="CGM wiki app table style", message=frappe.get_traceback())
+
+
 def _ensure_wiki_table_style() -> None:
 	"""Keep this app's style block in Wiki Settings > Head HTML up to date."""
 	if not frappe.db.exists("DocType", "Wiki Settings"):

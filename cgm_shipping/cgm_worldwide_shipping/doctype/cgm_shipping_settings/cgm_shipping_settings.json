@@ -49,6 +49,7 @@
   "custom_declaration_roles",
   "custom_transport_roles",
   "custom_field_operations_roles",
+  "material_request_all_roles",
   "section_document_responsibilities",
   "custom_document_responsibilities",
   "section_email_templates",
@@ -188,6 +189,13 @@
    "fieldname": "custom_field_operations_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Field Operations roles",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "Roles that see every Material Request. Everyone else sees only the requests that name them as requester, plus any they created. Leave empty to use the defaults: Finance User, Finance Manager, Funding Approver, Accounts Manager, Accounts User, Operations Manager and Director.",
+   "fieldname": "material_request_all_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "See all Material Requests",
    "options": "CGM Role Item"
   },
   {
@@ -523,7 +531,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-14 10:00:00",
+ "modified": "2026-10-14 14:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
