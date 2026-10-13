@@ -436,7 +436,7 @@
   },
   {
    "default": "0",
-   "description": "When two-factor login is on, the code is emailed. Tick this to text the same code to the user's mobile number as well. A user with no mobile number still gets the email. Each login then costs one SMS.",
+   "description": "When two-factor login is on, the code is emailed. Tick this to text the same code to the user's mobile number as well. A user with no mobile number still gets the email.",
    "fieldname": "send_login_code_by_sms",
    "fieldtype": "Check",
    "label": "Also send the login code by SMS"

@@ -103,8 +103,7 @@ code, so whichever arrives first works.
 |------|-----------|------|
 | A user logs in and is asked for the verification code | That user | Your verification code is *code* |
 
-A user with no mobile number still gets the email and can log in as before. Every
-login costs one SMS.
+A user with no mobile number still gets the email and can log in as before.
 
 ---
 
