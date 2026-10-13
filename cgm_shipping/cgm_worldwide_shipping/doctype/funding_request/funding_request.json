@@ -14,6 +14,7 @@
   "posting_date",
   "column_break_head",
   "workflow_state",
+  "pending_step",
   "submitted_by",
   "approved_by",
   "approval_date",
@@ -73,6 +74,15 @@
    "label": "Workflow State",
    "no_copy": 1,
    "options": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "What this request is waiting on. Set by the system; the action in the Actions menu is named after it.",
+   "fieldname": "pending_step",
+   "fieldtype": "Data",
+   "label": "Next Step",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -209,7 +219,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-13 00:00:00",
+ "modified": "2026-10-14 15:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Funding Request",

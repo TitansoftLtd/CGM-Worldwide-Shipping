@@ -66,8 +66,9 @@ Clearance invoices on shipment Tasks use [Finance](finance.md) task payments - n
 Material Request (Submit)
   → Funding Request (pull / Get Material Requests)
     → Approver sets Approved / Rejected amounts per line
-      → Operational Expense → Disburse (creates and submits the Journal Entries)
-      → Purchase / Subcontracting → Create Purchase Order (only after approved)
+      → Disburse
+          Operational Expense → Journal Entries created and submitted
+          Purchase / Subcontracting → draft Purchase Orders created
 ```
 
 1. Create and **Submit** each Material Request with the correct type, items, amounts, and Project where relevant.
@@ -75,8 +76,7 @@ Material Request (Submit)
 3. Submit the Funding Request into the site’s approval workflow (Pending Approval → Approved / Rejected, etc.).
 4. Approvers set **approved** (or rejected) amounts per request line - not only a header yes/no.
 5. After approval:
-   - **Operational Expense:** **Actions > Disburse** on the Funding Request (uses Default Operational Expense Account when configured). See [Disbursing](#disbursing).
-   - **Purchase / Subcontracting:** create Purchase Orders for remaining funded rows.
+   - **Actions > Disburse** on the Funding Request. Operational Expense rows are paid by Journal Entry (using the Default Operational Expense Account when configured); Purchase and Subcontracting rows get a Purchase Order. See [Disbursing](#disbursing).
 
 :::tip
 Use **Funding Request Report** and **Material Request Funding** reports to see what is unfunded, on a request, or disbursed.
@@ -183,34 +183,120 @@ matches it, and the Material Request is only marked Disbursed once both are.
 
 ### Disbursing
 
-**Actions > Disburse** is the payment. It appears on an approved Funding Request
-while any Operational Expense row is still unpaid.
+The first entry in **Actions** on an approved Funding Request is the payment step.
+It is a standard workflow action, and it is named after what the request is
+waiting on, so the menu always says what is pending:
 
-1. Choose the account each payment leaves, one per currency.
-2. Read the confirmation. It lists every Journal Entry about to be posted, with its
-   amount and account, and nothing has been created yet.
-3. Confirm. One Journal Entry per row is created **and submitted**, and the request
-   moves to **Disbursed**.
-4. **View Journal Entry** on the message that follows opens what was posted.
+| The action reads | When | What it does |
+|------------------|------|--------------|
+| **Disburse** | An Operational Expense row has no Journal Entry yet | Creates and submits the entries (and raises any Purchase Orders still needed) |
+| **Create Purchase Order** | Only Purchase rows still need their order | Creates the draft orders |
+| **Submit Journal Entry** | A draft Journal Entry is waiting | Submits it |
+| **Submit Purchase Order** | The order exists but is still a draft | Opens the Purchase Order |
+| **Record Purchase Payment** | The order is submitted but not yet paid | Opens the Purchase Order |
+
+The same wording is shown on the request in **Next Step**. The last two are done on
+the Purchase Order itself, so the action takes you there and leaves the request as
+it is.
+
+Whichever of the first three it reads, it moves every approved row still
+outstanding to its payment document:
+
+| Row type | What Disburse does | When the row counts as paid |
+|----------|--------------------|-----------------------------|
+| **Operational Expense** | Creates a Journal Entry and submits it | Straight away |
+| **Purchase / Subcontracting** | Creates a draft Purchase Order | When the supplier's invoice is paid |
+
+1. Choose the account each payment leaves, one per currency. This step is skipped
+   when the request has no Operational Expense row.
+2. Read the confirmation. It lists every Journal Entry and Purchase Order about to
+   be created, and nothing exists yet. The request and document numbers are links
+   that open in a new tab.
+3. Confirm.
+4. The message that follows lists what was created, with a button to open it.
+
+A request with only Operational Expense rows ends in **Disbursed**. One with
+Purchase rows goes to **Disbursement in Progress** and moves to Disbursed when the
+Purchase Orders are paid.
 
 Things to know:
 
 - **Submitting is final.** A submitted Journal Entry is in the ledger. To reverse a
   payment, cancel the entry; the request then goes back to showing it unpaid.
-- **It is all or nothing.** If any entry cannot be posted, none are, and the request
-  is left as it was.
+- **It is all or nothing.** If any document cannot be created or posted, none are,
+  and the request is left as it was.
 - **A draft raised earlier is posted, not duplicated.** A row that already has a
   draft Journal Entry is listed with that draft, and Disburse submits it as it
   stands.
-- **You need permission to submit Journal Entries**, not only to create them.
-- **A Completed request offers no payment action.**
+- **A Purchase Order raised earlier is adopted, not raised again.** If a row's
+  order already exists, for example one made straight from the Material Request,
+  it is linked to this Funding Request when the request is approved. The request
+  goes straight to Disbursement in Progress and the action reads Submit Purchase
+  Order.
+- **Permissions.** Operational Expense rows need permission to submit Journal
+  Entries; Purchase rows need permission to create Purchase Orders.
+- **Disbursed is the last state.** There is no separate Complete step: a request
+  is finished when it is paid.
+- **If a payment is undone,** for example its Journal Entry is cancelled, the request
+  goes back to Approved (or Partially Approved) and can be disbursed again.
 - **A request is Disbursed when every row is paid in its own currency.** The
   company-currency totals can differ by a few shillings when the rate moved between
   approval and payment; that is an exchange difference, not an amount still owed,
   and Outstanding shows zero.
 
-Purchase and Subcontracting rows are not disbursed this way. They keep **Actions >
-Create Purchase Order**.
+### Cancelling a Funding Request
+
+**Actions > Cancel Request** is offered on an approved request at every stage,
+including Disbursed. It takes the request's payment documents with it:
+
+| The document is | What happens to it |
+|-----------------|--------------------|
+| A **draft** Journal Entry or Purchase Order | Deleted |
+| A **submitted** Journal Entry | Cancelled, which reverses its ledger postings |
+| A **submitted** Purchase Order | Cancelled, which hands the ordered quantity back |
+
+The confirmation lists every document and what will happen to it before anything is
+touched. Afterwards:
+
+- The Material Requests are released and can be put on a new Funding Request.
+- A cancelled entry or order keeps its link to the Funding Request, as the record
+  of what was undone, but no longer points at the Material Request.
+- The request shows nothing paid.
+
+It is all or nothing. A Journal Entry in a closed period, or a Purchase Order that
+already has a receipt or an invoice, cannot be cancelled; the cancel stops there and
+nothing is changed.
+
+**A Purchase Order that has been paid stops the cancel.** The message names the
+payment. Cancel that payment first, then cancel the request. A Journal Entry is
+reversed by its own cancellation, but a payment to a supplier is not, so it has to
+be dealt with on the payment itself. You need permission to cancel the submitted documents
+themselves.
+
+Only documents tied to this Funding Request are touched. A Purchase Order raised
+straight from the Material Request and never taken up by this request is left
+alone.
+
+### What the Material Request shows
+
+A Material Request mirrors the row it has on its Funding Request:
+
+| Material Request status | Means |
+|-------------------------|-------|
+| **On Funding Request** | On a request that is not approved yet |
+| **Approved** | Approved, and nothing has been raised for it yet |
+| **Disbursement in Progress** | Its Journal Entry or Purchase Order is raised but not yet paid |
+| **Disbursed** | Paid in full |
+
+The status follows the request's own row, not the batch: one request on a Funding
+Request can be Disbursed while another is still Approved.
+
+### When a Purchase row counts as paid
+
+A Purchase row is paid by payments recorded against its Purchase Order: either
+against the supplier's invoice, or as an advance against the order itself before
+any invoice exists. Both count, and the request moves to Disbursed once the order
+is paid in full.
 
 ### What reaches the ledger
 

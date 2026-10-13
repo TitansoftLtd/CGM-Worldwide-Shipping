@@ -621,3 +621,34 @@ class TestMulticurrencyBackfillPatch(unittest.TestCase):
 		self.patch.execute()
 		self.patch.execute()
 		self.assertTrue(self._flags(self.REQUEST_TYPE) <= {1})
+
+
+class TestMulticurrencyStaysOn(unittest.TestCase):
+	"""Operational Expense requests are always multicurrency; the box cannot be unticked."""
+
+	def _doc(self, request_type, value):
+		doc = frappe._dict(material_request_type=request_type, custom_multicurrency=value)
+		doc.meta = _meta("custom_multicurrency")
+		return doc
+
+	def test_unticked_operational_expense_is_ticked_again(self):
+		doc = self._doc("Operational Expense", 0)
+		F._keep_multicurrency_on(doc)
+		self.assertEqual(doc.custom_multicurrency, 1)
+
+	def test_purchase_requests_are_left_alone(self):
+		doc = self._doc("Purchase", 0)
+		F._keep_multicurrency_on(doc)
+		self.assertEqual(doc.custom_multicurrency, 0)
+
+	def test_the_field_is_read_only_on_the_form(self):
+		import json
+		from pathlib import Path
+
+		path = Path(frappe.get_app_path("cgm_shipping")) / "cgm_worldwide_shipping" / "custom" / "material_request.json"
+		field = next(
+			f for f in json.loads(path.read_text())["custom_fields"] if f["fieldname"] == "custom_multicurrency"
+		)
+		self.assertEqual(field["read_only"], 1)
+		self.assertEqual(str(field["default"]), "1")
+

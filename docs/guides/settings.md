@@ -141,6 +141,24 @@ role added casually here gains more than is obvious. **Operations roles** in
 particular also decides who is notified for final document review, so a broad list
 emails a lot of people who are not reviewers.
 
+### See all Material Requests
+
+The roles that see every Material Request. Finance and approvers need this to find
+the requests they fund; without it they see only their own.
+
+| Who | What they see |
+|-----|---------------|
+| A user with one of the listed roles | Every Material Request |
+| Everyone else | Requests that name them as requester, requests with no requester, and any they created |
+
+Seeded with Finance User, Finance Manager, Funding Approver, Accounts Manager,
+Accounts User, Operations Manager and Director. An empty table means those
+defaults, not "nobody". System Managers always see everything.
+
+This only concerns the requester. A user limited to one Company or Project by a
+user permission is still limited to it. Funding Requests are not affected; they
+were already visible to everyone allowed to read them.
+
 ### Document responsibilities
 
 ![Document responsibilities, further down the Roles tab, with the column headings boxed](../images/settings-document-responsibilities.png)

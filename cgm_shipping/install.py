@@ -50,6 +50,9 @@ def after_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.recruitment import (
 		ensure_recruitment_schema,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.request_visibility import (
+		ensure_see_all_roles,
+	)
 
 	missing_layout_fields = check_project_layout_export_drift()
 	if missing_layout_fields:
@@ -82,6 +85,7 @@ def after_migrate() -> None:
 		("hrms custom fields", ensure_hrms_custom_fields),
 		("job group structure & per diems", ensure_per_diem_setup),
 		("document trail doctypes", ensure_document_trail_setup),
+		("material request see-all roles", ensure_see_all_roles),
 		("wiki documentation", ensure_wiki_docs_published),
 	):
 		try:
@@ -226,12 +230,16 @@ def ensure_app_setup() -> None:
 	)
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+		ensure_funding_completed_cancel_transition,
 		ensure_funding_disburse_transition,
+		ensure_material_request_progress_state,
 	)
 
 	ensure_app_custom_fields()
 	ensure_app_workflows()
 	ensure_funding_disburse_transition()
+	ensure_funding_completed_cancel_transition()
+	ensure_material_request_progress_state()
 	ensure_app_notifications()
 	ensure_workflow_sms_notifications()
 
