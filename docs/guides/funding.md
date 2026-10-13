@@ -66,7 +66,7 @@ Clearance invoices on shipment Tasks use [Finance](finance.md) task payments - n
 Material Request (Submit)
   → Funding Request (pull / Get Material Requests)
     → Approver sets Approved / Rejected amounts per line
-      → Operational Expense → Create Journal Entry
+      → Operational Expense → Disburse (creates and submits the Journal Entries)
       → Purchase / Subcontracting → Create Purchase Order (only after approved)
 ```
 
@@ -75,7 +75,7 @@ Material Request (Submit)
 3. Submit the Funding Request into the site’s approval workflow (Pending Approval → Approved / Rejected, etc.).
 4. Approvers set **approved** (or rejected) amounts per request line - not only a header yes/no.
 5. After approval:
-   - **Operational Expense:** create Journal Entries from the Funding Request (uses Default Operational Expense Account when configured).
+   - **Operational Expense:** **Actions > Disburse** on the Funding Request (uses Default Operational Expense Account when configured). See [Disbursing](#disbursing).
    - **Purchase / Subcontracting:** create Purchase Orders for remaining funded rows.
 
 :::tip
@@ -181,9 +181,40 @@ be paid as one thing: an entry takes money out of a single bank account held in 
 single currency. Each row is approved on its own and paid from the account that
 matches it, and the Material Request is only marked Disbursed once both are.
 
+### Disbursing
+
+**Actions > Disburse** is the payment. It appears on an approved Funding Request
+while any Operational Expense row is still unpaid.
+
+1. Choose the account each payment leaves, one per currency.
+2. Read the confirmation. It lists every Journal Entry about to be posted, with its
+   amount and account, and nothing has been created yet.
+3. Confirm. One Journal Entry per row is created **and submitted**, and the request
+   moves to **Disbursed**.
+4. **View Journal Entry** on the message that follows opens what was posted.
+
+Things to know:
+
+- **Submitting is final.** A submitted Journal Entry is in the ledger. To reverse a
+  payment, cancel the entry; the request then goes back to showing it unpaid.
+- **It is all or nothing.** If any entry cannot be posted, none are, and the request
+  is left as it was.
+- **A draft raised earlier is posted, not duplicated.** A row that already has a
+  draft Journal Entry is listed with that draft, and Disburse submits it as it
+  stands.
+- **You need permission to submit Journal Entries**, not only to create them.
+- **A Completed request offers no payment action.**
+- **A request is Disbursed when every row is paid in its own currency.** The
+  company-currency totals can differ by a few shillings when the rate moved between
+  approval and payment; that is an exchange difference, not an amount still owed,
+  and Outstanding shows zero.
+
+Purchase and Subcontracting rows are not disbursed this way. They keep **Actions >
+Create Purchase Order**.
+
 ### What reaches the ledger
 
-When Finance creates the Journal Entry they are asked which bank account the money
+When Finance disburses they are asked which bank account the money
 leaves, one per currency on the request. The account must be held in either the
 request currency or the company currency, and only Bank and Cash accounts are
 offered.

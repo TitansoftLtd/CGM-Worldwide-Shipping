@@ -20,6 +20,19 @@ frappe.ui.form.on("Funding Request", {
 		}));
 	},
 
+	before_workflow_action(frm) {
+		if (frm.selected_workflow_action === "Disburse") {
+			return prepare_disbursement(frm);
+		}
+	},
+
+	after_workflow_action(frm) {
+		if (frm.__cgm_disbursing) {
+			frm.__cgm_disbursing = false;
+			show_last_disbursement(frm);
+		}
+	},
+
 	refresh(frm) {
 		frm.dashboard.clear_headline();
 		const rows = get_valid_material_request_rows(frm);
@@ -441,32 +454,36 @@ function add_material_request_row(frm, details) {
 }
 
 function setup_funding_pay_buttons(frm) {
+	// Drop the handler left by an earlier refresh before anything else. It holds
+	// the pay options of that moment, and it used to stay bound once the request
+	// had nothing left to pay - which put a dead payment action back on a
+	// Completed request every time the form re-rendered.
+	$(frm.wrapper).off("render_complete.cgm_funding_pay");
 	if (frm.is_new() || frm.doc.docstatus !== 1) {
 		return;
 	}
+	const requested_for = frm.doc.name;
 	frappe.call({
 		method: "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_funding_pay_options",
 		args: { funding_request: frm.doc.name },
 		callback(r) {
+			// Late response: the form may already be showing another request.
+			if (frm.doc.name !== requested_for) {
+				return;
+			}
 			const options = r.message || {};
 			const has_operational = (options.operational || []).length;
 			const has_purchase = (options.purchase || []).length;
 			if (!has_operational && !has_purchase) {
 				return;
 			}
+			// Operational Expense rows are paid by the Disburse workflow action,
+			// which the workflow itself puts in this menu. Only the Purchase Order
+			// step is added here.
+			if (!has_purchase) {
+				return;
+			}
 			const register_actions = () => {
-				if (has_operational) {
-					frm.page.add_action_item(__("Create Journal Entry"), () => {
-						choose_payment_banks(frm, options, (bank_accounts) => {
-							create_funding_docs(
-								frm,
-								"cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_journal_entries",
-								"Journal Entry",
-								{ bank_accounts: JSON.stringify(bank_accounts) }
-							);
-						});
-					}, true);
-				}
 				if (has_purchase) {
 					frm.page.add_action_item(__("Create Purchase Order"), () => {
 						create_funding_docs(
@@ -502,7 +519,8 @@ function register_funding_action_after_workflow(frm, register_action) {
 function choose_payment_banks(frm, options, proceed) {
 	const currencies = options.currencies || [];
 	const company_currency = options.company_currency;
-	const rows = options.operational || [];
+	// Rows with a draft entry already have their bank account on the draft.
+	const rows = (options.operational || []).filter((row) => !row.draft_entry);
 
 	// One account per currency about to be paid. Which account money leaves is a
 	// treasury decision taken per payment, so it is asked here rather than
@@ -512,8 +530,7 @@ function choose_payment_banks(frm, options, proceed) {
 			fieldtype: "HTML",
 			fieldname: "intro",
 			options: `<p class="cgm-dialog-intro">${__(
-				"{0} draft entry(s) will be created, one per approved request. Nothing is paid until you submit them.",
-				[rows.length]
+				"Choose the account each payment leaves. You will be asked to confirm before anything is posted."
 			)}</p>`,
 		},
 	];
@@ -557,10 +574,10 @@ function choose_payment_banks(frm, options, proceed) {
 	}
 
 	const d = new frappe.ui.Dialog({
-		title: __("Create Journal Entry"),
-		size: currencies.length > 1 ? "small" : "small",
+		title: __("Disburse"),
+		size: "small",
 		fields,
-		primary_action_label: __("Create Draft Entries"),
+		primary_action_label: __("Continue"),
 		primary_action(values) {
 			const bank_accounts = {};
 			let missing = null;
@@ -586,6 +603,110 @@ function choose_payment_banks(frm, options, proceed) {
 	});
 	d.show();
 	brand_dialog(d);
+}
+
+function prepare_disbursement(frm) {
+	// Disburse is a standard workflow action, and a workflow action takes no
+	// input. So before Frappe applies it: ask which account each currency is paid
+	// from, show exactly what will be posted, and only let the action through on a
+	// yes. Leaving either dialog leaves the request untouched.
+	frappe.dom.unfreeze();
+	return new Promise((resolve) => {
+		frappe.call({
+			method: "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_funding_pay_options",
+			args: { funding_request: frm.doc.name },
+			callback(r) {
+				const options = r.message || {};
+				if (!(options.operational || []).length) {
+					frappe.msgprint({
+						title: __("Nothing to disburse"),
+						indicator: "orange",
+						message: __(
+							"No approved Operational Expense row is unpaid. Purchase rows are paid through their Purchase Order."
+						),
+					});
+					return;
+				}
+				choose_payment_banks(frm, options, (bank_accounts) => {
+					confirm_disbursement(frm, options, bank_accounts, resolve);
+				});
+			},
+		});
+	});
+}
+
+function confirm_disbursement(frm, options, bank_accounts, proceed) {
+	// Disbursing posts to the ledger, so the person doing it is told exactly what
+	// will be posted and has to say yes. Nothing is created before that.
+	const rows = options.operational || [];
+	const lines = rows
+		.map((row) => {
+			const amount = `${frappe.utils.escape_html(row.currency)} ${format_number(row.remaining, null, 2)}`;
+			const from = row.draft_entry
+				? __("draft {0}", [frappe.utils.escape_html(row.draft_entry)])
+				: frappe.utils.escape_html(bank_accounts[row.currency] || "");
+			return `<li><b>${amount}</b> · ${frappe.utils.escape_html(row.label || row.material_request)}<br><span class="text-muted">${from}</span></li>`;
+		})
+		.join("");
+	const message = `
+		<p>${__("You are about to create and submit {0} Journal Entry(s) for {1}:", [
+			rows.length,
+			frappe.utils.escape_html(frm.doc.name),
+		])}</p>
+		<ul>${lines}</ul>
+		<p>${__("Submitting posts each entry to the ledger and records the payment. To reverse it, the entry has to be cancelled.")}</p>`;
+	frappe.confirm(message, () => {
+		frappe.call({
+			method: "cgm_shipping.cgm_worldwide_shipping.customizations.funding.set_disbursement_accounts",
+			args: { funding_request: frm.doc.name, bank_accounts: JSON.stringify(bank_accounts) },
+			callback(r) {
+				if (r.exc) {
+					return;
+				}
+				frm.__cgm_disbursing = true;
+				frappe.dom.freeze(__("Posting journal entries..."));
+				proceed();
+			},
+		});
+	});
+}
+
+function show_last_disbursement(frm) {
+	frappe.call({
+		method: "cgm_shipping.cgm_worldwide_shipping.customizations.funding.get_last_disbursement",
+		args: { funding_request: frm.doc.name },
+		callback(r) {
+			const entries = r.message || [];
+			if (entries.length) {
+				show_disbursed_entries(frm, entries);
+			}
+		},
+	});
+}
+
+function show_disbursed_entries(frm, entries) {
+	const links = entries
+		.map((name) => `<li><a href="${frappe.utils.get_form_link("Journal Entry", name)}">${frappe.utils.escape_html(name)}</a></li>`)
+		.join("");
+	frappe.msgprint({
+		title: __("Disbursed"),
+		indicator: "green",
+		message: `<p>${__("{0} Journal Entry(s) submitted for {1}.", [
+			entries.length,
+			frappe.utils.escape_html(frm.doc.name),
+		])}</p><ul>${links}</ul>`,
+		primary_action: {
+			label: entries.length === 1 ? __("View Journal Entry") : __("View Journal Entries"),
+			action() {
+				frappe.hide_msgprint();
+				if (entries.length === 1) {
+					frappe.set_route("Form", "Journal Entry", entries[0]);
+				} else {
+					frappe.set_route("List", "Journal Entry", { custom_funding_request: frm.doc.name });
+				}
+			},
+		},
+	});
 }
 
 function create_funding_docs(frm, method, doctype, extra_args) {

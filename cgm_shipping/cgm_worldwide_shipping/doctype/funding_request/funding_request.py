@@ -81,6 +81,32 @@ class FundingRequest(Document):
 		self._apply_partial_approval_state()
 		self.calculate_totals()
 		self.sync_material_request_links()
+		# Last: it posts entries that re-save this request from a fresh copy.
+		self._disburse_on_workflow_action()
+
+	def _disburse_on_workflow_action(self):
+		"""The Disburse workflow action is the payment.
+
+		Moving the request into its Disbursed state by a workflow action posts the
+		Journal Entries. If they cannot be posted the error stops the action, so
+		the state never says Disbursed over an unpaid request.
+
+		Payments recorded any other way (an entry submitted by hand, a Purchase
+		Order paid) reach Disbursed through `sync_funding_request_paid_amounts`,
+		which writes the state without saving and so does not come through here.
+		"""
+		prev = self.get_doc_before_save()
+		if not prev or prev.workflow_state == self.workflow_state:
+			return
+		if not get_funding_workflow_map().is_disbursed(self.workflow_state):
+			return
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+			disburse_on_workflow_action,
+		)
+
+		disburse_on_workflow_action(self.name)
+		# The entries updated the rows and the state on a fresh copy.
+		self.reload()
 
 	def on_trash(self):
 		"""Hand the Material Requests back before this record disappears.
@@ -110,7 +136,18 @@ class FundingRequest(Document):
 		if funding_approval_is_recorded(self.workflow_state):
 			self.total_approved = self._base_sum(approved_rows, "approved_amount")
 			self.total_variance = flt(self.total_approved) - flt(self.total_requested_approved_rows(approved_rows))
-			self.outstanding = flt(self.total_approved) - flt(self.total_funded)
+			# What is still to pay, row by row, each at its own rate. Not approved
+			# minus funded: those two totals are converted at different rates (the
+			# approval's and the payment's), so their difference is an exchange
+			# difference, and a fully paid USD row showed as a few shillings owed.
+			self.outstanding = flt(
+				sum(
+					max(flt(row.get("approved_amount")) - flt(row.get("funded_amount")), 0)
+					* (flt(row.get("exchange_rate")) or 1)
+					for row in approved_rows
+				),
+				2,
+			)
 		else:
 			self.total_approved = 0
 			if self.meta.has_field("total_variance"):

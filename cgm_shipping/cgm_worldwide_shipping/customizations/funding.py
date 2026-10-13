@@ -172,12 +172,19 @@ def funding_progress_state(
 	workflow=None,
 	*,
 	disbursement_started: bool = False,
+	rows_fully_paid: bool = False,
 ) -> str | None:
 	"""Payment-driven Funding Request state.
 
 	Draft Journal Entries / Purchase Orders move the batch to Disbursement in
 	Progress. Submitted Journal Entries and recorded PO payments move rows (and
 	the batch when fully paid) to Disbursed.
+
+	`rows_fully_paid` settles it when every approved row is paid in its own
+	currency. The company-currency totals cannot be trusted for that: a USD row
+	approved at one rate and paid at another leaves them a few shillings apart
+	in either direction, and the request then sat in Disbursement in Progress
+	for ever with every row paid.
 	"""
 	wf = get_funding_workflow_map(workflow)
 	if current not in wf.progress_states():
@@ -185,7 +192,7 @@ def funding_progress_state(
 	funded = flt(total_funded)
 	approved = flt(total_approved)
 	disbursed = next(iter(wf.disbursed_states()), None)
-	if approved > 0 and funded + 0.005 >= approved:
+	if rows_fully_paid or (approved > 0 and funded + 0.005 >= approved):
 		return disbursed or current
 	if funded > 0 or disbursement_started:
 		return wf.disbursement_state or current
@@ -653,11 +660,18 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 			row.base_funded_amount = paid_base
 			changed = True
 	fr.calculate_totals()
+	approved_rows = [
+		row
+		for row in fr.material_requests
+		if row.material_request and getattr(row, "decision", None) == FR_ROW_DECISION_APPROVED
+	]
 	next_state = funding_progress_state(
 		fr.workflow_state,
 		fr.total_funded,
 		fr.total_approved,
 		disbursement_started=funding_request_disbursement_started(funding_request),
+		rows_fully_paid=bool(approved_rows)
+		and all(flt(row.approved_amount) - flt(row.funded_amount) <= 0.005 for row in approved_rows),
 	)
 	state_changed = next_state != fr.workflow_state
 	if not changed and not state_changed:
@@ -1009,6 +1023,112 @@ def make_journal_entries(funding_request: str, bank_accounts=None) -> list[str]:
 	return created
 
 
+def _draft_journal_entry(funding_request: str, material_request: str, currency: str | None = None) -> str | None:
+	"""The unposted entry already raised for this row, if there is one."""
+	if not frappe.db.has_column("Journal Entry", "custom_material_request"):
+		return None
+	drafts = frappe.get_all(
+		"Journal Entry",
+		filters={
+			"custom_funding_request": funding_request,
+			"custom_material_request": material_request,
+			"docstatus": 0,
+		},
+		pluck="name",
+		order_by="creation asc",
+	)
+	if drafts and currency:
+		drafts = _entries_in_currency(drafts, currency)
+	return drafts[0] if drafts else None
+
+
+def _disbursement_cache_key(kind: str, funding_request: str) -> str:
+	return f"cgm_funding_{kind}:{funding_request}:{frappe.session.user}"
+
+
+@frappe.whitelist()
+def set_disbursement_accounts(funding_request: str, bank_accounts=None) -> None:
+	"""Hold the bank accounts Finance chose until the Disburse action runs.
+
+	Disburse is a workflow action, and a workflow action carries no input of its
+	own. The form asks which account each currency is paid from, parks the answer
+	here, and then lets the standard workflow call go ahead; the request picks the
+	answer up when its state changes. Kept for ten minutes, for this user only.
+	"""
+	frappe.has_permission("Funding Request", "write", doc=funding_request, throw=True)
+	chosen = frappe.parse_json(bank_accounts) if bank_accounts else {}
+	if not isinstance(chosen, dict):
+		chosen = {}
+	frappe.cache.set_value(_disbursement_cache_key("accounts", funding_request), chosen, expires_in_sec=600)
+
+
+@frappe.whitelist()
+def get_last_disbursement(funding_request: str) -> list[str]:
+	"""The Journal Entries this user's last Disburse posted, read once."""
+	frappe.has_permission("Funding Request", "read", doc=funding_request, throw=True)
+	key = _disbursement_cache_key("posted", funding_request)
+	entries = frappe.cache.get_value(key) or []
+	frappe.cache.delete_value(key)
+	return entries
+
+
+def disburse_on_workflow_action(funding_request: str) -> list[str]:
+	"""Run the payment for a request that has just been moved to Disbursed."""
+	key = _disbursement_cache_key("accounts", funding_request)
+	chosen = frappe.cache.get_value(key) or {}
+	frappe.cache.delete_value(key)
+	result = disburse_funding_request(funding_request, chosen)
+	frappe.cache.set_value(
+		_disbursement_cache_key("posted", funding_request), result["journal_entries"], expires_in_sec=600
+	)
+	return result["journal_entries"]
+
+
+def disburse_funding_request(funding_request: str, bank_accounts=None) -> dict:
+	"""Pay every approved operational-expense row still outstanding.
+
+	Called by the Disburse workflow action, never directly from the browser: the
+	workflow decides who may disburse and from which state.
+
+	Disbursing is the payment: one Journal Entry per row is created and
+	submitted here, so the request moves to Disbursed without a second visit to
+	each entry. A draft raised earlier for a row is submitted as it stands, not
+	duplicated.
+
+	All or nothing. If any entry cannot be posted the error is raised and the
+	request is left exactly as it was, with no half-paid batch to untangle.
+	"""
+	frappe.has_permission("Journal Entry", "create", throw=True)
+	frappe.has_permission("Journal Entry", "submit", throw=True)
+	fr = frappe.get_doc("Funding Request", funding_request)
+	_assert_funding_request_approved(fr)
+	chosen = frappe.parse_json(bank_accounts) if bank_accounts else {}
+	if not isinstance(chosen, dict):
+		chosen = {}
+	posted = []
+	for row in _outstanding_rows(fr, MATERIAL_REQUEST_TYPE_OPERATIONAL):
+		draft = _draft_journal_entry(fr.name, row.material_request, row.get("currency"))
+		if draft:
+			je = frappe.get_doc("Journal Entry", draft)
+		else:
+			je = _build_operational_journal_entry(fr, row, chosen)
+			je.insert(ignore_permissions=True)
+		je.submit()
+		posted.append(je.name)
+	if not posted:
+		frappe.throw(
+			_(
+				"Nothing to disburse on {0}: no approved Operational Expense row is unpaid. "
+				"Purchase rows are paid through their Purchase Order."
+			).format(frappe.bold(fr.name))
+		)
+	sync_funding_request_paid_amounts(fr.name)
+	return {
+		"journal_entries": posted,
+		"workflow_state": frappe.db.get_value("Funding Request", fr.name, "workflow_state"),
+	}
+
+
 @frappe.whitelist()
 def make_purchase_orders(funding_request: str) -> list[str]:
 	"""Create one draft Purchase Order per remaining purchase row."""
@@ -1054,6 +1174,12 @@ def _assert_funding_request_approved(fr) -> None:
 		frappe.throw(
 			_("Cannot create payment documents before approval of {0}.").format(
 				frappe.bold(fr.name)
+			)
+		)
+	if get_funding_workflow_map().is_fully_complete(fr.workflow_state):
+		frappe.throw(
+			_("{0} is {1}. Nothing more can be paid against it.").format(
+				frappe.bold(fr.name), frappe.bold(fr.workflow_state)
 			)
 		)
 
@@ -1396,7 +1522,10 @@ def get_funding_pay_options(funding_request: str) -> dict:
 	frappe.has_permission("Funding Request", "read", throw=True)
 	fr = frappe.get_doc("Funding Request", funding_request)
 	base = company_currency(fr.company)
-	if not funding_is_approved(fr.workflow_state, fr.docstatus):
+	# A closed request offers nothing, whatever its rows say.
+	if not funding_is_approved(fr.workflow_state, fr.docstatus) or get_funding_workflow_map().is_fully_complete(
+		fr.workflow_state
+	):
 		return {"operational": [], "purchase": [], "company_currency": base, "currencies": []}
 	operational = []
 	purchase = []
@@ -1424,8 +1553,10 @@ def get_funding_pay_options(funding_request: str) -> dict:
 			"label": _pay_option_label(row, remaining),
 		}
 		if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
-			if not _open_journal_entry_exists(fr.name, row.material_request, row.get("currency")):
-				operational.append(payload)
+			# A row with a draft entry is still unpaid, so it is still offered:
+			# Disburse posts that draft. It needs no bank account, the draft has one.
+			payload["draft_entry"] = _draft_journal_entry(fr.name, row.material_request, row.get("currency"))
+			operational.append(payload)
 		elif mr_type in PURCHASE_REQUEST_TYPES:
 			if not _open_purchase_order_exists(row.material_request):
 				purchase.append(payload)
@@ -1433,6 +1564,8 @@ def get_funding_pay_options(funding_request: str) -> dict:
 	# needs to know which currencies are actually on the request.
 	currencies = []
 	for payload in operational:
+		if payload.get("draft_entry"):
+			continue
 		if payload["currency"] not in currencies:
 			currencies.append(payload["currency"])
 	return {

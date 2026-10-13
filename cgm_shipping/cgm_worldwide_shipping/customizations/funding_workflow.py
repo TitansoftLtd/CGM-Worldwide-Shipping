@@ -16,6 +16,9 @@ from frappe.utils import cint
 
 FUNDING_REQUEST_DOCTYPE = "Funding Request"
 MATERIAL_REQUEST_DOCTYPE = "Material Request"
+# The workflow action that pays a request. Named here because the state map
+# below has to recognise it.
+DISBURSE_ACTION = "Disburse"
 
 
 def _named_state(states, *needles: str) -> str | None:
@@ -152,6 +155,12 @@ class FundingWorkflowMap:
 				pending.add(source)
 				approve_next.add(target)
 			elif from_ds == 1 and to_ds == 1 and source != target:
+				# Disburse also runs between two submitted states, but it is the
+				# payment, not the closing step. Counting it here made Approved a
+				# state to complete from and Disbursed read as fully complete, which
+				# then refused the very payment the action exists to make.
+				if (transition.get("action") or "") == DISBURSE_ACTION:
+					continue
 				complete_from.add(source)
 				complete_next.add(target)
 
@@ -288,3 +297,57 @@ def another_approver_exists(role: str, exclude: str | None = None) -> bool:
 		if frappe.db.get_value("User", user, "enabled"):
 			return True
 	return False
+
+
+def ensure_funding_disburse_transition() -> bool:
+	"""Add the Disburse action to the Funding Request workflow where it is missing.
+
+	The workflow is built and owned in Desk, so this adds and never edits: a
+	state that already has a Disburse transition is left exactly as it is, and
+	no other transition is touched. Runs on every migrate.
+
+	Disburse is offered from each state where money can still go out - approved,
+	partially approved, and disbursement in progress - and leads to the workflow's
+	Disbursed state. It is allowed to whoever may already act on the request in
+	that state, taken from the transitions that state has.
+	"""
+	cached = load_funding_request_workflow()
+	if not cached:
+		return False
+	# A fresh copy: the cached one is shared and must not be edited in place.
+	workflow = frappe.get_doc("Workflow", cached.name)
+	wf = get_funding_workflow_map(workflow)
+	disbursed = next(iter(wf.disbursed_states()), None)
+	if not disbursed:
+		return False
+	sources = [s for s in (*sorted(wf.approve_next_states), wf.partial_state, wf.disbursement_state) if s]
+	sources = [s for s in dict.fromkeys(sources) if s != disbursed]
+
+	changed = False
+	for state in sources:
+		existing = [t for t in workflow.transitions if t.state == state]
+		if any((t.action or "") == DISBURSE_ACTION for t in existing):
+			continue
+		allowed = next((t.allowed for t in existing if t.allowed), None) or next(
+			(s.allow_edit for s in workflow.states if s.state == state and s.allow_edit), None
+		)
+		if not allowed:
+			continue
+		workflow.append(
+			"transitions",
+			{
+				"state": state,
+				"action": DISBURSE_ACTION,
+				"next_state": disbursed,
+				"allowed": allowed,
+				"allow_self_approval": 1,
+			},
+		)
+		changed = True
+	if changed:
+		_ensure_workflow_action_masters((DISBURSE_ACTION,))
+		workflow.flags.ignore_permissions = True
+		workflow.save()
+		frappe.clear_cache(doctype=FUNDING_REQUEST_DOCTYPE)
+	return changed
+
