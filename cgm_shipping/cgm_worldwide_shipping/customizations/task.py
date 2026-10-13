@@ -4074,6 +4074,11 @@ def on_task_update(doc, _method=None):
 				sync_project_shipment_status_from_tasks(doc.project)
 	prev = doc.get_doc_before_save()
 	if doc.status == "Completed" and (not prev or prev.status != "Completed"):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms import (
+			notify_step_completed_sms,
+		)
+
+		notify_step_completed_sms(doc)
 		apply_finance_payment_to_project_permits(doc)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
 			close_permit_application_when_finance_done,

@@ -233,3 +233,58 @@ def get_funding_workflow_map(workflow=None) -> FundingWorkflowMap:
 	if workflow is None:
 		workflow = load_funding_request_workflow()
 	return FundingWorkflowMap.from_workflow(workflow)
+
+
+def funding_approver_role(workflow=None) -> str:
+	"""The role the live workflow lets approve a Funding Request.
+
+	Read from the workflow rather than hardcoded, because the states and the roles
+	on them are site configuration: a site that renames the role, or routes
+	approval through a different one, should still get a message naming the role it
+	actually uses.
+	"""
+	if workflow is None:
+		workflow = load_funding_request_workflow()
+	if not workflow:
+		return ""
+	approve_states = _approve_next_states(workflow)
+	for row in workflow.get("transitions") or []:
+		# Rows come back as Documents, not dicts, so read them with .get().
+		allowed = row.get("allowed")
+		if row.get("next_state") in approve_states and allowed:
+			return allowed
+	return ""
+
+
+def _approve_next_states(workflow) -> frozenset[str]:
+	"""States an Approve action leads to."""
+	return frozenset(
+		row.get("next_state")
+		for row in (workflow.get("transitions") or [])
+		if (row.get("action") or "").strip().lower() == "approve" and row.get("next_state")
+	)
+
+
+def another_approver_exists(role: str, exclude: str | None = None) -> bool:
+	"""Is there anybody besides `exclude` who can approve?
+
+	Deliberately a yes/no and not a list. Naming people in a refusal message
+	publishes who holds a finance role to whoever happens to trigger it, and the
+	list goes stale the moment somebody joins or leaves. The role is the useful
+	part; who currently holds it is a question for the role list.
+
+	Administrator is not counted: nobody chases Administrator to approve a payment.
+	"""
+	if not role:
+		return False
+	holders = frappe.get_all(
+		"Has Role",
+		filters={"role": role, "parenttype": "User"},
+		pluck="parent",
+	)
+	for user in set(holders):
+		if user == exclude or user == "Administrator":
+			continue
+		if frappe.db.get_value("User", user, "enabled"):
+			return True
+	return False

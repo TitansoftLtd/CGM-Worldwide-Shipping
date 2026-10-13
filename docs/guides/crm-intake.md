@@ -59,6 +59,8 @@ The transport document comes first because it is what the customer actually send
 
 ## Approval before a shipment exists
 
+![An Opportunity: 1 the Actions button, 2 Send For Review](../images/opportunity-actions.png)
+
 Intake is a **workflow on Opportunity** (`CGM Opportunity Pre-Shipment`). No Project is created until it has been approved.
 
 | State | What it means | Who moves it on |

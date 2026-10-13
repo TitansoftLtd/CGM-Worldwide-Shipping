@@ -221,10 +221,14 @@ def ensure_app_setup() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_setup import (
 		ensure_app_workflows,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms import (
+		ensure_workflow_sms_notifications,
+	)
 
 	ensure_app_custom_fields()
 	ensure_app_workflows()
 	ensure_app_notifications()
+	ensure_workflow_sms_notifications()
 
 
 def ensure_transporter_portal_setup() -> None:

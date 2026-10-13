@@ -59,7 +59,6 @@
    "read_only": 1
   },
   {
-   "description": "What the approved figure in this currency is worth in company currency, at the rates on the requests.",
    "fieldname": "base_total_approved",
    "fieldtype": "Currency",
    "label": "Approved (Company Currency)",

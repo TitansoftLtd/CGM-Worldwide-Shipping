@@ -199,7 +199,6 @@
   },
   {
    "allow_on_submit": 1,
-   "description": "One row per currency requested. Figures are in that currency; the overall total below converts them.",
    "fieldname": "currency_totals",
    "fieldtype": "Table",
    "label": "Totals by Currency",

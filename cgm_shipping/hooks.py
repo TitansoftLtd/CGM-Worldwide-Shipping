@@ -393,6 +393,7 @@ doc_events = {
 		],
 		"before_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
 		"before_update_after_submit": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.stamp_verified_documents_on_approval",
+		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms.notify_opportunity_approval_sms",
 		"on_trash": "cgm_shipping.cgm_worldwide_shipping.customizations.shipment.clear_back_links_on_trash",
 	},
 	"Task": {

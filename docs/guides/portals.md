@@ -6,6 +6,8 @@ For **portal users** and **support staff** helping customers and transporters us
 
 ## Customer portal
 
+![The customer portal home: 1 My Shipments, 2 Quotations, 3 Invoices, 4 Messages, 5 Documents](../images/portal-quick-actions.png)
+
 **Role:** `Customer` (Website User linked to Customer master)  
 **Home after login:** `/portal`
 

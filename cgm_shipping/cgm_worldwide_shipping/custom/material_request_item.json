@@ -306,6 +306,16 @@
    "doctype_or_field": "DocField",
    "field_name": "expense_account",
    "modified": "2026-10-13 00:00:00",
+   "name": "Material Request Item-expense_account-allow_on_submit",
+   "property": "allow_on_submit",
+   "property_type": "Check",
+   "value": "1"
+  },
+  {
+   "doc_type": "Material Request Item",
+   "doctype_or_field": "DocField",
+   "field_name": "expense_account",
+   "modified": "2026-10-13 00:00:00",
    "name": "Material Request Item-expense_account-columns",
    "property": "columns",
    "property_type": "Int",

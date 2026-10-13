@@ -50,6 +50,8 @@ Task 4: Finance pays UCR
 
 ## Permit workflows
 
+![A permit application task with the Permits table boxed](../images/task-permits-table.png)
+
 ### Pre-clearance (tasks 5–6)
 
 1. Apply for permits (DVS, NBA, VMD, ACA) on Task 5.

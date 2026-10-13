@@ -26,6 +26,8 @@ Welcome to the CGM Worldwide Shipping documentation. This wiki covers freight fo
 | [Applying for Leave](guides/leave.md) | All employees | Balances, leave types, approvals |
 | [Payroll & HR](guides/payroll-hr.md) | HR, Payroll | Payroll and HR process notes |
 | [CGM Shipping Settings](guides/settings.md) | System Manager | Every setting, tab by tab, and the child tables behind them |
+| [SMS Notifications](guides/sms-notifications.md) | System Manager, all staff | Workflow texts, who receives them, switching them on |
+| [Document Trail](guides/document-trail.md) | Managers | Who did what to a document, and the warnings it raises |
 | [What CGM Adds to ERPNext](guides/customizations.md) | Technical | DocType and custom field inventory |
 | [Patches](guides/patches.md) | Technical | Data migrations that have run |
 

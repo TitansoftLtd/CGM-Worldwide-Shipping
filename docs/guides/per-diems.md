@@ -55,6 +55,8 @@ Opening a job group shows its rate and the designations that sit in it:
 
 ## Claiming a per diem
 
+![A new Expense Claim: 1 the employee, 2 the Expenses table where the Per Diem row goes, 3 Save](../images/expense-claim-new.png)
+
 1. Open **Expense Claim** → **Add Expense Claim** (`/app/expense-claim/new`).
 2. In **Expenses**, add a row and set **Expense Type** to **Per Diem**.
 3. Enter **Per Diem Days** - the number of days away.

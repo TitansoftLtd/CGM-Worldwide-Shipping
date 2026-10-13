@@ -15,6 +15,8 @@ what it is.
 
 ## At a glance
 
+![CGM Shipping Settings, with the row of tabs boxed](../images/cgm-shipping-settings.png)
+
 | Tab | What it decides |
 |-----|-----------------|
 | [Quotation customs](#quotation-customs) | Default tax rates offered on a quotation |
@@ -24,7 +26,8 @@ what it is.
 | [Container tracking](#container-tracking-legacy-seq-map) | Which task sequence number maps to which container step |
 | [General](#general) | Default company, and when the Packages table appears |
 | [Container & Port Settings](#container--port-settings) | KPA day rate and the accounts charges accrue to |
-| [Notification Settings](#notification-settings) | Portal URL, deposit refund reminders, and which Notification fires on which event |
+| [Notification Settings](#notification-settings) | Portal URL, deposit refund reminders, which Notification fires on which event, and which events also send a text |
+| [Document trail](#document-trail) | Which document types can be looked up on the Document Trail page |
 
 ---
 
@@ -48,6 +51,8 @@ including ones already in flight.
 
 ### Default Customs Taxes
 
+![The Quotation customs tab, with the Default Customs Taxes table boxed](../images/settings-quotation-customs.png)
+
 Seeds the tax lines offered when a quotation is costed, so the same duty rates do
 not have to be typed each time.
 
@@ -64,6 +69,8 @@ already exist.
 ## Shipment status documents
 
 ### Workflow stage requirements
+
+![The Shipment status documents tab, with the table's column headings boxed](../images/settings-status-documents.png)
 
 Decides what a shipment must have on file before it may advance. This is the table
 behind "the Project will not move to the next status".
@@ -82,6 +89,8 @@ adding a requirement is now configuration rather than a code change.
 ## Finance receipts
 
 ### Finance receipts
+
+![The Finance receipts tab, with the rules table boxed](../images/settings-finance-receipts.png)
 
 Decides whether a payment task waits for a receipt before it may complete. The
 invoice, the payment and any POP are unaffected by these rows; only the receipt
@@ -109,6 +118,8 @@ Two different things live on this tab. Both matter and they are easy to confuse.
 
 ### Department role lists
 
+![The Roles tab: 1 Finance roles, 2 Declaration roles. Each list is boxed the same way for the other departments](../images/settings-roles.png)
+
 Six **Table MultiSelect** fields, one per department: **Finance**, **Operations**,
 **Documentation**, **Declaration**, **Transport**, **Field Operations**. Each lists
 the roles whose holders may open that department's sea tasks.
@@ -131,6 +142,8 @@ particular also decides who is notified for final document review, so a broad li
 emails a lot of people who are not reviewers.
 
 ### Document responsibilities
+
+![Document responsibilities, further down the Roles tab, with the column headings boxed](../images/settings-document-responsibilities.png)
 
 Says who owns each action in each money flow. This is the table that answers "why
 can this person not upload the invoice".
@@ -183,6 +196,8 @@ container generally does not.
 ---
 
 ## Container & Port Settings
+
+![The Container & Port Settings tab, boxed in the tab row](../images/settings-container-port.png)
 
 | Group | Fields |
 |-------|--------|
@@ -240,6 +255,8 @@ Reminders stop early once the refund is recorded.
 
 ### Workflow notifications
 
+![Workflow notifications: 1 the Send SMS column, 2 a ticked event](../images/settings-workflow-notifications.png)
+
 Binds a Notification record to a workflow event, so the message can be changed or
 switched off without touching code.
 
@@ -247,9 +264,37 @@ switched off without touching code.
 |--------|-------|
 | **Workflow Event** (required) | The moment that fires it, for example *Finance Payment Action* or *Permit Invoices to Finance* |
 | **Notification** (required) | The Notification record to send |
+| **Send SMS** | Also send a text at this event. Off by default |
 | **Notes** | Free text |
 
 Remove the row and that event stops notifying. The underlying action still happens.
+
+**Send SMS** adds a text to the email; it does not replace it. The main finance
+handoffs each have a short `CGM SMS - ...` Notification of their own, with its own
+wording and recipients, and that is what the tick sends. An event without one is
+texted from the email's subject line. Each text costs a credit per recipient, so
+tick only the events worth it. See [SMS Notifications](sms-notifications.md).
+
+---
+
+## Document trail
+
+### Document types
+
+![The Document trail tab: 1 the tab, 2 the Document types table](../images/settings-document-trail.png)
+
+The document types offered on the [Document Trail](document-trail.md) page.
+
+| Column | Means |
+|--------|-------|
+| **Document Type** (required) | A document type to make available, for example *Project* or *Journal Entry* |
+
+Seeded with Project, Task, Opportunity, Sales Invoice and Journal Entry. Unlike
+the other tables on this page, an empty table here means those five defaults, not
+"off".
+
+Listing a type switches on its change history, because that is what the trail
+reads. Child tables and settings pages are refused.
 
 ---
 
@@ -272,4 +317,6 @@ Remove the row and that event stops notifying. The underlying action still happe
 - [Finance](finance.md) - how the receipt rules and responsibilities play out in payment tasks
 - [Funding Request](funding.md) - the Default Operational Expense Account and foreign-currency requests
 - [Operations](operations.md) - task plans, departments and final document review
+- [SMS Notifications](sms-notifications.md) - the texts, who receives them and how to switch them on
+- [Document Trail](document-trail.md) - looking up what happened to a document
 - [Declaration & Customs](declaration-customs.md) - permits, UCR and entry flows

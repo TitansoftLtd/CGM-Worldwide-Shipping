@@ -83,6 +83,8 @@ HR controls which types this applies to, with **Attachment Required** on the Lea
 
 ## What happens next
 
+![A Leave Application waiting for approval: 1 the Actions button, 2 Approve](../images/leave-application-actions.png)
+
 How many approvals your leave needs depends on two things on your Employee record: your **branch**, and whether your **department sits under Operations**. Both are shown on the application.
 
 Departments under Operations are Declaration, Documentation, Field Operations, Transport, Tracking and Operations Management. Finance, HR & Admin, ICT, Marketing, Quality Assurance and Admin are not.

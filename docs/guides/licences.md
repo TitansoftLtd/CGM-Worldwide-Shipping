@@ -22,6 +22,8 @@ All five are on the **CGM Shipping** workspace under **Licences & Permits**, and
 
 ## Recording a licence
 
+![A new License Register record: 1 the licence type, 2 the expiry date the reminders count down to, 3 the responsible person, 4 Save](../images/licence-register-new.png)
+
 | Field | Notes |
 |-------|-------|
 | **Licence / Permit** | As it appears on the certificate |

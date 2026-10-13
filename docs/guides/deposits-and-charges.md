@@ -92,6 +92,8 @@ In CGM Shipping Settings:
 
 ## Part 2 - Container charges
 
+![A Container Tracker: 1 the Free Days tab, 2 the last shipping-line free day, 3 demurrage or detention days, 4 KPA chargeable days](../images/container-tracker-free-days.png)
+
 ### What is charged
 
 Two charges, computed per container on the **Container Tracker**:

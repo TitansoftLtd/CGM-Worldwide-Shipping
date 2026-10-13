@@ -103,6 +103,28 @@ def _settings_notification_overrides() -> dict[str, str]:
 	return overrides
 
 
+@frappe.request_cache
+def _sms_enabled_notifications() -> set[str]:
+	"""Default Notification names whose Settings row has Send SMS ticked."""
+	if not frappe.db.exists("DocType", "CGM Shipping Settings"):
+		return set()
+	settings = frappe.get_cached_doc("CGM Shipping Settings")
+	if not settings.meta.has_field(WORKFLOW_NOTIFICATIONS_FIELD):
+		return set()
+	enabled: set[str] = set()
+	for row in settings.get(WORKFLOW_NOTIFICATIONS_FIELD) or []:
+		if not row.get("send_sms"):
+			continue
+		default_name = default_notification_for_event((row.get("workflow_event") or "").strip())
+		if default_name:
+			enabled.add(default_name)
+	return enabled
+
+
+def sms_enabled_for_notification(default_notification_name: str | None) -> bool:
+	return bool(default_notification_name) and default_notification_name in _sms_enabled_notifications()
+
+
 def resolve_notification_name(notification_name: str | None) -> str | None:
 	"""Resolve Desk override from CGM Shipping Settings → Workflow notifications."""
 	if not notification_name:

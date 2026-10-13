@@ -37,6 +37,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.multicurrency import (
 	material_request_currency_totals,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+	another_approver_exists,
+	funding_approver_role,
 	get_funding_workflow_map,
 )
 
@@ -489,15 +491,36 @@ class FundingRequest(Document):
 		if not self.submitted_by or approver != self.submitted_by:
 			return
 
+		# Name the role that is waiting. "Ask another approver" left the reader to
+		# work out who that is, which on a site with several finance roles is not
+		# obvious. The people holding it are deliberately not listed: a refusal
+		# message is the wrong place to publish who holds a finance role, and any
+		# list goes stale as soon as somebody joins or leaves.
+		role = funding_approver_role()
+		if not role:
+			who = _("Ask another approver to review it.")
+		elif another_approver_exists(role, exclude=self.submitted_by):
+			who = _("Waiting on a <b>{0}</b>.").format(role)
+		else:
+			who = _(
+				"Waiting on a <b>{0}</b>, and nobody else currently holds that role, "
+				"so it has to be given to someone before this can move."
+			).format(role)
+
 		blocked_dialog(
 			_("Someone else has to approve this"),
 			_("A funding request cannot be approved by the person who raised it:"),
 			[
 				(
-					_("Raised and approved by {0}").format(self.submitted_by),
-					_(
-						"Ask another approver to review it. Segregation of duties is the "
-						"control that stops one person moving money on their own."
+					_("Raised and approved by {0}").format(
+						frappe.db.get_value("User", self.submitted_by, "full_name")
+						or self.submitted_by
+					),
+					who
+					+ " "
+					+ _(
+						"Segregation of duties is the control that stops one person "
+						"moving money on their own."
 					),
 				)
 			],

@@ -84,6 +84,8 @@ Step 9 is the one that pays: the interchange is the proof the container came bac
 
 ## Container Ops Board
 
+![The Container Ops Board, listing shipments with their operational status](../images/container-ops-board.png)
+
 **Desk:** CGM Shipping → Container Ops Board  
 **Route:** `container-ops-board`
 
