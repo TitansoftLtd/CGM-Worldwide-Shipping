@@ -16,6 +16,12 @@ class CGMShippingSettings(Document):
 			):
 				self.remove(row)
 
+		from cgm_shipping.cgm_worldwide_shipping.customizations.document_trail import (
+			validate_trail_doctype_rows,
+		)
+
+		validate_trail_doctype_rows(self)
+
 	def on_update(self):
 		# Responsibility / role-group lookups are request-cached.
 		frappe.clear_cache()
@@ -29,6 +35,12 @@ class CGMShippingSettings(Document):
 			)
 
 			apply_package_field_depends_on()
+		# The Document Trail reads change history, so a doctype listed there keeps it.
+		from cgm_shipping.cgm_worldwide_shipping.customizations.document_trail import (
+			ensure_change_history,
+		)
+
+		ensure_change_history()
 		if self.flags.get("skip_role_group_sync"):
 			return
 		_sync_role_groups_from_settings(self)

@@ -1,0 +1,241 @@
+/* CGM Document Trail.
+
+   Uses the same surfaces and severity colours as the Operations Overview so
+   the two pages read as one product. A warning is never colour alone: each
+   one also carries a text tag. */
+
+.cgm-trail {
+	--cgm-surface: var(--card-bg, #ffffff);
+	--cgm-border: var(--border-color, #e5e7eb);
+	--cgm-muted: var(--text-muted, #64748b);
+	--cgm-radius: 12px;
+	--sev-warn-text: #b45309;
+	--sev-warn-bg: #fffbeb;
+	--sev-warn-border: #fde68a;
+	--sev-note-text: #475569;
+	--sev-note-bg: #f8fafc;
+	--sev-note-border: #e2e8f0;
+	--sev-ok-text: #15803d;
+	--sev-ok-bg: #f0fdf4;
+	--sev-ok-border: #bbf7d0;
+}
+
+.cgm-trail-body {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding: 14px 0 32px;
+}
+
+.cgm-trail-card {
+	background: var(--cgm-surface);
+	border: 1px solid var(--cgm-border);
+	border-radius: var(--cgm-radius);
+	padding: 16px 18px;
+}
+
+.cgm-trail-card h4 {
+	font-size: 13px;
+	font-weight: 600;
+	margin: 0 0 12px;
+}
+
+.cgm-trail-empty {
+	color: var(--cgm-muted);
+	padding: 48px 16px;
+	text-align: center;
+}
+
+.cgm-trail-head {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px 24px;
+	justify-content: space-between;
+}
+
+.cgm-trail-doctype,
+.cgm-trail-name,
+.cgm-trail-stamps span,
+.cgm-trail-fact span {
+	color: var(--cgm-muted);
+	font-size: 12px;
+}
+
+.cgm-trail-title {
+	display: block;
+	font-size: 17px;
+	font-weight: 600;
+}
+
+.cgm-trail-stamps {
+	font-size: 13px;
+	line-height: 1.7;
+}
+
+.cgm-trail-stamps span {
+	display: inline-block;
+	min-width: 92px;
+}
+
+.cgm-trail-facts {
+	border-top: 1px solid var(--cgm-border);
+	display: grid;
+	gap: 10px 20px;
+	grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+	margin-top: 14px;
+	padding-top: 14px;
+}
+
+.cgm-trail-fact span {
+	display: block;
+}
+
+.cgm-trail-fact b {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.cgm-trail-clear {
+	background: var(--sev-ok-bg);
+	border-color: var(--sev-ok-border);
+	color: var(--sev-ok-text);
+}
+
+.cgm-trail-warnings {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.cgm-trail-warnings li {
+	border: 1px solid;
+	border-left-width: 4px;
+	border-radius: 8px;
+	padding: 9px 12px;
+}
+
+.cgm-trail-warn {
+	background: var(--sev-warn-bg);
+	border-color: var(--sev-warn-border);
+	color: #78350f;
+}
+
+.cgm-trail-note {
+	background: var(--sev-note-bg);
+	border-color: var(--sev-note-border);
+	color: var(--sev-note-text);
+}
+
+.cgm-trail-tag {
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	margin-right: 8px;
+	text-transform: uppercase;
+}
+
+.cgm-trail-warn .cgm-trail-tag {
+	color: var(--sev-warn-text);
+}
+
+.cgm-trail-table-wrap {
+	overflow-x: auto;
+}
+
+.cgm-trail-table {
+	border-collapse: collapse;
+	font-size: 13px;
+	width: 100%;
+}
+
+.cgm-trail-table th,
+.cgm-trail-table td {
+	border-bottom: 1px solid var(--cgm-border);
+	padding: 7px 10px;
+	text-align: left;
+	white-space: nowrap;
+}
+
+.cgm-trail-table td:first-child {
+	white-space: normal;
+}
+
+.cgm-trail-table th {
+	color: var(--cgm-muted);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.cgm-trail-flag td {
+	background: var(--sev-warn-bg);
+}
+
+.cgm-trail-blank {
+	color: var(--cgm-muted);
+}
+
+.cgm-trail-count {
+	color: var(--cgm-muted);
+	font-weight: 400;
+	margin-left: 4px;
+}
+
+.cgm-trail-timeline {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.cgm-trail-event {
+	border-left: 2px solid var(--cgm-border);
+	display: grid;
+	gap: 4px 16px;
+	grid-template-columns: 150px 1fr;
+	padding: 8px 0 8px 14px;
+}
+
+.cgm-trail-kind-bulk,
+.cgm-trail-kind-untracked {
+	border-left-color: var(--sev-warn-text);
+}
+
+.cgm-trail-kind-created,
+.cgm-trail-kind-linked {
+	border-left-color: var(--sev-ok-text);
+}
+
+.cgm-trail-time,
+.cgm-trail-detail,
+.cgm-trail-more {
+	color: var(--cgm-muted);
+	font-size: 12px;
+}
+
+.cgm-trail-what {
+	font-size: 13px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.cgm-trail-changes {
+	margin: 4px 0 0;
+	padding-left: 18px;
+}
+
+.cgm-trail-changes b {
+	font-weight: 600;
+}
+
+.cgm-trail-old {
+	color: var(--cgm-muted);
+	text-decoration: line-through;
+}
+
+@media (max-width: 640px) {
+	.cgm-trail-event {
+		grid-template-columns: 1fr;
+	}
+}

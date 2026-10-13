@@ -1,0 +1,29 @@
+{
+ "content": null,
+ "creation": "2026-10-13 15:00:00",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-10-13 15:00:00",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "document-trail",
+ "owner": "Administrator",
+ "page_name": "document-trail",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Finance Manager"
+  },
+  {
+   "role": "Operations Manager"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Document Trail"
+}

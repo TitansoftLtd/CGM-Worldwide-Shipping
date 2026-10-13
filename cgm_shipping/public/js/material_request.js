@@ -1,16 +1,34 @@
 // Copyright (c) 2026, Titansoft Limited and contributors
 // For license information, please see license.txt
 
+// This list, not `in_list_view` on the DocField, is what decides the columns on
+// this form: `apply_item_grid_layout` forces `in_list_view = 0` on anything absent
+// from it and replaces `setup_user_defined_columns` outright. A field added through
+// Customize Form or a custom field will not appear here until it is named below.
 const OE_ITEM_GRID_FIELDS = {
-	show: ["item_code", "qty", "uom", "rate", "amount", "schedule_date"],
+	show: [
+		"item_code",
+		"qty",
+		"uom",
+		// The currency the line is requested in, and the account the Journal Entry
+		// debits. Both belong on an Operational Expense line: the money leaves a
+		// bank account held in that currency and posts to that account.
+		"custom_currency",
+		"rate",
+		"amount",
+		"expense_account",
+		"schedule_date",
+	],
 	hide: ["warehouse", "from_warehouse"],
 	columns: {
 		item_code: 2,
 		qty: 1,
 		uom: 1,
-		rate: 2,
-		amount: 2,
-		schedule_date: 2,
+		custom_currency: 1,
+		rate: 1,
+		amount: 1,
+		expense_account: 2,
+		schedule_date: 1,
 	},
 };
 
@@ -275,6 +293,9 @@ function apply_item_grid_layout(frm) {
 		}
 	});
 
+	// `hidden` stays forced: these fields do not apply to this request type at all
+	// (warehouse is cleared server-side on an Operational Expense), so offering
+	// them would be offering a column that is always empty.
 	layout.hide.forEach((fieldname) => {
 		set_grid_df_property(grid, fieldname, "hidden", 1);
 		set_grid_df_property(grid, fieldname, "in_list_view", 0);
@@ -288,10 +309,26 @@ function apply_item_grid_layout(frm) {
 		}
 	});
 
-	// Staging/user GridView settings override Customize Form. Force the app
-	// column order so Item Code stays first on every site.
+	// The app list is the *default* column set, not a lock.
+	//
+	// It exists because a grid with no configuration picked up whatever a staging
+	// site had saved, which put Required By first and buried Item Code. Forcing the
+	// app order fixed that, but it also meant the gear icon did nothing: a column
+	// somebody added by hand was wiped on the next refresh, and there was no way to
+	// tell, which is a worse problem than the one it solved.
+	//
+	// So a layout the user saved from the gear wins, because it is a deliberate
+	// choice, and the app list applies only when they have never configured this
+	// grid. "Reset to default" in that dialog clears their layout and brings the
+	// app list back.
 	if (!grid._cgm_columns_patched) {
+		const frappe_user_columns = grid.setup_user_defined_columns.bind(grid);
 		grid.setup_user_defined_columns = function () {
+			this.user_defined_columns = [];
+			frappe_user_columns();
+			if (this.user_defined_columns.length) {
+				return;
+			}
 			this.user_defined_columns = build_grid_columns(this, get_item_grid_layout(frm));
 		};
 		grid._cgm_columns_patched = true;

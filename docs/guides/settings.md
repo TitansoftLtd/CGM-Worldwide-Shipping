@@ -188,11 +188,37 @@ container generally does not.
 |-------|--------|
 | KPA Port Chargeable Days | **KPA Port Daily Rate**, **KPA Port Rate Currency** |
 | Container Charge Accrual Accounts | **Demurrage Expense**, **Demurrage Accrued Payable**, **KPA Port Expense**, **KPA Port Accrued Payable** |
-| Funding | **Default Operational Expense Account** |
+| Funding | **Default Operational Expense Account**, **Allow Any Account as Item Default** |
 
 The accrual accounts are where container charges post. Getting one wrong misstates
 the ledger rather than breaking the workflow, which makes it harder to notice, so
 change these with Finance present.
+
+### Allow Any Account as Item Default
+
+**On by default.** **Default Expense Account** and **Default Income Account** on an
+Item or an Item Group offer every account on the company.
+
+ERPNext normally offers only Profit and Loss accounts there, which is right for a
+company that consumes what it buys. CGM does not always consume it: shipping line
+and KPA charges are accrued to liability accounts because the charge is incurred on
+a client's behalf and billed on, so it never belongs in an expense account at all.
+An item representing one of those charges would have nowhere valid to point.
+
+The restriction this removes is a shortlist, not a control. Nothing validates the
+account type of an Item Default, so narrowing the picker never prevented a wrong
+choice, only a correct one. Whoever sets an Item Default is choosing where money
+lands and is expected to know which account they mean.
+
+**Group and disabled accounts are still never offered**, because neither can be
+posted to.
+
+This widens what the two pickers show and nothing else. It changes no Item that
+already exists, no account and nothing already posted. Untick it and the pickers
+return exactly what ERPNext returns, account for account.
+
+One thing worth saying out loud to whoever reads the chart next: an item defaulting
+to a liability account is correct here, but it is surprising if you come to it cold.
 
 ---
 
@@ -244,5 +270,6 @@ Remove the row and that event stops notifying. The underlying action still happe
 
 - [What CGM Adds to ERPNext](customizations.md) - the full DocType and field inventory
 - [Finance](finance.md) - how the receipt rules and responsibilities play out in payment tasks
+- [Funding Request](funding.md) - the Default Operational Expense Account and foreign-currency requests
 - [Operations](operations.md) - task plans, departments and final document review
 - [Declaration & Customs](declaration-customs.md) - permits, UCR and entry flows

@@ -32,6 +32,10 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
 	released_mr_workflow_state,
 	variance_amount,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations.multicurrency import (
+	company_currency,
+	material_request_currency_totals,
+)
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
 	get_funding_workflow_map,
 )
@@ -99,19 +103,92 @@ class FundingRequest(Document):
 		rows = self._valid_material_request_rows()
 		approved_rows = self._approved_rows(rows)
 		self.total_requests = len(rows)
-		self.total_requested = flt(sum(flt(row.requested_amount) for row in rows))
-		self.total_funded = flt(sum(flt(row.funded_amount) for row in approved_rows))
+		self.total_requested = self._base_sum(rows, "requested_amount")
+		self.total_funded = self._base_sum(approved_rows, "funded_amount")
 		if funding_approval_is_recorded(self.workflow_state):
-			self.total_approved = flt(sum(flt(row.approved_amount) for row in approved_rows))
-			self.total_variance = flt(
-				sum(variance_amount(row.requested_amount, row.approved_amount) for row in approved_rows)
-			)
+			self.total_approved = self._base_sum(approved_rows, "approved_amount")
+			self.total_variance = flt(self.total_approved) - flt(self.total_requested_approved_rows(approved_rows))
 			self.outstanding = flt(self.total_approved) - flt(self.total_funded)
+		else:
+			self.total_approved = 0
+			if self.meta.has_field("total_variance"):
+				self.total_variance = 0
+			self.outstanding = 0
+		self._set_currency_totals(rows, approved_rows)
+
+	def total_requested_approved_rows(self, approved_rows) -> float:
+		"""Company-currency requested total across approved rows only."""
+		return self._base_sum(approved_rows, "requested_amount")
+
+	@staticmethod
+	def _base_sum(rows, fieldname: str) -> float:
+		"""Sum a row amount in company currency.
+
+		Falls back to the row-currency figure when no base twin is stored, which is
+		what happens on an existing request saved before multicurrency and on any
+		row whose currency is the company's own.
+		"""
+		total = 0.0
+		for row in rows:
+			base_field = f"base_{fieldname}"
+			if row.meta.has_field(base_field) and flt(row.get(base_field)):
+				total += flt(row.get(base_field))
+			else:
+				total += flt(row.get(fieldname)) * (flt(row.get("exchange_rate")) or 1)
+		return flt(total, 2)
+
+	def _set_currency_totals(self, rows, approved_rows) -> None:
+		"""One row per currency, so a KES figure is never added to a USD one.
+
+		The company-currency totals below this are the ones the approval decision
+		and the payment gates use, because those need a single comparable number.
+		This table is what the figures were actually asked for in, which is what a
+		requester and an approver recognise.
+		"""
+		if not self.meta.has_field("currency_totals"):
 			return
-		self.total_approved = 0
-		if self.meta.has_field("total_variance"):
-			self.total_variance = 0
-		self.outstanding = 0
+		base = company_currency(self.company)
+		recorded = funding_approval_is_recorded(self.workflow_state)
+		approved_names = {row.name for row in approved_rows}
+
+		totals: dict[str, dict] = {}
+		for row in rows:
+			currency = row.get("currency") or base
+			bucket = totals.setdefault(
+				currency,
+				{"requested": 0.0, "approved": 0.0, "funded": 0.0, "base_approved": 0.0},
+			)
+			rate = flt(row.get("exchange_rate")) or 1
+			bucket["requested"] += flt(row.get("requested_amount"))
+			if recorded and row.name in approved_names:
+				bucket["approved"] += flt(row.get("approved_amount"))
+				bucket["funded"] += flt(row.get("funded_amount"))
+				bucket["base_approved"] += flt(row.get("base_approved_amount")) or (
+					flt(row.get("approved_amount")) * rate
+				)
+
+		# A request entirely in the company currency has nothing to break down, and
+		# one row repeating the totals below it would be noise.
+		if set(totals) <= {base}:
+			self.set("currency_totals", [])
+			return
+
+		self.set("currency_totals", [])
+		# Company currency first, then alphabetical, so the sheet reads the same way
+		# every time regardless of which request came in first.
+		for currency in sorted(totals, key=lambda c: (c != base, c)):
+			bucket = totals[currency]
+			self.append(
+				"currency_totals",
+				{
+					"currency": currency,
+					"total_requested": flt(bucket["requested"], 2),
+					"total_approved": flt(bucket["approved"], 2),
+					"total_funded": flt(bucket["funded"], 2),
+					"outstanding": flt(bucket["approved"] - bucket["funded"], 2),
+					"base_total_approved": flt(bucket["base_approved"], 2),
+				},
+			)
 
 	def _sync_funding_progress_state(self) -> None:
 		next_state = funding_progress_state(
@@ -207,13 +284,23 @@ class FundingRequest(Document):
 		for row in self.material_requests:
 			if not row.material_request:
 				frappe.throw(_("Row {0}: Material Request is required.").format(row.idx))
-			if row.material_request in seen:
+			# A request holding more than one currency appears once per currency,
+			# because each half is approved on its own and paid from its own bank
+			# account. Two rows for the same request *and* currency is still a
+			# duplicate and still wrong.
+			key = (row.material_request, row.get("currency") or "")
+			if key in seen:
+				currency = row.get("currency")
 				frappe.throw(
-					_("Material Request {0} is included more than once.").format(
+					_("Material Request {0} is included more than once in {1}.").format(
+						frappe.bold(row.material_request), frappe.bold(currency)
+					)
+					if currency
+					else _("Material Request {0} is included more than once.").format(
 						frappe.bold(row.material_request)
 					)
 				)
-			seen.add(row.material_request)
+			seen.add(key)
 			if row.material_request in blocked:
 				frappe.throw(
 					_("Material Request {0} is already on another active Funding Request.").format(
@@ -253,6 +340,7 @@ class FundingRequest(Document):
 	def _apply_row_amounts(self) -> None:
 		for row in self.material_requests:
 			requested = get_material_request_total(row.material_request)
+			requested = self._sync_row_currency(row, requested)
 			row.requested_amount = requested
 			if row.meta.has_field("item_summary"):
 				row.item_summary = get_material_request_item_summary(row.material_request)
@@ -273,7 +361,56 @@ class FundingRequest(Document):
 				row.approved_amount = 0
 			if row.meta.has_field("variance"):
 				row.variance = variance_amount(row.requested_amount, row.approved_amount)
+			self._sync_row_base_amounts(row)
 			row.status = self._row_status_label(row)
+
+	def _sync_row_currency(self, row, requested: float) -> float:
+		"""Keep the row aligned with its own slice of the Material Request.
+
+		One request may produce several rows, one per currency. Each row owns its
+		currency, so the request is re-read and the matching slice taken rather
+		than the whole request total being forced onto every row. Returns the
+		requested amount in the row's currency.
+		"""
+		if not row.meta.has_field("currency"):
+			return requested
+
+		splits = material_request_currency_totals(row.material_request)
+		if not splits:
+			return requested
+
+		# A row that has no currency yet belongs to the first slice, which is how a
+		# request raised before multicurrency reads.
+		if not row.currency:
+			row.currency = splits[0]["currency"]
+
+		match = next((s for s in splits if s["currency"] == row.currency), None)
+		if not match:
+			# The request no longer has lines in this currency: keep the row at zero
+			# rather than silently repricing it into a currency nobody asked for.
+			if row.meta.has_field("exchange_rate"):
+				row.exchange_rate = row.exchange_rate or 1
+			return 0.0
+
+		if row.meta.has_field("exchange_rate"):
+			row.exchange_rate = match["exchange_rate"]
+		return match["amount"]
+
+	def _sync_row_base_amounts(self, row) -> None:
+		"""Mirror the row-currency amounts into their company-currency twins.
+
+		The header totals and everything downstream of them are stated in company
+		currency, so these twins are what keeps a foreign row comparable with a
+		local one. For a company-currency row the rate is 1 and the twin is the
+		same number, which is why nothing changed for existing requests.
+		"""
+		rate = flt(row.get("exchange_rate")) or 1
+		for source, target in (
+			("requested_amount", "base_requested_amount"),
+			("approved_amount", "base_approved_amount"),
+		):
+			if row.meta.has_field(target):
+				row.set(target, flt(flt(row.get(source)) * rate, 2))
 
 	def _row_status_label(self, row) -> str:
 		if row.decision == FR_ROW_DECISION_REJECTED:
