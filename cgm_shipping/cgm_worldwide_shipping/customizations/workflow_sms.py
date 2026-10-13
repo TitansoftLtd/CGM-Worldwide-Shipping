@@ -7,7 +7,7 @@ Two sources, one sender:
    notifications has a "Send SMS" tick per event. When it is on, a text goes out
    with the email. The handoffs in `HANDOFF_SMS` have an SMS Notification of
    their own, so the text is short and its recipients are set apart from the
-   email's. Any other ticked event is texted from the email's subject line, to
+   email's: finance texts go only to the holders of the Finance Alerts role. Any other ticked event is texted from the email's subject line, to
    the email's recipients.
 
 2. Steps that had no announcement at all. A step being completed told nobody -
@@ -51,6 +51,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 SEA_IMPORT_FLOW = "Sea Import Workflow"
 OPPORTUNITY_APPROVAL_SMS = "CGM SMS - Opportunity Approval Needed"
 OPPORTUNITY_PENDING_STATE = "Pending Approval"
+LEAVE_APPROVED_SMS = "CGM SMS - Leave Approved"
+LEAVE_APPROVED_STATE = "Approved"
 
 # One text is 160 plain characters; a longer one is billed as two or more.
 SMS_MAX_LENGTH = 160
@@ -122,14 +124,16 @@ STEP_SMS: tuple[tuple[int, str, tuple[str, ...], str], ...] = (
 	),
 )
 
-# Roles seeded when the handoff's email Notification has none to copy.
-_FINANCE_FALLBACK = ("Finance User",)
+
+# Finance texts go to the people holding this role and nobody else. The finance
+# emails reach every Accounts and Finance user; CGM wants the texts to reach two
+# named people, and a role of its own is how a Notification names people.
+FINANCE_ALERTS_ROLE = "Finance Alerts"
 
 # (email Notification the event fires, SMS Notification name, roles, text).
-# roles None = copy the email Notification's roles when the SMS one is created.
 # "Paid" texts go to whoever acts next, which is not who the email goes to.
-HANDOFF_SMS: tuple[tuple[str, str, tuple[str, ...] | None, str], ...] = (
-	(UCR_INVOICE_TO_FINANCE, "CGM SMS - UCR Invoice to Finance", None, f"UCR invoice, verify and pay: {_SHIPMENT}"),
+HANDOFF_SMS: tuple[tuple[str, str, tuple[str, ...], str], ...] = (
+	(UCR_INVOICE_TO_FINANCE, "CGM SMS - UCR Invoice to Finance", (FINANCE_ALERTS_ROLE,), f"UCR invoice, verify and pay: {_SHIPMENT}"),
 	(
 		UCR_RECEIPT_FOR_DECLARANT,
 		"CGM SMS - UCR Paid",
@@ -139,7 +143,7 @@ HANDOFF_SMS: tuple[tuple[str, str, tuple[str, ...] | None, str], ...] = (
 	(
 		PERMIT_INVOICES_TO_FINANCE,
 		"CGM SMS - Permit Invoices to Finance",
-		None,
+		(FINANCE_ALERTS_ROLE,),
 		f"Permit invoices, verify and pay: {_SHIPMENT}",
 	),
 	(
@@ -151,7 +155,7 @@ HANDOFF_SMS: tuple[tuple[str, str, tuple[str, ...] | None, str], ...] = (
 	(
 		SHIPPING_LINE_INVOICE_TO_FINANCE,
 		"CGM SMS - Shipping Line Invoice to Finance",
-		None,
+		(FINANCE_ALERTS_ROLE,),
 		f"Shipping line invoice, verify and pay: {_SHIPMENT}",
 	),
 	(
@@ -163,7 +167,7 @@ HANDOFF_SMS: tuple[tuple[str, str, tuple[str, ...] | None, str], ...] = (
 	(
 		ENTRY_INVOICE_TO_FINANCE,
 		"CGM SMS - Entry Invoice to Finance",
-		None,
+		(FINANCE_ALERTS_ROLE,),
 		f"Entry slip invoice, verify and pay: {_SHIPMENT}",
 	),
 	(
@@ -172,9 +176,9 @@ HANDOFF_SMS: tuple[tuple[str, str, tuple[str, ...] | None, str], ...] = (
 		("Declarant",),
 		f"Entry slip paid, attach entry and receipt: {_SHIPMENT}",
 	),
-	(KPA_INVOICE_TO_FINANCE, "CGM SMS - KPA Invoice to Finance", None, f"KPA invoice, verify and pay: {_SHIPMENT}"),
+	(KPA_INVOICE_TO_FINANCE, "CGM SMS - KPA Invoice to Finance", (FINANCE_ALERTS_ROLE,), f"KPA invoice, verify and pay: {_SHIPMENT}"),
 	(KPA_RECEIPT_FOR_SUPERVISOR, "CGM SMS - KPA Paid", ("Senior Supervisor",), f"KPA paid: {_SHIPMENT}"),
-	(CFS_INVOICE_TO_FINANCE, "CGM SMS - CFS Invoice to Finance", None, f"CFS invoice, verify and pay: {_SHIPMENT}"),
+	(CFS_INVOICE_TO_FINANCE, "CGM SMS - CFS Invoice to Finance", (FINANCE_ALERTS_ROLE,), f"CFS invoice, verify and pay: {_SHIPMENT}"),
 	(CFS_RECEIPT_FOR_SUPERVISOR, "CGM SMS - CFS Paid", ("Senior Supervisor",), f"CFS paid: {_SHIPMENT}"),
 )
 
@@ -214,8 +218,11 @@ def _sms_text(notification, doc, context) -> str:
 	return text
 
 
-def queue_notification_sms(notification, doc) -> int:
+def queue_notification_sms(notification, doc, numbers: list[str] | None = None) -> int:
 	"""Queue one text per recipient of this Notification. Returns how many were queued.
+
+	`numbers` replaces the Notification's own recipients, for a text whose
+	recipient cannot be written as a role or a phone field on the document.
 
 	Never raises: this runs inside task and opportunity saves.
 	"""
@@ -235,7 +242,8 @@ def queue_notification_sms(notification, doc) -> int:
 
 		stamp_shipment_name_on_doc(doc)
 		context = get_context(doc)
-		numbers = notification.get_receiver_list(doc, context, "mobile_no", notification.get_mobile_no)
+		if numbers is None:
+			numbers = notification.get_receiver_list(doc, context, "mobile_no", notification.get_mobile_no)
 		numbers = sorted({n for n in (normalise_mobile(n) for n in numbers) if n})
 		text = _sms_text(notification, doc, context)
 		if not numbers or not text:
@@ -329,6 +337,40 @@ def notify_opportunity_approval_sms(doc, _method=None) -> None:
 	queue_notification_sms(OPPORTUNITY_APPROVAL_SMS, doc)
 
 
+def employee_mobile_numbers(employee: str | None, user: str | None = None) -> list[str]:
+	"""The employee's number: from their User record, else from the Employee."""
+	numbers = []
+	user = user or (frappe.db.get_value("Employee", employee, "user_id") if employee else None)
+	if user:
+		numbers.append(frappe.db.get_value("User", user, "mobile_no"))
+	if employee:
+		numbers.append(frappe.db.get_value("Employee", employee, "cell_number"))
+	numbers = [normalise_mobile(n) for n in numbers if n]
+	return numbers[:1]
+
+
+def notify_leave_approved_sms(doc, _method=None) -> None:
+	"""Text the employee once, when the last approver approves.
+
+	The approval chain has up to five steps and each already emails the next
+	approver. The employee only needs the outcome, so nothing is texted for the
+	steps in between.
+	"""
+	if (doc.get("workflow_state") or "") != LEAVE_APPROVED_STATE:
+		return
+	prev = doc.get_doc_before_save()
+	if prev and (prev.get("workflow_state") or "") == LEAVE_APPROVED_STATE:
+		return
+	# on_change also runs for later db_set calls in the same request.
+	flag = f"cgm_leave_approved_sms:{doc.name}"
+	if frappe.flags.get(flag):
+		return
+	frappe.flags[flag] = True
+	numbers = employee_mobile_numbers(doc.get("employee"), doc.get("custom_employee_user"))
+	if numbers:
+		queue_notification_sms(LEAVE_APPROVED_SMS, doc, numbers=numbers)
+
+
 # ------------------------------------------------------------------
 # Seeding
 # ------------------------------------------------------------------
@@ -339,15 +381,7 @@ def _sms_notification_specs() -> list[dict]:
 		{"name": name, "document_type": "Task", "roles": roles, "message": text}
 		for _seq, name, roles, text in STEP_SMS
 	]
-	for email_name, name, roles, text in HANDOFF_SMS:
-		if roles is None:
-			roles = tuple(
-				frappe.get_all(
-					"Notification Recipient",
-					filters={"parent": email_name, "parenttype": "Notification", "receiver_by_role": ["is", "set"]},
-					pluck="receiver_by_role",
-				)
-			) or _FINANCE_FALLBACK
+	for _email_name, name, roles, text in HANDOFF_SMS:
 		# Enabled from the start: the Send SMS tick on the event is the switch.
 		specs.append({"name": name, "document_type": "Task", "roles": roles, "message": text, "enabled": 1})
 	specs.append(
@@ -358,7 +392,46 @@ def _sms_notification_specs() -> list[dict]:
 			"message": "Approve shipment {{ doc.name }}: {{ doc.customer_name or doc.party_name or '-' }}",
 		}
 	)
+	specs.append(
+		{
+			"name": LEAVE_APPROVED_SMS,
+			"document_type": "Leave Application",
+			# For the record only: the number is looked up from the employee,
+			# because this field holds an email address, not a phone.
+			"fields": ("custom_employee_user",),
+			"message": (
+				"Your {{ doc.leave_type }} from {{ frappe.utils.formatdate(doc.from_date, 'd MMM') }} "
+				"to {{ frappe.utils.formatdate(doc.to_date, 'd MMM') }} is approved."
+			),
+		}
+	)
 	return specs
+
+
+def ensure_finance_alerts_role() -> None:
+	"""The role, and a Role Profile holding only it, so it can be given to people.
+
+	The role carries no permissions. Nobody holds it until a System Manager adds
+	the **Finance Alerts** role profile to a user, so until then the finance texts
+	reach no one.
+
+	The profile matters: CGM's users take their roles from role profiles, and
+	saving such a user resets their roles to what the profiles list. A role
+	ticked directly on the user is gone at the next save. Adding this profile
+	beside the user's existing ones is what makes the role stick.
+	"""
+	if not frappe.db.exists("Role", FINANCE_ALERTS_ROLE):
+		frappe.get_doc({"doctype": "Role", "role_name": FINANCE_ALERTS_ROLE, "desk_access": 1}).insert(
+			ignore_permissions=True
+		)
+	if frappe.db.exists("DocType", "Role Profile") and not frappe.db.exists("Role Profile", FINANCE_ALERTS_ROLE):
+		frappe.get_doc(
+			{
+				"doctype": "Role Profile",
+				"role_profile": FINANCE_ALERTS_ROLE,
+				"roles": [{"role": FINANCE_ALERTS_ROLE}],
+			}
+		).insert(ignore_permissions=True)
 
 
 def ensure_workflow_sms_notifications() -> int:
@@ -370,9 +443,12 @@ def ensure_workflow_sms_notifications() -> int:
 	"""
 	if not frappe.db.exists("DocType", "Notification"):
 		return 0
+	ensure_finance_alerts_role()
 	created = 0
 	for spec in _sms_notification_specs():
 		if frappe.db.exists("Notification", spec["name"]):
+			continue
+		if not frappe.db.exists("DocType", spec["document_type"]):
 			continue
 		notification = frappe.new_doc("Notification")
 		notification.name = spec["name"]
@@ -382,9 +458,11 @@ def ensure_workflow_sms_notifications() -> int:
 		notification.event = "Custom"
 		notification.enabled = cint(spec.get("enabled"))
 		notification.message = spec["message"]
-		for role in spec["roles"]:
+		for role in spec.get("roles") or ():
 			if frappe.db.exists("Role", role):
 				notification.append("recipients", {"receiver_by_role": role})
+		for fieldname in spec.get("fields") or ():
+			notification.append("recipients", {"receiver_by_document_field": fieldname})
 		previous = frappe.flags.ignore_links
 		frappe.flags.ignore_links = True
 		try:

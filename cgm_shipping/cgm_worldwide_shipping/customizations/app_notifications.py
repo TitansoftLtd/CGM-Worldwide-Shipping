@@ -21,6 +21,8 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.sea_task_notifications i
 	task_notification_message,
 )
 
+REQUISITION_RAISED_NOTIFICATION = "CGM Material Request - Requisition Raised"
+
 _SHIPMENT = (
 	"{{ doc.get('cgm_shipment_name') "
 	"or (frappe.db.get_value('Project', doc.project, 'project_name') if doc.project else None) "
@@ -82,8 +84,33 @@ def portal_feedback_message() -> str:
 	)
 
 
+def requisition_raised_message() -> str:
+	return notification_message(
+		"A new requisition was submitted and needs Accounts.",
+		(
+			("Requisition", "<b>{{ doc.name }}</b>"),
+			("Raised by", "{{ frappe.db.get_value('User', doc.owner, 'full_name') or doc.owner }}"),
+			("Purpose", "{{ doc.get('custom_purpose') or doc.material_request_type or '-' }}"),
+			("Shipment", "{{ doc.get('custom_project') or doc.get('project') or '-' }}"),
+			("Required by", "{{ doc.schedule_date or '-' }}"),
+			("Status", "{{ doc.workflow_state or doc.status }}"),
+		),
+		link=notification_link("Material Request", "Open requisition"),
+	)
+
+
 def _notifications() -> list[dict]:
 	return [
+		{
+			# Fired by Frappe itself on submit, which is the moment a requisition
+			# leaves its requester. Later steps are already covered by email.
+			"name": REQUISITION_RAISED_NOTIFICATION,
+			"document_type": "Material Request",
+			"event": "Submit",
+			"subject": "New requisition {{ doc.name }} from {{ frappe.db.get_value('User', doc.owner, 'full_name') or doc.owner }}",
+			"message": requisition_raised_message(),
+			"recipients": [{"receiver_by_role": "Finance Alerts"}],
+		},
 		{
 			"name": FINAL_DOCUMENT_NOTIFICATION,
 			"document_type": "Task",
@@ -125,6 +152,12 @@ def _notifications() -> list[dict]:
 def ensure_app_notifications() -> None:
 	if not frappe.db.exists("DocType", "Notification"):
 		return
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms import (
+		ensure_finance_alerts_role,
+	)
+
+	# The requisition email is addressed to this role, so it has to exist first.
+	ensure_finance_alerts_role()
 	for spec in _notifications():
 		if frappe.db.exists("Notification", spec["name"]):
 			continue
@@ -135,7 +168,7 @@ def ensure_app_notifications() -> None:
 		notification.subject = spec["subject"]
 		notification.document_type = spec["document_type"]
 		notification.channel = "Email"
-		notification.event = "Custom"
+		notification.event = spec.get("event", "Custom")
 		notification.enabled = 1
 		notification.message_type = "HTML"
 		notification.message = spec["message"]

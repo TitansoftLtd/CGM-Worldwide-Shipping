@@ -242,6 +242,10 @@ to a liability account is correct here, but it is surprising if you come to it c
 **Client Portal URL** and **Operations Notification Email** are the addresses used
 in outbound messages.
 
+**Also send the login code by SMS** texts the two-factor login code to the user's
+mobile number as well as emailing it. Off by default. A user with no mobile number
+still gets the email. See [SMS Notifications](sms-notifications.md#login-code).
+
 ### Container deposits
 
 **Container Deposit Account** is the asset account debited when Finance pays a

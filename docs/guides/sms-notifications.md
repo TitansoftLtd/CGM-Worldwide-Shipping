@@ -63,25 +63,48 @@ unchanged; the text is extra.
 
 | Workflow event | Notification | Texted to (default) | Text |
 |----------------|--------------|---------------------|------|
-| UCR Invoice to Finance | `CGM SMS - UCR Invoice to Finance` | Finance | UCR invoice, verify and pay: *shipment* |
+| UCR Invoice to Finance | `CGM SMS - UCR Invoice to Finance` | Finance Alerts | UCR invoice, verify and pay: *shipment* |
 | UCR Receipt Attach | `CGM SMS - UCR Paid` | Declarant | UCR paid, attach receipt and IDF: *shipment* |
-| Permit Invoices to Finance | `CGM SMS - Permit Invoices to Finance` | Finance | Permit invoices, verify and pay: *shipment* |
+| Permit Invoices to Finance | `CGM SMS - Permit Invoices to Finance` | Finance Alerts | Permit invoices, verify and pay: *shipment* |
 | Permit Receipts Attach | `CGM SMS - Permits Paid` | Declarant | Permits paid, attach receipts and permits: *shipment* |
-| Shipping Line Invoice to Finance | `CGM SMS - Shipping Line Invoice to Finance` | Finance | Shipping line invoice, verify and pay: *shipment* |
+| Shipping Line Invoice to Finance | `CGM SMS - Shipping Line Invoice to Finance` | Finance Alerts | Shipping line invoice, verify and pay: *shipment* |
 | Shipping Line Receipt Attach | `CGM SMS - Shipping Line Paid` | Documentation | Shipping line paid, POP shared: *shipment* |
-| Entry Invoice to Finance | `CGM SMS - Entry Invoice to Finance` | Finance | Entry slip invoice, verify and pay: *shipment* |
+| Entry Invoice to Finance | `CGM SMS - Entry Invoice to Finance` | Finance Alerts | Entry slip invoice, verify and pay: *shipment* |
 | Entry Receipt Attach | `CGM SMS - Entry Slip Paid` | Declarant | Entry slip paid, attach entry and receipt: *shipment* |
-| KPA Invoice to Finance | `CGM SMS - KPA Invoice to Finance` | Finance | KPA invoice, verify and pay: *shipment* |
+| KPA Invoice to Finance | `CGM SMS - KPA Invoice to Finance` | Finance Alerts | KPA invoice, verify and pay: *shipment* |
 | KPA Receipt Attach | `CGM SMS - KPA Paid` | Senior Supervisor | KPA paid: *shipment* |
-| CFS Invoice to Finance | `CGM SMS - CFS Invoice to Finance` | Finance | CFS invoice, verify and pay: *shipment* |
+| CFS Invoice to Finance | `CGM SMS - CFS Invoice to Finance` | Finance Alerts | CFS invoice, verify and pay: *shipment* |
 | CFS Receipt Attach | `CGM SMS - CFS Paid` | Senior Supervisor | CFS paid: *shipment* |
 
 The permit pair covers both pre-clearance and post-clearance permits. The CFS
 pair is the LCL equivalent of KPA.
 
-"Finance" means the roles on the matching email Notification at the time the SMS
-one was created. After that the two lists are separate: changing who gets the
-email does not change who gets the text.
+**Finance Alerts** is a role held only by the people who should get finance
+texts. The finance emails still go to every Accounts and Finance user; the texts
+go to the holders of this role and nobody else. See
+[Who gets the finance texts](#who-gets-the-finance-texts).
+
+### Leave approved
+
+| When | Notification | Texted to | Text |
+|------|--------------|-----------|------|
+| A Leave Application reaches **Approved**, after the last approver | `CGM SMS - Leave Approved` | The employee | Your *leave type* from *date* to *date* is approved. |
+
+One text, at the end. The approvals in between text nobody; each approver is
+still emailed as before. A rejection is not texted. The number is taken from the
+employee's User record, or from the Employee record if the user has none.
+
+### Login code
+
+With two-factor login on, the code is emailed. It can be texted as well: the same
+code, so whichever arrives first works.
+
+| When | Texted to | Text |
+|------|-----------|------|
+| A user logs in and is asked for the verification code | That user | Your verification code is *code* |
+
+A user with no mobile number still gets the email and can log in as before. Every
+login costs one SMS.
 
 ---
 
@@ -101,6 +124,14 @@ handoff's `CGM SMS - ...` Notification is already enabled and waits for that
 tick. Unticking **Enabled** on the Notification also silences it.
 
 ![Workflow notifications in CGM Shipping Settings: 1 the Send SMS column, 2 a ticked event](../images/settings-workflow-notifications.png)
+
+**Leave approved:** tick **Enabled** on the `CGM SMS - Leave Approved`
+Notification.
+
+**Login code:** in **CGM Shipping Settings**, tab **Notification Settings**, tick
+**Also send the login code by SMS**. Leave **System Settings > Two Factor
+Authentication method** on *Email*; do not switch it to *SMS*, or a user with no
+mobile number cannot log in.
 
 Ticking **Send SMS** on an event that has no `CGM SMS - ...` Notification of its
 own (receipt verification, the *Your Turn* alerts) texts the email's subject line
@@ -123,6 +154,25 @@ Both are on the Notification record, and a migrate never overwrites them.
 
 Deleting a `CGM SMS - ...` Notification brings it back, with its defaults, on the
 next migrate. To stop a text, untick **Enabled** instead.
+
+---
+
+## Who gets the finance texts
+
+The **Finance Alerts** role decides it. To add or remove a person:
+
+1. Open the **User**.
+2. Under **Roles & Permissions**, add or remove **Finance Alerts** in **Role
+   Profiles**, beside the profiles the user already has.
+3. Save.
+
+Add it as a role profile, not by ticking the role. CGM's users take their roles
+from role profiles, and saving a user resets the ticked roles to what the
+profiles list, so a role ticked by hand disappears at the next save.
+
+The same role also receives one email: `CGM Material Request - Requisition
+Raised`, sent when a requisition is submitted. Later steps of a requisition are
+covered by the existing emails.
 
 ---
 

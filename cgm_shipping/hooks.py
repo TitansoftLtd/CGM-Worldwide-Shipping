@@ -334,6 +334,7 @@ doc_events = {
 	},
 	"Leave Application": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
+		"on_change": "cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms.notify_leave_approved_sms",
 	},
 	"Employee Grade": {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.per_diem.validate_job_group_designations",
@@ -505,6 +506,7 @@ override_doctype_dashboards = {
 # before_request = ["cgm_shipping.utils.before_request"]
 before_request = [
 	"cgm_shipping.cgm_worldwide_shipping.customizations.website.redirect_transporter_portal_users_from_desk",
+	"cgm_shipping.cgm_worldwide_shipping.customizations.login_code_sms.ensure_login_code_sms",
 ]
 # after_request = ["cgm_shipping.utils.after_request"]
 
