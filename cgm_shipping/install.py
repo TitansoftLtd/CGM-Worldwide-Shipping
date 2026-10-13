@@ -225,8 +225,13 @@ def ensure_app_setup() -> None:
 		ensure_workflow_sms_notifications,
 	)
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
+		ensure_funding_disburse_transition,
+	)
+
 	ensure_app_custom_fields()
 	ensure_app_workflows()
+	ensure_funding_disburse_transition()
 	ensure_app_notifications()
 	ensure_workflow_sms_notifications()
 
