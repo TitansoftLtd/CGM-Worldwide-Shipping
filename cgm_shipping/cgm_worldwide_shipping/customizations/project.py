@@ -906,3 +906,33 @@ def create_project_from_opportunity(opportunity, project_name=None):
 	sync_cargo_type_from_linked_bl(proj)
 	sync_predocuments_from_source(proj, opp)
 	return insert_shipment_project(proj)
+
+
+@frappe.whitelist()
+def set_project_status(project: str, status: str):
+	"""ERPNext's Set Project Status, limited to cancelling.
+
+	The stock action writes the chosen status onto every task with
+	`frappe.db.set_value`, so "Completed" closes a shipment without running one
+	completion gate or hook: no payment or receipt checks, no vessel-arrival
+	event, no Container Tracker. PROJ-0037 was closed that way on 5 Oct 2026 -
+	15 of its 23 tasks have no completed date - and had no tracker until arrival
+	was confirmed by hand a week later.
+
+	A shipment completes when its tasks do. Cancelling everything at once is
+	still a legitimate thing to want, so that half is kept.
+	"""
+	if status != "Cancelled":
+		frappe.throw(
+			frappe._(
+				"A project cannot be set to {0} from here. It completes on its own "
+				"once its tasks are completed."
+			).format(frappe.bold(frappe._(status))),
+			title=frappe._("Complete the tasks instead"),
+		)
+
+	from erpnext.projects.doctype.project.project import (
+		set_project_status as erpnext_set_project_status,
+	)
+
+	return erpnext_set_project_status(project, status)

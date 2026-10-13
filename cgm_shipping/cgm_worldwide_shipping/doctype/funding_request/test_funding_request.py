@@ -205,21 +205,59 @@ class TestFundingRequestHelpers(unittest.TestCase):
 				return 0
 			return None
 
-		with patch("frappe.get_all", return_value=["Felix Gor - CWSCL", None]):
+		# The resolver reads whole rows now, not just the account, because on a
+		# request holding two currencies it has to pick the account from a line in
+		# the currency being paid.
+		lines = [
+			frappe._dict(expense_account=None, custom_currency="KES", amount=100),
+			frappe._dict(expense_account="Felix Gor - CWSCL", custom_currency="KES", amount=200),
+		]
+		with patch("frappe.get_all", return_value=lines):
 			with patch("frappe.db.get_value", side_effect=_not_group):
 				self.assertEqual(
 					_material_request_expense_account("MAT-MR-1", "Company"),
 					"Felix Gor - CWSCL",
 				)
 
+		# Asked for USD, it must not reach for the KES line's account.
+		mixed = [
+			frappe._dict(expense_account="KES Account - CWSCL", custom_currency="KES", amount=100),
+			frappe._dict(expense_account="USD Account - CWSCL", custom_currency="USD", amount=200),
+		]
+		with patch("frappe.get_all", return_value=mixed):
+			with patch("frappe.db.get_value", side_effect=_not_group):
+				with patch(
+					"cgm_shipping.cgm_worldwide_shipping.customizations.funding.company_currency",
+					return_value="KES",
+				):
+					self.assertEqual(
+						_material_request_expense_account("MAT-MR-1", "Company", "USD"),
+						"USD Account - CWSCL",
+					)
+					self.assertEqual(
+						_material_request_expense_account("MAT-MR-1", "Company", "KES"),
+						"KES Account - CWSCL",
+					)
+
+		# CGM Shipping Settings is a Single and so has no table of its own, which
+		# makes `frappe.db.has_column` raise rather than return False. The field
+		# check goes through the meta instead, and the meta is patched here because
+		# loading it for real needs the `get_value` this test has mocked out.
+		settings_meta = frappe._dict(has_field=lambda _f: True)
 		with patch("frappe.db.exists", return_value=True):
-			with patch("frappe.db.has_column", return_value=True):
+			with patch("frappe.get_meta", return_value=settings_meta):
 				with patch("frappe.db.get_single_value", return_value="Settings Expense - CWSCL"):
 					with patch("frappe.db.get_value", side_effect=_not_group):
 						self.assertEqual(
 							_default_operational_expense_account("Company"),
 							"Settings Expense - CWSCL",
 						)
+
+		# And the field being absent must come back as "nothing configured",
+		# not as an exception.
+		with patch("frappe.db.exists", return_value=True):
+			with patch("frappe.get_meta", return_value=frappe._dict(has_field=lambda _f: False)):
+				self.assertIsNone(_default_operational_expense_account("Company"))
 
 		def _company_bank(doctype, name, field=None, as_dict=False):
 			if field == "default_bank_account":

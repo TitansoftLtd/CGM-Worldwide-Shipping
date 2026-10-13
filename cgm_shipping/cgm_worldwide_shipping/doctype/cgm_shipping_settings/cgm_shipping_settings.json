@@ -23,6 +23,7 @@
   "kpa_port_accrual_payable_account",
   "section_funding_settings",
   "default_operational_expense_account",
+  "allow_any_item_default_account",
   "tab_notification_settings",
   "section_notification_settings",
   "portal_url",
@@ -62,6 +63,9 @@
   "tab_finance_receipts",
   "section_finance_receipts",
   "custom_finance_receipt_rules",
+  "tab_document_trail",
+  "section_document_trail",
+  "custom_document_trail_doctypes",
   "tab_container_tracking",
   "section_container_task_sequences",
   "custom_track_eta_task_seq",
@@ -104,11 +108,11 @@
    "fieldtype": "Section Break"
   },
   {
+   "description": "Before a shipment moves to a status, every Document Type with Default Required ticked and a matching Required Stage (for the shipment's mode of transport) must be attached - and verified when Must Be Verified is ticked.",
    "fieldname": "custom_workflow_stage_requirements",
    "fieldtype": "Table",
    "label": "Workflow stage requirements",
-   "options": "Workflow Stage Requirement Item",
-   "description": "Before a shipment moves to a status, every Document Type with Default Required ticked and a matching Required Stage (for the shipment's mode of transport) must be attached - and verified when Must Be Verified is ticked."
+   "options": "Workflow Stage Requirement Item"
   },
   {
    "fieldname": "tab_finance_receipts",
@@ -120,11 +124,11 @@
    "fieldtype": "Section Break"
   },
   {
+   "description": "Whether a payment task waits for the receipt. The invoice, the payment and any POP are unaffected - only the receipt, which CGM cannot produce itself. A payment kind with no row here keeps the built-in rule (receipt required).",
    "fieldname": "custom_finance_receipt_rules",
    "fieldtype": "Table",
    "label": "Finance receipts",
-   "options": "Finance Receipt Rule",
-   "description": "Whether a payment task waits for the receipt. The invoice, the payment and any POP are unaffected - only the receipt, which CGM cannot produce itself. A payment kind with no row here keeps the built-in rule (receipt required)."
+   "options": "Finance Receipt Rule"
   },
   {
    "fieldname": "roles_tab",
@@ -217,6 +221,22 @@
    "fieldname": "custom_ucr_finance_email_template",
    "fieldtype": "Code",
    "label": "UCR finance notification template"
+  },
+  {
+   "fieldname": "tab_document_trail",
+   "fieldtype": "Tab Break",
+   "label": "Document trail"
+  },
+  {
+   "fieldname": "section_document_trail",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Document types that can be looked up on the Document Trail page. Listing one here also switches on its change history, which is what the trail reads. Leave empty to use the defaults: Project, Task, Opportunity, Sales Invoice and Journal Entry.",
+   "fieldname": "custom_document_trail_doctypes",
+   "fieldtype": "Table",
+   "label": "Document types",
+   "options": "Document Trail DocType"
   },
   {
    "fieldname": "tab_container_tracking",
@@ -482,13 +502,20 @@
    "fieldtype": "Table",
    "label": "Workflow notifications",
    "options": "CGM Workflow Notification Item"
+  },
+  {
+   "default": "1",
+   "description": "Offers every account on the company for Default Expense Account and Default Income Account on an Item or Item Group. ERPNext restricts these to Profit and Loss accounts, which leaves no valid choice for a charge CGM accrues to a liability account and bills on. Untick to go back to ERPNext's own list.",
+   "fieldname": "allow_any_item_default_account",
+   "fieldtype": "Check",
+   "label": "Allow Any Account as Item Default"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-14 13:00:00.000000",
+ "modified": "2026-10-13 15:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

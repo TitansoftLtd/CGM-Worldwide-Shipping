@@ -92,7 +92,10 @@ doctype_js = {
 		"public/js/project.js",
 	],
 	"Customer": "public/js/crm_customer.js",
-	"Item": "public/js/item_pricing_rule.js",
+	"Item": [
+		"public/js/item_pricing_rule.js",
+		"public/js/item_default_accounts.js",
+	],
 	"Opportunity": [
 		"public/js/package_field_visibility.js",
 		"public/js/opportunity_shipment.js",
@@ -109,6 +112,7 @@ doctype_js = {
 	"Bill of Lading": "public/js/cgm_transport_reference.js",
 	"Container Tracker": "public/js/portal_engagement.js",
 	"Material Request": "public/js/material_request.js",
+	"Item Group": "public/js/item_default_accounts.js",
 	"Employee Advance": "public/js/employee_advance.js",
 	"Expense Claim": "public/js/expense_claim.js",
 	"Job Applicant": "public/js/job_applicant.js",
@@ -467,6 +471,8 @@ override_whitelisted_methods = {
     "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_supplier_quotation",
     "erpnext.stock.doctype.material_request.material_request.make_purchase_order_based_on_supplier":
     "cgm_shipping.cgm_worldwide_shipping.customizations.funding.make_purchase_order_based_on_supplier",
+    "erpnext.projects.doctype.project.project.set_project_status":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.project.set_project_status",
 }
 #
 # each overriding function accepts a `data` argument;

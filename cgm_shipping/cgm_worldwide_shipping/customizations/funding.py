@@ -23,12 +23,19 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	MR_WORKFLOW_STATE_ON_FUNDING_REQUEST,
 	MR_WORKFLOW_STATE_REJECTED,
 	MR_WORKFLOW_STATE_SUBMITTED,
+	MR_WORKFLOW_STATE_SUBMITTED_LEGACY,
 	MR_WORKFLOW_STATE_UNFUNDED,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.funding_workflow import (
 	get_funding_workflow_map,
 	get_material_request_state_names,
 	pick_workflow_state,
+)
+from cgm_shipping.cgm_worldwide_shipping.customizations.multicurrency import (
+	company_currency,
+	live_exchange_rate,
+	material_request_currency_totals,
+	normalize_material_request_currencies,
 )
 
 
@@ -97,7 +104,12 @@ def released_mr_workflow_state(material_request: str, mr_workflow=None) -> str:
 	mr_type = frappe.db.get_value("Material Request", material_request, "material_request_type")
 	if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
 		return pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED)
-	return pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED)
+	return pick_workflow_state(
+		mr_states,
+		MR_WORKFLOW_STATE_SUBMITTED,
+		MR_WORKFLOW_STATE_SUBMITTED_LEGACY,
+		default=MR_WORKFLOW_STATE_SUBMITTED,
+	)
 
 
 def variance_amount(requested, approved) -> float:
@@ -465,6 +477,7 @@ def on_material_request_validate(doc, method=None) -> None:
 	_clear_warehouse_for_operational_expense(doc)
 	_set_default_funding_workflow_state(doc)
 	_validate_operational_expense_request(doc)
+	normalize_material_request_currencies(doc)
 
 
 def on_material_request_on_submit(doc, method=None) -> None:
@@ -479,7 +492,12 @@ def on_material_request_on_submit(doc, method=None) -> None:
 	next_state = (
 		pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED)
 		if doc.get("material_request_type") == MATERIAL_REQUEST_TYPE_OPERATIONAL
-		else pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED)
+		else pick_workflow_state(
+			mr_states,
+			MR_WORKFLOW_STATE_SUBMITTED,
+			MR_WORKFLOW_STATE_SUBMITTED_LEGACY,
+			default=MR_WORKFLOW_STATE_SUBMITTED,
+		)
 	)
 	doc.db_set(MR_WORKFLOW_STATE_FIELD, next_state, update_modified=False)
 
@@ -623,9 +641,16 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 	for row in fr.material_requests:
 		if not row.material_request:
 			continue
-		paid = paid_amount_for_material_request(fr.name, row.material_request)
+		paid, paid_base = paid_amount_for_material_request(
+			fr.name, row.material_request, row.get("currency")
+		)
 		if abs(flt(row.funded_amount) - flt(paid)) > 0.005:
 			row.funded_amount = paid
+			changed = True
+		if row.meta.has_field("base_funded_amount") and (
+			abs(flt(row.get("base_funded_amount")) - flt(paid_base)) > 0.005
+		):
+			row.base_funded_amount = paid_base
 			changed = True
 	fr.calculate_totals()
 	next_state = funding_progress_state(
@@ -654,18 +679,35 @@ def sync_funding_request_paid_amounts(funding_request: str | None) -> None:
 	fr.sync_material_request_links()
 
 
-def paid_amount_for_material_request(funding_request: str, material_request: str) -> float:
+def paid_amount_for_material_request(
+	funding_request: str, material_request: str, currency: str | None = None
+) -> tuple[float, float]:
+	"""Amount paid as (request currency, company currency)."""
 	mr_type = frappe.db.get_value("Material Request", material_request, "material_request_type")
 	if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
-		return _paid_against_journal_entries(funding_request, material_request)
+		return _paid_against_journal_entries(funding_request, material_request, currency)
 	if mr_type in PURCHASE_REQUEST_TYPES:
-		return _paid_against_purchase_orders(material_request)
-	return 0.0
+		# Purchase Orders are raised in the company currency by this flow, so the
+		# two figures are the same number.
+		paid = _paid_against_purchase_orders(material_request)
+		return paid, paid
+	return 0.0, 0.0
 
 
-def _paid_against_journal_entries(funding_request: str, material_request: str) -> float:
+def _paid_against_journal_entries(
+	funding_request: str, material_request: str, currency: str | None = None
+) -> tuple[float, float]:
+	"""What was actually paid, as (request currency, company currency).
+
+	Both figures are needed and they are not interchangeable. `jea.debit` is always
+	company currency; `jea.debit_in_account_currency` is the account's own. A row
+	closes on the request-currency figure, because a rate movement between approval
+	and payment would otherwise leave a fully paid USD row looking short in KES and
+	the request would never reach fully disbursed. The company-currency figure is
+	what the header totals and the ledger reconcile on.
+	"""
 	if not frappe.db.has_column("Journal Entry", "custom_material_request"):
-		return 0.0
+		return 0.0, 0.0
 	entries = frappe.get_all(
 		"Journal Entry",
 		filters={
@@ -676,10 +718,18 @@ def _paid_against_journal_entries(funding_request: str, material_request: str) -
 		pluck="name",
 	)
 	if not entries:
-		return 0.0
-	paid = frappe.db.sql(
+		return 0.0, 0.0
+	company = frappe.db.get_value("Material Request", material_request, "company")
+	base = company_currency(company)
+	request_currency = currency or base
+	# A mixed request has one entry per currency against the same request, so the
+	# entries for the other half must not be counted here.
+	in_currency_entries = _entries_in_currency(entries, request_currency)
+	if in_currency_entries:
+		entries = in_currency_entries
+	rows = frappe.db.sql(
 		"""
-		select coalesce(sum(jea.debit_in_account_currency), 0)
+		select jea.account_currency, jea.debit_in_account_currency, jea.debit
 		from `tabJournal Entry Account` jea
 		inner join `tabJournal Entry` je on je.name = jea.parent
 		where je.docstatus = 1
@@ -687,8 +737,21 @@ def _paid_against_journal_entries(funding_request: str, material_request: str) -
 			and jea.debit_in_account_currency > 0
 		""",
 		{"entries": entries},
+		as_dict=True,
 	)
-	return flt(paid[0][0] if paid else 0)
+	paid_base = flt(sum(flt(row.debit) for row in rows))
+	# Prefer a line actually written in the request currency; fall back to the
+	# company-currency total when the whole entry was posted in base.
+	in_currency = flt(
+		sum(
+			flt(row.debit_in_account_currency)
+			for row in rows
+			if (row.account_currency or base) == request_currency
+		)
+	)
+	if request_currency == base or not in_currency:
+		return paid_base if request_currency == base else in_currency, paid_base
+	return in_currency, paid_base
 
 
 def _paid_against_purchase_orders(material_request: str) -> float:
@@ -744,6 +807,35 @@ def _funding_request_from_purchase_invoice(purchase_invoice: str) -> str | None:
 # ── Funding Request helpers ──────────────────────────────────────────────────
 
 
+def fetch_material_request_rows(material_request: str) -> list[dict]:
+	"""One Funding Request row per currency on the request.
+
+	A request with KES and USD lines becomes two rows. They are approved
+	separately and paid separately, because a Journal Entry takes money from one
+	bank account held in one currency: there is no single payment that settles
+	both halves.
+	"""
+	base = fetch_material_request_details(material_request)
+	if not base:
+		return []
+	splits = material_request_currency_totals(material_request)
+	if not splits:
+		return [base]
+	rows = []
+	for split in splits:
+		row = dict(base)
+		row.update(
+			{
+				"currency": split["currency"],
+				"exchange_rate": split["exchange_rate"],
+				"requested_amount": split["amount"],
+				"base_requested_amount": split["base_amount"],
+			}
+		)
+		rows.append(row)
+	return rows
+
+
 def fetch_material_request_details(material_request: str) -> dict:
 	if not material_request:
 		return {}
@@ -761,8 +853,10 @@ def fetch_material_request_details(material_request: str) -> dict:
 		"project": mr.get("custom_project") or get_material_request_project(mr.name),
 		"requested_amount": requested,
 		"approved_amount": 0,
+		"base_approved_amount": 0,
 		"variance": 0,
 		"funded_amount": 0,
+		"base_funded_amount": 0,
 		"status": pick_workflow_state(
 			get_material_request_state_names(),
 			"On Funding Request",
@@ -774,9 +868,10 @@ def fetch_material_request_details(material_request: str) -> dict:
 
 
 @frappe.whitelist()
-def get_material_request_details(material_request: str) -> dict:
+def get_material_request_details(material_request: str) -> list[dict]:
+	"""One row per currency. A list even when there is only one."""
 	frappe.has_permission("Material Request", "read", throw=True)
-	return fetch_material_request_details(material_request)
+	return fetch_material_request_rows(material_request)
 
 
 @frappe.whitelist()
@@ -802,7 +897,12 @@ def get_unfunded_material_requests(
 		"in",
 		[
 			pick_workflow_state(mr_states, "Unfunded", default=MR_WORKFLOW_STATE_UNFUNDED),
-			pick_workflow_state(mr_states, "Submitted", default=MR_WORKFLOW_STATE_SUBMITTED),
+			pick_workflow_state(
+				mr_states,
+				MR_WORKFLOW_STATE_SUBMITTED,
+				MR_WORKFLOW_STATE_SUBMITTED_LEGACY,
+				default=MR_WORKFLOW_STATE_SUBMITTED,
+			),
 		],
 	]
 	blocked = set(_material_requests_on_active_funding_requests())
@@ -825,8 +925,8 @@ def get_unfunded_material_requests(
 			continue
 		if row.custom_funding_request:
 			continue
-		details = fetch_material_request_details(row.name)
-		out.append(details)
+		# One entry per currency, so a mixed request offers both halves.
+		out.extend(fetch_material_request_rows(row.name))
 	return out
 
 
@@ -877,21 +977,30 @@ def make_funding_request(material_request: str):
 	fr = frappe.new_doc("Funding Request")
 	fr.company = mr.company
 	fr.posting_date = nowdate()
-	fr.append("material_requests", fetch_material_request_details(mr.name))
+	for details in fetch_material_request_rows(mr.name):
+		fr.append("material_requests", details)
 	return fr.as_dict()
 
 
 @frappe.whitelist()
-def make_journal_entries(funding_request: str) -> list[str]:
-	"""Create one draft Journal Entry per remaining operational-expense row."""
+def make_journal_entries(funding_request: str, bank_accounts=None) -> list[str]:
+	"""Create one draft Journal Entry per remaining operational-expense row.
+
+	`bank_accounts` maps a currency to the account money leaves, as chosen by
+	Finance when they create the entries. A currency left out falls back to the
+	company default bank, which only works for the company currency.
+	"""
 	frappe.has_permission("Journal Entry", "create", throw=True)
 	fr = frappe.get_doc("Funding Request", funding_request)
 	_assert_funding_request_approved(fr)
+	chosen = frappe.parse_json(bank_accounts) if bank_accounts else {}
+	if not isinstance(chosen, dict):
+		chosen = {}
 	created = []
 	for row in _outstanding_rows(fr, MATERIAL_REQUEST_TYPE_OPERATIONAL):
-		if _open_journal_entry_exists(fr.name, row.material_request):
+		if _open_journal_entry_exists(fr.name, row.material_request, row.get("currency")):
 			continue
-		je = _build_operational_journal_entry(fr, row)
+		je = _build_operational_journal_entry(fr, row, chosen)
 		je.insert(ignore_permissions=True)
 		created.append(je.name)
 	if not created:
@@ -949,11 +1058,22 @@ def _assert_funding_request_approved(fr) -> None:
 		)
 
 
-def _build_operational_journal_entry(fr, row):
+def _build_operational_journal_entry(fr, row, bank_accounts: dict | None = None):
+	"""One draft entry: expense debited, bank credited, in the row's currency.
+
+	The amount outstanding is held in the row's own currency. The rate is fetched
+	live for the posting date rather than taken from the request, because the
+	estimate on the request was made for the approver's benefit and may be weeks
+	old by the time Finance pays. Where the live rate cannot be had, the request
+	estimate is used as a fallback and named in the entry's remark, so nobody has
+	to guess which rate a posted entry used.
+	"""
 	remaining = flt(row.approved_amount) - flt(row.funded_amount)
 	if remaining <= 0:
 		frappe.throw(_("No remaining approved amount to journal."))
-	expense_account = _material_request_expense_account(row.material_request, fr.company)
+	expense_account = _material_request_expense_account(
+		row.material_request, fr.company, row.get("currency")
+	)
 	if not expense_account:
 		frappe.throw(
 			_(
@@ -961,13 +1081,11 @@ def _build_operational_journal_entry(fr, row):
 				"Default Operational Expense Account in CGM Shipping Settings."
 			).format(frappe.bold(row.material_request))
 		)
-	bank_account = _company_bank_or_cash_account(fr.company)
-	if not bank_account:
-		frappe.throw(
-			_("Set Default Bank Account on Company {0} before creating the Journal Entry.").format(
-				frappe.bold(fr.company)
-			)
-		)
+	base = company_currency(fr.company)
+	row_currency = row.get("currency") or base
+	posting_date = nowdate()
+	rate, rate_note = _payment_exchange_rate(row, row_currency, base, posting_date)
+	bank_account = _resolve_bank_account(fr.company, row_currency, base, bank_accounts)
 	remark = " - ".join(
 		part
 		for part in (
@@ -975,13 +1093,14 @@ def _build_operational_journal_entry(fr, row):
 			get_material_request_item_summary(row.material_request),
 			row.material_request,
 			fr.name,
+			rate_note,
 		)
 		if part
 	)
 	je = frappe.new_doc("Journal Entry")
 	je.voucher_type = "Journal Entry"
 	je.company = fr.company
-	je.posting_date = nowdate()
+	je.posting_date = posting_date
 	je.user_remark = remark
 	if je.meta.has_field("custom_funding_request"):
 		je.custom_funding_request = fr.name
@@ -992,16 +1111,11 @@ def _build_operational_journal_entry(fr, row):
 	if je.meta.has_field("custom_employee"):
 		je.custom_employee = row.employee
 	cost_center = frappe.db.get_value("Company", fr.company, "cost_center")
-	debit = {
-		"account": expense_account,
-		"debit_in_account_currency": remaining,
-		"user_remark": remark,
-	}
-	credit = {
-		"account": bank_account,
-		"credit_in_account_currency": remaining,
-		"user_remark": remark,
-	}
+	base_amount = flt(flt(remaining) * flt(rate), 2)
+	if row_currency != base:
+		je.multi_currency = 1
+	debit = _journal_line(expense_account, "debit", remaining, base_amount, row_currency, base, rate, remark)
+	credit = _journal_line(bank_account, "credit", remaining, base_amount, row_currency, base, rate, remark)
 	if row.project:
 		debit["project"] = row.project
 		credit["project"] = row.project
@@ -1013,22 +1127,175 @@ def _build_operational_journal_entry(fr, row):
 	return je
 
 
-def _material_request_expense_account(material_request: str, company: str | None) -> str | None:
-	for account in frappe.get_all(
+def _payment_exchange_rate(row, row_currency: str, base: str, posting_date: str) -> tuple[float, str]:
+	"""Today's rate, with the request's estimate as a named fallback."""
+	if row_currency == base:
+		return 1.0, ""
+	rate = live_exchange_rate(row_currency, base, posting_date)
+	if rate > 0:
+		return rate, _("rate {0} {1}/{2} on {3}").format(rate, row_currency, base, posting_date)
+	estimate = flt(row.get("exchange_rate"))
+	if estimate > 0:
+		return estimate, _("estimated rate {0} {1}/{2} (live rate unavailable)").format(
+			estimate, row_currency, base
+		)
+	frappe.throw(
+		_(
+			"Could not fetch an exchange rate for {0} to {1}, and Material Request {2} "
+			"carries no estimate. Add a Currency Exchange record for {3} or set an "
+			"Exchange Rate on the request before creating the Journal Entry."
+		).format(
+			frappe.bold(row_currency),
+			frappe.bold(base),
+			frappe.bold(row.material_request),
+			posting_date,
+		)
+	)
+
+
+def _journal_line(
+	account: str,
+	side: str,
+	foreign_amount: float,
+	base_amount: float,
+	row_currency: str,
+	base: str,
+	rate: float,
+	remark: str,
+) -> dict:
+	"""One Journal Entry Account row, stated in whichever currency the account holds.
+
+	A line is written in the account's own currency, not the row's. That is what
+	lets a USD expense be settled from a KES bank account, or the reverse: both
+	lines still carry the same company-currency figure, so the entry balances
+	whatever mix of accounts is used.
+	"""
+	account_currency = frappe.db.get_value("Account", account, "account_currency") or base
+	if account_currency == base:
+		amount, line_rate = base_amount, 1.0
+	elif account_currency == row_currency:
+		amount, line_rate = foreign_amount, rate
+	else:
+		frappe.throw(
+			_(
+				"Account {0} is held in {1}, which is neither the request currency "
+				"({2}) nor the company currency ({3}). Choose an account in one of "
+				"those two currencies."
+			).format(
+				frappe.bold(account), frappe.bold(account_currency),
+				frappe.bold(row_currency), frappe.bold(base),
+			)
+		)
+	return {
+		"account": account,
+		"account_currency": account_currency,
+		"exchange_rate": line_rate,
+		f"{side}_in_account_currency": amount,
+		"user_remark": remark,
+	}
+
+
+def _resolve_bank_account(
+	company: str, row_currency: str, base: str, bank_accounts: dict | None
+) -> str:
+	"""The account money leaves, as picked by Finance, validated before it is used.
+
+	Finance chooses this when they create the entries rather than it being
+	configured once, because which account a payment leaves is a treasury decision
+	taken per payment, not a fixed property of a currency.
+	"""
+	chosen = (bank_accounts or {}).get(row_currency) or (bank_accounts or {}).get("*")
+	if not chosen:
+		chosen = _company_bank_or_cash_account(company)
+		if not chosen:
+			frappe.throw(
+				_(
+					"Choose a bank account for {0}, or set a Default Bank Account on "
+					"Company {1}."
+				).format(frappe.bold(row_currency), frappe.bold(company))
+			)
+	account = frappe.db.get_value(
+		"Account",
+		chosen,
+		["name", "company", "is_group", "account_type", "account_currency"],
+		as_dict=True,
+	)
+	if not account:
+		frappe.throw(_("Bank account {0} does not exist.").format(frappe.bold(chosen)))
+	if account.company != company:
+		frappe.throw(
+			_("Bank account {0} belongs to {1}, not {2}.").format(
+				frappe.bold(chosen), frappe.bold(account.company), frappe.bold(company)
+			)
+		)
+	if cint(account.is_group):
+		frappe.throw(_("{0} is a group account, so it cannot be paid from.").format(frappe.bold(chosen)))
+	if account.account_type not in ("Bank", "Cash"):
+		frappe.throw(
+			_("{0} is a {1} account. Choose a Bank or Cash account to pay from.").format(
+				frappe.bold(chosen), frappe.bold(account.account_type or _("non-bank"))
+			)
+		)
+	currency = account.account_currency or base
+	if currency not in (row_currency, base):
+		frappe.throw(
+			_(
+				"{0} is held in {1}, so it cannot settle a {2} request. Choose an "
+				"account in {2} or {3}."
+			).format(
+				frappe.bold(chosen), frappe.bold(currency),
+				frappe.bold(row_currency), frappe.bold(base),
+			)
+		)
+	return account.name
+
+
+def _material_request_expense_account(
+	material_request: str, company: str | None, currency: str | None = None
+) -> str | None:
+	"""The account to debit, taken from a line in the currency being paid.
+
+	The account belongs to the line, not to the request: it is whatever the
+	requester chose, or what Item Defaults filled in. On a request holding both
+	KES and USD lines the two halves usually post to different accounts, so taking
+	the first line's account would send the USD payment to wherever the KES line
+	happened to point.
+
+	Falls back to any priced line, then to the Settings default, so a request whose
+	lines carry no account still produces an entry rather than failing.
+	"""
+	rows = frappe.get_all(
 		"Material Request Item",
 		filters={"parent": material_request},
-		pluck="expense_account",
+		fields=["expense_account", "custom_currency", "amount"],
 		order_by="idx",
-	):
-		if account and not cint(frappe.db.get_value("Account", account, "is_group")):
-			return account
+	)
+
+	def usable(account):
+		return account and not cint(frappe.db.get_value("Account", account, "is_group"))
+
+	if currency:
+		base = company_currency(company)
+		for row in rows:
+			if (row.custom_currency or base) == currency and usable(row.expense_account):
+				return row.expense_account
+
+	for row in rows:
+		if usable(row.expense_account):
+			return row.expense_account
 	return _default_operational_expense_account(company)
 
 
 def _default_operational_expense_account(company: str | None) -> str | None:
 	if not company or not frappe.db.exists("DocType", "CGM Shipping Settings"):
 		return None
-	if not frappe.db.has_column("CGM Shipping Settings", "default_operational_expense_account"):
+	# CGM Shipping Settings is a Single, so it has no table of its own and
+	# `frappe.db.has_column` raises instead of returning False. Reaching this with
+	# a raw ProgrammingError lost the clear "set an expense account" message that
+	# the caller raises when nothing is configured.
+	if not frappe.get_meta("CGM Shipping Settings").has_field(
+		"default_operational_expense_account"
+	):
 		return None
 	account = frappe.db.get_single_value("CGM Shipping Settings", "default_operational_expense_account")
 	if account and not cint(frappe.db.get_value("Account", account, "is_group")):
@@ -1063,19 +1330,52 @@ def _outstanding_rows(fr, request_type: str | None, purchase: bool = False):
 	return out
 
 
-def _open_journal_entry_exists(funding_request: str, material_request: str) -> bool:
+def _open_journal_entry_exists(
+	funding_request: str, material_request: str, currency: str | None = None
+) -> bool:
+	"""Is there already an entry for this request *in this currency*?
+
+	A mixed request has one row and one entry per currency, so keying on the
+	request alone would create the first entry and then decide the second was a
+	duplicate.
+	"""
 	if not frappe.db.has_column("Journal Entry", "custom_material_request"):
 		return False
-	return bool(
-		frappe.db.exists(
-			"Journal Entry",
-			{
-				"custom_funding_request": funding_request,
-				"custom_material_request": material_request,
-				"docstatus": ["<", 2],
-			},
-		)
+	entries = frappe.get_all(
+		"Journal Entry",
+		filters={
+			"custom_funding_request": funding_request,
+			"custom_material_request": material_request,
+			"docstatus": ["<", 2],
+		},
+		pluck="name",
 	)
+	if not entries:
+		return False
+	if not currency:
+		return True
+	return bool(_entries_in_currency(entries, currency))
+
+
+def _entries_in_currency(entries: list[str], currency: str) -> list[str]:
+	"""Those entries whose debit line is written in this currency.
+
+	A company-currency entry carries no foreign line, so it is matched by its own
+	currency on the debit side.
+	"""
+	if not entries:
+		return []
+	rows = frappe.db.sql(
+		"""
+		select distinct jea.parent
+		from `tabJournal Entry Account` jea
+		where jea.parent in %(entries)s
+			and jea.debit_in_account_currency > 0
+			and jea.account_currency = %(currency)s
+		""",
+		{"entries": entries, "currency": currency},
+	)
+	return [r[0] for r in rows]
 
 
 def _open_purchase_order_exists(material_request: str) -> bool:
@@ -1095,8 +1395,9 @@ def get_funding_pay_options(funding_request: str) -> dict:
 	"""Outstanding rows for Finance, split by how they are paid."""
 	frappe.has_permission("Funding Request", "read", throw=True)
 	fr = frappe.get_doc("Funding Request", funding_request)
+	base = company_currency(fr.company)
 	if not funding_is_approved(fr.workflow_state, fr.docstatus):
-		return {"operational": [], "purchase": []}
+		return {"operational": [], "purchase": [], "company_currency": base, "currencies": []}
 	operational = []
 	purchase = []
 	for row in fr.material_requests:
@@ -1118,22 +1419,37 @@ def get_funding_pay_options(funding_request: str) -> dict:
 			"remaining": remaining,
 			"approved_amount": flt(row.approved_amount),
 			"funded_amount": flt(row.funded_amount),
+			"currency": row.get("currency") or base,
 			"material_request_type": mr_type,
 			"label": _pay_option_label(row, remaining),
 		}
 		if mr_type == MATERIAL_REQUEST_TYPE_OPERATIONAL:
-			if not _open_journal_entry_exists(fr.name, row.material_request):
+			if not _open_journal_entry_exists(fr.name, row.material_request, row.get("currency")):
 				operational.append(payload)
 		elif mr_type in PURCHASE_REQUEST_TYPES:
 			if not _open_purchase_order_exists(row.material_request):
 				purchase.append(payload)
-	return {"operational": operational, "purchase": purchase}
+	# Finance picks one bank account per currency about to be paid, so the dialog
+	# needs to know which currencies are actually on the request.
+	currencies = []
+	for payload in operational:
+		if payload["currency"] not in currencies:
+			currencies.append(payload["currency"])
+	return {
+		"operational": operational,
+		"purchase": purchase,
+		"company_currency": base,
+		"currencies": sorted(currencies, key=lambda c: (c != base, c)),
+		"default_bank_account": _company_bank_or_cash_account(fr.company),
+	}
 
 
 def _pay_option_label(row, remaining) -> str:
 	who = row.employee_name or row.employee or row.material_request
 	what = row.item_summary or row.material_request
-	return f"{who} - {what} - {flt(remaining):,.2f}"
+	currency = row.get("currency")
+	amount = f"{currency} {flt(remaining):,.2f}" if currency else f"{flt(remaining):,.2f}"
+	return f"{who} - {what} - {amount}"
 
 
 # ── Project dashboard ────────────────────────────────────────────────────────

@@ -276,6 +276,31 @@ function setup_port_arrival_confirmation_button(frm) {
 	});
 }
 
+function setup_cancel_project_button(frm) {
+	// ERPNext's "Set Project Status" writes the status straight onto every task,
+	// so choosing Completed closed a shipment past every completion gate and never
+	// created its Container Trackers (PROJ-0037). Only cancelling is offered; the
+	// server refuses Completed as well.
+	frm.remove_custom_button(__("Set Project Status"), __("Actions"));
+	if (frm.is_new() || !frm.doc.name || frm.doc.status === "Cancelled") {
+		return;
+	}
+
+	add_project_inner_action(frm, "Cancel Project and Tasks", () => {
+		frappe.confirm(
+			__("Set this project and all of its tasks to {0}?", [__("Cancelled").bold()]),
+			() => {
+				frappe
+					.xcall("erpnext.projects.doctype.project.project.set_project_status", {
+						project: frm.doc.name,
+						status: "Cancelled",
+					})
+					.then(() => frm.reload_doc());
+			}
+		);
+	});
+}
+
 function setup_create_container_allocation_button(frm) {
 	if (frm.is_new() || !frm.doc.name || !project_supports_container_allocation(frm)) {
 		return;
@@ -1819,6 +1844,7 @@ function setup_project_toolbar_buttons(frm) {
 	}
 
 	setup_port_arrival_confirmation_button(frm);
+	setup_cancel_project_button(frm);
 	setup_create_container_allocation_button(frm);
 	setup_add_bill_of_lading_button(frm);
 	setup_company_deposit_invoice_button(frm);

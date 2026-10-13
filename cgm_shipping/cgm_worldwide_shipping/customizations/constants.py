@@ -450,7 +450,13 @@ FR_ROW_DECISION_REJECTED = "Rejected"
 
 MR_WORKFLOW_STATE_FIELD = "workflow_state"
 MR_WORKFLOW_STATE_DRAFT = "Draft"
-MR_WORKFLOW_STATE_SUBMITTED = "Submitted"
+#: "Submitted" said only that a form had been saved, not that anything was owed.
+#: The state means the request is waiting for a Funding Request to pick it up, so
+#: it says that. The old name is kept as a fallback for sites that have not been
+#: migrated yet; `pick_workflow_state` takes the first candidate the live workflow
+#: actually has.
+MR_WORKFLOW_STATE_SUBMITTED = "Awaiting Funding"
+MR_WORKFLOW_STATE_SUBMITTED_LEGACY = "Submitted"
 MR_WORKFLOW_STATE_UNFUNDED = "Unfunded"
 MR_WORKFLOW_STATE_ON_FUNDING_REQUEST = "On Funding Request"
 MR_WORKFLOW_STATE_APPROVED = "Approved"

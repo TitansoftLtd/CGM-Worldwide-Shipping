@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Titansoft Limited and contributors
 # For license information, please see license.txt
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import UnitTestCase
 
@@ -31,6 +33,20 @@ class _FinanceTaskStub(frappe._dict):
 class TestEntryFinanceCompletion(UnitTestCase):
 	def setUp(self):
 		self.profile = APPLICATION_FINANCE_PROFILES["Entry Application"]
+
+	@staticmethod
+	def _journal_entry_is_submitted(submitted=True):
+		"""Only a submitted Journal Entry counts as payment.
+
+		These stubs name an entry that does not exist on the site, so without this
+		the paid-invoice cases would be testing "the entry is missing" rather than
+		the rule they are about.
+		"""
+		return patch(
+			"cgm_shipping.cgm_worldwide_shipping.customizations."
+			"application_finance._submitted_journal_entry",
+			return_value=submitted,
+		)
 
 	def _entry_finance_task(self) -> _FinanceTaskStub:
 		return _FinanceTaskStub(
@@ -89,8 +105,34 @@ class TestEntryFinanceCompletion(UnitTestCase):
 				"verified": 1,
 			},
 		)
-		self.assertTrue(can_complete_application_finance_task(task, self.profile))
-		self.assertTrue(finance_payment_task_ready_to_complete(task))
+		with self._journal_entry_is_submitted():
+			self.assertTrue(can_complete_application_finance_task(task, self.profile))
+			self.assertTrue(finance_payment_task_ready_to_complete(task))
+
+	def test_draft_journal_entry_does_not_pay_the_invoice(self):
+		"""A draft posts nothing to the ledger, so it settles nothing."""
+		task = self._entry_finance_task()
+		task.append(
+			TASK_FINANCE_FIELD,
+			{
+				"line_type": "Invoice",
+				"line_label": "Entry Slip Invoice",
+				"attachment": "/files/entry-invoice.pdf",
+				"verified": 1,
+				"journal_entry": "ACC-JV-2026-00001",
+			},
+		)
+		task.append(
+			TASK_FINANCE_FIELD,
+			{
+				"line_type": "Receipt",
+				"line_label": "Entry Slip Receipt",
+				"attachment": "/files/entry-receipt.pdf",
+				"verified": 1,
+			},
+		)
+		with self._journal_entry_is_submitted(False):
+			self.assertFalse(can_complete_application_finance_task(task, self.profile))
 
 	def test_block_premature_finance_completion_reverts_stale_completed(self):
 		task = self._entry_finance_task()

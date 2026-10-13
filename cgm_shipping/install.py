@@ -38,6 +38,9 @@ def after_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
 		ensure_cargo_terminology_renames,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.document_trail import (
+		ensure_document_trail_setup,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.per_diem import (
 		ensure_per_diem_setup,
 	)
@@ -78,6 +81,7 @@ def after_migrate() -> None:
 		("recruitment schema", ensure_recruitment_schema),
 		("hrms custom fields", ensure_hrms_custom_fields),
 		("job group structure & per diems", ensure_per_diem_setup),
+		("document trail doctypes", ensure_document_trail_setup),
 		("wiki documentation", ensure_wiki_docs_published),
 	):
 		try:
