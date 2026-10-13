@@ -85,6 +85,7 @@ Grouped by what they are for. Row counts are from this site, and show what is ge
 | DocType | Rows | Notes |
 |---------|------|-------|
 | **Funding Request** | 0 | Submittable. Has its own approval workflow |
+| **Funding Request Currency Total** | child | One row per currency on a Funding Request: requested, approved, disbursed and outstanding in that currency, plus the company-currency equivalent. Computed, never typed |
 | **Shipping Line Charges** | 0 | Submittable |
 | **Charge Item**, **Clearance Charge Item** | 3, 9 | Charge masters |
 | **Payment Kind**, **Cost Type** | 6, 0 | |
@@ -106,21 +107,22 @@ Grouped by what they are for. Row counts are from this site, and show what is ge
 
 ## Fields added to stock DocTypes
 
-189 custom fields, concentrated in a few places:
+340 custom fields, concentrated in a few places:
 
 | DocType | Fields | What they add |
 |---------|--------|---------------|
-| **Project** | 60 | The whole shipment record: status, references, transport details, documents, containers, cost totals |
-| **Task** | 42 | Task flow keys and sequence, documents, permits, finance lines, container updates |
-| **Opportunity** | 22 | Shipment intake: type, transport document, cargo, client documents |
-| **Quotation** | 11 | Import cost components, customs taxes, item pricing, shipment references |
-| **Sales Invoice** | 8 | Approval fields, customer share |
-| **Material Request** | 8 | Funding link and approved amounts |
-| **Journal Entry** | 7 | Finance cost ledger links |
-| **Employee Advance** | 5 | Material request, funding request, project, per diem |
-| **Purchase Invoice**, **Supplier**, **Container**, **Leave Application** | 3 each | Transporter share, shipping line rates, leave attachments |
-| **Employee Grade**, **Expense Claim Detail** | 2 each | Job group per diem - see [Per Diems](per-diems.md) |
-| **Employee**, **Customer**, **Territory**, **Leave Type**, **Job Applicant**, **Salary Component**, **Purchase Order**, **Bill of Lading**, **Permit Register** | 1 each | |
+| **Project** | 103 | The whole shipment record: status, references, transport details, documents, containers, cost totals |
+| **Opportunity** | 48 | Shipment intake: type, transport document, cargo, client documents |
+| **Task** | 45 | Task flow keys and sequence, documents, permits, finance lines, container updates |
+| **Employee** | 37 | Job group, per diem and HR additions - see [Payroll & HR](payroll-hr.md) |
+| **Quotation** | 36 | Import cost components, customs taxes, item pricing, shipment references |
+| **Material Request** | 15 | Funding link, approved amounts, requester, and the multicurrency flag with its company-currency total - see [Funding Request](funding.md) |
+| **Sales Invoice** | 13 | Approval fields, customer share |
+| **Leave Application** | 8 | Leave attachments and approvals |
+| **Supplier** | 6 | Shipping line flag and rates |
+| **Employee Advance**, **Journal Entry** | 5 each | Material request, funding request, project, per diem; finance cost ledger links |
+| **Material Request Item** | 3 | **Currency**, **Exchange Rate** and the company-currency amount on each line |
+| **Purchase Invoice**, **Container**, **Employee Grade**, **Expense Claim Detail** and others | 1-3 each | Transporter share, container details, job group per diem |
 
 **Lead has none.** It was customised once and deliberately stripped back to stock - see [CRM & Intake](crm-intake.md#lead).
 

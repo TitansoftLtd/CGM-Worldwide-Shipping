@@ -34,6 +34,8 @@ Do not invent task subjects. Plans below match the seeded templates in `task_tem
 
 ## 2. How Shipment Type selects the plan
 
+![The Sea Import Shipment Type: 1 mode of transport, 2 the Task Template that becomes the task plan, 3 the container tracker mode](../images/shipment-type-form.png)
+
 1. On **Lead / Opportunity**, choose **Shipment Type** (Sea Import, Sea Export, Air Import, …).
 2. Each type links to:
    - **CGM Task Template** (task subjects, departments, roles, payment kinds)

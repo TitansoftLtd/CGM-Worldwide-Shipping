@@ -38,6 +38,8 @@ def send_notification(notification_name: str, doc, *, audience: str = "users") -
 		resolve_notification_name,
 	)
 
+	# Settings rows are keyed by the event's default name, not by an override.
+	default_notification_name = notification_name
 	notification_name = resolve_notification_name(notification_name) or notification_name
 
 	if not frappe.db.exists("Notification", notification_name):
@@ -94,6 +96,12 @@ def send_notification(notification_name: str, doc, *, audience: str = "users") -
 			"email_error": str(exc),
 			"message": f"Could not send notification: {exc}",
 		}
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms import (
+		send_sms_for_workflow_event,
+	)
+
+	send_sms_for_workflow_event(default_notification_name, notification, doc)
 
 	notified = 1
 	emails_sent = 1 if notification.channel == "Email" else 0

@@ -53,6 +53,8 @@ Typical fields on Quotation:
 
 ## Quotation workflow
 
+![A draft Quotation with the Submit button boxed](../images/quotation-actions.png)
+
 **Workflow:** `CGM Quotation Approval`
 
 | Step | Action |

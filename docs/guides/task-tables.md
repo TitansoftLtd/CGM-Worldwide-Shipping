@@ -41,6 +41,8 @@ an attachment removes the evidence, not the obligation.
 
 ## Task Documents
 
+![A task with the Task Documents table boxed](../images/task-documents-table.png)
+
 Also labelled **Clearance Documents** on some steps. One row per document the step
 requires.
 
@@ -64,6 +66,8 @@ Final documents can be sent for review. See
 ---
 
 ## Invoices & Receipts
+
+![A finance task with the Invoices & Receipts table boxed](../images/task-finance-lines-table.png)
 
 One row per invoice, proof of payment or receipt on a finance task. Rows for the
 same fee are copied between the application task and its paired finance task, so
@@ -94,6 +98,8 @@ See [Finance](finance.md) for the full payment flow.
 ---
 
 ## Permits (this task)
+
+![A permit application task with the Permits table boxed](../images/task-permits-table.png)
 
 One row per permit. The same table appears on the declarant's application task and
 on the paired **Finance pays** task, and rows are kept in step between them.
@@ -127,6 +133,8 @@ See [Declaration & Customs](declaration-customs.md) for the permit flow.
 
 ## Container Updates
 
+![A task with the Container Updates section opened and the table boxed](../images/task-container-updates-table.png)
+
 One row per container on a transport step. These rows mirror the Container Tracker.
 
 The important thing to know is that **transport tasks are not completed by hand.**
@@ -153,6 +161,8 @@ See [Transport & Containers](transport-containers.md).
 ---
 
 ## When a task will not complete
+
+![A task form: 1 the banner that says what is still needed, 2 the Actions menu, 3 Save](../images/task-status-and-save.png)
 
 The dialog tells you which table and which row. It is worth reading rather than
 dismissing: every one of them names the exact thing outstanding and where to put

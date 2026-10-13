@@ -67,6 +67,12 @@
 					"CGM Shipping Settings": "guides/settings.md"
 				},
 				{
+					"SMS Notifications": "guides/sms-notifications.md"
+				},
+				{
+					"Document Trail": "guides/document-trail.md"
+				},
+				{
 					"What CGM Adds to ERPNext": "guides/customizations.md"
 				},
 				{

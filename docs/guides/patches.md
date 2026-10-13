@@ -43,6 +43,20 @@ means in the checks below:
 - Safe to run on a site where the work is already done (early return).
 - Ongoing config is never a KEEP patch - it belongs in `install.after_migrate`, which a fresh install also runs.
 
+Currently outstanding, all from the multicurrency work (see
+[Funding Request](funding.md)):
+
+| Patch | What it does | Why it cannot be a field default |
+|-------|--------------|----------------------------------|
+| `backfill_funding_currency_fields` | Stamps the company currency, rate 1 and the company-currency twin on existing Material Request Items and Funding Request rows | The code reads blank as "company currency", so this is cosmetic rather than corrective, but it stops old requests showing an empty Currency column |
+| `default_multicurrency_on_operational_expense` | Ticks Multicurrency on existing Operational Expense requests | A DocField `default` only applies to documents created after it ships, so a request raised last week would otherwise behave differently from one raised today |
+| `enable_any_item_default_account` | Switches on **Allow Any Account as Item Default** where it has never been set | Same reason: CGM Shipping Settings is a Single created long ago, so its stored value never sees the new default. Respects a deliberate untick |
+| `rename_material_request_submitted_state` | Renames the workflow state `Submitted` to `Awaiting Funding` and moves the documents | Workflow records are site data, not shipped in the app. Skips the rename if another workflow has started using the old state |
+| `clear_stale_child_grid_views` | Removes saved `GridView` layouts for Material Request Item and Funding Request Material Request | A saved grid layout makes Frappe ignore `in_list_view` entirely, so a column added later never appears for the people who use the form most |
+
+Each one is idempotent and prints what it did. Retire them once staging and
+production Patch Log both show them.
+
 ### B - SAFE TO REMOVE (one-time / superseded)
 
 Candidates after confirming Patch Log on all live sites:

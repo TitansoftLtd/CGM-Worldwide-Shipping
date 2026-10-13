@@ -25,8 +25,11 @@ Standard ERPNext doctypes used heavily: **Lead**, **Opportunity**, **Customer**,
 | Page | Route | Purpose |
 |------|-------|---------|
 | Container Ops Board | `container-ops-board` | Live container KPIs, filters (client, B/L, batch, station), empty-return tracker |
+| Document Trail | `document-trail` | Timeline of who did what to one document, with warnings for bulk closes and skipped checks. See [Document Trail](guides/document-trail.md) |
 
 Backend: `customizations/container_ops_board.py` · Frontend: `page/container_ops_board/container_ops_board.js`
+
+Document Trail backend: `customizations/document_trail.py` · Frontend: `page/document_trail/document_trail.js`
 
 ### Reports
 
@@ -123,6 +126,8 @@ All use Jinja + `get_doc_qr_code` (`customizations/doc_qr.py`). PDF engine: **Ch
 | **Finance Cost Category Map** | Maps payment items to project cost buckets |
 | **Default Customs Tax** | Default tax rates on Settings |
 | **CGM Role Item** | Role groupings (Finance, Operations, Declaration) |
+| **CGM Workflow Notification Item** | Workflow event to Notification mapping, with the per-event **Send SMS** tick. See [SMS Notifications](guides/sms-notifications.md) |
+| **Document Trail DocType** | Document types offered on the Document Trail page |
 
 ### Key custom fields on standard DocTypes
 

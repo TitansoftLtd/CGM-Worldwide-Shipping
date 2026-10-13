@@ -45,12 +45,49 @@ def sync_wiki_docs() -> None:
 		)
 		return
 
+	_ensure_wiki_table_style()
 	space = _get_or_create_space()
 	nodes = _build_nodes_from_local_config(DOCS_DIR, sidebar)
 	_import_local_images(space, DOCS_DIR, nodes)
 	_sync_to_live(space, nodes, None, None)
 	_ensure_space_published(space.name)
 	frappe.db.commit()
+
+
+# Marks the block this app owns inside Wiki Settings > Head HTML, so a re-sync
+# replaces it in place and leaves anything else in the field alone.
+WIKI_STYLE_START = "<!-- cgm-shipping:start -->"
+WIKI_STYLE_END = "<!-- cgm-shipping:end -->"
+
+# The wiki lays tables out with `table-layout: fixed`, which gives every column
+# the same width: a "#" column as wide as the description beside it, and the
+# description wrapped over three lines. Auto layout sizes each column to its
+# content. Screenshots get a border so a white page edge reads as an edge.
+WIKI_STYLE = """<style>
+.prose table { table-layout: auto !important; width: 100%; }
+.prose th, .prose td { vertical-align: top; }
+.prose th { white-space: nowrap; }
+.prose img { border: 1px solid var(--outline-gray-2, #e5e7eb); border-radius: 8px; }
+</style>"""
+
+
+def _ensure_wiki_table_style() -> None:
+	"""Keep this app's style block in Wiki Settings > Head HTML up to date."""
+	if not frappe.db.exists("DocType", "Wiki Settings"):
+		return
+	if not frappe.get_meta("Wiki Settings").has_field("head_html"):
+		return
+	current = frappe.db.get_single_value("Wiki Settings", "head_html") or ""
+	block = f"{WIKI_STYLE_START}\n{WIKI_STYLE}\n{WIKI_STYLE_END}"
+	if WIKI_STYLE_START in current and WIKI_STYLE_END in current:
+		start = current.index(WIKI_STYLE_START)
+		end = current.index(WIKI_STYLE_END) + len(WIKI_STYLE_END)
+		updated = current[:start] + block + current[end:]
+	else:
+		updated = (current.rstrip() + "\n" + block).lstrip()
+	if updated != current:
+		frappe.db.set_single_value("Wiki Settings", "head_html", updated)
+		frappe.clear_document_cache("Wiki Settings", "Wiki Settings")
 
 
 def _get_or_create_space() -> frappe.Document:

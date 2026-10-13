@@ -210,6 +210,10 @@ You do not have to watch the shipment. When a task becomes your department's to 
 
 The subject carries the task and the shipment, so it is clear what is being asked and against which job.
 
+The same handoffs can also send a short text to your phone, and so can the
+completion of the main sea import steps. Those are off until a System Manager
+switches them on; see [SMS Notifications](sms-notifications.md).
+
 These are ordinary ERPNext Notifications. **CGM Shipping Settings** maps each workflow event to the Notification it should send, so wording and recipients can be changed in the Desk without touching code - migrate only seeds defaults that are missing, and never overwrites edits. Finance has a further set for invoices and receipts; see the [Finance Guide](finance.md).
 
 ---
@@ -256,6 +260,8 @@ Notes:
 
 ## Container Ops Board
 
+![The Container Ops Board](../images/container-ops-board.png)
+
 Route: **CGM Shipping → Container Ops Board** or `/app/container-ops-board`
 
 Use this page to:
@@ -270,6 +276,8 @@ Container statuses: Pending Arrival → Vessel Berthed → Discharged / At Port 
 ---
 
 ## Daily Status Update
+
+![A new Daily Status Update, with Save boxed](../images/daily-status-update-new.png)
 
 Submit a **Daily Status Update** (`DSU-{date}-{#####}`) for RAG reporting on active shipments. Finance and management receive notifications when configured.
 
@@ -286,6 +294,8 @@ Submit a **Daily Status Update** (`DSU-{date}-{#####}`) for RAG reporting on act
 5. Hand off to Declaration for UCR (task 3).
 
 ### After vessel arrival
+
+![A Project: 1 the Container Tracker tab, 2 the Full Report button](../images/project-container-tracker.png)
 
 1. Confirm ATA on Project (Actions → Confirm Shipment Arrival at the Port) to create Container Trackers.
 2. Create Entry (Declaration, task 12) proceeds independently for Entry Slip / ENTRY paperwork.
@@ -317,10 +327,14 @@ Steps 3 to 9 are the part that takes unpredictable time: everything there waits 
 
 ## Tips & guards
 
+![The Project Actions menu: 1 Confirm Shipment Arrival at the Port, 2 Cancel Project and Tasks](../images/project-actions-menu.png)
+
 - You only see **Tasks** for your **department** (permission-scoped).
 - Do not manually edit **Finance Cost Total** on Project - it is system-calculated.
 - One **Project** per **Opportunity**; use `custom_source_opportunity` to trace origin.
 - B/L container rows sync to **Container Tracker** records on the Project.
+- A Project reaches **Completed** only when its tasks are completed. **Actions > Cancel Project and Tasks** cancels a shipment and every task on it in one step; there is no matching shortcut to complete one, because it skipped every task check and left the shipment with no Container Tracker.
+- To see who did what on a shipment, and anything unusual about how it was closed, open it in the [Document Trail](document-trail.md).
 
 ---
 
@@ -332,3 +346,5 @@ Steps 3 to 9 are the part that takes unpredictable time: everything there waits 
 - [CRM & Intake](crm-intake.md)
 - [Shipment Modes](shipment-modes.md)
 - [Other Shipment Types](shipment-types.md)
+- [SMS Notifications](sms-notifications.md)
+- [Document Trail](document-trail.md)

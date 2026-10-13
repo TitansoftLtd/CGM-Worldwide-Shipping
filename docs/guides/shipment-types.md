@@ -22,6 +22,8 @@ The eight shipment types, each linked to the task template and tracker mode it u
 
 ![The Shipment Type list, showing the eight configured modes](../images/shipment-type-list.png)
 
+![The Sea Import Shipment Type: 1 mode of transport, 2 the Task Template that becomes the task plan, 3 the container tracker mode](../images/shipment-type-form.png)
+
 ## Air Export
 
 The shipment is going out, so the airline is chosen before anything else can be numbered - the air waybill only exists once the booking does.

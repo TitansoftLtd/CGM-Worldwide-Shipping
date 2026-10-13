@@ -32,6 +32,8 @@ Day-to-day leave application, balances, sick-leave documents, and approval chain
 
 ## 3. Features - Additional Salary Tool
 
+![The Additional Salary Tool, with Create Additional Salaries boxed](../images/additional-salary-tool.png)
+
 **Additional Salary Tool** (single DocType) batches additional salary lines for a period:
 
 - Select payroll period / employees / components per site process

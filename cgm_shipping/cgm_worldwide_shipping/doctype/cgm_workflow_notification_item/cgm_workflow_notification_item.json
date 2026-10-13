@@ -8,6 +8,7 @@
  "field_order": [
   "workflow_event",
   "notification",
+  "send_sms",
   "notes"
  ],
  "fields": [
@@ -30,6 +31,15 @@
    "reqd": 1
   },
   {
+   "columns": 1,
+   "default": "0",
+   "description": "Also text the people this Notification goes to. The text is the Notification's subject line, and it is sent to every user with a mobile number among the recipients.",
+   "fieldname": "send_sms",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Send SMS"
+  },
+  {
    "fieldname": "notes",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -40,7 +50,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-15 12:00:00.000000",
+ "modified": "2026-10-13 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Workflow Notification Item",

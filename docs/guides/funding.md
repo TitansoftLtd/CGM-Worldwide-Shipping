@@ -60,6 +60,8 @@ Clearance invoices on shipment Tasks use [Finance](finance.md) task payments - n
 
 ## 3. How to - create and approve funding
 
+![A new Funding Request: 1 the Material Requests table, 2 Save. Get Material Requests, beside Save, fills the table](../images/funding-request-new.png)
+
 ```
 Material Request (Submit)
   → Funding Request (pull / Get Material Requests)
@@ -91,6 +93,8 @@ part-approved without rejecting the whole batch. The Material Requests it draws 
 
 ## 4. How to - request in a foreign currency
 
+![A Funding Request with two currencies: 1 Totals by Currency, 2 Outstanding in company currency](../images/funding-request-totals.png)
+
 Some operational expenses are billed in US dollars: shipping line charges and KPA
 charges are the usual ones, and the company holds USD bank accounts for them.
 
@@ -117,6 +121,13 @@ The expense account belongs to the **line**, not to the currency, so the two hal
 of a mixed request usually post to different accounts. Setting it on the Item or
 Item Group saves typing it every time - see
 [CGM Shipping Settings](settings.md#allow-any-account-as-item-default).
+
+**It can be corrected after the request is submitted.** The Journal Entry reads the
+account off the line when Finance creates it, which can be days later, so a wrong
+account no longer means cancelling and re-raising the request. Changing it affects
+the **next** entry created from that line; entries already submitted keep the
+account they posted to, and correcting those is a Journal Entry matter, not a
+Material Request one.
 
 ### Columns on the items table
 
@@ -218,6 +229,45 @@ cannot leave a fully paid request looking short.
 | Bank account in an unrelated currency | Blocked when creating the Journal Entry |
 | No exchange rate from any source | Journal Entry refused rather than posted at zero |
 | Allow Any Account as Item Default | Offers every account on an Item or Item Group default, groups and disabled excluded; on by default |
+
+### Who approves
+
+The **Funding Approver** role, and never the person who raised the request. The
+approver role is read from the workflow, so a site that routes approval through a
+different role gets that one.
+
+If you try to approve your own request the block names the role that is waiting,
+so you know what to chase rather than being told to "ask another approver". It
+names the role and not the people: a refusal message is the wrong place to publish
+who holds a finance role, and any such list goes stale as soon as somebody joins or
+leaves. Who currently holds it is a question for the role list.
+
+If nobody besides you holds the role, the message says so, because the request is
+then stuck until somebody is given it.
+
+Worth checking on your own site: if the same people hold both **Finance User** and
+**Funding Approver**, then raising and approving are only kept apart by this
+per-document check rather than by the roles themselves. That is a reasonable
+arrangement for a small team, but it means the role list alone will not tell an
+auditor who can do what.
+
+### What the status on a Material Request means
+
+| Status | Means |
+|--------|-------|
+| **Draft** | Not submitted yet |
+| **Awaiting Funding** | Submitted and waiting to be picked up on a Funding Request |
+| **Unfunded** | An Operational Expense request submitted but not yet on a Funding Request |
+| **On Funding Request** | Sitting on a Funding Request that has not been approved |
+| **Approved** / **Partially Approved** | The approver has decided; payment has not started |
+| **Disbursed** | Every currency on the request has been paid |
+| **Rejected** | The approver turned it down |
+
+**Awaiting Funding** was called *Submitted* until October 2026. It was renamed
+because every submitted document in Frappe is submitted, so the word said nothing
+about what the request was waiting for or who was holding it. Existing requests
+were moved by a patch, and the app accepts either name so a site that has not
+upgraded still works.
 
 Workflow states on Material Request and Funding Request are site-configured ERPNext Workflows; CGM maps pending / approved / disbursed behaviour in code so Desk and reports stay consistent.
 

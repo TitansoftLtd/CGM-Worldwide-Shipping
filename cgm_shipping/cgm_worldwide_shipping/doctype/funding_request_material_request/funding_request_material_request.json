@@ -43,7 +43,6 @@
    "allow_on_submit": 0,
    "columns": 1,
    "default": "Pending",
-   "description": "Left as Pending until the approver decides. The Approve action is what requires a decision on every row.",
    "fieldname": "decision",
    "fieldtype": "Select",
    "in_list_view": 1,

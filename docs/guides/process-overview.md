@@ -35,6 +35,8 @@ Task plans for every mode are in [Shipment Modes](shipment-modes.md).
 
 ## 2. How to run a shipment end to end
 
+![A shipment Project: 1 the clearance workflow, with passed stages in green, 2 the Clearance Tasks button, 3 how many tasks are done and which is next](../images/project-workflow-stepper.png)
+
 ### Step 1 - Intake (CRM)
 
 1. Capture the enquiry on **Lead** (optional) or go straight to **Opportunity**.

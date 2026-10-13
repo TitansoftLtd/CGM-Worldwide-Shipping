@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import frappe
@@ -101,3 +102,46 @@ class TestItemGridBehaviour(unittest.TestCase):
 		)
 		self.assertIn("PASS", result.stdout)
 		self.assertNotIn("FAIL", result.stdout)
+
+
+class TestExpenseAccountEditableAfterSubmit(unittest.TestCase):
+	"""The account can be corrected on a request that is already submitted.
+
+	The Journal Entry reads the expense account off the line when Finance creates
+	it, which can be days after the request was submitted. Locking the field on
+	submit meant a wrong account could only be fixed by cancelling and re-raising
+	the whole request, and the Material Request posts nothing to the ledger itself,
+	so there was nothing to protect.
+	"""
+
+	def test_the_field_may_be_changed_after_submit(self):
+		field = frappe.get_meta("Material Request Item").get_field("expense_account")
+		self.assertTrue(
+			field.allow_on_submit,
+			"expense_account is locked on submit; a wrong account could only be "
+			"fixed by cancelling the request",
+		)
+
+	def test_the_field_is_not_read_only(self):
+		field = frappe.get_meta("Material Request Item").get_field("expense_account")
+		self.assertFalse(field.read_only)
+
+	def test_a_change_reaches_the_next_journal_entry(self):
+		"""Editing the line is only useful if the entry actually follows it.
+
+		Entries already posted keep the account they were posted with: this changes
+		what the *next* one debits, not history.
+		"""
+		from cgm_shipping.cgm_worldwide_shipping.customizations.funding import (
+			_material_request_expense_account,
+		)
+
+		lines = [
+			frappe._dict(expense_account="Corrected - X", custom_currency="KES", amount=100)
+		]
+		with patch.object(frappe, "get_all", return_value=lines), patch.object(
+			frappe.db, "get_value", return_value=0
+		):
+			self.assertEqual(
+				_material_request_expense_account("MR-1", "Company"), "Corrected - X"
+			)

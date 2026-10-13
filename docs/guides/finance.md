@@ -156,6 +156,8 @@ Print formats: **CGM Quotation Full**, **CGM Quotation Local Charges**.
 
 ## Sales Invoice approval
 
+![A draft Sales Invoice: 1 the Actions button, 2 Submit for Review](../images/sales-invoice-actions.png)
+
 **Workflow:** `CGM Sales Invoice Approval` (maker-checker gate before submit)
 
 | Approval state | docstatus | Who can edit |
