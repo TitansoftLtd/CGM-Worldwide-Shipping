@@ -28,6 +28,7 @@
   "section_notification_settings",
   "portal_url",
   "ops_notification_email",
+  "send_login_code_by_sms",
   "section_container_deposit_settings",
   "container_deposit_account",
   "container_deposit_sales_item",
@@ -434,6 +435,13 @@
    "label": "Operations Notification Email"
   },
   {
+   "default": "0",
+   "description": "When two-factor login is on, the code is emailed. Tick this to text the same code to the user's mobile number as well. A user with no mobile number still gets the email. Each login then costs one SMS.",
+   "fieldname": "send_login_code_by_sms",
+   "fieldtype": "Check",
+   "label": "Also send the login code by SMS"
+  },
+  {
    "fieldname": "section_container_deposit_settings",
    "fieldtype": "Section Break",
    "label": "Container deposits"
@@ -515,7 +523,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-13 15:00:00",
+ "modified": "2026-10-14 10:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

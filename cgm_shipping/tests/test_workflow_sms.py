@@ -195,3 +195,130 @@ class TestOpportunityTrigger(unittest.TestCase):
 
 	def test_other_states_do_not_text(self):
 		self._run("Approved", "Pending Approval").assert_not_called()
+
+
+class TestFinanceRecipients(unittest.TestCase):
+	def test_to_finance_texts_go_to_the_finance_alerts_role_only(self):
+		"""Finance emails reach every Accounts user; the texts reach two named people."""
+		to_finance = [h for h in sms.HANDOFF_SMS if h[1].endswith("to Finance")]
+		self.assertEqual(len(to_finance), 6)
+		for _email, _name, roles, _text in to_finance:
+			self.assertEqual(roles, (sms.FINANCE_ALERTS_ROLE,))
+
+
+class TestLeaveApprovedTrigger(unittest.TestCase):
+	def _run(self, state, previous, numbers=("254700000001",)):
+		doc = MagicMock()
+		doc.name = "HR-LAP-1"
+		doc.get.side_effect = lambda key: {"workflow_state": state, "employee": "EMP-1"}.get(key)
+		prev = MagicMock()
+		prev.get.side_effect = lambda key: {"workflow_state": previous}.get(key)
+		doc.get_doc_before_save.return_value = prev
+		frappe.flags.pop("cgm_leave_approved_sms:HR-LAP-1", None)
+		with (
+			patch.object(sms, "employee_mobile_numbers", return_value=list(numbers)),
+			patch.object(sms, "queue_notification_sms") as queue,
+		):
+			sms.notify_leave_approved_sms(doc)
+			again = queue.call_count
+			sms.notify_leave_approved_sms(doc)
+		return queue, again
+
+	def test_final_approval_texts_the_employee_once(self):
+		queue, first = self._run("Approved", "Pending Director Approval")
+		self.assertEqual(first, 1)
+		self.assertEqual(queue.call_count, 1)
+		self.assertEqual(queue.call_args.kwargs["numbers"], ["254700000001"])
+
+	def test_intermediate_approvals_text_nobody(self):
+		for state in ("Pending Senior Supervisor Approval", "Pending HR Approval", "Pending Director Approval"):
+			queue, _first = self._run(state, "Pending Line Manager Approval")
+			queue.assert_not_called()
+
+	def test_rejection_texts_nobody(self):
+		self._run("Rejected", "Pending HR Approval")[0].assert_not_called()
+
+	def test_resaving_an_approved_leave_does_not_text_again(self):
+		self._run("Approved", "Approved")[0].assert_not_called()
+
+	def test_employee_without_a_number_is_skipped(self):
+		self._run("Approved", "Pending Director Approval", numbers=())[0].assert_not_called()
+
+
+class TestLoginCodeSms(unittest.TestCase):
+	MOD = "cgm_shipping.cgm_worldwide_shipping.customizations.login_code_sms"
+
+	def setUp(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations import login_code_sms
+
+		self.mod = login_code_sms
+
+	def _wrapped(self, email_result, *, number="254700000001", method="Email", raises=False):
+		import frappe.twofactor as twofactor
+
+		# A plain function: a MagicMock answers any attribute, including the
+		# "already wrapped" mark, and would never be wrapped.
+		original = MagicMock(spec=["__call__"], return_value=dict(email_result))
+		send = MagicMock(return_value=number)
+		if raises:
+			send.side_effect = RuntimeError("gateway down")
+		with (
+			patch.object(twofactor, "process_2fa_for_email", original),
+			patch.object(self.mod, "send_login_code_sms", send),
+			patch.object(frappe, "log_error"),
+		):
+			self.mod.ensure_login_code_sms()
+			wrapped = twofactor.process_2fa_for_email
+			self.mod.ensure_login_code_sms()
+			self.assertIs(twofactor.process_2fa_for_email, wrapped, "wrapped twice")
+			result = wrapped("u@x", 1, "SECRET", "CGM", method=method)
+		return result, original, send
+
+	def test_email_is_always_sent_and_the_text_is_added(self):
+		result, original, send = self._wrapped({"token_delivery": True, "prompt": "email", "method": "Email"})
+		original.assert_called_once()
+		send.assert_called_once()
+		self.assertIn("2547******001", result["prompt"])
+
+	def test_user_without_a_number_still_gets_the_email(self):
+		result, original, _send = self._wrapped(
+			{"token_delivery": True, "prompt": "email", "method": "Email"}, number=None
+		)
+		original.assert_called_once()
+		self.assertEqual(result["prompt"], "email")
+
+	def test_gateway_failure_does_not_break_login(self):
+		result, _original, _send = self._wrapped(
+			{"token_delivery": True, "prompt": "email", "method": "Email"}, raises=True
+		)
+		self.assertEqual(result, {"token_delivery": True, "prompt": "email", "method": "Email"})
+
+	def test_authenticator_setup_email_is_not_texted(self):
+		_result, _original, send = self._wrapped({"token_delivery": True, "prompt": "qr"}, method="OTP App")
+		send.assert_not_called()
+
+	def test_off_by_default(self):
+		with (
+			patch.object(self.mod, "login_code_sms_enabled", return_value=False),
+			patch.object(frappe, "enqueue") as enqueue,
+		):
+			self.assertIsNone(self.mod.send_login_code_sms("u@x", 1, "JBSWY3DPEHPK3PXP"))
+		enqueue.assert_not_called()
+
+	def test_code_matches_the_emailed_one(self):
+		import pyotp
+
+		with (
+			patch.object(self.mod, "login_code_sms_enabled", return_value=True),
+			patch(
+				"cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms.sms_gateway_configured",
+				return_value=True,
+			),
+			patch.object(frappe.db, "get_value", return_value=frappe._dict(mobile_no="0798 695 833", phone=None)),
+			patch("frappe.twofactor.get_rendered_otp_message", side_effect=lambda otp: f"code {otp}"),
+			patch.object(frappe, "enqueue") as enqueue,
+		):
+			number = self.mod.send_login_code_sms("u@x", 7, "JBSWY3DPEHPK3PXP")
+		self.assertEqual(number, "254798695833")
+		self.assertEqual(enqueue.call_args.kwargs["numbers"], ["254798695833"])
+		self.assertEqual(enqueue.call_args.kwargs["text"], "code " + pyotp.HOTP("JBSWY3DPEHPK3PXP").at(7))
