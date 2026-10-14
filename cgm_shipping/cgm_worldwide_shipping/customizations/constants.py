@@ -472,3 +472,10 @@ MATERIAL_REQUEST_TYPE_OPERATIONAL = "Operational Expense"
 # Sales Invoice numbering: INV-MMYY-#### / CR-MMYY-#### (MMYY = month+year from posting date).
 SALES_INVOICE_NAMING_SERIES = "INV-.MMYY.-.####"
 SALES_INVOICE_CREDIT_NOTE_NAMING_SERIES = "CR-.MMYY.-.####"
+
+
+#: A shipment counts as finished on either status. Defined here so the board, the
+#: assignment lifecycle and anything added later all ask the same question; the
+#: two used to be tested inconsistently and a Settled shipment sat in the active
+#: grid while being counted as completed.
+COMPLETED_SHIPMENT_STATUSES = frozenset({"Completed", "Settled"})

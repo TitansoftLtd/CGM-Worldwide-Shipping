@@ -66,11 +66,11 @@ def _parse_filters(filters) -> frappe._dict:
 	return frappe._dict(filters)
 
 
-#: A shipment counts as finished on either status. Hiding used to test only
-#: "Completed" while the KPIs and the tile filter tested both, so a Settled
-#: shipment sat in the active grid while being counted as completed. Defined once
-#: here and reused everywhere; the set below is the same object.
-COMPLETED_SHIPMENT_STATUSES = frozenset({"Completed", "Settled"})
+#: Re-exported from constants so the board keeps its familiar name while there is
+#: only one definition of "finished" in the app.
+from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (  # noqa: E402
+	COMPLETED_SHIPMENT_STATUSES,
+)
 
 
 def _hide_completed(filters) -> bool:

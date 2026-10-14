@@ -255,6 +255,41 @@ to a liability account is correct here, but it is surprising if you come to it c
 
 ---
 
+## Notification Assignment Routing
+
+### Send To Assignee Instead Of Role
+
+A notification row naming a role reaches **every** holder of that role. For a role
+of twelve people that is twelve messages about one task, eleven of them noise, and
+noise is how people learn to ignore the message that mattered.
+
+Each row here says: when a notification names this role, send it to whoever is
+assigned instead.
+
+| Column | Means |
+|--------|-------|
+| **Role** (required) | The role to narrow |
+| **Assigned On** (required) | *Task* - whoever is assigned to the task itself. *Project* - whoever is assigned to the shipment the task belongs to |
+| **Fall Back To Role** | With nobody assigned, send to the whole role anyway. Leave this ticked unless you would rather the message went nowhere |
+| **Notes** | Free text |
+
+Seeded with two rows: **Field Operations Officers** on the task, because field work
+is owned per task, and **Declarant** on the project, because a declarant handles a
+whole shipment rather than individual tasks.
+
+**A role left out of this table is unaffected.** That is what lets a narrowed role
+and a broad one sit on the same notification: a row naming Director still reaches
+every Director, even when the Field Operations row has been narrowed to one person.
+
+This applies to **email and SMS alike**. Frappe's own assignee option covers email
+only, which would have left half of CGM's notifications behaving the old way.
+
+:::note
+It reads **open** assignments. Completing a task, or finishing a shipment, closes
+them - see [Operations](operations.md#assignments-and-when-they-close) - so a
+finished job stops notifying whoever finished it and falls back to the role.
+:::
+
 ## Notification Settings
 
 **Client Portal URL** and **Operations Notification Email** are the addresses used

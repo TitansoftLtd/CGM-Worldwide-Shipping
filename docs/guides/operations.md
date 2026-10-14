@@ -338,6 +338,35 @@ Steps 3 to 9 are the part that takes unpredictable time: everything there waits 
 
 ---
 
+## Assignments and when they close
+
+Assigning somebody to a task or a shipment creates a ToDo. That record is what
+tells the system who is responsible, and notifications read it to decide who to
+message, so it has to track the work rather than lag behind it.
+
+| What happens | What the assignment does |
+|--------------|--------------------------|
+| Task moves to **Completed** or **Cancelled** | Closed |
+| Task is **reopened** | Back to Open |
+| Shipment reaches **Completed** or **Settled** | Closed |
+| Shipment **comes back** to a live status | Back to Open |
+
+Reopening restores only assignments that were **Closed** by the work finishing. A
+person removed from the job by hand is recorded as **Cancelled**, and reopening the
+work does not put them back: that was a decision, not a side effect.
+
+Closing on task completion was already ERPNext's behaviour. The other three are
+CGM's, in `customizations/assignment_lifecycle.py`. Shipment completion is keyed on
+**Shipment Status**, not ERPNext's Project status, because that is the field the
+shipment actually moves through.
+
+:::note
+Assigning somebody to a task that is **already** completed leaves an open
+assignment, because nothing changed state. That is deliberate - you assigned it on
+purpose - but it is worth knowing if you are looking at an old task wondering why
+someone is still on it.
+:::
+
 ## Related guides
 
 - [Declaration & Customs](declaration-customs.md)

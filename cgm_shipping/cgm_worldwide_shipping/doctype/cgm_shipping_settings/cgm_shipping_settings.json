@@ -25,6 +25,8 @@
   "default_operational_expense_account",
   "allow_any_item_default_account",
   "tab_notification_settings",
+  "section_notification_routing",
+  "notification_assignment_routes",
   "section_notification_settings",
   "portal_url",
   "ops_notification_email",
@@ -525,13 +527,25 @@
    "fieldname": "allow_any_item_default_account",
    "fieldtype": "Check",
    "label": "Allow Any Account as Item Default"
+  },
+  {
+   "fieldname": "section_notification_routing",
+   "fieldtype": "Section Break",
+   "label": "Notification Assignment Routing"
+  },
+  {
+   "description": "A notification row naming one of these roles goes to whoever is assigned rather than to every holder of the role. Roles left out of this table are unaffected, so a Director row on the same notification still reaches every Director.",
+   "fieldname": "notification_assignment_routes",
+   "fieldtype": "Table",
+   "label": "Send To Assignee Instead Of Role",
+   "options": "CGM Notification Assignment Route"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-14 14:00:00",
+ "modified": "2026-10-14 00:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
