@@ -243,6 +243,8 @@ override_doctype_class = {
     "cgm_shipping.cgm_worldwide_shipping.customizations.quotation.CGMQuotation",
     "Salary Slip":
     "cgm_shipping.cgm_worldwide_shipping.overrides.salary_slip.CGMSalarySlip",
+    "Notification":
+    "cgm_shipping.cgm_worldwide_shipping.customizations.notification_routing.CGMNotification",
 }
 
 # Document Events
@@ -268,6 +270,7 @@ doc_events = {
 		"on_update": [
 			"cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_update",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.sync_project_dates_to_trackers",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.assignment_lifecycle.on_project_update",
 		],
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
@@ -412,7 +415,10 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.before_task_save",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.task.validate_task_completion_requirements",
 		],
-		"on_update": "cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_update",
+		"on_update": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task.on_task_update",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.assignment_lifecycle.on_task_update",
+		],
 	},
 	"CGM Task Template": {
 		"on_update": "cgm_shipping.cgm_worldwide_shipping.doctype.cgm_task_template.cgm_task_template.sync_open_tasks_from_template",
