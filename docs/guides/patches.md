@@ -73,6 +73,68 @@ Candidates after confirming Patch Log on all live sites:
 
 ---
 
+## What a deploy may and may not overwrite
+
+A deploy runs `bench migrate`, which re-imports this app's files. Several of those
+imports replace what is already on the site, so each one is a way for somebody's
+deliberate change to disappear with no error and no record. These are the rules
+the app now follows.
+
+### Permissions: a deploy may add, never remove
+
+Re-importing a DocType **replaces its `DocPerm` rows** with the JSON's. That is why
+permissions set by editing a DocType's Permissions tab in production kept vanishing
+on every deploy.
+
+`ensure_permissions_survive_deploy` (in `customizations/permission_guard.py`) runs
+on every migrate and:
+
+- copies each app-owned DocType's permissions into **Custom DocPerm** once, which a
+  re-import cannot touch;
+- leaves **any role the site already has** completely alone, whatever has been done
+  to it;
+- adds **a role the app ships that the site has never seen**, with the JSON's flags.
+
+So a permission written locally and committed still reaches production, and
+removing access stays a deliberate act performed on the site.
+
+:::warning
+Changing a DocType's permissions in the app is not enough on its own. The import is
+**timestamp-gated**: bump `modified` in the DocType JSON or migrate skips the file
+and the change never ships.
+:::
+
+Only DocTypes belonging to this app are touched. ERPNext's and Frappe's own are left
+alone - their permissions are not ours to freeze.
+
+### Fixtures: not used, deliberately
+
+`sync_fixtures` does what its docstring says: *"Import, **overwrite** fixtures"*.
+Every record listed is rewritten on every deploy, so anything the business has
+changed is reverted.
+
+Container Tracker Mode shipped this way. All five records on production carried the
+same `modified` timestamp to the millisecond - the moment of the last deploy. It is
+now seeded create-if-missing from `customizations/container_tracker_modes.py`.
+
+Two traps if you ever consider adding one back:
+
+1. `sync_fixtures` walks the **`fixtures/` directory**, not the `fixtures` hook.
+   Emptying the list in `hooks.py` changes nothing; the file has to be absent.
+2. A fixture is only right when the code genuinely should own the whole record,
+   including undoing edits made on the site. That is rarely what anyone means.
+
+`tests/test_deploy_safety.py` fails if a fixture directory reappears or the
+permission rules regress.
+
+### What a deploy does legitimately replace
+
+| | |
+|---|---|
+| `custom/*.json` | Custom Fields and Property Setters the app owns. Fields added on the site are left alone |
+| DocType JSON | field definitions for app-owned DocTypes |
+| Print formats | standard ones belonging to the app |
+
 ## Naming conventions
 
 | Prefix | Meaning |

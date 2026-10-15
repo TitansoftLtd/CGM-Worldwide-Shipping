@@ -21,7 +21,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-07-21 17:55:49.236683",
+ "modified": "2026-10-15 00:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Charge Item",
@@ -39,6 +39,19 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 1,
+   "export": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "select": 1,
+   "share": 0,
+   "write": 0
   }
  ],
  "row_format": "Dynamic",

@@ -574,9 +574,16 @@ after_request = [
 # Fixtures loaded on migrate.
 # CGM Task Template is intentionally NOT listed: company admins edit templates in
 # the browser; seeding only creates missing defaults (see task_template_seed_data).
-fixtures = [
-	"Container Tracker Mode",
-]
+# Deliberately empty, and `cgm_shipping/fixtures/` is deliberately absent.
+#
+# Two things to know before adding either back. A fixture is re-imported and
+# **overwritten** on every migrate, so whatever production has done to those
+# records is silently reverted. And `sync_fixtures` walks the *directory*, not
+# this list - emptying the list alone changes nothing, the file has to go.
+#
+# Container Tracker Mode lived here and was rewritten on every deploy. It is now
+# seeded create-if-missing from `customizations/container_tracker_modes.py`.
+fixtures = []
 
 # Translation
 # ------------

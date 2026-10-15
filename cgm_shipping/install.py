@@ -33,6 +33,24 @@ def after_install() -> None:
 	apply_cgm_branding()
 
 
+def ensure_container_tracker_modes() -> None:
+	"""Seed container tracking modes without overwriting what production has."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker_modes import (
+		ensure_container_tracker_modes as _seed,
+	)
+
+	_seed()
+
+
+def ensure_permissions_survive_deploy() -> None:
+	"""Keep a deploy from replacing permissions the site set for itself."""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.permission_guard import (
+		ensure_permissions_survive_deploy as _guard,
+	)
+
+	_guard()
+
+
 def after_migrate() -> None:
 	"""Re-apply idempotent schema installers after every bench migrate."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.cargo_terminology import (
@@ -86,6 +104,8 @@ def after_migrate() -> None:
 		("job group structure & per diems", ensure_per_diem_setup),
 		("document trail doctypes", ensure_document_trail_setup),
 		("material request see-all roles", ensure_see_all_roles),
+		("container tracking modes", ensure_container_tracker_modes),
+		("permissions protected from deploys", ensure_permissions_survive_deploy),
 		("wiki documentation", ensure_wiki_docs_published),
 	):
 		try:
