@@ -166,7 +166,7 @@
    "options": "CGM Role Item"
   },
   {
-   "description": "Roles that may open Documentation-department sea tasks only (e.g. CGM Documentation). Keep this separate from Operations roles.",
+   "description": "Roles that may open Documentation-department sea tasks only. Keep this separate from Operations roles.",
    "fieldname": "custom_documentation_roles",
    "fieldtype": "Table MultiSelect",
    "label": "Documentation roles",
@@ -545,7 +545,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-14 00:00:00",
+ "modified": "2026-10-15 13:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
