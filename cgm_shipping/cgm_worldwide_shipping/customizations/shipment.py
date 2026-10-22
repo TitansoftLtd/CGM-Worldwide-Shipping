@@ -930,6 +930,18 @@ def sync_opportunity_from_linked_awb(doc, method=None) -> None:
 	apply_awb_fields_to_doc(doc, frappe.get_doc("Air Waybill", awb))
 
 
+def _bl_link_set_on_this_save(doc, bl_field: str) -> bool:
+	"""Whether this save should copy BL scalars (vessel, weights, …) onto ``doc``.
+
+	A Project keeps what users type: BL values land when the BL is first linked
+	or swapped, not on every save - that silently reverted every edit to those
+	fields. A BL submitted later reaches the Project via sync_linked_project_from_bl.
+	"""
+	if doc.doctype != "Project":
+		return True
+	return doc.has_value_changed(bl_field)
+
+
 def sync_preshipment_containers_from_bl(doc, method=None) -> None:
 	"""Populate container rows and BL tracking fields from the linked Bill of Lading."""
 	config = get_bl_config()
@@ -939,7 +951,11 @@ def sync_preshipment_containers_from_bl(doc, method=None) -> None:
 	sync_cargo_type_from_linked_bl(doc)
 
 	bl_name = doc.get(bl_field) if bl_field else None
-	if bl_name and frappe.db.exists("Bill of Lading", bl_name):
+	if (
+		bl_name
+		and _bl_link_set_on_this_save(doc, bl_field)
+		and frappe.db.exists("Bill of Lading", bl_name)
+	):
 		bl_doc = frappe.get_doc("Bill of Lading", bl_name)
 		apply_bl_fields_to_doc(doc, bl_doc)
 
