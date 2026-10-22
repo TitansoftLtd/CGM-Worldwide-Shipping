@@ -392,6 +392,8 @@ doc_events = {
 		],
 		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.validate_opportunity_intake",
+			# Runs after ERPNext's own validate, so it has the last word on the title.
+			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_shipment.keep_customer_in_opportunity_title",
 		],
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.opportunity_intake_wizard.sync_opportunity_intake_on_save",

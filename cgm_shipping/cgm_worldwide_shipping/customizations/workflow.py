@@ -1955,57 +1955,65 @@ def validate_permit_application_can_complete(task) -> None:
 
 
 def enforce_receipt_verified_permission(task) -> None:
+	"""Only whoever verifies may tick the two verification flags on a permit row.
+
+	Both checks used to be wrong in the same place, and Finance could never tick
+	**Receipt Verified** on a permit at all:
+
+	* The receipt check asked for the **Upload Receipt** responsibility. On permits
+	  that belongs to Declaration - the declarant downloads the receipt from the
+	  issuing body's portal - so it demanded the uploader's permission for an act
+	  of checking the uploader's work. Verification is Finance's, same as the
+	  invoice beside it.
+	* It tested whether the flag *was set* rather than whether it *changed*. Once
+	  any row had been verified, the holder of that responsibility was the only
+	  person who could save the task again, for any edit at all. The invoice check
+	  two lines down had always tested the change; the receipt one had not.
+	"""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.document_responsibilities import (
-		ACTION_UPLOAD_RECEIPT,
 		ACTION_VERIFY_INVOICE,
 		FLOW_PERMIT,
 		user_has_responsibility,
 	)
 
-	if is_permit_application_task_doc(task):
-		# Application task mirrors Finance ticks — only responsibility holders may change them.
-		for row in task.get(TASK_PERMITS_FIELD) or []:
-			if row.get("receipt_verified") and not user_has_responsibility(
-				FLOW_PERMIT, ACTION_UPLOAD_RECEIPT
-			):
-				frappe.throw(
-					"Only the configured <b>Upload Receipt</b> role group can mark "
-					"<b>Receipt Verified</b>. Use the paired finance permit payment task "
-					"(CGM Shipping Settings → Document responsibilities)."
-				)
-			if _permit_invoice_verified_changed(task, row) and not user_has_responsibility(
-				FLOW_PERMIT, ACTION_VERIFY_INVOICE
-			):
-				frappe.throw(
-					"Only the configured <b>Verify Invoice</b> role group can mark "
-					"<b>Invoice Verified</b>. Use the paired finance permit payment task "
-					"(CGM Shipping Settings → Document responsibilities)."
-				)
+	application = is_permit_application_task_doc(task)
+	if not application and not is_permit_finance_task_doc(task):
 		return
-	if not is_permit_finance_task_doc(task):
-		return
+
+	# The application task mirrors Finance's ticks, so the same rule guards both;
+	# only the hint at the end differs, pointing the reader at the right task.
+	where = (
+		". Use the paired finance permit payment task"
+		if application
+		else " on permit rows"
+	)
+
 	for row in task.get(TASK_PERMITS_FIELD) or []:
-		if row.get("receipt_verified") and not user_has_responsibility(
-			FLOW_PERMIT, ACTION_UPLOAD_RECEIPT
-		):
-			frappe.throw(
-				"Only the configured <b>Upload Receipt</b> role group can mark "
-				"<b>Receipt Verified</b> on permit rows "
-				"(CGM Shipping Settings → Document responsibilities)."
-			)
-		if _permit_invoice_verified_changed(task, row) and not user_has_responsibility(
+		if _permit_flag_newly_ticked(task, row, "receipt_verified") and not user_has_responsibility(
 			FLOW_PERMIT, ACTION_VERIFY_INVOICE
 		):
 			frappe.throw(
 				"Only the configured <b>Verify Invoice</b> role group can mark "
-				"<b>Invoice Verified</b> on permit rows "
+				f"<b>Receipt Verified</b>{where} "
+				"(CGM Shipping Settings → Document responsibilities)."
+			)
+		if _permit_flag_newly_ticked(task, row, "invoice_verified") and not user_has_responsibility(
+			FLOW_PERMIT, ACTION_VERIFY_INVOICE
+		):
+			frappe.throw(
+				"Only the configured <b>Verify Invoice</b> role group can mark "
+				f"<b>Invoice Verified</b>{where} "
 				"(CGM Shipping Settings → Document responsibilities)."
 			)
 
 
-def _permit_invoice_verified_changed(task, row) -> bool:
-	"""True when Invoice Verified was newly ticked on this save."""
-	if not cint(row.get("invoice_verified")):
+def _permit_flag_newly_ticked(task, row, fieldname: str) -> bool:
+	"""True when this flag went from off to on during the current save.
+
+	Asking "is it set?" instead would make an existing tick block every later save
+	of the task, by anyone without that responsibility, however unrelated the edit.
+	"""
+	if not cint(row.get(fieldname)):
 		return False
 	prev = task.get_doc_before_save()
 	if not prev:
@@ -2017,7 +2025,12 @@ def _permit_invoice_verified_changed(task, row) -> bool:
 		):
 			prev_row = candidate
 			break
-	return not cint(prev_row.get("invoice_verified") if prev_row else 0)
+	return not cint(prev_row.get(fieldname) if prev_row else 0)
+
+
+def _permit_invoice_verified_changed(task, row) -> bool:
+	"""True when Invoice Verified was newly ticked on this save."""
+	return _permit_flag_newly_ticked(task, row, "invoice_verified")
 
 
 # ------------------------------------------------------------------

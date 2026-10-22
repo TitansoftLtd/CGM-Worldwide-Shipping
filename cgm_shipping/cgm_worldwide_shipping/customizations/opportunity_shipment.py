@@ -561,3 +561,47 @@ def seed_required_documents_on_opportunity(doc, _method=None) -> None:
 			continue
 		row = doc.append(docs_field, {"document_type": doc_type, "status": "Missing"})
 		existing.append(row)
+
+
+def keep_customer_in_opportunity_title(doc, _method=None) -> None:
+	"""The Opportunity title names the customer, never the container count.
+
+	Opportunities turned up on production titled "8 x 20FT" or "10 x 40FT" - the
+	container summary copied off the Bill of Lading - instead of the company. The
+	customer link itself was always right; only the title was wrong.
+
+	Two things let it persist unseen. ERPNext fills the title from the customer
+	**only when it is empty** (`if not self.title`), so one bad value was permanent.
+	And this app hides the field on the form, so nobody could see it to correct it.
+
+	What wrote it was never found: on production there is no Client Script, no
+	Server Script, no Property Setter on the field, and the live DocField carries
+	no `options`, `default` or `fetch_from`, so Frappe's `set_title_field` template
+	path cannot fire either. It was intermittent rather than systematic - on 15
+	October one Opportunity broke while the three created after it were fine.
+
+	So this does not try to name the cause. It restores the invariant on every
+	save, after ERPNext has had its turn, which holds whatever did it.
+
+	Deliberately narrow: it acts only when the title is **exactly** the record's own
+	quantity string. A title somebody typed is left alone, and so is one that
+	already names the customer.
+	"""
+	if not doc.meta.has_field("custom_quantity"):
+		return
+
+	quantity = (doc.get("custom_quantity") or "").strip()
+	if not quantity:
+		return
+
+	title = (doc.get("title") or "").strip()
+	if title != quantity:
+		return
+
+	customer = (doc.get("customer_name") or doc.get("party_name") or "").strip()
+	if not customer:
+		# Nothing better to use. Leaving the quantity beats blanking the title,
+		# which would make the row read as its document ID instead.
+		return
+
+	doc.title = customer
