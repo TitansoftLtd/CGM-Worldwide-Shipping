@@ -114,6 +114,7 @@ on the paired **Finance pays** task, and rows are kept in step between them.
 | **Journal Entry** | System | The entry Finance raised for this permit |
 | **Payment Receipt** | Declarant | The receipt, usually downloaded from the issuing body's portal |
 | **Receipt Verified** | Finance only | Finance's own record. It does **not** gate the declarant's task |
+| **Invoice Verified** | Finance only | Finance has checked the permit invoice before paying it |
 | **Uploaded On** / **Uploaded By** | System | Stamped for invoice and certificate separately |
 
 What the application task waits for:
@@ -121,6 +122,11 @@ What the application task waits for:
 1. Every **Permit Invoice** attached, and verified by Finance
 2. Every **Payment Receipt** attached - attached is enough, the tick is not required
 3. Every **Permit Certificate** attached
+
+Both **Receipt Verified** and **Invoice Verified** are Finance's ticks, set on the
+paired finance permit task. The declarant attaches the receipt; Finance confirms
+it. Checking the uploader's own work is the point, so the two are different
+people by design.
 
 The receipt deliberately needs only to exist. Declarants collect receipts from a
 third-party portal and cannot force one to be issued, so requiring Finance's tick
