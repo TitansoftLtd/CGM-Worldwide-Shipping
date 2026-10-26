@@ -182,19 +182,34 @@ class TestStatutoryReportTemplates(unittest.TestCase):
 					missing = [col["fieldname"] for col in columns if col["fieldname"] not in row]
 					self.assertEqual(missing, [])
 
-	def test_empty_period_returns_columns_without_rows(self):
-		"""Before payroll is run the reports render headers rather than raising."""
+	def test_empty_period_returns_columns_and_a_note_without_rows(self):
+		"""Before payroll is run the reports render headers and explain the gap quietly.
+
+		The explanation is the report's own third return value, which Frappe renders
+		above the table. It is deliberately not `frappe.msgprint`: a month whose payroll
+		has not been submitted yet is a normal state for these returns, and these reports
+		default to the current month, so a dialog fired on nearly every open.
+		"""
 		for slug in REPORT_TEMPLATES:
 			with self.subTest(report=slug):
 				module = load_report(slug)
 				original = module.get_salary_slips
 				module.get_salary_slips = lambda _filters: []
+				dialogs = []
+				original_msgprint = frappe.msgprint
+				frappe.msgprint = lambda *a, **k: dialogs.append(a)
 				try:
-					columns, rows = module.execute({"company": "Test Co"})
+					result = module.execute({"company": "Test Co"})
 				finally:
 					module.get_salary_slips = original
+					frappe.msgprint = original_msgprint
+
+				self.assertEqual(dialogs, [], "an empty period must not open a dialog")
+				self.assertEqual(len(result), 3, "the note belongs in the report's return value")
+				columns, rows, message = result
 				self.assertTrue(columns)
 				self.assertEqual(rows, [])
+				self.assertIn("submitted", message)
 
 
 class TestStatutoryReportDefinitions(unittest.TestCase):

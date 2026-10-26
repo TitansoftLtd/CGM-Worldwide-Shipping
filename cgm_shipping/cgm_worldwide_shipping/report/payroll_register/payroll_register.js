@@ -374,8 +374,8 @@ function inject_print_style() {
             background: var(--card-bg, #fff);
         }
         .payroll-analysis .pa-tile-total {
-            border-color: #b8122c;
-            background: #ffe8ec;
+            border-color: #9ca3af;
+            background: #e5e7eb;
         }
         .payroll-analysis .pa-tile-label {
             color: var(--text-muted, #6b7280);
@@ -436,7 +436,7 @@ function inject_print_style() {
         }
         .payroll-analysis .pa-table tfoot td {
             font-weight: 700;
-            border-top: 2px solid #b8122c;
+            border-top: 2px solid #9ca3af;
             border-bottom: none;
         }
 
@@ -480,7 +480,7 @@ function inject_print_style() {
         #payroll-print-area .print-analysis .pa-title { font-size: 12px; font-weight: 700; color: #b8122c; }
         #payroll-print-area .print-analysis .pa-muted { color: #6b7280; }
         #payroll-print-area .print-analysis .pa-tile { border: 1px solid #9ca3af; border-radius: 4px; padding: 5px 7px; }
-        #payroll-print-area .print-analysis .pa-tile-total { border-color: #b8122c; background: #ffe8ec !important; }
+        #payroll-print-area .print-analysis .pa-tile-total { border-color: #9ca3af; background: #e5e7eb !important; }
         #payroll-print-area .print-analysis .pa-tile-label { color: #6b7280; font-size: 8px; }
         #payroll-print-area .print-analysis .pa-tile-value { font-weight: 700; font-size: 10px; }
         #payroll-print-area .print-analysis .pa-grid { display: block; }
@@ -504,8 +504,8 @@ function inject_print_style() {
         #payroll-print-area .print-analysis .pa-table .num { text-align: right; }
         #payroll-print-area .print-analysis .pa-table tfoot td {
             font-weight: 700;
-            color: #b8122c;
-            background: #ffe8ec !important;
+            color: #111827;
+            background: #e5e7eb !important;
         }
 
         /* Actions only offers chart and dashboard tools, which this register has no use for. */
@@ -658,11 +658,13 @@ function inject_print_style() {
             font-weight: 700;
         }
 
+        /* Totals read as a total through weight and a rule, not through brand colour:
+           the red belongs to the headers and the letterhead. */
         #payroll-print-area .totals-row td {
             font-weight: 700;
-            color: #b8122c;
-            border-top: 2px solid #8c0e22;
-            background: #ffe8ec !important;
+            color: #111827;
+            border-top: 2px solid #9ca3af;
+            background: #e5e7eb !important;
         }
 
         #payroll-print-area .print-signatures {
@@ -959,9 +961,10 @@ function build_print_html(columns, data, letterheadHtml, include_analysis = fals
     wrapper.id = "payroll-print-area";
     wrapper.innerHTML = `
         <div class="print-letterhead">
-            ${letterheadHtml
-                ? `<div class="print-letterhead-img">${letterheadHtml}</div>`
-                : `<div class="print-company">${escapeHtml(company)}</div>`}
+            ${letterheadHtml ? `<div class="print-letterhead-img">${letterheadHtml}</div>` : ""}
+            <!-- The company is named whether or not a letter head image is set: a logo
+                 alone does not say which company's payroll this is. -->
+            <div class="print-company">${escapeHtml(company)}</div>
             <div class="print-title">Payroll Register</div>
             ${period ? `<div class="print-period">Period: <strong>${escapeHtml(period)}</strong>${currency ? ` &nbsp;|&nbsp; Amounts in <strong>${escapeHtml(currency)}</strong>` : ""}</div>` : ""}
         </div>

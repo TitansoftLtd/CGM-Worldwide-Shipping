@@ -188,5 +188,6 @@ def dtb_branch_code(employee) -> str:
 def no_slips_message(filters) -> str:
 	from_date, to_date = get_period(filters)
 	return frappe._(
-		"No submitted Salary Slips found between {0} and {1}. Run and submit payroll for the period first."
+		"Nothing to show for {0} to {1} yet. These figures are taken from submitted Salary "
+		"Slips, so they appear once the period's payroll has been submitted."
 	).format(frappe.format(from_date, "Date"), frappe.format(to_date, "Date"))

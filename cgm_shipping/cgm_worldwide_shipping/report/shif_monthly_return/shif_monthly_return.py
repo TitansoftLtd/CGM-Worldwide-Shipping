@@ -25,8 +25,10 @@ def execute(filters=None):
 	filters = frappe._dict(filters or {})
 	slips = get_salary_slips(filters)
 	if not slips:
-		frappe.msgprint(no_slips_message(filters), indicator="orange", title=_("No Payroll Data"))
-		return get_columns(), []
+		# The report's own message, not a dialog: a month whose payroll has not been
+		# submitted yet is a normal state for these returns, and a modal to dismiss on
+		# every open is not. The columns still render, so the form is visible.
+		return get_columns(), [], no_slips_message(filters)
 
 	data = []
 	for slip in slips:

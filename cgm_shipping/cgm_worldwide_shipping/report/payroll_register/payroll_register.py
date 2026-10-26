@@ -47,6 +47,16 @@ def execute(filters=None):
     earning_components, deduction_components, employer_components, has_taxable_income = get_components(
         slip_names, included_components
     )
+    # An employer contribution already gets its own column in the employer block. Without
+    # this it is ALSO force-computed as a deduction, because being left out of the slip
+    # totals is exactly what marks a component as forced. The register then shows two
+    # columns with the same label and the same figure, which reads as double counting.
+    employer_set = set(employer_components)
+    forced = [c for c in forced if c not in employer_set]
+    forced_set = set(forced)
+    forced_earning = [c for c in forced_earning if c not in employer_set]
+    forced_deduction = [c for c in forced_deduction if c not in employer_set]
+
     # Render forced components only in their dedicated zone, never twice.
     earning_components = [c for c in earning_components if c not in forced_set]
     deduction_components = [c for c in deduction_components if c not in forced_set]
