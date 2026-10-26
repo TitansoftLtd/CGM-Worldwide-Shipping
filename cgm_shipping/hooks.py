@@ -271,6 +271,7 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.task_engine.on_project_update",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker.sync_project_dates_to_trackers",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.assignment_lifecycle.on_project_update",
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project_completion.set_completion_date_on_update",
 		],
 		"before_save": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
@@ -342,7 +343,11 @@ doc_events = {
 		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.item_pricing.validate_item_pricing_rules",
 	},
 	"Leave Application": {
-		"validate": "cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
+		"validate": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
+			# Before any workflow action, so the routing condition reads a current flag.
+			"cgm_shipping.cgm_worldwide_shipping.customizations.leave_hr_approval.set_applicant_is_hr",
+		],
 		"on_change": "cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms.notify_leave_approved_sms",
 	},
 	"Employee Grade": {

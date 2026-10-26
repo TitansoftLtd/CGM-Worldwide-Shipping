@@ -59,6 +59,9 @@ def after_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.document_trail import (
 		ensure_document_trail_setup,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.leave_hr_approval import (
+		ensure_leave_hr_route,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.per_diem import (
 		ensure_per_diem_setup,
 	)
@@ -70,6 +73,9 @@ def after_migrate() -> None:
 	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.request_visibility import (
 		ensure_see_all_roles,
+	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.sidebar_entries import (
+		ensure_cgm_sidebar_entries,
 	)
 
 	missing_layout_fields = check_project_layout_export_drift()
@@ -101,6 +107,8 @@ def after_migrate() -> None:
 		("licence register roles", ensure_license_setup),
 		("recruitment schema", ensure_recruitment_schema),
 		("hrms custom fields", ensure_hrms_custom_fields),
+		("sidebar entries", ensure_cgm_sidebar_entries),
+		("leave HR approval route", ensure_leave_hr_route),
 		("job group structure & per diems", ensure_per_diem_setup),
 		("document trail doctypes", ensure_document_trail_setup),
 		("material request see-all roles", ensure_see_all_roles),
