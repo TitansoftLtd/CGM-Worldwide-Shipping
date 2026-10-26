@@ -266,6 +266,9 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project import (
 		cap_workflow_status_for_intake,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_completion import (
+		sync_completion_date,
+	)
 
 	progress_status = cap_workflow_status_for_intake(proj, progress_status, states)
 	current = frappe.db.get_value("Project", project, "custom_shipment_status") or "Draft"
@@ -291,6 +294,9 @@ def sync_project_shipment_status_from_tasks(project: str) -> str | None:
 			progress_status,
 			update_modified=False,
 		)
+	# This write runs no document hooks, so the completion date has to be kept in step
+	# here rather than from Project's on_update.
+	sync_completion_date(project, progress_status)
 	frappe.clear_document_cache("Project", project)
 	frappe.publish_realtime(
 		"cgm_project_tracking_refresh",

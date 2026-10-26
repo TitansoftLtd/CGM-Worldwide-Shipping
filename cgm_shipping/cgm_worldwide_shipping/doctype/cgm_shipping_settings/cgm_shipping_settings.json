@@ -52,6 +52,8 @@
   "custom_transport_roles",
   "custom_field_operations_roles",
   "material_request_all_roles",
+  "section_hr_roles",
+  "custom_hr_roles",
   "section_document_responsibilities",
   "custom_document_responsibilities",
   "section_email_templates",
@@ -198,6 +200,19 @@
    "fieldname": "material_request_all_roles",
    "fieldtype": "Table MultiSelect",
    "label": "See all Material Requests",
+   "options": "CGM Role Item"
+  },
+  {
+   "description": "Roles held by the people who approve leave for everyone else. A leave application raised by someone holding one of these is final once their line manager approves, because the HR approval step would be a self-approval. Leave empty to fall back to whichever role the leave workflow allows at its HR step.",
+   "fieldname": "section_hr_roles",
+   "fieldtype": "Section Break",
+   "label": "HR"
+  },
+  {
+   "description": "Usually just CGM HR. Give this role to the HR employee on their User record.",
+   "fieldname": "custom_hr_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "HR roles",
    "options": "CGM Role Item"
   },
   {
@@ -545,7 +560,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-15 13:00:00",
+ "modified": "2026-10-26 12:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
