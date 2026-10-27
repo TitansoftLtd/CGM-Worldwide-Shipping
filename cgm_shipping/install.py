@@ -68,6 +68,9 @@ def after_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.project_layout import (
 		check_project_layout_export_drift,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.project_progress import (
+		reconcile_project_progress,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.recruitment import (
 		ensure_recruitment_schema,
 	)
@@ -111,6 +114,7 @@ def after_migrate() -> None:
 		("leave HR approval route", ensure_leave_hr_route),
 		("job group structure & per diems", ensure_per_diem_setup),
 		("document trail doctypes", ensure_document_trail_setup),
+		("project progress reconciled with tasks", reconcile_project_progress),
 		("material request see-all roles", ensure_see_all_roles),
 		("container tracking modes", ensure_container_tracker_modes),
 		("permissions protected from deploys", ensure_permissions_survive_deploy),
