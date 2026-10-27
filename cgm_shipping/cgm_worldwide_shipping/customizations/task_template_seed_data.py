@@ -689,7 +689,6 @@ AIR_IMPORT_GATES: list[dict] = [
 	_gate("UCR Applied", 2),
 	_gate("UCR Paid", 3),
 	_gate("Pre-clearance", 5),
-	_gate("Client Inspection", 7),
 	_gate("Final Docs Received", 8),
 	_gate("Entry Lodged", 10),
 	_gate("Entry Paid", 12),
@@ -723,7 +722,7 @@ SEA_TRANSIT_IMPORT_GATES: list[dict] = [
 ]
 
 # Sea Import LCL: Sea Import's statuses less the container ones (KPA Paid,
-# Containers Returned, In Transit, Client Inspection), plus CFS Paid.
+# Containers Returned, In Transit), plus CFS Paid.
 SEA_IMPORT_LCL_GATES: list[dict] = [
 	_gate("Documents Received", 1),
 	_gate("UCR Applied", 3),

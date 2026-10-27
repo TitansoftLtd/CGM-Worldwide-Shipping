@@ -75,9 +75,26 @@ class TestSeededGates(unittest.TestCase):
 		gates = tg.gate_map(DEFAULT_SEA_WORKFLOW_TASK_GATES)
 		self.assertEqual(gates["In Delivery"]["min_completed_task_seq"], 21)
 
-	def test_client_inspection_stays_a_status_without_a_gate(self):
+	def test_client_inspection_is_gone_from_both_the_states_and_the_gates(self):
+		"""It used to be a status with no gate, and that is what made it a problem.
+
+		A state is drawn as passed only when its task gate is satisfied, so a state with
+		no gate is drawn grey on every shipment, finished ones included, and clients read
+		it as a step still open. Its tasks were dropped long ago, so the status goes too.
+		"""
 		self.assertNotIn("Client Inspection", tg.gate_map(DEFAULT_SEA_WORKFLOW_TASK_GATES))
-		self.assertIn("Client Inspection", DEFAULT_SEA_IMPORT_WORKFLOW_STATES)
+		self.assertNotIn("Client Inspection", DEFAULT_SEA_IMPORT_WORKFLOW_STATES)
+
+	def test_only_the_known_exceptions_are_left_without_a_gate(self):
+		"""Guards the shape of problem Client Inspection was.
+
+		Draft is passed alongside Documents Received by the chart itself, and CFS Paid is
+		gated on the LCL plan rather than this one. Anything else appearing here is a
+		status that can never show as reached.
+		"""
+		gates = tg.gate_map(DEFAULT_SEA_WORKFLOW_TASK_GATES)
+		ungated = [s for s in DEFAULT_SEA_IMPORT_WORKFLOW_STATES if s not in gates]
+		self.assertEqual(ungated, ["Draft", "CFS Paid"])
 
 	def test_each_status_once_per_template(self):
 		for definition in TEMPLATE_DEFINITIONS:
@@ -180,7 +197,7 @@ class TestTemplateValidation(unittest.TestCase):
 			doc.validate_gates()
 
 	def test_task_not_in_the_plan_warns(self):
-		doc = self._template(("Client Inspection", 7))
+		doc = self._template(("Pre-clearance", 5))
 		with patch.object(frappe, "msgprint") as msgprint:
 			doc.validate_gates()
 		msgprint.assert_called_once()

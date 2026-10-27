@@ -246,7 +246,6 @@ SHIPMENT_STATUS_TABLE = (
 	("UCR Applied", "Booking & Documents", "primary", "active"),
 	("UCR Paid", "Booking & Documents", "primary", "active"),
 	("Pre-clearance", "Pre-Clearance", "primary", "active"),
-	("Client Inspection", "Pre-Clearance", "info", "active"),
 	("In Transit", "In Transit", "info", "info"),
 	("Final Docs Received", "Arrival & Customs Entry", "primary", "active"),
 	("Entry Lodged", "Arrival & Customs Entry", "primary", "active"),
