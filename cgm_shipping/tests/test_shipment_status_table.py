@@ -35,7 +35,6 @@ DESK_TONES_BEFORE = {
 	"UCR Applied": "primary",
 	"UCR Paid": "primary",
 	"Pre-clearance": "primary",
-	"Client Inspection": "info",
 	"In Transit": "info",
 	"Final Docs Received": "primary",
 	"Entry Lodged": "primary",
@@ -62,7 +61,7 @@ PORTAL_TONES_BEFORE = {status: "active" for status in DESK_TONES_BEFORE} | {
 
 MILESTONES_BEFORE = [
 	("Booking & Documents", ("Draft", "Documents Received", "UCR Applied", "UCR Paid")),
-	("Pre-Clearance", ("Pre-clearance", "Client Inspection")),
+	("Pre-Clearance", ("Pre-clearance",)),
 	("In Transit", ("In Transit",)),
 	("Arrival & Customs Entry", ("Final Docs Received", "Entry Lodged", "Line Paid & DO Lodged", "Entry Paid")),
 	("Clearance", ("Post-clearance", "Field Clearance", "KPA Paid", "CFS Paid")),

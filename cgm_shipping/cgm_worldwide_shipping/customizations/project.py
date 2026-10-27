@@ -208,7 +208,8 @@ def apply_shipment_document_automation(doc, _method=None):
 		legacy_map = {
 			"IDF Created": "UCR Applied",
 			"Permits Processing": "Pre-clearance",
-			"Awaiting Arrival": "Client Inspection",
+			# Client Inspection is retired; Awaiting Arrival sat in the same phase.
+			"Awaiting Arrival": "Pre-clearance",
 		}
 		if legacy_status in legacy_map:
 			doc.custom_shipment_status = legacy_map[legacy_status]

@@ -20,15 +20,19 @@ DEFAULT_SEA_WORKFLOW_TASK_GATES: list[dict] = [
 	{"shipment_workflow_state": "Completed", "min_completed_task_seq": 25, "gate_rule": "All Sea Tasks Complete"},
 ]
 
-# CGM Sea Import Workflow states, in chart order. Client Inspection has no gate -
-# no task reaches it - but stays a status the shipment can be moved to by hand.
+# CGM Sea Import Workflow states, in chart order.
+#
+# Client Inspection was kept here after its tasks were dropped, on the reasoning that it
+# stayed a status someone could set by hand. That carried a consequence nobody weighed: a
+# state is drawn as passed only when its task gate is satisfied, so a state with no gate
+# is drawn grey on every shipment, finished ones included, and reads as a step still open.
+# It is removed rather than left to mislead.
 DEFAULT_SEA_IMPORT_WORKFLOW_STATES: list[str] = [
 	"Draft",
 	"Documents Received",
 	"UCR Applied",
 	"UCR Paid",
 	"Pre-clearance",
-	"Client Inspection",
 	"In Transit",
 	"Final Docs Received",
 	"Line Paid & DO Lodged",

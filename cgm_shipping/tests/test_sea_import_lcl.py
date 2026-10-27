@@ -103,10 +103,10 @@ class TestStatusChart(unittest.TestCase):
 			patch.object(template_gates, "get_template_gates", side_effect=lambda t: gates[t]),
 			patch.object(
 				sea_clearance, "get_tracking_workflow_states",
-				return_value=["Draft", "Client Inspection", "KPA Paid", "CFS Paid", "Completed"],
+				return_value=["Draft", "In Transit", "KPA Paid", "CFS Paid", "Completed"],
 			),
 		):
 			self.assertEqual(
 				wt.get_clearance_workflow_states_for_project("PROJ-TEST"),
-				["Draft", "Client Inspection", "KPA Paid", "Completed"],
+				["Draft", "In Transit", "KPA Paid", "Completed"],
 			)
