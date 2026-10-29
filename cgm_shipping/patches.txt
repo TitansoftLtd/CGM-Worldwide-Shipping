@@ -42,3 +42,4 @@ cgm_shipping.patches.grant_read_on_reference_masters
 cgm_shipping.patches.remove_ui_payroll_registers_report
 cgm_shipping.patches.backfill_project_completion_date
 cgm_shipping.patches.mark_in_flight_hr_leave_applications
+cgm_shipping.patches.align_access_with_job_matrix
