@@ -118,8 +118,12 @@ frappe.ui.form.on("Opportunity", {
 	},
 });
 
+// Only Ops Intake is editable; every later state (Pending Approval, Approved,
+// Rejected, Cancelled) is render-only - syncing linked docs there marks the
+// form Not Saved on a record the user can no longer save.
 function opportunity_awaiting_workflow_review(frm) {
-	return (frm.doc.workflow_state || "").trim() === "Pending Approval";
+	const state = (frm.doc.workflow_state || "").trim();
+	return Boolean(state) && state !== "Ops Intake";
 }
 
 function run_opportunity_workflow_review_refresh(frm) {
