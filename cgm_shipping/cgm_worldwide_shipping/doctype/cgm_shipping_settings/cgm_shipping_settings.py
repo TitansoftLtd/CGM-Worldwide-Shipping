@@ -22,6 +22,12 @@ class CGMShippingSettings(Document):
 
 		validate_trail_doctype_rows(self)
 
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+			validate_container_step_requirement_rows,
+		)
+
+		validate_container_step_requirement_rows(self)
+
 	def on_update(self):
 		# Responsibility / role-group lookups are request-cached.
 		frappe.clear_cache()

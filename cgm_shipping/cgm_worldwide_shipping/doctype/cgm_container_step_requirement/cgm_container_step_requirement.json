@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "creation": "2026-11-01 16:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "container_step",
+  "tracker_field",
+  "field_label"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "container_step",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Container Step",
+   "options": "Book Trucks\nGate Out\nMonitor Delivery\nOffload\nEmpty Return\nInterchange",
+   "reqd": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "tracker_field",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Container Tracker Field",
+   "options": "transporter\ntruck_number\ndriver_name\ndriver_contact\ngate_out_date_port\ngate_in_date_warehouse\ndelivery_location\noffloading_date\nactual_empty_return\ngate_in_date_depot\ntransporter_at_return\ninterchange_date\ninterchange_document",
+   "reqd": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "field_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Shows On Tracker As",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-01 16:00:00",
+ "modified_by": "Administrator",
+ "module": "CGM Worldwide Shipping",
+ "name": "CGM Container Step Requirement",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

@@ -1513,6 +1513,72 @@ function cgm_with_updates_ui(on_ready, on_fail) {
 	);
 }
 
+// Files attached to this shipment's tasks, gathered for reading. Frappe keeps an
+// attachment on the one document it was attached to, so without this the only way to
+// find a receipt months later is to open every task in turn.
+function render_project_task_attachments(frm) {
+	const field = frm.get_field("custom_task_attachments_html");
+	if (!field || !field.$wrapper) {
+		return;
+	}
+
+	if (frm.is_new() || !frm.doc.name) {
+		field.$wrapper.html(
+			`<div class="text-muted small">${__("Save the shipment to see its task attachments.")}</div>`
+		);
+		return;
+	}
+
+	field.$wrapper.html(`<div class="text-muted small">${__("Loading attachments...")}</div>`);
+
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.project_task_documents.get_project_task_documents",
+		args: { project: frm.doc.name },
+		callback(r) {
+			const rows = (r.message && r.message.rows) || [];
+			if (!rows.length) {
+				field.$wrapper.html(
+					`<div class="text-muted small">${__("No files are attached to this shipment's tasks yet.")}</div>`
+				);
+				return;
+			}
+
+			const body = rows
+				.map((row) => {
+					const when = frappe.datetime.str_to_user(row.uploaded_on);
+					const task_link = `/app/task/${encodeURIComponent(row.task)}`;
+					return `
+						<tr>
+							<td><a href="${frappe.utils.escape_html(row.file_url)}" target="_blank" rel="noopener">${frappe.utils.escape_html(row.file_name || row.file_url)}</a></td>
+							<td><a href="${task_link}">${frappe.utils.escape_html(row.task_subject || row.task)}</a></td>
+							<td>${frappe.utils.escape_html(row.uploaded_by || "")}</td>
+							<td class="text-muted">${frappe.utils.escape_html(when || "")}</td>
+						</tr>`;
+				})
+				.join("");
+
+			field.$wrapper.html(`
+				<div class="text-muted small" style="margin-bottom:6px;">
+					${__("{0} file(s) attached to this shipment's tasks. The task remains the owner; this is a read-only view.", [rows.length])}
+				</div>
+				<div style="max-height:320px; overflow:auto;">
+					<table class="table table-bordered table-sm" style="font-size:12px; margin-bottom:0;">
+						<thead>
+							<tr>
+								<th>${__("File")}</th>
+								<th>${__("Task")}</th>
+								<th>${__("Uploaded By")}</th>
+								<th>${__("Uploaded On")}</th>
+							</tr>
+						</thead>
+						<tbody>${body}</tbody>
+					</table>
+				</div>`);
+		},
+	});
+}
+
 function render_project_operational_updates(frm) {
 	const field = frm.get_field("custom_shipment_updates_html");
 	if (!field || !field.$wrapper) {
@@ -1944,6 +2010,7 @@ frappe.ui.form.on("Project", {
 			configure_project_container_grid(frm);
 			refresh_project_deposit_refund_mirror(frm);
 			render_project_operational_updates(frm);
+			render_project_task_attachments(frm);
 
 			// Sync auto business name to Project Reference only — never CGM Ref No
 			// (company-entered, independent of project_name).

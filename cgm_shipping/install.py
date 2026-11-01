@@ -80,6 +80,9 @@ def after_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.sidebar_entries import (
 		ensure_cgm_sidebar_entries,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
+		ensure_container_step_requirements,
+	)
 
 	missing_layout_fields = check_project_layout_export_drift()
 	if missing_layout_fields:
@@ -114,6 +117,7 @@ def after_migrate() -> None:
 		("leave HR approval route", ensure_leave_hr_route),
 		("job group structure & per diems", ensure_per_diem_setup),
 		("document trail doctypes", ensure_document_trail_setup),
+		("container step requirements", ensure_container_step_requirements),
 		("project progress reconciled with tasks", reconcile_project_progress),
 		("material request see-all roles", ensure_see_all_roles),
 		("container tracking modes", ensure_container_tracker_modes),

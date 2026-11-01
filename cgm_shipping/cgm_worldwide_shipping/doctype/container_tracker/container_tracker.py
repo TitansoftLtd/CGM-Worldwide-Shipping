@@ -49,10 +49,14 @@ class ContainerTracker(Document):
 		_sync_project_child_row(self)
 		from cgm_shipping.cgm_worldwide_shipping.customizations.task_container_updates import (
 			check_all_container_tasks_for_project,
+			backfill_finished_task_rows_from_tracker,
 			sync_tracker_fields_to_open_task_rows,
 		)
 
 		sync_tracker_fields_to_open_task_rows(self)
+		# A step signed off before its details were entered left a blank grid; this
+		# fills those blanks without touching anything already recorded.
+		backfill_finished_task_rows_from_tracker(self)
 		check_all_container_tasks_for_project(self.project)
 		from cgm_shipping.cgm_worldwide_shipping.doctype.seal_record.seal_record import (
 			sync_seal_record_from_tracker,
