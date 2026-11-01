@@ -194,6 +194,25 @@ SHOTS: list[Shot] = [
 			Annotation("[data-fieldname='containers']", "Containers on the job", "above"),
 		],
 	),
+	Shot(
+		"settings-container-step-requirements",
+		"cgm-shipping-settings",
+		"transport-containers",
+		[
+			Annotation(
+				"#cgm-shipping-settings-tab_container_port_settings-tab, "
+				"[data-fieldname='tab_container_port_settings']",
+				"Container & Port Settings tab",
+				"below",
+			),
+			Annotation(
+				"[data-fieldname='custom_container_step_requirements']",
+				"What each step needs before it completes",
+				"above",
+			),
+		],
+		tab="tab_container_port_settings",
+	),
 	# --- Deposits & charges -------------------------------------------------
 	Shot("bill-of-lading-form", "bill-of-lading/{bill_of_lading}", "deposits-and-charges"),
 	# --- Finance ------------------------------------------------------------

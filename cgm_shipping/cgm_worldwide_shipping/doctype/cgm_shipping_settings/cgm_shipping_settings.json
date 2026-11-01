@@ -21,6 +21,8 @@
   "column_break_accrual_accounts",
   "kpa_port_accrual_expense_account",
   "kpa_port_accrual_payable_account",
+  "section_container_step_requirements",
+  "custom_container_step_requirements",
   "section_funding_settings",
   "default_operational_expense_account",
   "allow_any_item_default_account",
@@ -554,13 +556,25 @@
    "fieldtype": "Table",
    "label": "Send To Assignee Instead Of Role",
    "options": "CGM Notification Assignment Route"
+  },
+  {
+   "fieldname": "section_container_step_requirements",
+   "fieldtype": "Section Break",
+   "label": "Details a container step needs before it completes"
+  },
+  {
+   "description": "Which Container Tracker fields every container must have before a transport step completes itself. Leave the table empty for the built-in set: Book Trucks needs the transporter, truck, driver and driver contact; Empty Return needs the empty return and depot gate-in dates; Interchange needs the date and the receipt; the rest need their own date.",
+   "fieldname": "custom_container_step_requirements",
+   "fieldtype": "Table",
+   "label": "Container step requirements",
+   "options": "CGM Container Step Requirement"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-26 12:00:00",
+ "modified": "2026-11-01 16:00:00",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",

@@ -13,6 +13,13 @@ from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
+	CONTAINER_STEP_BOOK_TRUCKS,
+	CONTAINER_STEP_BY_SEQ_FIELD,
+	CONTAINER_STEP_EMPTY_RETURN,
+	CONTAINER_STEP_GATE_OUT,
+	CONTAINER_STEP_INTERCHANGE,
+	CONTAINER_STEP_MONITOR_DELIVERY,
+	CONTAINER_STEP_OFFLOAD,
 	CONTAINER_UPDATE_STEPS,
 	TASK_CONTAINER_UPDATES_FIELD,
 )
@@ -103,92 +110,234 @@ def is_shipping_line_deposit_mirror_task(doc) -> bool:
 	)
 
 
-def _completion_field_by_seq() -> dict[int, str]:
+# A step used to close on one Container Tracker field, and the rest of the row could
+# stay blank: Book Trucks signed itself off on a truck number alone, with no
+# transporter and no driver recorded against the container. That is precisely the
+# record wanted months later, when a shipping line bills for demurrage and the
+# question is who held the box and when the depot took it back.
+#
+# These are the fields every container must carry before a step completes itself.
+# Settings overrides them per step; an empty table means this set, never "nothing
+# required" (see container_step_requirements).
+DEFAULT_CONTAINER_STEP_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+	CONTAINER_STEP_BOOK_TRUCKS: TRANSPORT_TRACKER_FIELDS,
+	CONTAINER_STEP_GATE_OUT: ("gate_out_date_port",),
+	CONTAINER_STEP_MONITOR_DELIVERY: ("gate_in_date_warehouse",),
+	CONTAINER_STEP_OFFLOAD: ("offloading_date",),
+	CONTAINER_STEP_EMPTY_RETURN: ("actual_empty_return", "gate_in_date_depot"),
+	CONTAINER_STEP_INTERCHANGE: ("interchange_date", "interchange_document"),
+}
+
+CONTAINER_STEP_REQUIREMENT_FIELD = "custom_container_step_requirements"
+
+
+def container_step_requirements() -> dict[str, tuple[str, ...]]:
+	"""Tracker fields each container step needs, from Settings or the defaults.
+
+	Kept configurable because the list is a business judgement, not a rule of the
+	trade: it was agreed once, and the next month of real shipments will move it.
+	A deploy per adjustment would have put that out of reach of the people who know.
+	"""
+	configured: dict[str, list[str]] = {}
+	try:
+		settings = frappe.get_cached_doc("CGM Shipping Settings")
+		if settings.meta.has_field(CONTAINER_STEP_REQUIREMENT_FIELD):
+			for row in settings.get(CONTAINER_STEP_REQUIREMENT_FIELD) or []:
+				step = (row.get("container_step") or "").strip()
+				field = (row.get("tracker_field") or "").strip()
+				if not step or not field:
+					continue
+				if field not in configured.setdefault(step, []):
+					configured[step].append(field)
+	except Exception:
+		# Settings unreadable (install, patch, broken row): the defaults still gate.
+		configured = {}
+
+	meta = frappe.get_meta("Container Tracker")
+	out: dict[str, tuple[str, ...]] = {}
+	for step, defaults in DEFAULT_CONTAINER_STEP_REQUIREMENTS.items():
+		wanted = configured.get(step) or list(defaults)
+		# A field named in Settings but absent from the tracker would hold the step
+		# open for good, with nowhere for anyone to go and fill it.
+		usable = tuple(f for f in wanted if meta.has_field(f))
+		out[step] = usable or tuple(f for f in defaults if meta.has_field(f))
+	return out
+
+
+def ensure_container_step_requirements() -> None:
+	"""Seed the default rows so the table shows what is actually enforced.
+
+	Seeded rather than left empty: an empty table tells the reader nothing about
+	which details a step waits for, and the point of moving the list into Settings
+	was for the people who know the trade to read it and change it. Only ever when
+	empty, because rows someone has edited are theirs, not ours to restore.
+	"""
+	if not frappe.db.exists("DocType", "CGM Container Step Requirement"):
+		return
+	settings = frappe.get_single("CGM Shipping Settings")
+	if not settings.meta.has_field(CONTAINER_STEP_REQUIREMENT_FIELD):
+		return
+	if settings.get(CONTAINER_STEP_REQUIREMENT_FIELD):
+		return
+
+	meta = frappe.get_meta("Container Tracker")
+	for step, fields in DEFAULT_CONTAINER_STEP_REQUIREMENTS.items():
+		for field in fields:
+			if not meta.has_field(field):
+				continue
+			settings.append(
+				CONTAINER_STEP_REQUIREMENT_FIELD,
+				{
+					"container_step": step,
+					"tracker_field": field,
+					"field_label": container_tracker_field_label(field),
+				},
+			)
+	settings.flags.ignore_permissions = True
+	settings.flags.ignore_mandatory = True
+	settings.save()
+
+
+def validate_container_step_requirement_rows(settings) -> None:
+	"""Name each row's field as the tracker names it, and drop repeats."""
+	if not settings.meta.has_field(CONTAINER_STEP_REQUIREMENT_FIELD):
+		return
+	rows = settings.get(CONTAINER_STEP_REQUIREMENT_FIELD) or []
+	meta = frappe.get_meta("Container Tracker")
+	seen: set[tuple[str, str]] = set()
+	keep = []
+	for row in rows:
+		step = (row.container_step or "").strip()
+		field = (row.tracker_field or "").strip()
+		if not step or not field or (step, field) in seen:
+			continue
+		if not meta.has_field(field):
+			frappe.throw(
+				_(
+					"{0} is not a field on the Container Tracker, so a step waiting for it "
+					"could never be closed. Remove the row or pick another field."
+				).format(frappe.bold(field))
+			)
+		row.field_label = container_tracker_field_label(field)
+		seen.add((step, field))
+		keep.append(row)
+	if len(keep) != len(rows):
+		settings.set(CONTAINER_STEP_REQUIREMENT_FIELD, keep)
+
+
+def _gated_step_by_seq() -> dict[int, str]:
+	"""Configured sequence number → container step, for the steps that gate."""
 	return {
-		get_container_task_sequence("custom_book_trucks_task_seq"): "truck_number",
-		get_container_task_sequence("custom_gate_out_task_seq"): "gate_out_date_port",
-		get_container_task_sequence("custom_monitor_delivery_task_seq"): "gate_in_date_warehouse",
-		get_container_task_sequence("custom_offload_task_seq"): "offloading_date",
-		get_container_task_sequence("custom_empty_return_task_seq"): "actual_empty_return",
-		get_container_task_sequence("custom_interchange_task_seq"): "interchange_date",
+		get_container_task_sequence(seq_field): step
+		for seq_field, step in CONTAINER_STEP_BY_SEQ_FIELD.items()
+		if step in DEFAULT_CONTAINER_STEP_REQUIREMENTS
 	}
 
 
-# The tracker field that closes each step, by the label the tracker form shows.
-# frappe.unscrub() on the fieldname is close but not right: gate_out_date_port
-# reads "Gate Out Mombasa" on the form, and a dialog that invents its own name for
-# a field sends people looking for something that is not there.
-CONTAINER_STEP_FIELD_LABELS = {
-	"truck_number": "Truck Number",
-	"gate_out_date_port": "Gate Out Mombasa",
-	"gate_in_date_warehouse": "Gate In Date (Clearance Station / Warehouse)",
-	"offloading_date": "Offloading Date",
-	"actual_empty_return": "Actual Empty Return",
-	"interchange_date": "Interchange Date",
-}
+def _required_fields_by_seq() -> dict[int, tuple[str, ...]]:
+	requirements = container_step_requirements()
+	return {
+		seq: requirements[step]
+		for seq, step in _gated_step_by_seq().items()
+		if requirements.get(step)
+	}
+
+
+def container_tracker_field_label(field: str) -> str:
+	"""The field's name in the tracker form's own words.
+
+	Read from the tracker rather than from a list kept here: gate_out_date_port
+	reads "Gate Out Mombasa" on the form, and a dialog that invents its own name for
+	a field sends people looking for something that is not there.
+	"""
+	try:
+		df = frappe.get_meta("Container Tracker").get_field(field)
+	except Exception:
+		df = None
+	return (df.label if df and df.label else "") or frappe.unscrub(field)
 
 
 def container_step_requirement_label(seq: int) -> str:
-	"""What the Container Tracker still needs for this step, in the form's own words."""
-	if seq == get_container_task_sequence("custom_interchange_task_seq"):
-		# Interchange needs the date and the document, not a date alone.
-		return "Interchange Date and Interchange Document"
-	field = _completion_field_by_seq().get(seq) or ""
-	return CONTAINER_STEP_FIELD_LABELS.get(field, frappe.unscrub(field.replace("_", " ")))
+	"""What the Container Tracker still needs for this step, as the form names it."""
+	fields = _required_fields_by_seq().get(seq) or ()
+	labels = [container_tracker_field_label(f) for f in fields]
+	if not labels:
+		return ""
+	if len(labels) == 1:
+		return labels[0]
+	return "{0} and {1}".format(", ".join(labels[:-1]), labels[-1])
 
 
 def transport_step_tracker_blockers(task) -> tuple[str, list[str]]:
-	"""(what the tracker needs, containers missing it) for a transport step task.
+	"""(what the tracker needs, containers short of it) for a transport step task.
 
 	Transport steps are not completed by hand: the tracker drives them, and the task
-	marks itself Completed once every container has the step's field. Callers use
+	marks itself Completed once every container has the step's fields. Callers use
 	this to name the containers actually holding a task up, so the gate functions are
 	reused rather than restated and the message cannot drift from the rule.
 	"""
 	seq = int(task.get("custom_sequence_no") or 0)
 	if not seq or not task.get("project"):
 		return "", []
-	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
-	if not _completion_field_by_seq().get(seq) and seq != interchange_seq:
+	if not _required_fields_by_seq().get(seq):
 		return "", []
-	return container_step_requirement_label(seq), _containers_missing_step(task.project, seq)
+	return container_step_requirement_label(seq), _step_shortfall_lines(task.project, seq)
 
 
-def _trackers_missing_field(project: str, field: str) -> list[str]:
+def _missing_step_fields(tracker: dict, fields: tuple[str, ...]) -> list[str]:
+	"""Labels of the step's fields this container has not got."""
+	missing = []
+	for field in fields:
+		value = tracker.get(field)
+		if isinstance(value, str):
+			value = value.strip()
+		if not value:
+			missing.append(container_tracker_field_label(field))
+	return missing
+
+
+def _step_shortfall(project: str, seq: int) -> dict[str, list[str]]:
+	"""Container → the step's fields it is still missing, for each one short of any."""
+	fields = _required_fields_by_seq().get(seq) or ()
+	if not fields or not project:
+		return {}
+
+	columns = ["name", "container_number"]
+	columns += [f for f in fields if f not in columns]
 	trackers = frappe.get_all(
 		"Container Tracker",
 		filters={"project": project},
-		fields=["name", "container_number", field],
+		fields=columns,
+		order_by="container_number asc",
 	)
-	return [
-		t.container_number or t.name
-		for t in trackers
-		if not t.get(field)
-	]
+
+	shortfall: dict[str, list[str]] = {}
+	for tracker in trackers:
+		missing = _missing_step_fields(tracker, fields)
+		if missing:
+			shortfall[tracker.container_number or tracker.name] = missing
+	return shortfall
 
 
-def _trackers_missing_interchange(project: str) -> list[str]:
-	"""Containers on the project still missing interchange date or receipt."""
-	trackers = frappe.get_all(
-		"Container Tracker",
-		filters={"project": project},
-		fields=["name", "container_number", "interchange_date", "interchange_document"],
-	)
+def _step_shortfall_lines(project: str, seq: int) -> list[str]:
+	"""Containers holding a step open, each naming what it is short of.
+
+	A step needing one field reads as the container alone, as it always has. One
+	needing several says which of them this container is missing, because "fill in
+	the details" sent people back to a row where most cells were already full.
+	"""
+	shortfall = _step_shortfall(project, seq)
+	multi = len(_required_fields_by_seq().get(seq) or ()) > 1
+	if not multi:
+		return list(shortfall)
 	return [
-		t.container_number or t.name
-		for t in trackers
-		if not t.get("interchange_date") or not (t.get("interchange_document") or "").strip()
+		"{0} ({1})".format(container, ", ".join(missing))
+		for container, missing in shortfall.items()
 	]
 
 
 def _containers_missing_step(project: str, seq: int) -> list[str]:
-	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
-	if seq == interchange_seq:
-		return _trackers_missing_interchange(project)
-	check_field = _completion_field_by_seq().get(seq)
-	if not check_field:
-		return []
-	return _trackers_missing_field(project, check_field)
+	return list(_step_shortfall(project, seq))
 
 
 TRACKER_SEED_FIELDS = [
@@ -212,6 +361,7 @@ TRACKER_SEED_FIELDS = [
 	"interchange_date",
 	"interchange_document",
 	"gate_in_date_warehouse",
+	"gate_in_date_depot",
 	"delivery_location",
 ]
 
@@ -805,7 +955,7 @@ def check_all_container_tasks_for_project(project: str) -> None:
 
 	frappe.flags.cgm_checking_container_task_completion = True
 	try:
-		for seq in _completion_field_by_seq():
+		for seq in _required_fields_by_seq():
 			try_auto_complete_container_task_for_seq(project, seq)
 	finally:
 		frappe.flags.cgm_checking_container_task_completion = False
@@ -832,7 +982,7 @@ def check_task_container_completion(doc) -> None:
 		return
 
 	seq = _container_seq(doc)
-	if not _completion_field_by_seq().get(seq):
+	if not _required_fields_by_seq().get(seq):
 		return
 
 	try_auto_complete_container_task_for_seq(doc.project, seq)
@@ -852,9 +1002,7 @@ def validate_container_step_task_completion(doc) -> None:
 	seq = _container_seq(doc)
 	if not doc.get("project"):
 		return
-	if not _completion_field_by_seq().get(seq) and seq != get_container_task_sequence(
-		"custom_interchange_task_seq"
-	):
+	if not _required_fields_by_seq().get(seq):
 		return
 
 	if not frappe.db.exists("Container Tracker", {"project": doc.project}):
@@ -869,7 +1017,7 @@ def validate_container_step_task_completion(doc) -> None:
 			],
 		)
 
-	missing = _containers_missing_step(doc.project, seq)
+	missing = _step_shortfall_lines(doc.project, seq)
 	if missing:
 		label = container_step_requirement_label(seq)
 		blocked_dialog(

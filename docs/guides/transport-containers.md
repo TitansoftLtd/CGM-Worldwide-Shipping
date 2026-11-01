@@ -62,6 +62,9 @@ Statuses are **derived from dates** on Container Tracker (daily scheduler recalc
 
 Use **Task Container Update** child table on these tasks to record per-container gate-out, delivery, offload, and return dates.
 
+Each of these completes itself once every container has that step's details. See
+[What a step needs before it completes](#what-a-step-needs-before-it-completes).
+
 ---
 
 ## How a job reaches a transporter
@@ -165,6 +168,56 @@ step receiving only its own fields: booking trucks gets the transporter, truck a
 driver; gate out gets the port gate-out and free days; monitoring delivery gets the
 warehouse gate-in; empty return gets the return and depot dates; interchange gets the
 interchange date and document.
+
+### What a step needs before it completes
+
+A transport step is not ticked by hand. It completes itself once **every container on
+the shipment** carries the details for that step, and it stays open until then.
+
+| Step | Every container must have |
+|------|---------------------------|
+| 20 Book trucks | Transporter, Truck Number, Driver Name, Driver Contact |
+| 21 Load trucks and exit port | Gate Out Mombasa |
+| 22 Monitor delivery | Gate In Date (Clearance Station / Warehouse) |
+| 23 Offload cargo | Offloading Date |
+| 24 Return empty container | Actual Empty Return, Gate In Date Depot |
+| 25 Receive interchange confirmation | Interchange Date, Interchange Document |
+
+Booking trucks and returning the empty used to close on one field each, a truck number
+and a return date, and the rest of the row could stay blank. A step could therefore be
+signed off with no transporter and no driver recorded against the container, and that is
+precisely the record wanted months later when a shipping line bills for demurrage and
+the question is who held the box and when the depot took it back.
+
+Try to complete a step before its containers are ready and the message names the
+containers holding it up and, where a step needs several fields, which of them each one
+is short of:
+
+> Transporter, Truck Number, Driver Name and Driver Contact missing on:
+> MSCU1234567 (Driver Name), TGHU9998877 (Transporter, Driver Contact)
+
+Fill those on the **Container Tracker** and the task completes itself. Steps already
+Completed are left alone; this is a gate on closing a step, not a re-audit of closed
+ones.
+
+### Changing what a step needs
+
+![CGM Shipping Settings: 1 the Container & Port Settings tab, 2 the Container step requirements table](../images/settings-container-step-requirements.png)
+
+**CGM Shipping Settings**, tab **Container & Port Settings**, table **Container step
+requirements**. One row per field a step requires: pick the **Container Step** and the
+**Container Tracker Field**.
+
+- **Leave the table empty** for the set in the table above. An emptied table means the
+  defaults, never "nothing required".
+- **Rows for a step replace that step's defaults.** Listing only Truck Number against
+  Book Trucks goes back to the old single-field behaviour. Other steps are unaffected.
+- **Add rows to ask for more**, for example Clearance Station on Monitor Delivery.
+- A field that is not on the Container Tracker is ignored rather than waited for, so a
+  mistyped row cannot hold a step open with nowhere to go and fill it.
+
+The list sits in Settings because it is a judgement about which details matter, not a
+rule of the trade. It was agreed once, and a month of real shipments will move it.
 
 ### Details entered after a step was signed off
 
