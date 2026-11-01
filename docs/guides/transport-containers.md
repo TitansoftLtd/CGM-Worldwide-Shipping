@@ -154,6 +154,61 @@ Submittable confirmation when empty container is returned to depot - links to ta
 
 ---
 
+## Container Updates and the Container Tracker
+
+The transport details live in two places on purpose. The **Container Tracker** is the
+container's own record. The **Container Updates** grid on each transport task is what
+the person doing that step fills in, and what the task is judged complete on.
+
+Editing the tracker pushes the relevant fields down to the matching task grids, each
+step receiving only its own fields: booking trucks gets the transporter, truck and
+driver; gate out gets the port gate-out and free days; monitoring delivery gets the
+warehouse gate-in; empty return gets the return and depot dates; interchange gets the
+interchange date and document.
+
+### Details entered after a step was signed off
+
+A finished task used to be skipped entirely, so anything entered on the tracker
+afterwards never appeared in its grid. Opening that task later showed nothing, which is
+exactly where someone looks when a shipping line invoices for demurrage months on.
+
+Blank cells on a finished task are now filled from the tracker. A cell that already
+holds a value is never changed: the finished task records what was done at the time,
+and overwriting it would damage the trail rather than complete it. So the rule is:
+
+- **Blank on a finished task** - filled from the tracker.
+- **Already filled** - left exactly as it is, even if the tracker now disagrees.
+- **Open task** - the live sync handles it, as before.
+
+If a finished task's grid and the tracker disagree, the grid is the record of what was
+entered at the time and the tracker is the current truth. That difference is
+deliberate, and it is what lets you tell when something was corrected after the fact.
+
+
+## Reading container status at a glance
+
+Open **Container Tracker** as a list and each container carries a coloured pill for
+its operational status. The colours run with the lifecycle, so a list of a
+shipment's boxes can be skimmed for the one that needs attention:
+
+| Colour | Means |
+| --- | --- |
+| Grey | Not at port yet |
+| Yellow | At port: berthed, discharged or KRA released |
+| Orange | On the road, or offloaded and not yet back |
+| Blue | At the warehouse or destination |
+| **Red** | **Return overdue.** A live demurrage alarm |
+| Green | Interchange confirmed, the box is closed out |
+
+Clicking a pill filters the list to that status.
+
+The colours are set in one place, `CONTAINER_STATUS_TABLE`, and the list, the
+container form, the Container Tracking report and the Operations Overview board all
+read it. A status with no row in that table is drawn grey rather than guessed at, so
+a container showing grey when it should not is a sign the status itself is
+unrecognised, not that the colour is wrong.
+
+
 ## Related guides
 
 - [Container Deposits & Charges](deposits-and-charges.md) - deposits, demurrage and KPA charges, and how they reach the ledger

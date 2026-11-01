@@ -625,6 +625,98 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 		frappe.flags.cgm_syncing_tracker_to_task = False
 
 
+def backfill_finished_task_rows_from_tracker(tracker) -> int:
+	"""Fill blank cells on finished tasks' container rows from the tracker.
+
+	The live sync skips Completed and Cancelled tasks, and for a cell that already
+	holds a value that is right: a finished task is a record of what was done at the
+	time, and rewriting it would destroy the trail rather than complete it.
+
+	A blank cell records nothing, though. Transport details entered on the Container
+	Tracker after the step was signed off never reached the task grid at all, so the
+	grid stayed empty and whoever opened the task months later, chasing a late
+	container, found nothing there. That is the hole this fills, and only that: a cell
+	with a value is never touched.
+
+	Returns how many tasks were changed.
+	"""
+	if not tracker.project or frappe.flags.get("cgm_syncing_tracker_to_task"):
+		return 0
+
+	seq_fields = _finished_backfill_fields()
+	tasks = _container_step_task_rows(
+		tracker.project, set(seq_fields), exclude_statuses=("Cancelled",)
+	)
+	if not tasks:
+		return 0
+
+	changed_tasks = 0
+	frappe.flags.cgm_syncing_tracker_to_task = True
+	try:
+		for task_row in tasks:
+			fields = seq_fields.get(task_row.container_seq)
+			if not fields:
+				continue
+
+			task = frappe.get_doc("Task", task_row.name)
+			# The open ones are already handled by the live sync; doing them here too
+			# would mean two writes for the same edit.
+			if task.status != "Completed":
+				continue
+			if not task.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
+				continue
+
+			changed = False
+			for row in task.get(TASK_CONTAINER_UPDATES_FIELD) or []:
+				if row.get("container_tracker") != tracker.name:
+					continue
+				for field in fields:
+					if row.get(field):
+						continue  # already recorded; not ours to overwrite
+					value = tracker.get(field)
+					if field == "discharging_date" and not value:
+						value = tracker.get("ata")
+					if value:
+						row.set(field, value)
+						changed = True
+
+			if changed:
+				task.save(ignore_permissions=True)
+				changed_tasks += 1
+	finally:
+		frappe.flags.cgm_syncing_tracker_to_task = False
+
+	return changed_tasks
+
+
+def _finished_backfill_fields() -> dict[int, tuple[str, ...]]:
+	"""The same step-to-field map the live sync uses, in one place."""
+	return {
+		get_container_task_sequence("custom_vessel_arrival_task_seq"): ("discharging_date",),
+		get_container_task_sequence("custom_book_trucks_task_seq"): tuple(TRANSPORT_TRACKER_FIELDS),
+		get_container_task_sequence("custom_gate_out_task_seq"): (
+			"gate_out_date_port",
+			"free_days_start_date",
+			"free_days_end_date",
+			"kpa_free_days_start_date",
+			"kpa_free_days_end_date",
+		),
+		get_container_task_sequence("custom_monitor_delivery_task_seq"): (
+			"gate_in_date_warehouse",
+			"delivery_location",
+		),
+		get_container_task_sequence("custom_offload_task_seq"): ("offloading_date",),
+		get_container_task_sequence("custom_empty_return_task_seq"): (
+			"actual_empty_return",
+			"gate_in_date_depot",
+		),
+		get_container_task_sequence("custom_interchange_task_seq"): (
+			"interchange_date",
+			"interchange_document",
+		),
+	}
+
+
 def _auto_complete_container_task(task_name: str, project: str) -> bool:
 	if frappe.flags.get("cgm_auto_completing_container_task"):
 		return False
