@@ -122,6 +122,8 @@ doctype_js = {
 doctype_list_js = {
 	"Task": "public/js/task_list.js",
 	"Material Request": "public/js/material_request_list.js",
+	# `status` is a Data field, so the list draws no indicator without this.
+	"Container Tracker": "public/js/container_tracker_list.js",
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
