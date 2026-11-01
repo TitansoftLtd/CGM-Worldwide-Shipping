@@ -91,6 +91,36 @@ timeline reads. An emptied table means the defaults, not nothing.
 
 ---
 
+## Finding a file attached to a task
+
+**Project**, panel **Task Attachments**, below the shipment's documents table.
+
+A file attached with the paperclip belongs to the one record it was attached to.
+Attach a KPA receipt to the task that paid it and the file lives on that task, not
+on the shipment. That is how Frappe works, and it is where most working documents
+land: registered entries, e-slips, payment instructions, receipts, approved IDFs.
+
+Retracing a shipment months later therefore meant opening each of its tasks in
+turn. The panel gathers them instead. It lists every file attached to any task of
+the shipment, with the task it came from, who uploaded it and when. The file name
+opens the file; the task name opens the task.
+
+This matters most when a shipping line invoices for demurrage long afterwards and
+you need to establish which transporter returned a container late, and when.
+
+### What it does and does not do
+
+- **Nothing is copied.** The task keeps the file. The panel is a view, so a file
+  replaced on the task shows its replacement here immediately. Copying would have
+  doubled the storage and left two versions of the truth.
+- **It is read-only.** Attach and remove files on the task, as before.
+- **It is not the documents table.** The **Client Documents** table above it is the
+  shipment's own set of required document types, filled through the document
+  checkpoint tasks. The two are separate on purpose: that table answers "is the
+  bill of lading in", this panel answers "what has anyone attached anywhere".
+- **Permission follows the shipment.** Someone who cannot open the shipment is
+  refused the list.
+
 ## Related guides
 
 - [CGM Shipping Settings](settings.md) - the Document trail tab
