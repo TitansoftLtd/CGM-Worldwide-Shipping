@@ -140,6 +140,10 @@ class Shot:
 	route: str
 	guide: str
 	annotations: list[Annotation] = field(default_factory=list)
+	#: Tab fieldname to open before capturing, for a form whose content is tabbed.
+	#: The `#tab_x` hash the desk reads is applied before this layout renders, so
+	#: the form opens on its first tab whatever the URL said.
+	tab: str = ""
 
 
 SHOTS: list[Shot] = [
@@ -351,6 +355,18 @@ _READY_JS = """
 		'.frappe-control, .list-row, .grid-row, .form-section'
 	).length;
 	return (body.innerText || '').trim().length > 400 && painted > 5 ? painted : 0;
+})()
+"""
+
+#: Open a named tab. select_tab() takes a fieldname or a label and is what the
+#: desk's own keyboard navigation calls, so no DOM structure is assumed here.
+_SELECT_TAB_JS = """
+(() => {
+  const tab = %s;
+  const frm = window.cur_frm;
+  if (!frm || !frm.layout || !frm.layout.select_tab) return 0;
+  frm.layout.select_tab(tab);
+  return 1;
 })()
 """
 
@@ -653,8 +669,14 @@ def capture_all(
 	height: int = DEFAULT_HEIGHT,
 	wait: int = DEFAULT_WAIT_MS,
 	anonymise: bool = True,
+	stem: str | None = None,
 ) -> None:
-	"""Capture every shot in SHOTS (or just one guide's) into docs/images."""
+	"""Capture every shot in SHOTS, or one guide's (*only*), or a single *stem*.
+
+	*stem* exists so adding one screenshot does not retake its neighbours: a
+	rerun picks up whatever the data looks like today, and an unrelated image
+	changing in the same commit is noise a reviewer has to rule out.
+	"""
 	from frappe.utils.pdf_generator.cdp_connection import CDPSocketClient
 	from frappe.utils.pdf_generator.chrome_pdf_generator import ChromePDFGenerator
 	from frappe.utils.pdf_generator.page import Page
@@ -673,6 +695,10 @@ def capture_all(
 	pairs = list(build_alias_map().items()) if anonymise else []
 
 	wanted = [s for s in SHOTS if not only or s.guide == only]
+	if stem:
+		wanted = [s for s in wanted if s.stem == stem]
+		if not wanted:
+			frappe.throw(f"No shot named {stem!r}. Known: {sorted(s.stem for s in SHOTS)}")
 	if not wanted:
 		frappe.throw(f"No shots match guide {only!r}. Known: {sorted({s.guide for s in SHOTS})}")
 
@@ -719,6 +745,10 @@ def capture_all(
 
 				page.navigate(url)
 				_wait_until_rendered(page, wait / 1000)
+
+				if shot.tab:
+					if _value(page.evaluate(_SELECT_TAB_JS % json.dumps(shot.tab))):
+						time.sleep(1.5)
 
 				# List routes only: drop any saved filter that would hide the rows.
 				if "/" not in resolved:
