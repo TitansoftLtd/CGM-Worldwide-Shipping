@@ -165,9 +165,12 @@ the person doing that step fills in, and what the task is judged complete on.
 
 Editing the tracker pushes the relevant fields down to the matching task grids, each
 step receiving only its own fields: booking trucks gets the transporter, truck and
-driver; gate out gets the port gate-out and free days; monitoring delivery gets the
-warehouse gate-in; empty return gets the return and depot dates; interchange gets the
-interchange date and document.
+driver; gate out gets the same transport details plus the port gate-out and free days;
+monitoring delivery gets the warehouse gate-in; empty return gets the return and depot
+dates; interchange gets the interchange date and document.
+
+A task's grid also arrives pre-filled with whatever the tracker already holds for that
+step, so a step reached late in the job does not start blank.
 
 ### What a step needs before it completes
 
@@ -199,6 +202,21 @@ is short of:
 Fill those on the **Container Tracker** and the task completes itself. Steps already
 Completed are left alone; this is a gate on closing a step, not a re-audit of closed
 ones.
+
+### The truck on the exit step
+
+**Load trucks and exit port** shows the transporter, truck, driver and contact as well
+as its own gate-out fields. The truck that turns up at the gate is not always the one
+booked, and the exit step is where that is noticed.
+
+The details are editable there, not just displayed. Correcting the truck on the exit
+step updates the Container Tracker, so the tracker holds the truck that actually left.
+The Book trucks grid keeps what was booked, because a completed step records what was
+done at the time.
+
+Showing the details is not the same as requiring them. Only **Book trucks** refuses to
+complete without all four; **Load trucks and exit port** still closes on the gate-out
+date alone.
 
 ### Changing what a step needs
 

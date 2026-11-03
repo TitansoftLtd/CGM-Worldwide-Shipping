@@ -46,45 +46,51 @@ TRANSPORT_TRACKER_FIELDS = (
 )
 
 
+# Container Tracker fields each step mirrors onto its task grid, keyed by the
+# Settings sequence field. One map: four copies of it had to agree, which is how
+# gate_in_date_depot went missing from the seed query.
+STEP_SYNC_TRACKER_FIELDS: dict[str, tuple[str, ...]] = {
+	"custom_vessel_arrival_task_seq": ("discharging_date",),
+	"custom_book_trucks_task_seq": TRANSPORT_TRACKER_FIELDS,
+	# Editable at exit too: the truck that turns up is not always the one booked.
+	"custom_gate_out_task_seq": TRANSPORT_TRACKER_FIELDS
+	+ (
+		"gate_out_date_port",
+		"free_days_start_date",
+		"free_days_end_date",
+		"kpa_free_days_start_date",
+		"kpa_free_days_end_date",
+	),
+	"custom_monitor_delivery_task_seq": ("gate_in_date_warehouse", "delivery_location"),
+	"custom_offload_task_seq": ("offloading_date",),
+	"custom_empty_return_task_seq": ("actual_empty_return", "gate_in_date_depot"),
+	"custom_interchange_task_seq": ("interchange_date", "interchange_document"),
+}
+
+# Pairs whose task and tracker names differ. Task → tracker only.
+STEP_RENAMED_TRACKER_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
+	"custom_field_clearance_task_seq": (("verification_location", "current_location"),),
+	"custom_offload_task_seq": (("container_emptied_location", "delivery_location"),),
+}
+
+
+def _sync_fields_by_seq() -> dict[int, tuple[str, ...]]:
+	"""Container Tracker → task grid, keyed by configured sequence number."""
+	return {
+		get_container_task_sequence(seq_field): fields
+		for seq_field, fields in STEP_SYNC_TRACKER_FIELDS.items()
+	}
+
+
 def _seq_field_map() -> dict[int, list[tuple[str, str]]]:
 	"""Task grid field → Container Tracker field, keyed by configured sequence number."""
-	mapping: dict[int, list[tuple[str, str]]] = {
-		get_container_task_sequence("custom_vessel_arrival_task_seq"): [
-			("discharging_date", "discharging_date"),
-		],
-		get_container_task_sequence("custom_field_clearance_task_seq"): [
-			("verification_location", "current_location"),
-		],
-		get_container_task_sequence("custom_book_trucks_task_seq"): [
-			("transporter", "transporter"),
-			("truck_number", "truck_number"),
-			("driver_name", "driver_name"),
-			("driver_contact", "driver_contact"),
-		],
-		get_container_task_sequence("custom_gate_out_task_seq"): [
-			("gate_out_date_port", "gate_out_date_port"),
-			("free_days_start_date", "free_days_start_date"),
-			("free_days_end_date", "free_days_end_date"),
-			("kpa_free_days_start_date", "kpa_free_days_start_date"),
-			("kpa_free_days_end_date", "kpa_free_days_end_date"),
-		],
-		get_container_task_sequence("custom_monitor_delivery_task_seq"): [
-			("gate_in_date_warehouse", "gate_in_date_warehouse"),
-			("delivery_location", "delivery_location"),
-		],
-		get_container_task_sequence("custom_offload_task_seq"): [
-			("offloading_date", "offloading_date"),
-			("container_emptied_location", "delivery_location"),
-		],
-		get_container_task_sequence("custom_empty_return_task_seq"): [
-			("actual_empty_return", "actual_empty_return"),
-			("gate_in_date_depot", "gate_in_date_depot"),
-		],
-		get_container_task_sequence("custom_interchange_task_seq"): [
-			("interchange_date", "interchange_date"),
-			("interchange_document", "interchange_document"),
-		],
-	}
+	mapping: dict[int, list[tuple[str, str]]] = {}
+	for seq_field, fields in STEP_SYNC_TRACKER_FIELDS.items():
+		mapping.setdefault(get_container_task_sequence(seq_field), []).extend(
+			(field, field) for field in fields
+		)
+	for seq_field, pairs in STEP_RENAMED_TRACKER_FIELDS.items():
+		mapping.setdefault(get_container_task_sequence(seq_field), []).extend(pairs)
 	# Shipping Line Application: deposit fields are mirrored from Bill of Lading (read-only).
 	# Do not map them onto Container Tracker.
 	return mapping
@@ -420,12 +426,6 @@ def _prefill_row_from_tracker(
 		row.current_status = tracker.get("status")
 		changed = True
 
-	book_seq = get_container_task_sequence("custom_book_trucks_task_seq")
-	gate_out_seq = get_container_task_sequence("custom_gate_out_task_seq")
-	monitor_seq = get_container_task_sequence("custom_monitor_delivery_task_seq")
-	offload_seq = get_container_task_sequence("custom_offload_task_seq")
-	empty_seq = get_container_task_sequence("custom_empty_return_task_seq")
-	interchange_seq = get_container_task_sequence("custom_interchange_task_seq")
 	vessel_arrival_seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 
 	if seq == vessel_arrival_seq:
@@ -441,40 +441,9 @@ def _prefill_row_from_tracker(
 		if flt(row.get("deposit_amount")) != new_amt:
 			row.deposit_amount = new_amt
 			changed = True
-	elif seq == book_seq:
-		for field in TRANSPORT_TRACKER_FIELDS:
-			if not row.get(field) and tracker.get(field):
-				row.set(field, tracker.get(field))
-				changed = True
-	elif seq == gate_out_seq:
-		for field in (
-			"gate_out_date_port",
-			"free_days_start_date",
-			"free_days_end_date",
-			"kpa_free_days_start_date",
-			"kpa_free_days_end_date",
-		):
-			if not row.get(field) and tracker.get(field):
-				row.set(field, tracker.get(field))
-				changed = True
-	elif seq == monitor_seq:
-		for field in ("gate_in_date_warehouse", "delivery_location"):
-			if not row.get(field) and tracker.get(field):
-				row.set(field, tracker.get(field))
-				changed = True
-	elif seq == offload_seq and not row.get("offloading_date") and tracker.get("offloading_date"):
-		row.offloading_date = tracker.get("offloading_date")
-		changed = True
-	elif seq == empty_seq:
-		for field in (
-			"actual_empty_return",
-			"gate_in_date_depot",
-		):
-			if not row.get(field) and tracker.get(field):
-				row.set(field, tracker.get(field))
-				changed = True
-	elif seq == interchange_seq:
-		for field in ("interchange_date", "interchange_document"):
+	else:
+		# Blanks only: a filled cell records what was entered against the step.
+		for field in _sync_fields_by_seq().get(seq) or ():
 			if not row.get(field) and tracker.get(field):
 				row.set(field, tracker.get(field))
 				changed = True
@@ -506,50 +475,25 @@ def seed_container_update_rows(doc) -> bool:
 	)
 
 	changed = False
-	book_seq = get_container_task_sequence("custom_book_trucks_task_seq")
-	monitor_seq = get_container_task_sequence("custom_monitor_delivery_task_seq")
-	vessel_arrival_seq = get_container_task_sequence("custom_vessel_arrival_task_seq")
 	for tracker in trackers:
-		if tracker.name in existing:
-			if _prefill_row_from_tracker(
-				existing[tracker.name], tracker, seq, doc.project, shipping_line=shipping_line
-			):
-				changed = True
-			continue
-
-		row_data = {
-			"container_tracker": tracker.name,
-			"container_number": tracker.container_number,
-			"cargo_size": tracker_row_cargo_size(tracker),
-			"current_status": tracker.status,
-		}
-		if seq == vessel_arrival_seq:
-			row_data["discharging_date"] = (
-				tracker.get("discharging_date") or tracker.get("ata") or None
-			)
-		elif shipping_line:
-			bl_map = _bl_deposit_by_container_number(doc.project)
-			src = bl_map.get((tracker.container_number or "").strip().upper()) or {}
-			row_data["deposit_amount"] = flt(src.get("deposit_amount"))
-		elif seq == book_seq:
-			row_data.update(
+		row = existing.get(tracker.name)
+		if row is None:
+			# New rows take the same prefill as existing ones, or a step whose columns
+			# the prefill knows about would still be born blank.
+			row = doc.append(
+				TASK_CONTAINER_UPDATES_FIELD,
 				{
-					"truck_number": tracker.truck_number or "",
-					"driver_name": tracker.driver_name or "",
-					"driver_contact": tracker.driver_contact or "",
-					"transporter": tracker.transporter or "",
-				}
+					"container_tracker": tracker.name,
+					"container_number": tracker.container_number,
+					"cargo_size": tracker_row_cargo_size(tracker),
+					"current_status": tracker.status,
+				},
 			)
-		elif seq == monitor_seq:
-			row_data.update(
-				{
-					"gate_in_date_warehouse": tracker.gate_in_date_warehouse,
-					"delivery_location": tracker.delivery_location or "",
-				}
-			)
-
-		doc.append(TASK_CONTAINER_UPDATES_FIELD, row_data)
-		changed = True
+			changed = True
+		if _prefill_row_from_tracker(
+			row, tracker, seq, doc.project, shipping_line=shipping_line
+		):
+			changed = True
 	return changed
 
 
@@ -718,32 +662,7 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 	if not tracker.project or frappe.flags.get("cgm_syncing_tracker_to_task"):
 		return
 
-	sync_seqs = {
-		get_container_task_sequence("custom_vessel_arrival_task_seq"): (
-			"discharging_date",
-		),
-		get_container_task_sequence("custom_book_trucks_task_seq"): TRANSPORT_TRACKER_FIELDS,
-		get_container_task_sequence("custom_gate_out_task_seq"): (
-			"gate_out_date_port",
-			"free_days_start_date",
-			"free_days_end_date",
-			"kpa_free_days_start_date",
-			"kpa_free_days_end_date",
-		),
-		get_container_task_sequence("custom_monitor_delivery_task_seq"): (
-			"gate_in_date_warehouse",
-			"delivery_location",
-		),
-		get_container_task_sequence("custom_offload_task_seq"): ("offloading_date",),
-		get_container_task_sequence("custom_empty_return_task_seq"): (
-			"actual_empty_return",
-			"gate_in_date_depot",
-		),
-		get_container_task_sequence("custom_interchange_task_seq"): (
-			"interchange_date",
-			"interchange_document",
-		),
-	}
+	sync_seqs = _sync_fields_by_seq()
 
 	tasks = _container_step_task_rows(tracker.project, set(sync_seqs))
 	if not tasks:
@@ -840,31 +759,8 @@ def backfill_finished_task_rows_from_tracker(tracker) -> int:
 
 
 def _finished_backfill_fields() -> dict[int, tuple[str, ...]]:
-	"""The same step-to-field map the live sync uses, in one place."""
-	return {
-		get_container_task_sequence("custom_vessel_arrival_task_seq"): ("discharging_date",),
-		get_container_task_sequence("custom_book_trucks_task_seq"): tuple(TRANSPORT_TRACKER_FIELDS),
-		get_container_task_sequence("custom_gate_out_task_seq"): (
-			"gate_out_date_port",
-			"free_days_start_date",
-			"free_days_end_date",
-			"kpa_free_days_start_date",
-			"kpa_free_days_end_date",
-		),
-		get_container_task_sequence("custom_monitor_delivery_task_seq"): (
-			"gate_in_date_warehouse",
-			"delivery_location",
-		),
-		get_container_task_sequence("custom_offload_task_seq"): ("offloading_date",),
-		get_container_task_sequence("custom_empty_return_task_seq"): (
-			"actual_empty_return",
-			"gate_in_date_depot",
-		),
-		get_container_task_sequence("custom_interchange_task_seq"): (
-			"interchange_date",
-			"interchange_document",
-		),
-	}
+	"""The same step-to-field map the live sync uses, from the one source."""
+	return _sync_fields_by_seq()
 
 
 def _auto_complete_container_task(task_name: str, project: str) -> bool:
