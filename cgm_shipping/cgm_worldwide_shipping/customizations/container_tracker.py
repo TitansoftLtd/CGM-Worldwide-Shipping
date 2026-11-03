@@ -325,8 +325,9 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	if free_end:
 		# Shipping-line demurrage/detention: empty return / interchange, not KPA.
 		dem_start = free_end + timedelta(days=1)
-		# Settling fixes the exposure at what was paid, so the count stops there.
-		charge_end = effective_return or settled or ref_date
+		# The return stops the clock, not the payment: demurrage is settled as the box
+		# comes back, so a settlement with the box still out means more is owed.
+		charge_end = effective_return or ref_date
 		if charge_end >= dem_start:
 			out["demurrage_days"] = (charge_end - dem_start).days + 1
 			out["demurrage_start_date"] = dem_start
@@ -343,7 +344,12 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	if expected and not effective_return and ref_date > expected:
 		out["days_outstanding"] = (ref_date - expected).days
 
-	out["status"] = _derive_tracker_status(data, ref_date=ref_date)
+	# Derive from the expected return just computed, not the one stored on the row.
+	# The stored one is a save behind, so adjusting the free days left the status
+	# reading against the old window until someone saved a second time.
+	out["status"] = _derive_tracker_status(
+		{**data, "expected_empty_return": out["expected_empty_return"]}, ref_date=ref_date
+	)
 	out["alert_status"] = _derive_alert_status(
 		free_end=free_end,
 		free_start=free_start,

@@ -100,7 +100,7 @@ Two charges, computed per container on the **Container Tracker**:
 
 | Charge | Counts from | Stops when |
 |--------|-------------|------------|
-| **Demurrage/Detention** (one combined charge) | The day after **Shipping Line Free Day End Date** | The container is returned (Empty Return or Interchange), else the date in **Demurrage Settled On**, else today |
+| **Demurrage/Detention** (one combined charge) | The day after **Shipping Line Free Day End Date** | The container is returned (Empty Return or Interchange), else today |
 | **KPA Port** storage | The day after **KPA Free Day End Date** | The box leaves Mombasa port (gate out, offloading, gate in at warehouse, return or interchange), else today |
 
 The tracker also shows **Port Days Used** and **Days Outstanding** (days past the expected empty return). All of these recalculate whenever the tracker is saved, and again overnight.
@@ -117,8 +117,9 @@ The tracker also shows **Port Days Used** and **Days Outstanding** (days past th
 The day counts above are the system's own estimate. The figure that matters is the one
 on the shipping line's invoice, and that is recorded per container under **Demurrage
 Settlement** on the Free Days tab: invoice number, the container's share, who paid, and
-the date. Setting the settlement date stops the day count and turns the container blue
-as **Returned Late (Settled)**. See
+the date. Setting the settlement date turns the container blue as **Returned Late (Settled)**
+and takes it out of the active demurrage figures. The day count itself stops on the
+return, not on the payment. See
 [Transport & Containers](transport-containers.md) for how that reads on the list.
 
 Note that the computed **amount** stays at zero until a shipping line has

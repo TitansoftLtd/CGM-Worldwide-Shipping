@@ -274,24 +274,21 @@ colour of a box nobody has touched.
 | Demurrage Paid By | **Company**, or **Client** when the client settled the line directly |
 | Demurrage Settled On | The date it was paid |
 
-Fill in **Demurrage Settled On** and three things change:
+Fill in **Demurrage Settled On** for a container that came back late and two things
+change:
 
-- The container reads **Returned Late (Settled)** in blue instead of orange or red.
-- The demurrage day count **stops** at that date and no longer climbs.
-- The container drops out of the active demurrage figures on the Operations board,
-  and its traffic light becomes **AWAITING INTERCHANGE** rather than action needed.
+- It reads **Returned Late (Settled)** in blue instead of orange or red.
+- It drops out of the active demurrage figures on the Operations board, and its traffic
+  light becomes **AWAITING INTERCHANGE** rather than action needed.
 
 The lateness itself is not erased. The day count stays on the record, because that is
 what the line billed for and what anyone reviewing the job later needs to see.
 
-Two rules worth knowing:
-
-- **Paying does not return a box.** A settlement recorded against a container that is
-  still out leaves it overdue, and the demurrage keeps accruing, because more days out
-  means more to pay.
-- **A return stops the clock before a payment does.** If the empty came back on the
-  25th and the invoice was paid on the 1st of the next month, the count stops on the
-  25th. You stop owing when the box is back.
+**The return stops the day count, not the payment.** Demurrage is settled as the
+container comes back, so the two happen together and the return is the real end of the
+charge. If a settlement is recorded while the box is still out, the days keep running,
+because they are still being incurred and more will be owed. Nothing is frozen until
+the empty is back.
 
 **Demurrage Start Date** on the same tab is the first chargeable day, the day after the
 free days end. It is worked out for you and fills in as soon as there is a charge.

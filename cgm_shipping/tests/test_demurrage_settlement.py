@@ -106,27 +106,37 @@ def _metrics(**kw):
 
 
 class TestTheDayCount(unittest.TestCase):
-    """Settling must stop the clock, or the figure keeps climbing after payment."""
+    """The return stops the clock. Paying does not.
+
+    Demurrage is settled as the container comes back, so the two happen together and
+    the return is the real end of the charge. A settlement recorded while the box is
+    still out therefore means more is owed, not less, and freezing the count there
+    would have hidden live exposure.
+    """
 
     def test_an_unreturned_unsettled_box_counts_against_today(self):
         days = _metrics()["demurrage_days"]
         self.assertEqual(days, (TODAY - FREE_END).days)
 
-    def test_settling_freezes_the_count(self):
-        settled_on = date(2026, 10, 1)
-        frozen = _metrics(demurrage_settled_on=settled_on)["demurrage_days"]
-        self.assertEqual(frozen, (settled_on - FREE_END).days)
-        self.assertLess(frozen, _metrics()["demurrage_days"])
-
-    def test_a_return_still_stops_it_as_before(self):
+    def test_the_return_stops_it(self):
         days = _metrics(actual_empty_return=RETURNED)["demurrage_days"]
         self.assertEqual(days, (RETURNED - FREE_END).days)
 
-    def test_the_return_wins_over_the_settlement_date(self):
-        """You stop owing when the box is back, not when the invoice is paid."""
-        days = _metrics(actual_empty_return=RETURNED,
-                        demurrage_settled_on=date(2026, 10, 1))["demurrage_days"]
-        self.assertEqual(days, (RETURNED - FREE_END).days)
+    def test_settling_alone_does_not_stop_it(self):
+        """The box is still out, so the days keep running and so does the bill."""
+        settled = _metrics(demurrage_settled_on=date(2026, 10, 1))["demurrage_days"]
+        self.assertEqual(settled, _metrics()["demurrage_days"])
+        self.assertEqual(settled, (TODAY - FREE_END).days)
+
+    def test_the_settlement_date_never_moves_the_count(self):
+        paid_before_return = _metrics(
+            actual_empty_return=RETURNED, demurrage_settled_on=date(2026, 9, 20)
+        )["demurrage_days"]
+        paid_after_return = _metrics(
+            actual_empty_return=RETURNED, demurrage_settled_on=date(2026, 10, 1)
+        )["demurrage_days"]
+        self.assertEqual(paid_before_return, (RETURNED - FREE_END).days)
+        self.assertEqual(paid_after_return, (RETURNED - FREE_END).days)
 
 
 class TestTheFirstChargeableDay(unittest.TestCase):
