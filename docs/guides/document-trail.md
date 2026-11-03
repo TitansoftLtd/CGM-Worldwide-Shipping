@@ -118,8 +118,10 @@ you need to establish which transporter returned a container late, and when.
   shipment's own set of required document types, filled through the document
   checkpoint tasks. The two are separate on purpose: that table answers "is the
   bill of lading in", this panel answers "what has anyone attached anywhere".
-- **Permission follows the shipment.** Someone who cannot open the shipment is
-  refused the list.
+- **Permission follows the shipment and each task.** Someone who cannot open the
+  shipment is refused the list, and the list holds only files from tasks they may
+  read. Task visibility is narrowed by department, so a field officer and someone in
+  finance looking at the same shipment do not see the same files.
 
 ## Related guides
 

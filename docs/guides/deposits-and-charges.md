@@ -112,6 +112,21 @@ The tracker also shows **Port Days Used** and **Days Outstanding** (days past th
 - **Per-container overrides:** a daily rate typed on the tracker beats the tables, and the adjustment fields add or subtract a fixed amount.
 - The **Shipping Line Free Days Rules** table on the Supplier is reference only. The **dates on the Container Tracker** are what actually drive the day counts.
 
+### Recording what the line actually billed
+
+The day counts above are the system's own estimate. The figure that matters is the one
+on the shipping line's invoice, and that is recorded per container under **Demurrage
+Settlement** on the Free Days tab: invoice number, the container's share, who paid, and
+the date. Setting the settlement date turns the container blue as **Returned Late (Settled)**
+and takes it out of the active demurrage figures. The day count itself stops on the
+return, not on the payment. See
+[Transport & Containers](transport-containers.md) for how that reads on the list.
+
+Note that the computed **amount** stays at zero until a shipping line has
+**Shipping Line Demurrage Tiers** filled in on its Supplier record. No line has them
+at present, so the day counts are live but the money comes from the invoice, not from
+the calculation.
+
 ### Posting the charges to the ledger
 
 Charges accrue on the tracker as a running figure. Getting them into the accounts is a separate step.

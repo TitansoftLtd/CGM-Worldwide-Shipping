@@ -18,22 +18,33 @@ import frappe
 from frappe import _
 
 
+def _readable_project_tasks(project: str) -> list:
+	"""The project's tasks this user may read. get_list applies Task permissions."""
+	return frappe.get_list(
+		"Task",
+		filters={"project": project},
+		fields=["name", "subject", "custom_task_role"],
+		limit_page_length=0,
+		ignore_permissions=False,
+	)
+
+
 @frappe.whitelist()
 def get_project_task_documents(project: str) -> dict:
-	"""Files attached to the project's tasks, newest first.
+	"""Files attached to the project's tasks the user may read, newest first.
 
-	Permission is checked against the Project. Frappe already refuses a File whose parent
-	the user cannot read, but the caller names a project, so the project is what is
-	checked here rather than relying on that.
+	Both the shipment and each task are checked. Reading the shipment is not enough:
+	Task visibility is narrowed by department and assignment, and listing with get_all
+	ignored that, so an operations user was handed finance's payment proofs.
 	"""
 	if not project:
 		return {"rows": [], "total": 0}
 
 	frappe.has_permission("Project", doc=project, throw=True)
+	if not frappe.has_permission("Task"):
+		return {"rows": [], "total": 0}
 
-	tasks = frappe.get_all(
-		"Task", filters={"project": project}, fields=["name", "subject", "custom_task_role"]
-	)
+	tasks = _readable_project_tasks(project)
 	if not tasks:
 		return {"rows": [], "total": 0}
 
@@ -65,8 +76,10 @@ def get_project_task_documents(project: str) -> dict:
 
 
 def task_document_count(project: str) -> int:
-	"""How many task attachments a shipment has, without building the rows."""
-	tasks = frappe.get_all("Task", filters={"project": project}, pluck="name")
+	"""How many of the shipment's task attachments the user may read."""
+	if not project or not frappe.has_permission("Task"):
+		return 0
+	tasks = [t.name for t in _readable_project_tasks(project)]
 	if not tasks:
 		return 0
 	return frappe.db.count(

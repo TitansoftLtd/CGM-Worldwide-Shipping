@@ -44,6 +44,7 @@ Every container in the system, with where each one has reached:
 | Empty Returned | Empty container at depot |
 | Interchange Received | Interchange receipt filed |
 | Return Overdue | Past free days / deadline |
+| Returned Late (Settled) | Back late, demurrage settled |
 
 Statuses are **derived from dates** on Container Tracker (daily scheduler recalculates charges).
 
@@ -165,9 +166,12 @@ the person doing that step fills in, and what the task is judged complete on.
 
 Editing the tracker pushes the relevant fields down to the matching task grids, each
 step receiving only its own fields: booking trucks gets the transporter, truck and
-driver; gate out gets the port gate-out and free days; monitoring delivery gets the
-warehouse gate-in; empty return gets the return and depot dates; interchange gets the
-interchange date and document.
+driver; gate out gets the same transport details plus the port gate-out and free days;
+monitoring delivery gets the warehouse gate-in; empty return gets the return and depot
+dates; interchange gets the interchange date and document.
+
+A task's grid also arrives pre-filled with whatever the tracker already holds for that
+step, so a step reached late in the job does not start blank.
 
 ### What a step needs before it completes
 
@@ -199,6 +203,21 @@ is short of:
 Fill those on the **Container Tracker** and the task completes itself. Steps already
 Completed are left alone; this is a gate on closing a step, not a re-audit of closed
 ones.
+
+### The truck on the exit step
+
+**Load trucks and exit port** shows the transporter, truck, driver and contact as well
+as its own gate-out fields. The truck that turns up at the gate is not always the one
+booked, and the exit step is where that is noticed.
+
+The details are editable there, not just displayed. Correcting the truck on the exit
+step updates the Container Tracker, so the tracker holds the truck that actually left.
+The Book trucks grid keeps what was booked, because a completed step records what was
+done at the time.
+
+Showing the details is not the same as requiring them. Only **Book trucks** refuses to
+complete without all four; **Load trucks and exit port** still closes on the gate-out
+date alone.
 
 ### Changing what a step needs
 
@@ -238,6 +257,45 @@ entered at the time and the tracker is the current truth. That difference is
 deliberate, and it is what lets you tell when something was corrected after the fact.
 
 
+## Demurrage: late but settled
+
+Demurrage is the shipping line's charge for holding its container past the free days.
+The line invoices it, Admin receives the invoice and it gets paid. Until that payment
+was recorded anywhere, a container that came back late stayed red forever, and moving
+the free-days dates to quiet it dropped the status to **Discharged / At Port**, the
+colour of a box nobody has touched.
+
+**Container Tracker**, tab **Free Days**, section **Demurrage Settlement**:
+
+| Field | What it is for |
+| --- | --- |
+| Demurrage Invoice No | The line's invoice. Put the same number on every container it covers |
+| Demurrage Currency | Defaults to **USD**, which is how lines bill demurrage. Change it if this one differs |
+| Demurrage Invoiced | This container's share of that invoice, in the currency beside it |
+| Demurrage Paid By | **Company**, or **Client** when the client settled the line directly |
+| Demurrage Settled On | The date it was paid |
+
+Fill in **Demurrage Settled On** for a container that came back late and two things
+change:
+
+- It reads **Returned Late (Settled)** in blue instead of orange or red.
+- It drops out of the active demurrage figures on the Operations board, and its traffic
+  light becomes **AWAITING INTERCHANGE** rather than action needed.
+
+The lateness itself is not erased. The day count stays on the record, because that is
+what the line billed for and what anyone reviewing the job later needs to see.
+
+**The return stops the day count, not the payment.** Demurrage is settled as the
+container comes back, so the two happen together and the return is the real end of the
+charge. If a settlement is recorded while the box is still out, the days keep running,
+because they are still being incurred and more will be owed. Nothing is frozen until
+the empty is back.
+
+**Demurrage Start Date** on the same tab is the first chargeable day, the day after the
+free days end. It is worked out for you and fills in as soon as there is a charge.
+
+---
+
 ## Reading container status at a glance
 
 Open **Container Tracker** as a list and each container carries a coloured pill for
@@ -251,6 +309,7 @@ shipment's boxes can be skimmed for the one that needs attention:
 | Orange | On the road, or offloaded and not yet back |
 | Blue | At the warehouse or destination |
 | **Red** | **Return overdue.** A live demurrage alarm |
+| Blue | Back late with the demurrage settled, or at the warehouse |
 | Green | Interchange confirmed, the box is closed out |
 
 Clicking a pill filters the list to that status.

@@ -95,6 +95,7 @@ frappe.ui.form.on("Task", {
 		if (ui.show_documents) {
 			configure_task_document_version_grid(frm, ui);
 		}
+		render_task_declaration_register(frm);
 
 		frm.set_df_property("status", "read_only", 1);
 		const show_completion_meta = frm.doc.status === "Completed";
@@ -3528,6 +3529,82 @@ function configure_shipping_line_finance_container_grid(frm) {
 	if (grid.wrapper) {
 		grid.refresh();
 	}
+}
+
+function render_task_declaration_register(frm) {
+	// The invoice and receipt live in Invoices & Receipts, the declaration's own
+	// document in Task Documents. This puts all three on one line so a gap shows.
+	const field = frm.get_field("custom_declaration_register_html");
+	if (!field || !field.$wrapper) {
+		return;
+	}
+	if (frm.is_new() || !frm.doc.name) {
+		field.$wrapper.empty();
+		return;
+	}
+
+	frappe.call({
+		method:
+			"cgm_shipping.cgm_worldwide_shipping.customizations.declaration_register.get_task_declaration_register",
+		args: { task: frm.doc.name },
+		callback(r) {
+			const data = r.message || {};
+			const rows = data.rows || [];
+			if (!rows.length) {
+				field.$wrapper.empty();
+				return;
+			}
+
+			const cell = (slot) => {
+				if (slot.state === "attached") {
+					const name = frappe.utils.escape_html(slot.file_name || slot.file_url);
+					const url = frappe.utils.escape_html(slot.file_url);
+					const tick = slot.verified
+						? ` <span class="text-muted" title="${__("Verified by Finance")}">&check;</span>`
+						: "";
+					return `<a href="${url}" target="_blank" rel="noopener">${name}</a>${tick}`;
+				}
+				if (slot.state === "n/a") {
+					return `<span class="text-muted">&mdash;</span>`;
+				}
+				return `<span class="text-danger">${__("not attached")}</span>`;
+			};
+
+			const body = rows
+				.map(
+					(row) => `
+						<tr>
+							<td>${frappe.utils.escape_html(row.label)}${row.amendment ? ` <span class="text-muted">(${__("amendment")})</span>` : ""}</td>
+							<td>${cell(row.invoice)}</td>
+							<td>${cell(row.document)}</td>
+							<td>${cell(row.receipt)}</td>
+						</tr>`
+				)
+				.join("");
+
+			const missing = data.missing || [];
+			const note = missing.length
+				? `<div class="text-danger small" style="margin-bottom:6px;">${__("Still to attach: {0}", [missing.join(", ")])}</div>`
+				: `<div class="text-muted small" style="margin-bottom:6px;">${__("Everything is attached.")}</div>`;
+
+			field.$wrapper.html(`
+				${note}
+				<table class="table table-bordered table-sm" style="font-size:12px; margin-bottom:0;">
+					<thead>
+						<tr>
+							<th>${__("Declaration")}</th>
+							<th>${__("Invoice")}</th>
+							<th>${__("Document")}</th>
+							<th>${__("Receipt")}</th>
+						</tr>
+					</thead>
+					<tbody>${body}</tbody>
+				</table>
+				<div class="text-muted small" style="margin-top:6px;">
+					${__("A read-only view. Attach the invoice and receipt in Invoices & Receipts, and the document in Task Documents.")}
+				</div>`);
+		},
+	});
 }
 
 function configure_entry_arrival_mirror_grid(frm) {

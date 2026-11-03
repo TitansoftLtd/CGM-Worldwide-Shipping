@@ -126,6 +126,7 @@ CONTAINER_STATUS_CARGO_OFFLOADED = "Cargo Offloaded"
 CONTAINER_STATUS_EMPTY_RETURNED = "Empty Returned"
 CONTAINER_STATUS_INTERCHANGE = "Interchange Received"
 CONTAINER_STATUS_RETURN_OVERDUE = "Return Overdue"
+CONTAINER_STATUS_RETURNED_LATE_SETTLED = "Returned Late (Settled)"
 
 
 # Every container status, and what each view does with it. All status lists in
@@ -170,6 +171,8 @@ CONTAINER_STATUS_TABLE = (
 	("Offloaded at Destination", PHASE_AT_DESTINATION, "orange", "active"),
 	(CONTAINER_STATUS_RETURN_OVERDUE, PHASE_OVERDUE, "red", "danger"),
 	(CONTAINER_STATUS_EMPTY_RETURNED, PHASE_RETURNED, "orange", "active"),
+	# Back late, demurrage paid: no exposure left, so it must not read as an alarm.
+	(CONTAINER_STATUS_RETURNED_LATE_SETTLED, PHASE_RETURNED, "blue", "info"),
 	(CONTAINER_STATUS_INTERCHANGE, PHASE_COMPLETE, "green", "success"),
 	# Outbound transit, before the box is loaded.
 	("Pending Loading", PHASE_AWAITING, "gray", "muted"),

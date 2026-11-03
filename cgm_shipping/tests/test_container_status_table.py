@@ -100,7 +100,12 @@ class TestPortParity(unittest.TestCase):
 
 	def test_closed_statuses_unchanged(self):
 		# Drives charge accrual and the metrics refresh - must not move.
-		self.assertEqual(set(CLOSED_CONTAINER_STATUSES), {"Empty Returned", "Interchange Received"})
+		# "Returned Late (Settled)" joined it: the empty is back and the demurrage is
+		# paid, so charges stop and it is no alarm, which is what closed means here.
+		self.assertEqual(
+			set(CLOSED_CONTAINER_STATUSES),
+			{"Empty Returned", "Interchange Received", "Returned Late (Settled)"},
+		)
 		self.assertEqual(set(CONTAINER_CLOSED_STATUSES), set(CLOSED_CONTAINER_STATUSES))
 
 	def test_open_return_unchanged_for_port(self):

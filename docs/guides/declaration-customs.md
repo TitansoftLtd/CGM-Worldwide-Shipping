@@ -46,6 +46,11 @@ Task 4: Finance pays UCR
 
 **IDF UCR Record** doctype stores UCR/IDF certificate details and links to finance workflow fields.
 
+Task 3 carries a one-line summary, **This declaration at a glance**, reading across the
+UCR invoice, the IDF certificate and the receipt, so you can see which of the three is
+still outstanding without checking two tables. See
+[The Tables on a Task](task-tables.md#this-declaration-at-a-glance-ucr-and-entry).
+
 ---
 
 ## Permit workflows
@@ -75,6 +80,10 @@ Same pattern after Delivery Order is lodged (task 14).
 3. **Create Entry** stays open until Finance has **verified and paid** the invoice - it does not complete on invoice verify alone.
 4. **Finance Pays Entry Slip** completes after payment and receipt verification.
 5. **ENTRY** customs document on Create Entry → **Task Documents** remains optional when issued.
+
+Create Entry carries the same one-line summary as UCR, across the e-slip invoice, the
+ENTRY document and the POP. See
+[The Tables on a Task](task-tables.md#this-declaration-at-a-glance-ucr-and-entry).
 
 Port arrival / ATA is confirmed separately on the **Project** (Actions → Confirm Shipment Arrival at the Port) and does not complete Create Entry.
 

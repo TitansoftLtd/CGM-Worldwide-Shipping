@@ -16,6 +16,10 @@ Updates**.
 | [Permits (this task)](#permits-this-task) | One row per permit being applied for or paid |
 | [Container Updates](#container-updates) | Per-container dates for transport steps |
 
+UCR and Entry tasks also carry a read-only summary line,
+[This declaration at a glance](#this-declaration-at-a-glance-ucr-and-entry), which
+reads across two of these tables so you can see what is still to attach.
+
 ---
 
 ## How all four behave
@@ -94,6 +98,40 @@ Three things that commonly confuse people:
   attached the invoice. That is the control, not a fault.
 
 See [Finance](finance.md) for the full payment flow.
+
+---
+
+## This declaration at a glance (UCR and Entry)
+
+A UCR has three pieces of paper: the invoice, the payment receipt, and the IDF/UCR
+certificate itself. The first two are rows in **Invoices & Receipts**; the certificate
+is a row in **Task Documents**. Entry is the same, with its e-slip invoice, its POP and
+the entry document.
+
+So one declaration was spread over two tables, and worse, the document row is often
+**absent** rather than empty. An absent row looks the same as a flow that was never set
+up, so nobody could tell what was actually outstanding. Permits never had this problem,
+because one Permit Register row holds all three.
+
+On the declarant's **Application** task for UCR and Entry there is now a single line
+that reads across all three:
+
+| Declaration | Invoice | Document | Receipt |
+|---|---|---|---|
+| UCR | ucr-invoice.pdf | *not attached* | ucr-receipt.pdf |
+
+Anything not attached is named above the table, so **Still to attach: Document** tells
+you what is left without opening anything.
+
+- **It is read-only.** Attach the invoice and receipt in **Invoices & Receipts** and the
+  document in **Task Documents**, as before. This is a view, not a second place to work.
+- **A tick beside a file** means Finance has verified that row.
+- **It is on the declarant's task only.** Finance never holds the certificate, so a
+  blank cell on the finance task would read as a gap that was never theirs to fill.
+- **An amendment line shows a dash** in the Document column. The declaration has one
+  document, and it belongs to the first line.
+- **A UCR certificate counts whether the row is typed IDF, IDF CERT or UCR_CERT.**
+  Older shipments used different names for the same paper.
 
 ---
 
