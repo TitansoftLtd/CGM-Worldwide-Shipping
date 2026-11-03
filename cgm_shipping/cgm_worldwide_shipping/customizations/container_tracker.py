@@ -23,6 +23,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	CONTAINER_STATUS_PENDING_ARRIVAL,
 	CONTAINER_STATUS_RELEASED_IN_TRANSIT,
 	CONTAINER_STATUS_RETURN_OVERDUE,
+	CONTAINER_STATUS_RETURNED_LATE_SETTLED,
 	CONTAINER_STATUS_VESSEL_BERTHED,
 	CONTAINER_STEP_BY_SEQ_FIELD,
 	CONTAINER_TASK_SEQ_DEFAULTS,
@@ -293,6 +294,7 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	interchange = _optional_date(data.get("interchange_date"))
 	discharging = _optional_date(data.get("discharging_date"))
 	ata = _optional_date(data.get("ata"))
+	settled = _optional_date(data.get("demurrage_settled_on"))
 
 	free_days = _derived_free_days(data)
 	kpa_free_days = _derived_kpa_free_days(data)
@@ -303,6 +305,7 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		"kpa_free_days": kpa_free_days,
 		"port_days_used": 0,
 		"demurrage_days": 0,
+		"demurrage_start_date": None,
 		"demurrage_amount": 0.0,
 		"kpa_days": 0,
 		"kpa_amount": 0.0,
@@ -322,9 +325,11 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 	if free_end:
 		# Shipping-line demurrage/detention: empty return / interchange, not KPA.
 		dem_start = free_end + timedelta(days=1)
-		charge_end = effective_return or ref_date
+		# Settling fixes the exposure at what was paid, so the count stops there.
+		charge_end = effective_return or settled or ref_date
 		if charge_end >= dem_start:
 			out["demurrage_days"] = (charge_end - dem_start).days + 1
+			out["demurrage_start_date"] = dem_start
 
 	if free_start:
 		out["port_days_used"] = max(0, (port_clock_end - free_start).days + 1)
@@ -348,6 +353,7 @@ def compute_container_metrics(data: dict[str, Any]) -> dict[str, Any]:
 		expected_return=expected,
 		ref_date=ref_date,
 		free_configured=free_configured,
+		settled=settled,
 	)
 	out.update(compute_container_charge_amounts(data, out))
 	return out
@@ -372,6 +378,7 @@ def _derive_tracker_status(data: dict[str, Any], *, ref_date) -> str:
 		interchange=_optional_date(data.get("interchange_date")),
 		actual_return=_optional_date(data.get("actual_empty_return")),
 		expected_return=_optional_date(data.get("expected_empty_return")),
+		settled=_optional_date(data.get("demurrage_settled_on")),
 		offloading=_optional_date(data.get("offloading_date")),
 		gate_in_wh=_optional_date(data.get("gate_in_date_warehouse")),
 		gate_out=_optional_date(data.get("gate_out_date_port")),
@@ -435,10 +442,16 @@ def _derive_status(
 	discharging,
 	ata,
 	ref_date,
+	settled=None,
 ) -> str:
 	if interchange:
 		return CONTAINER_STATUS_INTERCHANGE
 	if actual_return:
+		# Back late with the demurrage paid: the exposure is closed, so it stops
+		# reading as an alarm. Paying does not return a box, so a settlement
+		# without a return date is deliberately not enough to reach this.
+		if settled and expected_return and actual_return > expected_return:
+			return CONTAINER_STATUS_RETURNED_LATE_SETTLED
 		return CONTAINER_STATUS_EMPTY_RETURNED
 	if expected_return and ref_date > expected_return and not actual_return:
 		return CONTAINER_STATUS_RETURN_OVERDUE
@@ -465,6 +478,7 @@ def _derive_alert_status(
 	expected_return,
 	ref_date,
 	free_configured=True,
+	settled=None,
 ) -> str:
 	"""Urgency overlay on operational status. Not stored in DB."""
 	effective_return = _effective_return_date(actual_return, interchange)
@@ -491,6 +505,8 @@ def _derive_alert_status(
 		if effective_return <= expected_return:
 			return "✅ Returned On Time"
 		late_days = (effective_return - expected_return).days
+		if settled:
+			return f"✅ Returned Late, Settled ({late_days} day(s))"
 		return f"⚠️ Returned Late ({late_days} day(s) past free period)"
 
 	return ""

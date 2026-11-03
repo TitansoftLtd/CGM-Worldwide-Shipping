@@ -44,6 +44,7 @@ Every container in the system, with where each one has reached:
 | Empty Returned | Empty container at depot |
 | Interchange Received | Interchange receipt filed |
 | Return Overdue | Past free days / deadline |
+| Returned Late (Settled) | Back late, demurrage settled |
 
 Statuses are **derived from dates** on Container Tracker (daily scheduler recalculates charges).
 
@@ -256,6 +257,47 @@ entered at the time and the tracker is the current truth. That difference is
 deliberate, and it is what lets you tell when something was corrected after the fact.
 
 
+## Demurrage: late but settled
+
+Demurrage is the shipping line's charge for holding its container past the free days.
+The line invoices it, Admin receives the invoice and it gets paid. Until that payment
+was recorded anywhere, a container that came back late stayed red forever, and moving
+the free-days dates to quiet it dropped the status to **Discharged / At Port**, the
+colour of a box nobody has touched.
+
+**Container Tracker**, tab **Free Days**, section **Demurrage Settlement**:
+
+| Field | What it is for |
+| --- | --- |
+| Demurrage Invoice No | The line's invoice. Put the same number on every container it covers |
+| Demurrage Invoiced | This container's share of that invoice |
+| Demurrage Paid By | **Company**, or **Client** when the client settled the line directly |
+| Demurrage Settled On | The date it was paid |
+
+Fill in **Demurrage Settled On** and three things change:
+
+- The container reads **Returned Late (Settled)** in blue instead of orange or red.
+- The demurrage day count **stops** at that date and no longer climbs.
+- The container drops out of the active demurrage figures on the Operations board,
+  and its traffic light becomes **AWAITING INTERCHANGE** rather than action needed.
+
+The lateness itself is not erased. The day count stays on the record, because that is
+what the line billed for and what anyone reviewing the job later needs to see.
+
+Two rules worth knowing:
+
+- **Paying does not return a box.** A settlement recorded against a container that is
+  still out leaves it overdue, and the demurrage keeps accruing, because more days out
+  means more to pay.
+- **A return stops the clock before a payment does.** If the empty came back on the
+  25th and the invoice was paid on the 1st of the next month, the count stops on the
+  25th. You stop owing when the box is back.
+
+**Demurrage Start Date** on the same tab is the first chargeable day, the day after the
+free days end. It is worked out for you and fills in as soon as there is a charge.
+
+---
+
 ## Reading container status at a glance
 
 Open **Container Tracker** as a list and each container carries a coloured pill for
@@ -269,6 +311,7 @@ shipment's boxes can be skimmed for the one that needs attention:
 | Orange | On the road, or offloaded and not yet back |
 | Blue | At the warehouse or destination |
 | **Red** | **Return overdue.** A live demurrage alarm |
+| Blue | Back late with the demurrage settled, or at the warehouse |
 | Green | Interchange confirmed, the box is closed out |
 
 Clicking a pill filters the list to that status.

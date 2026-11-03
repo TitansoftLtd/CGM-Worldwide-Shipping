@@ -100,7 +100,7 @@ Two charges, computed per container on the **Container Tracker**:
 
 | Charge | Counts from | Stops when |
 |--------|-------------|------------|
-| **Demurrage/Detention** (one combined charge) | The day after **Shipping Line Free Day End Date** | The container is returned (Empty Return or Interchange), else today |
+| **Demurrage/Detention** (one combined charge) | The day after **Shipping Line Free Day End Date** | The container is returned (Empty Return or Interchange), else the date in **Demurrage Settled On**, else today |
 | **KPA Port** storage | The day after **KPA Free Day End Date** | The box leaves Mombasa port (gate out, offloading, gate in at warehouse, return or interchange), else today |
 
 The tracker also shows **Port Days Used** and **Days Outstanding** (days past the expected empty return). All of these recalculate whenever the tracker is saved, and again overnight.
@@ -111,6 +111,20 @@ The tracker also shows **Port Days Used** and **Days Outstanding** (days past th
 - **KPA port:** **KPA Port Daily Rate** and **KPA Port Rate Currency** in CGM Shipping Settings.
 - **Per-container overrides:** a daily rate typed on the tracker beats the tables, and the adjustment fields add or subtract a fixed amount.
 - The **Shipping Line Free Days Rules** table on the Supplier is reference only. The **dates on the Container Tracker** are what actually drive the day counts.
+
+### Recording what the line actually billed
+
+The day counts above are the system's own estimate. The figure that matters is the one
+on the shipping line's invoice, and that is recorded per container under **Demurrage
+Settlement** on the Free Days tab: invoice number, the container's share, who paid, and
+the date. Setting the settlement date stops the day count and turns the container blue
+as **Returned Late (Settled)**. See
+[Transport & Containers](transport-containers.md) for how that reads on the list.
+
+Note that the computed **amount** stays at zero until a shipping line has
+**Shipping Line Demurrage Tiers** filled in on its Supplier record. No line has them
+at present, so the day counts are live but the money comes from the invoice, not from
+the calculation.
 
 ### Posting the charges to the ledger
 

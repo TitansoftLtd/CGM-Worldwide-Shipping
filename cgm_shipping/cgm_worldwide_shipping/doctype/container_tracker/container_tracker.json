@@ -75,6 +75,12 @@
   "free_days",
   "demurrage_days",
   "demurrage_start_date",
+  "section_demurrage_settlement",
+  "demurrage_invoice_number",
+  "demurrage_invoice_amount",
+  "column_break_demurrage_settlement",
+  "demurrage_paid_by",
+  "demurrage_settled_on",
   "section_kpa_free_days",
   "kpa_free_days_start_date",
   "kpa_free_days_end_date",
@@ -627,6 +633,40 @@
    "fieldtype": "Date",
    "hidden": 1,
    "label": "Get Out Mombasa"
+  },
+  {
+   "fieldname": "section_demurrage_settlement",
+   "fieldtype": "Section Break",
+   "label": "Demurrage Settlement"
+  },
+  {
+   "description": "The shipping line's invoice. Put the same number on every container it covers.",
+   "fieldname": "demurrage_invoice_number",
+   "fieldtype": "Data",
+   "label": "Demurrage Invoice No"
+  },
+  {
+   "description": "This container's share of the invoice.",
+   "fieldname": "demurrage_invoice_amount",
+   "fieldtype": "Currency",
+   "label": "Demurrage Invoiced"
+  },
+  {
+   "fieldname": "column_break_demurrage_settlement",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Client when the client settled the shipping line directly.",
+   "fieldname": "demurrage_paid_by",
+   "fieldtype": "Select",
+   "label": "Demurrage Paid By",
+   "options": "\nCompany\nClient"
+  },
+  {
+   "description": "Set this and the container reads Returned Late (Settled): no alarm, and the day count stops.",
+   "fieldname": "demurrage_settled_on",
+   "fieldtype": "Date",
+   "label": "Demurrage Settled On"
   }
  ],
  "index_web_pages_for_search": 1,
@@ -637,7 +677,7 @@
    "link_fieldname": "container_tracker"
   }
  ],
- "modified": "2026-10-03 11:00:00.000000",
+ "modified": "2026-11-03 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",
