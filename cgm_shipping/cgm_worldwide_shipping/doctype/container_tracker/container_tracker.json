@@ -77,6 +77,7 @@
   "demurrage_start_date",
   "section_demurrage_settlement",
   "demurrage_invoice_number",
+  "demurrage_invoice_currency",
   "demurrage_invoice_amount",
   "column_break_demurrage_settlement",
   "demurrage_paid_by",
@@ -649,7 +650,8 @@
    "description": "This container's share of the invoice.",
    "fieldname": "demurrage_invoice_amount",
    "fieldtype": "Currency",
-   "label": "Demurrage Invoiced"
+   "label": "Demurrage Invoiced",
+   "options": "demurrage_invoice_currency"
   },
   {
    "fieldname": "column_break_demurrage_settlement",
@@ -667,6 +669,14 @@
    "fieldname": "demurrage_settled_on",
    "fieldtype": "Date",
    "label": "Demurrage Settled On"
+  },
+  {
+   "default": "USD",
+   "description": "Lines bill demurrage in USD. Change it if this invoice is in another currency.",
+   "fieldname": "demurrage_invoice_currency",
+   "fieldtype": "Link",
+   "label": "Demurrage Currency",
+   "options": "Currency"
   }
  ],
  "index_web_pages_for_search": 1,
@@ -677,7 +687,7 @@
    "link_fieldname": "container_tracker"
   }
  ],
- "modified": "2026-11-03 09:00:00.000000",
+ "modified": "2026-11-03 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "Container Tracker",

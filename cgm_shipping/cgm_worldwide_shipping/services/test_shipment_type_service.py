@@ -1,4 +1,5 @@
 # Copyright (c) 2026, Titansoft Limited and Contributors
+import frappe
 from frappe.tests import IntegrationTestCase
 
 from cgm_shipping.cgm_worldwide_shipping.services.shipment_type_service import (
@@ -83,10 +84,29 @@ class TestShipmentTypeService(IntegrationTestCase):
 		self.assertFalse(booking["is_required_for_start"])
 
 	def test_air_export_respects_explicit_transport_documents_only(self):
-		if not self.db_exists("Shipment Type", "Air Export"):
+		"""Whatever the record lists is what comes back: nothing added, nothing dropped.
+
+		This used to call a self.db_exists that no test case provides, so it raised
+		AttributeError and never ran. Its assertions had drifted to contradict
+		test_air_does_not_force_booking_confirmation_required in this same file.
+		"""
+		if not frappe.db.exists("Shipment Type", "Air Export"):
 			self.skipTest("Air Export Shipment Type not installed")
 
+		shipment_type = frappe.get_doc("Shipment Type", "Air Export")
+		configured = [
+			row.transport_document for row in (shipment_type.get("transport_documents") or [])
+		]
+		if not configured:
+			self.skipTest("Air Export lists no transport documents")
+
 		allowed = get_allowed_transport_documents("Air Export")
-		labels = [row["transport_document"] for row in allowed]
-		self.assertEqual(labels, ["Air Waybill"])
-		self.assertTrue(all(row["is_required_for_start"] for row in allowed))
+		self.assertEqual([row["transport_document"] for row in allowed], configured)
+
+		# Only the primary document gates the start; see the booking test above.
+		by_label = {row["transport_document"]: row for row in allowed}
+		primary = shipment_type.get("primary_transport_document")
+		if primary in by_label:
+			self.assertTrue(by_label[primary]["is_required_for_start"])
+		if "Booking Confirmation" in by_label and primary != "Booking Confirmation":
+			self.assertFalse(by_label["Booking Confirmation"]["is_required_for_start"])

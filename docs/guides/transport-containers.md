@@ -270,7 +270,8 @@ colour of a box nobody has touched.
 | Field | What it is for |
 | --- | --- |
 | Demurrage Invoice No | The line's invoice. Put the same number on every container it covers |
-| Demurrage Invoiced | This container's share of that invoice |
+| Demurrage Currency | Defaults to **USD**, which is how lines bill demurrage. Change it if this one differs |
+| Demurrage Invoiced | This container's share of that invoice, in the currency beside it |
 | Demurrage Paid By | **Company**, or **Client** when the client settled the line directly |
 | Demurrage Settled On | The date it was paid |
 
