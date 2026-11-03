@@ -16,12 +16,11 @@ from cgm_shipping.cgm_worldwide_shipping.customizations import project_task_docu
 
 
 def _run(tasks, files):
+    """Tasks come from get_list, which applies Task permissions; files from get_all."""
     with (
         patch.object(frappe, "has_permission", return_value=True),
-        patch.object(frappe, "get_all", side_effect=[
-            [frappe._dict(t) for t in tasks],
-            [frappe._dict(f) for f in files],
-        ]),
+        patch.object(frappe, "get_list", return_value=[frappe._dict(t) for t in tasks]),
+        patch.object(frappe, "get_all", return_value=[frappe._dict(f) for f in files]),
     ):
         return ptd.get_project_task_documents("PROJ-0001")
 
@@ -61,7 +60,7 @@ class TestProjectTaskDocuments(unittest.TestCase):
     def test_a_shipment_with_no_tasks_returns_nothing(self):
         with (
             patch.object(frappe, "has_permission", return_value=True),
-            patch.object(frappe, "get_all", return_value=[]),
+            patch.object(frappe, "get_list", return_value=[]),
         ):
             self.assertEqual(ptd.get_project_task_documents("PROJ-0001"), {"rows": [], "total": 0})
 
@@ -74,3 +73,65 @@ class TestProjectTaskDocuments(unittest.TestCase):
             with self.assertRaises(frappe.PermissionError):
                 ptd.get_project_task_documents("PROJ-0001")
         self.assertEqual(perm.call_args[0][0], "Project")
+
+
+class TestItOnlyShowsFilesFromTasksTheUserMayRead(unittest.TestCase):
+    """Reading the shipment used to hand over every task's files.
+
+    Task visibility is narrowed by department and assignment, but the task list was
+    built with get_all, which ignores permissions. On real data one operations user
+    could read 7 of a shipment's 23 tasks and was still shown all 56 files, finance
+    payment proofs included.
+    """
+
+    def test_files_on_unreadable_tasks_are_left_out(self):
+        readable = [TASKS[0]]
+        with (
+            patch.object(frappe, "has_permission", return_value=True),
+            patch.object(frappe, "get_list", return_value=[frappe._dict(t) for t in readable]),
+            patch.object(frappe, "get_all", return_value=[frappe._dict(FILES[0])]),
+        ) :
+            result = ptd.get_project_task_documents("PROJ-0001")
+        self.assertEqual([r["task"] for r in result["rows"]], ["TASK-1"])
+
+    def test_the_file_query_is_limited_to_readable_tasks(self):
+        """The unreadable task must not even reach the File filter."""
+        with (
+            patch.object(frappe, "has_permission", return_value=True),
+            patch.object(frappe, "get_list", return_value=[frappe._dict(TASKS[0])]),
+            patch.object(frappe, "get_all", return_value=[]) as get_all,
+        ):
+            ptd.get_project_task_documents("PROJ-0001")
+        asked_for = get_all.call_args.kwargs["filters"]["attached_to_name"][1]
+        self.assertEqual(asked_for, ["TASK-1"])
+
+    def test_the_task_list_is_not_built_with_get_all(self):
+        """get_all ignores permissions, so it must not be what lists the tasks."""
+        with (
+            patch.object(frappe, "has_permission", return_value=True),
+            patch.object(frappe, "get_list", return_value=[]) as get_list,
+            patch.object(frappe, "get_all", return_value=[]),
+        ):
+            ptd.get_project_task_documents("PROJ-0001")
+        self.assertEqual(get_list.call_args[0][0], "Task")
+        self.assertIs(get_list.call_args.kwargs["ignore_permissions"], False)
+
+    def test_without_task_read_nothing_is_returned(self):
+        """Readable shipment, no Task permission at all: empty, not every file."""
+        def perm(doctype, *a, **kw):
+            return doctype != "Task"
+
+        with patch.object(frappe, "has_permission", side_effect=perm):
+            self.assertEqual(
+                ptd.get_project_task_documents("PROJ-0001"), {"rows": [], "total": 0}
+            )
+
+    def test_the_count_matches_what_the_panel_lists(self):
+        """A badge counting more than the list shows would advertise hidden files."""
+        with (
+            patch.object(frappe, "has_permission", return_value=True),
+            patch.object(frappe, "get_list", return_value=[frappe._dict(TASKS[0])]),
+            patch.object(frappe.db, "count", return_value=1) as count,
+        ):
+            self.assertEqual(ptd.task_document_count("PROJ-0001"), 1)
+        self.assertEqual(count.call_args[0][1]["attached_to_name"][1], ["TASK-1"])
