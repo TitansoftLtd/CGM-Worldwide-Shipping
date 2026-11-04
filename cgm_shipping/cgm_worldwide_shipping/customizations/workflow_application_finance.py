@@ -41,6 +41,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance impo
 	sync_application_finance_lines_to_idf_record,
 	sync_certificate_to_project,
 	sync_invoice_verification_to_application_task,
+	sync_pop_verification_to_application_task,
 	sync_receipt_verification_to_application_task,
 	sync_status_from_finance_to_application,
 	task_matches_application,
@@ -82,6 +83,7 @@ def sync_application_payment_hooks(task, profile: ApplicationFinanceProfile) -> 
 		"cgm_syncing_application_receipt"
 	):
 		sync_invoice_verification_to_application_task(task, profile)
+		sync_pop_verification_to_application_task(task, profile)
 		sync_receipt_verification_to_application_task(task, profile)
 	if task_matches_application(task, profile) or task_matches_application_finance(
 		task, profile
@@ -981,6 +983,8 @@ def verify_application_finance_line(
 		sync_invoice_verification_to_application_task(task, profile)
 		if task.project:
 			auto_complete_application_for_project(task.project, profile)
+	elif line_type == "POP":
+		sync_pop_verification_to_application_task(task, profile)
 	elif line_type == "Receipt":
 		sync_receipt_verification_to_application_task(task, profile)
 	task.reload()

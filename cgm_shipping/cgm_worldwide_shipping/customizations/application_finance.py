@@ -1835,6 +1835,22 @@ def sync_receipt_verification_to_application_task(
 	)
 
 
+def sync_pop_verification_to_application_task(
+	finance_task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""Mirror a verified POP onto the application task.
+
+	Only Shipping Line carries a POP row, and it had no mirror: the invoice and the
+	receipt each had one, so a POP Finance had verified still read "Pending
+	Verification" on the declarant's task for good.
+	"""
+	if not profile.requires_pop:
+		return False
+	return _sync_line_verification_to_application(
+		finance_task, profile, get_pop_line, LINE_POP, None
+	)
+
+
 def sync_status_from_finance_to_application(
 	application_task, profile: ApplicationFinanceProfile
 ) -> bool:
@@ -1847,6 +1863,7 @@ def sync_status_from_finance_to_application(
 		return False
 	finance_task = frappe.get_doc("Task", finance_name)
 	changed = sync_invoice_verification_to_application_task(finance_task, profile)
+	changed = sync_pop_verification_to_application_task(finance_task, profile) or changed
 	changed = sync_receipt_verification_to_application_task(finance_task, profile) or changed
 	return changed
 
