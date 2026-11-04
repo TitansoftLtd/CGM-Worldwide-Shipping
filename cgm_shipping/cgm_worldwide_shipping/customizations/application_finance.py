@@ -1835,6 +1835,22 @@ def sync_receipt_verification_to_application_task(
 	)
 
 
+def sync_pop_verification_to_application_task(
+	finance_task, profile: ApplicationFinanceProfile
+) -> bool:
+	"""Mirror a verified POP onto the application task.
+
+	Only Shipping Line carries a POP row, and it had no mirror: the invoice and the
+	receipt each had one, so a POP Finance had verified still read "Pending
+	Verification" on the declarant's task for good.
+	"""
+	if not profile.requires_pop:
+		return False
+	return _sync_line_verification_to_application(
+		finance_task, profile, get_pop_line, LINE_POP, None
+	)
+
+
 def sync_status_from_finance_to_application(
 	application_task, profile: ApplicationFinanceProfile
 ) -> bool:
@@ -1847,6 +1863,7 @@ def sync_status_from_finance_to_application(
 		return False
 	finance_task = frappe.get_doc("Task", finance_name)
 	changed = sync_invoice_verification_to_application_task(finance_task, profile)
+	changed = sync_pop_verification_to_application_task(finance_task, profile) or changed
 	changed = sync_receipt_verification_to_application_task(finance_task, profile) or changed
 	return changed
 
@@ -1963,15 +1980,14 @@ def can_complete_application_task(
 		)
 		if not pop_ok:
 			return False
-		rec_ok = receipt_verified(task, profile) or (
+		if not receipt_required(task, profile, finance_task):
+			# Optional means optional. The line often issues no receipt at all, and
+			# one filed later is a record, not a gate: attaching it must not reopen
+			# the question of whether the step is done.
+			return True
+		return receipt_verified(task, profile) or (
 			finance_task is not None and receipt_verified(finance_task, profile)
 		)
-		if not receipt_required(task, profile, finance_task):
-			rec_here = receipt_attached(task, profile) or (
-				finance_task is not None and receipt_attached(finance_task, profile)
-			)
-			return not rec_here or rec_ok
-		return bool(rec_ok)
 
 	# Entry Slip: application completes when Finance has verified and settled payment.
 	if profile.complete_when_finance_settled:
@@ -2026,8 +2042,8 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 		if not receipt_attached_for_payment_workflow(task, profile):
 			return False
 		return receipt_verified(task, profile)
-	# Not required, but one arrived: Finance still checks it before closing over it.
-	return not receipt_attached(task, profile) or receipt_verified(task, profile)
+	# Optional means optional: filing a receipt must not hold the step open.
+	return True
 
 
 def build_application_purchase_invoice_lines(
