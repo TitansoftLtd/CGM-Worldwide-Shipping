@@ -44,11 +44,19 @@ class TestTaskPermissionMatrix(unittest.TestCase):
 			f"Roles can create a Task but not edit it: {broken}.",
 		)
 
-	def test_every_role_group_can_work_on_tasks(self):
-		"""Each department the workflow routes Task work to needs one role with write.
+	def test_nobody_is_routed_work_they_cannot_do(self):
+		"""Every user in a department the workflow routes Task work to can edit a Task.
 
+		This used to require the department's OWN role to carry write, and failed
+		permanently on a site where it does not: at CGM the field, transport and
+		documentation people hold Projects User as well, so they can already edit
+		every task they are allowed to see. Nobody was locked out, yet the matrix
+		read as broken, and the suggested cure was to widen Task permissions for
+		roles no user would have gained anything from.
+
+		What matters is the person, not which of their roles carries the flag.
 		Department scoping is enforced separately by permission_query_conditions /
-		has_permission, so granting write here does not widen what a user can see.
+		has_permission, so write here never widens what anyone can see.
 		"""
 		writable = {p["role"] for p in self.perms if p["write"]}
 		locked_out = {}
@@ -56,11 +64,21 @@ class TestTaskPermissionMatrix(unittest.TestCase):
 			existing = [r for r in roles if frappe.db.exists("Role", r)]
 			if not existing:
 				continue  # none of this group's roles are provisioned on this site
-			if not (set(existing) & writable):
-				locked_out[group] = existing
+			users = set()
+			for role in existing:
+				users |= {
+					r.parent
+					for r in frappe.get_all("Has Role", filters={"role": role}, fields=["parent"])
+				}
+			users = {u for u in users if frappe.db.get_value("User", u, "enabled")}
+			if not users:
+				continue  # nobody holds these roles here
+			stuck = sorted(u for u in users if not (set(frappe.get_roles(u)) & writable))
+			if stuck:
+				locked_out[group] = stuck
 		self.assertEqual(
 			locked_out,
 			{},
-			"Role groups with no write access to Task: "
-			+ "; ".join(f"{g} (roles present: {r})" for g, r in locked_out.items()),
+			"Users routed Task work they cannot edit: "
+			+ "; ".join(f"{g} ({len(u)}: {u[:3]})" for g, u in locked_out.items()),
 		)
