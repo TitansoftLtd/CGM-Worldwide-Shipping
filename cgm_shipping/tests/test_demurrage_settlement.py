@@ -13,6 +13,7 @@ the day count and leaves the lateness on the record.
 
 import unittest
 from datetime import date
+from unittest.mock import patch
 
 from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
     CONTAINER_CLOSED_STATUSES,
@@ -23,6 +24,7 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
     CONTAINER_STATUS_RETURN_OVERDUE,
     CONTAINER_STATUS_RETURNED_LATE_SETTLED,
 )
+from cgm_shipping.cgm_worldwide_shipping.customizations import container_tracker as ct
 from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
     _derive_alert_status,
     _derive_status,
@@ -96,13 +98,20 @@ class TestHowItLooks(unittest.TestCase):
 
 
 def _metrics(**kw):
+    """compute_container_metrics reads the real clock, so pin it.
+
+    These assertions compare against TODAY. Passing a _ref_date did nothing: the
+    function calls today() itself, so the tests only agreed with it on the day they
+    were written and broke at the next midnight.
+    """
     data = {
         "free_days_start_date": date(2026, 9, 1),
         "free_days_end_date": FREE_END,
         "discharging_date": date(2026, 9, 1),
     }
     data.update(kw)
-    return compute_container_metrics({**data, "_ref_date": TODAY})
+    with patch.object(ct, "today", lambda: TODAY.isoformat()):
+        return compute_container_metrics(data)
 
 
 class TestTheDayCount(unittest.TestCase):
