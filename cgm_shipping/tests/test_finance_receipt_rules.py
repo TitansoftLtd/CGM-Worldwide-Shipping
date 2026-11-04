@@ -177,6 +177,18 @@ class TestShippingLineKeepsItsPop(unittest.TestCase):
 			task = self._shipping_line_task(receipt="/files/sl-receipt.pdf")
 			self.assertFalse(can_complete_application_finance_task(task, SHIPPING_LINE))
 
+	def test_a_filed_receipt_does_not_reopen_the_step(self):
+		"""The line sends the receipt late, or never. Filing it must change nothing."""
+		with _rules(
+			**{"Shipping Line": {"required_when_company_pays": 0, "required_when_client_pays": 0}}
+		), _je_submitted():
+			task = self._shipping_line_task(pop="/files/sl-pop.pdf")
+			for row in task.get(TASK_FINANCE_FIELD):
+				if row.line_type == "Receipt":
+					row.attachment = "/files/sl-receipt.pdf"
+					row.verified = 0
+			self.assertTrue(can_complete_application_finance_task(task, SHIPPING_LINE))
+
 	def test_ticking_the_rule_back_on_restores_the_wait(self):
 		with _rules(
 			**{"Shipping Line": {"required_when_company_pays": 1, "required_when_client_pays": 0}}
@@ -236,11 +248,24 @@ class TestReceiptDoesNotWaitForThePop(unittest.TestCase):
 			af.enforce_application_finance_line_permissions(task, SHIPPING_LINE)
 
 
-class TestAnAttachedReceiptIsAlwaysChecked(unittest.TestCase):
-	"""Not required does not mean unread: if one arrives, Finance still verifies it."""
+class TestAnOptionalReceiptNeverHoldsTheTask(unittest.TestCase):
+	"""Optional means optional, including after one has been filed.
 
-	def test_an_unverified_receipt_holds_the_task_even_when_not_required(self):
+	It used to hold the task until Finance verified it, on the reasoning that a
+	receipt which does arrive should still be read. In practice the shipping line
+	often issues none, and the one that does come is filed late, which reopened a
+	step that had been finished for weeks. Ops file it as a record now. Only a
+	receipt the Settings rule asks for can gate anything.
+	"""
+
+	def test_an_unverified_receipt_does_not_hold_the_task(self):
 		task = _paid_entry_task(receipt="/files/duty-pop.pdf", verified=0, client_pays=1)
+		with _rules(ENTRY_SLIP={"required_when_company_pays": 1, "required_when_client_pays": 0}):
+			self.assertTrue(can_complete_application_finance_task(task, ENTRY))
+
+	def test_a_required_receipt_still_gates(self):
+		"""The Settings rule is what decides: switch it on and the wait comes back."""
+		task = _paid_entry_task(receipt="/files/duty-pop.pdf", verified=0)
 		with _rules(ENTRY_SLIP={"required_when_company_pays": 1, "required_when_client_pays": 0}):
 			self.assertFalse(can_complete_application_finance_task(task, ENTRY))
 

@@ -1980,15 +1980,14 @@ def can_complete_application_task(
 		)
 		if not pop_ok:
 			return False
-		rec_ok = receipt_verified(task, profile) or (
+		if not receipt_required(task, profile, finance_task):
+			# Optional means optional. The line often issues no receipt at all, and
+			# one filed later is a record, not a gate: attaching it must not reopen
+			# the question of whether the step is done.
+			return True
+		return receipt_verified(task, profile) or (
 			finance_task is not None and receipt_verified(finance_task, profile)
 		)
-		if not receipt_required(task, profile, finance_task):
-			rec_here = receipt_attached(task, profile) or (
-				finance_task is not None and receipt_attached(finance_task, profile)
-			)
-			return not rec_here or rec_ok
-		return bool(rec_ok)
 
 	# Entry Slip: application completes when Finance has verified and settled payment.
 	if profile.complete_when_finance_settled:
@@ -2043,8 +2042,8 @@ def can_complete_application_finance_task(task, profile: ApplicationFinanceProfi
 		if not receipt_attached_for_payment_workflow(task, profile):
 			return False
 		return receipt_verified(task, profile)
-	# Not required, but one arrived: Finance still checks it before closing over it.
-	return not receipt_attached(task, profile) or receipt_verified(task, profile)
+	# Optional means optional: filing a receipt must not hold the step open.
+	return True
 
 
 def build_application_purchase_invoice_lines(
