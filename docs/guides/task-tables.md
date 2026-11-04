@@ -202,6 +202,24 @@ itself. There is a manual fallback - a document, a **Reference No** or a note in
 
 See [Transport & Containers](transport-containers.md).
 
+### The same table on a shipping-line task
+
+**Attach Shipping Line Invoice** and **Finance pays Shipping Line Charges** show the
+same table, but they record no transport step of their own. Theirs is a read-only
+view of the Container Tracker, so you can see where each box is while handling the
+line's charges: the discharge date, who is carrying it, the truck and driver, when
+it left the port, when the empty went back and when the interchange came in. The
+Deposit Amount beside them comes from the Bill of Lading.
+
+Two things follow from it being a view:
+
+- **It always shows the tracker's current detail.** A step's grid records what was
+  entered at the time and is left alone afterwards; this one is corrected whenever
+  the tracker changes.
+- **It is read-only.** Edit the container on the Container Tracker. These tasks
+  carry no step, so anything typed here would not reach the tracker and would be
+  overwritten on the next change.
+
 ---
 
 ## When a task will not complete
