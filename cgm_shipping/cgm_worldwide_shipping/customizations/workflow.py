@@ -861,23 +861,41 @@ def sync_permit_invoices_to_finance_task(finance_task, *, save: bool = True) -> 
 		permit_requires_payment,
 	)
 
+	# The declarant owns the origin. A permit they have marked Foreign is not
+	# Finance's to pay, however an older copy of the row on the finance task reads.
+	foreign_types = {
+		(r.get("permit_type") or "").strip()
+		for r in app_rows
+		if r.get("permit_type") and not permit_requires_payment(r)
+	}
+
 	# Finance only tracks Local payable invoices; Foreign stays on the application task.
-	app_rows = [
+	payable_app_rows = [
 		r
 		for r in app_rows
 		if r.get("permit_type") and r.get("payment_invoice") and permit_requires_payment(r)
 	]
-	if not app_rows:
-		return seed_finance_permit_rows_from_project(finance_task, save=save)
 
 	fin_rows = list(finance_task.get(TASK_PERMITS_FIELD) or [])
 	changed = False
 	# Drop Foreign / non-payable rows left on the finance task from earlier syncs.
+	# Deciding on the finance row's OWN origin missed the case this exists for: the
+	# declarant flips a permit to Foreign, their copy never reaches here, and the
+	# stale Local copy keeps sitting in the payable set owing a receipt nobody will
+	# ever attach - so the application could never close.
 	for fin_row in list(fin_rows):
-		if fin_row.permit_type and not permit_requires_payment(fin_row):
+		if not fin_row.permit_type:
+			continue
+		if not permit_requires_payment(fin_row) or fin_row.permit_type.strip() in foreign_types:
 			finance_task.remove(fin_row)
 			changed = True
 	fin_rows = list(finance_task.get(TASK_PERMITS_FIELD) or [])
+
+	if not payable_app_rows:
+		if changed and save:
+			finance_task.save(ignore_permissions=True)
+		return changed or bool(seed_finance_permit_rows_from_project(finance_task, save=save))
+	app_rows = payable_app_rows
 	used: set[int] = set()
 
 	for row in app_rows:
@@ -1152,12 +1170,19 @@ def _reopen_sea_task(task, *, reason: str | None = None) -> bool:
 
 
 def permit_work_fingerprint(task) -> tuple:
-	"""Cheap stable fingerprint of permit invoice/payment/receipt state."""
+	"""Cheap stable fingerprint of permit invoice/payment/receipt state.
+
+	Origin counts as permit work. Changing a permit to Foreign says Finance has
+	nothing to pay, which is as real a change as attaching an invoice - and while
+	it was left out, flipping it saved silently and the finance task went on
+	holding a Local row owing a receipt that was never coming.
+	"""
 	rows = task.get(TASK_PERMITS_FIELD) or []
 	return tuple(
 		sorted(
 			(
 				(r.get("permit_type") or "").strip(),
+				(r.get("origin") or "Local").strip(),
 				(r.get("payment_invoice") or "").strip(),
 				(r.get("payment_receipt") or "").strip(),
 				cint(r.get("invoice_verified")),

@@ -184,3 +184,68 @@ class TestThereIsOnlyOneRule(unittest.TestCase):
         src = inspect.getsource(patch.execute)
         self.assertIn('"custom_task_role": "Permit Application"', src)
         self.assertIn("OPEN_STATES", src)
+
+
+class TestChangingAPermitToForeignMidway(unittest.TestCase):
+    """Marking a permit Foreign halfway through must reach the Finance task.
+
+    It did not. `origin` was missing from the permit fingerprint, so the flip saved
+    silently and the application-to-finance sync never ran. Finance went on holding
+    a Local row owing a receipt that was never coming, and the declarant's task
+    could not close. Four pairs on production were stuck that way.
+    """
+
+    def test_origin_is_part_of_the_permit_fingerprint(self):
+        class _Doc:
+            def __init__(self, origin):
+                self.rows = [
+                    frappe._dict(
+                        permit_type="KEBS", origin=origin, payment_invoice="/f/a.pdf"
+                    )
+                ]
+
+            def get(self, _field, _default=None):
+                return self.rows
+
+        before = wf.permit_work_fingerprint(_Doc("Local"))
+        after = wf.permit_work_fingerprint(_Doc("Foreign"))
+        self.assertTrue(before, "the fingerprint should not be empty")
+        self.assertNotEqual(before, after, "flipping origin must count as permit work")
+
+    def test_the_sync_drops_a_row_the_declarant_marked_foreign(self):
+        """It used to trust the finance copy's own origin, which was the stale one."""
+        import inspect
+
+        src = inspect.getsource(wf.sync_permit_invoices_to_finance_task)
+        self.assertIn("foreign_types", src)
+        self.assertIn("in foreign_types", src)
+
+    def test_a_foreign_row_is_never_sent_to_finance_in_the_first_place(self):
+        from cgm_shipping.cgm_worldwide_shipping.doctype.permit_register.permit_register import (
+            permit_requires_payment,
+        )
+
+        self.assertFalse(permit_requires_payment(frappe._dict(origin="Foreign")))
+        self.assertTrue(permit_requires_payment(frappe._dict(origin="Local")))
+        self.assertTrue(permit_requires_payment(frappe._dict()))
+
+    def test_the_backfill_patch_is_registered(self):
+        from pathlib import Path
+
+        import cgm_shipping
+
+        listed = (Path(cgm_shipping.__file__).parent / "patches.txt").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("cgm_shipping.patches.drop_stale_foreign_permit_rows", listed)
+
+    def test_the_patch_reuses_the_sync_and_the_gate(self):
+        """It must not re-decide what a permit needs; that is how Foreign broke."""
+        import inspect
+
+        from cgm_shipping.patches import drop_stale_foreign_permit_rows as patch
+
+        src = inspect.getsource(patch.execute)
+        self.assertIn("sync_permit_invoices_to_finance_task", src)
+        self.assertIn("close_permit_application_if_finance_already_done", src)
+        self.assertNotIn("payment_receipt", src)
