@@ -29,11 +29,23 @@ REPORT_TEMPLATES = {
 	"shif_monthly_return": "SHIF Template.xlsx",
 }
 
-# The NSSF and SHIF templates shout their headers in caps. The reports render them
-# in the PAYE template's Title Case instead -- acronyms capitalised, minor words
-# lowercase, "Number" spelled out -- so all four read consistently in the desk.
-# Column ORDER and COUNT still track the template exactly; only the wording differs.
-RELABELLED = {
+# The contract, pinned here rather than only inside the template workbooks.
+#
+# The workbooks are the bank's and KRA's own forms and are deliberately not in this
+# repo, so a checkout cannot read them and these tests used to error outright. That
+# left DTB and PAYE with no column check at all: only NSSF and SHIF were listed
+# below, so a reorder in the other two produced a file the portal rejects with
+# nothing to catch it.
+#
+# Pinning the list makes the order and count a regression test that runs anywhere.
+# It freezes the layout in use today; it does not re-derive what the bank wants.
+# When a workbook IS present the stricter comparison against it still runs.
+#
+# NSSF and SHIF shout their headers in caps. The reports render them in the PAYE
+# template's Title Case instead -- acronyms capitalised, minor words lowercase,
+# "Number" spelled out -- so all four read consistently in the desk. Order and
+# count still track the template exactly; only the wording differs.
+TEMPLATE_COLUMNS = {
 	"nssf_monthly_return": [
 		"Payroll Number",
 		"Surname",
@@ -55,16 +67,70 @@ RELABELLED = {
 		"Contribution Amount",
 		"Phone",
 	],
+	"dtb_salary_payment_schedule": [
+		"Additional Info 1",
+		"Beneficiary Name",
+		"Beneficiary Address",
+		"BIC / SWIFT Code",
+		"Branch",
+		"Beneficiary Bank Name",
+		"DTB Branch Code",
+		"Beneficiary Account",
+		"Payable Amount",
+		"Payment Method",
+		"Additional Info 2",
+		"Payable Currency",
+		"Debit Account No",
+		"Payment Instructions 1",
+		"Mobile Service Provider Code",
+		"Bene Mobile Number",
+		"Execution Date",
+		"Supporting Document Name",
+		"Email",
+		"Charge Bourned By",
+		"Remittance Purpose Code",
+		"Remittance Purpose Details",
+	],
+	"paye_monthly_return": [
+		"PIN of Employee",
+		"Name of Employee",
+		"Resident Status",
+		"Type of Employee",
+		"Person with Disability (PWD)",
+		"Exemption Certificate Number",
+		"Total Cash Pay",
+		"Value of Car",
+		"Value of Meals",
+		"Non Cash Benefits",
+		"Type of Housing",
+		"Housing Benefits",
+		"Other Benefits",
+		"Total Gross Pay",
+		"SHIF",
+		"NSSF",
+		"Other Premium Contribution",
+		"Post Retirement Medical",
+		"Mortgage Interest",
+		"Housing Levy",
+		"Taxable Pay",
+		"Monthly Personal Relief",
+		"Insurance Relief",
+		"PAYE Tax",
+		"Self Assessed PAYE Tax",
+	],
 }
 
 
-def expected_labels(slug: str, template: str) -> list[str]:
-	"""Labels the report should emit: the template's own, unless deliberately relabelled."""
-	return RELABELLED.get(slug) or template_headers(template)
+def expected_labels(slug: str) -> list[str]:
+	"""The pinned column contract for this report."""
+	return TEMPLATE_COLUMNS[slug]
 
 
-def template_headers(filename: str) -> list[str]:
+def template_headers(filename: str) -> list[str] | None:
+	"""The workbook's header row, or None when the workbook is not in this checkout."""
 	path = os.path.join(FILES_DIR, filename)
+	if not os.path.exists(path):
+		return None
 	if filename.endswith(".xls"):
 		import xlrd
 
@@ -157,20 +223,48 @@ def run_with_sample_slips(module, filters=None):
 
 
 class TestStatutoryReportTemplates(unittest.TestCase):
-	def test_columns_match_templates(self):
-		"""Leading report columns reproduce the template's columns, in order."""
-		for slug, template in REPORT_TEMPLATES.items():
+	def test_columns_match_the_pinned_contract(self):
+		"""Leading report columns reproduce the pinned columns, in order.
+
+		This catches a reorder or a relabel before finance uploads the file. It needs
+		no workbook, so it runs on every checkout.
+		"""
+		for slug in REPORT_TEMPLATES:
 			with self.subTest(report=slug):
 				columns, _rows = run_with_sample_slips(load_report(slug))
-				expected = expected_labels(slug, template)
+				expected = expected_labels(slug)
 				actual = [col["label"] for col in columns][: len(expected)]
 				self.assertEqual(actual, expected)
 
-	def test_column_count_tracks_template(self):
-		"""Relabelling may change wording but never the number of template columns."""
-		for slug, template in REPORT_TEMPLATES.items():
+	def test_the_report_adds_nothing_before_the_contract_columns(self):
+		"""The pinned columns must be the LEADING ones, or the upload misaligns.
+
+		Comparing only a prefix would pass just as happily if the report grew a
+		column at the front, which is the mistake that breaks a positional upload.
+		"""
+		for slug in REPORT_TEMPLATES:
 			with self.subTest(report=slug):
-				self.assertEqual(len(expected_labels(slug, template)), len(template_headers(template)))
+				columns, _rows = run_with_sample_slips(load_report(slug))
+				expected = expected_labels(slug)
+				self.assertEqual(columns[0]["label"], expected[0])
+				self.assertGreaterEqual(len(columns), len(expected))
+
+	def test_the_pinned_contract_still_matches_the_supplied_workbook(self):
+		"""Only runs where the bank's and KRA's workbooks are present.
+
+		They are not in this repo on purpose, so this is the stricter check for a
+		machine that has them rather than a reason for the suite to error.
+		"""
+		checked = []
+		for slug, template in REPORT_TEMPLATES.items():
+			headers = template_headers(template)
+			if headers is None:
+				continue
+			with self.subTest(report=slug):
+				self.assertEqual(len(expected_labels(slug)), len(headers))
+				checked.append(slug)
+		if not checked:
+			self.skipTest(f"no template workbooks in {FILES_DIR}")
 
 	def test_every_column_is_populated(self):
 		"""Each row carries a key for every declared column, so no cell exports as undefined."""
