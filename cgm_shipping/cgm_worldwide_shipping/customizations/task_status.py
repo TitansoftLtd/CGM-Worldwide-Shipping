@@ -77,8 +77,7 @@ def try_persist_sea_task_completion_if_ready(doc) -> bool:
 
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_behaviour import (
 		task_is_configured_application_workflow,
-		task_is_permit_application,
-	task_is_permit_finance,
+		task_is_permit_finance,
 		task_is_ucr_application,
 		task_is_ucr_finance,
 	)
@@ -108,15 +107,6 @@ def try_persist_sea_task_completion_if_ready(doc) -> bool:
 		)
 
 		if can_complete_finance_permit_task(doc) and auto_complete_finance_permit_task(doc):
-			doc.reload()
-			return True
-
-	if task_is_permit_application(doc):
-		from cgm_shipping.cgm_worldwide_shipping.customizations.workflow import (
-			close_permit_application_if_finance_already_done,
-		)
-
-		if close_permit_application_if_finance_already_done(doc):
 			doc.reload()
 			return True
 

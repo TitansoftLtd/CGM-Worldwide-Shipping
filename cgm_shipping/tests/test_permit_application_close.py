@@ -144,12 +144,43 @@ class TestThereIsOnlyOneRule(unittest.TestCase):
                 self.assertNotIn("permit_requires_payment", src)
                 self.assertNotIn("payment_invoice", src)
 
-    def test_the_retry_is_wired_into_the_auto_complete(self):
-        """A retry nothing calls is the bug it was written to fix."""
+    def test_it_is_a_patch_and_not_something_that_fires_on_opening_a_task(self):
+        """Closing a task because somebody opened it is a nasty surprise.
+
+        It runs once from a migrate patch. The forward path is unchanged: Finance
+        completing still closes a ready application, which is a deliberate act and
+        no surprise to anyone.
+        """
         import inspect
 
         from cgm_shipping.cgm_worldwide_shipping.customizations import task_status
+        from cgm_shipping.patches import close_permit_applications_finance_finished as patch
 
-        src = inspect.getsource(task_status)
-        self.assertIn("close_permit_application_if_finance_already_done", src)
-        self.assertIn("task_is_permit_application", src)
+        self.assertNotIn(
+            "close_permit_application_if_finance_already_done",
+            inspect.getsource(task_status),
+        )
+        self.assertIn(
+            "close_permit_application_if_finance_already_done", inspect.getsource(patch)
+        )
+
+    def test_the_patch_is_registered_to_run(self):
+        from pathlib import Path
+
+        import cgm_shipping
+
+        listed = (
+            Path(cgm_shipping.__file__).parent / "patches.txt"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "cgm_shipping.patches.close_permit_applications_finance_finished", listed
+        )
+
+    def test_the_patch_only_looks_at_open_permit_applications(self):
+        import inspect
+
+        from cgm_shipping.patches import close_permit_applications_finance_finished as patch
+
+        src = inspect.getsource(patch.execute)
+        self.assertIn('"custom_task_role": "Permit Application"', src)
+        self.assertIn("OPEN_STATES", src)
