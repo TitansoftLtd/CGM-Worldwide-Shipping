@@ -440,6 +440,13 @@ function apply_cached_sea_ui_sequences(frm, config) {
 	frm._cgm_sea_seq_load_failed = false;
 	frm._cgm_sea_layout_ready = false;
 	frm._cgm_finance_grid_ready = false;
+	// The container and status grids are configured once per form open too. Leaving
+	// their flags set meant they kept whatever they rendered before the config
+	// arrived, and only a page reload put the columns right.
+	frm._cgm_shipping_line_deposit_grid_ready = false;
+	frm._cgm_shipping_line_finance_container_grid_ready = false;
+	frm._cgm_entry_arrival_mirror_grid_ready = false;
+	frm._cgm_status_grids_ready = false;
 	frm.trigger("refresh");
 }
 
@@ -1306,6 +1313,11 @@ function ensure_checkpoint_task_documents_on_form(frm) {
 function configure_finance_line_grid(frm, ui) {
 	const grid = frm.fields_dict.custom_task_finance_lines?.grid;
 	if (!grid || frm._cgm_finance_grid_ready) {
+		return;
+	}
+	// Nothing can be configured before the rows exist; come back on the next
+	// refresh rather than marking this grid done having changed nothing.
+	if (!container_grid_is_rendered(grid)) {
 		return;
 	}
 	const is_finance = user_can_make_payment(frm);
@@ -3491,22 +3503,41 @@ const SHIPPING_LINE_CONTAINER_COLUMNS = [
 // Mirrored from the Container Tracker, so not editable here.
 const SHIPPING_LINE_MIRROR_COLUMNS = SHIPPING_LINE_CONTAINER_COLUMNS.slice(4);
 
+// Frappe's update_docfield_property does nothing at all until the rows exist, so a
+// configurator that runs before then achieves nothing while still marking itself
+// done. That is what leaves the grid showing the wrong columns until the page is
+// reloaded. Check before configuring, and only claim "ready" when it really was.
+function container_grid_is_rendered(grid) {
+	return Boolean(grid && grid.grid_rows);
+}
+
+// update_docfield_property throws for a field the child table does not carry, and
+// an uncaught throw abandons the rest of the layout half-applied - which looks
+// exactly like a disarranged table.
+function set_grid_column_property(grid, fieldname, property, value) {
+	try {
+		grid.update_docfield_property(fieldname, property, value);
+	} catch (e) {
+		// Not a column of this child table; nothing to configure.
+	}
+}
+
 // The container grid is shared by every step, so columns belonging to other steps
 // render here too. Anyone who has saved their own layout keeps it, as Frappe
 // honours a saved GridView over in_list_view.
 function restrict_container_grid_columns(grid, keep) {
 	(grid.docfields || []).forEach((df) => {
 		if (df.fieldname && !keep.includes(df.fieldname)) {
-			grid.update_docfield_property(df.fieldname, "in_list_view", 0);
+			set_grid_column_property(grid, df.fieldname, "in_list_view", 0);
 		}
 	});
 	keep.forEach((fn) => {
-		grid.update_docfield_property(fn, "in_list_view", 1);
-		grid.update_docfield_property(fn, "hidden", 0);
+		set_grid_column_property(grid, fn, "in_list_view", 1);
+		set_grid_column_property(grid, fn, "hidden", 0);
 	});
 	SHIPPING_LINE_MIRROR_COLUMNS.forEach((fn) => {
 		if (keep.includes(fn)) {
-			grid.update_docfield_property(fn, "read_only", 1);
+			set_grid_column_property(grid, fn, "read_only", 1);
 		}
 	});
 }
@@ -3528,6 +3559,11 @@ function configure_shipping_line_deposit_grid(frm) {
 	// Configure once per form open — grid.refresh() on every Task.refresh
 	// re-renders rows, fires render_complete, and makes toolbar buttons flicker.
 	if (frm._cgm_shipping_line_deposit_grid_ready) {
+		return;
+	}
+	// Nothing can be configured before the rows exist; come back on the next
+	// refresh rather than marking this grid done having changed nothing.
+	if (!container_grid_is_rendered(grid)) {
 		return;
 	}
 	["deposit_amount"].forEach((fn) => {
@@ -3560,6 +3596,11 @@ function configure_shipping_line_finance_container_grid(frm) {
 		frm.toggle_display("custom_deposit_payer", true);
 	}
 	if (frm._cgm_shipping_line_finance_container_grid_ready) {
+		return;
+	}
+	// Nothing can be configured before the rows exist; come back on the next
+	// refresh rather than marking this grid done having changed nothing.
+	if (!container_grid_is_rendered(grid)) {
 		return;
 	}
 	["container_number", "cargo_size", "current_status", "deposit_amount"].forEach((fn) => {
@@ -3659,6 +3700,11 @@ function configure_entry_arrival_mirror_grid(frm) {
 	frm.toggle_display("custom_section_container_updates", true);
 	frm.toggle_display("custom_container_updates", true);
 	if (frm._cgm_entry_arrival_mirror_grid_ready) {
+		return;
+	}
+	// Nothing can be configured before the rows exist; come back on the next
+	// refresh rather than marking this grid done having changed nothing.
+	if (!container_grid_is_rendered(grid)) {
 		return;
 	}
 	grid.update_docfield_property("discharging_date", "hidden", 0);

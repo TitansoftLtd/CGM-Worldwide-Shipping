@@ -59,6 +59,11 @@ function apply_document_type_picker(frm) {
 	if (!grid || grid._cgm_document_type_picker) {
 		return;
 	}
+	// update_docfield_property is a no-op until the rows exist. Claiming the picker
+	// was applied here would leave a plain text box until the page was reloaded.
+	if (!grid.grid_rows) {
+		return;
+	}
 	try {
 		grid.update_docfield_property("required_document_types", "fieldtype", "MultiSelectList");
 		grid.update_docfield_property("required_document_types", "get_data", document_type_options);

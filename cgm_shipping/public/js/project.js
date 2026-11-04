@@ -69,13 +69,24 @@ function configure_project_container_grid(frm) {
 			if (r.exc || frm.doc.name !== frm._cgm_container_modes_loading) {
 				return;
 			}
-			frm._cgm_container_modes_loaded = frm.doc.name;
+			// update_docfield_property does nothing while the rows are unbuilt, so
+			// marking this loaded here would hide nothing and never be retried -
+			// the column then stayed wrong until the page was reloaded.
+			if (!grid.grid_rows) {
+				frm._cgm_container_modes_loading = null;
+				return;
+			}
 			const modes = new Set((r.message || []).map((row) => row.container_mode).filter(Boolean));
 			const hideCharges =
 				modes.size === 1 && modes.has("Export");
 			["demurrage_days"].forEach((fieldname) => {
-				grid.update_docfield_property(fieldname, "hidden", hideCharges ? 1 : 0);
+				try {
+					grid.update_docfield_property(fieldname, "hidden", hideCharges ? 1 : 0);
+				} catch (e) {
+					// Not a column of this grid; nothing to hide.
+				}
 			});
+			frm._cgm_container_modes_loaded = frm.doc.name;
 		},
 	});
 	frm._cgm_container_modes_loading = frm.doc.name;
