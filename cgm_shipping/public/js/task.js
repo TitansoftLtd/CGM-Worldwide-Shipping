@@ -3470,6 +3470,19 @@ function configure_client_paid_field(frm, ui) {
 	}
 }
 
+// The container grid is shared by every step, so a transport step's Transporter,
+// Truck, Driver and Gate Out columns render on the shipping-line tasks too, where
+// nothing ever fills them: those grids mirror Bill of Lading deposits. Anyone who
+// has saved their own layout for this grid keeps it, as Frappe honours that first.
+function restrict_container_grid_columns(grid, keep) {
+	(grid.docfields || []).forEach((df) => {
+		if (df.fieldname && !keep.includes(df.fieldname)) {
+			grid.update_docfield_property(df.fieldname, "in_list_view", 0);
+		}
+	});
+	keep.forEach((fn) => grid.update_docfield_property(fn, "in_list_view", 1));
+}
+
 function configure_shipping_line_deposit_grid(frm) {
 	const grid = frm.fields_dict.custom_container_updates?.grid;
 	if (!grid) {
@@ -3494,6 +3507,12 @@ function configure_shipping_line_deposit_grid(frm) {
 		grid.update_docfield_property(fn, "in_list_view", 1);
 		grid.update_docfield_property(fn, "read_only", 1);
 	});
+	restrict_container_grid_columns(grid, [
+		"container_number",
+		"cargo_size",
+		"current_status",
+		"deposit_amount",
+	]);
 	frm._cgm_shipping_line_deposit_grid_ready = true;
 	if (grid.wrapper) {
 		grid.refresh();
@@ -3525,6 +3544,12 @@ function configure_shipping_line_finance_container_grid(frm) {
 		grid.update_docfield_property(fn, "in_list_view", 1);
 		grid.update_docfield_property(fn, "read_only", 1);
 	});
+	restrict_container_grid_columns(grid, [
+		"container_number",
+		"cargo_size",
+		"current_status",
+		"deposit_amount",
+	]);
 	frm._cgm_shipping_line_finance_container_grid_ready = true;
 	if (grid.wrapper) {
 		grid.refresh();
