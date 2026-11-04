@@ -2172,33 +2172,79 @@ def close_permit_application_when_finance_done(task) -> None:
 		return
 	# Do not force-complete while Local permits still lack certificates / receipts,
 	# or while Finance still has unpaid rows (should not happen when finance is Completed).
-	app = frappe.get_doc("Task", app_name)
+	_close_permit_application_if_ready(
+		frappe.get_doc("Task", app_name),
+		completed_by=task.completed_by or frappe.session.user,
+		completed_on=task.completed_on or now_datetime(),
+		description=(
+			"Permit invoices submitted to Finance; payment and receipt verification "
+			f"completed on {task.name}."
+		),
+	)
+
+
+def _close_permit_application_if_ready(app, *, completed_by, completed_on, description) -> bool:
+	"""Close the application when its own gate says it may close.
+
+	One rule for both directions: this asks validate_permit_application_can_complete
+	rather than re-deciding what a permit needs, so a Foreign row can never start
+	waiting for an invoice again through a second copy drifting.
+	"""
 	merge_project_permits_into_application_task(app)
 	try:
 		validate_permit_application_can_complete(app)
 	except frappe.ValidationError:
-		return
-	# The gate short-circuits under the auto-complete flag this runs with, so
+		return False
+	# The gate short-circuits under the auto-complete flag this may run with, so
 	# check verification explicitly: the application must not close while any
 	# invoice or receipt is unverified, whoever triggers it.
 	if any(permit_rows_pending_verification(app)[:2]):
-		return
+		return False
 	frappe.db.set_value(
 		"Task",
-		app_name,
+		app.name,
 		{
 			"status": "Completed",
-			"completed_by": task.completed_by or frappe.session.user,
-			"completed_on": task.completed_on or now_datetime(),
+			"completed_by": completed_by,
+			"completed_on": completed_on,
 			"progress": 100,
-			"description": (
-				"Permit invoices submitted to Finance; payment and receipt verification "
-				f"completed on {task.name}."
-			),
+			"description": description,
 		},
 		update_modified=True,
 	)
-	frappe.clear_document_cache("Task", app_name)
+	frappe.clear_document_cache("Task", app.name)
+	return True
+
+
+def close_permit_application_if_finance_already_done(app_task) -> bool:
+	"""Second look at an application whose Finance task finished before it was ready.
+
+	close_permit_application_when_finance_done fires on the Finance task's save and
+	nothing else. An application that was not ready at that moment - a certificate
+	still to come, or a row not yet marked Foreign - was never looked at again, and
+	sat Open with Finance long since closed.
+	"""
+	if not is_permit_application_task_doc(app_task):
+		return False
+	if app_task.status in ("Completed", "Cancelled"):
+		return False
+	# Client-pays leaves the declarant to close it themselves, as before.
+	if task_client_paid_directly(app_task):
+		return False
+	fin_name = finance_permit_task_for_application(app_task)
+	if not fin_name:
+		return False
+	fin = frappe.db.get_value(
+		"Task", fin_name, ["status", "completed_by", "completed_on"], as_dict=True
+	)
+	if not fin or fin.status != "Completed":
+		return False
+	return _close_permit_application_if_ready(
+		app_task,
+		completed_by=fin.completed_by or frappe.session.user,
+		completed_on=fin.completed_on or now_datetime(),
+		description=f"Permits cleared; Finance payment completed on {fin_name}.",
+	)
 
 
 def complete_permit_finance_when_application_done(app_task) -> str | None:

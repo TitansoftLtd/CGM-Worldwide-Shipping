@@ -44,3 +44,4 @@ cgm_shipping.patches.backfill_project_completion_date
 cgm_shipping.patches.mark_in_flight_hr_leave_applications
 cgm_shipping.patches.align_access_with_job_matrix
 cgm_shipping.patches.backfill_pop_verification
+cgm_shipping.patches.close_permit_applications_finance_finished
