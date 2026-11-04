@@ -67,6 +67,21 @@ STEP_SYNC_TRACKER_FIELDS: dict[str, tuple[str, ...]] = {
 	"custom_interchange_task_seq": ("interchange_date", "interchange_document"),
 }
 
+# A shipping-line task shows the shipment's containers but records no step of its
+# own, so nothing used to fill these and they read as blanks that never resolved.
+# It is a read-only mirror: it carries the tracker's current truth, not what was
+# entered at the time, which is the opposite of how a step grid behaves.
+SHIPPING_LINE_MIRROR_FIELDS = (
+	"discharging_date",
+	"transporter",
+	"truck_number",
+	"driver_name",
+	"driver_contact",
+	"gate_out_date_port",
+	"actual_empty_return",
+	"interchange_date",
+)
+
 # Pairs whose task and tracker names differ. Task → tracker only.
 STEP_RENAMED_TRACKER_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
 	"custom_field_clearance_task_seq": (("verification_location", "current_location"),),
@@ -418,6 +433,41 @@ def is_container_update_task(doc) -> bool:
 	return container_step_for_task(doc) in CONTAINER_UPDATE_STEPS or is_shipping_line_deposit_mirror_task(doc)
 
 
+def _mirror_tracker_fields_onto_row(row, tracker: dict) -> bool:
+	"""Put the tracker's current container detail on a read-only mirror row."""
+	changed = False
+	for field in SHIPPING_LINE_MIRROR_FIELDS:
+		value = tracker.get(field)
+		if field == "discharging_date" and not value:
+			value = tracker.get("ata")
+		if value and row.get(field) != value:
+			row.set(field, value)
+			changed = True
+	return changed
+
+
+def _shipping_line_mirror_tasks(project: str) -> list:
+	"""The project's shipping-line tasks. They mirror containers but own no step."""
+	if not project:
+		return []
+	rows = frappe.get_all(
+		"Task",
+		filters={
+			"project": project,
+			"custom_task_flow_key": task_flow_key_in_filter(),
+			"status": ["not in", ("Cancelled",)],
+		},
+		fields=[
+			"name",
+			"custom_task_role",
+			"custom_payment_kind",
+			"custom_task_flow_key",
+			"custom_sequence_no",
+		],
+	)
+	return [row for row in rows if is_shipping_line_deposit_mirror_task(row)]
+
+
 def _prefill_row_from_tracker(
 	row, tracker: dict, seq: int, project: str | None = None, *, shipping_line: bool = False
 ) -> bool:
@@ -440,6 +490,8 @@ def _prefill_row_from_tracker(
 		new_amt = flt(src.get("deposit_amount"))
 		if flt(row.get("deposit_amount")) != new_amt:
 			row.deposit_amount = new_amt
+			changed = True
+		if _mirror_tracker_fields_onto_row(row, tracker):
 			changed = True
 	else:
 		# Blanks only: a filled cell records what was entered against the step.
@@ -664,17 +716,24 @@ def sync_tracker_fields_to_open_task_rows(tracker) -> None:
 
 	sync_seqs = _sync_fields_by_seq()
 
-	tasks = _container_step_task_rows(tracker.project, set(sync_seqs))
+	targets = [
+		(row.name, sync_seqs.get(row.container_seq))
+		for row in _container_step_task_rows(tracker.project, set(sync_seqs))
+	]
+	# Shipping-line tasks own no step, so they never matched the loop above and
+	# their container grid sat blank however often the tracker changed.
+	targets += [
+		(row.name, SHIPPING_LINE_MIRROR_FIELDS)
+		for row in _shipping_line_mirror_tasks(tracker.project)
+	]
+	tasks = [(name, fields) for name, fields in targets if fields]
 	if not tasks:
 		return
 
 	frappe.flags.cgm_syncing_tracker_to_task = True
 	try:
-		for task_row in tasks:
-			fields = sync_seqs.get(task_row.container_seq)
-			if not fields:
-				continue
-			task = frappe.get_doc("Task", task_row.name)
+		for task_name, fields in tasks:
+			task = frappe.get_doc("Task", task_name)
 			if not task.meta.has_field(TASK_CONTAINER_UPDATES_FIELD):
 				continue
 			changed = False

@@ -3470,17 +3470,45 @@ function configure_client_paid_field(frm, ui) {
 	}
 }
 
-// The container grid is shared by every step, so a transport step's Transporter,
-// Truck, Driver and Gate Out columns render on the shipping-line tasks too, where
-// nothing ever fills them: those grids mirror Bill of Lading deposits. Anyone who
-// has saved their own layout for this grid keeps it, as Frappe honours that first.
+// What a shipping-line task shows for each container: the deposit it owns, plus a
+// read-only mirror of the tracker. Read-only matters - the task-to-tracker push is
+// keyed by container step and these tasks have none, so anything typed here would
+// never reach the tracker and would be overwritten by the next sync.
+const SHIPPING_LINE_CONTAINER_COLUMNS = [
+	"container_number",
+	"cargo_size",
+	"current_status",
+	"deposit_amount",
+	"discharging_date",
+	"transporter",
+	"truck_number",
+	"driver_name",
+	"driver_contact",
+	"gate_out_date_port",
+	"actual_empty_return",
+	"interchange_date",
+];
+// Mirrored from the Container Tracker, so not editable here.
+const SHIPPING_LINE_MIRROR_COLUMNS = SHIPPING_LINE_CONTAINER_COLUMNS.slice(4);
+
+// The container grid is shared by every step, so columns belonging to other steps
+// render here too. Anyone who has saved their own layout keeps it, as Frappe
+// honours a saved GridView over in_list_view.
 function restrict_container_grid_columns(grid, keep) {
 	(grid.docfields || []).forEach((df) => {
 		if (df.fieldname && !keep.includes(df.fieldname)) {
 			grid.update_docfield_property(df.fieldname, "in_list_view", 0);
 		}
 	});
-	keep.forEach((fn) => grid.update_docfield_property(fn, "in_list_view", 1));
+	keep.forEach((fn) => {
+		grid.update_docfield_property(fn, "in_list_view", 1);
+		grid.update_docfield_property(fn, "hidden", 0);
+	});
+	SHIPPING_LINE_MIRROR_COLUMNS.forEach((fn) => {
+		if (keep.includes(fn)) {
+			grid.update_docfield_property(fn, "read_only", 1);
+		}
+	});
 }
 
 function configure_shipping_line_deposit_grid(frm) {
@@ -3507,12 +3535,7 @@ function configure_shipping_line_deposit_grid(frm) {
 		grid.update_docfield_property(fn, "in_list_view", 1);
 		grid.update_docfield_property(fn, "read_only", 1);
 	});
-	restrict_container_grid_columns(grid, [
-		"container_number",
-		"cargo_size",
-		"current_status",
-		"deposit_amount",
-	]);
+	restrict_container_grid_columns(grid, SHIPPING_LINE_CONTAINER_COLUMNS);
 	frm._cgm_shipping_line_deposit_grid_ready = true;
 	if (grid.wrapper) {
 		grid.refresh();
@@ -3544,12 +3567,7 @@ function configure_shipping_line_finance_container_grid(frm) {
 		grid.update_docfield_property(fn, "in_list_view", 1);
 		grid.update_docfield_property(fn, "read_only", 1);
 	});
-	restrict_container_grid_columns(grid, [
-		"container_number",
-		"cargo_size",
-		"current_status",
-		"deposit_amount",
-	]);
+	restrict_container_grid_columns(grid, SHIPPING_LINE_CONTAINER_COLUMNS);
 	frm._cgm_shipping_line_finance_container_grid_ready = true;
 	if (grid.wrapper) {
 		grid.refresh();

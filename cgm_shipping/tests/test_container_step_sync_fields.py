@@ -155,10 +155,16 @@ class TestSeedingARow(unittest.TestCase):
         self.assertTrue(self._prefill(row, tracker, SEQ["custom_vessel_arrival_task_seq"]))
         self.assertEqual(row.discharging_date, "2026-09-30")
 
-    def test_the_shipping_line_branch_still_wins_over_the_step_columns(self):
-        """A deposit task takes the Bill of Lading figure."""
+    def test_the_shipping_line_branch_wins_over_the_step_columns(self):
+        """A shipping-line task takes its deposit and the tracker mirror, not a step.
+
+        It used to take the deposit alone, which left Transporter, Truck and Driver
+        blank on a grid that shows them. It now mirrors those too, but still never
+        picks up a step's own columns such as the free-days dates.
+        """
         row = _row(current_status="x")
-        tracker = {"status": "x", "container_number": "ABCD1234567", "truck_number": "KBX 1"}
+        tracker = {"status": "x", "container_number": "ABCD1234567",
+                   "truck_number": "KBX 1", "free_days_start_date": "2026-09-01"}
         with patch.object(
             tcu,
             "_bl_deposit_by_container_number",
@@ -172,7 +178,8 @@ class TestSeedingARow(unittest.TestCase):
                 shipping_line=True,
             )
         self.assertEqual(row.deposit_amount, 500.0)
-        self.assertIsNone(row.get("truck_number"))
+        self.assertEqual(row.truck_number, "KBX 1")
+        self.assertIsNone(row.get("free_days_start_date"))
 
     def test_the_current_status_is_always_refreshed(self):
         row = _row(current_status="old")
@@ -260,3 +267,79 @@ class TestSeedingANewRow(unittest.TestCase):
         self.assertEqual(rows[0].container_number, "ABCD1234567")
         self.assertEqual(rows[0].cargo_size, "40")
         self.assertEqual(rows[0].current_status, "Cargo Offloaded")
+
+
+class TestTheShippingLineMirror(unittest.TestCase):
+    """A shipping-line task shows the containers but records no step of its own.
+
+    Nothing filled its Transporter, Truck, Driver or Gate Out columns, so they read
+    as blanks that never resolved however often the tracker changed. It now mirrors
+    the tracker's current detail, read-only.
+    """
+
+    def _row(self, **values):
+        return _row(current_status=None, **values)
+
+    def _prefill(self, row, tracker):
+        with (
+            patch.object(tcu, "get_container_task_sequence", _seq),
+            patch.object(tcu, "_bl_deposit_by_container_number", return_value={}),
+        ):
+            return tcu._prefill_row_from_tracker(
+                row, tracker, 0, project="PROJ-1", shipping_line=True
+            )
+
+    def test_the_tracker_detail_lands_on_the_row(self):
+        row = self._row()
+        changed = self._prefill(row, {
+            "status": "Released / In Transit",
+            "transporter": "ACME",
+            "truck_number": "KBX 123A",
+            "driver_name": "J. Mwangi",
+            "driver_contact": "0712345678",
+            "gate_out_date_port": "2026-10-01",
+        })
+        self.assertTrue(changed)
+        self.assertEqual(row.truck_number, "KBX 123A")
+        self.assertEqual(row.driver_name, "J. Mwangi")
+        self.assertEqual(row.gate_out_date_port, "2026-10-01")
+
+    def test_it_carries_the_current_truth_not_what_was_entered(self):
+        """Unlike a step grid, this is a view: a stale value is corrected, not kept."""
+        row = self._row(truck_number="KBX OLD")
+        self._prefill(row, {"status": "x", "truck_number": "KBX NEW"})
+        self.assertEqual(row.truck_number, "KBX NEW")
+
+    def test_discharging_falls_back_to_ata(self):
+        row = self._row()
+        self._prefill(row, {"status": "x", "discharging_date": None, "ata": "2026-09-30"})
+        self.assertEqual(row.discharging_date, "2026-09-30")
+
+    def test_the_deposit_still_mirrors_the_bill_of_lading(self):
+        row = self._row()
+        with (
+            patch.object(tcu, "get_container_task_sequence", _seq),
+            patch.object(tcu, "_bl_deposit_by_container_number",
+                         return_value={"ABCD1234567": {"deposit_amount": 500.0}}),
+        ):
+            tcu._prefill_row_from_tracker(
+                row, {"status": "x", "container_number": "ABCD1234567",
+                      "truck_number": "KBX 1"},
+                0, project="PROJ-1", shipping_line=True)
+        self.assertEqual(row.deposit_amount, 500.0)
+        self.assertEqual(row.truck_number, "KBX 1")
+
+    def test_an_edit_here_can_never_reach_the_tracker(self):
+        """These tasks carry no step, so the task-to-tracker push cannot match them.
+
+        That is why the columns are read-only in the grid: a value typed here would
+        be silently dropped and then overwritten by the next sync.
+        """
+        with patch.object(tcu, "get_container_task_sequence", _seq):
+            self.assertEqual(tcu._seq_field_map().get(0, []), [])
+
+    def test_the_mirror_is_not_one_of_the_step_maps(self):
+        """It must not leak into a step's grid, which records its own entries."""
+        with patch.object(tcu, "get_container_task_sequence", _seq):
+            for seq, fields in tcu._sync_fields_by_seq().items():
+                self.assertNotEqual(tuple(fields), tcu.SHIPPING_LINE_MIRROR_FIELDS)
