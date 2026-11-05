@@ -145,8 +145,10 @@ CONTAINER_STATUS_RETURNED_LATE_SETTLED = "Returned Late (Settled)"
 #
 # Green on offloaded cannot mask a late box: _derive_status tests Return Overdue
 # BEFORE Cargo Offloaded, so an overdue container never reads as offloaded at all.
-# Empty Returned stays orange on purpose - the empty is back but the interchange
-# is not in, and that gap is where a shipping line still bills.
+# Empty Returned is green too: the box is back, which is what ops are looking for.
+# The interchange still has to arrive, and the Operations board traffic light says
+# AWAITING INTERCHANGE for exactly that, so the gap is reported there rather than
+# by holding the dot back.
 PHASE_AWAITING = "awaiting"  # not at port yet, or outbound not loaded
 PHASE_AT_PORT = "at_port"
 PHASE_RELEASED = "released"  # out of port, on the road / in transit
@@ -175,7 +177,7 @@ CONTAINER_STATUS_TABLE = (
 	(CONTAINER_STATUS_CARGO_OFFLOADED, PHASE_AT_DESTINATION, "green", "success"),
 	("Offloaded at Destination", PHASE_AT_DESTINATION, "green", "success"),
 	(CONTAINER_STATUS_RETURN_OVERDUE, PHASE_OVERDUE, "red", "danger"),
-	(CONTAINER_STATUS_EMPTY_RETURNED, PHASE_RETURNED, "orange", "active"),
+	(CONTAINER_STATUS_EMPTY_RETURNED, PHASE_RETURNED, "green", "success"),
 	# Back late, demurrage paid: no exposure left, so it must not read as an alarm.
 	(CONTAINER_STATUS_RETURNED_LATE_SETTLED, PHASE_RETURNED, "blue", "info"),
 	(CONTAINER_STATUS_INTERCHANGE, PHASE_COMPLETE, "green", "success"),

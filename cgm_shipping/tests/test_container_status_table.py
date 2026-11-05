@@ -155,10 +155,15 @@ class TestColourRule(unittest.TestCase):
 			with self.subTest(status=status):
 				self.assertEqual(CONTAINER_STATUS_COLOUR[status], "green")
 
-	def test_the_empty_is_still_outstanding_until_the_interchange(self):
-		"""The box is back but the interchange is not in, and a line still bills."""
-		self.assertEqual(CONTAINER_STATUS_COLOUR["Empty Returned"], "orange")
+	def test_the_empty_being_back_is_green_too(self):
+		"""The box is back, which is what ops look for. The interchange is tracked
+		by the Operations board traffic light, which still says AWAITING INTERCHANGE."""
+		self.assertEqual(CONTAINER_STATUS_COLOUR["Empty Returned"], "green")
 		self.assertEqual(CONTAINER_STATUS_COLOUR["Interchange Received"], "green")
+
+	def test_back_late_but_settled_stays_its_own_colour(self):
+		"""Distinct on purpose: it was late, and the demurrage was paid for it."""
+		self.assertEqual(CONTAINER_STATUS_COLOUR["Returned Late (Settled)"], "blue")
 
 	def test_a_late_box_is_red_and_never_reads_as_offloaded(self):
 		"""Green cannot hide a late container: the deriver tests overdue first."""
@@ -203,4 +208,4 @@ class TestBootPayload(unittest.TestCase):
 		self.assertEqual(boot["order"], [row[0] for row in CONTAINER_STATUS_TABLE])
 		self.assertTrue(boot["statuses"]["Released from Port"]["return_open"])
 		self.assertTrue(boot["statuses"]["Empty Returned"]["closed"])
-		self.assertEqual(boot["statuses"]["Empty Returned"]["colour"], "orange")
+		self.assertEqual(boot["statuses"]["Empty Returned"]["colour"], "green")

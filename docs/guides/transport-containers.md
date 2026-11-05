@@ -306,9 +306,9 @@ shipment's boxes can be skimmed for the one that needs attention:
 | --- | --- |
 | Grey | Not at port yet |
 | Yellow | At port: berthed, discharged or KRA released |
-| Orange | On the road, or the empty back but no interchange yet |
+| Orange | On the road |
 | Blue | At the warehouse, or back late with the demurrage settled |
-| **Green** | **Cargo offloaded**, or the interchange confirmed |
+| **Green** | **Cargo offloaded, the empty back, or the interchange confirmed** |
 | **Red** | **Return overdue.** A live demurrage alarm |
 
 Green on offloaded cannot hide a late box: the status is worked out in order and

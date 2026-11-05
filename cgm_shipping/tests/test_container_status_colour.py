@@ -86,8 +86,8 @@ class TestOpsBoardPills(unittest.TestCase):
 			with self.subTest(status=status):
 				self.assertEqual(_STATUS_PILL[status], "success")
 
-	def test_the_empty_is_still_outstanding_until_the_interchange(self):
-		self.assertEqual(_STATUS_PILL["Empty Returned"], "active")
+	def test_the_empty_being_back_is_green_too(self):
+		self.assertEqual(_STATUS_PILL["Empty Returned"], "success")
 
 	def test_interchange_is_green(self):
 		self.assertEqual(_STATUS_PILL["Interchange Received"], "success")
