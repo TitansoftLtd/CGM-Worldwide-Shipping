@@ -888,20 +888,24 @@ function container_has_active_charges(c) {
 
 function container_status_dot(status, alert_status) {
 	const alert = alert_status || "";
+	// A red alarm still wins. Demurrage is accruing and must never read as calm.
 	if (alert.includes("🔴") || alert.includes("🚨") || status === "Return Overdue") {
 		return "🔴";
 	}
-	if (alert.includes("⚠️")) {
-		return "🟡";
-	}
-	return {
-		green: "🟢",
-		orange: "🟠",
-		yellow: "🟡",
-		blue: "🔵",
-		red: "🔴",
-	}[container_status_badge_class(status)];
-	return "⚪";
+	// A soft "return due in N days" no longer repaints the dot. It is printed on
+	// the card just below, and painting the dot yellow hid the status underneath:
+	// a container whose cargo was off read the same as one nobody had touched.
+	// Nothing is lost by letting the status through - once a box is genuinely
+	// late its status becomes Return Overdue, which is red above.
+	return (
+		{
+			green: "🟢",
+			orange: "🟠",
+			yellow: "🟡",
+			blue: "🔵",
+			red: "🔴",
+		}[container_status_badge_class(status)] || "⚪"
+	);
 }
 
 function container_card_escape(value) {

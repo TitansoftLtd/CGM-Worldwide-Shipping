@@ -80,10 +80,14 @@ class TestContainerStatusProgression(unittest.TestCase):
 class TestOpsBoardPills(unittest.TestCase):
 	"""Ops board tones: 'active' is orange, 'success' is green."""
 
-	def test_offloaded_statuses_are_orange(self):
-		for status in ("Cargo Offloaded", "Offloaded at Destination", "Empty Returned"):
+	def test_offloaded_statuses_are_green(self):
+		"""The pill follows the dot: cargo off the box is the delivery done."""
+		for status in ("Cargo Offloaded", "Offloaded at Destination"):
 			with self.subTest(status=status):
-				self.assertEqual(_STATUS_PILL[status], "active")
+				self.assertEqual(_STATUS_PILL[status], "success")
+
+	def test_the_empty_is_still_outstanding_until_the_interchange(self):
+		self.assertEqual(_STATUS_PILL["Empty Returned"], "active")
 
 	def test_interchange_is_green(self):
 		self.assertEqual(_STATUS_PILL["Interchange Received"], "success")
