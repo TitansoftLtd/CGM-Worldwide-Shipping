@@ -349,6 +349,8 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.leave_application.validate_required_attachment",
 			# Before any workflow action, so the routing condition reads a current flag.
 			"cgm_shipping.cgm_worldwide_shipping.customizations.leave_hr_approval.set_applicant_is_hr",
+			# Likewise: the watch notifications address the field this stamps.
+			"cgm_shipping.cgm_worldwide_shipping.customizations.leave_watch_notification.set_leave_watcher_emails",
 		],
 		"on_change": "cgm_shipping.cgm_worldwide_shipping.customizations.workflow_sms.notify_leave_approved_sms",
 	},

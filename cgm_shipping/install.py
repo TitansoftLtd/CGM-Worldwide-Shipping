@@ -62,6 +62,9 @@ def after_migrate() -> None:
 	from cgm_shipping.cgm_worldwide_shipping.customizations.leave_hr_approval import (
 		ensure_leave_hr_route,
 	)
+	from cgm_shipping.cgm_worldwide_shipping.customizations.leave_watch_notification import (
+		ensure_leave_watch_notifications,
+	)
 	from cgm_shipping.cgm_worldwide_shipping.customizations.per_diem import (
 		ensure_per_diem_setup,
 	)
@@ -115,6 +118,7 @@ def after_migrate() -> None:
 		("hrms custom fields", ensure_hrms_custom_fields),
 		("sidebar entries", ensure_cgm_sidebar_entries),
 		("leave HR approval route", ensure_leave_hr_route),
+		("leave watch notifications", ensure_leave_watch_notifications),
 		("job group structure & per diems", ensure_per_diem_setup),
 		("document trail doctypes", ensure_document_trail_setup),
 		("container step requirements", ensure_container_step_requirements),
