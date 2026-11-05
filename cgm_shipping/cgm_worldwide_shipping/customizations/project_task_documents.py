@@ -18,33 +18,73 @@ import frappe
 from frappe import _
 
 
-def _readable_project_tasks(project: str) -> list:
-	"""The project's tasks this user may read. get_list applies Task permissions."""
-	return frappe.get_list(
+# Tasks whose attachments are payment evidence: the POP, the bank receipt, the
+# proof Finance files. Everything else on a shipment - permits, certificates, the
+# entry, the IDF, the supplier invoices - is the pack the job is run from.
+FINANCE_TASK_ROLES = ("Finance Payment", "Permit Finance")
+
+
+def _project_tasks(project: str) -> list:
+	"""Every task on the shipment. Visibility is decided below, per task role."""
+	return frappe.get_all(
 		"Task",
 		filters={"project": project},
 		fields=["name", "subject", "custom_task_role"],
-		limit_page_length=0,
-		ignore_permissions=False,
 	)
+
+
+def _readable_task_names(project: str) -> set:
+	"""The project's tasks this user may open. get_list applies Task permissions."""
+	if not frappe.has_permission("Task"):
+		return set()
+	return {
+		t.name
+		for t in frappe.get_list(
+			"Task",
+			filters={"project": project},
+			fields=["name"],
+			limit_page_length=0,
+			ignore_permissions=False,
+		)
+	}
+
+
+def _visible_project_tasks(project: str) -> list:
+	"""Tasks whose attachments this user may see on the shipment.
+
+	Task row visibility is scoped by department, and inheriting that here was wrong
+	for this panel: every permit, IDF and entry on a shipment sits on a Declaration
+	task, so a field officer - the person who carries those papers - saw an empty
+	list and was told the documents did not exist.
+
+	The shipment's pack is for whoever works the shipment. Finance's payment
+	evidence is not: those stay behind the task permission, so a POP still only
+	reaches someone who can open the task that holds it.
+	"""
+	tasks = _project_tasks(project)
+	if not tasks:
+		return []
+	readable = _readable_task_names(project)
+	return [
+		t
+		for t in tasks
+		if (t.get("custom_task_role") or "") not in FINANCE_TASK_ROLES
+		or t.name in readable
+	]
 
 
 @frappe.whitelist()
 def get_project_task_documents(project: str) -> dict:
-	"""Files attached to the project's tasks the user may read, newest first.
+	"""Files attached to the shipment's tasks, newest first.
 
-	Both the shipment and each task are checked. Reading the shipment is not enough:
-	Task visibility is narrowed by department and assignment, and listing with get_all
-	ignored that, so an operations user was handed finance's payment proofs.
+	Permission is checked on the shipment, then per task: see _visible_project_tasks.
 	"""
 	if not project:
 		return {"rows": [], "total": 0}
 
 	frappe.has_permission("Project", doc=project, throw=True)
-	if not frappe.has_permission("Task"):
-		return {"rows": [], "total": 0}
 
-	tasks = _readable_project_tasks(project)
+	tasks = _visible_project_tasks(project)
 	if not tasks:
 		return {"rows": [], "total": 0}
 
@@ -76,10 +116,10 @@ def get_project_task_documents(project: str) -> dict:
 
 
 def task_document_count(project: str) -> int:
-	"""How many of the shipment's task attachments the user may read."""
-	if not project or not frappe.has_permission("Task"):
+	"""How many of the shipment's task attachments the user may see."""
+	if not project:
 		return 0
-	tasks = [t.name for t in _readable_project_tasks(project)]
+	tasks = [t.name for t in _visible_project_tasks(project)]
 	if not tasks:
 		return 0
 	return frappe.db.count(

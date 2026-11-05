@@ -306,11 +306,15 @@ shipment's boxes can be skimmed for the one that needs attention:
 | --- | --- |
 | Grey | Not at port yet |
 | Yellow | At port: berthed, discharged or KRA released |
-| Orange | On the road, or offloaded and not yet back |
-| Blue | At the warehouse or destination |
+| Orange | On the road |
+| Blue | At the warehouse, or back late with the demurrage settled |
+| **Green** | **Cargo offloaded, the empty back, or the interchange confirmed** |
 | **Red** | **Return overdue.** A live demurrage alarm |
-| Blue | Back late with the demurrage settled, or at the warehouse |
-| Green | Interchange confirmed, the box is closed out |
+
+Green on offloaded cannot hide a late box: the status is worked out in order and
+**Return Overdue is decided before Cargo Offloaded**, so an overdue container never
+reads as offloaded at all. The "return due in N days" warning still shows as its own
+line on the card.
 
 Clicking a pill filters the list to that status.
 

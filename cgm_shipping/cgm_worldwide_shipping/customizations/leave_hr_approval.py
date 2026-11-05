@@ -251,22 +251,36 @@ def _add_hr_shortcut(workflow) -> bool:
 			"next_state": APPROVED_STATE,
 			"allowed": allowed,
 			"condition": IS_HR,
-			# The line manager is not the applicant here, so this is not self-approval.
-			"allow_self_approval": 1,
+			# Not self-approval: the line manager approves, not the applicant. The
+			# flag stays off because HR hold the approver role themselves - they
+			# approve everyone else's leave - so with it on, an HR applicant could
+			# action this route on their own application and skip the line manager
+			# entirely (HR-LAP-2026-00074 went straight to Approved that way).
+			"allow_self_approval": 0,
 		},
 	)
 	return True
 
 
-def _block_hr_self_approval(workflow) -> bool:
-	"""Stop the HR step approving an application its own owner raised.
+#: Approve routes nobody may run on their own application: the HR step, and the
+#: shortcut this module adds. Both are reachable by somebody who also holds the
+#: approver role, which is exactly the person whose leave it is.
+NO_SELF_APPROVAL_ROUTES = ((HR_STATE, None), (LINE_MANAGER_STATE, APPROVED_STATE))
 
-	Belt and braces behind the routing: an application that reached the HR step some
-	other way still cannot be approved by the person who raised it.
+
+def _block_hr_self_approval(workflow) -> bool:
+	"""Stop an Approve route being run by the person who raised the application.
+
+	Belt and braces behind the routing, and the repair for workflows already carrying
+	the shortcut with self-approval left on.
 	"""
 	changed = False
 	for row in workflow.transitions:
-		if row.state == HR_STATE and row.action == APPROVE_ACTION and row.allow_self_approval:
-			row.allow_self_approval = 0
-			changed = True
+		if row.action != APPROVE_ACTION or not row.allow_self_approval:
+			continue
+		for state, next_state in NO_SELF_APPROVAL_ROUTES:
+			if row.state == state and (next_state is None or row.next_state == next_state):
+				row.allow_self_approval = 0
+				changed = True
+				break
 	return changed

@@ -15,12 +15,28 @@ import frappe
 from cgm_shipping.cgm_worldwide_shipping.customizations import project_task_documents as ptd
 
 
-def _run(tasks, files):
-    """Tasks come from get_list, which applies Task permissions; files from get_all."""
+def _run(tasks, files, readable=None):
+    """All the shipment's tasks come from get_all; the readable ones from get_list.
+
+    `readable` is the set of task names this user could open. Anything outside it is
+    visible only when the task is not Finance's.
+    """
+    names = [t["name"] for t in tasks] if readable is None else list(readable)
+
+    def get_all(doctype, **kw):
+        if doctype == "Task":
+            return [frappe._dict(t) for t in tasks]
+        # Honour the filter the way the database would, or a hidden task's file
+        # would come back and the test would pass on a stub, not on the code.
+        wanted = set((kw.get("filters") or {}).get("attached_to_name", ["in", []])[1])
+        return [frappe._dict(f) for f in files if f["attached_to_name"] in wanted]
+
     with (
         patch.object(frappe, "has_permission", return_value=True),
-        patch.object(frappe, "get_list", return_value=[frappe._dict(t) for t in tasks]),
-        patch.object(frappe, "get_all", return_value=[frappe._dict(f) for f in files]),
+        patch.object(frappe, "get_all", side_effect=get_all),
+        patch.object(
+            frappe, "get_list", return_value=[frappe._dict(name=n) for n in names]
+        ),
     ):
         return ptd.get_project_task_documents("PROJ-0001")
 
@@ -51,9 +67,24 @@ class TestProjectTaskDocuments(unittest.TestCase):
         self.assertEqual(rows["entry.pdf"]["uploaded_by"], "declarant@x")
 
     def test_a_file_whose_task_vanished_still_lists(self):
-        # Defensive: the file is real even if the task lookup misses it.
-        orphan = [dict(FILES[0], attached_to_name="TASK-GONE")]
-        rows = _run(TASKS, orphan)["rows"]
+        """A task deleted between the two queries must not drop its file silently.
+
+        Stubbed without the filter on purpose: the point is the lookup missing, which
+        the filter would otherwise make unreachable.
+        """
+        orphan = frappe._dict(FILES[0], attached_to_name="TASK-GONE")
+
+        def get_all(doctype, **kw):
+            if doctype == "Task":
+                return [frappe._dict(t) for t in TASKS]
+            return [orphan]
+
+        with (
+            patch.object(frappe, "has_permission", return_value=True),
+            patch.object(frappe, "get_all", side_effect=get_all),
+            patch.object(frappe, "get_list", return_value=[]),
+        ):
+            rows = ptd.get_project_task_documents("PROJ-0001")["rows"]
         self.assertEqual(rows[0]["task"], "TASK-GONE")
         self.assertEqual(rows[0]["task_subject"], "")
 
@@ -75,63 +106,64 @@ class TestProjectTaskDocuments(unittest.TestCase):
         self.assertEqual(perm.call_args[0][0], "Project")
 
 
-class TestItOnlyShowsFilesFromTasksTheUserMayRead(unittest.TestCase):
-    """Reading the shipment used to hand over every task's files.
+class TestWhoSeesTheShipmentPack(unittest.TestCase):
+    """The pack is for whoever works the shipment; Finance's evidence is not.
 
-    Task visibility is narrowed by department and assignment, but the task list was
-    built with get_all, which ignores permissions. On real data one operations user
-    could read 7 of a shipment's 23 tasks and was still shown all 56 files, finance
-    payment proofs included.
+    Scoping this by Task department was wrong for this panel. Every permit, IDF and
+    entry on a shipment sits on a Declaration task, so a field officer - the person
+    who carries those papers to the port - opened the shipment and was told no files
+    were attached. On PROJ-0034 all 12 files sat on Declaration tasks.
+
+    Finance's payment evidence stays behind the task permission: a POP still only
+    reaches somebody who can open the task holding it.
     """
 
-    def test_files_on_unreadable_tasks_are_left_out(self):
-        readable = [TASKS[0]]
-        with (
-            patch.object(frappe, "has_permission", return_value=True),
-            patch.object(frappe, "get_list", return_value=[frappe._dict(t) for t in readable]),
-            patch.object(frappe, "get_all", return_value=[frappe._dict(FILES[0])]),
-        ) :
-            result = ptd.get_project_task_documents("PROJ-0001")
-        self.assertEqual([r["task"] for r in result["rows"]], ["TASK-1"])
+    def test_a_declaration_document_reaches_someone_who_cannot_open_that_task(self):
+        """This is the field officer case."""
+        rows = _run(TASKS, FILES, readable=[])["rows"]
+        self.assertIn("entry.pdf", [r["file_name"] for r in rows])
 
-    def test_the_file_query_is_limited_to_readable_tasks(self):
-        """The unreadable task must not even reach the File filter."""
+    def test_finance_evidence_stays_with_finance(self):
+        rows = _run(TASKS, FILES, readable=[])["rows"]
+        self.assertNotIn("receipt.pdf", [r["file_name"] for r in rows])
+
+    def test_finance_still_sees_its_own(self):
+        rows = _run(TASKS, FILES, readable=["TASK-1", "TASK-2"])["rows"]
+        self.assertEqual(
+            sorted(r["file_name"] for r in rows), ["entry.pdf", "receipt.pdf"]
+        )
+
+    def test_a_permit_finance_task_is_treated_as_finance_too(self):
+        tasks = [
+            {
+                "name": "TASK-9",
+                "subject": "Finance pays permits",
+                "custom_task_role": "Permit Finance",
+            }
+        ]
+        files = [dict(FILES[0], attached_to_name="TASK-9")]
+        self.assertEqual(_run(tasks, files, readable=[])["total"], 0)
+
+    def test_the_file_query_never_asks_for_a_hidden_task(self):
         with (
             patch.object(frappe, "has_permission", return_value=True),
-            patch.object(frappe, "get_list", return_value=[frappe._dict(TASKS[0])]),
-            patch.object(frappe, "get_all", return_value=[]) as get_all,
+            patch.object(frappe, "get_list", return_value=[]),
+            patch.object(
+                frappe, "get_all", side_effect=[[frappe._dict(t) for t in TASKS], []]
+            ) as get_all,
         ):
             ptd.get_project_task_documents("PROJ-0001")
-        asked_for = get_all.call_args.kwargs["filters"]["attached_to_name"][1]
-        self.assertEqual(asked_for, ["TASK-1"])
-
-    def test_the_task_list_is_not_built_with_get_all(self):
-        """get_all ignores permissions, so it must not be what lists the tasks."""
-        with (
-            patch.object(frappe, "has_permission", return_value=True),
-            patch.object(frappe, "get_list", return_value=[]) as get_list,
-            patch.object(frappe, "get_all", return_value=[]),
-        ):
-            ptd.get_project_task_documents("PROJ-0001")
-        self.assertEqual(get_list.call_args[0][0], "Task")
-        self.assertIs(get_list.call_args.kwargs["ignore_permissions"], False)
-
-    def test_without_task_read_nothing_is_returned(self):
-        """Readable shipment, no Task permission at all: empty, not every file."""
-        def perm(doctype, *a, **kw):
-            return doctype != "Task"
-
-        with patch.object(frappe, "has_permission", side_effect=perm):
-            self.assertEqual(
-                ptd.get_project_task_documents("PROJ-0001"), {"rows": [], "total": 0}
-            )
+        asked = get_all.call_args.kwargs["filters"]["attached_to_name"][1]
+        self.assertEqual(asked, ["TASK-2"])
 
     def test_the_count_matches_what_the_panel_lists(self):
-        """A badge counting more than the list shows would advertise hidden files."""
         with (
             patch.object(frappe, "has_permission", return_value=True),
-            patch.object(frappe, "get_list", return_value=[frappe._dict(TASKS[0])]),
+            patch.object(
+                frappe, "get_all", return_value=[frappe._dict(t) for t in TASKS]
+            ),
+            patch.object(frappe, "get_list", return_value=[]),
             patch.object(frappe.db, "count", return_value=1) as count,
         ):
             self.assertEqual(ptd.task_document_count("PROJ-0001"), 1)
-        self.assertEqual(count.call_args[0][1]["attached_to_name"][1], ["TASK-1"])
+        self.assertEqual(count.call_args[0][1]["attached_to_name"][1], ["TASK-2"])

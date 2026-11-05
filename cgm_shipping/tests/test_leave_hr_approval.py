@@ -131,6 +131,47 @@ class TestTeachingTheWorkflow(unittest.TestCase):
 		self.assertEqual(added[0].allowed, "Leave Approver")
 		self.assertFalse(lhr._add_hr_shortcut(wf))
 
+	def test_the_shortcut_cannot_be_run_by_the_applicant(self):
+		"""HR-LAP-2026-00074: an HR applicant approved her own leave outright.
+
+		HR hold the Leave Approver role themselves, because they approve everyone
+		else's leave. With self-approval left on, this route let the applicant skip
+		the line manager entirely and land on Approved, submitted.
+		"""
+		wf = _workflow()
+		lhr._add_hr_shortcut(wf)
+		shortcut = [t for t in wf.transitions if t.next_state == "Approved"][0]
+		self.assertEqual(shortcut.allow_self_approval, 0)
+
+	def test_a_shortcut_already_carrying_self_approval_is_repaired(self):
+		"""Workflows built before the fix keep the open route until migrate runs."""
+		wf = _workflow()
+		lhr._add_hr_shortcut(wf)
+		shortcut = [t for t in wf.transitions if t.next_state == "Approved"][0]
+		shortcut.allow_self_approval = 1
+		self.assertTrue(lhr._block_hr_self_approval(wf))
+		self.assertEqual(shortcut.allow_self_approval, 0)
+		self.assertFalse(lhr._block_hr_self_approval(wf))
+
+	def test_the_line_manager_can_still_approve(self):
+		"""Only the applicant is blocked; the approver is not the owner."""
+		wf = _workflow()
+		lhr._add_hr_shortcut(wf)
+		shortcut = [t for t in wf.transitions if t.next_state == "Approved"][0]
+		self.assertEqual(shortcut.allowed, "Leave Approver")
+		self.assertEqual(shortcut.condition, "doc.custom_applicant_is_hr")
+
+	def test_reject_routes_keep_their_self_approval_flag(self):
+		"""Only Approve is locked down. Withdrawing your own request is not abuse."""
+		wf = _workflow()
+		for row in wf.transitions:
+			if row.action == "Reject":
+				row.allow_self_approval = 1
+		lhr._block_hr_self_approval(wf)
+		for row in wf.transitions:
+			if row.action == "Reject":
+				self.assertEqual(row.allow_self_approval, 1)
+
 	def test_the_hr_step_can_no_longer_self_approve(self):
 		wf = _workflow()
 		self.assertTrue(lhr._block_hr_self_approval(wf))

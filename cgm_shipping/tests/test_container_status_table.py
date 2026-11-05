@@ -145,12 +145,46 @@ class TestTransitNowTracked(unittest.TestCase):
 
 
 class TestColourRule(unittest.TestCase):
-	def test_offloaded_is_orange_until_interchange(self):
-		for status in ("Cargo Offloaded", "Offloaded at Destination", "Empty Returned"):
+	def test_offloaded_is_green(self):
+		"""Cargo off the box is the delivery done, and ops read the dot for that.
+
+		It was orange until the interchange came in, which meant a delivered
+		container looked the same as one still on the road.
+		"""
+		for status in ("Cargo Offloaded", "Offloaded at Destination"):
 			with self.subTest(status=status):
-				self.assertEqual(CONTAINER_STATUS_COLOUR[status], "orange")
+				self.assertEqual(CONTAINER_STATUS_COLOUR[status], "green")
+
+	def test_the_empty_being_back_is_green_too(self):
+		"""The box is back, which is what ops look for. The interchange is tracked
+		by the Operations board traffic light, which still says AWAITING INTERCHANGE."""
+		self.assertEqual(CONTAINER_STATUS_COLOUR["Empty Returned"], "green")
 		self.assertEqual(CONTAINER_STATUS_COLOUR["Interchange Received"], "green")
+
+	def test_back_late_but_settled_stays_its_own_colour(self):
+		"""Distinct on purpose: it was late, and the demurrage was paid for it."""
+		self.assertEqual(CONTAINER_STATUS_COLOUR["Returned Late (Settled)"], "blue")
+
+	def test_a_late_box_is_red_and_never_reads_as_offloaded(self):
+		"""Green cannot hide a late container: the deriver tests overdue first."""
 		self.assertEqual(CONTAINER_STATUS_COLOUR["Return Overdue"], "red")
+		from cgm_shipping.cgm_worldwide_shipping.customizations.container_tracker import (
+			_derive_status,
+		)
+		from datetime import date
+
+		late = _derive_status(
+			interchange=None,
+			actual_return=None,
+			expected_return=date(2026, 10, 1),
+			offloading=date(2026, 9, 20),
+			gate_in_wh=None,
+			gate_out=date(2026, 9, 10),
+			discharging=date(2026, 9, 1),
+			ata=None,
+			ref_date=date(2026, 11, 5),
+		)
+		self.assertEqual(late, "Return Overdue")
 
 
 class TestTrafficLight(unittest.TestCase):
@@ -174,4 +208,4 @@ class TestBootPayload(unittest.TestCase):
 		self.assertEqual(boot["order"], [row[0] for row in CONTAINER_STATUS_TABLE])
 		self.assertTrue(boot["statuses"]["Released from Port"]["return_open"])
 		self.assertTrue(boot["statuses"]["Empty Returned"]["closed"])
-		self.assertEqual(boot["statuses"]["Empty Returned"]["colour"], "orange")
+		self.assertEqual(boot["statuses"]["Empty Returned"]["colour"], "green")

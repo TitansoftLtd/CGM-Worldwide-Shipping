@@ -139,9 +139,16 @@ CONTAINER_STATUS_RETURNED_LATE_SETTLED = "Returned Late (Settled)"
 #   colour  Desk indicator colour (tracker form, report, Project tab)
 #   pill    Ops Board pill tone
 #
-# Colour rule: unchanged before offloading, orange once the offloading date is
-# recorded, green only when the interchange is confirmed. Return Overdue stays
-# red - it is a live demurrage alarm and must not blend in.
+# Colour rule: unchanged while the box is still moving, green once the cargo is
+# off it - that is the delivery done, and it is what ops look for. Return Overdue
+# stays red; it is a live demurrage alarm and must not blend in.
+#
+# Green on offloaded cannot mask a late box: _derive_status tests Return Overdue
+# BEFORE Cargo Offloaded, so an overdue container never reads as offloaded at all.
+# Empty Returned is green too: the box is back, which is what ops are looking for.
+# The interchange still has to arrive, and the Operations board traffic light says
+# AWAITING INTERCHANGE for exactly that, so the gap is reported there rather than
+# by holding the dot back.
 PHASE_AWAITING = "awaiting"  # not at port yet, or outbound not loaded
 PHASE_AT_PORT = "at_port"
 PHASE_RELEASED = "released"  # out of port, on the road / in transit
@@ -167,10 +174,10 @@ CONTAINER_STATUS_TABLE = (
 	("Border Cleared", PHASE_RELEASED, "orange", "primary"),
 	(CONTAINER_STATUS_AT_WAREHOUSE, PHASE_AT_DESTINATION, "blue", "primary"),
 	("Arrived at Destination", PHASE_AT_DESTINATION, "blue", "primary"),
-	(CONTAINER_STATUS_CARGO_OFFLOADED, PHASE_AT_DESTINATION, "orange", "active"),
-	("Offloaded at Destination", PHASE_AT_DESTINATION, "orange", "active"),
+	(CONTAINER_STATUS_CARGO_OFFLOADED, PHASE_AT_DESTINATION, "green", "success"),
+	("Offloaded at Destination", PHASE_AT_DESTINATION, "green", "success"),
 	(CONTAINER_STATUS_RETURN_OVERDUE, PHASE_OVERDUE, "red", "danger"),
-	(CONTAINER_STATUS_EMPTY_RETURNED, PHASE_RETURNED, "orange", "active"),
+	(CONTAINER_STATUS_EMPTY_RETURNED, PHASE_RETURNED, "green", "success"),
 	# Back late, demurrage paid: no exposure left, so it must not read as an alarm.
 	(CONTAINER_STATUS_RETURNED_LATE_SETTLED, PHASE_RETURNED, "blue", "info"),
 	(CONTAINER_STATUS_INTERCHANGE, PHASE_COMPLETE, "green", "success"),
