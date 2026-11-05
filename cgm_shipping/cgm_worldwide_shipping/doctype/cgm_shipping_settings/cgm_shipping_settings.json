@@ -56,6 +56,8 @@
   "material_request_all_roles",
   "section_hr_roles",
   "custom_hr_roles",
+  "section_leave_watchers",
+  "custom_leave_watchers",
   "section_document_responsibilities",
   "custom_document_responsibilities",
   "section_email_templates",
@@ -568,13 +570,25 @@
    "fieldtype": "Table",
    "label": "Container step requirements",
    "options": "CGM Container Step Requirement"
+  },
+  {
+   "fieldname": "section_leave_watchers",
+   "fieldtype": "Section Break",
+   "label": "Leave Watchers"
+  },
+  {
+   "fieldname": "custom_leave_watchers",
+   "fieldtype": "Table MultiSelect",
+   "label": "Leave Watchers",
+   "options": "CGM Leave Watcher",
+   "description": "Told when anyone applies for leave and when the line manager approves. Remove someone to stop their notices. Nobody is told about their own leave."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-01 16:00:00",
+ "modified": "2026-11-05 14:30:00.000000",
  "modified_by": "Administrator",
  "module": "CGM Worldwide Shipping",
  "name": "CGM Shipping Settings",
