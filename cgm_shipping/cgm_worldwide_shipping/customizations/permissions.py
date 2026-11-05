@@ -831,6 +831,34 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	return f"({unrestricted} OR {restricted_visible})"
 
 
+#: Payment evidence: the POP, the bank receipt, the proof Finance files. Everything
+#: else a shipment carries is the pack the job is run from.
+FINANCE_TASK_ROLES = ("Finance Payment", "Permit Finance")
+
+
+def task_paperwork_readable(doc, user: str | None = None) -> bool:
+	"""May this user read this task because they work the shipment it belongs to?
+
+	Every permit, IDF and entry on a shipment sits on a Declaration task. Scoping
+	those by department told a field officer - the person who carries them to the
+	port - that the documents did not exist, and Frappe then refused the download
+	of any private one because it checks the parent task. Reading the paperwork of
+	a shipment you already work is not a department matter.
+
+	Deliberately narrow: read only, never Finance's payment evidence, and the Task
+	list stays scoped by get_permission_query_conditions. This opens one document
+	to someone who can already open its shipment; it does not widen the list.
+	"""
+	if not hasattr(doc, "get"):
+		return False
+	if (doc.get("custom_task_role") or "").strip() in FINANCE_TASK_ROLES:
+		return False
+	project = doc.get("project")
+	if not project:
+		return False
+	return bool(frappe.has_permission("Project", doc=project, user=user))
+
+
 def has_permission(doc, ptype=None, user=None, **kwargs):
 	"""Deny access to clearance tasks outside the user's departments."""
 	user = user or frappe.session.user
@@ -839,6 +867,8 @@ def has_permission(doc, ptype=None, user=None, **kwargs):
 	if not is_clearance_department_restricted_task(doc):
 		return True
 	if user_can_access_sea_task(doc, user):
+		return True
+	if ptype in (None, "read", "select") and task_paperwork_readable(doc, user):
 		return True
 	return False
 
