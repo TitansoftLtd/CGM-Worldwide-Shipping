@@ -254,6 +254,13 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	# Nothing the system sends reaches a login that has been disabled. Skipped for a
+	# human-composed Communication, which must go where the sender addressed it.
+	"Email Queue": {
+		"before_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.notification_recipients.drop_disabled_from_email_queue"
+		],
+	},
 	"Salary Component": {
 		"validate": [
 			"cgm_shipping.cgm_worldwide_shipping.overrides.salary_component.validate_net_pay_only_component"

@@ -66,6 +66,18 @@ class TestResolution(unittest.TestCase):
 		self.assertIsNone(self._resolve("Field Operations Officers", [None, ""]))
 
 
+def _todo_filters(get_all):
+	"""Filters of the ToDo lookup.
+
+	Named rather than taken from the last call: resolving assignees now also reads
+	the disabled users, so `call_args` is no longer the query under test.
+	"""
+	for c in get_all.call_args_list:
+		if c.args and c.args[0] == "ToDo":
+			return c.kwargs["filters"]
+	raise AssertionError("no ToDo lookup was made")
+
+
 class TestWhereItLooks(unittest.TestCase):
 	"""Task rules read the task; Declarant rules read the shipment it belongs to."""
 
@@ -73,7 +85,7 @@ class TestWhereItLooks(unittest.TestCase):
 		doc = frappe._dict(doctype="Task", name="TASK-1", project="PROJ-1")
 		with patch.object(frappe, "get_all", return_value=["a@x.com"]) as get_all:
 			NR.assigned_users(doc, "Task")
-		filters = get_all.call_args.kwargs["filters"]
+		filters = _todo_filters(get_all)
 		self.assertEqual(filters["reference_type"], "Task")
 		self.assertEqual(filters["reference_name"], "TASK-1")
 		self.assertEqual(filters["status"], "Open")
@@ -82,7 +94,7 @@ class TestWhereItLooks(unittest.TestCase):
 		doc = frappe._dict(doctype="Task", name="TASK-1", project="PROJ-1")
 		with patch.object(frappe, "get_all", return_value=["a@x.com"]) as get_all:
 			NR.assigned_users(doc, "Project")
-		filters = get_all.call_args.kwargs["filters"]
+		filters = _todo_filters(get_all)
 		self.assertEqual(filters["reference_type"], "Project")
 		self.assertEqual(filters["reference_name"], "PROJ-1")
 
@@ -92,7 +104,7 @@ class TestWhereItLooks(unittest.TestCase):
 		doc = frappe._dict(doctype="Task", name="TASK-1")
 		with patch.object(frappe, "get_all", return_value=[]) as get_all:
 			NR.assigned_users(doc, "Task")
-		self.assertEqual(get_all.call_args.kwargs["filters"]["status"], "Open")
+		self.assertEqual(_todo_filters(get_all)["status"], "Open")
 
 	def test_a_task_with_no_shipment_resolves_to_nobody(self):
 		doc = frappe._dict(doctype="Task", name="TASK-1")
@@ -102,7 +114,7 @@ class TestWhereItLooks(unittest.TestCase):
 		doc = frappe._dict(doctype="Project", name="PROJ-1")
 		with patch.object(frappe, "get_all", return_value=[]) as get_all:
 			NR.assigned_users(doc, "Project")
-		self.assertEqual(get_all.call_args.kwargs["filters"]["reference_name"], "PROJ-1")
+		self.assertEqual(_todo_filters(get_all)["reference_name"], "PROJ-1")
 
 
 class TestAgainstTheRealNotification(unittest.TestCase):

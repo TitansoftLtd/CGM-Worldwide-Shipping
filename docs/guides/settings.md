@@ -290,6 +290,50 @@ them - see [Operations](operations.md#assignments-and-when-they-close) - so a
 finished job stops notifying whoever finished it and falls back to the role.
 :::
 
+### Nobody who has left is ever notified
+
+**Disabling a login is all that is needed.** From that moment the person is dropped
+from every notification, on email, SMS and the in-app bell, whichever way the
+notification happens to be addressed - a role, a field on the document, a cc, or the
+assignee. There is no list to tidy up and no notification to go and edit.
+
+This is not only Frappe's own behaviour. Frappe drops a disabled user from a role
+recipient, but not from a field on the document, a cc, or the assignee list, and the
+routing above resolves a role to its assignees itself. So CGM filters every recipient
+list in one place instead.
+
+The order matters, and it is deliberate: a departed assignee is dropped when the
+assignee is **chosen**, not when the message is sent. So a routed role whose only
+assignee has left falls back to the live holders of that role and the work still gets
+told. Dropping them at the end would have sent it nowhere.
+
+For texts the number is matched on its last nine digits, so `0712345678`,
+`+254712345678` and `254712345678` are recognised as one person, and it is taken from
+**both** their User and their Employee record. Those two disagree in practice: every
+departed employee's Employee cell number differs from the User mobile, and for one of
+them the real number is only on the Employee record. The leave-approved text reads
+the Employee record, so matching on the User alone would still have texted them.
+
+:::note
+An address that is not a login is never touched. Customers, shipping lines and
+transporters are not users, so their mail is unaffected. Neither is an email a person
+composed and sent by hand, which goes exactly where they addressed it.
+:::
+
+Two things disabling a login does **not** do, so they are worth doing by hand when
+somebody leaves:
+
+- **Their open assignments stay open.** They no longer notify anybody by way of that
+  person, but they still sit on the task. Reassign them.
+- **Their roles stay on the account.** Harmless while the login is disabled, but they
+  take effect again the moment anybody re-enables it. Strip the roles too.
+
+:::warning
+All of this hangs on the login being disabled. Marking an Employee as *Left* does not
+by itself stop anything, because notifications are addressed to users. Disable the
+login as well.
+:::
+
 ## Notification Settings
 
 **Client Portal URL** and **Operations Notification Email** are the addresses used

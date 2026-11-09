@@ -152,6 +152,13 @@ Where they live: `cgm_shipping/cgm_worldwide_shipping/custom/<doctype>.json`, ap
 - **Licence expiry** - see [Licences](licences.md)
 - **Container deposit refund reminders**, **daily status RAG alerts**, **final document review**
 
+Two rules apply to every one of them, whatever the channel:
+
+- **Routed to the assignee** where Settings says so, instead of to everyone holding
+  the role. See [Settings](settings.md#notification-assignment-routing)
+- **Never sent to a disabled login.** Disabling the account is enough; nothing else
+  needs editing. See [Settings](settings.md#nobody-who-has-left-is-ever-notified)
+
 ---
 
 ## Reports
