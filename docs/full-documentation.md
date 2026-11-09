@@ -350,6 +350,16 @@ ERPNext Notifications (seeded / referenced in `constants.py`) alert teams at key
 
 Dispatcher: `customizations/notifications.py`
 
+Recipients are resolved in `customizations/notification_routing.py` (a role narrows to
+whoever is assigned) and filtered in `customizations/notification_recipients.py` (a
+disabled login is never written to or texted, on any channel). A departed assignee is
+dropped at selection, so a routed role still falls back to its live holders rather
+than reaching nobody. `drop_disabled_from_email_queue` is the backstop for mail queued
+outside a Notification, and stands aside for anything a person composed and sent.
+`workflow_sms.deliver_sms` is the matching chokepoint for texts, needed because the
+leave-approved text works its number out from the Employee record rather than the
+User.
+
 ---
 
 ## 7. Installation & patches
@@ -387,6 +397,8 @@ Workflows, notifications and fields are only created when missing, so an edit ma
 - `Task` → `CGMTask`
 - `Quotation` → `CGMQuotation`
 - `Sales Order` → `CGMSalesOrder`
+- `Salary Slip` → `CGMSalarySlip`
+- `Notification` → `CGMNotification` (assignee routing, and no disabled recipients)
 
 ### Scheduled jobs
 

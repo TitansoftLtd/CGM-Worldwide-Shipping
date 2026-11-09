@@ -264,9 +264,20 @@ def queue_notification_sms(notification, doc, numbers: list[str] | None = None) 
 
 
 def deliver_sms(numbers: list[str], text: str, source: str = "") -> None:
-	"""Background job: one gateway call per number, failures logged and skipped."""
+	"""Background job: one gateway call per number, failures logged and skipped.
+
+	Every text in the app passes through here, so this is where somebody who has
+	left is dropped. Needed on top of the recipient filter because a caller may pass
+	numbers it worked out itself: the leave-approved text reads the Employee record,
+	whose cell number is not the one on the User.
+	"""
 	from frappe.core.doctype.sms_settings.sms_settings import _send_sms
 
+	from cgm_shipping.cgm_worldwide_shipping.customizations.notification_recipients import (
+		live_numbers,
+	)
+
+	numbers = live_numbers(numbers, f"SMS: {source}" if source else "SMS")
 	failed = []
 	for number in numbers:
 		try:

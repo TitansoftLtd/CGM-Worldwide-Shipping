@@ -34,6 +34,12 @@ from __future__ import annotations
 import frappe
 from frappe.email.doctype.notification.notification import Notification
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.notification_recipients import (
+	live_addresses,
+	live_logins,
+	live_numbers,
+)
+
 SETTINGS_FIELD = "notification_assignment_routes"
 
 
@@ -77,7 +83,7 @@ def assigned_users(doc, assigned_on: str) -> list[str]:
 		reference_type, reference_name = doc.doctype, doc.name
 	if not reference_name:
 		return []
-	return frappe.get_all(
+	assigned = frappe.get_all(
 		"ToDo",
 		filters={
 			"reference_type": reference_type,
@@ -86,6 +92,9 @@ def assigned_users(doc, assigned_on: str) -> list[str]:
 		},
 		pluck="allocated_to",
 	)
+	# Someone who has left is not a recipient. Dropped here rather than at the end so
+	# the role fallback still reaches whoever is covering the work.
+	return live_logins(assigned, f"assignments on {reference_type} {reference_name}")
 
 
 def resolve_role_recipients(doc, role: str, routes: dict[str, dict]) -> list[str] | None:
@@ -116,7 +125,9 @@ class CGMNotification(Notification):
 		"""Email. Swap a routed role for its assignees, leave everything else."""
 		routes = assignment_routes()
 		if not routes:
-			return super().get_list_of_recipients(doc, context)
+			to, cc, bcc = super().get_list_of_recipients(doc, context)
+			why = f"Notification {self.name}"
+			return live_addresses(to, why), live_addresses(cc, why), live_addresses(bcc, why)
 
 		swapped = {}
 		for recipient in self.recipients:
@@ -137,7 +148,13 @@ class CGMNotification(Notification):
 				email = frappe.db.get_value("User", user, "email") or user
 				if email:
 					recipients.append(email)
-		return list(set(recipients)), cc, bcc
+
+		why = f"Notification {self.name}"
+		return (
+			live_addresses(list(set(recipients)), why),
+			live_addresses(cc, why),
+			live_addresses(bcc, why),
+		)
 
 	def get_receiver_list(self, doc, context, field_on_user="mobile_no", recipient_extractor_func=None):
 		"""SMS, and anything else reading users by a field on User.
@@ -147,7 +164,10 @@ class CGMNotification(Notification):
 		"""
 		routes = assignment_routes()
 		if not routes:
-			return super().get_receiver_list(doc, context, field_on_user, recipient_extractor_func)
+			return live_numbers(
+				super().get_receiver_list(doc, context, field_on_user, recipient_extractor_func),
+				f"Notification {self.name}",
+			)
 
 		swapped = {}
 		for recipient in self.recipients:
@@ -168,4 +188,4 @@ class CGMNotification(Notification):
 				value = frappe.db.get_value("User", user, field_on_user)
 				if value:
 					receivers.append(value)
-		return list(set(receivers))
+		return live_numbers(list(set(receivers)), f"Notification {self.name}")
