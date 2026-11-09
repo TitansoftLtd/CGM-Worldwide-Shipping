@@ -38,7 +38,11 @@ def get_gate_for_state(workflow_state: str, project=None) -> dict | None:
 
 @frappe.request_cache
 def get_sea_import_workflow_states() -> list[str]:
-	"""Ordered Project workflow states from CGM Sea Import Workflow metadata."""
+	"""Ordered Project workflow states from CGM Sea Import Workflow metadata.
+
+	A state appears once per role allowed to edit it, so the rows repeat. Keep the
+	first of each: the stepper wants the chart, not the edit rights.
+	"""
 	if frappe.db.exists("Workflow", SEA_IMPORT_WORKFLOW_NAME):
 		rows = frappe.get_all(
 			"Workflow Document State",
@@ -46,7 +50,7 @@ def get_sea_import_workflow_states() -> list[str]:
 			fields=["state"],
 			order_by="idx asc",
 		)
-		states = [row.state for row in rows if row.state]
+		states = list(dict.fromkeys(row.state for row in rows if row.state))
 		if states:
 			return states
 
