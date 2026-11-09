@@ -194,6 +194,26 @@ Note the order around the entry: **Line Paid & DO Lodged sits between Entry Lodg
 | **Intake documents** | **CI** and **PKL** required before **Documents Received** |
 | **Closure** | All 25 sea tasks must be complete before **Completed** |
 
+### Who can edit a shipment
+
+A workflow decides this on its own, separately from the Project permissions. Each
+row of the workflow's **States** table names one role in **Allow Edit**, and anyone
+holding none of the roles listed for the document's current state gets a read-only
+form, however much write permission the role profile gives them.
+
+Because it is one role per row, a state editable by six roles needs six rows. The
+same state repeating down the table is correct, not a mistake, and the shipment
+stepper lists each state once regardless.
+
+:::warning
+A read-only form does not look read-only. System Settings has **Hide empty read
+only fields** on, so for anyone locked out every field with no value disappears
+from the form rather than greying out. That is what is happening when somebody says
+a field is missing: `CGM Ref No` is blank, so they cannot see it, and they cannot
+see it because they cannot edit the document. Check **Allow Edit** for the state
+the shipment is sitting in before touching the field or the role profile.
+:::
+
 ---
 
 ## Being told it is your turn
