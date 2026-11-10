@@ -46,3 +46,4 @@ cgm_shipping.patches.align_access_with_job_matrix
 cgm_shipping.patches.backfill_pop_verification
 cgm_shipping.patches.close_permit_applications_finance_finished
 cgm_shipping.patches.drop_stale_foreign_permit_rows
+cgm_shipping.patches.clear_sea_defaults_on_air_projects

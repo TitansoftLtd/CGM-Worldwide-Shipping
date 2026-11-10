@@ -707,7 +707,7 @@
    "creation": "2026-09-04 14:46:00",
    "default": null,
    "depends_on": null,
-   "description": "Show this invoice on the customer portal.",
+   "description": "Show this invoice on the customer portal. When payment is recorded, they will see it as Paid.",
    "docstatus": 0,
    "dt": "Sales Invoice",
    "fetch_from": null,

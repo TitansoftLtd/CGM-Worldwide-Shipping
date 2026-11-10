@@ -9,7 +9,9 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.constants import (
 	DEPARTMENT_NAME_ALIASES,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_registry import (
+	is_air_task,
 	is_sea_import_task,
+	sql_air_flow_key_in,
 	sql_task_flow_key_in,
 )
 
@@ -595,7 +597,18 @@ def user_can_access_sea_task(
 	if _user_can_access_linked_sea_project_task(doc, user):
 		return True
 
+	if declarant_runs_whole_air_file(doc, user):
+		return True
+
 	return False
+
+
+def declarant_runs_whole_air_file(doc, user: str) -> bool:
+	"""A declarant works every step of an air file, not just Declaration.
+
+	Department scoping left them 5 of 16 steps. Air only; sea keeps its split.
+	"""
+	return bool(user_has_declarant_department_access(user)) and is_air_task(doc)
 
 
 def _user_can_access_sea_payment_task_by_role(doc, user: str) -> bool:
@@ -741,12 +754,22 @@ def _department_only_sql(
 	restricted: str,
 	assigned_only: str,
 	stems: set[str],
+	also_visible: str = "",
 ) -> str:
 	"""List filter locked to the given department stems, plus tasks assigned to the user."""
 	visibility_parts = [assigned_only, _build_department_sql_conditions(stems)]
+	if also_visible:
+		visibility_parts.append(also_visible)
 	restricted_visible = f"({restricted} AND ({' OR '.join(visibility_parts)}))"
 	unrestricted = f"(NOT ({restricted}))"
 	return f"({unrestricted} OR {restricted_visible})"
+
+
+def air_file_sql_for_user(user: str) -> str:
+	"""List-view half of declarant_runs_whole_air_file. Empty for everyone else."""
+	if not user_has_declarant_department_access(user):
+		return ""
+	return f"({sql_air_flow_key_in()})"
 
 
 def get_permission_query_conditions(user: str | None = None) -> str | None:
@@ -767,6 +790,8 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	restricted = f"(({sea_flow}) OR {clearance_dept})"
 	# Assignment only — not owner (Start Shipment used to make Declarants owner of every step).
 	assigned_only = f"(LOCATE({assign_token}, IFNULL(`tabTask`.`_assign`, '')) > 0)"
+	# A declarant works the whole air file.
+	air_visible = air_file_sql_for_user(user)
 
 	# Single-department users: lock to that department only (no cross-department handoff leaks).
 	if _documentation_only_visibility(user):
@@ -774,30 +799,35 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 			restricted=restricted,
 			assigned_only=assigned_only,
 			stems=set(documentation_visibility_department_stems()) or {"Documentation"},
+			also_visible=air_visible,
 		)
 	if _operations_only_visibility(user):
 		return _department_only_sql(
 			restricted=restricted,
 			assigned_only=assigned_only,
 			stems=set(operations_visibility_department_stems()) or {"Operations"},
+			also_visible=air_visible,
 		)
 	if _transport_only_visibility(user):
 		return _department_only_sql(
 			restricted=restricted,
 			assigned_only=assigned_only,
 			stems=set(transport_department_stems()) | set(_stems_for_role_group("Transport")),
+			also_visible=air_visible,
 		)
 	if _field_operations_only_visibility(user):
 		return _department_only_sql(
 			restricted=restricted,
 			assigned_only=assigned_only,
 			stems=set(field_operations_visibility_department_stems()) or {"Field Operations"},
+			also_visible=air_visible,
 		)
 	if _finance_only_visibility(user):
 		return _department_only_sql(
 			restricted=restricted,
 			assigned_only=assigned_only,
 			stems=set(finance_payment_department_stems()) or {"Finance"},
+			also_visible=air_visible,
 		)
 	if _declaration_only_visibility(user):
 		# Declaration department only — never Finance via stale application markers.
@@ -805,10 +835,13 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 			restricted=restricted,
 			assigned_only=assigned_only,
 			stems=set(declarant_application_department_stems()) or {"Declaration"},
+			also_visible=air_visible,
 		)
 
 	# Hybrid users (roles in more than one Settings list): union of their departments.
 	visibility_parts = [assigned_only]
+	if air_visible:
+		visibility_parts.append(air_visible)
 	if stems:
 		visibility_parts.insert(0, _build_department_sql_conditions(stems))
 
@@ -819,6 +852,8 @@ def get_permission_query_conditions(user: str | None = None) -> str | None:
 	if user_has_finance_department_access(user):
 		stems |= set(finance_payment_department_stems())
 		visibility_parts = [assigned_only]
+		if air_visible:
+			visibility_parts.append(air_visible)
 		if stems:
 			visibility_parts.insert(0, _build_department_sql_conditions(stems))
 		linked = _build_linked_sea_task_sql(stems)

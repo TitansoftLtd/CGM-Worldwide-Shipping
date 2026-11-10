@@ -222,6 +222,62 @@ LCL cargo has no container of its own, so after field clearance the shipment pay
 | 15 | Clearance - verification and permit removal | Field Operations |
 | 16 | Release and entry settlement | Operations |
 
+### The air form hides the sea fields
+
+The Project form was built for sea import, so an air shipment used to be asked
+for a shipping line, a voyage number, a clearance port, a berth phase and a
+Container Tracker tab. 34 fields now carry this **Depends On** rule:
+
+```
+eval:doc.custom_mode_of_transport != "Air" && !(doc.custom_shipment_type || "").startsWith("Air")
+```
+
+**Where to change it.** The rule is on the field, so **Customize Form → Project →
+the field → Depends On** shows it and can edit it, like any other field condition.
+The committed copy lives in `cgm_worldwide_shipping/custom/project.json`, which
+has `sync_on_migrate`, so a migrate reapplies the repo's version and a desk edit
+that is not also committed is undone at the next deploy. That is true of every
+Project customization, not just these.
+
+**Opportunity carries the same rule**, in `custom/opportunity.json`, because that
+is where an air file starts: 10 sea fields hidden on air, Airline and Air Waybill
+shown only on air, each combined with the intake-stage condition
+that was already there. Port of Loading and Port of Discharge stay on air, where
+they are the airports. Cargo Type is left to the Shipment Type profile, which
+already hides it.
+
+`customizations/air_field_visibility.py` does not do the hiding. It lists which
+fields are meant to carry the rule on each form, and `test_air_field_visibility`
+fails if either JSON and those lists disagree.
+
+**Voyage Number is hidden on air with no replacement.** The flight goes in
+**Airline**, which is free text, as `KQ117/06` on the existing air projects. That
+is all the Air Waybill carries too, so a separate flight field would have had
+nothing to sync from and nothing reading it.
+
+**Airline and Air Waybill** now use the same air rule as every other field. Air
+Waybill used to name `Air Import` only, so an Air Export shipment never showed
+the field at all.
+
+Hidden is not deleted. Anything already entered is kept and reappears if the
+shipment is switched back to Sea. The one exception is **Berth Phase**, which
+carried a hard default of `Before Vessel Berth` on every project including air;
+that default is cleared on air so it stops reaching reports. **Container Tracker
+Mode** is hidden but kept, because the Shipment Type backfill would only restore
+it and an air job has no containers for it to affect.
+
+### Declarants run the whole air file
+
+On sea, clearance tasks are scoped by department. On air they are not: anyone with
+Declaration access sees and works all 16 steps, including the Documentation,
+Operations, Field Operations and Finance ones. Air clears in days and there is no
+air desk to hand off to, so department scoping left a declarant 5 of 16 steps and
+no view of where the file stood.
+
+This widens who can open a finance step, not who can pay. Completing a Finance
+Payment task still needs a **submitted** Journal Entry, which is Finance's own
+action; a draft does not complete it.
+
 ## 10. How to use - Air Export (11)
 
 **Template:** Air Export Workflow · **Mode:** Export

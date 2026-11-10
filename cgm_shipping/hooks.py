@@ -283,6 +283,7 @@ doc_events = {
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project_completion.set_completion_date_on_update",
 		],
 		"before_save": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.air_field_visibility.clear_sea_only_fields_on_air",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_consignee_from_customer",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_reference_on_save",
 			"cgm_shipping.cgm_worldwide_shipping.customizations.project.sync_project_ata_fields",

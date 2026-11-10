@@ -40,6 +40,9 @@ ALL_TEMPLATE_NAMES: frozenset[str] = frozenset(
 # charges instead of KPA, cargo delivery instead of containers).
 SEA_IMPORT_TEMPLATES: tuple[str, ...] = (SEA_IMPORT_TEMPLATE, SEA_IMPORT_LCL_TEMPLATE)
 
+# Air plans. One declarant carries an air file from IDF to release.
+AIR_TEMPLATES: tuple[str, ...] = (AIR_IMPORT_TEMPLATE, AIR_EXPORT_TEMPLATE)
+
 LEGACY_FLOW_KEY_TO_TEMPLATE: dict[str, str] = {
 	SEA_TASK_FLOW_KEY: SEA_IMPORT_TEMPLATE,
 	SEA_TRANSIT_IMPORT_TASK_FLOW_KEY: SEA_TRANSIT_IMPORT_TEMPLATE,
@@ -128,6 +131,28 @@ def sea_import_flow_keys() -> list[str]:
 	for template in SEA_IMPORT_TEMPLATES:
 		keys.extend(k for k in workflow_flow_keys_for_template(template) if k not in keys)
 	return keys
+
+
+def air_flow_keys() -> list[str]:
+	"""Keys stored on air Tasks, import and export."""
+	keys: list[str] = []
+	for template in AIR_TEMPLATES:
+		keys.extend(k for k in workflow_flow_keys_for_template(template) if k not in keys)
+	return keys
+
+
+def is_air_task(task) -> bool:
+	return any(task_matches_template(task, template) for template in AIR_TEMPLATES)
+
+
+def sql_air_flow_key_in(*, column: str = "`tabTask`.`custom_task_flow_key`") -> str:
+	"""SQL ``column IN (…)`` for every air flow key (already escaped)."""
+	import frappe
+
+	keys = air_flow_keys()
+	if not keys:
+		return "1=0"
+	return f"{column} IN ({', '.join(frappe.db.escape(k) for k in keys)})"
 
 
 def task_flow_key_in_filter(template_name: str | None = None) -> list:
