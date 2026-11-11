@@ -130,6 +130,20 @@ Where they live: `cgm_shipping/cgm_worldwide_shipping/custom/<doctype>.json`, ap
 
 ---
 
+### Mode-specific fields
+
+Fields that only apply to one mode carry a **Depends On** rule on the field
+itself, in `custom/project.json` and `custom/opportunity.json`. On Project, 34 sea
+fields are hidden on air and Airline and Air Waybill show only on air; Vessel,
+Bill of Lading and Container Information stay Sea-only. Opportunity carries the
+same rule over 10 sea fields.
+
+`customizations/air_field_visibility.py` lists which fields are meant to carry
+the air rule on each form, and `test_air_field_visibility` fails if either JSON
+drifts from it.
+Nothing hides fields at runtime, so Customize Form shows the real behaviour. See
+[Shipment Modes](shipment-modes.md#the-air-form-hides-the-sea-fields).
+
 ## Workflows
 
 | Workflow | On | States |

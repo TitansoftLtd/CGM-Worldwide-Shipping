@@ -114,7 +114,14 @@ approval the same banner names whatever is still missing, so you do not have to 
 rules to see what is blocking you.
 
 **2** **Shipment Type** chooses the task plan the Project is built from - change it here, not
-after the Project exists.
+after the Project exists. It also decides which transport fields appear: pick an air type, or
+set Mode of Transport to Air, and the sea fields go (Shipping Line, Vessel, Voyage Number,
+Bill of Lading, Container Information, Uses Container Tracking, Clearance Station, Station
+Code, Cargo Cut-off, Batch No), while Airline and Air Waybill appear. Port of Loading and
+Port of Discharge stay on air, where they are the airports.
+
+The same rule runs on the Project. See
+[Shipment Modes](shipment-modes.md#the-air-form-hides-the-sea-fields).
 
 The **Transport Documents** panel on the left shows which documents are attached - here a
 Bill of Lading, with Booking Confirmation still available to add. Fields greyed out on the
