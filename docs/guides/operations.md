@@ -125,7 +125,7 @@ Nobody creates these by hand. The moment a Project is created, the task engine r
 |---------------|----------|---------------|
 | Sea Import | Sea Import Workflow | 23 |
 | Sea Import, Cargo Type LCL | Sea Import LCL Workflow | 20 |
-| Air Import | Air Import Workflow | 16 |
+| Air Import | Air Import Workflow | 18 |
 | Sea Transit | Sea Transit Import Workflow | 15 |
 | Road Transit Import | Road Transit Inbound Workflow | 11 |
 

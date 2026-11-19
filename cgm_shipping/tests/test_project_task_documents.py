@@ -156,14 +156,31 @@ class TestWhoSeesTheShipmentPack(unittest.TestCase):
         asked = get_all.call_args.kwargs["filters"]["attached_to_name"][1]
         self.assertEqual(asked, ["TASK-2"])
 
-    def test_the_count_matches_what_the_panel_lists(self):
+    def _count(self, files):
         with (
             patch.object(frappe, "has_permission", return_value=True),
-            patch.object(
-                frappe, "get_all", return_value=[frappe._dict(t) for t in TASKS]
-            ),
             patch.object(frappe, "get_list", return_value=[]),
-            patch.object(frappe.db, "count", return_value=1) as count,
+            patch.object(
+                frappe,
+                "get_all",
+                side_effect=[[frappe._dict(t) for t in TASKS], [frappe._dict(f) for f in files]],
+            ) as get_all,
         ):
-            self.assertEqual(ptd.task_document_count("PROJ-0001"), 1)
-        self.assertEqual(count.call_args[0][1]["attached_to_name"][1], ["TASK-2"])
+            total = ptd.task_document_count("PROJ-0001")
+        asked = get_all.call_args.kwargs["filters"]["attached_to_name"][1]
+        return total, asked
+
+    def test_the_count_never_asks_for_a_hidden_task(self):
+        _, asked = self._count([{"attached_to_name": "TASK-2", "file_url": "/a.pdf"}])
+        self.assertEqual(asked, ["TASK-2"])
+
+    def test_the_count_matches_what_the_panel_lists(self):
+        """Three records of one file on one task is one document in both."""
+        files = [
+            {"attached_to_name": "TASK-2", "file_url": "/a.pdf"},
+            {"attached_to_name": "TASK-2", "file_url": "/a.pdf"},
+            {"attached_to_name": "TASK-2", "file_url": "/a.pdf"},
+            {"attached_to_name": "TASK-2", "file_url": "/b.pdf"},
+        ]
+        total, _ = self._count(files)
+        self.assertEqual(total, 2)

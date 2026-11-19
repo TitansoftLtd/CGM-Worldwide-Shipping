@@ -17,6 +17,7 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
+from cgm_shipping.cgm_worldwide_shipping.customizations.task_attachments import newest_per_file
 
 # Tasks whose attachments are payment evidence: the POP, the bank receipt, the
 # proof Finance files. Everything else on a shipment - permits, certificates, the
@@ -112,16 +113,25 @@ def get_project_task_documents(project: str) -> dict:
 			}
 		)
 
+	# Same file uploaded twice to one task is one document, not two.
+	rows = newest_per_file(rows)
 	return {"rows": rows, "total": len(rows)}
 
 
 def task_document_count(project: str) -> int:
-	"""How many of the shipment's task attachments the user may see."""
+	"""How many of the shipment's task attachments the user may see.
+
+	Counts documents, not File records, so it agrees with the list above: a file
+	uploaded to one task three times is one document in both.
+	"""
 	if not project:
 		return 0
 	tasks = [t.name for t in _visible_project_tasks(project)]
 	if not tasks:
 		return 0
-	return frappe.db.count(
-		"File", {"attached_to_doctype": "Task", "attached_to_name": ["in", tasks]}
+	rows = frappe.get_all(
+		"File",
+		filters={"attached_to_doctype": "Task", "attached_to_name": ["in", tasks]},
+		fields=["attached_to_name", "file_url"],
 	)
+	return len({(r.attached_to_name, r.file_url) for r in rows})

@@ -35,6 +35,58 @@ PAYMENT_KIND_TO_PROFILE_KEY = {
 	"CFS": "CFS Application",
 }
 
+PERMIT_PAYMENT_KIND = "Permit"
+
+
+def _application_rule(kind: str) -> str:
+	return f'eval:doc.custom_task_role == "{ROLE_APPLICATION}" && doc.custom_payment_kind == "{kind}"'
+
+
+def charge_field_depends_on() -> dict[str, str]:
+	"""Where each "... Submitted to Finance" box shows: its own application step.
+
+	The kind is the payment item the template stamps, so ENTRY_SLIP, not "Entry
+	Slip". Permits stamp no kind, so the role names that one. custom/task.json
+	carries the same text and test_mode_specific_fields pins that they agree.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+	)
+
+	rules = {}
+	for kind, profile_key in PAYMENT_KIND_TO_PROFILE_KEY.items():
+		field = APPLICATION_FINANCE_PROFILES[profile_key].application_submitted_field
+		if field:
+			rules[field] = _application_rule(kind)
+	rules["custom_permit_invoices_submitted"] = (
+		f'eval:doc.custom_task_role == "{ROLE_PERMIT_APPLICATION}"'
+	)
+	return rules
+
+
+def deposit_field_depends_on() -> dict[str, str]:
+	"""Where the two deposit fields show: the shipping line steps.
+
+	task.js only switches them on, never off, so without this they follow every task.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.application_finance import (
+		APPLICATION_FINANCE_PROFILES,
+	)
+
+	kind = APPLICATION_FINANCE_PROFILES["Shipping Line Application"].payment_item
+	both = f"['{ROLE_APPLICATION}','{ROLE_FINANCE_PAYMENT}']"
+	return {
+		# Finance confirms who pays.
+		"custom_deposit_payer": (
+			f'eval:doc.custom_task_role == "{ROLE_FINANCE_PAYMENT}"'
+			f' && doc.custom_payment_kind == "{kind}"'
+		),
+		# Read on both halves of the pair.
+		"custom_bl_deposit_arrangement": (
+			f'eval:{both}.includes(doc.custom_task_role) && doc.custom_payment_kind == "{kind}"'
+		),
+	}
+
 
 @dataclass(frozen=True)
 class TaskBehaviour:

@@ -143,3 +143,60 @@ class TestTaskTemplateValidation(unittest.TestCase):
 		for name in frappe.get_all("CGM Task Template", pluck="name"):
 			with self.subTest(template=name):
 				self.assertEqual(self._warnings(frappe.get_doc("CGM Task Template", name)), [])
+
+
+#: A step may require a document it produces, even an optional one. It must not
+#: require one it merely receives unless every shipment has it. Keep the reason.
+OPTIONAL_DOCUMENTS_A_STEP_PRODUCES = {
+	# Brought back by the IDF/UCR step.
+	"IDF CERT",
+	# Raised by the LCL delivery step and the closing air import step.
+	"Delivery Note",
+}
+
+
+class TestStepsDoNotWaitForDocumentsThatMayNotExist(unittest.TestCase):
+	"""COA was stamped on Air Import step 1; only half the shipments have one.
+
+	The master marks it optional, so the step would have held the rest forever.
+	"""
+
+	def _stamped(self):
+		from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
+			TEMPLATE_DEFINITIONS,
+		)
+		from cgm_shipping.cgm_worldwide_shipping.customizations.template_required_documents import (
+			parse_required_document_types,
+			resolve_legacy_document_type_name,
+		)
+
+		for definition in TEMPLATE_DEFINITIONS:
+			for row in definition["tasks"]:
+				for token in parse_required_document_types(row.get("required_document_types")):
+					name = resolve_legacy_document_type_name(token) or token
+					yield definition["template_name"], row["sequence_no"], token, name
+
+	def test_every_stamped_document_exists(self):
+		missing = [
+			f"{template} step {seq}: {token!r}"
+			for template, seq, token, name in self._stamped()
+			if not frappe.db.exists("Document Type", name)
+		]
+		self.assertEqual(missing, [], "a step waits for a Document Type that does not exist")
+
+	def test_a_step_only_waits_for_a_document_every_shipment_has(self):
+		offenders = []
+		for template, seq, _token, name in self._stamped():
+			if name in OPTIONAL_DOCUMENTS_A_STEP_PRODUCES:
+				continue
+			if not frappe.db.exists("Document Type", name):
+				continue
+			if not frappe.db.get_value("Document Type", name, "default_required"):
+				offenders.append(f"{template} step {seq} waits for {name}, which is optional")
+		self.assertEqual(
+			offenders,
+			[],
+			"Either the Document Type should be Default Required, or the step produces "
+			"it and belongs in OPTIONAL_DOCUMENTS_A_STEP_PRODUCES with the reason: "
+			f"{offenders}",
+		)
