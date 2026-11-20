@@ -48,6 +48,14 @@ CLOSING_STEPS = ("Confirm arrival at destination airport", "Confirm delivery to 
 INTAKE_STEP = "Receive proforma invoice packing list COA"
 
 
+def _ensure_document_types() -> None:
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		ensure_document_types,
+	)
+
+	ensure_document_types()
+
+
 def _seed_row(subject: str) -> dict:
 	"""The step as the seed defines it, so the plan is written down once."""
 	from cgm_shipping.cgm_worldwide_shipping.customizations.task_template_seed_data import (
@@ -73,6 +81,8 @@ def _intake_role() -> str:
 def execute():
 	if not frappe.db.exists("DocType", TEMPLATE):
 		return
+	# A template save rejects a stamp naming a Document Type the site lacks.
+	_ensure_document_types()
 	for name in (AIR_IMPORT, AIR_EXPORT):
 		_drop_unreachable_gates(name)
 	_align_air_import()

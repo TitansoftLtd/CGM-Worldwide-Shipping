@@ -943,6 +943,12 @@ DOCUMENT_TYPE_DEFAULTS = {
 		"default_required": 0,
 		"required_stage": "Pre-IDF",
 	},
+	# Raised by the closing air import step, beside the delivery note.
+	"Import Charges Invoice": {
+		"category": "Finance",
+		"default_required": 0,
+		"required_stage": "Port & line (DO / charges)",
+	},
 }
 
 def ensure_document_types():

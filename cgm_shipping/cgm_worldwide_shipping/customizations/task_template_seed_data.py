@@ -465,8 +465,8 @@ def air_import_tasks() -> list[dict]:
 			depends=17,
 			doc=1,
 			role="Document",
-			# The delivery note closes the job; the charges invoice has no master type.
-			required_docs="Delivery Note",
+			# The invoice comes first, then the delivery note that closes the job.
+			required_docs="Import Charges Invoice, Delivery Note",
 		),
 	]
 

@@ -152,6 +152,8 @@ OPTIONAL_DOCUMENTS_A_STEP_PRODUCES = {
 	"IDF CERT",
 	# Raised by the LCL delivery step and the closing air import step.
 	"Delivery Note",
+	# Uploaded by that same closing step, ahead of the delivery note.
+	"Import Charges Invoice",
 }
 
 

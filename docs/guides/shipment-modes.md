@@ -260,16 +260,26 @@ step, so the documents already on the shipment appear on the task and anything
 attached there syncs back to the shipment's Client Documents. Completing the step
 is the confirmation.
 
-### The delivery note closes an air import
+### The invoice and the delivery note close an air import
 
 Step 18 is admin's: **upload the invoice for import charges and the delivery
-note**. The **Delivery Note** document must be attached before it completes, and
-the **Completed** status waits for it. The client was explicit that this is the
-end of the file and that whatever follows happens offline.
+note**. Both documents must be attached before it completes, and the
+**Completed** status waits for it. The client was explicit that this is the end
+of the file and that whatever follows happens offline.
 
-The charges invoice has no Document Type of its own, so it goes on the step as a
-plain attachment. If it should be tracked like the rest, add a Document Type for
-it in Desk and stamp it on the step.
+Two documents, in that order, because that is the order the work happens in. The
+client put it plainly: the invoice and the receipt come first, and only then do
+you proceed to get the delivery note. So the step waits for **Import Charges
+Invoice** and **Delivery Note** together rather than the delivery note alone,
+and a shipment cannot reach Completed on the delivery note by itself.
+
+**Import Charges Invoice** is a Document Type like any other. It is seeded in
+code rather than added in Desk, because a site that lacks it would accept the
+step with nothing attached and nobody would notice.
+
+The receipt the client mentioned is not a document on this step. It is evidence
+that the invoice was paid, which the finance steps already carry, so asking for
+it again here would hold the shipment twice for one payment.
 
 ### A step that does not apply is cancelled, not left open
 

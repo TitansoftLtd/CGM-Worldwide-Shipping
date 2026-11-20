@@ -82,8 +82,24 @@ class TestAirImportPlan(unittest.TestCase):
 		last = rows[-1]
 		self.assertEqual(last["subject"], "Upload invoice for import charges and delivery note")
 		self.assertEqual(last["department_role"], "Documentation")
-		self.assertEqual(last["required_document_types"], "Delivery Note")
+		self.assertEqual(last["required_document_types"], "Import Charges Invoice, Delivery Note")
 		self.assertEqual(last["depends_on_sequences"], str(rows[-2]["sequence_no"]))
+
+	def test_the_closing_step_waits_for_the_invoice_as_well(self):
+		"""The client: the invoice and receipt come first, then the delivery note."""
+		last = air_import_tasks()[-1]
+		self.assertEqual(
+			last["required_document_types"].split(", "),
+			["Import Charges Invoice", "Delivery Note"],
+		)
+
+	def test_the_invoice_document_type_is_seeded_in_code(self):
+		"""Nothing else creates it, so a fresh site would not gate on it at all."""
+		from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+			DOCUMENT_TYPE_DEFAULTS,
+		)
+
+		self.assertIn("Import Charges Invoice", DOCUMENT_TYPE_DEFAULTS)
 
 	def test_finance_pays_the_entry(self):
 		row = _by_subject(air_import_tasks(), "Finance pays entry")
@@ -177,6 +193,24 @@ class TestThePatchNamesRealSteps(unittest.TestCase):
 			self.assertIn(subject, _subjects(air_import_tasks()))
 		for subject in (p.AIRWAYBILL_STEP, p.MANIFEST_STEP, *p.CLOSING_STEPS):
 			self.assertIn(subject, _subjects(air_export_tasks()))
+
+	def test_the_align_patch_creates_the_master_before_it_stamps(self):
+		"""It appends a step stamped from the seed, and the save validates the stamp.
+
+		Without this the first migrate of a site that lacks Import Charges Invoice
+		dies inside the patch, because the step naming it cannot be saved.
+		"""
+		import inspect
+
+		self.assertIn("_ensure_document_types()", inspect.getsource(self.patch.execute))
+
+	def test_the_invoice_patch_agrees_with_the_seed(self):
+		"""It stamps what the seed says, and only replaces its own earlier stamp."""
+		from cgm_shipping.patches import require_import_charges_invoice as p
+
+		row = _by_subject(air_import_tasks(), p.FINAL_STEP)
+		self.assertEqual(p._wanted(), row["required_document_types"])
+		self.assertNotEqual(p.STAMP_WAS, row["required_document_types"])
 
 	def test_what_it_retires_is_gone_from_the_seed(self):
 		for subject in (self.patch.ENTRY_PAYMENT_WAS, *self.patch.AIR_EXPORT_DROPPED):

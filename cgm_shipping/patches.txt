@@ -50,3 +50,4 @@ cgm_shipping.patches.clear_sea_defaults_on_air_projects
 cgm_shipping.patches.drop_duplicate_task_attachments
 cgm_shipping.patches.backfill_booking_documents
 cgm_shipping.patches.align_air_templates_with_client_plan
+cgm_shipping.patches.require_import_charges_invoice
