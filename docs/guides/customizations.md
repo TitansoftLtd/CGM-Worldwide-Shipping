@@ -141,6 +141,22 @@ same rule over 10 sea fields.
 `customizations/air_field_visibility.py` lists which fields are meant to carry
 the air rule on each form, and `test_air_field_visibility` fails if either JSON
 drifts from it.
+
+Container Tracker gates its Mombasa, Transit and Export sections on **Container
+Mode**. On Task the six charge confirmations and the two deposit fields gate on
+**Task Role** and **Payment Kind** instead, because what they belong to is a step,
+not a mode. See
+[Task tables](task-tables.md#charge-confirmations-belong-to-their-own-step).
+
+Write those rules against the value the database actually holds, not the label:
+the entry step stores `ENTRY_SLIP`, and the permit step stores no payment kind at
+all. A rule keyed on a guess hides data that is really there.
+
+`test_mode_specific_fields` is the guard across all four forms: a field whose
+name carries a sea word and has no mode rule fails the test, on the field itself
+or on the section or tab above it. A field that genuinely belongs on every mode
+goes in that test's `ALLOWED`, with the reason beside it. That is what stops the
+next mode-specific field quietly following air, export and transit around.
 Nothing hides fields at runtime, so Customize Form shows the real behaviour. See
 [Shipment Modes](shipment-modes.md#the-air-form-hides-the-sea-fields).
 

@@ -820,10 +820,14 @@ def sync_linked_project_from_opportunity(opp, _method=None) -> None:
 	changed = copy_opportunity_scalars_to_project(project, opp, only_empty=True)
 	if copy_opportunity_requested_cargo_to_project(opp, project, replace=False):
 		changed = True
+	if carry_new_opportunity_documents_to_project(project, opp):
+		changed = True
 
 	if not changed:
 		return
 
+	# ignore_validate skips before_save, where the rename lives, so do it here.
+	refresh_project_reference_from_fields(project)
 	project.flags.ignore_validate = True
 	project.save(ignore_permissions=True)
 
@@ -937,3 +941,59 @@ def set_project_status(project: str, status: str):
 	)
 
 	return erpnext_set_project_status(project, status)
+
+
+def carry_new_opportunity_documents_to_project(project, opp) -> bool:
+	"""Bring documents added to the Opportunity after the Project was created.
+
+	Fills only: the Project is the live record, so a file already there stays.
+	"""
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		OPPORTUNITY_DOCUMENTS_FIELD,
+		SHIPMENT_DOCUMENTS_FIELD,
+		document_types_match,
+		draft_document_field,
+		get_draft_attachment,
+	)
+
+	if not opp or not opp.meta.has_field(OPPORTUNITY_DOCUMENTS_FIELD):
+		return False
+	if not project.meta.has_field(SHIPMENT_DOCUMENTS_FIELD):
+		return False
+
+	changed = False
+	for source in opp.get(OPPORTUNITY_DOCUMENTS_FIELD) or []:
+		doc_type = source.get("document_type")
+		draft = get_draft_attachment(source) or source.get("attachment")
+		final = source.get("final_attachment")
+		if not doc_type or not (draft or final):
+			continue
+		if not frappe.db.exists("Document Type", doc_type):
+			continue
+
+		row = next(
+			(
+				r
+				for r in (project.get(SHIPMENT_DOCUMENTS_FIELD) or [])
+				if document_types_match(r.document_type, doc_type)
+			),
+			None,
+		)
+		if row is None:
+			row = project.append(
+				SHIPMENT_DOCUMENTS_FIELD,
+				{"document_type": doc_type, "status": source.get("status") or "Uploaded"},
+			)
+			changed = True
+
+		draft_field = draft_document_field(row.meta) or "draft_documents"
+		# One file per slot: a row holding anything keeps what it has.
+		if draft and not (row.get(draft_field) or row.get("attachment")):
+			row.set(draft_field, draft)
+			if row.meta.has_field("attachment"):
+				row.set("attachment", draft)
+			changed = True
+		if final and row.meta.has_field("final_attachment") and not row.get("final_attachment"):
+			row.set("final_attachment", final)
+			changed = True
+	return changed

@@ -21,14 +21,14 @@ from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.fcl_batch import (
 	allocate_fcl_batch_for_doc,
+	counts_from_derived_quantity_text,
+	counts_from_request_rows,
 	derived_quantity_from_booking,
 	hydrate_requested_cargo_rows,
 	is_lcl_cargo_type,
 	request_row_cargo_size,
 	request_row_quantity,
 	requested_cargo_rows_from_counts,
-	counts_from_derived_quantity_text,
-	counts_from_request_rows,
 )
 from cgm_shipping.cgm_worldwide_shipping.customizations.shipment import (
 	apply_shipment_type_profile_to_doc,
@@ -87,6 +87,17 @@ class BookingConfirmation(Document):
 			)
 
 			sync_linked_project_from_booking(self, opportunity)
+
+	def on_update_after_submit(self):
+		"""Carrying only at submit missed a file or link added afterwards.
+
+		Never fatal: copying the file onto the Opportunity must not stop someone
+		saving this booking.
+		"""
+		try:
+			fill_booking_document_from_booking(self)
+		except Exception:
+			frappe.log_error(f"Could not carry the booking document for {self.name}")
 
 
 BOOKING_LINK_FIELDS = (("Opportunity", "custom_booking_confirmation"), ("Project", "custom_booking_confirmation"))
@@ -540,3 +551,73 @@ def create_opportunity_from_booking_confirmation(booking_confirmation: str) -> s
 		)
 
 	return opp.name
+
+
+def fill_booking_document_from_booking(booking_doc) -> str | None:
+	"""Fill the Opportunity's Booking row from the booking when it is empty.
+
+	Never replaces, and leaves row order alone unlike prepend_opportunity_booking_document.
+	"""
+	attachment_url = (booking_doc.get("attach_booking") or "").strip()
+	opportunity = booking_doc.get(OPPORTUNITY_SOURCE_FIELD)
+	if not attachment_url or booking_doc.docstatus != 1:
+		return None
+	if not is_valid_opportunity_link(opportunity):
+		return None
+
+	field = get_opportunity_documents_field()
+	if not field:
+		return None
+	opp = frappe.get_doc("Opportunity", opportunity)
+	if not opp.meta.has_field(field):
+		return None
+
+	ensure_document_types()
+	document_type = get_document_type_link_name(DOCUMENT_TYPE_CODE)
+	if not document_type:
+		return None
+
+	from cgm_shipping.cgm_worldwide_shipping.customizations.documents import (
+		document_types_match,
+		draft_document_field,
+	)
+
+	row = next(
+		(r for r in (opp.get(field) or []) if document_types_match(r.document_type, document_type)),
+		None,
+	)
+	if row is None:
+		# No row yet: the existing prepend builds one.
+		if prepend_opportunity_booking_document(opp, attachment_url, booking_name=booking_doc.name):
+			opp.save(ignore_permissions=True)
+			return opportunity
+		return None
+
+	draft_field = draft_document_field(row.meta) or "draft_documents"
+	if row.get(draft_field) or row.get("attachment"):
+		return None  # already has a file
+
+	row.set(draft_field, attachment_url)
+	if row.meta.has_field("attachment") and not row.get("attachment"):
+		row.set("attachment", attachment_url)
+	if not row.get("status") or row.status == "Missing":
+		row.status = "Uploaded"
+	opp.save(ignore_permissions=True)
+	return opportunity
+
+
+def backfill_booking_documents() -> int:
+	"""Patch helper: fill empty Booking rows from their submitted booking."""
+	names = frappe.get_all(
+		"Booking Confirmation",
+		filters={"docstatus": 1, "attach_booking": ["is", "set"]},
+		pluck="name",
+	)
+	filled = 0
+	for name in names:
+		try:
+			if fill_booking_document_from_booking(frappe.get_doc("Booking Confirmation", name)):
+				filled += 1
+		except Exception:
+			frappe.log_error(f"Could not backfill booking document for {name}")
+	return filled

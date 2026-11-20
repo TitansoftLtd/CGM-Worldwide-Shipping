@@ -173,6 +173,27 @@ dates; interchange gets the interchange date and document.
 A task's grid also arrives pre-filled with whatever the tracker already holds for that
 step, so a step reached late in the job does not start blank.
 
+### The tracker only shows the sections its mode uses
+
+The tracker was built with every section on, so an import container at Mombasa was
+asked for export entry numbers, a sailing date and a certificate of export. Each
+section now depends on **Container Mode**:
+
+| Section or tab | Shown for |
+|----------------|-----------|
+| Mombasa Port | every mode except Export and Transit Export |
+| Transit | Transit Import, Transit Export |
+| Export | Export, Transit Export |
+| Free Days, Empty Return and Interchange | every mode except Export and Transit Export |
+| ICD | always |
+
+**ICD stays on every container** on purpose: an import landed at Mombasa can still be
+railed to an ICD, so its gate-in and gate-out dates are real. A container with no mode
+yet is treated as an import, so a new record starts with the import sections.
+
+Demurrage, port storage and empty return are import concepts, which is why those two
+tabs disappear on an export container.
+
 ### What a step needs before it completes
 
 A transport step is not ticked by hand. It completes itself once **every container on

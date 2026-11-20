@@ -67,6 +67,55 @@ the document or delete the row if it genuinely does not apply.
 Final documents can be sent for review. See
 [Operations](operations.md#final-document-review).
 
+### Charge confirmations belong to their own step
+
+The six **... Invoice Submitted to Finance** boxes used to show on every task at
+once, air steps and document steps included, so a task that had nothing to do with
+KPA still carried an unticked KPA box. All six are read-only: code ticks them when
+the declarant sends the invoice to Finance, and only ever on that charge's own
+application step.
+
+Each now appears on that step alone:
+
+| Box | Appears on |
+|-----|------------|
+| UCR Invoice Submitted to Finance | Application step, Payment Kind **UCR** |
+| Entry Slip Invoice Submitted to Finance | Application step, Payment Kind **ENTRY_SLIP** |
+| KPA Invoice Submitted to Finance | Application step, Payment Kind **KPA** |
+| CFS Invoice Submitted to Finance | Application step, Payment Kind **CFS** |
+| Shipping Line Invoice Submitted to Finance | Application step, Payment Kind **Shipping Line** |
+| Permit Invoices Submitted to Finance | Task Role **Permit Application** |
+
+Two of these are easy to get wrong. The entry step stores its kind as `ENTRY_SLIP`,
+not `Entry Slip`, and the permit step stores no payment kind at all, so its role is
+what names it. A rule written against the wrong value hides a tick that is really
+there: on production that would have been 67 entry steps and 133 permit steps.
+
+They are hidden on the matching **Finance Payment** step too. Finance never sets
+them, so there the box read "not submitted" on the very task that exists because
+it was.
+
+**Container Deposit Paid By** and **BL Deposit Arrangement** had the same problem
+for a different reason: `task.js` switched them on for the shipping line steps and
+nothing switched them off again, so they trailed every other task. Both now appear
+only on the shipping line steps.
+
+### Uploading the same file again replaces it
+
+Attaching a file to a task leaves a File record behind, and Frappe never removes the
+one it replaced. The same receipt uploaded six times left six records, which is how
+the shipment's attachment list grew to 53 rows for one job. Production held 641
+redundant records out of 2,461.
+
+Re-uploading **the same file to the same task** now removes the earlier records and
+keeps the newest. The file on disk is safe: Frappe counts references by content, so
+it is only removed once nothing points at it.
+
+A **different** file is never touched. That is a new version of the document, not a
+duplicate, and both stay. The shipment's read-only attachment roll-up on the Project
+also shows one row per file per task, so older records already in the system stop
+cluttering the view.
+
 ---
 
 ## Invoices & Receipts

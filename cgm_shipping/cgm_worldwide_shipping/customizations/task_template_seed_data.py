@@ -348,7 +348,16 @@ def sea_export_tasks() -> list[dict]:
 
 def air_import_tasks() -> list[dict]:
 	return [
-		_row(1, "Receive proforma invoice packing list COA", "Documentation", doc=1, role="Document"),
+		_row(
+			1,
+			"Receive proforma invoice packing list COA",
+			"Documentation",
+			doc=1,
+			# The documentation officer confirms the set the client sent.
+			role="Document Checkpoint",
+			# No COA: the master marks it optional and half the shipments lack one.
+			required_docs="CI, PKL",
+		),
 		_row(
 			2,
 			"IDF application (UCR)",
@@ -419,7 +428,7 @@ def air_import_tasks() -> list[dict]:
 		),
 		_row(
 			12,
-			"Confirm entry taxes paid",
+			"Finance pays entry",
 			"Finance",
 			depends=11,
 			finance=1,
@@ -435,25 +444,51 @@ def air_import_tasks() -> list[dict]:
 			role="Permit Application",
 			permit_stage="Post-clearance",
 		),
-		_row(14, "Share documents to ground handling team", "Field Operations", depends=13, doc=1, role="Document"),
-		_row(15, "Clearance - verification and permit removal", "Field Operations", depends=14),
-		_row(16, "Release and entry settlement", "Operations", depends=15),
+		_row(
+			14,
+			"Finance pays post-clearance permit invoices",
+			"Finance",
+			depends=13,
+			finance=1,
+			permit=1,
+			role="Permit Finance",
+			permit_stage="Post-clearance",
+			payment_kind="Permit",
+		),
+		_row(15, "Share documents to ground handling team", "Field Operations", depends=14, doc=1, role="Document"),
+		_row(16, "Clearance - verification and permit removal", "Field Operations", depends=15),
+		_row(17, "Release and entry settlement", "Operations", depends=16),
+		_row(
+			18,
+			"Upload invoice for import charges and delivery note",
+			"Documentation",
+			depends=17,
+			doc=1,
+			role="Document",
+			# The invoice comes first, then the delivery note that closes the job.
+			required_docs="Import Charges Invoice, Delivery Note",
+		),
 	]
 
 
 def air_export_tasks() -> list[dict]:
+	"""Air export from client documents through delivery.
+
+	Airport handover and airline handover happen on their own, so they are not
+	tasks. The flight departure is a date on the shipment (ATD), not a step.
+	Admin raises the airwaybill number, not the declarant.
+	"""
 	return [
 		_row(1, "Receive documents from client", "Documentation", doc=1),
 		_row(2, "Get origin and destination address", "Operations", depends=1),
 		_row(3, "Check rates from airlines and select route", "Operations", depends=2),
-		_row(4, "Generate airwaybill number", "Declaration", depends=3, doc=1),
+		_row(4, "Generate airwaybill number", "Documentation", depends=3, doc=1),
 		_row(5, "Do customs export entry", "Declaration", depends=4),
-		_row(6, "Take package to airport and export processes", "Field Operations", depends=5),
-		_row(7, "Weigh package and confirm dimensions", "Field Operations", depends=6),
-		_row(8, "Book and pay freight and handling charges", "Finance", depends=7, finance=1),
-		_row(9, "Hand over shipment to airline", "Field Operations", depends=8),
-		_row(10, "Monitor flight departure", "Operations", depends=9),
-		_row(11, "Obtain manifest and apply for COE", "Declaration", depends=10, doc=1),
+		_row(6, "Weigh package and confirm dimensions", "Field Operations", depends=5),
+		_row(7, "Book and pay freight and handling charges", "Finance", depends=6, finance=1),
+		_row(8, "Obtain manifest and apply for COE", "Declaration", depends=7, doc=1),
+		_row(9, "Confirm arrival at destination airport", "Documentation", depends=8),
+		_row(10, "Confirm delivery to consignee", "Documentation", depends=9),
 	]
 
 
@@ -692,19 +727,21 @@ AIR_IMPORT_GATES: list[dict] = [
 	_gate("Final Docs Received", 8),
 	_gate("Entry Lodged", 10),
 	_gate("Entry Paid", 12),
-	_gate("Post-clearance", 13),
-	_gate("Field Clearance", 15),
-	_gate("Completed", 16),
+	# Reached when Finance has paid, as pre-clearance is on 5.
+	_gate("Post-clearance", 14),
+	_gate("Field Clearance", 16),
+	_gate("Completed", 18),
 ]
 
-# Air Export: client docs → AWB → export entry → airport → flight → COE.
+# Air Export: client docs → AWB → export entry → freight → COE → arrival → delivery.
 AIR_EXPORT_GATES: list[dict] = [
 	_gate("Documents Received", 1),
 	_gate("Final Docs Received", 4),
 	_gate("Entry Lodged", 5),
-	_gate("Entry Paid", 8),
-	_gate("In Transit", 10),
-	_gate("Completed", 11),
+	_gate("Entry Paid", 7),
+	# The manifest is issued once the flight is away.
+	_gate("In Transit", 8),
+	_gate("Completed", 10),
 ]
 
 # Sea Transit Import leaves out the Sea Import-only statuses (UCR, permits,

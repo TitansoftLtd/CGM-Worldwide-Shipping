@@ -10,7 +10,7 @@ metatags:
 
 Use this page when you need the exact task list for Sea Export, Air, Transit, or Road - or when CRM asks which type to pick on Opportunity. Sea Import deep-dives stay in Operations, Declaration, Finance, and Transport; this page is the inventory for **all** modes.
 
-A typical scenario: Sales selects **Air Import** on Opportunity. After approval, the Project gets the **Air Import Workflow** (16 tasks) and tracker mode **ICD Nairobi**. Declaration and Finance run UCR and entry payment pairs; Field clears at the ICD.
+A typical scenario: Sales selects **Air Import** on Opportunity. After approval, the Project gets the **Air Import Workflow** (17 tasks) and tracker mode **ICD Nairobi**. Declaration and Finance run UCR and entry payment pairs; Field clears at the ICD.
 
 To access types and templates, go to:
 
@@ -63,8 +63,8 @@ reopen work that is already complete.
 | Sea Import | Sea Import Workflow | Mombasa Port | 25 |
 | Sea Import, Cargo Type LCL | Sea Import LCL Workflow | - | 20 |
 | Sea Export | Sea Export Workflow | Export | 14 |
-| Air Import | Air Import Workflow | ICD Nairobi | 16 |
-| Air Export | Air Export Workflow | Export | 11 |
+| Air Import | Air Import Workflow | ICD Nairobi | 18 |
+| Air Export | Air Export Workflow | Export | 10 |
 | Sea Transit Import | Sea Transit Import Workflow | Transit Import | 15 |
 | Sea Transit Export | Sea Transit Export Workflow | Transit Export | 10 |
 | Road Transit Outbound | Road Transit Outbound Workflow | Transit Export | 10 |
@@ -199,7 +199,7 @@ LCL cargo has no container of its own, so after field clearance the shipment pay
 | 13 | Container scheduled for vessel sailing | Operations |
 | 14 | Receive Certificate of Export (COE) | Operations |
 
-## 9. How to use - Air Import (16)
+## 9. How to use - Air Import (18)
 
 **Template:** Air Import Workflow · **Mode:** ICD Nairobi
 
@@ -216,11 +216,83 @@ LCL cargo has no container of its own, so after field clearance the shipment pay
 | 9 | Shipment arrival - manifest issued | Operations |
 | 10 | Lodge draft entry - share with client | Declaration |
 | 11 | Register entry - share e-slip for tax payment | Declaration |
-| 12 | Confirm entry taxes paid | Finance |
+| 12 | Finance pays entry | Finance |
 | 13 | Apply for post-clearance permits | Declaration |
-| 14 | Share documents to ground handling team | Field Operations |
-| 15 | Clearance - verification and permit removal | Field Operations |
-| 16 | Release and entry settlement | Operations |
+| 14 | Finance pays post-clearance permit invoices | Finance |
+| 15 | Share documents to ground handling team | Field Operations |
+| 16 | Clearance - verification and permit removal | Field Operations |
+| 17 | Release and entry settlement | Operations |
+| 18 | Upload invoice for import charges and delivery note | Documentation |
+
+### Nothing moves until the intake documents are in
+
+Step 1 now waits for the client documents: **CI** (the proforma invoice) and
+**PKL** are stamped on the step as Required Document Types, so it cannot be
+completed until both are attached on **Task Documents**. Step 2 depends on step
+1, so the shipment stands still.
+
+**COA is deliberately not required**, although the step is named after it. The
+Document Type master marks COA optional and places it at the Pre-arrival stage,
+and only about half of past shipments had one. A step that waits for a document
+half the shipments never get is a step that never closes. CI and PKL are marked
+Default Required, so every shipment is expected to have them.
+
+**COA is still there to pick.** Document Type carries no mode or stage filter, so
+COA can be selected on the step and on the shipment's Client Documents whenever
+the goods come with one. Not required is not the same as not available.
+
+The same rule applies to any step: require a document the step **produces**, or
+one every shipment has. `test_task_template_validation` fails if a step waits
+for a Document Type the master marks optional, unless it is listed there as one
+the step produces, with the reason.
+
+### The documentation officer confirms the set
+
+Two people look at the documents, at different moments. The **Operations
+Manager** approves the set on the Opportunity before the shipment exists, and
+that gate already blocks a Project from being created. See
+[CRM & Intake](crm-intake.md#approval-before-a-shipment-exists).
+
+Step 1 is the second look, and the client asked for it by name: the
+**documentation officer** confirms that what was approved actually arrived. The
+step is a **Document Checkpoint**, the same role sea import uses on its intake
+step, so the documents already on the shipment appear on the task and anything
+attached there syncs back to the shipment's Client Documents. Completing the step
+is the confirmation.
+
+### The invoice and the delivery note close an air import
+
+Step 18 is admin's: **upload the invoice for import charges and the delivery
+note**. Both documents must be attached before it completes, and the
+**Completed** status waits for it. The client was explicit that this is the end
+of the file and that whatever follows happens offline.
+
+Two documents, in that order, because that is the order the work happens in. The
+client put it plainly: the invoice and the receipt come first, and only then do
+you proceed to get the delivery note. So the step waits for **Import Charges
+Invoice** and **Delivery Note** together rather than the delivery note alone,
+and a shipment cannot reach Completed on the delivery note by itself.
+
+**Import Charges Invoice** is a Document Type like any other. It is seeded in
+code rather than added in Desk, because a site that lacks it would accept the
+step with nothing attached and nobody would notice.
+
+The receipt the client mentioned is not a document on this step. It is evidence
+that the invoice was paid, which the finance steps already carry, so asking for
+it again here would hold the shipment twice for one payment.
+
+### A step that does not apply is cancelled, not left open
+
+Some shipments need no IDF and no permits. The declarant is the one who knows,
+so the declarant sets those steps to **Cancelled**.
+
+Cancelled is not a workaround. It sits beside Completed everywhere it matters:
+a step waiting on a cancelled one can be completed, and the shipment status
+gates skip it, so the chart moves on. Nothing is deleted, and the cancelled step
+stays on the shipment as the record that it was considered and did not apply.
+
+Do not leave such a step Open instead. An open step holds up everything that
+depends on it and keeps the shipment status where it is.
 
 ### The air form hides the sea fields
 
@@ -269,16 +341,16 @@ it and an air job has no containers for it to affect.
 ### Declarants run the whole air file
 
 On sea, clearance tasks are scoped by department. On air they are not: anyone with
-Declaration access sees and works all 16 steps, including the Documentation,
+Declaration access sees and works all 18 steps, including the Documentation,
 Operations, Field Operations and Finance ones. Air clears in days and there is no
-air desk to hand off to, so department scoping left a declarant 5 of 16 steps and
+air desk to hand off to, so department scoping left a declarant 5 of 18 steps and
 no view of where the file stood.
 
 This widens who can open a finance step, not who can pay. Completing a Finance
 Payment task still needs a **submitted** Journal Entry, which is Finance's own
 action; a draft does not complete it.
 
-## 10. How to use - Air Export (11)
+## 10. How to use - Air Export (10)
 
 **Template:** Air Export Workflow · **Mode:** Export
 
@@ -287,14 +359,28 @@ action; a draft does not complete it.
 | 1 | Receive documents from client | Documentation |
 | 2 | Get origin and destination address | Operations |
 | 3 | Check rates from airlines and select route | Operations |
-| 4 | Generate airwaybill number | Declaration |
+| 4 | Generate airwaybill number | Documentation |
 | 5 | Do customs export entry | Declaration |
-| 6 | Take package to airport and export processes | Field Operations |
-| 7 | Weigh package and confirm dimensions | Field Operations |
-| 8 | Book and pay freight and handling charges | Finance |
-| 9 | Hand over shipment to airline | Field Operations |
-| 10 | Monitor flight departure | Operations |
-| 11 | Obtain manifest and apply for COE | Declaration |
+| 6 | Weigh package and confirm dimensions | Field Operations |
+| 7 | Book and pay freight and handling charges | Finance |
+| 8 | Obtain manifest and apply for COE | Declaration |
+| 9 | Confirm arrival at destination airport | Documentation |
+| 10 | Confirm delivery to consignee | Documentation |
+
+### What is no longer a task
+
+Three steps were dropped because nobody ticks them: taking the package to the
+airport, handing it to the airline, and monitoring the flight departure. They
+happen whether or not anyone records them, and an open step nobody closes holds
+up the shipment status.
+
+The departure is still worth knowing, so it is a field: **Actual Time of
+Departure (ATD)** on the shipment, next to ETD. The **In Transit** status now
+waits on step 8, the manifest, because the manifest is issued once the flight
+has gone.
+
+Arrival and delivery are two separate steps on purpose. The client was asked
+which one closes the job and answered both.
 
 ## 11. How to use - Sea Transit Import (15)
 

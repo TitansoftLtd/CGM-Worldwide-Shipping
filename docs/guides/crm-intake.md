@@ -145,6 +145,35 @@ From an approved Opportunity:
    - Shipment documents carried from Opportunity
 3. If Shipment Type uses sea-import workflow → **25 clearance tasks** are created automatically.
 
+### Documents attached later still reach the shipment
+
+Documents used to copy at the moment the Project was created and never again, so
+anything attached to the Opportunity afterwards stayed there. PROJ-0069 was created
+in September and its PKL, CI and COA were uploaded in November; they never moved.
+
+Saving the Opportunity now carries its documents to the linked Project. It **fills
+only**: a file already on the Project is never replaced, because the Project is the
+live record once clearance starts and its Final Documents must survive. An
+Opportunity row with no file is ignored.
+
+The same applies to a **Booking Confirmation**. Its attachment used to carry at the
+moment of submit and never again, so attaching the file or linking the Opportunity
+afterwards left nothing to run. On production that left 4 of the 5 submitted
+bookings with an empty Booking row. A submitted booking now re-syncs when it is
+saved, and fills the row only when it is empty.
+
+### The shipment name follows the quantity
+
+`project_name` is `{Client Ref} / {qty}X{size} / {batch}`, for example
+`THXDTK260803(C) / 5X40 / 2`. The quantity comes from the container rows, or from
+`custom_quantity` when there are none.
+
+A Project whose quantity arrived from the Opportunity after creation used to keep
+the name it was given when the quantity was still empty, showing `0X0`. The rename
+runs in `before_save`, and that sync saves with `ignore_validate`, which Frappe
+returns from before `before_save` runs. The sync now rebuilds the reference itself,
+so the name catches up on the next Opportunity save.
+
 ---
 
 ## Intake document guard

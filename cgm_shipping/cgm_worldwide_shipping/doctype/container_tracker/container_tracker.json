@@ -229,6 +229,7 @@
    "label": "ATA / Berthing Date"
   },
   {
+   "depends_on": "eval:![\"Export\",\"Transit Export\"].includes(doc.container_mode)",
    "fieldname": "section_mombasa",
    "fieldtype": "Section Break",
    "label": "Mombasa Port"
@@ -314,6 +315,7 @@
    "label": "Warehouse Loading Date"
   },
   {
+   "depends_on": "eval:[\"Transit Import\",\"Transit Export\"].includes(doc.container_mode)",
    "fieldname": "section_transit",
    "fieldtype": "Section Break",
    "label": "Transit"
@@ -407,6 +409,7 @@
    "label": "Transit Gate In Date"
   },
   {
+   "depends_on": "eval:[\"Export\",\"Transit Export\"].includes(doc.container_mode)",
    "fieldname": "section_export",
    "fieldtype": "Section Break",
    "label": "Export"
@@ -593,6 +596,7 @@
    "label": "Warehouse"
   },
   {
+   "depends_on": "eval:![\"Export\",\"Transit Export\"].includes(doc.container_mode)",
    "fieldname": "empty_return_and_interchange_tab",
    "fieldtype": "Tab Break",
    "label": "Empty Return and Interchange"
@@ -603,6 +607,7 @@
    "label": "Delivery Destination "
   },
   {
+   "depends_on": "eval:![\"Export\",\"Transit Export\"].includes(doc.container_mode)",
    "fieldname": "free_days_tab",
    "fieldtype": "Tab Break",
    "label": "Free Days"

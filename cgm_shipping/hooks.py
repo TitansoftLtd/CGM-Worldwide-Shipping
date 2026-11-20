@@ -256,6 +256,12 @@ override_doctype_class = {
 doc_events = {
 	# Nothing the system sends reaches a login that has been disabled. Skipped for a
 	# human-composed Communication, which must go where the sender addressed it.
+	# Re-uploading the same document to a task replaces it, never stacks.
+	"File": {
+		"after_insert": [
+			"cgm_shipping.cgm_worldwide_shipping.customizations.task_attachments.drop_superseded_task_attachment"
+		],
+	},
 	"Email Queue": {
 		"before_insert": [
 			"cgm_shipping.cgm_worldwide_shipping.customizations.notification_recipients.drop_disabled_from_email_queue"

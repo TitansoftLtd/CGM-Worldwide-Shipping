@@ -38,8 +38,11 @@ The shipment is going out, so the airline is chosen before anything else can be 
 8. **Weigh and measure** to get the correct dimensions.
 9. **Book and pay** freight and handling charges.
 10. **Hand over to the airline** for airlifting.
-11. **Monitor the departure** so you know when the flight has left.
-12. **Manifest**, then to customs for the **COE**.
+11. **Manifest**, then to customs for the **COE**.
+
+Steps 6, 7, 10 and the departure are not tasks in the system: they happen on
+their own. The departure is recorded as **Actual Time of Departure (ATD)** on the
+shipment. See [Shipment modes](shipment-modes.md#what-is-no-longer-a-task).
 
 The order that catches people out is 3-4: on an import the transport document arrives from the client, but on an export the airline selection is what creates it.
 
