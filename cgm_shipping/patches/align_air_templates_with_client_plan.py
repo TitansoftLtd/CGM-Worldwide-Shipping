@@ -10,12 +10,6 @@ steps: Finance for post-clearance permits, and the closing upload of the import
 charges invoice and delivery note. Its Client Inspection gate is dropped: the
 status was retired, so the row blocked every save, in Desk too.
 fix_sea_import_status_gates missed this one.
-
-Rows and gates a site added itself are kept. Live shipments are brought along
-only where nothing has been ticked.
-
-Idempotent. One-time - retire per docs/guides/patches.md once staging and
-production Patch Log show it.
 """
 
 import frappe
