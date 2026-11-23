@@ -547,6 +547,8 @@ override_doctype_dashboards = {
 before_request = [
 	"cgm_shipping.cgm_worldwide_shipping.customizations.website.redirect_transporter_portal_users_from_desk",
 	"cgm_shipping.cgm_worldwide_shipping.customizations.login_code_sms.ensure_login_code_sms",
+	# Frappe 16.60 link search crashes for select-only users. Remove once fixed upstream.
+	"cgm_shipping.cgm_worldwide_shipping.customizations.link_search_images.ensure_link_search_images_guard",
 ]
 # after_request = ["cgm_shipping.utils.after_request"]
 after_request = [
